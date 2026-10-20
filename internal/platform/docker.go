@@ -33,7 +33,7 @@ func dockerOutput(ctx context.Context, args ...string) ([]byte, error) {
 		if len(text) > 1500 {
 			text = text[len(text)-1500:]
 		}
-		return nil, fmt.Errorf("Docker: %s", text)
+		return nil, fmt.Errorf("docker: %s", text)
 	}
 	return raw, nil
 }
@@ -162,7 +162,7 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 	}
 	binary, err := os.Open(options.Binary)
 	if err != nil {
-		return "", fmt.Errorf("Linux Daemon binary is unavailable; build the release distribution: %w", err)
+		return "", fmt.Errorf("linux daemon binary is unavailable; build the release distribution: %w", err)
 	}
 	defer binary.Close()
 	hash := sha256.New()
@@ -317,13 +317,17 @@ func (s *Server) provision(operation domain.Provisioning) {
 			return
 		}
 	} else {
-		result, enrollErr := s.Hub.Enroll(ctx, s.URL, true, false)
+		localURL := s.URL
+		if s.Config.TLSCertificate != "" {
+			localURL = s.Config.PublicURL
+		}
+		result, enrollErr := s.Hub.Enroll(ctx, localURL, true, false)
 		if enrollErr != nil {
 			fail(enrollErr)
 			return
 		}
 		operation.EnrollmentID = result.Enrollment.ID
-		enrollment = ConnectOptions{ServerURL: s.URL, EnrollmentID: result.Enrollment.ID, Token: result.Token}
+		enrollment = ConnectOptions{ServerURL: localURL, EnrollmentID: result.Enrollment.ID, Token: result.Token}
 		if err = WriteJSON(enrollmentPath, enrollment); err != nil {
 			fail(err)
 			return

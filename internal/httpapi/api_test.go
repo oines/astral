@@ -122,6 +122,86 @@ func TestOwnerAuthAndIndependentHistoricalImageAndOriginalDownload(t *testing.T)
 	}
 }
 
+func TestContextStatsStayOnFrozenRequestUntilRunFinishes(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	p := testkit.New(t, 0, func(ctx context.Context, _ int, _ map[string]any) any {
+		close(started)
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return testkit.Text("done")
+	})
+	_, server := apiFixture(t, p)
+	if _, err := p.Harness.Submit(p.Context, p.Session.ID, harness.InputRequest{ID: "frozen-context", Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-p.Context.Done():
+		t.Fatal("model did not start")
+	}
+	if err := p.Store.Get(p.Context, "models", p.Profile.ID, &p.Profile); err != nil {
+		t.Fatal(err)
+	}
+	p.Profile.Overrides = map[string]json.RawMessage{"context_window": testkit.JSON(64000)}
+	if err := p.Harness.Models.SaveProfile(p.Context, &p.Profile); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Harness.Models.Verify(p.Context, p.Profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Harness.SelectModel(p.Context, p.Session.ID, p.Profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	read := func() ContextStats {
+		t.Helper()
+		response := request(t, p.Context, server, "GET", "/api/v1/sessions/"+p.Session.ID+"/context", nil, true)
+		defer response.Body.Close()
+		var stats ContextStats
+		if err := json.NewDecoder(response.Body).Decode(&stats); err != nil || response.StatusCode != 200 {
+			t.Fatalf("context response failed: status %d, %v", response.StatusCode, err)
+		}
+		return stats
+	}
+	if stats := read(); stats.ContextWindow != 128000 || stats.EstimatedInput <= 0 {
+		t.Fatalf("active request changed with the next model selection: %+v", stats)
+	}
+	close(release)
+	p.Idle(t, p.Session.ID)
+	if stats := read(); stats.ContextWindow != 64000 {
+		t.Fatalf("completed run did not expose the next request projection: %+v", stats)
+	}
+}
+
+func TestIdleContextUsesCurrentVerifiedProfileWithoutStartingRun(t *testing.T) {
+	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any {
+		t.Error("context inspection started a model request")
+		return testkit.Text("unexpected")
+	})
+	_, server := apiFixture(t, p)
+	if err := p.Store.Get(p.Context, "models", p.Profile.ID, &p.Profile); err != nil {
+		t.Fatal(err)
+	}
+	p.Profile.Overrides = map[string]json.RawMessage{"context_window": testkit.JSON(64000)}
+	if err := p.Harness.Models.SaveProfile(p.Context, &p.Profile); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Harness.Models.Verify(p.Context, p.Profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	response := request(t, p.Context, server, "GET", "/api/v1/sessions/"+p.Session.ID+"/context", nil, true)
+	defer response.Body.Close()
+	var stats ContextStats
+	if err := json.NewDecoder(response.Body).Decode(&stats); err != nil || response.StatusCode != 200 || stats.ContextWindow != 64000 {
+		t.Fatalf("idle profile revision did not refresh: %+v, HTTP %d, %v", stats, response.StatusCode, err)
+	}
+	view, err := p.Harness.View(p.Context, p.Session.ID)
+	if err != nil || view.RunID != "" || view.Status != "idle" {
+		t.Fatal("context inspection activated the Session")
+	}
+}
+
 func TestEventSubscriptionPrecedesSnapshotAndReconcilesCommit(t *testing.T) {
 	release := make(chan struct{})
 	p := testkit.New(t, 0, func(ctx context.Context, _ int, _ map[string]any) any {

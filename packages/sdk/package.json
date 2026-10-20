@@ -1,0 +1,12 @@
+{
+  "name": "@astral/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.gen.ts",
+    "./colada": "./src/@pinia/colada.gen.ts"
+  },
+  "peerDependencies": { "@pinia/colada": "^0.21.2" }
+}

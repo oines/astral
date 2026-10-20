@@ -27,6 +27,24 @@ type View struct {
 	Unresolved []sessions.ToolRecord      `json:"unresolved"`
 }
 
+// InspectContext prepares the same current selection that the next activation
+// will use. Global profile edits may have advanced its verified revision while
+// this Session was idle. Running requests retain their frozen configuration.
+func (s *Service) InspectContext(ctx context.Context, id string) (sessions.Context, error) {
+	r, err := s.open(ctx, id)
+	if err != nil {
+		return sessions.Context{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.run == nil && r.maintenance == "" {
+		if err = r.syncSelection(ctx); err != nil {
+			return sessions.Context{}, err
+		}
+	}
+	return r.core.InspectContext(ctx)
+}
+
 func (s *Service) View(ctx context.Context, id string) (View, error) {
 	r, err := s.open(ctx, id)
 	if err != nil {
@@ -40,6 +58,11 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	}
 	state := r.core.State()
 	view.RolloutID, view.HeadID, view.LastRun = state.RolloutID, state.Branch.HeadID, state.LastRun
+	if view.HeadID != "" {
+		if head, readErr := r.core.History().Get(ctx, view.HeadID); readErr == nil && head.Time.After(view.UpdatedAt) {
+			view.UpdatedAt = head.Time
+		}
+	}
 	view.Error = r.lastError
 	if r.run != nil {
 		view.Status, view.RunID = "running", r.run.ID()

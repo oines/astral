@@ -55,7 +55,7 @@ func HTTPJSON(ctx context.Context, method, url, token string, input, output any)
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("Astral Server could not be reached: %w", err)
+		return fmt.Errorf("astral server could not be reached: %w", err)
 	}
 	defer response.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
@@ -67,9 +67,9 @@ func HTTPJSON(ctx context.Context, method, url, token string, input, output any)
 			Message string `json:"message"`
 		}
 		if json.Unmarshal(raw, &problem) == nil && problem.Message != "" {
-			return fmt.Errorf("Astral returned HTTP %d: %s", response.StatusCode, problem.Message)
+			return fmt.Errorf("astral returned HTTP %d: %s", response.StatusCode, problem.Message)
 		}
-		return fmt.Errorf("Astral returned HTTP %d", response.StatusCode)
+		return fmt.Errorf("astral returned HTTP %d", response.StatusCode)
 	}
 	if output != nil {
 		return json.Unmarshal(raw, output)
@@ -175,7 +175,7 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 		}
 		select {
 		case <-wait.Done():
-			return fmt.Errorf("Daemon started but did not connect; inspect %s", filepath.Join(root, "daemon.log"))
+			return fmt.Errorf("daemon started but did not connect; inspect %s", filepath.Join(root, "daemon.log"))
 		case <-timer.C:
 		}
 	}
@@ -230,24 +230,7 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 	if runtime.GOOS == "linux" && runtime.GOARCH == probe.Arch {
 		binary, err = os.Executable()
 	} else {
-		request, requestErr := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(options.ServerURL, "/")+"/downloads/astral-linux-"+probe.Arch, nil)
-		if requestErr != nil {
-			return requestErr
-		}
-		response, requestErr := http.DefaultClient.Do(request)
-		if requestErr != nil {
-			return fmt.Errorf("Linux Daemon download failed: %w", requestErr)
-		}
-		defer response.Body.Close()
-		if response.StatusCode != 200 {
-			return fmt.Errorf("Linux Daemon distribution is unavailable (HTTP %d)", response.StatusCode)
-		}
-		file, writeErr := os.OpenFile(binary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0700)
-		if writeErr != nil {
-			return writeErr
-		}
-		_, writeErr = io.Copy(file, io.LimitReader(response.Body, 256<<20))
-		err = errors.Join(writeErr, file.Close())
+		err = downloadVerifiedBinary(ctx, options.ServerURL, "astral-linux-"+probe.Arch, binary)
 	}
 	if err != nil {
 		return err
@@ -272,4 +255,67 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 		report("Container started: " + id + ". Astral will show it online after its Daemon connects.")
 	}
 	return nil
+}
+
+func downloadVerifiedBinary(ctx context.Context, serverURL, name, target string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+	get := func(file string) (*http.Response, error) {
+		request, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(serverURL, "/")+"/downloads/"+file, nil)
+		if err != nil {
+			return nil, err
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			return nil, fmt.Errorf("daemon download failed: %w", err)
+		}
+		if response.StatusCode != http.StatusOK {
+			response.Body.Close()
+			return nil, fmt.Errorf("daemon distribution is unavailable (HTTP %d)", response.StatusCode)
+		}
+		return response, nil
+	}
+	checksums, err := get("checksums.txt")
+	if err != nil {
+		return err
+	}
+	raw, err := io.ReadAll(io.LimitReader(checksums.Body, 8193))
+	checksums.Body.Close()
+	if err != nil {
+		return err
+	}
+	expected := ""
+	for _, line := range strings.Split(string(raw), "\n") {
+		parts := strings.Fields(line)
+		if len(parts) == 2 && parts[1] == name {
+			expected = parts[0]
+		}
+	}
+	if len(raw) > 8192 || len(expected) != 64 {
+		return fmt.Errorf("daemon distribution has no valid checksum")
+	}
+	response, err := get(name)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	file, err := os.CreateTemp(filepath.Dir(target), ".astral-download-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if err = file.Chmod(0700); err != nil {
+		file.Close()
+		return err
+	}
+	hash := sha256.New()
+	size, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, (256<<20)+1))
+	if err = errors.Join(copyErr, file.Sync(), file.Close()); err != nil {
+		return err
+	}
+	if size > 256<<20 || hex.EncodeToString(hash.Sum(nil)) != expected {
+		return fmt.Errorf("daemon binary checksum did not match")
+	}
+	return os.Rename(file.Name(), target)
 }

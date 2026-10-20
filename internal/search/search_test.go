@@ -26,7 +26,7 @@ func TestExactlyOneSelectedProviderAndNoFallbackOnFailure(t *testing.T) {
 			t.Error("missing Tavily bearer credential")
 		}
 		if fail.Load() {
-			http.Error(w, "unavailable", 503)
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": []any{map[string]any{"title": "Source", "url": "https://example.test/source", "content": "Evidence", "published_date": "2026-10-21"}}})

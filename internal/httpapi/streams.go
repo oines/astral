@@ -155,6 +155,12 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 			}
 			gateway.RemoveImageData(reflect.ValueOf(&event))
 			envelope := Event{Epoch: h.RuntimeID, Core: &event}
+			if event.Type == core.EventRunStart || event.Type == core.EventRunEnd || event.Type == core.EventApproval || event.Type == core.EventContextApplied {
+				if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
+					envelope.View = &view
+					lastView, _ = json.Marshal(view)
+				}
+			}
 			if event.EntryID != "" {
 				if entry, readErr := session.History().Get(r.Context(), event.EntryID); readErr == nil {
 					gateway.RemoveImageData(reflect.ValueOf(&entry))

@@ -80,7 +80,7 @@ func fixture(t *testing.T, count int) *setup {
 		waitOnline(t, s, d.Credentials.ComputerID, d.Hello.BootID)
 		s.agent.AllowedComputers = append(s.agent.AllowedComputers, credentials.ComputerID)
 	}
-	s.agent.Meta.ID, s.agent.Name = domain.ID("agent"), "Test Agent"
+	s.agent.ID, s.agent.Name = domain.ID("agent"), "Test Agent"
 	if err = store.Save(ctx, "agents", &s.agent.Meta, &s.agent); err != nil {
 		t.Fatal(err)
 	}

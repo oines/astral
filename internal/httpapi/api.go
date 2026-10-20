@@ -490,8 +490,23 @@ func (a *API) resources() {
 }
 func (a *API) sessionRoutes() {
 	h := a.Config.Harness
-	route[httpcontract.Empty, []domain.Session](a, "GET", "/sessions", "listSessions", "Sessions", func(r *http.Request, _ httpcontract.Empty) ([]domain.Session, error) {
-		return readAll[domain.Session](r.Context(), h.Store, "sessions")
+	route[httpcontract.Empty, []harness.View](a, "GET", "/sessions", "listSessions", "Sessions", func(r *http.Request, _ httpcontract.Empty) ([]harness.View, error) {
+		records, err := readAll[domain.Session](r.Context(), h.Store, "sessions")
+		if err != nil {
+			return nil, err
+		}
+		views := make([]harness.View, 0, len(records))
+		for _, record := range records {
+			view, viewErr := h.View(r.Context(), record.ID)
+			if viewErr != nil {
+				// One unavailable historical configuration must not prevent
+				// the Owner from reaching their other Sessions or Settings.
+				view = harness.View{Session: record, Status: "needs_attention",
+					Error: "This Session could not be opened. Check its Agent and model configuration."}
+			}
+			views = append(views, view)
+		}
+		return views, nil
 	})
 	route[SessionInput, domain.Session](a, "POST", "/sessions", "createSession", "Sessions", func(r *http.Request, input SessionInput) (domain.Session, error) {
 		return h.CreateSession(r.Context(), input.AgentID, input.Title)
@@ -540,7 +555,29 @@ func (a *API) sessionRoutes() {
 		if err != nil {
 			return ContextStats{}, err
 		}
-		view, err := session.InspectContext(r.Context())
+		status, err := h.View(r.Context(), r.PathValue("id"))
+		if err != nil {
+			return ContextStats{}, err
+		}
+		// During a Run, report the actual frozen request. A model selection for
+		// the next Attempt must not change the context ring of the current one.
+		if status.RunID != "" {
+			page, readErr := session.History().Scan(r.Context(), sessions.Query{SessionID: status.ID, Kind: sessions.EntryModelRequest, Reverse: true, Limit: 1, MaxBytes: 128 << 20})
+			if readErr != nil {
+				return ContextStats{}, readErr
+			}
+			if len(page.Entries) > 0 && page.Entries[0].RunID == status.RunID && page.Entries[0].ModelRequest != nil {
+				request := page.Entries[0].ModelRequest.Request
+				model, resolveErr := h.Models.Resolve(r.Context(), request.ModelID, nil)
+				if resolveErr != nil {
+					return ContextStats{}, resolveErr
+				}
+				estimated, estimateErr := modelbridge.EstimateTokens(r.Context(), model, request)
+				spec := model.Spec()
+				return ContextStats{EstimatedInput: estimated, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: request.MaxOutputTokens, HeadID: status.HeadID}, estimateErr
+			}
+		}
+		view, err := h.InspectContext(r.Context(), r.PathValue("id"))
 		if err != nil {
 			return ContextStats{}, err
 		}

@@ -5368,7 +5368,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/astral_internal_domain_Session"
+                    "$ref": "#/components/schemas/astral_internal_harness_View"
                   },
                   "type": "array"
                 }

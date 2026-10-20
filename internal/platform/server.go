@@ -132,7 +132,7 @@ func New(config Config) (server *Server, err error) {
 		return nil, err
 	}
 	if len(s.token) < 32 {
-		return nil, fmt.Errorf("Owner token file is invalid")
+		return nil, fmt.Errorf("owner token file is invalid")
 	}
 	if err = os.Chmod(tokenPath, 0600); err != nil {
 		return nil, err
@@ -430,7 +430,7 @@ func (s *Server) web() http.Handler {
 			}
 			content, readErr := fs.ReadFile(source, "index.html")
 			if readErr != nil {
-				http.Error(w, "Web UI is unavailable. Build apps/web and restart with --web-dir apps/web/dist.", 503)
+				http.Error(w, "Web UI is unavailable. Build apps/web and restart with --web-dir apps/web/dist.", http.StatusServiceUnavailable)
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")

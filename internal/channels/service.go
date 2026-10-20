@@ -122,9 +122,14 @@ func (s *Service) SaveConnection(ctx context.Context, c *domain.Connection, toke
 	if err != nil {
 		return err
 	}
-	identity, err := adapter.Validate(ctx)
-	if err != nil {
-		return err
+	identity := Identity{ID: prior.AccountID, Username: prior.Username, Diagnostics: prior.Diagnostics}
+	// Disabling an existing account must remain possible during a platform
+	// outage or after its token was revoked. Enabling always verifies identity.
+	if c.Enabled || prior.ID == "" || token != nil {
+		identity, err = adapter.Validate(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	if prior.AccountID != "" && prior.AccountID != identity.ID {
 		return domain.Conflict("create a new Connection for a different platform account")

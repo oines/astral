@@ -124,8 +124,32 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 	f.StringVar(&config.TLSKey, "tls-key", "", "TLS private key PEM")
 	f.BoolVar(&config.NoLocal, "no-local", false, "do not start the local Daemon automatically")
 	ready := f.String("ready-file", "", "write private startup information for the desktop shell")
+	parentPID := f.Int("parent-pid", 0, "stop this managed Server if its desktop parent exits")
 	if err := f.Parse(args); err != nil {
 		return err
+	}
+	if *parentPID != 0 {
+		if *parentPID != os.Getppid() {
+			return fmt.Errorf("desktop parent process does not match")
+		}
+		managed, cancel := context.WithCancel(ctx)
+		defer cancel()
+		ctx = managed
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-managed.Done():
+					return
+				case <-ticker.C:
+					if os.Getppid() != *parentPID {
+						cancel()
+						return
+					}
+				}
+			}
+		}()
 	}
 	if config.WebDirectory == "" {
 		if stat, err := os.Stat("apps/web/dist/index.html"); err == nil && stat.Mode().IsRegular() {
@@ -273,7 +297,7 @@ func ownerRequest(ctx context.Context, args []string, out, stderr io.Writer) err
 	}
 	method, path := strings.ToUpper(args[0]), args[1]
 	if !strings.HasPrefix(path, "/api/v1/") || strings.HasPrefix(path, "//") {
-		return fmt.Errorf("Owner requests must use /api/v1/ paths")
+		return fmt.Errorf("owner requests must use /api/v1/ paths")
 	}
 	f := flags("request", stderr)
 	server := f.String("server", "", "override Server URL")
@@ -294,7 +318,7 @@ func ownerRequest(ctx context.Context, args []string, out, stderr io.Writer) err
 		if configErr != nil {
 			return configErr
 		}
-		return fmt.Errorf("Server and Owner token file are required")
+		return fmt.Errorf("server and Owner token file are required")
 	}
 	if err := modelbridge.ValidateURL(config.Server); err != nil {
 		return err
@@ -354,7 +378,7 @@ func session(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return ownerRequest(ctx, []string{"POST", "/api/v1/sessions", "--body", string(raw)}, out, stderr)
 	case "send":
 		if len(args) < 2 {
-			return fmt.Errorf("Session ID is required")
+			return fmt.Errorf("session ID is required")
 		}
 		f := flags("sessions send", stderr)
 		text := f.String("text", "", "prompt text")
@@ -367,7 +391,7 @@ func session(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return ownerRequest(ctx, []string{"POST", "/api/v1/sessions/" + url.PathEscape(args[1]) + "/inputs", "--body", string(raw)}, out, stderr)
 	case "stop", "continue", "history":
 		if len(args) < 2 {
-			return fmt.Errorf("Session ID is required")
+			return fmt.Errorf("session ID is required")
 		}
 		method := "POST"
 		if args[0] == "history" {
@@ -376,7 +400,7 @@ func session(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return ownerRequest(ctx, append([]string{method, "/api/v1/sessions/" + url.PathEscape(args[1]) + "/" + args[0]}, args[2:]...), out, stderr)
 	case "export":
 		if len(args) < 2 {
-			return fmt.Errorf("Session ID is required")
+			return fmt.Errorf("session ID is required")
 		}
 		f := flags("sessions export", stderr)
 		output := f.String("output", "", "write JSONL to a new file instead of stdout")
@@ -420,7 +444,7 @@ func session(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return err
 	case "fork":
 		if len(args) < 2 {
-			return fmt.Errorf("Session ID is required")
+			return fmt.Errorf("session ID is required")
 		}
 		f := flags("sessions fork", stderr)
 		entry := f.String("entry", "", "committed history Entry ID")

@@ -1,0 +1,29 @@
+appId: com.oines.astral
+productName: Astral
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+  - "!node_modules/**/*"
+extraResources:
+  - from: ../../dist/bin
+    to: bin
+    filter:
+      - astral-*
+      - checksums.txt
+      - THIRD_PARTY_NOTICES.txt
+  - from: resources/trayTemplate.png
+    to: trayTemplate.png
+mac:
+  icon: resources/icon.icns
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  identity: null
+  extendInfo:
+    NSHumanReadableCopyright: Astral contributors
+dmg:
+  title: Astral
+artifactName: Astral-${version}-${arch}.${ext}

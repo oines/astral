@@ -1,0 +1,23 @@
+{
+  "name": "@astral/desktop",
+  "productName": "Astral",
+  "description": "A self-hosted workspace for agents and Computers.",
+  "author": "Astral contributors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "dependencies": {},
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --dir",
+    "package": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --mac --arm64 --x64",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "electron": "^42.0.0",
+    "electron-builder": "^26.16.1",
+    "electron-vite": "^6.0.0",
+    "vite": "^8.1.5"
+  }
+}

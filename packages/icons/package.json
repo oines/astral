@@ -1,0 +1,8 @@
+{
+  "name": "@astral/icons",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "lucide-vue-next": "^0.562.0" }
+}

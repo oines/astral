@@ -13,6 +13,9 @@ import (
 )
 
 func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
+	if agent.AllowedComputers == nil {
+		agent.AllowedComputers = []string{}
+	}
 	if strings.TrimSpace(agent.Name) == "" {
 		return domain.Invalid("Agent name is required")
 	}

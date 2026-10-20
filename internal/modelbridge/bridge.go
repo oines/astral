@@ -37,7 +37,9 @@ func ValidateURL(raw string) error {
 	}
 	host := u.Hostname()
 	ip := net.ParseIP(host)
-	if u.Scheme != "https" && !(u.Scheme == "http" && (host == "localhost" || ip != nil && ip.IsLoopback())) {
+	secure := u.Scheme == "https"
+	localHTTP := u.Scheme == "http" && (host == "localhost" || ip != nil && ip.IsLoopback())
+	if !secure && !localHTTP {
 		return domain.Invalid("use HTTPS for remote connections; HTTP is only allowed on loopback")
 	}
 	return nil

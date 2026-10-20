@@ -176,6 +176,25 @@ func update(id int64, text string) telegramUpdate {
 	return telegramUpdate{ID: id, Message: &telegramMessage{ID: 100 + id, Date: time.Now().Unix(), Text: text, From: &telegramUser{ID: 7, FirstName: "Ada"}, Chat: telegramChat{ID: -100, Type: "supergroup", Title: "Workspace"}}}
 }
 
+func TestConnectionCanBeDisabledWhilePlatformIsUnavailable(t *testing.T) {
+	bot := newBot(t)
+	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return nil })
+	service := New(p.Store, p.Harness)
+	connection := bot.connection(t, service)
+	bot.server.Close()
+	connection.Enabled = false
+	if err := service.SaveConnection(p.Context, &connection, nil); err != nil {
+		t.Fatalf("platform outage blocked disabling the account: %v", err)
+	}
+	if connection.AccountID != "999" || connection.Username != "astral_bot" {
+		t.Fatal("disabling lost the verified account identity")
+	}
+	connection.Enabled = true
+	if err := service.SaveConnection(p.Context, &connection, nil); err == nil {
+		t.Fatal("enabling skipped platform verification")
+	}
+}
+
 func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T) {
 	bot := newBot(t)
 	p := testkit.New(t, 1, func(ctx context.Context, n int, request map[string]any) any {
