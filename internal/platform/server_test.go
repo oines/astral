@@ -1,0 +1,164 @@
+package platform
+
+import (
+	"context"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/httpapi"
+)
+
+func await(t *testing.T, ctx context.Context, check func() bool) {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for !check() {
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	config := Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers")}
+	s, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	local, err := s.UseLocal(ctx)
+	if err != nil || !local.Online || !local.Local || local.Kind != "local" {
+		t.Fatalf("local shortcut did not connect: %+v %v", local, err)
+	}
+	again, err := s.UseLocal(ctx)
+	if err != nil || again.ID != local.ID {
+		t.Fatal("local shortcut duplicated a Computer")
+	}
+	if _, err = New(config); err == nil {
+		t.Fatal("two Servers opened the same state domain")
+	}
+	var bootstrap httpapi.Bootstrap
+	if err = HTTPJSON(ctx, "GET", s.URL+"/api/v1/bootstrap", s.token, nil, &bootstrap); err != nil {
+		t.Fatal(err)
+	}
+	if bootstrap.Host.Hostname == "" || bootstrap.Host.OS == "" || len(bootstrap.Computers) != 1 {
+		t.Fatal("bootstrap confused Server host with browser")
+	}
+	info, err := os.Stat(filepath.Join(s.Config.DataDirectory, "owner.token"))
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("Owner credential is not private")
+	}
+	enrollment, err := s.Hub.Enroll(ctx, s.URL, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(enrollment.Command, "/install.sh") || !strings.Contains(enrollment.Command, enrollment.Enrollment.ID) {
+		t.Fatal("enrollment did not produce an installer command")
+	}
+	remoteCtx, stopRemote := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	options := ConnectOptions{ServerURL: s.URL, EnrollmentID: enrollment.Enrollment.ID, Token: enrollment.Token, Root: filepath.Join(root, "remote"), Foreground: true}
+	go func() { done <- Connect(remoteCtx, options, nil) }()
+	var remote domain.Computer
+	await(t, ctx, func() bool {
+		var e domain.Enrollment
+		if s.Store.Get(ctx, "enrollments", enrollment.Enrollment.ID, &e) != nil || e.ComputerID == "" {
+			return false
+		}
+		return s.Store.Get(ctx, "computers", e.ComputerID, &remote) == nil && s.Hub.Status(remote).Online
+	})
+	if remote.ID == local.ID || remote.Kind != "remote" {
+		t.Fatal("remote enrollment replaced local identity")
+	}
+	previousBoot := s.Hub.Status(remote).BootID
+	stopRemote()
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	remoteCtx, stopRemote = context.WithCancel(ctx)
+	go func() { done <- Connect(remoteCtx, options, nil) }()
+	await(t, ctx, func() bool { status := s.Hub.Status(remote); return status.Online && status.BootID != previousBoot })
+	stopRemote()
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	computers, err := s.Store.List(ctx, "computers")
+	if err != nil || len(computers) != 2 {
+		t.Fatal("retry created another Computer")
+	}
+	if err = s.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close(context.Background())
+	if err = s2.Start(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := s2.UseLocal(ctx)
+	if err != nil || reopened.ID != local.ID || !reopened.Online {
+		t.Fatal("Server restart lost local Computer identity")
+	}
+}
+
+func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) {
+	// An unavailable executable is a real supported failure mode, not a mocked
+	// successful container. No Computer is registered by the failed operation.
+	t.Setenv("PATH", t.TempDir())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	s, err := New(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers"), NoLocal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	if err = s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	operation, err := s.CreateContainer(ctx, "retryable-create")
+	if err != nil {
+		t.Fatal(err)
+	}
+	await(t, ctx, func() bool {
+		return s.Store.Get(ctx, "provisioning", operation.ID, &operation) == nil && operation.State == "failed"
+	})
+	if operation.ComputerID != "" || !strings.Contains(operation.Error, "container") {
+		t.Fatalf("failure invented a Computer: %+v", operation)
+	}
+	s.mu.Lock()
+	active := s.provisioning[operation.ID]
+	s.mu.Unlock()
+	if active {
+		await(t, ctx, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return !s.provisioning[operation.ID] })
+	}
+	retry, err := s.CreateContainer(ctx, "retryable-create")
+	if err != nil || retry.ID != operation.ID {
+		t.Fatal("same request created another operation")
+	}
+	if all, err := s.Store.List(ctx, "computers"); err != nil || len(all) != 0 {
+		t.Fatal("unavailable runtime registered an online placeholder")
+	}
+	response, err := http.Get(s.URL + "/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 200 {
+		t.Fatal("installer endpoint is unavailable")
+	}
+}

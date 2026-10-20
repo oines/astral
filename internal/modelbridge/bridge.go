@@ -108,8 +108,10 @@ func (b *Bridge) SaveProfile(ctx context.Context, p *domain.ModelProfile) error 
 	if err := b.Store.Get(ctx, "providers", p.ProviderID, &provider); err != nil {
 		return err
 	}
-	if _, _, err := p.Effective(); err != nil {
+	if values, _, err := p.Effective(); err != nil {
 		return err
+	} else if values.Defaults.ToolChoice.Mode == "none" {
+		return domain.Invalid("Agent model profiles must allow tool calling")
 	}
 	if p.ID == "" {
 		p.ID = domain.ID("model")
@@ -150,6 +152,22 @@ func (b *Bridge) Selection(ctx context.Context, id string) (string, core.Generat
 type adapter interface {
 	core.Model
 	EstimateTokens(context.Context, core.Request) (int, error)
+}
+
+// ValidateOptions checks the actual protocol serializer without sending a
+// request, so a Session effort choice cannot silently become another value.
+func (b *Bridge) ValidateOptions(ctx context.Context, ref string, options core.GenerationOptions) error {
+	if err := options.Validate(); err != nil {
+		return domain.Invalid(err.Error())
+	}
+	model, err := b.Resolve(ctx, ref, nil)
+	if err != nil {
+		return err
+	}
+	_, err = EstimateTokens(ctx, model, core.Request{ModelID: ref, ModelRevision: ref,
+		Messages:        []core.Message{core.User("Validate generation settings.")},
+		MaxOutputTokens: min(256, model.Spec().MaxOutputTokens), Options: options})
+	return err
 }
 
 func (b *Bridge) construct(ctx context.Context, p domain.ModelProfile, provider domain.Provider) (adapter, error) {
@@ -297,7 +315,14 @@ func (m *boundModel) Stream(ctx context.Context, req core.Request, emit func(cor
 	if err != nil {
 		return core.Reply{}, err
 	}
-	return m.adapter.Stream(ctx, req, emit)
+	reply, err := m.adapter.Stream(ctx, req, emit)
+	if err != nil {
+		err = safeProviderError(err)
+		if reply.Message.Role != "" {
+			reply.Message.ErrorMessage = err.Error()
+		}
+	}
+	return reply, err
 }
 func (m *boundModel) EstimateTokens(ctx context.Context, req core.Request) (int, error) {
 	req, err := m.wireImages(req, true)

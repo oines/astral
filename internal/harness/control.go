@@ -59,6 +59,9 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if record.Reasoning != nil {
+		options.Reasoning = *record.Reasoning
+	}
 	if ref != r.core.Configuration().ModelID || !jsonEqual(options, r.core.Configuration().Options) {
 		if err = r.core.SelectModel(ctx, ref, options); err != nil {
 			return err
@@ -72,7 +75,7 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 }
 func jsonEqual(a, b any) bool { return string(encode(a)) == string(encode(b)) }
 
-func (s *Service) SelectModel(ctx context.Context, id, profileID string) error {
+func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoning ...*core.ReasoningOptions) error {
 	r, err := s.open(ctx, id)
 	if err != nil {
 		return err
@@ -88,6 +91,14 @@ func (s *Service) SelectModel(ctx context.Context, id, profileID string) error {
 	}
 	var record domain.Session
 	if err = s.Store.Get(ctx, "sessions", id, &record); err != nil {
+		return err
+	}
+	record.Reasoning = nil
+	if len(reasoning) > 0 && reasoning[0] != nil {
+		copy := *reasoning[0]
+		record.Reasoning, options.Reasoning = &copy, copy
+	}
+	if err = s.Models.ValidateOptions(ctx, ref, options); err != nil {
 		return err
 	}
 	record.ProfileID, record.ModelRef, record.Options = profileID, ref, options
@@ -383,7 +394,7 @@ func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) er
 	for _, item := range items {
 		var value domain.Session
 		if json.Unmarshal(item.Data, &value) == nil && value.AgentID == id {
-			return domain.Conflict("archive this Agent's Sessions before removing its configuration; existing history requires the Agent")
+			return domain.Conflict("this Agent still owns retained Sessions; their history requires its configuration")
 		}
 	}
 	return s.Store.Update(ctx, func(tx *persistence.Tx) error { return tx.Delete(ctx, "agents", id, revision) })

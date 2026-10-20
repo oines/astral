@@ -56,9 +56,8 @@ func (h *Hub) Enroll(ctx context.Context, serverURL string, container, local boo
 	if err := h.Store.Save(ctx, "enrollments", &e.Meta, &e); err != nil {
 		return EnrollmentResult{}, err
 	}
-	// The installer command is completed by the distribution layer; this command
-	// works with both the packaged executable and a locally built CLI.
-	cmd := "astral computer connect --server " + shellQuote(serverURL) + " --enrollment " + shellQuote(e.ID) + " --token " + shellQuote(token)
+	cmd := "curl --fail --silent --show-error " + shellQuote(strings.TrimRight(serverURL, "/")+"/install.sh") +
+		" | sh -s -- --server " + shellQuote(serverURL) + " --enrollment " + shellQuote(e.ID) + " --token " + shellQuote(token)
 	if container {
 		cmd += " --container"
 	}

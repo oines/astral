@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -91,7 +92,12 @@ func New(conn *websocket.Conn, handler Handler) *Peer {
 func (p *Peer) Done() <-chan struct{} { return p.done }
 func (p *Peer) Close() error {
 	p.cancel(ErrDisconnected)
-	return p.conn.Close(websocket.StatusGoingAway, "shutdown")
+	err := p.conn.Close(websocket.StatusGoingAway, "shutdown")
+	if errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) ||
+		websocket.CloseStatus(err) == websocket.StatusNormalClosure || websocket.CloseStatus(err) == websocket.StatusGoingAway {
+		return nil
+	}
+	return err
 }
 func (p *Peer) send(value frame) error {
 	raw, err := json.Marshal(value)

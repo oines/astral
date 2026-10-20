@@ -44,6 +44,7 @@ type Session struct {
 	ProfileID       string                 `json:"profile_id,omitempty"`
 	ModelRef        string                 `json:"model_ref,omitempty"`
 	Options         core.GenerationOptions `json:"options"`
+	Reasoning       *core.ReasoningOptions `json:"reasoning,omitempty"`
 	ComputerID      string                 `json:"computer_id,omitempty"`
 	CWD             string                 `json:"cwd,omitempty"`
 	ConversationID  string                 `json:"conversation_id,omitempty"`
@@ -303,6 +304,28 @@ type Preferences struct {
 	KeepRunning  bool   `json:"keep_running"`
 	LoginStart   bool   `json:"login_start"`
 	RunningInput string `json:"running_input"`
+}
+
+type HostInfo struct {
+	Hostname           string `json:"hostname"`
+	OS                 string `json:"os"`
+	Arch               string `json:"arch"`
+	ContainerRuntime   string `json:"container_runtime,omitempty"`
+	ContainerAvailable bool   `json:"container_available"`
+	ContainerError     string `json:"container_error,omitempty"`
+	LocalError         string `json:"local_error,omitempty"`
+}
+type Provisioning struct {
+	Meta
+	IntentID     string   `json:"intent_id"`
+	Kind         string   `json:"kind"`
+	State        string   `json:"state"`
+	Phase        string   `json:"phase"`
+	ComputerID   string   `json:"computer_id,omitempty"`
+	EnrollmentID string   `json:"enrollment_id,omitempty"`
+	ContainerID  string   `json:"container_id,omitempty"`
+	Log          []string `json:"log"`
+	Error        string   `json:"error,omitempty"`
 }
 
 type Error struct {

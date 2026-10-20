@@ -17,12 +17,15 @@ import (
 )
 
 type SendRequest struct {
-	IntentID         string `json:"intent_id"`
-	ConversationID   string `json:"conversation_id,omitempty"`
-	Text             string `json:"text,omitempty"`
-	FileURI          string `json:"file_uri,omitempty"`
-	AssistantEntryID string `json:"-"`
-	BindingID        string `json:"-"`
+	IntentID         string                   `json:"intent_id"`
+	ConversationID   string                   `json:"conversation_id,omitempty"`
+	Text             string                   `json:"text,omitempty"`
+	FileURI          string                   `json:"file_uri,omitempty"`
+	Path             string                   `json:"path,omitempty"`
+	SourceComputerID string                   `json:"source_computer_id,omitempty"`
+	AssistantEntryID string                   `json:"-"`
+	BindingID        string                   `json:"-"`
+	SourceBinding    *domain.ExecutionBinding `json:"-"`
 }
 
 func (s *Service) group(ctx context.Context, id string) ([]domain.Outbox, error) {
@@ -84,11 +87,22 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 	}
 	var file domain.FileRef
 	var fragments []string
-	if request.FileURI != "" {
+	if request.FileURI != "" || request.Path != "" {
 		if !adapter.Capabilities().FileSending {
 			return nil, domain.Invalid("this adapter cannot send files")
 		}
-		file, err = s.Harness.Files.Get(ctx, agentID, request.FileURI)
+		if request.FileURI != "" && request.Path != "" {
+			return nil, domain.Invalid("provide a file URI or source path, not both")
+		}
+		if request.Path != "" {
+			source := request.SourceBinding
+			if source == nil || source.AgentID != agentID || source.SessionID != sessionID || source.ComputerID != request.SourceComputerID {
+				return nil, domain.Forbidden("file path needs the authenticated source Computer")
+			}
+			file, err = s.Harness.Files.Reference(ctx, *source, request.Path, true)
+		} else {
+			file, err = s.Harness.Files.Get(ctx, agentID, request.FileURI)
+		}
 		if err != nil {
 			return nil, err
 		}
