@@ -207,14 +207,16 @@ type FileRef struct {
 
 type Connection struct {
 	Meta
-	Name         string `json:"name"`
-	Platform     string `json:"platform"`
-	Adapter      string `json:"adapter"`
-	CredentialID string `json:"credential_id,omitempty"`
-	Enabled      bool   `json:"enabled"`
-	AccountID    string `json:"account_id,omitempty"`
-	Username     string `json:"username,omitempty"`
-	Cursor       string `json:"cursor,omitempty"`
+	Name         string          `json:"name"`
+	Platform     string          `json:"platform"`
+	Adapter      string          `json:"adapter"`
+	CredentialID string          `json:"credential_id,omitempty"`
+	Enabled      bool            `json:"enabled"`
+	AccountID    string          `json:"account_id,omitempty"`
+	Username     string          `json:"username,omitempty"`
+	Cursor       string          `json:"cursor,omitempty"`
+	Config       json.RawMessage `json:"config,omitempty"`
+	Diagnostics  []string        `json:"diagnostics,omitempty"`
 }
 
 type Conversation struct {
@@ -232,6 +234,7 @@ type ConversationBinding struct {
 	AgentID        string `json:"agent_id"`
 	SessionID      string `json:"session_id"`
 	Enabled        bool   `json:"enabled"`
+	StartSequence  int64  `json:"start_sequence"`
 }
 
 type Sender struct {
@@ -250,6 +253,7 @@ type Attachment struct {
 }
 
 type Observation struct {
+	SchemaVersion   int          `json:"schema_version"`
 	ID              string       `json:"id"`
 	ConnectionID    string       `json:"connection_id"`
 	ConversationID  string       `json:"conversation_id"`
@@ -271,17 +275,26 @@ type Observation struct {
 
 type Outbox struct {
 	Meta
-	IntentKey          string   `json:"intent_key"`
-	AgentID            string   `json:"agent_id"`
-	SessionID          string   `json:"session_id"`
-	BindingID          string   `json:"binding_id,omitempty"`
-	ConversationID     string   `json:"conversation_id"`
-	AssistantEntryID   string   `json:"assistant_entry_id,omitempty"`
-	Text               string   `json:"text,omitempty"`
-	FileRefID          string   `json:"file_ref_id,omitempty"`
-	Status             string   `json:"status"`
-	PlatformMessageIDs []string `json:"platform_message_ids,omitempty"`
-	Error              string   `json:"error,omitempty"`
+	IntentKey           string   `json:"intent_key"`
+	GroupID             string   `json:"group_id"`
+	AgentID             string   `json:"agent_id"`
+	SessionID           string   `json:"session_id"`
+	BindingID           string   `json:"binding_id,omitempty"`
+	ConversationID      string   `json:"conversation_id"`
+	AssistantEntryID    string   `json:"assistant_entry_id,omitempty"`
+	Text                string   `json:"text,omitempty"`
+	FileRefID           string   `json:"file_ref_id,omitempty"`
+	Status              string   `json:"status"`
+	PlatformMessageIDs  []string `json:"platform_message_ids,omitempty"`
+	Error               string   `json:"error,omitempty"`
+	RequestDigest       string   `json:"request_digest"`
+	ConnectionID        string   `json:"connection_id"`
+	ConnectionAccountID string   `json:"connection_account_id"`
+	ExternalID          string   `json:"external_id"`
+	TopicID             string   `json:"topic_id,omitempty"`
+	Fragment            int      `json:"fragment"`
+	Retryable           bool     `json:"retryable"`
+	ResolutionNote      string   `json:"resolution_note,omitempty"`
 }
 
 type Preferences struct {

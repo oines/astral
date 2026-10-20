@@ -363,3 +363,29 @@ func (tx *Tx) ClaimIntent(ctx context.Context, key, id string) (string, error) {
 	err = tx.tx.QueryRowContext(ctx, "SELECT outbox_id FROM outbox_keys WHERE intent_key=?", key).Scan(&existing)
 	return existing, err
 }
+
+func (s *Store) Intent(ctx context.Context, key string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, "SELECT outbox_id FROM outbox_keys WHERE intent_key=?", key).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", domain.Missing("send intent", key)
+	}
+	return id, err
+}
+func (s *Store) ObservationHead(ctx context.Context, conversation string) (int64, error) {
+	var sequence int64
+	err := s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence),0) FROM observations WHERE conversation_id=?", conversation).Scan(&sequence)
+	return sequence, err
+}
+func (s *Store) Observation(ctx context.Context, id string) (domain.Observation, error) {
+	var raw []byte
+	var event domain.Observation
+	err := s.db.QueryRowContext(ctx, "SELECT payload FROM observations WHERE id=?", id).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return event, domain.Missing("observation", id)
+	}
+	if err == nil {
+		err = json.Unmarshal(raw, &event)
+	}
+	return event, err
+}

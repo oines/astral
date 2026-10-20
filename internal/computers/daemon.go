@@ -359,7 +359,11 @@ func (d *Daemon) handle(ctx context.Context, request transport.Request, out *tra
 		return err
 	case "file.write":
 		// Core's write/edit semantics preserve symlinks and hard-linked files.
-		file, err := os.OpenFile(call.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+		path, err := fs.ResolvePath(ctx, call.Path, false)
+		if err != nil {
+			return err
+		}
+		file, err := os.OpenFile(path.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 		if err != nil {
 			return toolError(err, core.OutcomeNotExecuted)
 		}
