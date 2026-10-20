@@ -1,0 +1,22 @@
+[tools]
+go = "1.26.3"
+node = "26.7.0"
+pnpm = "10.31.0"
+
+[tasks.dev]
+run = "pnpm dev"
+
+[tasks.build]
+run = "pnpm build"
+
+[tasks.test]
+run = ["go test -race ./...", "pnpm test"]
+
+[tasks.lint]
+run = ["go vet ./...", "pnpm lint"]
+
+[tasks.typecheck]
+run = "pnpm typecheck"
+
+[tasks.sdk-generate]
+run = "pnpm sdk-generate"

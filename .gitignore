@@ -1,0 +1,16 @@
+go.work
+go.work.sum
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+apps/desktop/release/
+bin/
+.astral/
+data/
+*.db
+*.db-shm
+*.db-wal
+coverage.out
+.DS_Store
