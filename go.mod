@@ -4,8 +4,14 @@ go 1.25.7
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/oines/astral-core v0.0.0-20261020151814-b22b71497b5f
+	github.com/oines/astral-core v0.0.0-20261020162134-51e1f31dd6a4
 	modernc.org/sqlite v1.38.2
+)
+
+require (
+	github.com/creack/pty v1.1.24 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	golang.org/x/image v0.24.0 // indirect
 )
 
 require (
@@ -13,6 +19,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
+	github.com/oines/astral-models v0.0.0-20261020153010-d8f396b95459
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -183,6 +184,7 @@ type Enrollment struct {
 // Binding is carried in authenticated Server/Daemon calls. Request bodies at
 // the Agent gateway never supply this identity.
 type ExecutionBinding struct {
+	GrantID    string `json:"grant_id"`
 	AgentID    string `json:"agent_id"`
 	SessionID  string `json:"session_id"`
 	ComputerID string `json:"computer_id"`
@@ -304,3 +306,7 @@ func Missing(kind, id string) error {
 func Conflict(message string) error  { return &Error{Status: 409, Code: "conflict", Message: message} }
 func Forbidden(message string) error { return &Error{Status: 403, Code: "forbidden", Message: message} }
 func Offline(message string) error   { return &Error{Status: 503, Code: "offline", Message: message} }
+func IsMissing(err error) bool {
+	var problem *Error
+	return errors.As(err, &problem) && problem.Status == 404
+}

@@ -1,7 +1,9 @@
 # Astral 系统规格
 
-版本：1.4  
-日期：2026-10-20，Asia/Singapore  
+版本：1.6
+
+日期：2026-10-21，Asia/Singapore
+
 状态：V1 实现规范，尚非功能交付声明
 
 Astral 是一个可自托管、持久运行的个人 Agent 平台。一个 Server 管理多个 Agent、持久 Session、模型、搜索服务、IM 连接和 Computer；Agent 在 Session 中理解消息，通过基础工具操作 Computer，通过本地 HTTP API 使用平台能力。
@@ -93,7 +95,7 @@ IM 架构从首版按多平台设计。后续明确支持 QQ（NapCat 接入、�
 | D15 | Bash 命令直接执行，不增加逐命令审批；操作系统与所选 Computer 的实际执行环境决定可执行范围。 |
 | D16 | Daemon 将平台 HTTP Gateway 暴露为 Computer 内的 localhost 入口；模型调用时无需 Token。 |
 | D17 | 调用身份由 Daemon 与平台绑定和验证；每个 Agent 得到自己的数据与能力视图。 |
-| D18 | 工作文件、附件原件及需保留的文件版本留在 Computer；Server 仅保存引用与必要元数据、流式透传字节。 |
+| D18 | 工作文件、附件原件及需保留的文件版本留在 Computer；文件服务由 Server 流式透传。Rollout 独立保存模型实际收到的多模态 payload（例如 base64），不依赖原附件重放。 |
 | D19 | Web 中由 assistant text 引用文件，UI 解析并渲染；IM 文件由 Agent 主动调用 API 发送。 |
 | D20 | 模型与搜索凭据按全局资源配置；一个 Agent 同一时间仅选用一个搜索 Provider。 |
 | D21 | Transcript 是产品中心；普通工具过程折叠为 Activity Line，详情按需展开。 |
@@ -763,7 +765,7 @@ HTTP 接收成功、平台接收上传、最终送达是不同事实。断线或
 
 工作文件、输入附件的本地副本、生成的图像或文档、需要历史一致性的文件版本保留在来源 Computer。Server 保存引用与元数据，按需以有界内存缓冲透传内容，不建立工作文件资产库，不将下载或 IM 上传的中间文件落到 Server 磁盘。
 
-平台配置、消息文本、工具输出中的必要文本片段和 Core 历史属于业务数据；它们不构成一个可下载的工作文件副本。大媒体在持久模型历史中保存稳定引用，由 Model Bridge 在请求时解析源端内容。
+平台配置、消息文本、工具输出和 Core Rollout 属于业务数据。Rollout 保存模型当时实际收到的多模态内容，例如图片 base64；经过缩放或裁剪时保存处理后实际输入的版本，同时保留来源 URI。内容一经提交不随原文件变化，历史展示、恢复和重放不依赖附件目录或来源 Computer 在线。这是执行记录，不作为 Server 工作文件资产库或原附件下载的替代来源。
 
 FileRef 的必要语义为：
 
@@ -814,7 +816,8 @@ Agent 通过 localhost API 发送文件。Daemon 从源 Computer 读取文件，
 - Web 上传附件同样绑定上传时选定的目标 Computer，并通过 Server 流式写入 Daemon 管理的路径。
 - 切换 Computer 不迁移附件，不重写已有 FileRef。
 - 需要模型理解图像时，由 Bridge 提供真实的原生图片内容；alt text 和附件标签仅提供描述与索引。
-- 原件、缩略图和需持久保留的媒体版本遵循 Computer 存储规则。Provider 请求中的瞬时编码由 Bridge 管理，不作为 Server 文件资产保存。
+- 每张 Web/IM 入站图片同时提供三种能力：原文件写入来源 Computer 的 `AgentHome/.astral/attachments/` 专用目录；消息正文向 Agent 提供稳定 URI、文件名和绝对路径；同一轮模型请求包含原生图片内容。图片不能只保留内联多模态内容，也不能以 URI 或文字标签代替图片内容。
+- 原件、缩略图和需持久保留的附件版本遵循 Computer 存储规则；Rollout 另行冻结模型实际收到的媒体 payload。Bridge 从 Rollout 已保存的内容构造 Provider 请求，不在重放时重新读取可变附件来代替历史输入。
 
 文件流需要正确处理取消、断线、大小、内容类型和读取错误。支持的媒体预览应提供必要的范围读取；不能以“必须先整文件下载到 Server”为实现前提。
 
@@ -1080,7 +1083,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A27 | no_reply 非法组合 | 与文本或其他工具混合时，在副作用派发前明确拒绝，不部分执行后假装静默结束 |
 | A28 | Web 文件交付 | assistant text 的 FileRef 可预览或下载；来源固定，文件字节不落 Server 磁盘 |
 | A29 | IM 文件交付 | Agent 显式调用 API，从来源 Computer 流式上传并获得回执；普通文件链接不冒充附件已发送 |
-| A30 | 上传与媒体 | Web/IM 附件到指定 Computer；视觉请求含真实图片内容，持久历史保留来源引用 |
+| A30 | 上传与媒体 | Web/IM 图片原件写入指定 Computer 的附件专用目录；Agent 同时获得稳定 URI、文件名与路径及原生多模态图片内容。Rollout 冻结实际输入 payload；删除原件、源端离线、重开或 Fork 后，历史图片与模型重放保持一致 |
 | A31 | 文件异常与流取消 | 源端离线、删除、版本改变、读取失败和取消如实反馈，无隐藏 Server 副本回退 |
 | A32 | 模型配置 | 推荐值可覆盖且目录刷新不覆盖 override；Tool Calling 必须可用，非流式工具参数可正常执行 |
 | A33 | 单搜索后端 | 只调用 Agent 当前一个 Provider；无配置或失败明确报错，不聚合或隐式回退 |
