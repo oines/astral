@@ -13,6 +13,7 @@ extraResources:
       - astral-*
       - checksums.txt
       - THIRD_PARTY_NOTICES.txt
+      - LICENSE.txt
   - from: resources/trayTemplate.png
     to: trayTemplate.png
 mac:

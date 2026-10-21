@@ -13,7 +13,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
-	sessions "github.com/oines/astral-core/session"
+
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/transport"
 )
@@ -242,9 +242,9 @@ func Failure(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, message = 409, "conflict", "This Session is busy."
 	case errors.Is(err, core.ErrClosed):
 		status, code, message = 503, "offline", "This Session is closed."
-	case errors.Is(err, sessions.ErrNotFound):
+	case errors.Is(err, core.ErrNotFound):
 		status, code, message = 404, "not_found", "The history record is unavailable."
-	case errors.Is(err, sessions.ErrConflict):
+	case errors.Is(err, core.ErrConflict):
 		status, code, message = 409, "conflict", "The record changed. Reload before continuing."
 	case errors.Is(err, core.ErrNotContinuable):
 		status, code, message = 409, "conflict", "This Session needs a new input before it can continue."

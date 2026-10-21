@@ -15,7 +15,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
-	sessions "github.com/oines/astral-core/session"
+
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
@@ -100,7 +100,7 @@ type Fork struct {
 	Title   string `json:"title"`
 }
 type Approval struct {
-	Decision sessions.ApprovalDecision `json:"decision"`
+	Decision core.ApprovalDecision `json:"decision"`
 }
 type Resolution struct {
 	Execution core.ToolExecution `json:"execution"`
@@ -228,6 +228,23 @@ func (a *API) systemRoutes() {
 			return v, err
 		}
 		v.Models, err = readAll[domain.ModelProfile](r.Context(), h.Store, "models")
+		if err != nil {
+			return v, err
+		}
+		providers, err := readAll[domain.Provider](r.Context(), h.Store, "providers")
+		if err != nil {
+			return v, err
+		}
+		disabled := map[string]bool{}
+		for _, provider := range providers {
+			disabled[provider.ID] = provider.Enabled != nil && !*provider.Enabled
+		}
+		for i := range v.Models {
+			if disabled[v.Models[i].ProviderID] {
+				no := false
+				v.Models[i].Enabled = &no
+			}
+		}
 		return v, err
 	})
 	route[httpcontract.Empty, Preferences](a, "GET", "/preferences", "getPreferences", "System", func(r *http.Request, _ httpcontract.Empty) (Preferences, error) { return a.preferences(r.Context()) })
@@ -381,6 +398,21 @@ func (a *API) resources() {
 	route[httpcontract.Empty, []domain.Provider](a, "GET", "/providers", "listProviders", "Models", func(r *http.Request, _ httpcontract.Empty) ([]domain.Provider, error) {
 		return readAll[domain.Provider](r.Context(), h.Store, "providers")
 	})
+	route[httpcontract.Empty, modelbridge.Authorization](a, "POST", "/providers/{id}/authorize", "authorizeProvider", "Models", func(r *http.Request, _ httpcontract.Empty) (modelbridge.Authorization, error) {
+		return h.Models.StartAuthorization(r.Context(), r.PathValue("id"))
+	})
+	route[httpcontract.Empty, modelbridge.Authorization](a, "GET", "/provider-authorizations/{id}", "providerAuthorization", "Models", func(r *http.Request, _ httpcontract.Empty) (modelbridge.Authorization, error) {
+		return h.Models.PollAuthorization(r.Context(), r.PathValue("id"))
+	})
+	route[httpcontract.Empty, []modelbridge.ProviderPreset](a, "GET", "/provider-presets", "listProviderPresets", "Models", func(_ *http.Request, _ httpcontract.Empty) ([]modelbridge.ProviderPreset, error) {
+		return modelbridge.ProviderPresets(), nil
+	})
+	route[httpcontract.Empty, []modelbridge.Discovery](a, "GET", "/provider-presets/{id}/models", "presetModels", "Models", func(r *http.Request, _ httpcontract.Empty) ([]modelbridge.Discovery, error) {
+		return modelbridge.PresetModels(r.PathValue("id"))
+	})
+	route[modelbridge.ImportModelsInput, modelbridge.ImportModelsResult](a, "POST", "/providers/{id}/import", "importModels", "Models", func(r *http.Request, input modelbridge.ImportModelsInput) (modelbridge.ImportModelsResult, error) {
+		return h.Models.ImportModels(r.Context(), r.PathValue("id"), input)
+	})
 	route[ProviderInput, domain.Provider](a, "POST", "/providers", "saveProvider", "Models", func(r *http.Request, input ProviderInput) (domain.Provider, error) {
 		err := h.Models.SaveProvider(r.Context(), &input.Provider, input.APIKey, input.Headers)
 		return input.Provider, err
@@ -456,7 +488,7 @@ func (a *API) resources() {
 		}
 		return gateway.MessagePage{Items: all, NextSequence: next}, err
 	}, httpcontract.Parameter{Name: "after", Type: "integer"}, httpcontract.Parameter{Name: "limit", Type: "integer"})
-	route[httpcontract.Empty, persistence.Delivery](a, "GET", "/observations/{id}/delivery", "observationDelivery", "Channels", func(r *http.Request, _ httpcontract.Empty) (persistence.Delivery, error) {
+	route[httpcontract.Empty, channels.DeliveryView](a, "GET", "/observations/{id}/delivery", "observationDelivery", "Channels", func(r *http.Request, _ httpcontract.Empty) (channels.DeliveryView, error) {
 		return c.Delivery(r.Context(), r.PathValue("id"))
 	})
 	route[httpcontract.Empty, []domain.Outbox](a, "GET", "/outbox", "listOutbox", "Channels", func(r *http.Request, _ httpcontract.Empty) ([]domain.Outbox, error) {
@@ -562,7 +594,7 @@ func (a *API) sessionRoutes() {
 		// During a Run, report the actual frozen request. A model selection for
 		// the next Attempt must not change the context ring of the current one.
 		if status.RunID != "" {
-			page, readErr := session.History().Scan(r.Context(), sessions.Query{SessionID: status.ID, Kind: sessions.EntryModelRequest, Reverse: true, Limit: 1, MaxBytes: 128 << 20})
+			page, readErr := session.History().Scan(r.Context(), core.Query{SessionID: status.ID, Kind: core.EntryModelRequest, Reverse: true, Limit: 1, MaxBytes: 128 << 20})
 			if readErr != nil {
 				return ContextStats{}, readErr
 			}
@@ -581,20 +613,37 @@ func (a *API) sessionRoutes() {
 		if err != nil {
 			return ContextStats{}, err
 		}
-		model, err := h.Models.Resolve(r.Context(), view.Request.ModelID, nil)
+		// Preview the next selection without committing configuration or scanning
+		// the Computer. GET context must not advance the durable Session.
+		ref, options, err := h.Models.Selection(r.Context(), status.ProfileID)
+		if err != nil {
+			return ContextStats{}, err
+		}
+		if status.Reasoning != nil {
+			options.Reasoning = *status.Reasoning
+		}
+		model, err := h.Models.Resolve(r.Context(), ref, nil)
 		if err != nil {
 			return ContextStats{}, err
 		}
 		spec := model.Spec()
-		return ContextStats{EstimatedInput: view.EstimatedInput, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: view.Request.MaxOutputTokens, HeadID: view.HeadID}, nil
+		preview := view.Request
+		preview.ModelID, preview.ModelRevision, preview.Options = ref, spec.Revision, options
+		preview.MaxOutputTokens = min(16384, spec.MaxOutputTokens)
+		preview, err = core.PrepareRequest(r.Context(), model, preview)
+		if err != nil {
+			return ContextStats{}, err
+		}
+		estimated, err := modelbridge.EstimateTokens(r.Context(), model, preview)
+		return ContextStats{EstimatedInput: estimated, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: preview.MaxOutputTokens, HeadID: view.HeadID}, err
 	})
 	route[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/history", "sessionHistory", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
 		return gateway.History(r.Context(), h, r.PathValue("id"), r.URL.Query().Get("cursor"), limit(r, 50), r.URL.Query().Get("trace") == "true", false)
 	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
-	route[httpcontract.Empty, sessions.Entry](a, "GET", "/sessions/{id}/entries/{entry}", "sessionEntry", "Sessions", func(r *http.Request, _ httpcontract.Empty) (sessions.Entry, error) {
+	route[httpcontract.Empty, core.Entry](a, "GET", "/sessions/{id}/entries/{entry}", "sessionEntry", "Sessions", func(r *http.Request, _ httpcontract.Empty) (core.Entry, error) {
 		session, err := h.Core(r.Context(), r.PathValue("id"))
 		if err != nil {
-			return sessions.Entry{}, err
+			return core.Entry{}, err
 		}
 		entry, err := session.History().Get(r.Context(), r.PathValue("entry"))
 		gateway.RemoveImageData(reflect.ValueOf(&entry))

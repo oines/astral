@@ -268,6 +268,9 @@ func (s *Service) Bind(ctx context.Context, conversationID, agentID string) (dom
 		}
 		return tx.Save(ctx, "bindings", &binding.Meta, &binding)
 	})
+	if err == nil {
+		err = s.Harness.InitializeSession(ctx, binding.SessionID)
+	}
 	return binding, err
 }
 func (s *Service) Unbind(ctx context.Context, id string, revision int64) error {

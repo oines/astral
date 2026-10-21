@@ -13,7 +13,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
-	sessions "github.com/oines/astral-core/session"
+
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/filestream"
@@ -29,10 +29,10 @@ type Snapshot struct {
 	Trace   gateway.HistoryPage `json:"trace"`
 }
 type Event struct {
-	Epoch string          `json:"epoch"`
-	Core  *core.Event     `json:"core,omitempty"`
-	Entry *sessions.Entry `json:"entry,omitempty"`
-	View  *harness.View   `json:"view,omitempty"`
+	Epoch string        `json:"epoch"`
+	Core  *core.Event   `json:"core,omitempty"`
+	Entry *core.Entry   `json:"entry,omitempty"`
+	View  *harness.View `json:"view,omitempty"`
 }
 
 func (a *API) streamRoutes() {
@@ -86,7 +86,7 @@ func (a *API) snapshot(r *http.Request) (Snapshot, error) {
 	}
 	return snapshot, err
 }
-func thinEntry(entry *sessions.Entry) {
+func thinEntry(entry *core.Entry) {
 	// Actual request/response snapshots are available on demand, but are not
 	// retransmitted in full on every UI reconnect or live commit.
 	if entry.ModelRequest != nil {
@@ -155,7 +155,7 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 			}
 			gateway.RemoveImageData(reflect.ValueOf(&event))
 			envelope := Event{Epoch: h.RuntimeID, Core: &event}
-			if event.Type == core.EventRunStart || event.Type == core.EventRunEnd || event.Type == core.EventApproval || event.Type == core.EventContextApplied {
+			if event.Type == core.EventRunStart || event.Type == core.EventRunEnd || event.Type == core.EventApproval || event.Type == core.EventContextApplied || event.Attempt != nil || event.Type == core.EventMaintenanceStart || event.Type == core.EventMaintenanceEnd {
 				if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
 					envelope.View = &view
 					lastView, _ = json.Marshal(view)
@@ -210,7 +210,7 @@ func (a *API) exportRollout(w http.ResponseWriter, r *http.Request) {
 	}
 	cursor := ""
 	for {
-		page, scanErr := session.History().Scan(r.Context(), sessions.Query{Cursor: cursor, Limit: 20, MaxBytes: 128 << 20})
+		page, scanErr := session.History().Scan(r.Context(), core.Query{Cursor: cursor, Limit: 20, MaxBytes: 128 << 20})
 		if scanErr != nil {
 			panic(http.ErrAbortHandler)
 		}

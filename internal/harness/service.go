@@ -10,7 +10,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
-	sessions "github.com/oines/astral-core/session"
+
 	"github.com/oines/astral-core/standardtools"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
@@ -22,7 +22,7 @@ import (
 
 type Service struct {
 	Store     *persistence.Store
-	CoreStore sessions.Store
+	CoreStore core.Store
 	Models    *modelbridge.Bridge
 	Hub       *computers.Hub
 	Files     *filestream.Service
@@ -38,26 +38,20 @@ type Service struct {
 }
 
 type runtime struct {
-	service     *Service
-	id          string
-	agentID     string
-	ready       chan struct{}
-	openErr     error
-	mu          sync.Mutex
-	manager     *sessions.Manager
-	core        *sessions.Session
-	tools       *standardtools.Set
-	run         *core.Run
-	stopping    bool
-	maintenance string
-	lastError   string
-	bindingMu   sync.RWMutex
-	binding     domain.ExecutionBinding
-	processMu   sync.Mutex
-	processes   map[string]standardtools.Process
+	service       *Service
+	id            string
+	agentID       string
+	ready         chan struct{}
+	openErr       error
+	mu            sync.Mutex
+	core          *core.Session
+	tools         *standardtools.Set
+	environmentMu sync.Mutex
+	processMu     sync.Mutex
+	processes     map[string]standardtools.Process
 }
 
-func New(store *persistence.Store, coreStore sessions.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
+func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{Store: store, CoreStore: coreStore, Models: models, Hub: hub,
 		Files: &filestream.Service{Store: store, Hub: hub}, Search: &search.Service{Store: store},
@@ -115,7 +109,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		return err
 	}
 	if record.ModelRef == "" {
-		return domain.Conflict("select and verify a model before opening this Session")
+		return domain.Conflict("select a model before opening this Session")
 	}
 	r.tools, err = standardtools.New(&trackedBackend{runtime: r, backend: &computers.Backend{Hub: s.Hub}})
 	if err != nil {
@@ -125,63 +119,49 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		if err != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if r.manager != nil {
-				_ = r.manager.Close(cleanup)
+			if r.core != nil {
+				_ = r.core.Close(cleanup)
 			}
 			_ = r.tools.Close(cleanup)
 		}
 	}()
-	// Provision execution context outside request preparation. A disconnected
-	// Computer remains visible as unavailable; the model can select another.
-	if record.ComputerID != "" {
-		if b, bindErr := s.Hub.Bind(ctx, r.agentID, r.id, record.ComputerID, record.CWD); bindErr == nil {
-			r.setBinding(b)
-		}
-	}
 	model, err := r.resolveModel(ctx, record.ModelRef)
 	if err != nil {
 		return err
 	}
-	r.manager, err = sessions.New(sessions.Config{
+	config := core.Config{
 		Model: model, Store: s.CoreStore, ResolveModel: r.resolveModel, EstimateTokens: modelbridge.EstimateTokens,
 		SystemPrompt: systemPrompt, Options: record.Options, Tools: r.hostTools(),
-		Retry:           core.RetryPolicy{MaxAttempts: 2, InitialBackoff: time.Second, MaxBackoff: 5 * time.Second, RequestTimeout: 4 * time.Minute},
-		Budget:          sessions.BudgetPolicy{SafetyMargin: 1024, AutoCompactAt: 4096},
-		Compaction:      sessions.CompactionPolicy{KeepRecentTokens: 12000, OutputTokens: 4096},
+		CollectContext:  r.collectContext,
+		Budget:          core.BudgetPolicy{SafetyMargin: 1024, AutoCompactAt: 4096},
+		Compaction:      core.CompactionPolicy{KeepRecentTokens: 12000, OutputTokens: 4096},
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
-	})
-	if err != nil {
-		return err
 	}
-	r.core, err = r.manager.OpenSession(ctx, r.id)
-	if errors.Is(err, sessions.ErrNotFound) {
+	r.core, err = core.OpenSession(ctx, config, r.id)
+	if errors.Is(err, core.ErrNotFound) {
 		if record.ParentSessionID != "" {
 			parent, openErr := s.open(ctx, record.ParentSessionID)
 			if openErr != nil {
 				return openErr
 			}
-			child, forkErr := parent.core.Fork(ctx, record.ForkEntryID, sessions.ForkOptions{ID: r.id})
+			child, forkErr := parent.core.Fork(ctx, record.ForkEntryID, core.ForkOptions{ID: r.id})
 			if forkErr != nil {
 				return forkErr
 			}
 			if closeErr := child.Close(ctx); closeErr != nil {
 				return closeErr
 			}
-			r.core, err = r.manager.OpenSession(ctx, r.id)
+			r.core, err = core.OpenSession(ctx, config, r.id)
 		} else {
-			r.core, err = r.manager.NewSession(ctx, sessions.SessionOptions{ID: r.id})
+			r.core, err = core.NewSession(ctx, config, core.SessionOptions{ID: r.id})
 		}
 	}
 	return err
 }
 
 func (r *runtime) resolveModel(ctx context.Context, ref string) (core.Model, error) {
-	return r.service.Models.Resolve(ctx, ref, func(ctx context.Context) (string, error) { return r.environment(ctx, ref) })
-}
-func (r *runtime) setBinding(b domain.ExecutionBinding) {
-	r.bindingMu.Lock()
-	r.binding = b
-	r.bindingMu.Unlock()
+	ctx = modelbridge.WithSessionID(ctx, r.id)
+	return r.service.Models.Resolve(ctx, ref, func(ctx context.Context) error { return r.validateModelSelection(ctx, ref) })
 }
 func (r *runtime) currentBinding(ctx context.Context) (domain.ExecutionBinding, error) {
 	var record domain.Session
@@ -193,12 +173,12 @@ func (r *runtime) currentBinding(ctx context.Context) (domain.ExecutionBinding, 
 	}
 	b, err := r.service.Hub.Bind(ctx, r.agentID, r.id, record.ComputerID, record.CWD)
 	if err == nil {
-		r.setBinding(b)
+		err = r.rememberBinding(ctx, b)
 	}
 	return b, err
 }
 
-func (s *Service) Core(ctx context.Context, id string) (*sessions.Session, error) {
+func (s *Service) Core(ctx context.Context, id string) (*core.Session, error) {
 	r, err := s.open(ctx, id)
 	if err != nil {
 		return nil, err
@@ -222,8 +202,9 @@ func (s *Service) CreateSession(ctx context.Context, agentID, title string) (dom
 	if err = s.Store.Save(ctx, "sessions", &record.Meta, &record); err != nil {
 		return record, err
 	}
-	_, err = s.open(ctx, record.ID)
+	err = s.InitializeSession(ctx, record.ID)
 	if err == nil {
+		err = s.Store.Get(ctx, "sessions", record.ID, &record)
 		s.notify(record.ID)
 	}
 	return record, err
@@ -245,8 +226,8 @@ func (s *Service) Close(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		if r.manager != nil {
-			errs = append(errs, r.manager.Close(ctx))
+		if r.core != nil {
+			errs = append(errs, r.core.Close(ctx))
 		}
 		if r.tools != nil {
 			errs = append(errs, r.tools.Close(ctx))

@@ -29,10 +29,10 @@ CREATE TABLE IF NOT EXISTS versions(kind TEXT NOT NULL,id TEXT NOT NULL,revision
 CREATE TABLE IF NOT EXISTS secrets(id TEXT PRIMARY KEY,value BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS observations(sequence INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,connection_id TEXT NOT NULL,conversation_id TEXT NOT NULL,external_id TEXT NOT NULL,payload BLOB NOT NULL,UNIQUE(connection_id,external_id));
 CREATE INDEX IF NOT EXISTS observation_conversation ON observations(conversation_id,sequence);
-CREATE TABLE IF NOT EXISTS deliveries(event_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT NOT NULL,input_id TEXT NOT NULL DEFAULT '',entry_id TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS deliveries(event_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT NOT NULL,error TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,kind TEXT NOT NULL,state TEXT NOT NULL,data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox_keys(intent_key TEXT PRIMARY KEY,outbox_id TEXT NOT NULL);
-PRAGMA user_version=1;
+PRAGMA user_version=2;
 `
 
 func Open(directory string) (*Store, error) {
@@ -81,15 +81,24 @@ func Open(directory string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 	st := &Store{db: db, cipher: aead, Directory: directory}
 	fail := func(err error) (*Store, error) { _ = db.Close(); return nil, err }
-	if _, err = db.Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;"); err != nil {
-		return fail(err)
-	}
 	var version int
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version > 1 {
-		return fail(fmt.Errorf("database schema %d is newer than this server", version))
+	if version != 0 && version != 2 {
+		return fail(fmt.Errorf("unsupported Astral database schema %d; initialize a new data directory", version))
+	}
+	if version == 0 {
+		var tables int
+		if err = db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").Scan(&tables); err != nil {
+			return fail(err)
+		}
+		if tables != 0 {
+			return fail(fmt.Errorf("unsupported unversioned Astral database; initialize a new data directory"))
+		}
+	}
+	if _, err = db.Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;"); err != nil {
+		return fail(err)
 	}
 	if _, err = db.Exec(schema); err != nil {
 		return fail(err)
@@ -295,12 +304,33 @@ func (tx *Tx) PutSecret(ctx context.Context, value string) (string, error) {
 	return id, err
 }
 
+// RotateSecret refreshes an OAuth token without changing the identity of its
+// authorization grant. Normal API-key edits always use PutSecret and a new
+// provider revision instead.
+func (s *Store) RotateSecret(ctx context.Context, id, value string) error {
+	nonce := make([]byte, s.cipher.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return err
+	}
+	sealed := s.cipher.Seal(nonce, nonce, []byte(value), []byte(id))
+	result, err := s.db.ExecContext(ctx, "UPDATE secrets SET value=? WHERE id=?", sealed, id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return domain.Missing("credential", id)
+	}
+	return nil
+}
+
 type Delivery struct {
 	EventID   string `json:"event_id"`
 	SessionID string `json:"session_id"`
 	State     string `json:"state"`
-	InputID   string `json:"input_id,omitempty"`
-	EntryID   string `json:"entry_id,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
 type StoredObservation struct {
@@ -344,14 +374,14 @@ func (s *Store) Observations(ctx context.Context, conversation string, after int
 	return result, rows.Err()
 }
 func (s *Store) SaveDelivery(ctx context.Context, d Delivery) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO deliveries(event_id,session_id,state,input_id,entry_id,error) VALUES(?,?,?,?,?,?)
-ON CONFLICT(event_id) DO UPDATE SET state=excluded.state,input_id=excluded.input_id,entry_id=excluded.entry_id,error=excluded.error WHERE deliveries.session_id=excluded.session_id`,
-		d.EventID, d.SessionID, d.State, d.InputID, d.EntryID, d.Error)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO deliveries(event_id,session_id,state,error) VALUES(?,?,?,?)
+ON CONFLICT(event_id) DO UPDATE SET state=excluded.state,error=excluded.error WHERE deliveries.session_id=excluded.session_id`,
+		d.EventID, d.SessionID, d.State, d.Error)
 	return err
 }
 func (s *Store) Delivery(ctx context.Context, eventID string) (Delivery, error) {
 	var d Delivery
-	err := s.db.QueryRowContext(ctx, "SELECT event_id,session_id,state,input_id,entry_id,error FROM deliveries WHERE event_id=?", eventID).Scan(&d.EventID, &d.SessionID, &d.State, &d.InputID, &d.EntryID, &d.Error)
+	err := s.db.QueryRowContext(ctx, "SELECT event_id,session_id,state,error FROM deliveries WHERE event_id=?", eventID).Scan(&d.EventID, &d.SessionID, &d.State, &d.Error)
 	return d, err
 }
 func (tx *Tx) ClaimIntent(ctx context.Context, key, id string) (string, error) {

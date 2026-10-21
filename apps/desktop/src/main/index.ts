@@ -29,7 +29,8 @@ function assertSender(event: IpcMainInvokeEvent) {
 function createWindow() {
   window = new BrowserWindow({
     title: 'Astral', width: 1240, height: 860, minWidth: 700, minHeight: 540,
-    show: false, backgroundColor: '#fcfcfa',
+    show: false, backgroundColor: '#f4f4f1',
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 17, y: 16 } } : {}),
     webPreferences: {
       preload: join(directory, '../preload/index.cjs'),
       nodeIntegration: false, contextIsolation: true, sandbox: true,
@@ -86,7 +87,7 @@ async function start() {
     await shell.openExternal(externalURL(url))
   })
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'Astral', submenu: [{ role: 'about' }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => { show(); void window?.loadURL(`${serverURL}/settings/general`) } }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+    { label: 'Astral', submenu: [{ role: 'about' }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => { show(); window?.webContents.send('astral:open-settings') } }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
     { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
   ]))
   const trayPath = app.isPackaged ? join(process.resourcesPath, 'trayTemplate.png') : join(directory, '../../resources/trayTemplate.png')

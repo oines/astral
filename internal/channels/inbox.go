@@ -69,7 +69,7 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 	// Reconcile the durable Core receipt before trying to fetch any source
 	// attachment. A retry after deletion/offline must not reinject a committed input.
 	if receipt, receiptErr := s.Harness.Receipt(ctx, b.SessionID, deliveryID); receiptErr == nil && receipt.InputID != "" {
-		return s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: receipt.State, InputID: receipt.InputID, EntryID: receipt.EntryID, Error: receipt.Error})
+		return s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "routed"})
 	} else if receiptErr != nil && !domain.IsMissing(receiptErr) {
 		return receiptErr
 	}
@@ -107,11 +107,11 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 	if current.ID != b.ID {
 		return domain.Conflict("the original inbound binding is no longer active")
 	}
-	receipt, err := s.Harness.Deliver(ctx, b.SessionID, observation, trigger)
+	_, err = s.Harness.Deliver(ctx, b.SessionID, observation, trigger)
 	if err != nil {
 		return err
 	}
-	return s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: receipt.State, InputID: receipt.InputID, EntryID: receipt.EntryID, Error: receipt.Error})
+	return s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "routed"})
 }
 func (s *Service) copyAttachment(ctx context.Context, b domain.ConversationBinding, event domain.Observation, a domain.Attachment, c domain.Connection) (domain.FileRef, error) {
 	key := stableID("attachment", b.AgentID, event.ID, a.Ref)
@@ -146,12 +146,22 @@ func (s *Service) copyAttachment(ctx context.Context, b domain.ConversationBindi
 	err = s.Store.Save(ctx, "inbox_files", &copy.Meta, &copy)
 	return ref, err
 }
-func (s *Service) Delivery(ctx context.Context, eventID string) (persistence.Delivery, error) {
-	delivery, err := s.Store.Delivery(ctx, eventID)
+
+// DeliveryView combines the fixed channel destination with Core's current
+// input receipt. Application state is never copied back into the Host database.
+type DeliveryView struct {
+	persistence.Delivery
+	InputID string `json:"input_id,omitempty"`
+	EntryID string `json:"entry_id,omitempty"`
+}
+
+func (s *Service) Delivery(ctx context.Context, eventID string) (DeliveryView, error) {
+	route, err := s.Store.Delivery(ctx, eventID)
+	delivery := DeliveryView{Delivery: route}
 	if err != nil {
 		return delivery, err
 	}
-	if delivery.InputID == "" || delivery.State == "applied" || delivery.State == "cleared" {
+	if delivery.State != "routed" {
 		return delivery, nil
 	}
 	event, err := s.Store.Observation(ctx, eventID)
@@ -167,7 +177,7 @@ func (s *Service) Delivery(ctx context.Context, eventID string) (persistence.Del
 		return delivery, err
 	}
 	delivery.State, delivery.InputID, delivery.EntryID, delivery.Error = receipt.State, receipt.InputID, receipt.EntryID, receipt.Error
-	return delivery, s.Store.SaveDelivery(ctx, delivery)
+	return delivery, nil
 }
 
 // DownloadAttachment writes a platform attachment directly to the authenticated

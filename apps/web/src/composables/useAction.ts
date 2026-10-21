@@ -10,9 +10,9 @@ export function useAction() {
     success.value = ''
     try {
       const value = await fn()
-      success.value = message
+      if (message) success.value = message
       return value
-    } catch (e) { error.value = errorText(e); return undefined }
+    } catch (e) { success.value = ''; error.value = errorText(e); return undefined }
     finally { busy.value = false }
   }
   return { busy, error, success, run }

@@ -35,3 +35,5 @@ export function bytes(value: number) {
   const n = Math.floor(Math.log(value) / Math.log(1024))
   return `${(value / 1024 ** n).toFixed(1)} ${['B', 'KB', 'MB', 'GB', 'TB'][Math.min(n, 4)]}`
 }
+
+export function operatingSystem(value?: string) { return ({ darwin: 'macOS', linux: 'Linux', windows: 'Windows' })[value || ''] || value || '—' }

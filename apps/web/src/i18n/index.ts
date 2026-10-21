@@ -1,12 +1,24 @@
+import { providersEn, providersZh } from './providers'
 import { createI18n } from 'vue-i18n'
 import { detailEn, detailZh } from './details'
+import { redesignEn, redesignZh } from './redesign'
 const en = {
-  ...detailEn,
+  ...detailEn, ...redesignEn, ...providersEn,
+  common: { more: 'More' }, stopped: 'Stopped', bottom: 'Jump to latest', thinkingProcess: 'Thinking', noModelMatch: 'No matching models.',
+  runCommand: 'Run command', readFile: 'Read file', writeFile: 'Write file', editFile: 'Edit file',
+  application: 'Application', conversation: 'Conversation', interface: 'Interface',
+  loginStartHint: 'Open Astral automatically when you log in.', keepRunningHint: 'Let ongoing work continue after you close the window.',
+  inputDefaultHint: 'Choose how a new message is handled during a run.', themeHint: 'Choose how Astral looks on this device.', languageHint: 'The language used throughout the app.',
+  worked: 'Worked', steps: 'steps', rawData: 'Raw data', arguments: 'Arguments', sessionOptions: 'Conversation options', earlierActivity: 'Load earlier activity',
+  personal: 'Personal', workspace: 'Workspace', sessionInfo: 'Conversation info',
+
   newSession: 'New session', search: 'Search sessions', settings: 'Settings', back: 'Back to chats', now: 'Now', pinned: 'Pinned', recent: 'Recent',
-  save: 'Save changes', cancel: 'Cancel', add: 'Add', delete: 'Delete', edit: 'Edit', close: 'Close', retry: 'Retry', refresh: 'Refresh', copy: 'Copy', download: 'Download',
-  general: 'General', appearance: 'Appearance', models: 'Models', webSearch: 'Web search', computers: 'Computers', channels: 'Channels', agents: 'Agents', storage: 'Data & storage', security: 'Security & access', advanced: 'Advanced',
+  save: 'Save changes', cancel: 'Cancel', add: 'Add', delete: 'Delete', edit: 'Edit', close: 'Close', openSidebar: 'Open sidebar', closeSidebar: 'Collapse sidebar', retry: 'Retry', refresh: 'Refresh', copy: 'Copy', download: 'Download',
+  general: 'General', appearance: 'Appearance', models: 'Models', webSearch: 'Web search', computers: 'Computers', channels: 'Channels', agents: 'Agents', storage: 'Data & storage', security: 'Security & access', advanced: 'About & diagnostics',
   name: 'Name', online: 'Connected', offline: 'Offline', missing: 'Missing configuration', select: 'Select…', none: 'None', default: 'Default',
   working: 'Working', preparing: 'Preparing a tool call', running: 'Running', stopping: 'Stopping…', compacting: 'Compacting context…', idle: 'Ready', needs_attention: 'Needs attention',
+  modelAttempt: 'Working · attempt {attempt}/{max}', compactionAttempt: 'Compacting context · attempt {attempt}/{max}',
+  retryingModel: 'Retrying at {time} · attempt {attempt}/{max}', retryingCompaction: 'Retrying compaction at {time} · attempt {attempt}/{max}',
   connected: 'Live', reconnecting: 'Reconnecting…', connecting: 'Connecting…', send: 'Send', stop: 'Stop', continue: 'Continue', message: 'Ask Astral to do something…',
   followUp: 'After the current work', steer: 'Apply to the current work', waiting: 'Waiting', applying: 'Applying', applied: 'Applied', clearPending: 'Clear queued inputs',
   computer: 'Current Computer', model: 'Model', reasoning: 'Reasoning', context: 'Context usage', compact: 'Compact context', export: 'Export rollout', fork: 'Fork from here',
@@ -27,12 +39,22 @@ const en = {
   disconnect: 'Sign out', loading: 'Loading…', empty: 'Nothing here yet.', inspect: 'Inspect', result: 'Result', source: 'Source', terminal: 'Terminal output',
 }
 const zh: typeof en = {
-  ...detailZh,
+  ...detailZh, ...redesignZh, ...providersZh,
+  common: { more: '更多' }, stopped: '已停止', bottom: '回到最新消息', thinkingProcess: '思考过程', noModelMatch: '没有匹配的模型。',
+  runCommand: '运行命令', readFile: '读取文件', writeFile: '写入文件', editFile: '修改文件',
+  application: '应用', conversation: '对话', interface: '界面',
+  loginStartHint: '登录电脑后自动打开 Astral。', keepRunningHint: '关闭窗口后，让正在进行的工作继续运行。',
+  inputDefaultHint: '选择运行过程中收到的新消息如何处理。', themeHint: '选择 Astral 在这台设备上的外观。', languageHint: '应用界面使用的语言。',
+  worked: '已完成', steps: '个步骤', rawData: '原始数据', arguments: '参数', sessionOptions: '会话选项', earlierActivity: '加载更早的过程',
+  personal: '个人', workspace: '工作区', sessionInfo: '会话信息',
+
   newSession: '新建会话', search: '搜索会话', settings: '设置', back: '返回聊天', now: '进行中', pinned: '已固定', recent: '最近',
-  save: '保存更改', cancel: '取消', add: '添加', delete: '删除', edit: '编辑', close: '关闭', retry: '重试', refresh: '刷新', copy: '复制', download: '下载',
-  general: '通用', appearance: '外观', models: '模型', webSearch: '网页搜索', computers: 'Computers', channels: '消息渠道', agents: 'Agents', storage: '数据与存储', security: '安全与访问', advanced: '高级',
+  save: '保存更改', cancel: '取消', add: '添加', delete: '删除', edit: '编辑', close: '关闭', openSidebar: '打开侧边栏', closeSidebar: '收起侧边栏', retry: '重试', refresh: '刷新', copy: '复制', download: '下载',
+  general: '通用', appearance: '外观', models: '模型', webSearch: '网页搜索', computers: 'Computers', channels: '消息渠道', agents: 'Agents', storage: '数据与存储', security: '安全与访问', advanced: '关于与诊断',
   name: '名称', online: '已连接', offline: '离线', missing: '缺少配置', select: '请选择…', none: '不设置', default: '默认',
   working: '处理中', preparing: '正在准备工具参数', running: '运行中', stopping: '正在停止…', compacting: '正在压缩上下文…', idle: '就绪', needs_attention: '需要关注',
+  modelAttempt: '处理中 · 第 {attempt}/{max} 次尝试', compactionAttempt: '正在压缩上下文 · 第 {attempt}/{max} 次尝试',
+  retryingModel: '将在 {time} 重试 · 第 {attempt}/{max} 次尝试', retryingCompaction: '将在 {time} 重试压缩 · 第 {attempt}/{max} 次尝试',
   connected: '实时连接', reconnecting: '正在重新连接…', connecting: '正在连接…', send: '发送', stop: '停止', continue: '继续', message: '让 Astral 帮你做点什么…',
   followUp: '等当前工作完成', steer: '应用到当前工作', waiting: '等待应用', applying: '正在应用', applied: '已应用', clearPending: '清除待处理输入',
   computer: '当前 Computer', model: '模型', reasoning: '推理', context: '上下文使用量', compact: '压缩上下文', export: '导出 Rollout', fork: '从这里创建分支',
@@ -48,7 +70,7 @@ const zh: typeof en = {
   newComputer: '添加 Computer', useLocal: '使用本机', localContainer: '使用本机容器', remote: '连接其他机器', useContainer: '使用容器',
   waitingComputer: '等待 Computer 接入', assign: '分配给 Agent', commandHint: '在目标机器运行此命令，它会注册为一台独立的 Computer。',
   defaultModel: '默认模型', defaultComputer: '默认 Computer', allowedComputers: '允许使用的 Computers', conversations: '关联会话',
-  providers: '模型连接', profiles: '模型配置', apiKey: 'API Key', endpoint: 'Base URL', protocol: '协议', dialect: '模型服务商', verify: '验证工具调用',
+  providers: '服务商', profiles: '模型配置', apiKey: 'API Key', endpoint: 'Base URL', protocol: '协议', dialect: '模型服务商', verify: '验证工具调用',
   contextWindow: '上下文窗口', maxOutput: '最大输出 Token', reset: '使用推荐值', overrides: '自定义值', recommendations: '推荐值',
   disconnect: '退出登录', loading: '加载中…', empty: '暂无内容。', inspect: '查看', result: '结果', source: '来源', terminal: '终端输出',
 }

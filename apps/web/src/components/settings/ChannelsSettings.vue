@@ -2,8 +2,8 @@
 import { computed, ref } from 'vue'
 import { useQuery } from '@pinia/colada'
 import { listBindingsQuery, listConnectionsQuery, listConversationsQuery } from '@astral/sdk/colada'
-import { conversationMessages, deleteConnection, observationDelivery, resolveConversation, saveConnection, type AstralInternalHttpapiConnectionInput, type AstralInternalHttpapiConnectionView, type AstralInternalGatewayMessagePage, type AstralInternalPersistenceDelivery } from '@astral/sdk'
-import { Button, Modal } from '@astral/ui'
+import { conversationMessages, deleteConnection, observationDelivery, resolveConversation, saveConnection, type AstralInternalHttpapiConnectionInput, type AstralInternalHttpapiConnectionView, type AstralInternalGatewayMessagePage, type AstralInternalChannelsDeliveryView } from '@astral/sdk'
+import { Button, Modal, Switch, SettingsSection, SettingsRow } from '@astral/ui'
 import { ArrowLeft, ChevronRight, MessageCircle, Plus } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import { newMeta, object, request } from '../../lib/api'
@@ -24,11 +24,12 @@ const chatID = ref('')
 const topicID = ref('')
 const messages = ref<AstralInternalGatewayMessagePage>()
 const selectedConversation = ref('')
-const deliveries = ref<Record<string, AstralInternalPersistenceDelivery>>({})
+const deliveries = ref<Record<string, AstralInternalChannelsDeliveryView>>({})
 const status = computed(() => list.data.value?.find(c => c.id === selected.value?.id))
 const ownConversations = computed(() => conversations.data.value?.filter(c => c.connection_id === selected.value?.id) ?? [])
 function edit(value?: AstralInternalHttpapiConnectionView) {
-  selected.value = value ? { id: value.id, revision: value.revision, created_at: value.created_at, updated_at: value.updated_at, name: value.name, platform: value.platform, adapter: value.adapter, enabled: value.enabled, account_id: value.account_id, username: value.username } : { ...newMeta(), name: '', platform: 'telegram', adapter: 'telegram.bot', enabled: true }
+  action.error.value = ''; action.success.value = ''
+  selected.value = value ? { id: value.id, revision: value.revision, created_at: value.created_at, updated_at: value.updated_at, name: value.name, platform: value.platform, adapter: value.adapter, enabled: value.enabled, account_id: value.account_id, username: value.username } : { ...newMeta(), name: 'Telegram', platform: 'telegram', adapter: 'telegram.bot', enabled: true }
   token.value = ''
   endpoint.value = String(object(value?.config).base_url || '')
   messages.value = undefined
@@ -77,91 +78,121 @@ async function remove() {
     </p><p
       v-if="action.success.value"
       class="success-note"
+      role="status"
     >
       {{ action.success.value }}
     </p>
     <template v-if="!selected">
-      <div class="row between">
+      <div
+        v-if="list.data.value?.length"
+        class="settings-toolbar"
+      >
         <p class="muted">
-          Telegram Bot API
+          Telegram
         </p><Button
           size="small"
           @click="edit()"
         >
-          <Plus />{{ t('add') }} Telegram
+          <Plus />{{ t('connectTelegram') }}
         </Button>
       </div>
-      <div class="resource-list">
+      <div
+        v-if="list.data.value?.length"
+        class="resource-list"
+      >
         <button
           v-for="c in list.data.value"
           :key="c.id"
           class="resource-row"
           @click="edit(c)"
         >
-          <span class="resource-symbol"><MessageCircle /></span><span><strong>{{ c.name }}</strong><small>@{{ c.username }} · Telegram</small></span><span
+          <span class="resource-symbol"><MessageCircle /></span><span><strong>{{ c.name }}</strong><small>{{ c.username ? '@' + c.username : 'Telegram' }}</small></span><span
             class="badge"
             :class="{ good: c.status.state === 'polling', bad: Boolean(c.status.error) }"
-          >{{ c.enabled ? c.status.state : t('disabled') }}</span><ChevronRight />
-        </button><p
-          v-if="!list.data.value?.length"
-          class="empty"
-        >
-          {{ t('empty') }}
-        </p>
+          >{{ t(c.enabled ? c.status.state === 'polling' ? 'connected' : c.status.error ? 'needs_attention' : 'connecting' : 'disabled') }}</span><ChevronRight />
+        </button>
       </div>
-      <h2>{{ t('outboundReceipts') }}</h2><OutboxReceipts all />
+      <div
+        v-else
+        class="empty-state"
+      >
+        <MessageCircle /><strong>{{ t('noChannels') }}</strong><p>{{ t('noChannelsHint') }}</p><Button
+          variant="primary"
+          @click="edit()"
+        >
+          <Plus />{{ t('connectTelegram') }}
+        </Button>
+      </div>
+      <details
+        v-if="list.data.value?.length"
+        class="form-disclosure"
+      >
+        <summary>{{ t('outboundReceipts') }}</summary><OutboxReceipts all />
+      </details>
     </template>
     <form
       v-else
-      class="stack"
+      class="stack settings-form"
       @submit.prevent="save"
     >
-      <div class="row between">
+      <div class="object-heading">
         <Button
           variant="ghost"
-          size="small"
+          size="icon"
+          :aria-label="t('channels')"
           @click="selected = undefined"
         >
-          <ArrowLeft />{{ t('channels') }}
-        </Button><Button
-          v-if="selected.id"
-          variant="ghost"
-          size="small"
-          @click="deleting = true"
-        >
-          {{ t('delete') }}
-        </Button>
+          <ArrowLeft />
+        </Button><h2>{{ selected.id ? selected.name : t('connectTelegram') }}</h2>
       </div>
-      <label class="label">{{ t('name') }}<input
-        v-model="selected.name"
-        required
-      ></label>
-      <label class="label">{{ t('botToken') }}<input
-        v-model="token"
-        type="password"
-        autocomplete="new-password"
-        :placeholder="selected.id ? t('storedSecret') : t('botTokenHint')"
-      ></label>
-      <label class="row"><input
-        v-model="selected.enabled"
-        type="checkbox"
-      >{{ t('enabled') }}</label>
-      <details class="form-disclosure">
-        <summary>{{ t('customBotServer') }}</summary><label class="label">Base URL<input
-          v-model="endpoint"
-          type="url"
-          placeholder="https://api.telegram.org"
-        ></label>
-      </details>
-      <div class="form-footer">
-        <Button
-          type="submit"
-          variant="primary"
-          :busy="action.busy.value"
-        >
-          {{ t(selected.enabled ? 'saveAndVerify' : 'save') }}
-        </Button>
-      </div>
+      <SettingsSection :title="t('channelIdentity')">
+        <SettingsRow :label="t('name')">
+          <input
+            v-model="selected.name"
+            :aria-label="t('name')"
+            required
+          >
+        </SettingsRow>
+        <SettingsRow :label="t('botToken')">
+          <input
+            v-model="token"
+            :aria-label="t('botToken')"
+            type="password"
+            autocomplete="new-password"
+            :required="!selected.id"
+            :placeholder="selected.id ? t('storedSecret') : t('botTokenHint')"
+          >
+        </SettingsRow>
+        <SettingsRow :label="t('enabled')">
+          <div
+            class="row"
+            style="justify-content: flex-end"
+          >
+            <Switch
+              v-model="selected.enabled"
+              :label="t('enabled')"
+            />
+          </div>
+        </SettingsRow>
+        <details class="form-disclosure">
+          <summary>{{ t('customBotServer') }}</summary><label class="label">Base URL<input
+            v-model="endpoint"
+            type="url"
+            placeholder="https://api.telegram.org"
+          ></label>
+        </details>
+        <div class="form-footer">
+          <Button @click="selected = undefined">
+            {{ t('cancel') }}
+          </Button><Button
+            type="submit"
+            variant="primary"
+            :busy="action.busy.value"
+          >
+            {{ t(selected.enabled ? 'saveAndVerify' : 'save') }}
+          </Button>
+        </div>
+      </SettingsSection>
       <template v-if="status">
         <div class="notice">
           <strong>@{{ status.username }} · {{ status.status.state }}</strong><p v-if="status.status.error">
@@ -201,6 +232,18 @@ async function remove() {
           {{ t('assign') }}<ChevronRight style="display: inline" />
         </RouterLink>
       </template>
+      <div
+        v-if="selected.id"
+        class="danger-row"
+      >
+        <strong>{{ t('delete') }} {{ selected.name }}</strong><Button
+          variant="danger"
+          size="small"
+          @click="deleting = true"
+        >
+          {{ t('delete') }}
+        </Button>
+      </div>
       <Modal
         :open="Boolean(selectedConversation)"
         :title="t('conversations')"

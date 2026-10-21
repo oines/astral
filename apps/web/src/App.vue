@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import ChatPage from './pages/ChatPage.vue'
+import SettingsPage from './pages/SettingsPage.vue'
 import { useI18n } from 'vue-i18n'
 import { login } from '@astral/sdk'
 import { Button } from '@astral/ui'
@@ -8,6 +11,14 @@ import { useAppStore } from './stores/app'
 import { request, errorText } from './lib/api'
 
 const app = useAppStore()
+const route = useRoute()
+const router = useRouter()
+const unsubscribeSettings = window.astralDesktop?.onSettings?.(() => { void router.push('/settings/general') })
+onBeforeUnmount(() => unsubscribeSettings?.())
+const inSettings = computed(() => route.path.startsWith('/settings'))
+watch(() => route.path, path => {
+  if (!path.startsWith('/settings')) app.lastChatPath = path
+}, { immediate: true })
 const { t } = useI18n()
 const token = ref('')
 const busy = ref(false)
@@ -33,7 +44,7 @@ async function signIn() {
       class="login-form stack"
       @submit.prevent="signIn"
     >
-      <span class="wordmark">✳ astral</span>
+      <span class="wordmark">Astral</span>
       <h1>{{ t('signIn') }}</h1>
       <p class="muted">
         {{ t('tokenHint') }}
@@ -60,13 +71,17 @@ async function signIn() {
       </Button>
     </form>
   </div>
-  <RouterView v-else-if="app.data" />
+  <template v-else-if="app.data">
+    <KeepAlive>
+      <component :is="inSettings ? SettingsPage : ChatPage" />
+    </KeepAlive>
+  </template>
   <div
     v-else
     class="login-screen"
   >
     <div class="stack">
-      <span class="wordmark">✳ astral</span>
+      <span class="wordmark">Astral</span>
       <p
         v-if="app.query.error"
         class="error-box"

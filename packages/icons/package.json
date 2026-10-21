@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "lucide-vue-next": "^0.562.0" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@lobehub/icons-static-svg": "1.95.1",
+    "lucide-vue-next": "^0.562.0"
+  },
+  "peerDependencies": {
+    "vue": "^3.5.40"
+  },
+  "license": "AGPL-3.0-only"
 }

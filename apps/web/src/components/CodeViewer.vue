@@ -13,6 +13,33 @@ const host = ref<HTMLElement>()
 let editor: monaco.editor.IStandaloneCodeEditor | monaco.editor.IStandaloneDiffEditor | undefined
 let models: monaco.editor.ITextModel[] = []
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() }
+function applyTheme() {
+  const style = getComputedStyle(document.documentElement)
+  const color = (token: string) => style.getPropertyValue(token).trim()
+  monaco.editor.defineTheme('astral-preview', {
+    base: app.dark ? 'vs-dark' : 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      focusBorder: color('--focus-ring'),
+      'editor.background': color('--bg'),
+      'editor.foreground': color('--ink'),
+      'editorLineNumber.foreground': color('--subtle'),
+      'editor.lineHighlightBackground': color('--surface'),
+      'editor.lineHighlightBorder': '#00000000',
+      'editorWidget.background': color('--raised'),
+      'editorWidget.border': color('--field-line'),
+      'input.background': color('--raised'),
+      'input.foreground': color('--ink'),
+      'input.border': color('--field-line'),
+      'inputOption.activeBorder': color('--focus-ring'),
+      'inputOption.activeBackground': color('--selected'),
+      'inputOption.activeForeground': color('--ink'),
+      'list.focusOutline': color('--focus-ring'),
+    },
+  })
+  monaco.editor.setTheme('astral-preview')
+}
 function update() {
   if (!editor) return
   const previous = models
@@ -27,12 +54,13 @@ function update() {
 }
 onMounted(() => {
   if (!host.value) return
-  const options = { readOnly: true, automaticLayout: true, minimap: { enabled: false }, fontSize: 12, scrollBeyondLastLine: false, theme: app.dark ? 'vs-dark' : 'vs', wordWrap: 'on' as const, padding: { top: 12 } }
+  applyTheme()
+  const options = { readOnly: true, automaticLayout: true, minimap: { enabled: false }, fontSize: 12, scrollBeyondLastLine: false, theme: 'astral-preview', wordWrap: 'on' as const, padding: { top: 12 } }
   editor = props.original !== undefined ? monaco.editor.createDiffEditor(host.value, { ...options, renderSideBySide: false }) : monaco.editor.create(host.value, options)
   update()
 })
 watch(() => [props.content, props.original, props.language], update)
-watch(() => app.dark, dark => monaco.editor.setTheme(dark ? 'vs-dark' : 'vs'))
+watch(() => app.dark, applyTheme, { flush: 'post' })
 onBeforeUnmount(() => { editor?.dispose(); models.forEach(model => model.dispose()) })
 </script>
 <template>

@@ -4,6 +4,53 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type AstralCoreApprovalDecision = {
+    approved: boolean;
+    reason?: string;
+};
+
+export type AstralCoreApprovalRecord = {
+    decision?: AstralCoreApprovalDecision;
+    execution_id: string;
+    id: string;
+    request: AstralCoreApprovalRequest;
+};
+
+export type AstralCoreApprovalRequest = {
+    details?: unknown;
+    prompt: string;
+};
+
+export type AstralCoreAttemptStatus = {
+    attempt: number;
+    attempt_id: string;
+    error?: string;
+    max_attempts: number;
+    next_retry_at?: string;
+    purpose: string;
+    run_id?: string;
+    state: string;
+    turn_id?: string;
+};
+
+export type AstralCoreCompactionRecord = {
+    input_tokens: number;
+    instructions?: string;
+    model_id: string;
+    model_revision?: string;
+    options?: AstralCoreGenerationOptions;
+    summary: string;
+    through_id: string;
+    usage?: AstralCoreUsage;
+};
+
+export type AstralCoreConfiguration = {
+    model_id: string;
+    options?: AstralCoreGenerationOptions;
+    system_prompt: string;
+    tools?: Array<AstralCoreToolDefinition>;
+};
+
 export type AstralCoreContent = {
     data?: unknown;
     media_type?: string;
@@ -14,8 +61,46 @@ export type AstralCoreContent = {
     url?: string;
 };
 
+export type AstralCoreCreationRecord = {
+    fork_digest?: string;
+    fork_entry_id?: string;
+    fork_mode?: number;
+    fork_rollout_id?: string;
+    fork_session_id?: string;
+    format_version: number;
+    projection?: AstralCoreProjection;
+    rollout_id: string;
+    session_id: string;
+};
+
+export type AstralCoreEntry = {
+    approval?: AstralCoreApprovalRecord;
+    clear?: AstralCoreInputClear;
+    compaction?: AstralCoreCompactionRecord;
+    configuration?: AstralCoreConfiguration;
+    created?: AstralCoreCreationRecord;
+    id: string;
+    input?: AstralCoreQueuedInput;
+    input_id?: string;
+    kind: string;
+    message?: AstralCoreMessage;
+    model_request?: AstralCoreModelRequestRecord;
+    model_response?: AstralCoreModelResponseRecord;
+    parent_id?: string;
+    run?: AstralCoreRunRecord;
+    run_id?: string;
+    sequence: number;
+    session_id: string;
+    time: string;
+    tool?: AstralCoreToolRecord;
+    turn_id?: string;
+    usage?: AstralCoreUsage;
+    version: number;
+};
+
 export type AstralCoreEvent = {
     approval_id?: string;
+    attempt?: AstralCoreAttemptStatus;
     attempt_id?: string;
     end_reason?: string;
     entry_id?: string;
@@ -47,6 +132,10 @@ export type AstralCoreGenerationOptions = {
     temperature?: number;
     tool_choice?: AstralCoreToolChoice;
     top_p?: number;
+};
+
+export type AstralCoreInputClear = {
+    kinds: Array<string>;
 };
 
 export type AstralCoreInvocation = {
@@ -93,8 +182,33 @@ export type AstralCoreModelResponseRecord = {
     reply: AstralCoreReply;
 };
 
+export type AstralCorePendingApproval = {
+    ID: string;
+    Invocation: AstralCoreInvocation;
+    Request: AstralCoreApprovalRequest;
+};
+
+export type AstralCoreProjection = {
+    batch_configuration_id?: string;
+    compaction_id?: string;
+    configuration_id?: string;
+    head_id?: string;
+    last_message_id?: string;
+    pending_calls?: {
+        [key: string]: AstralCoreToolCall;
+    };
+    through_id?: string;
+    tool_entries?: {
+        [key: string]: string;
+    };
+    unresolved?: {
+        [key: string]: AstralCoreToolRecord;
+    };
+};
+
 export type AstralCoreQueuedInput = {
     contexts?: Array<AstralCoreMessage>;
+    digest: string;
     id: string;
     kind: string;
     message?: AstralCoreMessage;
@@ -130,6 +244,14 @@ export type AstralCoreResponseFormat = {
 
 export type AstralCoreRunEnd = {
     reason?: string;
+};
+
+export type AstralCoreRunRecord = {
+    end_reason?: string;
+    error?: string;
+    id: string;
+    queue_only?: boolean;
+    status: string;
 };
 
 export type AstralCoreToolCall = {
@@ -170,6 +292,14 @@ export type AstralCoreToolProgress = {
     text?: string;
 };
 
+export type AstralCoreToolRecord = {
+    control?: AstralCoreRunEnd;
+    decision?: AstralCoreToolDecision;
+    invocation: AstralCoreInvocation;
+    needs_resolution?: boolean;
+    result?: AstralCoreToolResult;
+};
+
 export type AstralCoreToolResult = {
     artifact?: string;
     code?: string;
@@ -180,14 +310,6 @@ export type AstralCoreToolResult = {
     terminate?: boolean;
 };
 
-export type AstralCoreTurnState = {
-    advanced?: boolean;
-    assistant_id: string;
-    decided?: boolean;
-    decision?: string;
-    id: string;
-};
-
 export type AstralCoreUsage = {
     available?: boolean;
     cache_write_tokens?: number;
@@ -195,123 +317,6 @@ export type AstralCoreUsage = {
     input_tokens?: number;
     output_tokens?: number;
     reasoning_tokens?: number;
-};
-
-export type AstralCoreSessionApprovalDecision = {
-    approved: boolean;
-    reason?: string;
-};
-
-export type AstralCoreSessionApprovalRecord = {
-    decision?: AstralCoreSessionApprovalDecision;
-    execution_id: string;
-    id: string;
-    request: AstralCoreSessionApprovalRequest;
-};
-
-export type AstralCoreSessionApprovalRequest = {
-    details?: unknown;
-    prompt: string;
-};
-
-export type AstralCoreSessionCompactionRecord = {
-    input_tokens: number;
-    instructions?: string;
-    model_id: string;
-    model_revision?: string;
-    options?: AstralCoreGenerationOptions;
-    summary: string;
-    through_id: string;
-    usage?: AstralCoreUsage;
-};
-
-export type AstralCoreSessionConfiguration = {
-    model_id: string;
-    options?: AstralCoreGenerationOptions;
-    system_prompt: string;
-    tools?: Array<AstralCoreToolDefinition>;
-};
-
-export type AstralCoreSessionCreationRecord = {
-    fork_digest?: string;
-    fork_entry_id?: string;
-    fork_mode?: number;
-    fork_rollout_id?: string;
-    fork_session_id?: string;
-    format_version: number;
-    projection?: AstralCoreSessionProjection;
-    rollout_id: string;
-    session_id: string;
-};
-
-export type AstralCoreSessionEntry = {
-    approval?: AstralCoreSessionApprovalRecord;
-    clear?: AstralCoreSessionInputClear;
-    compaction?: AstralCoreSessionCompactionRecord;
-    configuration?: AstralCoreSessionConfiguration;
-    created?: AstralCoreSessionCreationRecord;
-    id: string;
-    input?: AstralCoreQueuedInput;
-    input_id?: string;
-    kind: string;
-    message?: AstralCoreMessage;
-    model_request?: AstralCoreModelRequestRecord;
-    model_response?: AstralCoreModelResponseRecord;
-    parent_id?: string;
-    run?: AstralCoreSessionRunRecord;
-    run_id?: string;
-    sequence: number;
-    session_id: string;
-    time: string;
-    tool?: AstralCoreSessionToolRecord;
-    turn?: AstralCoreTurnState;
-    turn_id?: string;
-    usage?: AstralCoreUsage;
-    version: number;
-};
-
-export type AstralCoreSessionInputClear = {
-    kinds: Array<string>;
-};
-
-export type AstralCoreSessionPendingApproval = {
-    ID: string;
-    Invocation: AstralCoreInvocation;
-    Request: AstralCoreSessionApprovalRequest;
-};
-
-export type AstralCoreSessionProjection = {
-    batch_configuration_id?: string;
-    compaction_id?: string;
-    configuration_id?: string;
-    head_id?: string;
-    last_message_id?: string;
-    pending_calls?: {
-        [key: string]: AstralCoreToolCall;
-    };
-    through_id?: string;
-    tool_entries?: {
-        [key: string]: string;
-    };
-    unresolved?: {
-        [key: string]: AstralCoreSessionToolRecord;
-    };
-};
-
-export type AstralCoreSessionRunRecord = {
-    end_reason?: string;
-    error?: string;
-    id: string;
-    queue_only?: boolean;
-    status: string;
-};
-
-export type AstralCoreSessionToolRecord = {
-    control?: AstralCoreRunEnd;
-    decision?: AstralCoreToolDecision;
-    invocation: AstralCoreInvocation;
-    needs_resolution?: boolean;
-    result?: AstralCoreToolResult;
 };
 
 export type AstralInternalChannelsCapabilities = {
@@ -329,6 +334,15 @@ export type AstralInternalChannelsCapabilities = {
     reply_references: boolean;
     text_limit: number;
     upload_limit: number;
+};
+
+export type AstralInternalChannelsDeliveryView = {
+    entry_id?: string;
+    error?: string;
+    event_id: string;
+    input_id?: string;
+    session_id: string;
+    state: string;
 };
 
 export type AstralInternalChannelsStatus = {
@@ -471,12 +485,16 @@ export type AstralInternalDomainModelProfile = {
     catalog_at?: string;
     catalog_source?: string;
     created_at: string;
+    description?: string;
+    dialect?: string;
+    enabled?: boolean;
     id: string;
     model_id: string;
     name: string;
     overrides: {
         [key: string]: unknown;
     };
+    protocol?: string;
     provider_id: string;
     recommendations: {
         [key: string]: unknown;
@@ -548,11 +566,14 @@ export type AstralInternalDomainProvider = {
     created_at: string;
     credential_id?: string;
     dialect: string;
+    enabled?: boolean;
     header_names?: Array<string>;
     headers_credential_id?: string;
     id: string;
     name: string;
+    preset_id?: string;
     protocol: string;
+    replay_revision?: number;
     revision: number;
     updated_at: string;
 };
@@ -639,7 +660,7 @@ export type AstralInternalGatewayDownloadRequest = {
 };
 
 export type AstralInternalGatewayHistoryPage = {
-    entries: Array<AstralCoreSessionEntry>;
+    entries: Array<AstralCoreEntry>;
     head_id: string;
     next_cursor?: string;
 };
@@ -672,17 +693,13 @@ export type AstralInternalGatewaySendText = {
 };
 
 export type AstralInternalHarnessInputReceipt = {
-    created_at: string;
-    delivery_id: string;
+    accepted_at: string;
     digest: string;
     entry_id?: string;
     error?: string;
-    id: string;
-    input_id?: string;
-    revision: number;
+    input_id: string;
     session_id: string;
     state: string;
-    updated_at: string;
 };
 
 export type AstralInternalHarnessInputRequest = {
@@ -700,18 +717,20 @@ export type AstralInternalHarnessPendingInput = {
 
 export type AstralInternalHarnessView = {
     agent_id: string;
-    approvals: Array<AstralCoreSessionPendingApproval>;
+    approvals: Array<AstralCorePendingApproval>;
     archived: boolean;
+    attempt?: AstralCoreAttemptStatus;
     binding_id?: string;
     computer_id?: string;
     conversation_id?: string;
     created_at: string;
     cwd?: string;
     error?: string;
+    event_sequence: number;
     fork_entry_id?: string;
     head_id: string;
     id: string;
-    last_run?: AstralCoreSessionRunRecord;
+    last_run?: AstralCoreRunRecord;
     model_ref?: string;
     options: AstralCoreGenerationOptions;
     parent_session_id?: string;
@@ -725,12 +744,12 @@ export type AstralInternalHarnessView = {
     source: string;
     status: string;
     title: string;
-    unresolved: Array<AstralCoreSessionToolRecord>;
+    unresolved: Array<AstralCoreToolRecord>;
     updated_at: string;
 };
 
 export type AstralInternalHttpapiApproval = {
-    decision: AstralCoreSessionApprovalDecision;
+    decision: AstralCoreApprovalDecision;
 };
 
 export type AstralInternalHttpapiBindingInput = {
@@ -819,7 +838,7 @@ export type AstralInternalHttpapiEnrollmentInput = {
 
 export type AstralInternalHttpapiEvent = {
     core?: AstralCoreEvent;
-    entry?: AstralCoreSessionEntry;
+    entry?: AstralCoreEntry;
     epoch: string;
     view?: AstralInternalHarnessView;
 };
@@ -856,6 +875,7 @@ export type AstralInternalHttpapiProviderInput = {
     created_at: string;
     credential_id?: string;
     dialect: string;
+    enabled?: boolean;
     header_names?: Array<string>;
     headers?: {
         [key: string]: string;
@@ -863,7 +883,9 @@ export type AstralInternalHttpapiProviderInput = {
     headers_credential_id?: string;
     id: string;
     name: string;
+    preset_id?: string;
     protocol: string;
+    replay_revision?: number;
     revision: number;
     updated_at: string;
 };
@@ -956,21 +978,60 @@ export type AstralInternalMessagesMetadata = {
     source: string;
 };
 
+export type AstralInternalModelbridgeAuthorization = {
+    expires_at: string;
+    id: string;
+    interval: number;
+    provider?: AstralInternalDomainProvider;
+    status: string;
+    user_code?: string;
+    verification_url?: string;
+};
+
 export type AstralInternalModelbridgeDiscovery = {
+    dialect?: string;
     id: string;
     name: string;
+    protocol?: string;
     recommendations: {
         [key: string]: unknown;
     };
+    source?: string;
 };
 
-export type AstralInternalPersistenceDelivery = {
-    entry_id?: string;
-    error?: string;
-    event_id: string;
-    input_id?: string;
-    session_id: string;
-    state: string;
+export type AstralInternalModelbridgeImportModelsInput = {
+    ids?: Array<string>;
+    refresh: boolean;
+};
+
+export type AstralInternalModelbridgeImportModelsResult = {
+    catalog_error?: string;
+    imported: Array<AstralInternalDomainModelProfile>;
+    skipped: Array<string>;
+};
+
+export type AstralInternalModelbridgePresetRegion = {
+    base_url: string;
+    id: string;
+    name: string;
+};
+
+export type AstralInternalModelbridgeProviderPreset = {
+    auth: string;
+    base_url: string;
+    catalog_date: string;
+    category: string;
+    dialect: string;
+    docs_url?: string;
+    icon: string;
+    id: string;
+    key_placeholder?: string;
+    key_url?: string;
+    model_count: number;
+    name: string;
+    protocol: string;
+    regions?: Array<AstralInternalModelbridgePresetRegion>;
+    requires_url?: boolean;
 };
 
 export type AstralInternalPersistenceStoredObservation = {
@@ -1779,7 +1840,7 @@ export type ObservationDeliveryResponses = {
     /**
      * OK
      */
-    200: AstralInternalPersistenceDelivery;
+    200: AstralInternalChannelsDeliveryView;
 };
 
 export type ObservationDeliveryResponse = ObservationDeliveryResponses[keyof ObservationDeliveryResponses];
@@ -1915,6 +1976,85 @@ export type SavePreferencesResponses = {
 
 export type SavePreferencesResponse = SavePreferencesResponses[keyof SavePreferencesResponses];
 
+export type ProviderAuthorizationData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/provider-authorizations/{id}';
+};
+
+export type ProviderAuthorizationErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ProviderAuthorizationError = ProviderAuthorizationErrors[keyof ProviderAuthorizationErrors];
+
+export type ProviderAuthorizationResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalModelbridgeAuthorization;
+};
+
+export type ProviderAuthorizationResponse = ProviderAuthorizationResponses[keyof ProviderAuthorizationResponses];
+
+export type ListProviderPresetsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/provider-presets';
+};
+
+export type ListProviderPresetsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ListProviderPresetsError = ListProviderPresetsErrors[keyof ListProviderPresetsErrors];
+
+export type ListProviderPresetsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalModelbridgeProviderPreset>;
+};
+
+export type ListProviderPresetsResponse = ListProviderPresetsResponses[keyof ListProviderPresetsResponses];
+
+export type PresetModelsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/provider-presets/{id}/models';
+};
+
+export type PresetModelsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type PresetModelsError = PresetModelsErrors[keyof PresetModelsErrors];
+
+export type PresetModelsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalModelbridgeDiscovery>;
+};
+
+export type PresetModelsResponse = PresetModelsResponses[keyof PresetModelsResponses];
+
 export type ListProvidersData = {
     body?: never;
     path?: never;
@@ -1994,6 +2134,33 @@ export type DeleteProviderResponses = {
 
 export type DeleteProviderResponse = DeleteProviderResponses[keyof DeleteProviderResponses];
 
+export type AuthorizeProviderData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/providers/{id}/authorize';
+};
+
+export type AuthorizeProviderErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthorizeProviderError = AuthorizeProviderErrors[keyof AuthorizeProviderErrors];
+
+export type AuthorizeProviderResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalModelbridgeAuthorization;
+};
+
+export type AuthorizeProviderResponse = AuthorizeProviderResponses[keyof AuthorizeProviderResponses];
+
 export type ModelCatalogData = {
     body?: never;
     path: {
@@ -2020,6 +2187,33 @@ export type ModelCatalogResponses = {
 };
 
 export type ModelCatalogResponse = ModelCatalogResponses[keyof ModelCatalogResponses];
+
+export type ImportModelsData = {
+    body: AstralInternalModelbridgeImportModelsInput;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/providers/{id}/import';
+};
+
+export type ImportModelsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ImportModelsError = ImportModelsErrors[keyof ImportModelsErrors];
+
+export type ImportModelsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalModelbridgeImportModelsResult;
+};
+
+export type ImportModelsResponse = ImportModelsResponses[keyof ImportModelsResponses];
 
 export type ResourceUsageData = {
     body?: never;
@@ -2448,7 +2642,7 @@ export type SessionEntryResponses = {
     /**
      * OK
      */
-    200: AstralCoreSessionEntry;
+    200: AstralCoreEntry;
 };
 
 export type SessionEntryResponse = SessionEntryResponses[keyof SessionEntryResponses];

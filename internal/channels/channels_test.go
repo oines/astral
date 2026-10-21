@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	sessions "github.com/oines/astral-core/session"
+	sessions "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/filestream"
 	"github.com/oines/astral/internal/harness"
@@ -235,6 +235,14 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 	view := p.Idle(t, binding.SessionID)
 	if view.LastRun.EndReason != "no_reply" {
 		t.Fatal("silent end did not persist")
+	}
+	delivery, err := s.Delivery(p.Context, event1)
+	if err != nil || delivery.State != "applied" || delivery.EntryID == "" {
+		t.Fatalf("Core input receipt unavailable: %+v %v", delivery, err)
+	}
+	route, err := p.Store.Delivery(p.Context, event1)
+	if err != nil || route.State != "routed" {
+		t.Fatalf("receipt query wrote input state back into Host routing: %+v %v", route, err)
 	}
 	testkit.Await(t, p.Context, func() bool { return bot.sends.Load() == 1 })
 	testkit.Await(t, p.Context, func() bool {

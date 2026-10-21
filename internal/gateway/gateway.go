@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	sessions "github.com/oines/astral-core/session"
+	sessions "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"

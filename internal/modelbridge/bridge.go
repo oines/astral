@@ -13,21 +13,27 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	core "github.com/oines/astral-core"
 	models "github.com/oines/astral-models"
+	"github.com/oines/astral-models/provider/anthropic"
+	"github.com/oines/astral-models/provider/google"
 	"github.com/oines/astral-models/provider/openai/completions"
 	"github.com/oines/astral-models/provider/openai/responses"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
 )
 
-type Environment func(context.Context) (string, error)
+type RequestValidator func(context.Context) error
 
 type Bridge struct {
 	Store      *persistence.Store
 	HTTPClient *http.Client
+	authMu     sync.Mutex
+	authFlows  map[string]*authFlow
+	refreshMu  sync.Mutex
 }
 
 func ValidateURL(raw string) error {
@@ -53,15 +59,26 @@ func (b *Bridge) SaveProvider(ctx context.Context, p *domain.Provider, key *stri
 		return err
 	}
 	switch models.Dialect(p.Dialect) {
-	case models.OpenAI, models.DeepSeek, models.Qwen, models.OpenRouter:
+	case models.OpenAI, models.DeepSeek, models.Qwen, models.OpenRouter, models.Compatible, models.Anthropic, models.Google, models.MiMo:
 	default:
 		return domain.Invalid("unsupported provider dialect")
 	}
-	if p.Protocol != completions.Protocol && p.Protocol != responses.Protocol {
+	if p.Protocol != completions.Protocol && p.Protocol != responses.Protocol && p.Protocol != anthropic.Protocol && p.Protocol != google.Protocol {
 		return domain.Invalid("unsupported provider protocol")
 	}
-	if p.Protocol == responses.Protocol && p.Dialect != string(models.OpenAI) && p.Dialect != string(models.DeepSeek) {
+	if p.Protocol == responses.Protocol && p.Dialect != string(models.OpenAI) && p.Dialect != string(models.DeepSeek) && p.Dialect != string(models.Compatible) && p.Dialect != string(models.MiMo) {
 		return domain.Invalid("this provider does not have a supported Responses adapter")
+	}
+	if p.PresetID != "" && FindPreset(p.PresetID) == nil {
+		return domain.Invalid("unknown provider preset")
+	}
+	if preset := FindPreset(p.PresetID); preset != nil && preset.Auth == "oauth" {
+		if p.BaseURL != preset.BaseURL {
+			return domain.Invalid("the authorization provider address is fixed")
+		}
+		if key != nil {
+			return domain.Invalid("use the provider sign-in flow")
+		}
 	}
 	if p.ID == "" {
 		p.ID = domain.ID("provider")
@@ -71,6 +88,9 @@ func (b *Bridge) SaveProvider(ctx context.Context, p *domain.Provider, key *stri
 		if p.Revision > 0 {
 			if err := tx.Get(ctx, "providers", p.ID, &old); err != nil {
 				return err
+			}
+			if old.PresetID != p.PresetID {
+				return domain.Invalid("create another provider to change its preset")
 			}
 		}
 		// Credential references are server-owned, even for a complete PUT.
@@ -98,7 +118,42 @@ func (b *Bridge) SaveProvider(ctx context.Context, p *domain.Provider, key *stri
 				p.HeaderNames = append(p.HeaderNames, name)
 			}
 		}
-		return tx.Save(ctx, "providers", &p.Meta, p)
+		connectionUnchanged := old.Revision > 0 && old.Protocol == p.Protocol && old.Dialect == p.Dialect && old.BaseURL == p.BaseURL && old.CredentialID == p.CredentialID && old.HeadersCredentialID == p.HeadersCredentialID
+		// The scope is server-owned. Metadata edits must not invalidate signed
+		// model history when the user selects the updated profile revision.
+		p.ReplayRevision = p.Revision + 1
+		if connectionUnchanged {
+			p.ReplayRevision = old.ReplayRevision
+			if p.ReplayRevision == 0 {
+				p.ReplayRevision = old.Revision
+			}
+		}
+		if err := tx.Save(ctx, "providers", &p.Meta, p); err != nil {
+			return err
+		}
+		// Labels and enable switches do not change the tested API connection.
+		if connectionUnchanged {
+			records, err := tx.List(ctx, "models")
+			if err != nil {
+				return err
+			}
+			for _, record := range records {
+				var profile domain.ModelProfile
+				if err := json.Unmarshal(record.Data, &profile); err != nil {
+					return err
+				}
+				check := profile.Verification
+				if profile.ProviderID != p.ID || check == nil || check.ProviderRevision != old.Revision || check.ProfileRevision != profile.Revision {
+					continue
+				}
+				check.ProviderRevision = p.Revision
+				check.ProfileRevision = profile.Revision + 1
+				if err := tx.Save(ctx, "models", &profile.Meta, &profile); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	})
 }
 
@@ -119,6 +174,19 @@ func (b *Bridge) SaveProfile(ctx context.Context, p *domain.ModelProfile) error 
 		p.ID = domain.ID("model")
 	}
 	p.Verification = nil
+	if p.Revision > 0 {
+		var old domain.ModelProfile
+		if err := b.Store.Get(ctx, "models", p.ID, &old); err != nil {
+			return err
+		}
+		oldConfig, _ := json.Marshal([]any{old.ProviderID, old.ModelID, old.Protocol, old.Dialect, old.Recommendations, old.Overrides})
+		newConfig, _ := json.Marshal([]any{p.ProviderID, p.ModelID, p.Protocol, p.Dialect, p.Recommendations, p.Overrides})
+		if string(oldConfig) == string(newConfig) && old.Verification != nil {
+			copy := *old.Verification
+			copy.ProfileRevision = p.Revision + 1
+			p.Verification = &copy
+		}
+	}
 	// Constructing the adapter also checks native compatibility options.
 	if _, err := b.construct(ctx, *p, provider); err != nil {
 		return err
@@ -135,18 +203,19 @@ func (b *Bridge) Selection(ctx context.Context, id string) (string, core.Generat
 	if err := b.Store.Get(ctx, "models", id, &p); err != nil {
 		return "", core.GenerationOptions{}, err
 	}
+	if p.Enabled != nil && !*p.Enabled {
+		return "", core.GenerationOptions{}, domain.Conflict("this model is disabled")
+	}
 	var provider domain.Provider
 	if err := b.Store.Get(ctx, "providers", p.ProviderID, &provider); err != nil {
 		return "", core.GenerationOptions{}, err
 	}
+	if provider.Enabled != nil && !*provider.Enabled {
+		return "", core.GenerationOptions{}, domain.Conflict("this provider is disabled")
+	}
 	v, _, err := p.Effective()
 	if err != nil {
 		return "", v.Defaults, err
-	}
-	check := p.Verification
-	if check == nil || check.ProfileRevision != p.Revision || check.ProviderRevision != provider.Revision ||
-		check.ToolCalling != "supported" || check.ToolReplay != "supported" {
-		return "", v.Defaults, domain.Conflict("verify tool calling and replay for this model configuration before selecting it")
 	}
 	return Reference(p, provider), v.Defaults, nil
 }
@@ -192,11 +261,34 @@ func (b *Bridge) construct(ctx context.Context, p domain.ModelProfile, provider 
 		}
 	}
 	ref := Reference(p, provider)
+	protocol, dialect, baseURL, err := modelRoute(p, provider)
+	if err != nil {
+		return nil, err
+	}
+	headers["User-Agent"] = "Astral/0.1.0"
+	if strings.HasPrefix(provider.PresetID, "opencode") {
+		// OpenCode's native Messages/Gemini gateways authenticate with Bearer.
+		headers["Authorization"] = "Bearer " + key
+	}
+	replayRevision := provider.ReplayRevision
+	if replayRevision == 0 {
+		replayRevision = provider.Revision
+	}
 	config := models.Config{
 		Spec:  core.ModelSpec{ID: ref, Revision: ref, ContextWindow: v.ContextWindow, MaxInputTokens: v.MaxInputTokens, MaxOutputTokens: v.MaxOutputTokens},
-		Model: p.ModelID, BaseURL: provider.BaseURL, APIKey: key, Headers: headers, HTTPClient: b.HTTPClient,
-		Dialect: models.Dialect(provider.Dialect), ReplayScope: provider.ID + ":" + strconv.FormatInt(provider.Revision, 10),
+		Model: p.ModelID, BaseURL: baseURL, APIKey: key, Headers: headers, HTTPClient: b.HTTPClient,
+		Dialect: models.Dialect(dialect), ReplayScope: provider.ID + ":" + strconv.FormatInt(replayRevision, 10),
 		Streaming: v.Streaming, ReasoningReplay: v.ReasoningReplay, RequireReasoningReplay: v.RequireReasoningReplay, ImageTokenBudget: v.ImageTokenBudget,
+	}
+	if config.ImageTokenBudget == 0 && v.Images == "supported" && provider.PresetID != "" {
+		// Host reservation, not a vendor-published model limit. Users can
+		// override it for their image sizes in the model's advanced settings.
+		config.ImageTokenBudget = min(32768, max(1, v.ContextWindow/2))
+	}
+	if preset := FindPreset(provider.PresetID); preset != nil && preset.Auth == "oauth" {
+		config.APIKey = ""
+		config.HTTPClient = b.oauthClient(provider)
+		config.Codex = provider.PresetID == "codex"
 	}
 	if len(v.Reasoning) > 0 && string(v.Reasoning) != "null" {
 		config.Reasoning = &models.ReasoningCapabilities{}
@@ -204,17 +296,21 @@ func (b *Bridge) construct(ctx context.Context, p domain.ModelProfile, provider 
 			return nil, domain.Invalid("invalid reasoning capabilities")
 		}
 	}
-	switch provider.Protocol {
+	switch protocol {
 	case completions.Protocol:
 		return completions.New(config)
 	case responses.Protocol:
 		return responses.New(config)
+	case anthropic.Protocol:
+		return anthropic.New(config)
+	case google.Protocol:
+		return google.New(config)
 	default:
 		return nil, domain.Invalid("unsupported model protocol")
 	}
 }
 
-func (b *Bridge) Resolve(ctx context.Context, ref string, environment Environment) (core.Model, error) {
+func (b *Bridge) Resolve(ctx context.Context, ref string, validate RequestValidator) (core.Model, error) {
 	parts := strings.Split(ref, "~")
 	if len(parts) != 3 {
 		return nil, domain.Invalid("invalid versioned model reference")
@@ -237,17 +333,36 @@ func (b *Bridge) Resolve(ctx context.Context, ref string, environment Environmen
 		return nil, err
 	}
 	values, _, _ := p.Effective()
-	return &boundModel{adapter: model, environment: environment, images: values.Images}, nil
+	return &boundModel{adapter: model, validate: validate, images: values.Images, presetID: provider.PresetID, sessionID: sessionID(ctx), enabled: func(ctx context.Context) error {
+		var currentProfile domain.ModelProfile
+		if err := b.Store.Get(ctx, "models", p.ID, &currentProfile); err != nil {
+			return err
+		}
+		if currentProfile.Enabled != nil && !*currentProfile.Enabled {
+			return domain.Conflict("this model is disabled")
+		}
+		var current domain.Provider
+		if err := b.Store.Get(ctx, "providers", provider.ID, &current); err != nil {
+			return err
+		}
+		if current.Enabled != nil && !*current.Enabled {
+			return domain.Conflict("this provider is disabled")
+		}
+		return nil
+	}}, nil
 }
 
 type boundModel struct {
 	adapter
-	environment Environment
-	images      string
+	validate  RequestValidator
+	images    string
+	sessionID string
+	presetID  string
+	enabled   func(context.Context) error
 }
 
-// PrepareRequest freezes dynamic host context before Core estimates and records
-// the actual model request. Stream never fetches or alters external media.
+// PrepareRequest validates the selected model without adding or rewriting
+// conversation context. Host context is persisted through Core.InjectContext.
 func (m *boundModel) PrepareRequest(ctx context.Context, req core.Request) (core.Request, error) {
 	raw, err := json.Marshal(req)
 	if err != nil {
@@ -258,12 +373,10 @@ func (m *boundModel) PrepareRequest(ctx context.Context, req core.Request) (core
 		return req, err
 	}
 	req = owned
-	if m.environment != nil {
-		env, err := m.environment(ctx)
-		if err != nil {
+	if m.validate != nil {
+		if err := m.validate(ctx); err != nil {
 			return req, err
 		}
-		req.SystemPrompt += "\n\n" + env
 	}
 	return req, nil
 }
@@ -313,6 +426,14 @@ func (m *boundModel) wireImages(req core.Request, estimate bool) (core.Request, 
 }
 
 func (m *boundModel) Stream(ctx context.Context, req core.Request, emit func(core.ModelEvent)) (core.Reply, error) {
+	if m.enabled != nil {
+		if err := m.enabled(ctx); err != nil {
+			return core.Reply{}, err
+		}
+	}
+	if m.sessionID != "" {
+		ctx = models.WithRequestHeaders(ctx, sessionHeaders(m.presetID, m.sessionID))
+	}
 	req, err := m.wireImages(req, false)
 	if err != nil {
 		return core.Reply{}, err
@@ -325,6 +446,13 @@ func (m *boundModel) Stream(ctx context.Context, req core.Request, emit func(cor
 		}
 	}
 	return reply, err
+}
+
+func (m *boundModel) RecoverRequest(ctx context.Context, req core.Request, cause error) (core.Request, bool, error) {
+	if recoverer, ok := m.adapter.(core.ModelRequestRecoverer); ok {
+		return recoverer.RecoverRequest(ctx, req, cause)
+	}
+	return core.Request{}, false, nil
 }
 func (m *boundModel) EstimateTokens(ctx context.Context, req core.Request) (int, error) {
 	req, err := m.wireImages(req, true)
@@ -355,6 +483,7 @@ func (b *Bridge) Verify(ctx context.Context, id string) (domain.ModelVerificatio
 		return domain.ModelVerification{}, err
 	}
 	result := domain.ModelVerification{TestedAt: time.Now().UTC(), ProviderRevision: provider.Revision, ProfileRevision: p.Revision + 1, ToolCalling: "unknown", ToolReplay: "unknown"}
+	ctx = models.WithRequestHeaders(ctx, sessionHeaders(provider.PresetID, "verify-"+domain.ID("session")))
 	model, err := b.construct(ctx, p, provider)
 	if err != nil {
 		return result, err

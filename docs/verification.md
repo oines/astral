@@ -1,13 +1,13 @@
 # Verification record
 
-Verification date: **2026-10-21**, Asia/Singapore. The acceptance baseline is [SPEC.md §16](../SPEC.md#16-验收矩阵). This record distinguishes executable checks, actual browser/OS behavior, and checks that still need an external account or an unlocked desktop.
+Baseline verification: **2026-10-21**; execution refactor verification: **2026-10-22**, Asia/Singapore. The acceptance baseline is [SPEC.md §16](../SPEC.md#16-验收矩阵). This record distinguishes executable checks, actual browser/OS behavior, and checks that still need an external account or an unlocked desktop.
 
 ## Reproducible checks
 
 ```sh
 pnpm install --frozen-lockfile
-GOWORK=off go test -race ./...
-GOWORK=off go vet ./...
+go test -race ./...
+go vet ./...
 pnpm lint:go
 pnpm lint
 pnpm typecheck
@@ -20,9 +20,28 @@ pnpm --filter @astral/desktop package
 
 The frontend suite covers event/commit reconciliation, discarded failed-attempt previews, stale callbacks after route changes, permanent EventSource failures, silent-run ordering and the desktop navigation/IPC boundary. The Go suite uses actual SQLite stores, HTTP/SSE adapters, authenticated WebSocket Daemons, shell processes and file streams. The Telegram and search servers in automated tests are deterministic local protocol fixtures.
 
+Cross-module development checks use a local Go workspace containing Astral, `../agent-core` and `../astral-models`. The matching Core and Models revisions are now pushed and pinned in `go.mod`; standalone verification also runs with `GOWORK=off`, using downloaded modules instead of local replacements.
+
 The tagged platform integration tests require the distribution binaries and a running local Docker runtime. They download and execute the actual installer, connect a host Daemon, create Computers through both container entry points, perform real Linux command/file operations, check that retries reuse one container, and verify that registrations do not modify Agent allowlists. Test containers and volumes are removed by cleanup hooks.
 
 `check-desktop-service.mjs` launches the real Go binary through the desktop service class, verifies private Owner handoff, graceful shutdown, shutdown after a killed parent process, release of the data lock, and preservation of Local Computer identity on restart.
+
+## Execution refactor verification, 2026-10-22
+
+The three repository Go suites, race checks, `go vet` and golangci-lint 2.15.0 checks passed with fresh SQLite databases and the shared Memory implementation. All six Core examples ran successfully. OpenAPI and the TypeScript SDK were regenerated; Web/desktop type checks, 19 frontend tests and ESLint passed. The four distribution binaries built successfully, and fresh-data installer/container integration plus desktop service lifecycle checks passed. The native macOS application was built and opened on a separate empty data directory.
+
+| Boundary | Regression evidence |
+| --- | --- |
+| Input admission | Prompt Busy rejects admission; queues require explicit Continue; stable IDs detect content conflicts; indexed receipts retain frozen payloads and acceptance time after lost acknowledgement and reopen |
+| Atomic preparation | Memory/SQLite tests combine summary, fresh environment, attached context, driver input and consumption in one commit; collector, final budget and write failures preserve the old context and pending inputs |
+| Concurrent preparation | Clear during collection prevents delivery; later input waits for the next boundary; committed writes with lost acknowledgements are not repeated |
+| Compaction | New input stays outside the old-history summary; default retention adapts to a small window; summary requests have their own budget; failed candidates cannot loop through compactions |
+| Retry isolation | Generation and summaries retain frozen requests, three total default attempts, cancellable Retry-After, timeout/permanent-error behavior and one bounded protocol repair; failed fragments never enter subsequent model context |
+| HTTP/SSE | `TestRetrySnapshotSurvivesEventStreamReconnectWithoutResubmission` restores the active retry from a new subscription, observes exactly two model calls and one admitted input |
+| UI | Retry count/time survives snapshot reconnect; stale events cannot regress a newer view or mix Attempt output; reconnection does not send an input mutation |
+| Business behavior | Web/IM attachments, passive observations, trigger groups, `no_reply` with queued independent work, Computer/CWD, original process targets, approvals, unknown results, image replay, Fork and read-only reopen remain covered |
+
+Host schema 2 and Core format 9 are the only supported formats. These checks create new data; no old-data migration or compatibility reader is supplied. The browser evidence below records the earlier 2026-10-21 product pass; it is not presented as a new manual replay of every screen after this refactor.
 
 ## Browser and runtime evidence
 

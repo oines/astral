@@ -22,7 +22,7 @@ class Stream extends EventTarget {
 function snapshot(id: string, epoch: string): Snapshot {
   return {
     epoch,
-    view: { id, agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Work', archived: false, pinned: false, source: 'web', rollout_id: 'rollout', head_id: 'head', status: 'idle', options: {}, approvals: [], pending: [], unresolved: [] },
+    view: { id, agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Work', archived: false, pinned: false, source: 'web', rollout_id: 'rollout', head_id: 'head', event_sequence: 0, status: 'idle', options: {}, approvals: [], pending: [], unresolved: [] },
     history: { entries: [], head_id: 'head' }, trace: { entries: [], head_id: 'head' },
   }
 }
@@ -43,6 +43,21 @@ function connect(id = 'one') {
   return { sessionID, ...connection }
 }
 describe('recovering a session connection', () => {
+  it('restores retry state from a new snapshot without submitting or continuing a model request', async () => {
+    const fetch = vi.fn(() => { throw new Error('reconnection must only open the event stream') })
+    vi.stubGlobal('fetch', fetch)
+    const live = connect()
+    const original = Stream.instances[0]!
+    original.send('snapshot', snapshot('one', 'server'))
+    original.fail()
+    await vi.advanceTimersByTimeAsync(1000)
+    const restored = snapshot('one', 'server')
+    restored.view = { ...restored.view, event_sequence: 20, status: 'running', run_id: 'run', attempt: { attempt_id: 'a', run_id: 'run', turn_id: 'turn', purpose: 'generation', attempt: 1, max_attempts: 3, state: 'retrying', next_retry_at: '2026-10-22T00:00:10Z' } }
+    Stream.instances[1]!.send('snapshot', restored)
+    expect(live.state.value.view?.attempt).toEqual(restored.view.attempt)
+    expect(live.state.value.sequence).toBe(20)
+    expect(fetch).not.toHaveBeenCalled()
+  })
   it('reopens after a fatal proxy error instead of depending on native automatic retries', async () => {
     const live = connect()
     const original = Stream.instances[0]!

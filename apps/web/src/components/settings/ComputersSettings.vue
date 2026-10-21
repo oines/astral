@@ -4,11 +4,11 @@ import { useQuery } from '@pinia/colada'
 import { useIntervalFn } from '@vueuse/core'
 import { listComputersQuery } from '@astral/sdk/colada'
 import { createLocalContainer, enrollComputer, getComputerOperation, getEnrollment, revokeComputer, saveAgent, updateComputer, useLocalComputer, type AstralInternalDomainProvisioning, type AstralInternalDomainEnrollment, type AstralInternalComputersEnrollmentResult } from '@astral/sdk'
-import { Button, Modal } from '@astral/ui'
-import { ArrowLeft, Check, ChevronRight, Copy, Monitor, Plus, Server, Terminal } from '@astral/icons'
+import { Button, Modal, Select, SettingsSection, SettingsRow } from '@astral/ui'
+import { ArrowLeft, Check, ChevronRight, Copy, Monitor, Plus, Server, Terminal, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Computer } from '../../lib/types'
-import { clone, errorText, request } from '../../lib/api'
+import { clone, errorText, operatingSystem, request } from '../../lib/api'
 import { useAction } from '../../composables/useAction'
 import { useAppStore } from '../../stores/app'
 import ResourceDelete from './ResourceDelete.vue'
@@ -16,6 +16,8 @@ const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
 const list = useQuery(listComputersQuery())
+const search = ref('')
+const visibleComputers = computed(() => (list.data.value || []).filter(c => `${c.name} ${c.hostname}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => Number(a.revoked) - Number(b.revoked) || Number(b.online) - Number(a.online)))
 const selectedID = ref('')
 const selected = computed(() => list.data.value?.find(c => c.id === selectedID.value))
 const name = ref('')
@@ -47,7 +49,7 @@ if (pending) {
     }).catch(() => localStorage.removeItem(activeOperationKey))
   } catch { localStorage.removeItem(activeOperationKey) }
 }
-function edit(computer: Computer) { selectedID.value = computer.id; name.value = computer.name }
+function edit(computer: Computer) { selectedID.value = computer.id; name.value = computer.name; action.success.value = ''; action.error.value = '' }
 function add() {
   mode.value = 'choose'
   operation.value = undefined
@@ -136,63 +138,71 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
     </p><p
       v-if="action.success.value"
       class="success-note"
+      role="status"
     >
       {{ action.success.value }}
     </p>
     <template v-if="!selected">
-      <div class="row between">
-        <p class="muted">
-          {{ t('computersHint') }}
-        </p><Button
+      <div class="settings-toolbar">
+        <div class="search-input">
+          <Search /><input
+            v-model="search"
+            :placeholder="t('searchPlaceholder')"
+            :aria-label="t('computers')"
+          >
+        </div><Button
           size="small"
           @click="add"
         >
           <Plus />{{ t('newComputer') }}
         </Button>
       </div>
-      <div class="resource-list">
+      <div
+        v-if="list.data.value?.length"
+        class="resource-list"
+      >
         <button
-          v-for="c in list.data.value"
+          v-for="c in visibleComputers"
           :key="c.id"
           class="resource-row"
           @click="edit(c)"
         >
-          <span class="resource-symbol"><Monitor v-if="c.kind !== 'container'" /><Server v-else /></span><span><strong>{{ c.name }}</strong><small>{{ c.os }} · {{ c.arch }} · {{ c.kind }}</small></span><span
+          <span class="resource-symbol"><Monitor v-if="c.kind !== 'container'" /><Server v-else /></span><span><strong>{{ c.name }}</strong><small>{{ operatingSystem(c.os) }} · {{ t('accessCount', { count: app.agents.filter(a => a.allowed_computers.includes(c.id)).length }) }}</small></span><span
             class="badge"
             :class="{ good: c.online, bad: c.revoked }"
           >{{ t(c.revoked ? 'revoked' : c.online ? 'online' : 'offline') }}</span><ChevronRight />
         </button><p
-          v-if="!list.data.value?.length"
+          v-if="!visibleComputers.length"
           class="empty"
         >
-          {{ t('empty') }}
+          {{ t('noResults') }}
         </p>
+      </div>
+      <div
+        v-else
+        class="empty-state"
+      >
+        <Monitor /><strong>{{ t('noComputers') }}</strong><p>{{ t('noComputersHint') }}</p><Button
+          variant="primary"
+          @click="add"
+        >
+          {{ t('newComputer') }}
+        </Button>
       </div>
     </template>
     <template v-else>
-      <div class="row between">
+      <div class="object-heading">
         <Button
           variant="ghost"
-          size="small"
+          size="icon"
+          :aria-label="t('computers')"
           @click="selectedID = ''"
         >
-          <ArrowLeft />{{ t('computers') }}
-        </Button><span
+          <ArrowLeft />
+        </Button><h2>{{ selected.name }}</h2><span
           class="badge"
           :class="{ good: selected.online, bad: selected.revoked }"
         >{{ t(selected.revoked ? 'revoked' : selected.online ? 'online' : 'offline') }}</span>
-      </div>
-      <label class="label">{{ t('name') }}<input v-model="name"></label>
-      <div class="field-grid">
-        <div class="detail-block">
-          <h3>{{ t('host') }}</h3><p class="muted">
-            {{ selected.hostname }}<br>{{ selected.os }} / {{ selected.arch }}<br>{{ selected.shell }}
-          </p>
-        </div><div class="detail-block">
-          <h3>{{ t('home') }}</h3><p class="muted mono">
-            {{ selected.home }}
-          </p>
-        </div>
       </div>
       <p
         v-if="selected.last_error"
@@ -200,42 +210,76 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
       >
         {{ selected.last_error }}
       </p>
-      <div class="detail-block stack">
-        <h3>{{ t('agents') }}</h3><RouterLink
+      <form
+        class="settings-form"
+        @submit.prevent="rename"
+      >
+        <SettingsSection :title="t('basicInfo')">
+          <SettingsRow :label="t('name')">
+            <input
+              v-model="name"
+              :aria-label="t('name')"
+              required
+            >
+          </SettingsRow><SettingsRow :label="t('operatingSystem')">
+            <span class="muted">{{ operatingSystem(selected.os) }} / {{ selected.arch }}</span>
+          </SettingsRow><div class="form-footer">
+            <Button
+              type="submit"
+              variant="primary"
+              :busy="action.busy.value"
+              :disabled="name === selected.name"
+            >
+              {{ t('save') }}
+            </Button>
+          </div>
+        </SettingsSection>
+      </form>
+      <SettingsSection :title="t('computerAccess')">
+        <template #actions>
+          <Button
+            size="small"
+            :disabled="selected.revoked"
+            @click="computerID = selected.id; assign = true"
+          >
+            <Plus />{{ t('assign') }}
+          </Button>
+        </template>
+        <RouterLink
           v-for="a in assigned"
           :key="a.id"
-          to="/settings/agents"
+          :to="{ path: '/settings/agents', query: { agent: a.id, tab: 'computers' } }"
+          class="resource-row"
         >
-          {{ a.name }}<span
-            v-if="a.default_computer_id === selected.id"
-            class="badge"
-          >{{ t('default') }}</span>
+          <span class="agent-avatar">{{ a.avatar || a.name.slice(0, 1) }}</span><span><strong>{{ a.name }}</strong><small v-if="a.default_computer_id === selected.id">{{ t('defaultComputer') }}</small></span><ChevronRight />
         </RouterLink><p
           v-if="!assigned.length"
-          class="muted"
+          class="empty"
         >
-          {{ t('none') }}
-        </p><Button
-          class="align-start"
-          :disabled="selected.revoked"
-          @click="computerID = selected.id; assign = true"
-        >
-          {{ t('assign') }}
-        </Button>
-      </div>
-      <div class="form-footer">
-        <Button
-          v-if="!selected.revoked"
+          {{ t('noComputerAccess') }}
+        </p>
+      </SettingsSection>
+      <details class="form-disclosure">
+        <summary>{{ t('computerDetails') }}</summary><SettingsSection>
+          <SettingsRow :label="t('host')">
+            <span class="muted mono">{{ selected.hostname }}</span>
+          </SettingsRow><SettingsRow :label="t('shell')">
+            <span class="muted mono">{{ selected.shell }}</span>
+          </SettingsRow><SettingsRow :label="t('home')">
+            <span class="muted mono">{{ selected.home }}</span>
+          </SettingsRow>
+        </SettingsSection>
+      </details>
+      <div
+        v-if="!selected.revoked"
+        class="danger-row"
+      >
+        <strong>{{ t('revokeConnection') }}</strong><Button
           variant="danger"
+          size="small"
           @click="deleting = true"
         >
           {{ t('revokeConnection') }}
-        </Button><Button
-          variant="primary"
-          :busy="action.busy.value"
-          @click="rename"
-        >
-          {{ t('save') }}
         </Button>
       </div>
       <ResourceDelete
@@ -261,13 +305,13 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
       </p>
       <template v-if="mode === 'choose'">
         <p class="muted">
-          {{ app.data?.host.hostname }} · {{ app.data?.host.os }} / {{ app.data?.host.arch }}
+          {{ app.data?.host.hostname }} · {{ operatingSystem(app.data?.host.os) }} / {{ app.data?.host.arch }}
         </p>
         <button
           class="computer-option"
           @click="local"
         >
-          <Monitor /><span><strong>{{ t('useLocal') }}</strong><small>{{ app.data?.host.hostname }} · {{ app.data?.host.os }}</small></span><ChevronRight />
+          <Monitor /><span><strong>{{ t('useLocal') }}</strong><small>{{ app.data?.host.hostname }} · {{ operatingSystem(app.data?.host.os) }}</small></span><ChevronRight />
         </button>
         <button
           class="computer-option"
@@ -362,7 +406,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
         class="stack"
       >
         <span class="badge good align-start"><Check />{{ t('online') }}</span><h2>{{ connected.name }}</h2><p class="muted">
-          {{ connected.os }} · {{ connected.arch }}
+          {{ operatingSystem(connected.os) }} · {{ connected.arch }}
         </p><Button
           variant="primary"
           @click="adding = false; assign = true"
@@ -381,14 +425,12 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
       >
         {{ action.error.value }}
       </p>
-      <label class="label">{{ t('agent') }}<select v-model="agentID"><option
-        value=""
-        disabled
-      >{{ t('select') }}</option><option
-        v-for="a in app.agents"
-        :key="a.id"
-        :value="a.id"
-      >{{ a.name }}</option></select></label>
+      <label class="label">{{ t('agent') }}<Select
+        v-model="agentID"
+        :label="t('agent')"
+        :placeholder="t('select')"
+        :options="app.agents.map(a => ({ value: a.id, label: a.name }))"
+      /></label>
       <label class="row"><input
         v-model="isDefault"
         type="checkbox"

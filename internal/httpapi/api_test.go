@@ -12,8 +12,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
-	sessions "github.com/oines/astral-core/session"
+	sessions "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/gateway"
 	"github.com/oines/astral/internal/harness"
@@ -190,6 +191,11 @@ func TestIdleContextUsesCurrentVerifiedProfileWithoutStartingRun(t *testing.T) {
 	if _, err := p.Harness.Models.Verify(p.Context, p.Profile.ID); err != nil {
 		t.Fatal(err)
 	}
+	coreSession, err := p.Harness.Core(p.Context, p.Session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := testkit.JSON(coreSession.State())
 	response := request(t, p.Context, server, "GET", "/api/v1/sessions/"+p.Session.ID+"/context", nil, true)
 	defer response.Body.Close()
 	var stats ContextStats
@@ -199,6 +205,9 @@ func TestIdleContextUsesCurrentVerifiedProfileWithoutStartingRun(t *testing.T) {
 	view, err := p.Harness.View(p.Context, p.Session.ID)
 	if err != nil || view.RunID != "" || view.Status != "idle" {
 		t.Fatal("context inspection activated the Session")
+	}
+	if string(before) != string(testkit.JSON(coreSession.State())) {
+		t.Fatal("context inspection changed persisted Session state")
 	}
 }
 
@@ -297,5 +306,98 @@ func TestContractHasRuntimeRoutesAndStreamSchemas(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "text/event-stream") || !strings.Contains(string(raw), "ReasoningOptions") {
 		t.Fatal("stream or native Reasoning contract missing")
+	}
+}
+
+func TestRetrySnapshotSurvivesEventStreamReconnectWithoutResubmission(t *testing.T) {
+	p := testkit.New(t, 0, func(_ context.Context, n int, _ map[string]any) any {
+		if n == 1 {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Retry-After", "2")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = io.WriteString(w, `{"error":{"type":"rate_limit_error","message":"fixture throttled"}}`)
+			})
+		}
+		return testkit.Text("one committed answer")
+	})
+	_, server := apiFixture(t, p)
+	path := "/api/v1/sessions/" + p.Session.ID
+	connect := func() (*http.Response, *bufio.Scanner, Snapshot) {
+		t.Helper()
+		response := request(t, p.Context, server, "GET", path+"/events", nil, true)
+		scanner := bufio.NewScanner(response.Body)
+		scanner.Buffer(make([]byte, 4096), 8<<20)
+		for scanner.Scan() {
+			if strings.HasPrefix(scanner.Text(), "data: ") {
+				var snapshot Snapshot
+				if err := json.Unmarshal([]byte(strings.TrimPrefix(scanner.Text(), "data: ")), &snapshot); err != nil {
+					t.Fatal(err)
+				}
+				return response, scanner, snapshot
+			}
+		}
+		t.Fatalf("stream ended before snapshot: %v", scanner.Err())
+		return nil, nil, Snapshot{}
+	}
+	response, scanner, _ := connect()
+	defer response.Body.Close()
+	submission := request(t, p.Context, server, "POST", path+"/inputs", bytes.NewReader(testkit.JSON(harness.InputRequest{ID: "reconnect-input", Text: "hello"})), true)
+	_ = submission.Body.Close()
+	if submission.StatusCode != http.StatusOK {
+		t.Fatalf("input HTTP %d", submission.StatusCode)
+	}
+	var retry *sessions.AttemptStatus
+	for scanner.Scan() {
+		if !strings.HasPrefix(scanner.Text(), "data: ") {
+			continue
+		}
+		var event Event
+		if json.Unmarshal([]byte(strings.TrimPrefix(scanner.Text(), "data: ")), &event) != nil || event.Core == nil || event.Core.Type != sessions.EventRetry {
+			continue
+		}
+		retry = event.Core.Attempt
+		if event.View == nil || event.View.Attempt == nil || event.View.Attempt.State != "retrying" {
+			t.Fatal("retry event did not carry the current execution snapshot")
+		}
+		break
+	}
+	if retry == nil || retry.Attempt != 1 || retry.MaxAttempts != 3 || retry.Purpose != "generation" || !retry.NextRetryAt.After(time.Now()) {
+		t.Fatalf("missing retry progress: %+v", retry)
+	}
+	_ = response.Body.Close()
+	response, scanner, snapshot := connect()
+	defer response.Body.Close()
+	if snapshot.View.Attempt == nil || snapshot.View.Attempt.AttemptID != retry.AttemptID || snapshot.View.Attempt.State != "retrying" || snapshot.View.RunID != retry.RunID || !snapshot.View.Attempt.NextRetryAt.Equal(retry.NextRetryAt) {
+		t.Fatalf("reconnect lost active retry: %+v", snapshot.View)
+	}
+	if p.Requests.Load() != 1 {
+		t.Fatal("reconnect started an extra model request")
+	}
+	completed := false
+	for scanner.Scan() {
+		if !strings.HasPrefix(scanner.Text(), "data: ") {
+			continue
+		}
+		var event Event
+		if json.Unmarshal([]byte(strings.TrimPrefix(scanner.Text(), "data: ")), &event) != nil || event.Core == nil {
+			continue
+		}
+		if event.Core.Type == sessions.EventRunEnd {
+			completed = event.Core.Error == ""
+			break
+		}
+	}
+	if !completed || p.Requests.Load() != 2 {
+		t.Fatalf("expected one retry and one completion, got requests=%d completed=%v", p.Requests.Load(), completed)
+	}
+	p.Idle(t, p.Session.ID)
+	coreSession, err := p.Harness.Core(p.Context, p.Session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := coreSession.History().Scan(p.Context, sessions.Query{Kind: sessions.EntryInputQueued, MaxBytes: 1 << 20})
+	if err != nil || len(page.Entries) != 1 {
+		t.Fatalf("reconnect duplicated input: %d %v", len(page.Entries), err)
 	}
 }

@@ -8,5 +8,8 @@
     "./client": "./src/client.gen.ts",
     "./colada": "./src/@pinia/colada.gen.ts"
   },
-  "peerDependencies": { "@pinia/colada": "^0.21.2" }
+  "peerDependencies": {
+    "@pinia/colada": "^0.21.2"
+  },
+  "license": "AGPL-3.0-only"
 }

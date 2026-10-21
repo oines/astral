@@ -6,6 +6,7 @@ go.work.sum
 node_modules/
 dist/
 apps/desktop/release/
+apps/desktop/release-*/
 apps/desktop/out/
 apps/desktop/resources/icon.iconset/
 internal/platform/web/*

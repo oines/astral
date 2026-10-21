@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	sessions "github.com/oines/astral-core/session"
+	sessions "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/messages"
 )
@@ -16,20 +16,21 @@ type PendingInput struct {
 }
 type View struct {
 	domain.Session
-	RolloutID  string                     `json:"rollout_id"`
-	HeadID     string                     `json:"head_id"`
-	Status     string                     `json:"status"`
-	RunID      string                     `json:"run_id,omitempty"`
-	Error      string                     `json:"error,omitempty"`
-	LastRun    *sessions.RunRecord        `json:"last_run,omitempty"`
-	Pending    []PendingInput             `json:"pending"`
-	Approvals  []sessions.PendingApproval `json:"approvals"`
-	Unresolved []sessions.ToolRecord      `json:"unresolved"`
+	RolloutID     string                     `json:"rollout_id"`
+	HeadID        string                     `json:"head_id"`
+	Status        string                     `json:"status"`
+	EventSequence uint64                     `json:"event_sequence"`
+	Attempt       *sessions.AttemptStatus    `json:"attempt,omitempty"`
+	RunID         string                     `json:"run_id,omitempty"`
+	Error         string                     `json:"error,omitempty"`
+	LastRun       *sessions.RunRecord        `json:"last_run,omitempty"`
+	Pending       []PendingInput             `json:"pending"`
+	Approvals     []sessions.PendingApproval `json:"approvals"`
+	Unresolved    []sessions.ToolRecord      `json:"unresolved"`
 }
 
-// InspectContext prepares the same current selection that the next activation
-// will use. Global profile edits may have advanced its verified revision while
-// this Session was idle. Running requests retain their frozen configuration.
+// InspectContext describes persisted context without refreshing environment or
+// configuration. The next activation reconciles any changed host settings.
 func (s *Service) InspectContext(ctx context.Context, id string) (sessions.Context, error) {
 	r, err := s.open(ctx, id)
 	if err != nil {
@@ -37,12 +38,7 @@ func (s *Service) InspectContext(ctx context.Context, id string) (sessions.Conte
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.run == nil && r.maintenance == "" {
-		if err = r.syncSelection(ctx); err != nil {
-			return sessions.Context{}, err
-		}
-	}
-	return r.core.InspectContext(ctx)
+	return r.core.InspectContext(context.WithValue(ctx, inspectContextKey{}, true))
 }
 
 func (s *Service) View(ctx context.Context, id string) (View, error) {
@@ -52,28 +48,33 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	view := View{Status: "idle", Pending: []PendingInput{}, Approvals: r.core.PendingApprovals(), Unresolved: r.core.UnresolvedTools()}
+	snapshot := r.core.Snapshot()
+	view := View{Status: "idle", Pending: []PendingInput{}, Approvals: snapshot.Approvals, Unresolved: snapshot.Unresolved}
+	view.EventSequence = snapshot.EventSequence
 	if err = s.Store.Get(ctx, "sessions", id, &view.Session); err != nil {
 		return view, err
 	}
-	state := r.core.State()
+	state := snapshot.State
 	view.RolloutID, view.HeadID, view.LastRun = state.RolloutID, state.Branch.HeadID, state.LastRun
 	if view.HeadID != "" {
 		if head, readErr := r.core.History().Get(ctx, view.HeadID); readErr == nil && head.Time.After(view.UpdatedAt) {
 			view.UpdatedAt = head.Time
 		}
 	}
-	view.Error = r.lastError
-	if r.run != nil {
-		view.Status, view.RunID = "running", r.run.ID()
+	view.Error, view.Attempt = snapshot.Error, snapshot.Attempt
+	if state.LastRun != nil && state.LastRun.Status == "failed" {
+		view.Error = state.LastRun.Error
 	}
-	if r.maintenance != "" {
-		view.Status = r.maintenance
+	if snapshot.Running {
+		view.Status, view.RunID, view.Error = "running", snapshot.RunID, ""
 	}
-	if r.stopping {
+	if snapshot.Maintenance {
+		view.Status = "compacting"
+	}
+	if snapshot.Stopping {
 		view.Status = "stopping"
 	}
-	if len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (r.run == nil && r.maintenance == "" && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started"))) {
+	if len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started"))) {
 		view.Status = "needs_attention"
 	}
 	pending, err := r.core.PeekQueuedInputs(ctx)

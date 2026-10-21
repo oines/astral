@@ -57,6 +57,8 @@ type Session struct {
 
 type Provider struct {
 	Meta
+	PresetID            string   `json:"preset_id,omitempty"`
+	Enabled             *bool    `json:"enabled,omitempty"`
 	Name                string   `json:"name"`
 	Protocol            string   `json:"protocol"`
 	Dialect             string   `json:"dialect"`
@@ -64,6 +66,9 @@ type Provider struct {
 	HeaderNames         []string `json:"header_names,omitempty"`
 	HeadersCredentialID string   `json:"headers_credential_id,omitempty"`
 	CredentialID        string   `json:"credential_id,omitempty"`
+	// ReplayRevision changes with API credentials/routing, not display labels
+	// or enable switches. Zero keeps the legacy provider-revision scope.
+	ReplayRevision int64 `json:"replay_revision,omitempty"`
 }
 
 // Recommendations and Overrides keep their provenance independently. An
@@ -71,7 +76,11 @@ type Provider struct {
 // a catalog refresh. Unknown capability values remain unknown.
 type ModelProfile struct {
 	Meta
+	Description     string                     `json:"description,omitempty"`
+	Enabled         *bool                      `json:"enabled,omitempty"`
 	ProviderID      string                     `json:"provider_id"`
+	Protocol        string                     `json:"protocol,omitempty"`
+	Dialect         string                     `json:"dialect,omitempty"`
 	ModelID         string                     `json:"model_id"`
 	Name            string                     `json:"name"`
 	Recommendations map[string]json.RawMessage `json:"recommendations"`

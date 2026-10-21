@@ -2,13 +2,14 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { createSession, compactSession, forkSession, updateSession } from '@astral/sdk'
-import { Button, Modal } from '@astral/ui'
-import { ArrowRight, Ellipsis, PanelLeftOpen, Sparkle, GitBranch } from '@astral/icons'
+import { compactSession, forkSession, updateSession } from '@astral/sdk'
+import { Button, Modal, Popover } from '@astral/ui'
+import { ArrowRight, Ellipsis, PanelLeftClose, PanelLeftOpen, Sparkle, GitBranch, Pencil, Pin, Download, FolderOpen } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { useSurfaceStore } from '../stores/surface'
 import { useSession } from '../composables/useSession'
-import { errorText, request } from '../lib/api'
+import type { SessionView } from '../lib/types'
+import { errorText, newMeta, request } from '../lib/api'
 import Sidebar from '../components/Sidebar.vue'
 import Composer from '../components/Composer.vue'
 import Transcript from '../components/Transcript.vue'
@@ -18,27 +19,36 @@ const router = useRouter()
 const app = useAppStore()
 const surface = useSurfaceStore()
 const { t } = useI18n()
-const id = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
+const id = ref(typeof route.params.id === 'string' ? route.params.id : '')
+watch(() => route.path, path => { if (!path.startsWith('/settings')) id.value = typeof route.params.id === 'string' ? route.params.id : '' })
 const live = useSession(id)
 const view = computed(() => live.state.value.view)
 const error = ref('')
 const busy = ref(false)
-const agentID = ref(app.agents[0]?.id || '')
+watch(() => view.value?.id === id.value ? view.value?.agent_id : app.sessions.find(session => session.id === id.value)?.agent_id, agentID => {
+  if (agentID) app.activeAgentID = agentID
+}, { immediate: true })
 const menu = ref(false)
 const rename = ref(false)
 const title = ref('')
 const compact = ref(false)
 const instructions = ref('')
-const agent = computed(() => app.agents.find(a => a.id === view.value?.agent_id))
-async function start() {
-  busy.value = true
-  error.value = ''
-  try {
-    const session = await request(createSession({ body: { agent_id: agentID.value, title: t('newSession') } }))
-    await app.refresh()
-    await router.push(`/sessions/${session.id}`)
-  } catch (e) { error.value = errorText(e) }
-  finally { busy.value = false }
+const sidebarToggle = ref<InstanceType<typeof Button>>()
+let restoreSidebarFocus = false
+function sidebarLeaving(element: Element) { restoreSidebarFocus = element.contains(document.activeElement) }
+function sidebarClosed() {
+  if (restoreSidebarFocus && !app.sidebar) sidebarToggle.value?.$el.focus()
+}
+function sidebarOpened(element: Element) {
+  if (document.activeElement === document.body) element.querySelector<HTMLButtonElement>('.sidebar-agent')?.focus()
+}
+const initialView = computed<SessionView>(() => {
+  const agent = app.agents.find(a => a.id === app.activeAgentID)
+  return { ...newMeta(), agent_id: app.activeAgentID, title: t('newSession'), archived: false, pinned: false, source: 'web', options: {}, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', approvals: [], pending: [], unresolved: [], profile_id: agent?.default_model_id || '', computer_id: agent?.default_computer_id || '' }
+})
+async function started(sessionID: string) {
+  await router.push(`/sessions/${sessionID}`)
+  try { await app.refresh() } catch (e) { error.value = errorText(e) }
 }
 async function presentation(patch: { title?: string; pinned?: boolean; archived?: boolean }) {
   try {
@@ -70,6 +80,8 @@ async function doCompact() {
   finally { busy.value = false }
 }
 function shortcut(e: KeyboardEvent) {
+  if (route.path.startsWith('/settings') || e.defaultPrevented) return
+  if (e.key === 'Escape' && app.sidebar && window.innerWidth < 760) { e.preventDefault(); app.sidebar = false }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); void router.push('/') }
 }
 window.addEventListener('keydown', shortcut)
@@ -77,116 +89,129 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', shortcut); surface
 watch(id, () => { surface.close(); error.value = ''; menu.value = false })
 </script>
 <template>
-  <div class="chat-layout">
-    <div
-      v-if="app.sidebar"
-      class="sidebar-backdrop"
-      @click="app.sidebar = false"
-    />
-    <Sidebar v-if="app.sidebar" />
+  <div
+    class="chat-layout"
+    :class="{ 'sidebar-hidden': !app.sidebar }"
+  >
+    <Button
+      ref="sidebarToggle"
+      class="sidebar-toggle"
+      variant="ghost"
+      size="icon"
+      :aria-label="t(app.sidebar ? 'closeSidebar' : 'openSidebar')"
+      :title="t(app.sidebar ? 'closeSidebar' : 'openSidebar')"
+      aria-controls="chat-sidebar"
+      :aria-expanded="app.sidebar"
+      @click="app.sidebar = !app.sidebar"
+    >
+      <PanelLeftClose v-if="app.sidebar" />
+      <PanelLeftOpen v-else />
+    </Button>
+    <Transition name="fade">
+      <div
+        v-if="app.sidebar"
+        class="sidebar-backdrop"
+        @click="app.sidebar = false"
+      />
+    </Transition>
+    <Transition
+      name="sidebar"
+      @before-leave="sidebarLeaving"
+      @after-leave="sidebarClosed"
+      @after-enter="sidebarOpened"
+    >
+      <Sidebar
+        v-if="app.sidebar"
+        :inert="!app.sidebar"
+      />
+    </Transition>
     <main class="chat-main">
-      <Button
-        v-if="!app.sidebar"
-        class="sidebar-open"
-        variant="ghost"
-        size="icon"
-        :aria-label="t('recent')"
-        @click="app.sidebar = true"
-      >
-        <PanelLeftOpen />
-      </Button>
       <template v-if="!id">
         <div class="welcome">
-          <span class="welcome-mark">✳</span>
-          <h1>{{ t(app.models.length && app.agents.length ? 'welcome' : 'setup') }}</h1>
-          <p class="muted">
-            {{ t(app.models.length && app.agents.length ? 'welcomeText' : 'setupText') }}
-          </p>
-          <div
-            v-if="app.agents.length && app.models.length"
-            class="welcome-start"
-          >
-            <label class="label">{{ t('agent') }}<select v-model="agentID"><option
-              v-for="a in app.agents"
-              :key="a.id"
-              :value="a.id"
-            >{{ a.name }}</option></select></label>
-            <Button
-              variant="primary"
-              :busy="busy"
-              :disabled="!agentID"
-              @click="start"
-            >
-              {{ t('newSession') }}<ArrowRight />
-            </Button>
-          </div>
+          <template v-if="app.agents.length && app.models.length">
+            <h1>{{ t('welcome') }}</h1>
+            <Composer
+              :key="app.activeAgentID"
+              :view="initialView"
+              :live="true"
+              @started="started"
+            />
+          </template>
           <div
             v-else
-            class="row wrap"
+            class="welcome-setup"
           >
-            <RouterLink
-              to="/settings/models"
-              class="button button-primary"
-            >
-              {{ t('setupModels') }}<ArrowRight />
-            </RouterLink><RouterLink
-              to="/settings/agents"
-              class="button button-secondary"
-            >
-              {{ t('setupAgent') }}
-            </RouterLink>
+            <h1>{{ t('setup') }}</h1><p class="muted">
+              {{ t('setupText') }}
+            </p><div class="row wrap">
+              <RouterLink
+                to="/settings/models"
+                class="button button-primary"
+              >
+                {{ t('setupModels') }}<ArrowRight />
+              </RouterLink><RouterLink
+                to="/settings/agents"
+                class="button button-secondary"
+              >
+                {{ t('setupAgent') }}
+              </RouterLink>
+            </div>
           </div>
-          <p
-            v-if="error"
-            class="error-box"
-          >
-            {{ error }}
-          </p>
-          <span class="welcome-caption">{{ t('welcomeCaption') }}</span>
         </div>
       </template>
       <template v-else-if="view">
-        <div class="session-heading">
-          <div class="session-identity">
-            <span class="agent-avatar">{{ agent?.avatar || agent?.name.slice(0, 1) || 'A' }}</span><div>
-              <h1>{{ view.title }}</h1><p class="muted small">
-                {{ agent?.name || t('missing') }}<span v-if="view.source === 'im'"> · Telegram</span><span v-if="live.connection.value !== 'connected'"> · {{ t(live.connection.value) }}</span>
-              </p>
+        <div class="session-utilities">
+          <Popover
+            v-model:open="menu"
+            align="end"
+            :label="t('sessionOptions')"
+          >
+            <template #trigger>
+              <Button
+                variant="ghost"
+                size="icon"
+                :aria-label="t('sessionOptions')"
+              >
+                <Ellipsis />
+              </Button>
+            </template>
+            <div class="session-menu">
+              <div class="popover-label">
+                {{ view.title }}<p class="session-agent">
+                  {{ app.agents.find(a => a.id === view?.agent_id)?.name || t('missing') }}<span v-if="view.source === 'im'"> · Telegram</span>
+                </p>
+              </div>
+              <button
+                class="menu-item"
+                @click="title = view.title; rename = true; menu = false"
+              >
+                <Pencil />{{ t('rename') }}
+              </button>
+              <button
+                class="menu-item"
+                @click="presentation({ pinned: !view.pinned })"
+              >
+                <Pin />{{ t(view.pinned ? 'unpin' : 'pin') }}
+              </button>
+              <a
+                class="menu-item"
+                :href="`/api/v1/sessions/${id}/rollout`"
+              ><Download />{{ t('export') }}</a>
+              <RouterLink
+                v-if="view.parent_session_id"
+                class="menu-item"
+                :to="`/sessions/${view.parent_session_id}`"
+              >
+                <GitBranch />{{ t('source') }}
+              </RouterLink>
+              <button
+                class="menu-item"
+                @click="presentation({ archived: !view.archived })"
+              >
+                <FolderOpen />{{ t(view.archived ? 'unarchive' : 'archive') }}
+              </button>
             </div>
-          </div>
-          <div class="session-menu">
-            <Button
-              variant="ghost"
-              size="icon"
-              :aria-label="t('settings')"
-              @click="menu = !menu"
-            >
-              <Ellipsis />
-            </Button>
-            <div
-              v-if="menu"
-              class="dropdown stack"
-            >
-              <button @click="title = view.title; rename = true; menu = false">
-                {{ t('rename') }}
-              </button>
-              <button @click="presentation({ pinned: !view.pinned })">
-                {{ t(view.pinned ? 'unpin' : 'pin') }}
-              </button>
-              <a :href="`/api/v1/sessions/${id}/rollout`">{{ t('export') }}</a>
-              <button @click="presentation({ archived: !view.archived })">
-                {{ t(view.archived ? 'unarchive' : 'archive') }}
-              </button>
-            </div>
-          </div>
-        </div>
-        <div
-          v-if="view.parent_session_id"
-          class="branch-notice"
-        >
-          <GitBranch /><RouterLink :to="`/sessions/${view.parent_session_id}`">
-            {{ t('source') }}
-          </RouterLink><span class="muted small"> · {{ t('sharedFiles') }}</span>
+          </Popover>
         </div>
         <div
           v-if="error || live.error.value"
@@ -221,10 +246,7 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
         </p>
       </div>
     </main>
-    <ContextSurface
-      :state="live.state.value"
-      :more-trace="live.moreTrace"
-    />
+    <ContextSurface />
     <Modal
       v-model:open="rename"
       :title="t('rename')"

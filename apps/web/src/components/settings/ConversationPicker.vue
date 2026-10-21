@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useQuery } from '@pinia/colada'
 import { listBindingsQuery, listConnectionsQuery, listConversationsQuery } from '@astral/sdk/colada'
 import { bindConversation, resolveConversation } from '@astral/sdk'
-import { Button, Modal } from '@astral/ui'
+import { Button, Modal, Select } from '@astral/ui'
 import { useI18n } from 'vue-i18n'
 import { useAction } from '../../composables/useAction'
 import { request } from '../../lib/api'
@@ -52,26 +52,24 @@ async function save() {
     >
       {{ action.error.value }}
     </p>
-    <label class="label">{{ t('channels') }}<select
+    <label class="label">{{ t('channels') }}<Select
       v-model="connectionID"
-      @change="conversationID = ''; acknowledge = false"
-    ><option value="">{{ t('select') }}</option><option
-      v-for="connection in connections.data.value?.filter(c => c.enabled)"
-      :key="connection.id"
-      :value="connection.id"
-    >{{ connection.name }} · @{{ connection.username }}</option></select></label>
+      :label="t('channels')"
+      :placeholder="t('select')"
+      :options="(connections.data.value || []).filter(c => c.enabled).map(c => ({ value: c.id, label: c.name, description: '@' + c.username }))"
+      @update:model-value="conversationID = ''; acknowledge = false"
+    /></label>
     <template v-if="current">
       <label
         v-if="options.length"
         class="label"
-      >{{ t('conversations') }}<select
+      >{{ t('conversations') }}<Select
         v-model="conversationID"
-        @change="acknowledge = false"
-      ><option value="">{{ t('select') }}</option><option
-        v-for="c in options"
-        :key="c.id"
-        :value="c.id"
-      >{{ c.title }} · {{ c.kind }}{{ c.topic_id ? ' · Topic ' + c.topic_id : '' }}</option></select></label>
+        :label="t('conversations')"
+        :placeholder="t('select')"
+        :options="options.map(c => ({ value: c.id, label: c.title, description: c.kind + (c.topic_id ? ' · Topic ' + c.topic_id : '') }))"
+        @update:model-value="acknowledge = false"
+      /></label>
       <div class="detail-block stack">
         <p
           v-if="!current.capabilities.enumerate_conversations"

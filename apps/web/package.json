@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/main.ts", "./App.vue": "./src/App.vue" },
+  "exports": {
+    ".": "./src/main.ts",
+    "./App.vue": "./src/App.vue"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
@@ -38,5 +41,6 @@
     "@vitejs/plugin-vue": "^6.0.8",
     "vite": "^8.1.5",
     "vue-tsc": "^3.3.8"
-  }
+  },
+  "license": "AGPL-3.0-only"
 }

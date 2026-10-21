@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	sessions "github.com/oines/astral-core/session"
+	sessions "github.com/oines/astral-core"
 	"github.com/oines/astral-core/store/sqlite"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
@@ -66,22 +66,11 @@ func newFixture(t *testing.T, computerCount int, generate func(context.Context, 
 			http.Error(w, "invalid", 400)
 			return
 		}
-		tools, _ := request["tools"].([]any)
-		verification := len(tools) == 1 && strings.Contains(string(encode(tools)), "astral_verify")
-		var response any
-		if verification {
-			if request["tool_choice"] == "none" {
-				response = textReply("verified")
-			} else {
-				response = toolReply("verify", "astral_verify", map[string]string{"value": "ping"})
-			}
-		} else {
-			f.mu.Lock()
-			f.requests = append(f.requests, encode(request))
-			n := len(f.requests)
-			f.mu.Unlock()
-			response = f.generate(r.Context(), n, request)
-		}
+		f.mu.Lock()
+		f.requests = append(f.requests, encode(request))
+		n := len(f.requests)
+		f.mu.Unlock()
+		response := f.generate(r.Context(), n, request)
 		if response != nil {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(response)
@@ -97,9 +86,6 @@ func newFixture(t *testing.T, computerCount int, generate func(context.Context, 
 		"context_window": encode(128000), "max_output_tokens": encode(4096), "streaming": encode(false), "images": encode("supported"), "image_token_budget": encode(2048),
 	}}
 	if err = bridge.SaveProfile(ctx, &profile); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = bridge.Verify(ctx, profile.ID); err != nil {
 		t.Fatal(err)
 	}
 	f.service = New(f.store, f.coreStore, bridge, f.hub)
@@ -122,6 +108,7 @@ func newFixture(t *testing.T, computerCount int, generate func(context.Context, 
 		if err != nil {
 			t.Fatal(err)
 		}
+		d.Hello.Home = t.TempDir()
 		enrollment, err := f.hub.Enroll(ctx, server.URL, false, false)
 		if err != nil {
 			t.Fatal(err)
@@ -212,8 +199,14 @@ func TestSessionImagesRemainSelfContainedAcrossDeletionReopenAndFork(t *testing.
 		if !strings.Contains(body, "data:image/png;base64,") || !strings.Contains(body, "astral-file://") {
 			t.Error("native pixels and file URI must coexist")
 		}
-		if strings.Count(body, "Current Astral environment snapshot:") != 1 {
-			t.Error("actual request needs one frozen environment")
+		if !strings.Contains(body, "Current Astral environment snapshot:") {
+			t.Error("actual request needs a persisted environment snapshot")
+		}
+		for _, value := range request["messages"].([]any) {
+			message := value.(map[string]any)
+			if message["role"] == "system" && strings.Contains(string(encode(message)), "Current Astral environment snapshot:") {
+				t.Error("environment snapshot was moved into the system prompt")
+			}
 		}
 		return textReply("I can see the image")
 	})
@@ -231,8 +224,8 @@ func TestSessionImagesRemainSelfContainedAcrossDeletionReopenAndFork(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.State != "applied" {
-		t.Fatalf("first input not committed: %+v", receipt)
+	if receipt.InputID != input.ID || receipt.State != "pending" {
+		t.Fatalf("first input not admitted through the queue: %+v", receipt)
 	}
 	view := f.idle(t, f.session.ID)
 	if err = os.Remove(ref.Path); err != nil {

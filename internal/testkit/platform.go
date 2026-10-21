@@ -88,6 +88,10 @@ func New(t *testing.T, computerCount int, generate func(context.Context, int, ma
 		} else {
 			response = generate(r.Context(), int(p.Requests.Add(1)), request)
 		}
+		if handler, ok := response.(http.Handler); ok {
+			handler.ServeHTTP(w, r)
+			return
+		}
 		if response != nil {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(response)
@@ -128,6 +132,7 @@ func New(t *testing.T, computerCount int, generate func(context.Context, int, ma
 		if createErr != nil {
 			t.Fatal(createErr)
 		}
+		d.Hello.Home = t.TempDir()
 		enrollment, enrollErr := p.Hub.Enroll(ctx, server.URL, false, false)
 		if enrollErr != nil {
 			t.Fatal(enrollErr)

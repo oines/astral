@@ -1,6 +1,6 @@
 export type {
   AstralCoreContent as Content,
-  AstralCoreSessionEntry as Entry,
+  AstralCoreEntry as Entry,
   AstralCoreEvent as CoreEvent,
   AstralInternalHttpapiEvent as SessionEvent,
   AstralInternalHttpapiSnapshot as Snapshot,

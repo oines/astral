@@ -23,6 +23,9 @@ func safeProviderError(err error) error {
 		return err
 	}
 	message := "Model request failed; check the model settings and provider connection."
+	if models.IsEncryptedReasoningError(err) {
+		return &providerError{cause: err, message: "Provider could not verify its encrypted reasoning."}
+	}
 	var native *models.APIError
 	if errors.As(err, &native) {
 		switch native.Kind {

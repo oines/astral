@@ -75,7 +75,7 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home},
+	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Capabilities: []string{EnvironmentDiscoveryCapability}},
 		gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, executions: map[string]string{}}, nil
 }
 
@@ -278,6 +278,13 @@ func (d *Daemon) handle(ctx context.Context, request transport.Request, out *tra
 	backend, err := d.backend(call.Binding)
 	if err != nil {
 		return err
+	}
+	if request.Method == EnvironmentDiscoveryCapability {
+		result, err := discoverEnvironment(ctx, d.Hello.Home, call.Binding)
+		if err != nil {
+			return err
+		}
+		return out.JSON(result)
 	}
 	if strings.HasPrefix(request.Method, "process.") {
 		return d.processCall(ctx, request, call, backend, out)

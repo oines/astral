@@ -1,31 +1,50 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@pinia/colada'
 import { listBindingsQuery, listConnectionsQuery, listConversationsQuery, listSearchProvidersQuery } from '@astral/sdk/colada'
 import { bindConversation, deleteAgent, saveAgent, unbindConversation, type AstralInternalDomainConversationBinding } from '@astral/sdk'
-import { Button } from '@astral/ui'
-import { ArrowLeft, ChevronRight, Plus } from '@astral/icons'
+import { Button, Select, SettingsRow, SettingsSection } from '@astral/ui'
+import { ArrowLeft, ChevronRight, Plus, Search, User } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Agent } from '../../lib/types'
-import { clone, newMeta, request } from '../../lib/api'
+import { clone, newMeta, operatingSystem, request } from '../../lib/api'
 import { useAction } from '../../composables/useAction'
 import { useAppStore } from '../../stores/app'
 import ResourceDelete from './ResourceDelete.vue'
 import ConversationPicker from './ConversationPicker.vue'
 const { t } = useI18n()
 const app = useAppStore()
+const route = useRoute()
+const router = useRouter()
 const action = useAction()
 const searches = useQuery(listSearchProvidersQuery())
 const bindings = useQuery(listBindingsQuery())
 const conversations = useQuery(listConversationsQuery())
 const connections = useQuery(listConnectionsQuery())
 const selected = ref<Agent>()
+const tab = ref('identity')
+const search = ref('')
+const visibleAgents = computed(() => app.agents.filter(a => a.name.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())))
 const adding = ref(false)
 const deleting = ref(false)
 const ownBindings = computed(() => bindings.data.value?.filter(b => b.agent_id === selected.value?.id) ?? [])
 function edit(agent?: Agent) {
+  tab.value = 'identity'
+  action.error.value = ''; action.success.value = ''
   selected.value = agent ? clone(agent) : { ...newMeta(), name: '', avatar: '', allowed_computers: [], default_model_id: '', default_computer_id: '', search_provider_id: '' }
   normalize()
+}
+watch(() => route.fullPath, () => {
+  if (route.path !== '/settings/agents' || typeof route.query.agent !== 'string') return
+  const agent = app.agents.find(a => a.id === route.query.agent)
+  if (!agent) return
+  if (selected.value?.id !== agent.id) edit(agent)
+  if (route.query.tab === 'computers') tab.value = 'computers'
+}, { immediate: true })
+function closeAgent() {
+  selected.value = undefined
+  if (route.query.agent) void router.replace('/settings/agents')
 }
 function normalize() {
   if (!selected.value) return
@@ -69,89 +88,140 @@ function conversation(id: string) { return conversations.data.value?.find(c => c
     </p><p
       v-if="action.success.value"
       class="success-note"
+      role="status"
     >
       {{ action.success.value }}
     </p>
     <template v-if="!selected">
-      <div class="row between">
-        <p class="muted">
-          {{ t('agentsHint') }}
-        </p><Button
+      <div class="settings-toolbar">
+        <div class="search-input">
+          <Search /><input
+            v-model="search"
+            :placeholder="t('searchPlaceholder')"
+            :aria-label="t('agents')"
+          >
+        </div><Button
           size="small"
           @click="edit()"
         >
-          <Plus />{{ t('add') }}
+          <Plus />{{ t('setupAgent') }}
         </Button>
       </div>
-      <div class="resource-list">
+      <div
+        v-if="app.agents.length"
+        class="resource-list"
+      >
         <button
-          v-for="a in app.agents"
+          v-for="a in visibleAgents"
           :key="a.id"
           class="resource-row"
           @click="edit(a)"
         >
           <span class="agent-avatar">{{ a.avatar || a.name.slice(0, 1) }}</span><span><strong>{{ a.name }}</strong><small>{{ app.models.find(m => m.id === a.default_model_id)?.name || t('missing') }} · {{ a.allowed_computers.length }} Computers</small></span><ChevronRight />
-        </button><p
-          v-if="!app.agents.length"
+        </button>
+        <p
+          v-if="!visibleAgents.length"
           class="empty"
         >
-          {{ t('empty') }}
+          {{ t('noResults') }}
         </p>
+      </div>
+      <div
+        v-else
+        class="empty-state"
+      >
+        <User /><strong>{{ t('noAgents') }}</strong><p>{{ t('noAgentsHint') }}</p><Button
+          variant="primary"
+          @click="edit()"
+        >
+          {{ t('setupAgent') }}
+        </Button>
       </div>
     </template>
     <form
       v-else
-      class="stack"
+      class="stack settings-form"
       @submit.prevent="save"
     >
-      <div class="row between">
+      <div class="object-heading">
         <Button
           variant="ghost"
-          size="small"
-          @click="selected = undefined"
+          size="icon"
+          :aria-label="t('agents')"
+          @click="closeAgent"
         >
-          <ArrowLeft />{{ t('agents') }}
-        </Button><Button
-          v-if="selected.id"
-          variant="ghost"
-          size="small"
-          @click="deleting = true"
+          <ArrowLeft />
+        </Button><span class="agent-avatar">{{ selected.avatar || selected.name.slice(0, 1) || 'A' }}</span><h2>{{ selected.name || t('setupAgent') }}</h2>
+      </div>
+      <div
+        class="settings-tabs"
+        role="tablist"
+        :aria-label="t('agents')"
+      >
+        <button
+          v-for="item in [['identity', 'agentIdentity'], ['computers', 'agentComputerAccess'], ['channels', 'agentChannels']]"
+          :key="item[0]"
+          type="button"
+          role="tab"
+          :aria-selected="tab === item[0]"
+          :disabled="item[0] === 'channels' && !selected.id"
+          @click="tab = item[0]!"
         >
-          {{ t('delete') }}
-        </Button>
+          {{ t(item[1]!) }}
+        </button>
       </div>
-      <div class="agent-identity-edit">
-        <span class="agent-avatar large">{{ selected.avatar || selected.name.slice(0, 1) || 'A' }}</span><label class="label grow">{{ t('name') }}<input
-          v-model="selected.name"
-          required
-        ></label><label class="label avatar-field">{{ t('avatar') }}<input
-          v-model="selected.avatar"
-          maxlength="8"
-          placeholder="✳"
-        ></label>
-      </div>
-      <label class="label">{{ t('defaultModel') }}<select v-model="selected.default_model_id"><option value="">{{ t('none') }}</option><option
-        v-if="selected.default_model_id && !app.models.some(m => m.id === selected?.default_model_id)"
-        :value="selected.default_model_id"
-      >{{ t('missing') }}</option><option
-        v-for="m in app.models"
-        :key="m.id"
-        :value="m.id"
-      >{{ m.name }} · {{ m.verification?.tool_calling || 'unverified' }}</option></select><RouterLink
-        v-if="!app.models.length"
-        to="/settings/models"
-        class="muted"
-      >{{ t('setupModels') }}</RouterLink></label>
-      <label class="label">{{ t('webSearch') }}<select v-model="selected.search_provider_id"><option value="">{{ t('none') }}</option><option
-        v-if="selected.search_provider_id && !searches.data.value?.some(s => s.id === selected?.search_provider_id)"
-        :value="selected.search_provider_id"
-      >{{ t('missing') }}</option><option
-        v-for="s in searches.data.value"
-        :key="s.id"
-        :value="s.id"
-      >{{ s.name }} · {{ s.adapter }}</option></select></label>
-      <div class="stack">
-        <h3>{{ t('allowedComputers') }}</h3><div class="computer-checks">
+      <template v-if="tab === 'identity'">
+        <SettingsSection :title="t('agentIdentity')">
+          <SettingsRow :label="t('name')">
+            <input
+              v-model="selected.name"
+              :aria-label="t('name')"
+              required
+            >
+          </SettingsRow>
+          <SettingsRow :label="t('avatar')">
+            <div class="avatar-control">
+              <span class="agent-avatar">{{ selected.avatar || selected.name.slice(0, 1) || 'A' }}</span><input
+                v-model="selected.avatar"
+                :aria-label="t('avatar')"
+                maxlength="8"
+                :placeholder="selected.name.slice(0, 1)"
+              >
+            </div>
+          </SettingsRow>
+        </SettingsSection>
+        <SettingsSection :title="t('agentCapabilities')">
+          <SettingsRow :label="t('defaultModel')">
+            <Select
+              v-model="selected.default_model_id"
+              :label="t('defaultModel')"
+              :placeholder="t('missing')"
+              :options="[{ value: '', label: t('none') }, ...app.availableModels.map(m => ({ value: m.id, label: m.name }))]"
+            /><RouterLink
+              v-if="!app.models.length"
+              to="/settings/models"
+              class="small"
+            >
+              {{ t('setupModels') }}
+            </RouterLink>
+          </SettingsRow>
+          <SettingsRow :label="t('webSearch')">
+            <Select
+              v-model="selected.search_provider_id"
+              :label="t('webSearch')"
+              :options="[{ value: '', label: t('none') }, ...(searches.data.value || []).map(s => ({ value: s.id, label: s.name }))]"
+            /><RouterLink
+              v-if="!searches.data.value?.length"
+              to="/settings/search"
+              class="small"
+            >
+              {{ t('configure') }}{{ t('webSearch') }}
+            </RouterLink>
+          </SettingsRow>
+        </SettingsSection>
+      </template>
+      <template v-else-if="tab === 'computers'">
+        <SettingsSection :title="t('allowedComputers')">
           <label
             v-for="c in app.computers"
             :key="c.id"
@@ -161,51 +231,54 @@ function conversation(id: string) { return conversations.data.value?.find(c => c
             :checked="selected.allowed_computers.includes(c.id)"
             :disabled="c.revoked && !selected.allowed_computers.includes(c.id)"
             @change="allowComputer(c.id, ($event.target as HTMLInputElement).checked)"
-          ><span><strong>{{ c.name }}</strong><small>{{ c.os }} · {{ c.kind }}</small></span><span
+          ><span><strong>{{ c.name }}</strong><small>{{ operatingSystem(c.os) }}</small></span><span
             class="badge"
             :class="{ good: c.online, bad: c.revoked }"
-          >{{ c.revoked ? 'Revoked' : t(c.online ? 'online' : 'offline') }}</span></label>
-        </div><RouterLink
-          v-if="!app.computers.length"
-          to="/settings/computers"
-        >
-          {{ t('newComputer') }}
-        </RouterLink>
-      </div>
-      <label class="label">{{ t('defaultComputer') }}<select v-model="selected.default_computer_id"><option value="">{{ t('none') }}</option><option
-        v-for="c in app.computers.filter(c => selected?.allowed_computers.includes(c.id))"
-        :key="c.id"
-        :value="c.id"
-      >{{ c.name }}{{ c.online ? '' : ' · ' + t('offline') }}</option></select></label>
-      <div class="form-footer">
-        <Button
-          type="submit"
-          variant="primary"
-          :busy="action.busy.value"
-        >
-          {{ t('save') }}
-        </Button>
-      </div>
-      <template v-if="selected.id">
-        <hr class="separator"><div class="row between">
-          <h2>{{ t('conversations') }}</h2><Button
-            size="small"
-            @click="adding = true"
+          >{{ t(c.revoked ? 'revoked' : c.online ? 'online' : 'offline') }}</span></label>
+          <div
+            v-if="!app.computers.length"
+            class="empty-state"
           >
-            <Plus />{{ t('add') }}
-          </Button>
-        </div>
-        <div class="resource-list">
+            <p>{{ t('noComputersHint') }}</p><RouterLink
+              to="/settings/computers"
+              class="button button-secondary"
+            >
+              {{ t('newComputer') }}
+            </RouterLink>
+          </div>
+        </SettingsSection>
+        <SettingsSection>
+          <SettingsRow :label="t('defaultComputer')">
+            <Select
+              v-model="selected.default_computer_id"
+              :label="t('defaultComputer')"
+              :options="[{ value: '', label: t('none') }, ...app.computers.filter(c => selected?.allowed_computers.includes(c.id)).map(c => ({ value: c.id, label: c.name, description: t(c.online ? 'online' : 'offline') }))]"
+            />
+          </SettingsRow>
+        </SettingsSection>
+        <p class="section-caption">
+          {{ t('computerAccessHint') }}
+        </p>
+      </template>
+      <template v-else-if="selected.id">
+        <SettingsSection :title="t('conversations')">
+          <template #actions>
+            <Button
+              size="small"
+              @click="adding = true"
+            >
+              <Plus />{{ t('add') }}
+            </Button>
+          </template>
           <div
             v-for="b in ownBindings"
             :key="b.id"
             class="resource-row"
           >
-            <span><strong>{{ conversation(b.conversation_id)?.title || t('missing') }}</strong><small>Telegram · {{ connections.data.value?.find(c => c.id === conversation(b.conversation_id)?.connection_id)?.name }} · {{ conversation(b.conversation_id)?.kind }}<span v-if="conversation(b.conversation_id)?.topic_id"> · Topic {{ conversation(b.conversation_id)?.topic_id }}</span></small><RouterLink
+            <span><strong>{{ conversation(b.conversation_id)?.title || t('missing') }}</strong><small>Telegram · {{ connections.data.value?.find(c => c.id === conversation(b.conversation_id)?.connection_id)?.name }}</small><RouterLink
               :to="`/sessions/${b.session_id}`"
               class="small"
-            >{{ t('openConversationHistory') }}</RouterLink></span>
-            <Button
+            >{{ t('openConversationHistory') }}</RouterLink></span><Button
               size="small"
               :variant="b.enabled ? 'secondary' : 'ghost'"
               :busy="action.busy.value"
@@ -213,20 +286,48 @@ function conversation(id: string) { return conversations.data.value?.find(c => c
             >
               {{ t(b.enabled ? 'unbind' : 'enableAgain') }}
             </Button>
-          </div><p
+          </div>
+          <div
             v-if="!ownBindings.length"
-            class="empty"
+            class="empty-state"
           >
-            {{ t('empty') }}
-          </p>
-        </div><p class="muted small">
+            <strong>{{ t('noBindings') }}</strong><p>{{ t('noBindingsHint') }}</p><Button @click="adding = true">
+              {{ t('add') }}{{ t('conversations') }}
+            </Button>
+          </div>
+        </SettingsSection><p class="section-caption">
           {{ t('rebindHint') }}
-        </p>
-        <ConversationPicker
+        </p><ConversationPicker
           v-model:open="adding"
           :agent-i-d="selected.id"
         />
       </template>
+      <div
+        v-if="tab !== 'channels'"
+        class="form-footer"
+      >
+        <Button @click="closeAgent">
+          {{ t('cancel') }}
+        </Button><Button
+          type="submit"
+          variant="primary"
+          :busy="action.busy.value"
+        >
+          {{ t('save') }}
+        </Button>
+      </div>
+      <div
+        v-if="selected.id && tab === 'identity'"
+        class="danger-row"
+      >
+        <strong>{{ t('delete') }} Agent</strong><Button
+          size="small"
+          variant="danger"
+          @click="deleting = true"
+        >
+          {{ t('delete') }}
+        </Button>
+      </div>
       <ResourceDelete
         :id="selected.id"
         :open="deleting"

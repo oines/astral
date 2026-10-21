@@ -50,7 +50,7 @@ Session 的历史与工作状态持久保存。关闭窗口、浏览器断线或
 | Agent | 多 Agent，独立资源选择与 Conversation 绑定 |
 | Session | 持久历史、流式生成、运行中输入、Stop、Compaction、Fork |
 | Computer | Local macOS/Linux、Container、Remote macOS/Linux；使用本机/本机容器快捷入口、复制命令接入及可选容器模式、AgentHome、运行中由 Agent 切换 |
-| 模型 | Provider 配置、可编辑 Model Profile、能力验证、Session 临时选模 |
+| 模型 | Provider 配置、可编辑 Model Profile、直接使用、Session 临时选模 |
 | 搜索 | 全局搜索 Provider，每个 Agent 单选一个统一 `web_search` 后端 |
 | IM | 仅 Telegram，支持群、私聊与 Topic；独立 Conversation Session、静默观察、触发激活、文本自动回复、API 主动发送 |
 | 文件 | Computer 本地存储、来源明确的引用、流式预览与下载、IM 文件发送 |
@@ -437,11 +437,24 @@ UI tokens、共享组件和状态文案集中维护。依赖补丁按 pnpm patch
 - Agent 的稳定身份与平台行为说明。
 - Session 的来源与绑定 Conversation 信息。
 - 当前 Computer、操作系统、Shell、CWD、AgentHome，以及可选择的 Computer 信息。
+- 当前 Computer 的全局与工作区 Skills 目录，以及当前 CWD 的 `AGENTS.md` 内容和发现状态。
 - localhost API 的入口和能力说明。
 - 当前 Session 的有效历史、摘要、已应用观察、驱动输入及工具结果。
 - 本次允许调用的工具定义和各工具自己的用法。
 
-平台提供的环境说明必须与真实运行状态一致。初始进入、Computer 切换、相关配置变更与 Compaction 后，Host 负责保留或重新提供必要信息；Core 不会自动替 Host 管理环境快照。
+环境快照由 Host 的同步 `CollectContext` 接口返回为 `RoleUser`、`ContextKind=astral.environment` 的普通 Context。接口接收只读边界信息，Host 负责发现、内容和去重，Core 负责预算与提交；动态内容不放入 System Prompt 或 Developer Role，不改写旧消息。System Prompt 仅包含稳定的解释和使用规则。最近一条完整快照定义当前环境，旧快照仅记录历史环境。
+
+创建 Session 时采集初始快照。平时在激活、完整 Assistant/工具结果批次结束后的安全边界，以及显式 Computer/CWD 切换时扫描；同一 Run 内的工具批次结束不是新一次用户激活。外部文件变化在下一次运行边界发现，不安装文件监视器，也不在每次 Provider 重试前扫描。内容不变不追加，追加本身不启动或延长 Run。
+
+普通模型轮次统一进入 `prepareStep`：冻结分支、模型配置和有限输入选择范围；必要时仅对已提交的旧历史生成一次摘要草稿；摘要完成后同步调用 `CollectContext` 重新扫描。候选顺序为摘要与保留历史、待投递被动上下文、最新环境、驱动输入组。完整候选通过 token 与字节预算检查后，一次提交摘要、上下文、驱动输入和消费记录。新输入不参与旧历史摘要；内容相同也要为新 Compaction 提供一次完整快照。
+
+采集、预算或提交失败时，旧有效上下文保持完整，所选输入保持待投递；未提交摘要可在重试时重算。模型及 Computer I/O 不持有会话锁或数据库事务；提交前重新核对分支和所选输入，后来接收的输入留待后续边界，被清除的输入不得投递。手动 Compaction 复用准备流程，不消费驱动输入，也不自动生成回答。
+
+Host 对确定性内容计算指纹，与候选上下文中最近的快照比较，包含 Compaction ID，不包含采集时间等易变字段。A→B→A 必须保留两次变化；重开、网络重试和重复扫描不重复追加。Fork 继承既有 Computer/CWD，随后追加子 Session 自身的当前快照。历史、View 和上下文检查接口不采集环境、不修改会话配置；UI 所需模型预算预览仅在内存中计算。
+
+Skills 由选中 Computer 的 Daemon 发现：全局根为其操作系统用户 Home 下的 `~/.agents/skills`，工作区根为 `<cwd>/.agents/skills`。支持嵌套分类目录和符号链接并防止循环，找到 `SKILL.md` 的目录视为技能包，不继续扫描包内示例。目录包含 YAML 中的 name、description、scope、绝对路径和文件内容哈希；正文按需读取。同名技能保留全部条目，以 scope 和路径区分。Workspace 指导仅来自准确的 `<cwd>/AGENTS.md`，不向父目录查找。
+
+文件和根目录缺失是正常空状态；不可读、格式错误、扫描限额、Computer 离线、权限收回及旧 Daemon 不支持发现均显式记录，不以 Server 文件系统代替，也不沿用旧 CWD 的发现结果。单文件最多 1 MiB，一次扫描读取最多 16 MiB、目录条目预算 8192、递归深度 32；超限结果标记 partial。发现不可用仍允许纯文本对话，重新连接后的下次运行边界更新快照。
 
 消息来源、执行机器和回复目的地分别确定。例如，在 Web 中打开一个 IM Session 输入 prompt，来源是 Web，执行机器仍由 Current Computer 决定，普通回复的 IM 目的地仍由该 Session 的绑定决定。
 
@@ -465,6 +478,8 @@ UI tokens、共享组件和状态文案集中维护。依赖补丁按 pnpm patch
 ### 执行目标与切换
 
 `switch_computer(computer_id, cwd?)` 的目标必须在 Agent 的 Allowed Computers 中。缺省 CWD 使用该 Agent 在目标 Computer 上的 AgentHome，不继承之前机器的路径。
+
+同一 Agent 创建的普通 Web/IM Session 默认使用该 Agent 在选中 Computer 上共享的 AgentHome，绑定成功后持久保存实际 CWD。对同一个 Computer 调用 `switch_computer` 并指定 cwd，只修改该 Session 的工作目录。单次 `exec_command.workdir` 或 Shell 的 `cd` 不修改 Session CWD，也不改变其他 Session 的默认目录。
 
 切换必须单独成批，形成独立的工具执行边界。切换确认后再绑定后续文件与命令调用；不能提前把整个混合并行批次都绑定到旧 Computer，再期待其中一次切换改变其他调用。
 
@@ -688,27 +703,24 @@ meaning: 结束本次激活，不发送回复，不等待工具返回。
 - 不向 IM 发送“已结束”“保持沉默”或类似占位消息，不生成空 Assistant 气泡。
 - Session、历史和已经应用的观察保留；后续静默观察继续入档和入上下文。
 - 新的有效激活继续使用同一 Session；不能仅因为 `no_reply` 收尾而自动续跑旧请求。
-- 已排队的独立驱动输入保留，由 Scheduler 作为后续激活处理，不作为本次工具结果的续问。
+- 已排队的独立驱动输入保留，由 Session 收尾时作为新 Run 处理。
 - 结束 loop 不回滚之前已完成的外部操作，也不等同于终止所有 Computer 上的长进程。
 
 Host 在完整模型回复校验后执行控制决策。`no_reply` 与文本或其他调用混合的批次必须在派发前判为非法组合，不先执行其他副作用再把整批伪装成一次静默结束。
 
 UI 可在展开的 execution trace 中记录 `no_reply` 结束原因；普通聊天表面不把它当作一条对用户的回复。
 
-### Core 扩展契约
+### Core 执行契约
 
-当前本地 Core 的普通工具流程要求 `ToolCall → ToolResult` 配对。`ToolResult.Terminate` 只影响自动续问，且需要同批全部结果要求终止；排队输入仍可能被处理。`FinishTurn → TurnEnd` 可以在工具结果完整后结束 Run 并保留队列，但不提供“普通调用完全没有 result”的通道。
+Core 只提供一个 Session 执行实现，SQLite 与 Memory 共用。Host 直接创建、打开和关闭 Session，保留业务配置及 Computer、权限和渠道管理；运行、停止、维护和错误状态由 Core 的原子快照提供。没有独立 Agent 执行入口、Manager、SessionDriver 或 Host 等待后重启的协程。
 
-因此 `no_reply` 是明确的 Core 集成工作项，不能把“写一个空结果后停止”标为已经满足目标语义。扩展要求如下：
+`Prompt` 仅在空闲且协议完整时接收输入并启动，忙时返回 Busy 且不接收；`Steer`、`FollowUp` 只入队。`Continue` 显式处理队列或未完成工作，不添加虚构消息；无工作时不请求模型。`InjectContext` 接收被动上下文，不自行启动模型或压缩。读取和重开不启动执行。
 
-1. Core 提供通用的终止控制能力；`no_reply` 的产品名称与使用说明由 Host 注册，Core 不理解 Telegram 或其他业务。
-2. 接受控制调用与本次结束决策必须形成可持久恢复的事实，恢复时不得把它重新当作普通待执行工具。
-3. 原始控制调用在历史中可追溯；下一次模型请求不能带着没有对应结果的普通原生 `tool_call`。
-4. 模型投影需要识别已完成的控制动作，保持 Provider 协议有效，同时不为它伪造普通 tool result。
-5. 正常终止与异常取消在状态和事件上可区分；`no_reply` 不应被报为失败。
-6. Standalone 与持久 Session 的结束语义一致，并覆盖重开、Compaction、Fork 和队列边界。
+普通工具保持 `ToolCall → ToolResult` 配对。`no_reply` 使用 Core 的通用 EndRun 控制能力：控制事实和 Run 完成在同一提交中持久化，模型投影排除已完成控制调用，既保留原始审计事实，也不伪造普通 tool result。正常结束与取消、失败明确区分；重开、Compaction、Fork 和队列边界保持同一语义。
 
-具体 Core 类型和存储事件命名在实现该扩展时确定；以上行为是验收边界。
+普通回答与摘要共用 Core 模型调用入口，默认最多三次总尝试（包含首次），单次超时四分钟；指数退避从一秒开始，上限五秒，合法的较长 Retry-After 优先，等待可取消。永久错误和用户取消直接停止。协议回放修复最多一次，占用同一总尝试预算，仅修改请求副本并重新检查完整预算。
+
+同一逻辑请求保持 Run/Turn 身份，每次尝试有独立 Attempt ID。网络重试复用冻结请求，不重新消费输入、采集环境、压缩或执行工具。失败响应与重试过程仅进入执行记录；只有完整且验证通过的回复进入后续普通或摘要请求。Host 和 UI 不叠加模型重试；UI 从事件和快照展示用途、次数、下一次重试时间与安全错误摘要，浏览器断线只重连事件流。
 
 ## 10 平台 HTTP Gateway
 
@@ -829,7 +841,7 @@ Provider 是全局连接，包含名称、Base URL、协议、凭据和测试状
 
 已知值使用目录或 Provider 推荐值预填。推荐值与用户 override 分开保存，刷新目录和重新导入不得覆盖显式 override；字段可恢复推荐默认值。自定义 OpenAI-compatible 接口支持手工增加模型和真实连接测试。
 
-Tool Calling 是 Agent 模式的硬条件，不提供关闭开关。Tool Call Streaming 是可选能力：缺失时等待完整参数后执行，UI 不展示虚假的参数流式进度。修改 Profile 只修改配置，不会让 Provider 获得未实现的能力。
+Agent 请求包含工具定义。保存模型后可直接选择和使用，不要求预先验证 Tool Calling 或工具结果回放，也不自动发送验证请求；连接或能力问题由实际模型请求返回错误。Tool Call Streaming 是可选能力：缺失时等待完整参数后执行，UI 不展示虚假的参数流式进度。修改 Profile 只修改配置，不会让 Provider 获得未实现的能力。
 
 Host 实现真实 Model Bridge、请求转换、TokenEstimator 和对应兼容性检查。Core 提供协议中立接口，不承担外部 Provider SDK 的全部适配。多模态与 Provider 特有块需要按真实能力处理，不静默丢弃内容。
 
@@ -849,7 +861,7 @@ Settings 维护全局搜索实例，包括 Exa、Tavily、DeepSeek Search 类接
 
 Transcript 是主工作区。Sidebar 包含 New Session、Search、NOW、PINNED、RECENT 和 Settings；Agent 作为 Session 的身份或筛选信息，不默认展开为 Agent → Session 的多层后台导航。
 
-Sidebar 可以完全折叠，不保留固定 icon rail。主界面没有额外产品级 Top Bar、永久第三栏或常驻 Inspector。点击文件、Diff、执行详情或来源时，才开启可调整大小、可关闭的 Contextual Surface。
+Sidebar 可以完全折叠，不保留固定 icon rail。主界面没有额外产品级 Top Bar、永久第三栏或常驻 Inspector。点击文件或附件时，才开启可调整大小、可关闭的 Contextual Surface。执行详情、命令输出、Diff 和搜索来源在 Transcript 原地展开，不挤出常驻侧栏。会话标题和分支信息不作为占用纵向空间的 Transcript banner。
 
 macOS 与 Linux 使用共享 Web 应用中的同一页面、组件和状态文案。平台专属功能通过薄适配层处理，不复制一套 Headless 管理台。窄屏优先保证读消息、发消息、Stop 和处理需要关注的状态。
 
@@ -857,7 +869,7 @@ macOS 与 Linux 使用共享 Web 应用中的同一页面、组件和状态文�
 
 普通运行过程聚合为一条可点击、原地更新的 Activity Line；完成后收起为耗时与动作概览，后接 Assistant 正文。Assistant 正文使用 Markstream 渲染，用户消息使用轻量右对齐样式，不为每个工具事件插入大型卡片。
 
-展开后的 execution trace 依据真实事件显示工具步骤、命令输出、搜索结果、文件变更及结果。重复读取等高频动作按语义聚合，详细调用仍可追溯。生成中的工具参数与实际执行必须有不同文案：
+展开后的 execution trace 在 Activity Line 下方内联呈现，依据真实事件显示工具步骤、命令输出、搜索结果、文件变更及结果。分组与单步可独立折叠；展开状态由用户控制，消息与事件刷新不自动收起。过程和详情不用灰色方块或嵌套卡片包裹，使用缩进、字体层次与留白区分。重复读取等高频动作按语义聚合，详细调用仍可追溯。生成中的工具参数与实际执行必须有不同文案：
 
 | 阶段 | 呈现要求 |
 | --- | --- |
@@ -870,7 +882,9 @@ macOS 与 Linux 使用共享 Web 应用中的同一页面、组件和状态文�
 
 不制造百分比、步骤、输出、测试成功或 Reasoning。模型没有返回可展示的推理内容时，不用自编的思考过程补位。
 
-Contextual Surface 承载文件预览、完整 Diff、Terminal 输出、搜索来源、Computer 详情和 Diagnostics。它是按需查看的第二工作区，不扩张为默认常开的 IDE 或任意停靠工作台。
+Contextual Surface 承载文件及附件预览。执行过程、完整 Diff、Terminal 输出、搜索来源和对应 Diagnostics 在 Transcript 内展开；Computer 详情属于 Settings。它是按需查看的第二工作区，不扩张为默认常开的 IDE 或任意停靠工作台。
+
+Settings 采用中性配色、统一圆角分组、组内缩进细线和共享开关、选择菜单。侧栏、表单、弹层与 Composer 共用字体、间距、圆角和颜色 token；参考 Memoh 的组件组织和交互，并按 Astral 的功能范围实现。
 
 ### Composer
 
@@ -960,7 +974,8 @@ Channels 的连接配置由实际 Adapter 提供，通用列表与 Agent 的 Con
 | 资源与业务配置 | Agent、Provider、Profile、Computer、Connection、Binding、偏好及关联 | Server |
 | Session 运行元数据 | 当前模型、Current Computer/CWD、选择变更及与 Core 历史的关联 | Server |
 | IM Store | 规范化事件、平台消息当前状态、去重标识、接收顺序 | Server |
-| 输入投递记录 | 事件与 Core Input ID、应用 Entry ID、驱动输入的关联及状态 | Server |
+| 输入回执 | 稳定 Input ID、内容摘要、首次接收时间、冻结载荷、投递状态与应用 Entry ID | Core 的索引化持久存储 |
+| 渠道路由记录 | 事件、Session 与观察或触发路由关系；投递状态只读查询 Core | Server |
 | Core 持久历史 | Rollout、Pending、已应用输入、模型与工具事实、Summary、Fork、结束决策 | Core 的持久存储，由 Server 接入 |
 | 出站记录 | 自动文本及 API 发送意图、来源事实、平台回执、未知状态 | Server |
 | 工作文件与媒体 | AgentHome、工作产物、入站附件副本、需保留的媒体版本 | 来源 Computer |
@@ -982,7 +997,9 @@ Rollout 是追加的事实历史。编辑 IM 消息、更新 UI、Compaction、�
 
 Host 不能假设业务数据库写入、Core 接收输入和平台外部发送处于同一个事务。归档、投递、应用、发送各阶段需要稳定关联标识和可对账状态，允许在中断后确认已经完成的步骤。
 
-Core API 返回的 Input ID 是接收凭据，不是业务事件 ID。超时或崩溃后的重试先检查已持久事实与现有映射；不能为同一事件盲目调用第二次 InjectContext，也不能为同一 Assistant Entry 创建第二个发送意图。
+调用方为所有输入（包括首条消息）提供稳定 Input ID，Core 原子保存内容摘要、首次接收时间、冻结载荷及投递状态。同 ID 同内容返回原回执，内容不同返回冲突。重复投递先查索引化回执，不重建时间戳、不重读附件、不启动新 Run；Host 不保存输入状态镜像，也不扫描历史补回执。渠道事件确定稳定输入身份，出站继续以 Assistant Entry 等稳定来源去重。
+
+输入及其附带上下文是不可拆分的投递组，保持 FIFO、Steer 优先和 FollowUp 在当前任务自然结束时投递。Astral 按用户选择入队，默认 FollowUp，接收后显式调用 Continue；运行中的 Busy 不视为接收失败。停止或失败后不自动重启。
 
 工具结果中 `Outcome`、`IsError` 和进程退出码各自保留。执行失败、命令返回非零、没有执行、已执行但效果未知不是同一个状态。未知的外部效果需要先核查，不以重放整条命令或重复发送消息解决。
 
@@ -990,7 +1007,9 @@ Core API 返回的 Input ID 是接收凭据，不是业务事件 ID。超时或�
 
 重启后必须能够重新打开 Session，恢复已持久化的历史、Pending、摘要、分支和已知执行事实。网页断线不取消 Server 上的工作；Desktop 窗口关闭不直接决定 Run 生命周期。
 
-无人值守重启后是否自动继续尚未完成的工作，仍是待细化的调度策略。恢复历史、识别已完成步骤和显示真实状态是确定要求；不能把这等同于已经决定“重启后全部自动续跑”。
+重新打开只恢复已提交事实，不自动继续，不恢复半截流或退避计时。需要执行时显式 Continue；提交前中断重新准备，提交后按持久事实恢复，效果未知的工具仍要求先核查。
+
+当前只接受 Host schema 2 与 Core format 9。使用全新数据目录初始化和验收；旧格式直接报告不支持，不提供旧接口、兼容读取或迁移。持久运行使用 SQLite，临时会话可使用 Memory；JSONL 仅用于历史导出。
 
 Daemon 重启、网络断线和进程退出分别处理。当前 Core standardtools 的进程管理句柄包含内存状态，不能直接声称跨 Daemon 重启仍可使用。Astral 需要自己的句柄关联与存活核查；句柄失效时明确报告，不把旧数字句柄绑定到新进程或新 Computer。
 
@@ -1085,7 +1104,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A29 | IM 文件交付 | Agent 显式调用 API，从来源 Computer 流式上传并获得回执；普通文件链接不冒充附件已发送 |
 | A30 | 上传与媒体 | Web/IM 图片原件写入指定 Computer 的附件专用目录；Agent 同时获得稳定 URI、文件名与路径及原生多模态图片内容。Rollout 冻结实际输入 payload；删除原件、源端离线、重开或 Fork 后，历史图片与模型重放保持一致 |
 | A31 | 文件异常与流取消 | 源端离线、删除、版本改变、读取失败和取消如实反馈，无隐藏 Server 副本回退 |
-| A32 | 模型配置 | 推荐值可覆盖且目录刷新不覆盖 override；Tool Calling 必须可用，非流式工具参数可正常执行 |
+| A32 | 模型配置 | 推荐值可覆盖且目录刷新不覆盖 override；保存后无需验证即可使用，实际请求反馈上游错误，非流式工具参数可正常执行 |
 | A33 | 单搜索后端 | 只调用 Agent 当前一个 Provider；无配置或失败明确报错，不聚合或隐式回退 |
 | A34 | 默认执行 UI | 工具过程聚合为 Activity Line；展开才显示细节，参数生成不误报文件已经写入 |
 | A35 | Stop 与排队输入 | 点击 Stop 后等真实终态；已持久接收输入不丢失，Waiting/Applied 与 Core 事实一致 |
@@ -1120,7 +1139,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | no_reply Core 扩展 | 通用控制类型、持久事件、模型投影、恢复和协议验证 | 无普通 tool result、立即正常结束、无额外续问、下次请求协议有效 |
 | API Schema | Owner、Daemon、Gateway 与事件字段、错误码、幂等关联 | 分离调用身份；接收、应用、执行、送达分别表达 |
 | FileRef 编码 | URI、源端版本/指纹、路径规则、预览范围、媒体引用解析 | 必须含来源 Computer；工作文件与持久媒体不进入 Server 资产库 |
-| Provider 适配 | 首批模型、Profile 字段、真实 Streaming/多模态/TokenEstimator 行为 | Tool Calling 必备；能力不能仅靠用户勾选声称支持 |
+| Provider 适配 | 首批模型、Profile 字段、真实 Streaming/多模态/TokenEstimator 行为 | 不设置前置能力验证；能力按目录和配置表达，以实际请求结果为准 |
 | 搜索适配 | 候选服务的真实 API、返回映射、错误处理、测试凭据 | 一个 Agent 同时一个后端，无隐式聚合或回退 |
 | IM 适配契约 | 平台/接入方式 Schema、能力声明、统一事件与发送契约；首版 Telegram 的 Conversation、Topic、私聊发现、手工绑定、格式拆分及附件流实现 | 首版仅交付 Telegram；后续 QQ NapCat/官方、飞书等通过适配器扩展；独立 Session、真实事件与回执保留 |
 | 高流量调度 | 合并窗口、积压保护、上下文预算、投递诊断 | 观察有序且不重复；引用式触发不可越过尚未应用的依赖 |
@@ -1144,7 +1163,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 
 关键源文件：
 
-- Core：[message.go](/Users/oines/project/agent-core/message.go)、[tool.go](/Users/oines/project/agent-core/tool.go)、[run.go](/Users/oines/project/agent-core/run.go)、[tool_execution.go](/Users/oines/project/agent-core/tool_execution.go)、[turn.go](/Users/oines/project/agent-core/turn.go)、[contracts.md](/Users/oines/project/agent-core/docs/contracts.md)、[session_input.go](/Users/oines/project/agent-core/session/session_input.go)、[context.go](/Users/oines/project/agent-core/session/context.go)。
+- Core：[session.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/session.go)、[input.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/input.go)、[prepare.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/prepare.go)、[generation.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/generation.go)、[run.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/run.go)、[tool_execution.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/tool_execution.go)、[context.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/context.go)、[contracts.md](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/docs/contracts.md)。
 - Cahciua：[rendering/index.ts](/Users/oines/project/Cahciua/src/rendering/index.ts)、[driver/merge.ts](/Users/oines/project/Cahciua/src/driver/merge.ts)、[system.velin.md](/Users/oines/project/Cahciua/prompts/system.velin.md)。
 - Memoh：[Web package.json](/Users/oines/project/memoh/apps/web/package.json)、[Desktop package.json](/Users/oines/project/memoh/apps/desktop/package.json)、[UI package.json](/Users/oines/project/memoh/packages/ui/package.json)、[vite.config.ts](/Users/oines/project/memoh/apps/web/vite.config.ts)、[openapi-ts.config.ts](/Users/oines/project/memoh/openapi-ts.config.ts)、[eslint.config.mjs](/Users/oines/project/memoh/eslint.config.mjs)、[vitest.config.ts](/Users/oines/project/memoh/vitest.config.ts)、[mise.toml](/Users/oines/project/memoh/mise.toml)。
 

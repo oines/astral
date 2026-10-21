@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	core "github.com/oines/astral-core"
-	sessions "github.com/oines/astral-core/session"
+
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
 )
@@ -65,6 +65,13 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 	if record.Reasoning != nil {
 		options.Reasoning = *record.Reasoning
 	}
+	configuration := r.core.Configuration()
+	if configuration.SystemPrompt != systemPrompt {
+		configuration.SystemPrompt = systemPrompt
+		if err = r.core.Configure(ctx, configuration); err != nil {
+			return err
+		}
+	}
 	if ref != r.core.Configuration().ModelID || !jsonEqual(options, r.core.Configuration().Options) {
 		if err = r.core.SelectModel(ctx, ref, options); err != nil {
 			return err
@@ -85,7 +92,7 @@ func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoni
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.maintenance != "" {
+	if r.core.Snapshot().Maintenance {
 		return core.ErrBusy
 	}
 	ref, options, err := s.Models.Selection(ctx, profileID)
@@ -122,13 +129,18 @@ func (s *Service) SelectComputer(ctx context.Context, id, computerID, cwd string
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.run != nil || r.maintenance != "" {
+	if r.core.Snapshot().Running || r.core.Snapshot().Maintenance {
 		return domain.Conflict("stop the Session before changing its Computer")
 	}
 	_, err = r.selectComputer(ctx, computerID, cwd)
+	if err == nil {
+		err = r.refreshEnvironment(ctx)
+	}
 	return err
 }
 func (r *runtime) selectComputer(ctx context.Context, id, cwd string) (domain.ExecutionBinding, error) {
+	r.environmentMu.Lock()
+	defer r.environmentMu.Unlock()
 	b, err := r.service.Hub.Bind(ctx, r.agentID, r.id, id, cwd)
 	if err != nil {
 		return b, err
@@ -141,68 +153,20 @@ func (r *runtime) selectComputer(ctx context.Context, id, cwd string) (domain.Ex
 	if err = r.service.Store.Save(ctx, "sessions", &record.Meta, &record); err != nil {
 		return b, err
 	}
-	r.setBinding(b)
 	r.service.notify(r.id)
 	return b, nil
 }
 
 func (r *runtime) continueLocked(ctx context.Context) error {
-	if r.run != nil || r.maintenance != "" {
+	if snapshot := r.core.Snapshot(); snapshot.Running || snapshot.Maintenance {
 		return core.ErrBusy
 	}
 	if err := r.syncSelection(ctx); err != nil {
-		r.lastError = err.Error()
 		return err
 	}
-	// Readiness can change independently. Bind opportunistically so the prompt
-	// contains the actual directories whenever the selected Computer is online.
-	_, _ = r.currentBinding(ctx)
-	s := r.service
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return core.ErrClosed
-	}
-	run, err := r.core.Continue(s.ctx)
-	if err != nil {
-		s.mu.Unlock()
-		r.lastError = err.Error()
-		return err
-	}
-	r.trackRunLocked(run)
-	s.mu.Unlock()
-	s.notify(r.id)
-	return nil
-}
-
-// The caller holds r.mu and s.mu, covering admission and worker registration.
-func (r *runtime) trackRunLocked(run *core.Run) {
-	s := r.service
-	r.run, r.stopping, r.lastError = run, false, ""
-	s.workers.Add(1)
-	go func() {
-		defer s.workers.Done()
-		result, runErr := run.Wait(context.Background())
-		r.mu.Lock()
-		if r.run == run {
-			stopped := r.stopping
-			r.run, r.stopping = nil, false
-			if result.Status == "cancelled" {
-				r.lastError = ""
-			} else if runErr != nil {
-				r.lastError = runErr.Error()
-			}
-			// A queued independent input after no_reply is a new activation.
-			// Cancellation and failed execution always require explicit Continue.
-			if result.Status == "completed" && runErr == nil && !stopped && s.ctx.Err() == nil {
-				if queued, _ := r.core.HasQueuedInputs(s.ctx); queued {
-					_ = r.continueLocked(s.ctx)
-				}
-			}
-		}
-		r.mu.Unlock()
-		s.notify(r.id)
-	}()
+	_, err := r.core.Continue(ctx)
+	r.service.notify(r.id)
+	return err
 }
 
 func (s *Service) Continue(ctx context.Context, id string) error {
@@ -219,12 +183,7 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	r.mu.Lock()
-	if r.run != nil || r.maintenance != "" {
-		r.stopping = true
-	}
 	r.core.Cancel()
-	r.mu.Unlock()
 	s.notify(id)
 	return nil
 }
@@ -234,34 +193,16 @@ func (s *Service) Compact(ctx context.Context, id, instructions string) error {
 		return err
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.run != nil || r.maintenance != "" {
-		return core.ErrBusy
-	}
-	if err = r.syncSelection(ctx); err != nil {
+	err = r.syncSelection(ctx)
+	r.mu.Unlock()
+	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return core.ErrClosed
-	}
-	r.maintenance, r.lastError = "compacting", ""
-	s.workers.Add(1)
-	s.mu.Unlock()
-	go func() {
-		defer s.workers.Done()
-		_, err := r.core.Compact(s.ctx, instructions)
-		r.mu.Lock()
-		r.maintenance, r.stopping = "", false
-		if err != nil {
-			r.lastError = err.Error()
-		}
-		r.mu.Unlock()
-		s.notify(id)
-	}()
+	// Core exposes maintenance state and owns cancellation. The HTTP handler
+	// may wait, while the operation is tied to the service rather than its client.
+	_, err = r.core.Compact(s.ctx, instructions)
 	s.notify(id)
-	return nil
+	return err
 }
 func (s *Service) ClearPending(ctx context.Context, id, kind string) error {
 	r, err := s.open(ctx, id)
@@ -290,14 +231,14 @@ func (s *Service) Resolve(ctx context.Context, id, executionID string, execution
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.run != nil || r.maintenance != "" {
+	if r.core.Snapshot().Running || r.core.Snapshot().Maintenance {
 		return core.ErrBusy
 	}
 	err = r.core.ResolveTool(ctx, executionID, execution)
 	s.notify(id)
 	return err
 }
-func (s *Service) DecideApproval(ctx context.Context, id, approvalID string, decision sessions.ApprovalDecision) error {
+func (s *Service) DecideApproval(ctx context.Context, id, approvalID string, decision core.ApprovalDecision) error {
 	r, err := s.open(ctx, id)
 	if err != nil {
 		return err
@@ -342,7 +283,7 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 	} else {
 		record.Title += " · fork"
 	}
-	child, err := parent.core.Fork(ctx, head, sessions.ForkOptions{ID: newID})
+	child, err := parent.core.Fork(ctx, head, core.ForkOptions{ID: newID})
 	if err != nil {
 		return record, err
 	}
@@ -355,7 +296,7 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 	if err = s.Store.Save(ctx, "sessions", &record.Meta, &record); err != nil {
 		return record, err
 	}
-	_, err = s.open(ctx, record.ID)
+	err = s.InitializeSession(ctx, record.ID)
 	s.notify(record.ID)
 	return record, err
 }

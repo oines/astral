@@ -3,64 +3,117 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQuery } from '@pinia/colada'
 import { useIntervalFn } from '@vueuse/core'
-import { sessionContextQuery } from '@astral/sdk/colada'
-import { clearPending, continueSession, decideApproval, inputReceipt, resolveTool, selectComputer, selectModel, stopSession, submitInput, uploadAttachment, type AstralInternalHarnessInputRequest } from '@astral/sdk'
-import { ArrowUp, CircleStop, Paperclip, X, CircleAlert, Monitor, SlidersHorizontal } from '@astral/icons'
-import { Button, Modal } from '@astral/ui'
-import type { FileRef, SessionView } from '../lib/types'
+import { listProvidersQuery, sessionContextQuery } from '@astral/sdk/colada'
+import { createSession, clearPending, continueSession, decideApproval, inputReceipt, resolveTool, selectComputer, selectModel, stopSession, submitInput, uploadAttachment } from '@astral/sdk'
+import { ArrowUp, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, User } from '@astral/icons'
+import { Button, Modal, Popover, Select, ModelPicker } from '@astral/ui'
+import type { SessionView } from '../lib/types'
 import { errorText, object, request } from '../lib/api'
+import { prepareInputAttempt, sameInputContent } from '../lib/input-attempt'
 import { useAppStore } from '../stores/app'
-import { useSurfaceStore } from '../stores/surface'
 import OutboxReceipts from './OutboxReceipts.vue'
 const props = defineProps<{ view: SessionView; live: boolean }>()
-const emit = defineEmits<{ sent: [text: string]; compact: [] }>()
+const emit = defineEmits<{ sent: [text: string]; compact: []; started: [id: string] }>()
 const app = useAppStore()
-const surface = useSurfaceStore()
+const providers = useQuery(listProvidersQuery())
 const { t } = useI18n()
-const text = ref('')
-const files = ref<Array<{ uri: string; file: FileRef }>>([])
+const draftKey = props.view.id || `new:${props.view.agent_id}`
+if (!app.drafts[draftKey]) app.drafts[draftKey] = { text: '', files: [] }
+const draft = app.drafts[draftKey]!
+const text = computed({ get: () => draft.text, set: value => { draft.text = value } })
+const files = computed({ get: () => draft.files, set: value => { draft.files = value } })
+const attempt = computed({ get: () => draft.attempt, set: value => { draft.attempt = value } })
+const homeSelection = computed({ get: () => draft.selection || {}, set: value => { draft.selection = value } })
+const view = computed(() => props.view.id ? props.view : { ...(draft.session || props.view), ...homeSelection.value })
 const busy = ref(false)
 const uploading = ref(false)
 const error = ref('')
 const pick = ref<HTMLInputElement>()
 const mode = ref(app.data?.preferences.running_input || 'follow_up')
-const attempt = ref<AstralInternalHarnessInputRequest>()
-const running = computed(() => ['running', 'stopping', 'compacting'].includes(props.view.status))
-const agent = computed(() => app.agents.find(a => a.id === props.view.agent_id))
+const inputContent = computed(() => ({ text: text.value, files: files.value.map(file => file.uri), mode: mode.value }))
+const retrying = computed(() => attempt.value && sameInputContent(attempt.value, inputContent.value))
+watch(inputContent, () => { if (!busy.value) error.value = '' })
+watch(() => app.data?.preferences.running_input, value => { if (value) mode.value = value })
+const running = computed(() => ['running', 'stopping', 'compacting'].includes(view.value.status))
+const agent = computed(() => app.agents.find(a => a.id === view.value.agent_id))
 const computers = computed(() => app.computers.filter(c => agent.value?.allowed_computers.includes(c.id) && !c.revoked))
-const profile = computed(() => app.models.find(p => p.id === props.view.profile_id))
+const profile = computed(() => app.models.find(p => p.id === view.value.profile_id))
 const values = computed(() => ({ ...profile.value?.recommendations, ...profile.value?.overrides }))
 const caps = computed(() => object(values.value.reasoning))
 const efforts = computed(() => Array.isArray(caps.value.efforts) ? caps.value.efforts.filter((x): x is string => typeof x === 'string') : [])
-const context = useQuery(() => ({ ...sessionContextQuery({ path: { id: props.view.id } }), key: ['context', props.view.id, props.view.head_id, props.view.profile_id ?? '', props.view.run_id ?? ''], staleTime: 5000 }))
+const context = useQuery(() => ({ ...sessionContextQuery({ path: { id: view.value.id } }), key: ['context', view.value.id, view.value.head_id, view.value.profile_id ?? '', view.value.run_id ?? ''], staleTime: 5000, enabled: Boolean(view.value.id) }))
 useIntervalFn(() => { if (running.value && document.visibilityState === 'visible') void context.refetch() }, 2000)
 const ratio = computed(() => context.data.value ? Math.min(100, Math.round(context.data.value.estimated_input / context.data.value.context_window * 100)) : 0)
 const resolution = ref('')
 const note = ref('')
-const controlsOpen = ref(false)
+const computer = computed(() => computers.value.find(c => c.id === view.value.computer_id))
+const modelBusy = ref(false)
+const defaultReasoning = computed(() => object(object(values.value.defaults).reasoning))
+const reasoningValue = computed(() => view.value.reasoning?.enabled === false ? 'off' : view.value.reasoning?.effort || (view.value.reasoning?.enabled ? 'on' : 'default'))
+const defaultReasoningLabel = computed(() => defaultReasoning.value.enabled === false ? t('off') : typeof defaultReasoning.value.effort === 'string' ? t(defaultReasoning.value.effort) : defaultReasoning.value.enabled === true ? t('on') : t('default'))
+const reasoningLabel = computed(() => reasoningValue.value === 'default' ? defaultReasoningLabel.value : t(reasoningValue.value))
+const reasoningOptions = computed(() => !efforts.value.length && !caps.value.toggle && !caps.value.disable ? [] : [
+  { value: 'default', label: defaultReasoningLabel.value === t('default') ? t('default') : `${t('default')} · ${defaultReasoningLabel.value}` },
+  ...(caps.value.disable ? [{ value: 'off', label: t('off') }] : []),
+  ...(caps.value.toggle ? [{ value: 'on', label: t('on') }] : []),
+  ...efforts.value.map(value => ({ value, label: t(value) })),
+])
+const modelOptions = computed(() => app.availableModels.map(model => ({ value: model.id, label: model.name, group: model.provider_id, groupLabel: providers.data.value?.find(provider => provider.id === model.provider_id)?.name || t('providers'), keywords: model.model_id })))
 async function action(fn: () => Promise<unknown>) {
   error.value = ''
   try { await fn() } catch (e) { error.value = errorText(e) }
 }
+async function ensureSession() {
+  if (props.view.id) return
+  const desired = { ...view.value }
+  if (!draft.session) {
+    const created = await request(createSession({ body: { agent_id: desired.agent_id, title: text.value.trim().slice(0, 64) || t('newSession') } }))
+    draft.session = { ...created, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', approvals: [], pending: [], unresolved: [] }
+  }
+  const session = draft.session
+  if (desired.computer_id && desired.computer_id !== session.computer_id) {
+    await request(selectComputer({ path: { id: session.id }, body: { computer_id: desired.computer_id } }))
+    draft.session.computer_id = desired.computer_id
+  }
+  if (desired.profile_id && (desired.profile_id !== session.profile_id || JSON.stringify(desired.reasoning) !== JSON.stringify(session.reasoning))) {
+    await request(selectModel({ path: { id: session.id }, body: { profile_id: desired.profile_id, reasoning: desired.reasoning } }))
+    draft.session.profile_id = desired.profile_id
+    draft.session.reasoning = desired.reasoning
+  }
+}
+async function changeComputer(id: string) {
+  if (!props.view.id) { homeSelection.value = { ...homeSelection.value, computer_id: id }; return }
+  await action(async () => { await request(selectComputer({ path: { id: view.value.id }, body: { computer_id: id } })); if (draft.session) draft.session.computer_id = id })
+}
 async function send() {
-  if (busy.value || uploading.value || (!attempt.value && !text.value.trim() && !files.value.length)) return
-  const current = attempt.value ?? { id: crypto.randomUUID(), text: text.value, files: files.value.map(f => f.uri), mode: mode.value }
-  attempt.value = current
+  if (!props.live || busy.value || uploading.value || (!text.value.trim() && !files.value.length)) return
   busy.value = true
   error.value = ''
   try {
+    await ensureSession()
+    const current = await prepareInputAttempt(attempt.value, inputContent.value, async id => {
+      const result = await inputReceipt({ path: { id: view.value.id, input: id }, throwOnError: false })
+      if (result.response?.status !== 404 && result.error) throw result.error
+      return result.data
+    })
+    attempt.value = current
     try {
-      await request(submitInput({ path: { id: props.view.id }, body: current }))
+      await request(submitInput({ path: { id: view.value.id }, body: current }))
     } catch (e) {
       // A transport failure can happen after durable acceptance. Reconcile by
       // the same input ID before showing a retry that reuses the exact payload.
-      const receipt = await request(inputReceipt({ path: { id: props.view.id, input: current.id } })).catch(() => undefined)
+      const receipt = await request(inputReceipt({ path: { id: view.value.id, input: current.id } })).catch(() => undefined)
       if (!receipt || (!receipt.input_id && receipt.state !== 'applied')) throw e
     }
     text.value = ''
     files.value = []
     attempt.value = undefined
     emit('sent', current.text)
+    if (!props.view.id) {
+      const id = view.value.id
+      draft.session = undefined
+      emit('started', id)
+    }
   } catch (e) { error.value = errorText(e) }
   finally { busy.value = false }
 }
@@ -69,8 +122,9 @@ async function upload(event: Event) {
   uploading.value = true
   error.value = ''
   try {
+    await ensureSession()
     for (const file of Array.from(input.files ?? [])) {
-      const result = await request(uploadAttachment({ path: { id: props.view.id }, query: { name: file.name, computer_id: props.view.computer_id }, body: file }))
+      const result = await request(uploadAttachment({ path: { id: view.value.id }, query: { name: file.name, computer_id: view.value.computer_id }, body: file }))
       files.value.push(result)
     }
   } catch (e) { error.value = `${t('attachmentError')}: ${errorText(e)}` }
@@ -80,24 +134,35 @@ function keyboard(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !event.altKey) { event.preventDefault(); void send() }
 }
 async function changeModel(id: string) {
-  await action(() => request(selectModel({ path: { id: props.view.id }, body: { profile_id: id } })))
+  if (modelBusy.value || id === view.value.profile_id) return
+  if (!props.view.id) { homeSelection.value = { ...homeSelection.value, profile_id: id, reasoning: undefined }; return }
+  modelBusy.value = true
+  try { await action(async () => { await request(selectModel({ path: { id: view.value.id }, body: { profile_id: id } })); if (draft.session) { draft.session.profile_id = id; draft.session.reasoning = undefined } }) }
+  finally { modelBusy.value = false }
 }
 async function changeReasoning(value: string) {
+  if (modelBusy.value || value === reasoningValue.value) return
   const reasoning = value === 'default' ? undefined : value === 'off' ? { enabled: false } : value === 'on' ? { enabled: true } : { enabled: true, effort: value }
-  await action(() => request(selectModel({ path: { id: props.view.id }, body: { profile_id: props.view.profile_id ?? '', reasoning } })))
+  if (!props.view.id) { homeSelection.value = { ...homeSelection.value, reasoning }; return }
+  modelBusy.value = true
+  try { await action(async () => { await request(selectModel({ path: { id: view.value.id }, body: { profile_id: view.value.profile_id ?? '', reasoning } })); if (draft.session) draft.session.reasoning = reasoning }) }
+  finally { modelBusy.value = false }
 }
 async function resolve(outcome: 'succeeded' | 'failed') {
   await action(async () => {
-    await request(resolveTool({ path: { id: props.view.id, execution: resolution.value }, body: { execution: { result: { outcome, is_error: outcome === 'failed', content: [{ type: 'text', text: note.value }] } } } }))
+    await request(resolveTool({ path: { id: view.value.id, execution: resolution.value }, body: { execution: { result: { outcome, is_error: outcome === 'failed', content: [{ type: 'text', text: note.value }] } } } }))
     resolution.value = ''
     note.value = ''
   })
 }
-watch(() => props.view.id, () => { text.value = ''; files.value = []; attempt.value = undefined; error.value = '' })
+watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value = '' })
 </script>
 <template>
   <div class="composer-area">
-    <OutboxReceipts :session-i-d="view.id" />
+    <OutboxReceipts
+      v-if="view.id"
+      :session-i-d="view.id"
+    />
     <div
       v-if="view.approvals?.length"
       class="takeover stack"
@@ -142,7 +207,7 @@ watch(() => props.view.id, () => { text.value = ''; files.value = []; attempt.va
         <code>{{ tool.invocation.call.name }}</code>
         <Button
           size="small"
-          @click="resolution = tool.invocation.execution_id; surface.open({ kind: 'json', title: tool.invocation.call.name, data: tool })"
+          @click="resolution = tool.invocation.execution_id"
         >
           {{ t('inspect') }}
         </Button>
@@ -200,124 +265,75 @@ watch(() => props.view.id, () => { text.value = ''; files.value = []; attempt.va
       @submit.prevent="send"
     >
       <div
-        v-if="files.length"
+        v-if="files.length || uploading"
         class="attachment-tray"
       >
         <span
           v-for="(file, i) in files"
           :key="file.file.id"
-          class="file-chip"
-        >{{ file.file.display_name }}<button
-          v-if="!attempt"
-          type="button"
-          :aria-label="t('delete')"
-          @click="files.splice(i, 1)"
-        ><X /></button></span>
-      </div>
-      <textarea
-        v-model="text"
-        :placeholder="t('message')"
-        :aria-label="t('message')"
-        :readonly="Boolean(attempt)"
-        rows="2"
-        @keydown="keyboard"
-      />
-      <div class="composer-actions">
-        <div class="row composer-left">
-          <input
-            ref="pick"
-            type="file"
-            hidden
-            multiple
-            @change="upload"
-          >
-          <Button
-            variant="ghost"
-            size="icon"
-            :aria-label="t('attach')"
-            :title="t('attach')"
-            :disabled="!view.computer_id || uploading || Boolean(attempt)"
-            @click="pick?.click()"
-          >
-            <Paperclip />
-          </Button>
-          <span
-            v-if="uploading"
-            class="muted small"
-          >{{ t('upload') }}</span>
-          <label
-            v-else
-            class="inline-select computer-select"
-          ><Monitor /><select
-            :value="view.computer_id || ''"
-            :disabled="running"
-            :aria-label="t('computer')"
-            :title="t('computer')"
-            @change="action(() => request(selectComputer({ path: { id: view.id }, body: { computer_id: ($event.target as HTMLSelectElement).value } })))"
-          >
-            <option
-              value=""
-              disabled
-            >{{ t('missing') }}</option>
-            <option
-              v-if="view.computer_id && !computers.some(c => c.id === view.computer_id)"
-              :value="view.computer_id"
-            >{{ t('missing') }}</option>
-            <option
-              v-for="c in computers"
-              :key="c.id"
-              :value="c.id"
-            >{{ c.name }}{{ c.online ? '' : ' · ' + t('offline') }}</option>
-          </select></label>
-          <Button
-            variant="ghost"
-            size="icon"
-            :aria-label="t('model')"
-            :title="t('model')"
-            @click="controlsOpen = !controlsOpen"
-          >
-            <SlidersHorizontal />
-          </Button>
+          class="attachment-chip"
+        >
+          <File /><span>{{ file.file.display_name }}</span>
           <button
+            v-if="!busy"
             type="button"
-            class="context-ring"
-            :style="{ '--progress': `${ratio}%` }"
-            :title="`${t('context')}: ${context.data.value?.estimated_input ?? '—'} / ${context.data.value?.context_window ?? '—'}`"
-            :aria-label="t('context')"
-            @click="controlsOpen = !controlsOpen"
-          >
-            <span />
-          </button>
-        </div>
-        <div class="row">
-          <select
-            v-if="running"
-            v-model="mode"
-            class="send-mode"
-            :aria-label="t('inputDefault')"
-          >
-            <option value="follow_up">
-              {{ t('followUp') }}
-            </option><option value="steer">
-              {{ t('steer') }}
-            </option>
-          </select>
+            :aria-label="t('delete')"
+            @click="files.splice(i, 1)"
+          ><X /></button>
+        </span>
+        <span
+          v-if="uploading"
+          class="attachment-chip muted"
+        ><span class="spinner" />{{ t('upload') }}</span>
+      </div>
+      <div class="composer-input-row">
+        <input
+          ref="pick"
+          type="file"
+          hidden
+          multiple
+          @change="upload"
+        >
+        <Button
+          variant="ghost"
+          size="icon"
+          class="composer-add"
+          :aria-label="t('attach')"
+          :title="t('attach')"
+          :disabled="!view.computer_id || uploading || busy"
+          @click="pick?.click()"
+        >
+          <Plus />
+        </Button>
+        <textarea
+          v-model="text"
+          :placeholder="t('message')"
+          :aria-label="t('message')"
+          :readonly="busy"
+          rows="1"
+          @keydown="keyboard"
+        />
+        <div class="composer-submit-actions">
           <Button
             v-if="running"
+            class="composer-stop"
+            variant="primary"
             size="icon"
             :aria-label="t('stop')"
             :title="t('stop')"
             :disabled="view.status === 'stopping'"
             @click="action(() => request(stopSession({ path: { id: view.id } })))"
           >
-            <CircleStop />
+            <Square />
           </Button>
           <Button
+            v-if="!running || text.trim() || files.length || attempt"
+            class="composer-send"
             type="submit"
             variant="primary"
             size="icon"
-            :aria-label="t(attempt ? 'retry' : 'send')"
-            :title="t(attempt ? 'retry' : 'send')"
+            :aria-label="t(retrying ? 'retry' : 'send')"
+            :title="t(retrying ? 'retry' : 'send')"
             :busy="busy"
             :disabled="uploading || (!text.trim() && !files.length) || !live"
           >
@@ -325,52 +341,122 @@ watch(() => props.view.id, () => { text.value = ''; files.value = []; attempt.va
           </Button>
         </div>
       </div>
-      <div
-        v-if="controlsOpen"
-        class="composer-controls"
-      >
-        <label class="label">{{ t('model') }}<select
-          :value="view.profile_id"
-          @change="changeModel(($event.target as HTMLSelectElement).value)"
-        ><option
-          v-if="!profile"
-          :value="view.profile_id"
-        >{{ t('missing') }}</option><option
-          v-for="p in app.models"
-          :key="p.id"
-          :value="p.id"
-        >{{ p.name }}</option></select></label>
-        <label
-          v-if="efforts.length || caps.toggle"
-          class="label"
-        >{{ t('reasoning') }}<select
-          :value="view.reasoning?.enabled === false ? 'off' : view.reasoning?.effort || (view.reasoning?.enabled ? 'on' : 'default')"
-          @change="changeReasoning(($event.target as HTMLSelectElement).value)"
-        ><option value="default">{{ t('default') }}</option><option
-          v-if="caps.disable"
-          value="off"
-        >{{ t('off') }}</option><option
-          v-if="caps.toggle"
-          value="on"
-        >{{ t('on') }}</option><option
-          v-for="effort in efforts"
-          :key="effort"
-          :value="effort"
-        >{{ effort }}</option></select></label>
-        <div class="row wrap muted small">
-          <span>{{ t('context') }}: {{ context.data.value?.estimated_input?.toLocaleString() ?? '—' }} / {{ context.data.value?.context_window?.toLocaleString() ?? '—' }}</span><Button
-            variant="ghost"
-            size="small"
-            :disabled="running"
-            @click="emit('compact')"
-          >
-            {{ t('compact') }}
-          </Button>
+    </form>
+    <div class="composer-environment">
+      <div class="composer-environment-left">
+        <Popover
+          side="top"
+          :label="t('computer')"
+        >
+          <template #trigger>
+            <button
+              type="button"
+              class="composer-picker computer-picker"
+              :disabled="running"
+              :aria-label="t('computer')"
+              :title="computer?.name"
+            >
+              <Monitor /><span>{{ computer?.name || t('missing') }}</span><ChevronDown />
+            </button>
+          </template>
+          <template #default="{ close }">
+            <div class="popover-label">
+              {{ t('computer') }}
+            </div>
+            <button
+              v-for="c in computers"
+              :key="c.id"
+              type="button"
+              class="menu-item"
+              @click="changeComputer(c.id); close()"
+            >
+              <Monitor /><span>{{ c.name }}<small
+                v-if="!c.online"
+                class="muted"
+              > · {{ t('offline') }}</small></span><Check v-if="view.computer_id === c.id" />
+            </button>
+          </template>
+        </Popover>
+        <div class="composer-agent">
+          <User /><span
+            :title="view.id ? t('agentLocked') : agent?.name"
+          >{{ agent?.name }}</span>
         </div>
       </div>
-    </form>
-    <div class="composer-footnote">
-      {{ profile?.name || t('missing') }}<span v-if="running"> · {{ t(view.status) }}</span><span v-if="!live"> · {{ t('reconnecting') }}</span>
+      <div class="composer-environment-right">
+        <ModelPicker
+          :model-value="view.profile_id || ''"
+          :model-label="profile?.name || t('missing')"
+          :models="modelOptions"
+          :reasoning-value="reasoningValue"
+          :reasoning-label="reasoningLabel"
+          :reasoning-options="reasoningOptions"
+          :labels="{ model: t('model'), reasoning: t('reasoning'), search: t('searchModels'), empty: t('noModelMatch') }"
+          :busy="modelBusy"
+          @update:model-value="changeModel"
+          @update:reasoning-value="changeReasoning"
+        >
+          <button
+            type="button"
+            class="composer-picker model-picker"
+            :aria-label="t('model')"
+            :title="profile?.name"
+          >
+            <span>{{ profile?.name || t('missing') }}</span><ChevronDown />
+          </button>
+        </ModelPicker>
+        <Popover
+          v-if="view.id"
+          side="top"
+          align="end"
+          :label="t('context')"
+        >
+          <template #trigger>
+            <button
+              type="button"
+              class="context-button"
+              :title="`${t('context')}: ${ratio}%`"
+              :aria-label="t('context')"
+            >
+              <span
+                class="context-ring"
+                :style="{ '--progress': `${ratio}%` }"
+              ><span /></span>
+            </button>
+          </template>
+          <div class="context-menu">
+            <strong>{{ t('context') }} <span>{{ ratio }}%</span></strong>
+            <div class="context-meter">
+              <span :style="{ width: `${ratio}%` }" />
+            </div>
+            <p class="muted">
+              {{ context.data.value?.estimated_input?.toLocaleString() ?? '—' }} / {{ context.data.value?.context_window?.toLocaleString() ?? '—' }} tokens
+            </p>
+            <Button
+              variant="secondary"
+              size="small"
+              :disabled="running"
+              @click="emit('compact')"
+            >
+              {{ t('compact') }}
+            </Button>
+          </div>
+        </Popover>
+        <Select
+          v-if="running"
+          v-model="mode"
+          class="send-mode"
+          :label="t('inputDefault')"
+          :options="[{ value: 'follow_up', label: t('followUp') }, { value: 'steer', label: t('steer') }]"
+        />
+      </div>
+    </div>
+    <div
+      v-if="!live"
+      class="composer-connection"
+      role="status"
+    >
+      <span class="spinner" />{{ t('reconnecting') }}
     </div>
     <Modal
       :open="Boolean(resolution)"
@@ -378,6 +464,9 @@ watch(() => props.view.id, () => { text.value = ''; files.value = []; attempt.va
       :description="t('unknownHint')"
       @update:open="value => { if (!value) resolution = '' }"
     >
+      <details class="form-disclosure">
+        <summary>{{ t('details') }}</summary><pre>{{ JSON.stringify(view.unresolved?.find(item => item.invocation.execution_id === resolution), null, 2) }}</pre>
+      </details>
       <label class="label">{{ t('result') }}<textarea
         v-model="note"
         required

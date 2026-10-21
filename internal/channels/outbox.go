@@ -10,7 +10,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
-	sessions "github.com/oines/astral-core/session"
+
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/filestream"
 	"github.com/oines/astral/internal/persistence"
@@ -190,7 +190,7 @@ func (s *Service) collect(ctx context.Context, b domain.ConversationBinding) err
 	if err = s.Store.Get(ctx, "outbox_cursors", b.ID, &position); err != nil && !domain.IsMissing(err) {
 		return err
 	}
-	page, err := session.History().Scan(ctx, sessions.Query{SessionID: b.SessionID, Kind: sessions.EntryMessage, Cursor: position.Value, Limit: 100, MaxBytes: 64 << 20})
+	page, err := session.History().Scan(ctx, core.Query{SessionID: b.SessionID, Kind: core.EntryMessage, Cursor: position.Value, Limit: 100, MaxBytes: 64 << 20})
 	if err != nil {
 		return err
 	}

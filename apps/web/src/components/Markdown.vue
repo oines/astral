@@ -14,6 +14,7 @@ enableMermaid()
   <MarkdownRender
     custom-id="astral"
     html-policy="escape"
+    mode="chat"
     :content="content"
     :is-dark="app.dark"
     :typewriter="false"

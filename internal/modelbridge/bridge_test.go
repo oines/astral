@@ -55,8 +55,8 @@ func TestVerificationRevisionAndImmutableCredentials(t *testing.T) {
 	if err = bridge.SaveProfile(ctx, &profile); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = bridge.Selection(ctx, profile.ID); err == nil {
-		t.Fatal("unverified configuration was selectable")
+	if selected, _, selectionErr := bridge.Selection(ctx, profile.ID); selectionErr != nil || selected != Reference(profile, provider) {
+		t.Fatalf("new configuration was not immediately selectable: %q %v", selected, selectionErr)
 	}
 	verdict, err := bridge.Verify(ctx, profile.ID)
 	if err != nil || verdict.ToolCalling != "supported" || verdict.ToolReplay != "supported" {
@@ -66,18 +66,58 @@ func TestVerificationRevisionAndImmutableCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	model, err := bridge.Resolve(ctx, ref, func(context.Context) (string, error) { return "current computer: original", nil })
+	model, err := bridge.Resolve(ctx, ref, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := store.Get(ctx, "models", profile.ID, &profile); err != nil {
+		t.Fatal(err)
+	}
+	profile.Description = "A display-only edit"
+	if err := bridge.SaveProfile(ctx, &profile); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := bridge.Selection(ctx, profile.ID); err != nil {
+		t.Fatalf("description invalidated verification: %v", err)
+	}
+	for _, enabled := range []bool{false, true} {
+		profile.Enabled = &enabled
+		if err := bridge.SaveProfile(ctx, &profile); err != nil {
+			t.Fatal(err)
+		}
+		_, _, selectionErr := bridge.Selection(ctx, profile.ID)
+		if (selectionErr == nil) != enabled {
+			t.Fatalf("model enable state %v: %v", enabled, selectionErr)
+		}
+		if !enabled {
+			if _, err := model.Stream(ctx, core.Request{ModelID: ref}, func(core.ModelEvent) {}); err == nil {
+				t.Fatal("resolved model ignored current disabled state")
+			}
+		}
+	}
+	for _, enabled := range []bool{false, true} {
+		provider.Enabled = &enabled
+		if err := bridge.SaveProvider(ctx, &provider, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		_, _, selectionErr := bridge.Selection(ctx, profile.ID)
+		if (selectionErr == nil) != enabled {
+			t.Fatalf("provider enable state %v: %v", enabled, selectionErr)
+		}
+		if !enabled {
+			if _, err := model.Stream(ctx, core.Request{ModelID: ref}, func(core.ModelEvent) {}); err == nil {
+				t.Fatal("resolved model ignored current disabled provider")
+			}
+		}
 	}
 	key = "test-new-key"
 	if err = bridge.SaveProvider(ctx, &provider, &key, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = bridge.Selection(ctx, profile.ID); err == nil {
-		t.Fatal("changed provider reused stale capability verification")
+	if selected, _, selectionErr := bridge.Selection(ctx, profile.ID); selectionErr != nil || selected == ref {
+		t.Fatalf("changed provider was not immediately selectable: %q %v", selected, selectionErr)
 	}
-	request, err := model.(*boundModel).PrepareRequest(ctx, core.Request{ModelID: ref, MaxOutputTokens: 100, Options: options, Messages: []core.Message{core.User("continue")}})
+	request, err := model.(*boundModel).PrepareRequest(ctx, core.Request{ModelID: ref, SystemPrompt: "fixed rules", MaxOutputTokens: 100, Options: options, Messages: []core.Message{{Role: core.RoleUser, ContextKind: "astral.environment", Content: core.Text("current computer: original")}, core.User("continue")}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +135,9 @@ func TestVerificationRevisionAndImmutableCredentials(t *testing.T) {
 	}
 	if !strings.Contains(string(raw(requests[2])), "current computer: original") {
 		t.Fatal("environment missing from the actual request")
+	}
+	if request.SystemPrompt != "fixed rules" {
+		t.Fatal("preparation rewrote the stable system prompt")
 	}
 }
 

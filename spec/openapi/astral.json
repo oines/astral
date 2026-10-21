@@ -1,6 +1,153 @@
 {
   "components": {
     "schemas": {
+      "astral_core_ApprovalDecision": {
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved"
+        ],
+        "type": "object"
+      },
+      "astral_core_ApprovalRecord": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/astral_core_ApprovalDecision"
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/astral_core_ApprovalRequest"
+          }
+        },
+        "required": [
+          "id",
+          "execution_id",
+          "request"
+        ],
+        "type": "object"
+      },
+      "astral_core_ApprovalRequest": {
+        "properties": {
+          "details": {},
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "type": "object"
+      },
+      "astral_core_AttemptStatus": {
+        "properties": {
+          "attempt": {
+            "type": "integer"
+          },
+          "attempt_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "next_retry_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "turn_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "purpose",
+          "attempt",
+          "max_attempts",
+          "state"
+        ],
+        "type": "object"
+      },
+      "astral_core_CompactionRecord": {
+        "properties": {
+          "input_tokens": {
+            "type": "integer"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "model_revision": {
+            "type": "string"
+          },
+          "options": {
+            "$ref": "#/components/schemas/astral_core_GenerationOptions"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "through_id": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/astral_core_Usage"
+          }
+        },
+        "required": [
+          "through_id",
+          "summary",
+          "model_id",
+          "input_tokens"
+        ],
+        "type": "object"
+      },
+      "astral_core_Configuration": {
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "options": {
+            "$ref": "#/components/schemas/astral_core_GenerationOptions"
+          },
+          "system_prompt": {
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/astral_core_ToolDefinition"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "system_prompt",
+          "model_id"
+        ],
+        "type": "object"
+      },
       "astral_core_Content": {
         "properties": {
           "data": {},
@@ -26,10 +173,130 @@
         ],
         "type": "object"
       },
+      "astral_core_CreationRecord": {
+        "properties": {
+          "fork_digest": {
+            "type": "string"
+          },
+          "fork_entry_id": {
+            "type": "string"
+          },
+          "fork_mode": {
+            "type": "integer"
+          },
+          "fork_rollout_id": {
+            "type": "string"
+          },
+          "fork_session_id": {
+            "type": "string"
+          },
+          "format_version": {
+            "type": "integer"
+          },
+          "projection": {
+            "$ref": "#/components/schemas/astral_core_Projection"
+          },
+          "rollout_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rollout_id",
+          "format_version",
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "astral_core_Entry": {
+        "properties": {
+          "approval": {
+            "$ref": "#/components/schemas/astral_core_ApprovalRecord"
+          },
+          "clear": {
+            "$ref": "#/components/schemas/astral_core_InputClear"
+          },
+          "compaction": {
+            "$ref": "#/components/schemas/astral_core_CompactionRecord"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/astral_core_Configuration"
+          },
+          "created": {
+            "$ref": "#/components/schemas/astral_core_CreationRecord"
+          },
+          "id": {
+            "type": "string"
+          },
+          "input": {
+            "$ref": "#/components/schemas/astral_core_QueuedInput"
+          },
+          "input_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/astral_core_Message"
+          },
+          "model_request": {
+            "$ref": "#/components/schemas/astral_core_ModelRequestRecord"
+          },
+          "model_response": {
+            "$ref": "#/components/schemas/astral_core_ModelResponseRecord"
+          },
+          "parent_id": {
+            "type": "string"
+          },
+          "run": {
+            "$ref": "#/components/schemas/astral_core_RunRecord"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/astral_core_ToolRecord"
+          },
+          "turn_id": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/astral_core_Usage"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "sequence",
+          "version",
+          "id",
+          "kind",
+          "time"
+        ],
+        "type": "object"
+      },
       "astral_core_Event": {
         "properties": {
           "approval_id": {
             "type": "string"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/astral_core_AttemptStatus"
           },
           "attempt_id": {
             "type": "string"
@@ -124,6 +391,20 @@
             "type": "number"
           }
         },
+        "type": "object"
+      },
+      "astral_core_InputClear": {
+        "properties": {
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "kinds"
+        ],
         "type": "object"
       },
       "astral_core_Invocation": {
@@ -257,6 +538,66 @@
         ],
         "type": "object"
       },
+      "astral_core_PendingApproval": {
+        "properties": {
+          "ID": {
+            "type": "string"
+          },
+          "Invocation": {
+            "$ref": "#/components/schemas/astral_core_Invocation"
+          },
+          "Request": {
+            "$ref": "#/components/schemas/astral_core_ApprovalRequest"
+          }
+        },
+        "required": [
+          "ID",
+          "Invocation",
+          "Request"
+        ],
+        "type": "object"
+      },
+      "astral_core_Projection": {
+        "properties": {
+          "batch_configuration_id": {
+            "type": "string"
+          },
+          "compaction_id": {
+            "type": "string"
+          },
+          "configuration_id": {
+            "type": "string"
+          },
+          "head_id": {
+            "type": "string"
+          },
+          "last_message_id": {
+            "type": "string"
+          },
+          "pending_calls": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/astral_core_ToolCall"
+            },
+            "type": "object"
+          },
+          "through_id": {
+            "type": "string"
+          },
+          "tool_entries": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "unresolved": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/astral_core_ToolRecord"
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
       "astral_core_QueuedInput": {
         "properties": {
           "contexts": {
@@ -264,6 +605,9 @@
               "$ref": "#/components/schemas/astral_core_Message"
             },
             "type": "array"
+          },
+          "digest": {
+            "type": "string"
           },
           "id": {
             "type": "string"
@@ -277,6 +621,7 @@
         },
         "required": [
           "id",
+          "digest",
           "kind"
         ],
         "type": "object"
@@ -373,6 +718,30 @@
         },
         "type": "object"
       },
+      "astral_core_RunRecord": {
+        "properties": {
+          "end_reason": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "queue_only": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
       "astral_core_ToolCall": {
         "properties": {
           "arguments": {},
@@ -464,6 +833,29 @@
         },
         "type": "object"
       },
+      "astral_core_ToolRecord": {
+        "properties": {
+          "control": {
+            "$ref": "#/components/schemas/astral_core_RunEnd"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/astral_core_ToolDecision"
+          },
+          "invocation": {
+            "$ref": "#/components/schemas/astral_core_Invocation"
+          },
+          "needs_resolution": {
+            "type": "boolean"
+          },
+          "result": {
+            "$ref": "#/components/schemas/astral_core_ToolResult"
+          }
+        },
+        "required": [
+          "invocation"
+        ],
+        "type": "object"
+      },
       "astral_core_ToolResult": {
         "properties": {
           "artifact": {
@@ -494,30 +886,6 @@
         ],
         "type": "object"
       },
-      "astral_core_TurnState": {
-        "properties": {
-          "advanced": {
-            "type": "boolean"
-          },
-          "assistant_id": {
-            "type": "string"
-          },
-          "decided": {
-            "type": "boolean"
-          },
-          "decision": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "assistant_id"
-        ],
-        "type": "object"
-      },
       "astral_core_Usage": {
         "properties": {
           "available": {
@@ -539,354 +907,6 @@
             "type": "integer"
           }
         },
-        "type": "object"
-      },
-      "astral_core_session_ApprovalDecision": {
-        "properties": {
-          "approved": {
-            "type": "boolean"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "approved"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_ApprovalRecord": {
-        "properties": {
-          "decision": {
-            "$ref": "#/components/schemas/astral_core_session_ApprovalDecision"
-          },
-          "execution_id": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "request": {
-            "$ref": "#/components/schemas/astral_core_session_ApprovalRequest"
-          }
-        },
-        "required": [
-          "id",
-          "execution_id",
-          "request"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_ApprovalRequest": {
-        "properties": {
-          "details": {},
-          "prompt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "prompt"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_CompactionRecord": {
-        "properties": {
-          "input_tokens": {
-            "type": "integer"
-          },
-          "instructions": {
-            "type": "string"
-          },
-          "model_id": {
-            "type": "string"
-          },
-          "model_revision": {
-            "type": "string"
-          },
-          "options": {
-            "$ref": "#/components/schemas/astral_core_GenerationOptions"
-          },
-          "summary": {
-            "type": "string"
-          },
-          "through_id": {
-            "type": "string"
-          },
-          "usage": {
-            "$ref": "#/components/schemas/astral_core_Usage"
-          }
-        },
-        "required": [
-          "through_id",
-          "summary",
-          "model_id",
-          "input_tokens"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_Configuration": {
-        "properties": {
-          "model_id": {
-            "type": "string"
-          },
-          "options": {
-            "$ref": "#/components/schemas/astral_core_GenerationOptions"
-          },
-          "system_prompt": {
-            "type": "string"
-          },
-          "tools": {
-            "items": {
-              "$ref": "#/components/schemas/astral_core_ToolDefinition"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "system_prompt",
-          "model_id"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_CreationRecord": {
-        "properties": {
-          "fork_digest": {
-            "type": "string"
-          },
-          "fork_entry_id": {
-            "type": "string"
-          },
-          "fork_mode": {
-            "type": "integer"
-          },
-          "fork_rollout_id": {
-            "type": "string"
-          },
-          "fork_session_id": {
-            "type": "string"
-          },
-          "format_version": {
-            "type": "integer"
-          },
-          "projection": {
-            "$ref": "#/components/schemas/astral_core_session_Projection"
-          },
-          "rollout_id": {
-            "type": "string"
-          },
-          "session_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "rollout_id",
-          "format_version",
-          "session_id"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_Entry": {
-        "properties": {
-          "approval": {
-            "$ref": "#/components/schemas/astral_core_session_ApprovalRecord"
-          },
-          "clear": {
-            "$ref": "#/components/schemas/astral_core_session_InputClear"
-          },
-          "compaction": {
-            "$ref": "#/components/schemas/astral_core_session_CompactionRecord"
-          },
-          "configuration": {
-            "$ref": "#/components/schemas/astral_core_session_Configuration"
-          },
-          "created": {
-            "$ref": "#/components/schemas/astral_core_session_CreationRecord"
-          },
-          "id": {
-            "type": "string"
-          },
-          "input": {
-            "$ref": "#/components/schemas/astral_core_QueuedInput"
-          },
-          "input_id": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "message": {
-            "$ref": "#/components/schemas/astral_core_Message"
-          },
-          "model_request": {
-            "$ref": "#/components/schemas/astral_core_ModelRequestRecord"
-          },
-          "model_response": {
-            "$ref": "#/components/schemas/astral_core_ModelResponseRecord"
-          },
-          "parent_id": {
-            "type": "string"
-          },
-          "run": {
-            "$ref": "#/components/schemas/astral_core_session_RunRecord"
-          },
-          "run_id": {
-            "type": "string"
-          },
-          "sequence": {
-            "type": "integer"
-          },
-          "session_id": {
-            "type": "string"
-          },
-          "time": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "tool": {
-            "$ref": "#/components/schemas/astral_core_session_ToolRecord"
-          },
-          "turn": {
-            "$ref": "#/components/schemas/astral_core_TurnState"
-          },
-          "turn_id": {
-            "type": "string"
-          },
-          "usage": {
-            "$ref": "#/components/schemas/astral_core_Usage"
-          },
-          "version": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "session_id",
-          "sequence",
-          "version",
-          "id",
-          "kind",
-          "time"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_InputClear": {
-        "properties": {
-          "kinds": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "kinds"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_PendingApproval": {
-        "properties": {
-          "ID": {
-            "type": "string"
-          },
-          "Invocation": {
-            "$ref": "#/components/schemas/astral_core_Invocation"
-          },
-          "Request": {
-            "$ref": "#/components/schemas/astral_core_session_ApprovalRequest"
-          }
-        },
-        "required": [
-          "ID",
-          "Invocation",
-          "Request"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_Projection": {
-        "properties": {
-          "batch_configuration_id": {
-            "type": "string"
-          },
-          "compaction_id": {
-            "type": "string"
-          },
-          "configuration_id": {
-            "type": "string"
-          },
-          "head_id": {
-            "type": "string"
-          },
-          "last_message_id": {
-            "type": "string"
-          },
-          "pending_calls": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/astral_core_ToolCall"
-            },
-            "type": "object"
-          },
-          "through_id": {
-            "type": "string"
-          },
-          "tool_entries": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "unresolved": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/astral_core_session_ToolRecord"
-            },
-            "type": "object"
-          }
-        },
-        "type": "object"
-      },
-      "astral_core_session_RunRecord": {
-        "properties": {
-          "end_reason": {
-            "type": "string"
-          },
-          "error": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "queue_only": {
-            "type": "boolean"
-          },
-          "status": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "status"
-        ],
-        "type": "object"
-      },
-      "astral_core_session_ToolRecord": {
-        "properties": {
-          "control": {
-            "$ref": "#/components/schemas/astral_core_RunEnd"
-          },
-          "decision": {
-            "$ref": "#/components/schemas/astral_core_ToolDecision"
-          },
-          "invocation": {
-            "$ref": "#/components/schemas/astral_core_Invocation"
-          },
-          "needs_resolution": {
-            "type": "boolean"
-          },
-          "result": {
-            "$ref": "#/components/schemas/astral_core_ToolResult"
-          }
-        },
-        "required": [
-          "invocation"
-        ],
         "type": "object"
       },
       "astral_internal_channels_Capabilities": {
@@ -952,6 +972,34 @@
           "upload_limit",
           "text_limit",
           "caption_limit"
+        ],
+        "type": "object"
+      },
+      "astral_internal_channels_DeliveryView": {
+        "properties": {
+          "entry_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "input_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "session_id",
+          "state"
         ],
         "type": "object"
       },
@@ -1447,6 +1495,15 @@
             "format": "date-time",
             "type": "string"
           },
+          "description": {
+            "type": "string"
+          },
+          "dialect": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
           "id": {
             "type": "string"
           },
@@ -1459,6 +1516,9 @@
           "overrides": {
             "additionalProperties": {},
             "type": "object"
+          },
+          "protocol": {
+            "type": "string"
           },
           "provider_id": {
             "type": "string"
@@ -1716,6 +1776,9 @@
           "dialect": {
             "type": "string"
           },
+          "enabled": {
+            "type": "boolean"
+          },
           "header_names": {
             "items": {
               "type": "string"
@@ -1731,8 +1794,14 @@
           "name": {
             "type": "string"
           },
+          "preset_id": {
+            "type": "string"
+          },
           "protocol": {
             "type": "string"
+          },
+          "replay_revision": {
+            "type": "integer"
           },
           "revision": {
             "type": "integer"
@@ -2034,7 +2103,7 @@
         "properties": {
           "entries": {
             "items": {
-              "$ref": "#/components/schemas/astral_core_session_Entry"
+              "$ref": "#/components/schemas/astral_core_Entry"
             },
             "type": "array"
           },
@@ -2131,11 +2200,8 @@
       },
       "astral_internal_harness_InputReceipt": {
         "properties": {
-          "created_at": {
+          "accepted_at": {
             "format": "date-time",
-            "type": "string"
-          },
-          "delivery_id": {
             "type": "string"
           },
           "digest": {
@@ -2147,34 +2213,21 @@
           "error": {
             "type": "string"
           },
-          "id": {
-            "type": "string"
-          },
           "input_id": {
             "type": "string"
-          },
-          "revision": {
-            "type": "integer"
           },
           "session_id": {
             "type": "string"
           },
           "state": {
             "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "type": "string"
           }
         },
         "required": [
-          "id",
-          "revision",
-          "created_at",
-          "updated_at",
-          "delivery_id",
+          "input_id",
           "session_id",
           "digest",
+          "accepted_at",
           "state"
         ],
         "type": "object"
@@ -2229,12 +2282,15 @@
           },
           "approvals": {
             "items": {
-              "$ref": "#/components/schemas/astral_core_session_PendingApproval"
+              "$ref": "#/components/schemas/astral_core_PendingApproval"
             },
             "type": "array"
           },
           "archived": {
             "type": "boolean"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/astral_core_AttemptStatus"
           },
           "binding_id": {
             "type": "string"
@@ -2255,6 +2311,9 @@
           "error": {
             "type": "string"
           },
+          "event_sequence": {
+            "type": "integer"
+          },
           "fork_entry_id": {
             "type": "string"
           },
@@ -2265,7 +2324,7 @@
             "type": "string"
           },
           "last_run": {
-            "$ref": "#/components/schemas/astral_core_session_RunRecord"
+            "$ref": "#/components/schemas/astral_core_RunRecord"
           },
           "model_ref": {
             "type": "string"
@@ -2311,7 +2370,7 @@
           },
           "unresolved": {
             "items": {
-              "$ref": "#/components/schemas/astral_core_session_ToolRecord"
+              "$ref": "#/components/schemas/astral_core_ToolRecord"
             },
             "type": "array"
           },
@@ -2334,6 +2393,7 @@
           "rollout_id",
           "head_id",
           "status",
+          "event_sequence",
           "pending",
           "approvals",
           "unresolved"
@@ -2343,7 +2403,7 @@
       "astral_internal_httpapi_Approval": {
         "properties": {
           "decision": {
-            "$ref": "#/components/schemas/astral_core_session_ApprovalDecision"
+            "$ref": "#/components/schemas/astral_core_ApprovalDecision"
           }
         },
         "required": [
@@ -2648,7 +2708,7 @@
             "$ref": "#/components/schemas/astral_core_Event"
           },
           "entry": {
-            "$ref": "#/components/schemas/astral_core_session_Entry"
+            "$ref": "#/components/schemas/astral_core_Entry"
           },
           "epoch": {
             "type": "string"
@@ -2766,6 +2826,9 @@
           "dialect": {
             "type": "string"
           },
+          "enabled": {
+            "type": "boolean"
+          },
           "header_names": {
             "items": {
               "type": "string"
@@ -2787,8 +2850,14 @@
           "name": {
             "type": "string"
           },
+          "preset_id": {
+            "type": "string"
+          },
           "protocol": {
             "type": "string"
+          },
+          "replay_revision": {
+            "type": "integer"
           },
           "revision": {
             "type": "integer"
@@ -3098,17 +3167,59 @@
         ],
         "type": "object"
       },
+      "astral_internal_modelbridge_Authorization": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interval": {
+            "type": "integer"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/astral_internal_domain_Provider"
+          },
+          "status": {
+            "type": "string"
+          },
+          "user_code": {
+            "type": "string"
+          },
+          "verification_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "interval",
+          "expires_at"
+        ],
+        "type": "object"
+      },
       "astral_internal_modelbridge_Discovery": {
         "properties": {
+          "dialect": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
           "name": {
             "type": "string"
           },
+          "protocol": {
+            "type": "string"
+          },
           "recommendations": {
             "additionalProperties": {},
             "type": "object"
+          },
+          "source": {
+            "type": "string"
           }
         },
         "required": [
@@ -3118,31 +3229,128 @@
         ],
         "type": "object"
       },
-      "astral_internal_persistence_Delivery": {
+      "astral_internal_modelbridge_ImportModelsInput": {
         "properties": {
-          "entry_id": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "refresh": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "refresh"
+        ],
+        "type": "object"
+      },
+      "astral_internal_modelbridge_ImportModelsResult": {
+        "properties": {
+          "catalog_error": {
             "type": "string"
           },
-          "error": {
+          "imported": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_ModelProfile"
+            },
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "imported",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "astral_internal_modelbridge_PresetRegion": {
+        "properties": {
+          "base_url": {
             "type": "string"
           },
-          "event_id": {
+          "id": {
             "type": "string"
           },
-          "input_id": {
-            "type": "string"
-          },
-          "session_id": {
-            "type": "string"
-          },
-          "state": {
+          "name": {
             "type": "string"
           }
         },
         "required": [
-          "event_id",
-          "session_id",
-          "state"
+          "id",
+          "name",
+          "base_url"
+        ],
+        "type": "object"
+      },
+      "astral_internal_modelbridge_ProviderPreset": {
+        "properties": {
+          "auth": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "catalog_date": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "dialect": {
+            "type": "string"
+          },
+          "docs_url": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key_placeholder": {
+            "type": "string"
+          },
+          "key_url": {
+            "type": "string"
+          },
+          "model_count": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_modelbridge_PresetRegion"
+            },
+            "type": "array"
+          },
+          "requires_url": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "icon",
+          "category",
+          "protocol",
+          "dialect",
+          "base_url",
+          "auth",
+          "model_count",
+          "catalog_date"
         ],
         "type": "object"
       },
@@ -4637,7 +4845,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/astral_internal_persistence_Delivery"
+                  "$ref": "#/components/schemas/astral_internal_channels_DeliveryView"
                 }
               }
             },
@@ -4908,6 +5116,146 @@
         ]
       }
     },
+    "/api/v1/provider-authorizations/{id}": {
+      "get": {
+        "operationId": "providerAuthorization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_modelbridge_Authorization"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Models"
+        ]
+      }
+    },
+    "/api/v1/provider-presets": {
+      "get": {
+        "operationId": "listProviderPresets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/astral_internal_modelbridge_ProviderPreset"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Models"
+        ]
+      }
+    },
+    "/api/v1/provider-presets/{id}/models": {
+      "get": {
+        "operationId": "presetModels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/astral_internal_modelbridge_Discovery"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Models"
+        ]
+      }
+    },
     "/api/v1/providers": {
       "get": {
         "operationId": "listProviders",
@@ -5051,6 +5399,54 @@
         ]
       }
     },
+    "/api/v1/providers/{id}/authorize": {
+      "post": {
+        "operationId": "authorizeProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_modelbridge_Authorization"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Models"
+        ]
+      }
+    },
     "/api/v1/providers/{id}/catalog": {
       "get": {
         "operationId": "modelCatalog",
@@ -5073,6 +5469,64 @@
                     "$ref": "#/components/schemas/astral_internal_modelbridge_Discovery"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Models"
+        ]
+      }
+    },
+    "/api/v1/providers/{id}/import": {
+      "post": {
+        "operationId": "importModels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_modelbridge_ImportModelsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_modelbridge_ImportModelsResult"
                 }
               }
             },
@@ -5929,7 +6383,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/astral_core_session_Entry"
+                  "$ref": "#/components/schemas/astral_core_Entry"
                 }
               }
             },

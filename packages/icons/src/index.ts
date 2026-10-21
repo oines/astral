@@ -8,3 +8,6 @@ export {
   SlidersHorizontal, Sparkle, Square, Sun, Terminal, Trash2, TriangleAlert,
   Unplug, Upload, User, X,
 } from 'lucide-vue-next'
+
+export { default as ProviderIcon } from './ProviderIcon.vue'
+export { Brain, Wrench, Zap, RefreshCw } from 'lucide-vue-next'

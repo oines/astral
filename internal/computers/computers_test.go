@@ -17,7 +17,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
-	coresession "github.com/oines/astral-core/session"
+
 	"github.com/oines/astral-core/standardtools"
 	"github.com/oines/astral-core/store/sqlite"
 	"github.com/oines/astral/internal/computers"
@@ -65,6 +65,7 @@ func fixture(t *testing.T, count int) *setup {
 		if err != nil {
 			t.Fatal(err)
 		}
+		d.Hello.Home = t.TempDir()
 		enrollment, err := hub.Enroll(ctx, server.URL, false, false)
 		if err != nil {
 			t.Fatal(err)
@@ -366,24 +367,20 @@ func TestRolloutImagesSurviveSourceDeletionReopenAndFork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := coresession.Config{Store: coreStore, Model: model, EstimateTokens: modelbridge.EstimateTokens}
-	manager, err := coresession.New(config)
+	config := core.Config{Store: coreStore, Model: model, EstimateTokens: modelbridge.EstimateTokens}
+	session, err := core.NewSession(s.ctx, config, core.SessionOptions{ID: s.session.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := manager.NewSession(s.ctx, coresession.SessionOptions{ID: s.session.ID})
+	run, err := session.Prompt(s.ctx, core.Input{ID: "image", Message: message})
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := session.Start(s.ctx, message)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = run.Wait(s.ctx); err != nil {
+	if _, err = run.Run.Wait(s.ctx); err != nil {
 		t.Fatal(err)
 	}
 	forkAt := session.Head()
-	if err = manager.Close(s.ctx); err != nil {
+	if err = session.Close(s.ctx); err != nil {
 		t.Fatal(err)
 	}
 	if err = coreStore.Close(); err != nil {
@@ -395,34 +392,31 @@ func TestRolloutImagesSurviveSourceDeletionReopenAndFork(t *testing.T) {
 	}
 	defer coreStore.Close()
 	config.Store = coreStore
-	manager, err = coresession.New(config)
+	session, err = core.OpenSession(s.ctx, config, s.session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer manager.Close(context.Background())
-	session, err = manager.OpenSession(s.ctx, s.session.ID)
+	defer session.Close(context.Background())
+	run, err = session.Prompt(s.ctx, core.Input{ID: "replay", Message: core.User("Inspect the same historical image again.")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err = session.Start(s.ctx, core.User("Inspect the same historical image again."))
+	if _, err = run.Run.Wait(s.ctx); err != nil {
+		t.Fatal(err)
+	}
+	fork, err := session.Fork(s.ctx, forkAt, core.ForkOptions{ID: "image_fork"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = run.Wait(s.ctx); err != nil {
-		t.Fatal(err)
-	}
-	fork, err := session.Fork(s.ctx, forkAt, coresession.ForkOptions{ID: "image_fork"})
+	defer fork.Close(context.Background())
+	run, err = fork.Prompt(s.ctx, core.Input{ID: "fork-image", Message: core.User("Describe the image in this branch.")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err = fork.Start(s.ctx, core.User("Describe the image in this branch."))
-	if err != nil {
+	if _, err = run.Run.Wait(s.ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = run.Wait(s.ctx); err != nil {
-		t.Fatal(err)
-	}
-	page, err := fork.History().Path(s.ctx, fork.Head(), coresession.Query{})
+	page, err := fork.History().Path(s.ctx, fork.Head(), core.Query{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,5 +2,8 @@
   "name": "@astral/config",
   "version": "0.1.0",
   "private": true,
-  "exports": { "./tsconfig": "./tsconfig.json" }
+  "exports": {
+    "./tsconfig": "./tsconfig.json"
+  },
+  "license": "AGPL-3.0-only"
 }
