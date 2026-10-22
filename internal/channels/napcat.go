@@ -138,6 +138,30 @@ func (n *napcat) Validate(ctx context.Context) (Identity, error) {
 	if !status.Online {
 		return Identity{}, domain.Offline("NapCat QQ account is offline")
 	}
+	// HTTP and WebSocket are independently configured in NapCat. Verify both
+	// credentials and the login identity before reporting a usable connection.
+	verify, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	headers := http.Header{}
+	if n.token != "" {
+		headers.Set("Authorization", "Bearer "+n.token)
+	}
+	socket, _, err := websocket.Dial(verify, n.config.WebSocketURL, &websocket.DialOptions{HTTPClient: n.client, HTTPHeader: headers})
+	if err != nil {
+		return Identity{}, domain.Offline("NapCat forward WebSocket could not connect")
+	}
+	defer socket.CloseNow()
+	socket.SetReadLimit(8 << 20)
+	var connected struct {
+		PostType string  `json:"post_type"`
+		SelfID   qqValue `json:"self_id"`
+	}
+	if wsjson.Read(verify, socket, &connected) != nil || connected.PostType == "" || connected.SelfID == "" {
+		return Identity{}, domain.Invalid("NapCat WebSocket did not report a logged-in event account; use the event-enabled forward WebSocket endpoint, not /api")
+	}
+	if connected.SelfID != login.ID {
+		return Identity{}, domain.Conflict("NapCat HTTP and WebSocket are connected to different QQ accounts")
+	}
 	return Identity{ID: string(login.ID), Name: login.Nickname, Diagnostics: []string{
 		"NapCat 需要同时启用 HTTP 服务和正向 WebSocket 服务，并将消息上报格式设为数组。",
 		"正向 WebSocket 不提供断线期间的历史重放；Astral 只能接收连接期间推送的事件。",
@@ -247,14 +271,14 @@ func (n *napcat) normalize(raw json.RawMessage) (*Event, error) {
 	if json.Unmarshal(raw, &message) != nil {
 		return nil, domain.Invalid("NapCat returned an invalid event")
 	}
+	if message.SelfID != "" && n.connection.AccountID != "" && string(message.SelfID) != n.connection.AccountID {
+		return nil, domain.Conflict("NapCat event belongs to a different QQ account")
+	}
 	if message.PostType != "message" && message.PostType != "message_sent" && message.PostType != "notice" {
 		return nil, nil
 	}
 	if message.PostType == "notice" && message.NoticeType != "group_recall" && message.NoticeType != "friend_recall" {
 		return nil, nil
-	}
-	if message.SelfID != "" && n.connection.AccountID != "" && string(message.SelfID) != n.connection.AccountID {
-		return nil, domain.Conflict("NapCat event belongs to a different QQ account")
 	}
 	kind, id := "private", string(message.UserID)
 	if message.PostType == "message_sent" && message.TargetID != "" {

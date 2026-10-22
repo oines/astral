@@ -502,7 +502,7 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 	if _, err := rand.Read(random[:]); err != nil {
 		return Receipt{}, &SendError{Message: "QQ message sequence could not be generated", Retryable: true}
 	}
-	body := map[string]any{"content": send.Text, "msg_type": 0, "msg_seq": int(binary.BigEndian.Uint16(random[:])) + 1}
+	body := map[string]any{"content": send.Text, "msg_type": 0, "msg_seq": int(binary.BigEndian.Uint16(random[:]))%65535 + 1}
 	if reply != "" {
 		body["msg_id"] = reply
 	}
@@ -535,7 +535,11 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 	var result struct {
 		ID string `json:"id"`
 	}
-	err = q.call(ctx, http.MethodPost, route+"/messages", body, &result)
+	token, err := q.accessToken(ctx)
+	if err != nil {
+		return Receipt{}, &SendError{Message: err.Error(), Retryable: true}
+	}
+	err = q.request(ctx, http.MethodPost, q.config.BaseURL+route+"/messages", token, body, &result)
 	if err != nil {
 		var api *qqAPIError
 		if errors.As(err, &api) {

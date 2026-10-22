@@ -46,7 +46,7 @@ func TestNapCatForwardWebSocketAndPendingReplay(t *testing.T) {
 				return
 			}
 			defer socket.CloseNow()
-			_ = wsjson.Write(ctx, socket, map[string]any{"post_type": "meta_event", "meta_event_type": "heartbeat"})
+			_ = wsjson.Write(ctx, socket, map[string]any{"post_type": "meta_event", "meta_event_type": "lifecycle", "self_id": 999})
 			_ = wsjson.Write(ctx, socket, json.RawMessage(`{"post_type":"message","message_type":"group","self_id":999,"message_id":-123,"user_id":123,"group_id":456,"group_name":"Team","time":1780000000,"sender":{"nickname":"Alice","card":"A"},"message":[{"type":"at","data":{"qq":"999"}},{"type":"text","data":{"text":" hello"}},{"type":"reply","data":{"id":"-42"}},{"type":"image","data":{"file":"opaque-file","url":"https://media.example/image","file_size":"42","summary":"[image]"}},{"type":"forward","data":{"content":[{"nested":true}]}}]}`))
 			_ = wsjson.Write(ctx, socket, json.RawMessage(`{"post_type":"notice","notice_type":"group_recall","self_id":999,"message_id":-123,"group_id":456,"user_id":123,"time":1780000001}`))
 			_, _, _ = socket.Read(ctx)
@@ -102,6 +102,36 @@ func TestNapCatPrivateSentAndTemporaryGroupChatStayPrivate(t *testing.T) {
 	_, err = n.normalize(json.RawMessage(`{"post_type":"message","message_type":"private","self_id":999,"user_id":1,"message_id":2,"message":"[CQ:at,qq=all]"}`))
 	if err == nil {
 		t.Fatal("silently accepted CQ string instead of configured array")
+	}
+}
+
+func TestNapCatValidateRejectsWrongWebSocketAccountAndAuthentication(t *testing.T) {
+	for _, frame := range []string{
+		`{"post_type":"meta_event","meta_event_type":"lifecycle","self_id":888}`,
+		`{"status":"failed","retcode":1403,"message":"token validation failed"}`,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/get_login_info":
+				fmt.Fprint(w, `{"status":"ok","retcode":0,"data":{"user_id":999,"nickname":"Astral"}}`)
+			case "/get_status":
+				fmt.Fprint(w, `{"status":"ok","retcode":0,"data":{"online":true}}`)
+			case "/ws":
+				socket, err := websocket.Accept(w, r, nil)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				defer socket.CloseNow()
+				_ = wsjson.Write(r.Context(), socket, json.RawMessage(frame))
+				_, _, _ = socket.Read(r.Context())
+			}
+		}))
+		n := napcatTestAdapter(t, server)
+		if _, err := n.Validate(context.Background()); err == nil {
+			t.Fatal("HTTP account validation hid a wrong or unauthenticated WebSocket account")
+		}
+		server.Close()
 	}
 }
 
