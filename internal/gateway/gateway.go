@@ -109,6 +109,12 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		}
 		return value, nil
 	})
+	register[httpcontract.Empty, []channels.ChatOperation](s, "GET", "/v1/accounts/{id}/operations", "agentAccountOperations", func(r *http.Request, _ httpcontract.Empty) ([]channels.ChatOperation, error) {
+		return c.AccountOperations(r.Context(), binding(r).AgentID, r.PathValue("id"))
+	})
+	register[channels.ChatOperationRequest, channels.ChatOperationResult](s, "POST", "/v1/accounts/{id}/operations/{operation}", "agentAccountOperation", func(r *http.Request, request channels.ChatOperationRequest) (channels.ChatOperationResult, error) {
+		return c.AccountOperation(r.Context(), binding(r), r.PathValue("id"), r.PathValue("operation"), request)
+	})
 	register[httpcontract.Empty, []channels.TelegramOperation](s, "GET", "/v1/accounts/{id}/telegram/operations", "agentTelegramOperations", func(r *http.Request, _ httpcontract.Empty) ([]channels.TelegramOperation, error) {
 		return c.TelegramOperations(r.Context(), binding(r).AgentID, r.PathValue("id"))
 	})
@@ -224,7 +230,7 @@ func New(h *harness.Service, c *channels.Service) *Service {
 			Identity:    "Agent, Session and source Computer come from this listener. Request bodies cannot change them.",
 			Idempotency: "POST /im/messages and /im/files require a stable Idempotency-Key. They return queued receipts; query /im/receipts/{id}. Accepted means platform acceptance, not final delivery. Unknown sends must be inspected before retry.",
 			Files:       "Paths resolve on this listener's source Computer. File URIs retain their source. Ordinary assistant links do not upload files to IM.",
-			Endpoints:   map[string]string{"context": "GET /v1/context", "accounts": "GET /v1/accounts", "resolve_chat": "POST /v1/accounts/{id}/conversations/resolve {external_id,topic_id?}", "message": "GET /v1/conversations/{id}/messages/{message_id}", "attachment_content": "GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content (original bytes)", "telegram_operations": "GET /v1/accounts/{id}/telegram/operations", "conversations": "GET /v1/conversations", "messages": "GET /v1/conversations/{id}/messages?after=0&limit=100&q=", "history": "GET /v1/sessions/{id}/history?cursor=&limit=50", "computers": "GET /v1/computers", "send_text": "POST /v1/im/messages {conversation_id?,text}", "send_file": "POST /v1/im/files {conversation_id?,file_uri?|path?,text?}", "receipt": "GET /v1/im/receipts/{id}", "download_attachment": "POST /v1/attachments/download {conversation_id,event_id,attachment_ref,path}", "reference": "POST /v1/files/reference {path,snapshot?}", "openapi": "GET /v1/openapi.json"},
+			Endpoints:   map[string]string{"context": "GET /v1/context", "accounts": "GET /v1/accounts", "resolve_chat": "POST /v1/accounts/{id}/conversations/resolve {external_id,topic_id?}", "message": "GET /v1/conversations/{id}/messages/{message_id}", "attachment_content": "GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content (original bytes)", "account_operations": "GET /v1/accounts/{id}/operations", "invoke_operation": "POST /v1/accounts/{id}/operations/{operation} {conversation_id,parameters}", "telegram_operations": "GET /v1/accounts/{id}/telegram/operations", "conversations": "GET /v1/conversations", "messages": "GET /v1/conversations/{id}/messages?after=0&limit=100&q=", "history": "GET /v1/sessions/{id}/history?cursor=&limit=50", "computers": "GET /v1/computers", "send_text": "POST /v1/im/messages {conversation_id?,text}", "send_file": "POST /v1/im/files {conversation_id?,file_uri?|path?,text?}", "receipt": "GET /v1/im/receipts/{id}", "download_attachment": "POST /v1/attachments/download {conversation_id,event_id,attachment_ref,path}", "reference": "POST /v1/files/reference {path,snapshot?}", "openapi": "GET /v1/openapi.json"},
 		}, nil
 	})
 	s.mux.HandleFunc("GET /v1/openapi.json", func(w http.ResponseWriter, r *http.Request) { httpcontract.JSON(w, 200, s.Contract.Document()) })

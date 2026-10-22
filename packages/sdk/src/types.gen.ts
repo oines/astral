@@ -336,6 +336,17 @@ export type AstralInternalChannelsCapabilities = {
     upload_limit: number;
 };
 
+export type AstralInternalChannelsChatOperation = {
+    documentation: string;
+    message_scoped: boolean;
+    name: string;
+    parameters: Array<string>;
+};
+
+export type AstralInternalChannelsChatOperationResult = {
+    result: unknown;
+};
+
 export type AstralInternalChannelsDeliveryView = {
     entry_id?: string;
     error?: string;
@@ -371,6 +382,22 @@ export type AstralInternalChannelsTelegramRequest = {
 
 export type AstralInternalChannelsTelegramResult = {
     result: unknown;
+};
+
+export type AstralInternalChannelsWeixinLoginInput = {
+    connection_id?: string;
+    name: string;
+};
+
+export type AstralInternalChannelsWeixinLoginPoll = {
+    verify_code?: string;
+};
+
+export type AstralInternalChannelsWeixinLoginView = {
+    connection?: AstralInternalDomainConnection;
+    id: string;
+    qrcode_url: string;
+    status: string;
 };
 
 export type AstralInternalComputersEnrollmentResult = {
@@ -1244,6 +1271,33 @@ export type DeleteAgentResponses = {
 };
 
 export type DeleteAgentResponse = DeleteAgentResponses[keyof DeleteAgentResponses];
+
+export type StartWeixinLoginData = {
+    body: AstralInternalChannelsWeixinLoginInput;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/agents/{id}/weixin/login';
+};
+
+export type StartWeixinLoginErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type StartWeixinLoginError = StartWeixinLoginErrors[keyof StartWeixinLoginErrors];
+
+export type StartWeixinLoginResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalChannelsWeixinLoginView;
+};
+
+export type StartWeixinLoginResponse = StartWeixinLoginResponses[keyof StartWeixinLoginResponses];
 
 export type ListBindingsData = {
     body?: never;
@@ -3287,6 +3341,33 @@ export type StorageInfoResponses = {
 
 export type StorageInfoResponse = StorageInfoResponses[keyof StorageInfoResponses];
 
+export type PollWeixinLoginData = {
+    body: AstralInternalChannelsWeixinLoginPoll;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/weixin/logins/{id}/poll';
+};
+
+export type PollWeixinLoginErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type PollWeixinLoginError = PollWeixinLoginErrors[keyof PollWeixinLoginErrors];
+
+export type PollWeixinLoginResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalChannelsWeixinLoginView;
+};
+
+export type PollWeixinLoginResponse = PollWeixinLoginResponses[keyof PollWeixinLoginResponses];
+
 export type LogoutData = {
     body?: never;
     path?: never;
@@ -3388,6 +3469,61 @@ export type AgentResolveConversationResponses = {
 };
 
 export type AgentResolveConversationResponse = AgentResolveConversationResponses[keyof AgentResolveConversationResponses];
+
+export type AgentAccountOperationsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/accounts/{id}/operations';
+};
+
+export type AgentAccountOperationsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentAccountOperationsError = AgentAccountOperationsErrors[keyof AgentAccountOperationsErrors];
+
+export type AgentAccountOperationsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalChannelsChatOperation>;
+};
+
+export type AgentAccountOperationsResponse = AgentAccountOperationsResponses[keyof AgentAccountOperationsResponses];
+
+export type AgentAccountOperationData = {
+    body: AstralInternalChannelsTelegramRequest;
+    path: {
+        id: string;
+        operation: string;
+    };
+    query?: never;
+    url: '/v1/accounts/{id}/operations/{operation}';
+};
+
+export type AgentAccountOperationErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentAccountOperationError = AgentAccountOperationErrors[keyof AgentAccountOperationErrors];
+
+export type AgentAccountOperationResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalChannelsChatOperationResult;
+};
+
+export type AgentAccountOperationResponse = AgentAccountOperationResponses[keyof AgentAccountOperationResponses];
 
 export type AgentTelegramOperationsData = {
     body?: never;

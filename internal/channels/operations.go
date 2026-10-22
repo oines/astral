@@ -47,6 +47,8 @@ func (s *Service) AccountOperations(ctx context.Context, agentID, accountID stri
 func chatOperations(adapter Adapter) []ChatOperation {
 	result := []ChatOperation{}
 	switch adapter.(type) {
+	case *weixinAdapter:
+		result = append(result, WeixinOperationsCatalog()...)
 	case *telegram:
 		for _, op := range telegramOperations {
 			result = append(result, ChatOperation{Name: op.Name, Parameters: op.Parameters, Documentation: op.Documentation})
@@ -119,6 +121,8 @@ func (s *Service) AccountOperation(ctx context.Context, b domain.ExecutionBindin
 	}
 	var raw json.RawMessage
 	switch adapter := a.(type) {
+	case *weixinAdapter:
+		raw, err = adapter.operation(ctx, name, chat, params)
 	case *feishu:
 		raw, err = adapter.operation(ctx, name, chat, encoded(params))
 	case *napcat:
@@ -209,7 +213,7 @@ func napcatOperation(ctx context.Context, n *napcat, name string, chat domain.Co
 		if name == "delete_message" || name == "set_group_ban" {
 			var api *napcatAPIError
 			if errors.As(err, &api) {
-				return nil, &SendError{Message: err.Error(), Unknown: api.Status >= 500, Retryable: api.Status == 429}
+				return nil, api.sendError()
 			}
 			return nil, &SendError{Message: err.Error(), Unknown: true}
 		}

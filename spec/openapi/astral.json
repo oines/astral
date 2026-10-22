@@ -975,6 +975,41 @@
         ],
         "type": "object"
       },
+      "astral_internal_channels_ChatOperation": {
+        "properties": {
+          "documentation": {
+            "type": "string"
+          },
+          "message_scoped": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parameters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "parameters",
+          "message_scoped",
+          "documentation"
+        ],
+        "type": "object"
+      },
+      "astral_internal_channels_ChatOperationResult": {
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object"
+      },
       "astral_internal_channels_DeliveryView": {
         "properties": {
           "entry_id": {
@@ -1078,6 +1113,50 @@
         },
         "required": [
           "result"
+        ],
+        "type": "object"
+      },
+      "astral_internal_channels_WeixinLoginInput": {
+        "properties": {
+          "connection_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "astral_internal_channels_WeixinLoginPoll": {
+        "properties": {
+          "verify_code": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "astral_internal_channels_WeixinLoginView": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/astral_internal_domain_Connection"
+          },
+          "id": {
+            "type": "string"
+          },
+          "qrcode_url": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "qrcode_url",
+          "status"
         ],
         "type": "object"
       },
@@ -3946,6 +4025,64 @@
         ],
         "tags": [
           "Agents"
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/weixin/login": {
+      "post": {
+        "operationId": "startWeixinLogin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_channels_WeixinLoginInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_channels_WeixinLoginView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Channels"
         ]
       }
     },
@@ -7882,6 +8019,64 @@
         ]
       }
     },
+    "/api/v1/weixin/logins/{id}/poll": {
+      "post": {
+        "operationId": "pollWeixinLogin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_channels_WeixinLoginPoll"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_channels_WeixinLoginView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Channels"
+        ]
+      }
+    },
     "/auth/session": {
       "delete": {
         "operationId": "logout",
@@ -8012,6 +8207,107 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_domain_Conversation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/accounts/{id}/operations": {
+      "get": {
+        "operationId": "agentAccountOperations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/astral_internal_channels_ChatOperation"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/accounts/{id}/operations/{operation}": {
+      "post": {
+        "operationId": "agentAccountOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "operation",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_channels_TelegramRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_channels_ChatOperationResult"
                 }
               }
             },
