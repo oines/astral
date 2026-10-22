@@ -365,7 +365,9 @@ func (w *weixinAdapter) Send(ctx context.Context, send Send) (Receipt, error) {
 	if send.ReplyTo != "" {
 		return Receipt{}, &SendError{Message: "Weixin iLink does not expose outbound quote references"}
 	}
-	if send.Target.TopicID != "" || send.Target.Kind != "private" || send.Target.ExternalID == "" {
+	// Outbox snapshots retain the immutable external destination and Topic,
+	// without copying display metadata such as Conversation.Kind.
+	if send.Target.TopicID != "" || send.Target.Kind != "" && send.Target.Kind != "private" || send.Target.ExternalID == "" {
 		return Receipt{}, &SendError{Message: "Weixin iLink only supports private chats"}
 	}
 	if send.Target.ConnectionID != "" && send.Target.ConnectionID != w.connection.ID {
