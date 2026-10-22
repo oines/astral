@@ -86,7 +86,9 @@ type Adapter interface {
 type Factory func(domain.Connection, string, *http.Client) (Adapter, error)
 type Registry map[string]Factory
 
-func DefaultRegistry() Registry { return Registry{"telegram.bot": NewTelegram} }
+func DefaultRegistry() Registry {
+	return Registry{"telegram.bot": NewTelegram, "qq.bot": NewQQBot, "qq.napcat": NewNapCat, "weixin.ilink": NewWeixin, "feishu.bot": NewFeishu}
+}
 
 func stableID(prefix string, values ...string) string {
 	hash := sha256.New()
