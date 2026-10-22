@@ -18,6 +18,8 @@ github.com/oines/astral-core v0.0.0-20261022092116-f508cdea9069 h1:0aSAixZbiMZ3o
 github.com/oines/astral-core v0.0.0-20261022092116-f508cdea9069/go.mod h1:U3ERvZRC6nstFf1DKCw0D45MchoXmcykwNzQlBOkxKo=
 github.com/oines/astral-models v0.9.1-0.20261021165020-51dd89d3c8eb h1:cByAFib0MmcvC/6NCa05fcnCRjiVS/uCQQhUrw3sBqU=
 github.com/oines/astral-models v0.9.1-0.20261021165020-51dd89d3c8eb/go.mod h1:TXAZwFta7Nf0AjokE2zH6e9CZsb/Rx7P4V3mZPy2zik=
+github.com/oines/astral-models v0.9.1-0.20261022163736-af24a13e7f0d h1:9o7itzX3V2CFP7f+VFqao1J8cn6FbHTcDlJBQznYnHA=
+github.com/oines/astral-models v0.9.1-0.20261022163736-af24a13e7f0d/go.mod h1:TXAZwFta7Nf0AjokE2zH6e9CZsb/Rx7P4V3mZPy2zik=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
