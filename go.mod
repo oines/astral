@@ -12,6 +12,7 @@ require (
 
 require (
 	github.com/creack/pty v1.1.24 // indirect
+	github.com/larksuite/oapi-sdk-go/v3 v3.12.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/image v0.24.0 // indirect
 )
