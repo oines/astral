@@ -13,5 +13,6 @@ t 和 l 的弯曲收尾保持共同的曲线语言。字距按实际视觉间隙
 背景透明。图文组合保持 130 × 40 viewBox，与现版相同。
 颜色由 SVG 根节点 color 控制；内联时可用 CSS color 覆盖。
 
-此目录为字标设计试稿，独立于当前应用使用的资源。
+此方案已用于应用的带文字 Logo。应用资源位于 packages/icons/assets/，
+由共享 AstralLogo 组件按明暗主题切换，并校正原始画布留白以保持视觉对齐。
 preview.png / preview.html 提供新旧对比、深色背景和小尺寸预览。

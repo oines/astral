@@ -17,7 +17,6 @@
 .onboarding-main { border-radius: 0; }
 .onboarding-content { width: 100%; padding-top: 32px; padding-bottom: 32px; }
 .onboarding-brand { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
-.onboarding-brand > svg { width: 112px; height: 36px; }
 .onboarding-brand .select-trigger { width: 132px; }
 .onboarding-heading { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
 .onboarding-heading h1 { font-size: 26px; font-weight: 550; letter-spacing: -.5px; line-height: 1.4; }

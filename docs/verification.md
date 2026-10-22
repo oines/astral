@@ -26,6 +26,14 @@ The tagged platform integration tests require the distribution binaries and a ru
 
 `check-desktop-service.mjs` launches the real Go binary through the desktop service class, verifies private Owner handoff, graceful shutdown, shutdown after a killed parent process, release of the data lock, and preservation of Local Computer identity on restart.
 
+## Selected wordmark and optical alignment, 2026-10-22
+
+The shared lockup now uses exact copies of the selected `artifacts/wordmark-redesign/astral-lockup.svg` and `astral-lockup-inverse.svg`. Both retain their original aspect ratio and geometry; the shared component compensates for the artwork's canvas inset so its visible left edge aligns with page content and its visible vertical center aligns with adjacent controls.
+
+Browser checks at 1280 × 720 verified light/dark resource switching with identical geometry. At 390 × 844, the logo and language control remained aligned without horizontal overflow. The login page's logo, heading and input also shared the same visible left edge. Web typecheck, component ESLint and the macOS/Linux distribution build passed; no backend behavior changed.
+
+Evidence: [light onboarding](../artifacts/wordmark-ui-review/onboarding-light.png), [dark onboarding](../artifacts/wordmark-ui-review/onboarding-dark.png), [narrow dark layout](../artifacts/wordmark-ui-review/onboarding-dark-narrow.png), [login alignment](../artifacts/wordmark-ui-review/login-light.png).
+
 ## Default Bot and two-step onboarding, 2026-10-22
 
 A fresh installation now creates one ordinary Bot named Astral and guides the Owner through model selection and Computer selection before opening the chat home. The final action grants the selected Computer access and saves both defaults together.

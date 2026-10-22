@@ -48,7 +48,9 @@ withDefaults(defineProps<{ lockup?: boolean; decorative?: boolean }>(), {
 <style scoped>
 .astral-logo { display: inline-block; width: 28px; height: 28px; flex-shrink: 0; vertical-align: middle; object-fit: contain; user-select: none; }
 .astral-logo-lockup { width: 156px; height: 48px; }
-.astral-logo-lockup img { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* The 130 × 40 artwork starts at x=2.5 and is centered at y=17.701.
+   Align its visible left edge and vertical center, preserving the source SVG. */
+.astral-logo-lockup img { display: block; width: 100%; height: 100%; object-fit: contain; transform: translate(-1.9231%, 5.7475%); }
 .astral-logo-lockup .astral-logo-dark { display: none; }
 :global(:root[data-theme='dark'] .astral-logo-lockup .astral-logo-light) { display: none; }
 :global(:root[data-theme='dark'] .astral-logo-lockup .astral-logo-dark) { display: block; }
