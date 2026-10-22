@@ -39,7 +39,7 @@ func TestExactlyOneSelectedProviderAndNoFallbackOnFailure(t *testing.T) {
 		}
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body["type"] != "auto" || body["contents"] == nil {
+		if body["query"] != "query" || len(body) != 1 {
 			t.Error("invalid Exa request")
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": []any{map[string]any{"title": "Exa", "url": "https://example.test/exa", "highlights": []string{"Highlight"}, "author": "Author"}}})
@@ -49,22 +49,22 @@ func TestExactlyOneSelectedProviderAndNoFallbackOnFailure(t *testing.T) {
 	s := &Service{Store: store}
 	one, two := domain.SearchProvider{Name: "Tavily", Adapter: "tavily", BaseURL: server.URL}, domain.SearchProvider{Name: "Exa", Adapter: "exa", BaseURL: fallback.URL}
 	a, b := "tavily-key", "exa-key"
-	if err = s.Save(ctx, &one, &a); err != nil {
+	if err = s.Save(ctx, &one, map[string]string{"api_key": a}); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.Save(ctx, &two, &b); err != nil {
+	if err = s.Save(ctx, &two, map[string]string{"api_key": b}); err != nil {
 		t.Fatal(err)
 	}
 	agent := domain.Agent{Meta: domain.Meta{ID: "agent"}, SearchProviderID: one.ID}
 	if err = store.Save(ctx, "agents", &agent.Meta, &agent); err != nil {
 		t.Fatal(err)
 	}
-	result, err := s.Search(ctx, agent.ID, "query")
+	result, err := s.Search(ctx, agent.ID, Request{Query: "query"})
 	if err != nil || len(result.Results) != 1 || result.Results[0].Summary != "Evidence" {
 		t.Fatalf("search contract failed: %+v %v", result, err)
 	}
 	fail.Store(true)
-	if _, err = s.Search(ctx, agent.ID, "query"); err == nil {
+	if _, err = s.Search(ctx, agent.ID, Request{Query: "query"}); err == nil {
 		t.Fatal("provider failure was hidden")
 	}
 	if first.Load() != 2 || second.Load() != 0 {
@@ -74,7 +74,7 @@ func TestExactlyOneSelectedProviderAndNoFallbackOnFailure(t *testing.T) {
 	if err = store.Save(ctx, "agents", &agent.Meta, &agent); err != nil {
 		t.Fatal(err)
 	}
-	result, err = s.Search(ctx, agent.ID, "query")
+	result, err = s.Search(ctx, agent.ID, Request{Query: "query"})
 	if err != nil || len(result.Results) != 1 || result.Results[0].Summary != "Highlight" || second.Load() != 1 {
 		t.Fatal("selected Exa was not used")
 	}

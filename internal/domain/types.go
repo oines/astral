@@ -160,10 +160,12 @@ func (p ModelProfile) Effective() (ModelValues, map[string]string, error) {
 
 type SearchProvider struct {
 	Meta
-	Name         string `json:"name"`
-	Adapter      string `json:"adapter"`
-	BaseURL      string `json:"base_url,omitempty"`
-	CredentialID string `json:"credential_id,omitempty"`
+	Name             string            `json:"name"`
+	Adapter          string            `json:"adapter"`
+	BaseURL          string            `json:"base_url,omitempty"`
+	Config           map[string]string `json:"config,omitempty"`
+	CredentialID     string            `json:"credential_id,omitempty"`
+	CredentialFields []string          `json:"credential_fields,omitempty"`
 }
 
 type Computer struct {

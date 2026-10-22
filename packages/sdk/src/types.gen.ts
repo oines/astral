@@ -624,7 +624,11 @@ export type AstralInternalDomainProvisioning = {
 export type AstralInternalDomainSearchProvider = {
     adapter: string;
     base_url?: string;
+    config?: {
+        [key: string]: string;
+    };
     created_at: string;
+    credential_fields?: Array<string>;
     credential_id?: string;
     id: string;
     name: string;
@@ -961,16 +965,19 @@ export type AstralInternalHttpapiSearchInput = {
     adapter: string;
     api_key?: string;
     base_url?: string;
+    config?: {
+        [key: string]: string;
+    };
     created_at: string;
+    credential_fields?: Array<string>;
     credential_id?: string;
+    credentials?: {
+        [key: string]: string;
+    };
     id: string;
     name: string;
     revision: number;
     updated_at: string;
-};
-
-export type AstralInternalHttpapiSearchQuery = {
-    query: string;
 };
 
 export type AstralInternalHttpapiSelectComputer = {
@@ -1095,6 +1102,31 @@ export type AstralInternalModelbridgeProviderPreset = {
 export type AstralInternalPersistenceStoredObservation = {
     observation: AstralInternalDomainObservation;
     sequence: number;
+};
+
+export type AstralInternalSearchAdapter = {
+    base_url: string;
+    base_url_required: boolean;
+    fields: Array<AstralInternalSearchField>;
+    id: string;
+    name: string;
+    website: string;
+};
+
+export type AstralInternalSearchField = {
+    default?: string;
+    label: string;
+    name: string;
+    options?: Array<string>;
+    required: boolean;
+    secret: boolean;
+};
+
+export type AstralInternalSearchRequest = {
+    domains?: Array<string>;
+    limit?: number;
+    query: string;
+    recency?: number;
 };
 
 export type AstralInternalSearchResponse = {
@@ -2328,6 +2360,31 @@ export type ResourceUsageResponses = {
 
 export type ResourceUsageResponse = ResourceUsageResponses[keyof ResourceUsageResponses];
 
+export type ListSearchAdaptersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/search-adapters';
+};
+
+export type ListSearchAdaptersErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ListSearchAdaptersError = ListSearchAdaptersErrors[keyof ListSearchAdaptersErrors];
+
+export type ListSearchAdaptersResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalSearchAdapter>;
+};
+
+export type ListSearchAdaptersResponse = ListSearchAdaptersResponses[keyof ListSearchAdaptersResponses];
+
 export type ListSearchProvidersData = {
     body?: never;
     path?: never;
@@ -2408,7 +2465,7 @@ export type DeleteSearchProviderResponses = {
 export type DeleteSearchProviderResponse = DeleteSearchProviderResponses[keyof DeleteSearchProviderResponses];
 
 export type TestSearchProviderData = {
-    body: AstralInternalHttpapiSearchQuery;
+    body: AstralInternalSearchRequest;
     path: {
         id: string;
     };

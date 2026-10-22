@@ -829,11 +829,11 @@ Agent 选择 Default Model；Session 临时选模不改变 Agent 默认值，也
 
 ### Web Search
 
-Settings 维护全局搜索实例，包括 Exa、Tavily、DeepSeek Search 类接口等候选；每种实际支持的适配器需通过其真实接口验证。
+Settings 维护全局搜索实例，支持 Tavily、Exa、DeepSeek Search、Brave、Google Custom Search、Sogou／腾讯云、Serper、SearXNG、Jina、Bocha、DuckDuckGo 和 Yandex。Bing 不提供入口。配置字段由后端适配器目录定义；API Key、腾讯云 SecretId / SecretKey 均存入加密凭据库，普通配置文档只保存凭据引用与已配置的字段名。旧版 Tavily / Exa 单密钥记录继续有效。
 
-每个 Agent 同时只选择一个搜索 Provider，模型只看到统一的 `web_search(query)`。一次调用只路由该 Provider；没有配置或服务失败时明确返回对应错误，不聚合其他引擎，不自动回退。
+每个 Agent 同时只选择一个搜索 Provider，模型只看到统一的 `web_search(query, domains?, recency?, limit?)`。只有 `query` 必填；`domains` 为域名数组，`recency` 为过去天数，`limit` 为请求结果数量。可选参数未提供时不向上游补默认值；提供时映射到该服务的原生参数或明确支持的查询语法，不静默丢弃、不调整数值。服务不支持某一参数或时间范围时明确返回错误。一次调用只路由该 Provider；没有配置或服务失败时明确返回对应错误，不聚合其他引擎，不自动回退。
 
-基本结果包含标题、摘要、URL 及可用的来源信息。首版搜索能力不意味着提供浏览器接管、动态页面操作或截图。
+基本结果包含标题、摘要、URL 及可用的来源信息。Astral 不对有效来源的结果条数、单条摘要字符数、总输出 Token 数或响应正文大小添加截断；上游服务自身的数量、查询长度、计费和内容范围规则仍然适用。搜索保留请求取消与 40 秒超时，不自动翻页或另行抓取全文。具体连接字段、参数映射与服务限制见 [搜索契约](docs/search.md)。搜索能力不意味着提供浏览器接管、动态页面操作或截图。
 
 ## 13 UI 与 Settings
 

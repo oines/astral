@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useQuery } from '@pinia/colada'
-import { listSearchProvidersQuery, listSearchProvidersQueryKey } from '@astral/sdk/colada'
-import { deleteSearchProvider, listSearchProviders, saveSearchProvider, testSearchProvider, type AstralInternalDomainSearchProvider, type AstralInternalSearchResponse } from '@astral/sdk'
+import { listSearchAdaptersQuery, listSearchProvidersQuery, listSearchProvidersQueryKey } from '@astral/sdk/colada'
+import { deleteSearchProvider, listSearchProviders, saveSearchProvider, testSearchProvider, type AstralInternalDomainSearchProvider, type AstralInternalSearchField, type AstralInternalSearchResponse } from '@astral/sdk'
 import { Button, Modal, Select, SettingsSection, SettingsRow } from '@astral/ui'
 import { ArrowLeft, ChevronRight, Globe, Plus } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
@@ -12,62 +12,93 @@ import { useSettingsSave } from '../../composables/useSettingsSave'
 import SettingsFeedback from './SettingsFeedback.vue'
 import { useAppStore } from '../../stores/app'
 import ResourceDelete from './ResourceDelete.vue'
-const { t } = useI18n()
+
+type Provider = AstralInternalDomainSearchProvider & { config: Record<string, string> }
+type Draft = { provider: Provider; credentials: Record<string, string>; baseline: string }
+const { t, te } = useI18n()
 const app = useAppStore()
 const action = useAction()
 const saves = useSettingsSave()
 const editorKey = ref('')
-const drafts = new Map<string, { provider: AstralInternalDomainSearchProvider; key: string; baseline: string }>()
+const drafts = new Map<string, Draft>()
 const list = useQuery(listSearchProvidersQuery())
-const services = [{ id: 'tavily', name: 'Tavily', url: 'tavily.com' }, { id: 'exa', name: 'Exa', url: 'exa.ai' }]
-const selected = ref<AstralInternalDomainSearchProvider>()
+const catalog = useQuery(listSearchAdaptersQuery())
+const services = computed(() => catalog.data.value || [])
+const selected = ref<Provider>()
+const activeService = computed(() => services.value.find(item => item.id === selected.value?.adapter))
 const saved = ref('')
-const key = ref('')
+const credentials = ref<Record<string, string>>({})
 const query = ref('')
 const result = ref<AstralInternalSearchResponse>()
 const deleting = ref(false)
 const adding = ref(false)
+const configValues = (config: Record<string, string> = {}) => Object.fromEntries(Object.entries(config).filter(([, value]) => value.trim()).sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => [name, value.trim()]))
 function configuration(provider: AstralInternalDomainSearchProvider) {
-  return JSON.stringify({ name: provider.name, adapter: provider.adapter, base_url: provider.base_url || '' })
+  return JSON.stringify({ name: provider.name, adapter: provider.adapter, base_url: provider.base_url || '', config: configValues(provider.config) })
 }
-const dirty = computed(() => !!key.value || !!selected.value && configuration(selected.value) !== saved.value)
-watch(dirty, value => { if (value) action.success.value = '' })
-function keepDraft() { if (selected.value) drafts.set(selected.value.id || editorKey.value, { provider: selected.value, key: key.value, baseline: saved.value }) }
+const secretUpdates = computed(() => Object.fromEntries(Object.entries(credentials.value).filter(([, value]) => value !== '')))
+const dirty = computed(() => Object.keys(secretUpdates.value).length > 0 || !!selected.value && configuration(selected.value) !== saved.value)
+watch(dirty, value => { if (value) { action.success.value = ''; result.value = undefined } })
+watch(query, () => { result.value = undefined })
+function keepDraft() { if (selected.value) drafts.set(selected.value.id || editorKey.value, { provider: selected.value, credentials: credentials.value, baseline: saved.value }) }
 const assigned = computed(() => app.agents.filter(a => a.search_provider_id === selected.value?.id))
 function usage(id: string) {
   const count = app.agents.filter(a => a.search_provider_id === id).length
   return t(count ? 'searchUsageCount' : 'searchNotAssigned', { count })
+}
+function serviceHost(website: string) { return new URL(website).hostname }
+function serviceName(adapter: string) { return services.value.find(item => item.id === adapter)?.name || adapter }
+function fieldLabel(field: AstralInternalSearchField) {
+  const key = `searchField_${field.name}`
+  return te(key) ? t(key) : field.label
+}
+function hasStoredSecret(name: string) {
+  if (!selected.value?.credential_id || !saved.value || JSON.parse(saved.value).adapter !== selected.value.adapter) return false
+  return selected.value.credential_fields?.includes(name) ?? name === 'api_key'
+}
+function changeAdapter(adapter: string) {
+  if (!selected.value || adapter === selected.value.adapter) return
+  if (selected.value.name === serviceName(selected.value.adapter)) selected.value.name = serviceName(adapter)
+  selected.value.adapter = adapter
+  selected.value.config = {}
+  selected.value.base_url = ''
+  credentials.value = {}
+  result.value = undefined
 }
 function edit(item?: AstralInternalDomainSearchProvider, adapter = 'tavily') {
   keepDraft()
   action.error.value = ''; action.success.value = ''
   editorKey.value = item?.id || `new:${adapter}`
   const draft = drafts.get(editorKey.value)
-  selected.value = draft?.provider || (item ? clone(item) : { ...newMeta(), name: adapter === 'exa' ? 'Exa' : 'Tavily', adapter, base_url: '' })
+  selected.value = draft?.provider || (item ? { ...clone(item), config: clone(item.config || {}) } : { ...newMeta(), name: serviceName(adapter), adapter, base_url: '', config: {} })
   saved.value = draft?.baseline || configuration(selected.value)
-  key.value = draft?.key || ''; query.value = ''; result.value = undefined; adding.value = false
+  credentials.value = draft?.credentials || {}; query.value = ''; result.value = undefined; adding.value = false
 }
 async function save() {
   if (!selected.value) return
   const snapshot = clone(selected.value)
   const editing = selected.value
-  const apiKey = key.value
+  const updates = clone(secretUpdates.value)
   const resource = editorKey.value
+  const desired = { name: snapshot.name.trim(), adapter: snapshot.adapter, base_url: (snapshot.base_url || '').trim(), config: configValues(snapshot.config) }
   let beforeCredential: string | undefined
   const accept = async (value: AstralInternalDomainSearchProvider) => {
-    const changes = { name: editing.name, adapter: editing.adapter, base_url: editing.base_url }
-    Object.assign(editing, value)
-    for (const field of ['name', 'adapter', 'base_url'] as const) {
-      if (changes[field] !== snapshot[field]) Object.assign(editing, { [field]: changes[field] })
+    const changes = { name: editing.name, adapter: editing.adapter, base_url: editing.base_url, config: clone(editing.config) }
+    Object.assign(editing, value, { config: value.config || {} })
+    for (const field of ['name', 'adapter', 'base_url', 'config'] as const) {
+      if (JSON.stringify(changes[field]) !== JSON.stringify(snapshot[field])) Object.assign(editing, { [field]: changes[field] })
     }
     const baseline = configuration(value)
     const active = editorKey.value === resource && selected.value === editing
-    const remainingKey = active ? key.value : drafts.get(resource)?.key ?? apiKey
-    const entry = { provider: editing, key: remainingKey === apiKey ? '' : remainingKey, baseline }
+    const remaining = { ...(active ? credentials.value : drafts.get(resource)?.credentials ?? updates) }
+    if (editing.adapter === snapshot.adapter) {
+      for (const [name, value] of Object.entries(updates)) if (remaining[name] === value) delete remaining[name]
+    }
+    const entry = { provider: editing, credentials: remaining, baseline }
     drafts.set(value.id, entry)
     if (!snapshot.id) drafts.delete(resource)
     if (active) {
-      key.value = entry.key
+      credentials.value = remaining
       saved.value = baseline
     }
     saves.confirm(listSearchProvidersQueryKey(), value)
@@ -78,27 +109,33 @@ async function save() {
       const current = snapshot.id ? (await request(listSearchProviders())).find(p => p.id === snapshot.id) : undefined
       if (snapshot.id && !current) throw { code: 'not_found', message: t('noResults') }
       beforeCredential = current?.credential_id
-      const value = await request(saveSearchProvider({ body: { ...(current || newMeta()), name: snapshot.name.trim(), adapter: snapshot.adapter, base_url: (snapshot.base_url || '').trim(), ...(apiKey ? { api_key: apiKey } : {}) } }))
+      const value = await request(saveSearchProvider({ body: { ...(current || newMeta()), ...desired, ...(Object.keys(updates).length ? { credentials: updates } : {}) } }))
       await accept(value)
     },
     reconcile: async () => {
       if (!snapshot.id) return 'unknown'
       const current = (await request(listSearchProviders())).find(p => p.id === snapshot.id)
-      const matches = current && current.name === snapshot.name.trim() && current.adapter === snapshot.adapter && current.base_url === (snapshot.base_url || '').trim()
-      if (matches && (!apiKey || current.credential_id !== beforeCredential)) { await accept(current); return 'applied' }
-      return apiKey && matches ? 'unknown' : 'not-applied'
+      const matches = current && configuration(current) === configuration({ ...snapshot, ...desired })
+      if (matches && (!Object.keys(updates).length || current.credential_id !== beforeCredential)) { await accept(current); return 'applied' }
+      return Object.keys(updates).length && matches ? 'unknown' : 'not-applied'
     },
   })
 }
 async function test() {
   if (!selected.value?.id || dirty.value) return
-  const id = selected.value.id
-  await action.run(async () => { result.value = await request(testSearchProvider({ path: { id }, body: { query: query.value.trim() } })) })
+  const editing = selected.value
+  const submittedQuery = query.value.trim()
+  const testedRevision = editing.revision
+  await action.run(async () => {
+    const value = await request(testSearchProvider({ path: { id: editing.id }, body: { query: submittedQuery } }))
+    if (selected.value === editing && editing.revision === testedRevision && !dirty.value && query.value.trim() === submittedQuery) result.value = value
+  })
 }
 async function remove() {
   await action.run(async () => {
     if (!selected.value) return
     await request(deleteSearchProvider({ path: { id: selected.value.id }, query: { revision: selected.value.revision } }))
+    drafts.delete(selected.value.id)
     selected.value = undefined; deleting.value = false
     await app.refresh()
   })
@@ -143,9 +180,22 @@ async function remove() {
           class="resource-row"
           @click="edit(item)"
         >
-          <span class="resource-symbol"><Globe /></span><span><strong>{{ item.name }}</strong><small>{{ item.adapter === 'exa' ? 'Exa' : 'Tavily' }} · {{ usage(item.id) }}</small></span><ChevronRight />
+          <span class="resource-symbol"><Globe /></span><span><strong>{{ item.name }}</strong><small>{{ serviceName(item.adapter) }} · {{ usage(item.id) }}</small></span><ChevronRight />
         </button>
       </div>
+      <p
+        v-else-if="catalog.isLoading.value"
+        class="muted"
+      >
+        {{ t('loading') }}
+      </p>
+      <p
+        v-else-if="catalog.error.value"
+        class="error-box"
+        role="alert"
+      >
+        {{ t('searchCatalogFailed') }}
+      </p>
       <div
         v-else
         class="resource-grid"
@@ -156,7 +206,7 @@ async function remove() {
           class="resource-card"
           @click="edit(undefined, service.id)"
         >
-          <span class="resource-symbol"><Globe /></span><span class="resource-card-copy"><strong>{{ service.name }}</strong><small>{{ service.url }}</small></span><Plus />
+          <span class="resource-symbol"><Globe /></span><span class="resource-card-copy"><strong>{{ service.name }}</strong><small>{{ serviceHost(service.website) }}</small></span><Plus />
         </button>
       </div>
     </template>
@@ -185,30 +235,58 @@ async function remove() {
         </SettingsRow>
         <SettingsRow :label="t('searchServices')">
           <Select
-            v-model="selected.adapter"
+            :model-value="selected.adapter"
             :label="t('searchServices')"
             :options="services.map(service => ({ value: service.id, label: service.name }))"
+            @update:model-value="changeAdapter"
           />
         </SettingsRow>
-        <SettingsRow :label="t('apiKey')">
+        <p
+          v-if="te(`searchNotice_${selected.adapter}`)"
+          class="settings-context-note"
+        >
+          {{ t(`searchNotice_${selected.adapter}`) }}
+        </p>
+        <SettingsRow
+          v-for="field in activeService?.fields || []"
+          :key="`${selected.adapter}:${field.name}`"
+          :label="fieldLabel(field)"
+          :description="!field.required && field.secret ? t('searchOptionalCredential') : undefined"
+        >
           <input
-            v-model="key"
-            :aria-label="t('apiKey')"
+            v-if="field.secret"
+            v-model="credentials[field.name]"
+            :aria-label="fieldLabel(field)"
             type="password"
             autocomplete="new-password"
-            :required="!selected.credential_id"
-            :placeholder="selected.credential_id ? t('storedSecret') : ''"
+            :required="field.required && !hasStoredSecret(field.name)"
+            :placeholder="hasStoredSecret(field.name) ? t('storedSecret') : ''"
+          >
+          <Select
+            v-else-if="field.options?.length"
+            :model-value="selected.config[field.name] || field.default || ''"
+            :label="fieldLabel(field)"
+            :options="field.options.map(value => ({ value, label: te(`searchOption_${value}`) ? t(`searchOption_${value}`) : value }))"
+            @update:model-value="selected.config[field.name] = $event"
+          />
+          <input
+            v-else
+            v-model="selected.config[field.name]"
+            :aria-label="fieldLabel(field)"
+            :required="field.required"
+            :placeholder="field.default || ''"
           >
         </SettingsRow>
         <SettingsRow
           :label="t('endpoint')"
-          :description="t('officialEndpointHint')"
+          :description="activeService?.base_url_required ? t('searchInstanceHint') : t('officialEndpointHint')"
         >
           <input
             v-model="selected.base_url"
             :aria-label="t('endpoint')"
             type="url"
-            :placeholder="selected.adapter === 'exa' ? 'https://api.exa.ai' : 'https://api.tavily.com'"
+            :required="activeService?.base_url_required"
+            :placeholder="activeService?.base_url || 'https://search.example.com'"
           >
         </SettingsRow>
         <div class="settings-submit-row">
@@ -216,7 +294,7 @@ async function remove() {
             type="submit"
             variant="primary"
             :busy="saves.state(`search:${editorKey}/config`).status === 'saving'"
-            :disabled="!!selected.id && !dirty"
+            :disabled="!activeService || !!selected.id && !dirty"
           >
             {{ t('saveConnectionSettings') }}
           </Button>
@@ -316,14 +394,16 @@ async function remove() {
       v-model:open="adding"
       :title="t('selectSearchService')"
     >
-      <button
-        v-for="service in services"
-        :key="service.id"
-        class="computer-option"
-        @click="edit(undefined, service.id)"
-      >
-        <Globe /><span><strong>{{ service.name }}</strong><small>{{ service.url }}</small></span><ChevronRight />
-      </button>
+      <div class="resource-list">
+        <button
+          v-for="service in services"
+          :key="service.id"
+          class="resource-row"
+          @click="edit(undefined, service.id)"
+        >
+          <span class="resource-symbol"><Globe /></span><span><strong>{{ service.name }}</strong><small>{{ serviceHost(service.website) }}</small></span><ChevronRight />
+        </button>
+      </div>
     </Modal>
   </div>
 </template>

@@ -39,7 +39,7 @@ Use a new, empty data directory for this version. Host schema 3 and Core format 
 
 Start in **Settings → Models** to connect a provider and add models, then open **Settings → Bots** to create a Bot. Choose its default model in **Basic settings** and grant machine access in **Computer access**. Saved models are immediately usable; no capability probe is required. New sessions inherit the Bot defaults. Provider keys and endpoints are global resources, so Bots do not need separate copies. Independent settings save automatically; connection parameters are submitted together with the local **Save connection** action.
 
-The model adapters support Chat Completions for OpenAI, DeepSeek, Qwen and OpenRouter, and Responses for OpenAI and DeepSeek. Connection and capability failures are reported from actual model requests. Native reasoning options are preserved. Search uses one selected Tavily or Exa resource per Agent.
+The model adapters support Chat Completions for OpenAI, DeepSeek, Qwen and OpenRouter, and Responses for OpenAI and DeepSeek. Connection and capability failures are reported from actual model requests. Native reasoning options are preserved. Search uses one selected resource per Bot: Tavily, Exa, DeepSeek Search, Brave, Google Custom Search, Sogou/Tencent, Serper, SearXNG, Jina, Bocha, DuckDuckGo or Yandex. The unified `web_search` tool accepts `query` and optional `domains`, `recency` (days), and `limit`; omitted options keep upstream defaults, and Astral does not truncate result counts or search text. See [search setup and provider capabilities](docs/search.md).
 
 ## macOS application
 

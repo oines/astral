@@ -14,6 +14,7 @@ import (
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/search"
 )
 
 type hostTool struct {
@@ -55,16 +56,14 @@ func (r *runtime) hostTools() []core.Tool {
 				}
 				return resultJSON(map[string]string{"computer_id": b.ComputerID, "cwd": b.CWD, "agent_home": b.AgentHome, "shell": b.Shell, "api_url": b.APIURL}), nil
 			}},
-		core.ToolFunc{Spec: core.ToolDefinition{Name: "web_search", Version: "astral-1", Description: "Search the web with this Agent's selected search provider. Returns titles, summaries and source URLs; there is no fallback provider.",
-			Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":8000}},"required":["query"],"additionalProperties":false}`)},
+		core.ToolFunc{Spec: core.ToolDefinition{Name: "web_search", Version: "astral-2", Description: "Search the web with this Agent's selected search provider. Only query is required; omit domains, recency (days), and limit to use the provider's defaults. Optional filters are passed to that provider; unsupported filters return an error. Returns titles, full summaries and source URLs without local result-count or output-length truncation. There is no fallback provider.",
+			Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1},"domains":{"type":"array","items":{"type":"string"},"description":"Restrict to these domain names (no scheme or path)."},"recency":{"type":"integer","minimum":1,"description":"Restrict to the past N days."},"limit":{"type":"integer","minimum":1,"description":"Requested result count, passed directly to the provider."}},"required":["query"],"additionalProperties":false}`)},
 			Run: func(ctx context.Context, inv core.Invocation, _ func(core.ToolProgress)) (core.ToolExecution, error) {
-				var args struct {
-					Query string `json:"query"`
-				}
+				var args search.Request
 				if err := json.Unmarshal(inv.Call.Arguments, &args); err != nil {
 					return core.ToolExecution{}, notExecuted("invalid_search", err)
 				}
-				response, err := r.service.Search.Search(ctx, r.agentID, args.Query)
+				response, err := r.service.Search.Search(ctx, r.agentID, args)
 				if err != nil {
 					return core.ToolExecution{}, &core.ToolError{Code: "search_failed", Outcome: core.OutcomeFailed, Cause: err}
 				}

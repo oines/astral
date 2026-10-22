@@ -1972,9 +1972,21 @@
           "base_url": {
             "type": "string"
           },
+          "config": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "credential_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "credential_id": {
             "type": "string"
@@ -3103,12 +3115,30 @@
           "base_url": {
             "type": "string"
           },
+          "config": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
           },
+          "credential_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "credential_id": {
             "type": "string"
+          },
+          "credentials": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
           },
           "id": {
             "type": "string"
@@ -3131,17 +3161,6 @@
           "updated_at",
           "name",
           "adapter"
-        ],
-        "type": "object"
-      },
-      "astral_internal_httpapi_SearchQuery": {
-        "properties": {
-          "query": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
         ],
         "type": "object"
       },
@@ -3549,6 +3568,95 @@
         "required": [
           "sequence",
           "observation"
+        ],
+        "type": "object"
+      },
+      "astral_internal_search_Adapter": {
+        "properties": {
+          "base_url": {
+            "type": "string"
+          },
+          "base_url_required": {
+            "type": "boolean"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_search_Field"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "website",
+          "base_url",
+          "base_url_required",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "astral_internal_search_Field": {
+        "properties": {
+          "default": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "secret",
+          "required"
+        ],
+        "type": "object"
+      },
+      "astral_internal_search_Request": {
+        "properties": {
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "query": {
+            "type": "string"
+          },
+          "recency": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
         ],
         "type": "object"
       },
@@ -5853,6 +5961,47 @@
         ]
       }
     },
+    "/api/v1/search-adapters": {
+      "get": {
+        "operationId": "listSearchAdapters",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/astral_internal_search_Adapter"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Search"
+        ]
+      }
+    },
     "/api/v1/search-providers": {
       "get": {
         "operationId": "listSearchProviders",
@@ -6013,7 +6162,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/astral_internal_httpapi_SearchQuery"
+                "$ref": "#/components/schemas/astral_internal_search_Request"
               }
             }
           },

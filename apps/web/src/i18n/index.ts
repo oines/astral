@@ -1,3 +1,4 @@
+import { searchEn, searchZh } from './search'
 import { channelsEn, channelsZh } from './channels'
 import { providersEn, providersZh } from './providers'
 import { createI18n } from 'vue-i18n'
@@ -6,7 +7,7 @@ import { redesignEn, redesignZh } from './redesign'
 import { settingsEn, settingsZh } from './settings'
 import { settingsUxEn, settingsUxZh } from './settings-ux'
 const en = {
-  ...channelsEn, ...detailEn, ...redesignEn, ...providersEn, ...settingsEn, ...settingsUxEn,
+  ...channelsEn, ...detailEn, ...redesignEn, ...providersEn, ...settingsEn, ...settingsUxEn, ...searchEn,
   common: { more: 'More' }, stopped: 'Stopped', bottom: 'Jump to latest', thinkingProcess: 'Thinking', noModelMatch: 'No matching models.',
   runCommand: 'Run command', readFile: 'Read file', writeFile: 'Write file', editFile: 'Edit file',
   application: 'Application', conversation: 'Conversation', interface: 'Interface',
@@ -43,7 +44,7 @@ const en = {
   disconnect: 'Sign out', loading: 'Loading…', empty: 'Nothing here yet.', inspect: 'Inspect', result: 'Result', source: 'Source', terminal: 'Terminal output',
 }
 const zh: typeof en = {
-  ...channelsZh, ...detailZh, ...redesignZh, ...providersZh, ...settingsZh, ...settingsUxZh,
+  ...channelsZh, ...detailZh, ...redesignZh, ...providersZh, ...settingsZh, ...settingsUxZh, ...searchZh,
   common: { more: '更多' }, stopped: '已停止', bottom: '回到最新消息', thinkingProcess: '思考过程', noModelMatch: '没有匹配的模型。',
   runCommand: '运行命令', readFile: '读取文件', writeFile: '写入文件', editFile: '修改文件',
   application: '应用', conversation: '对话', interface: '界面',

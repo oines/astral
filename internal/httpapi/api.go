@@ -65,7 +65,8 @@ type ProviderInput struct {
 }
 type SearchInput struct {
 	domain.SearchProvider
-	APIKey *string `json:"api_key,omitempty"`
+	APIKey      *string           `json:"api_key,omitempty"`
+	Credentials map[string]string `json:"credentials,omitempty"`
 }
 type ConnectionInput struct {
 	domain.Connection
@@ -136,9 +137,7 @@ type ResolveSend struct {
 	Note       string   `json:"note"`
 	MessageIDs []string `json:"message_ids,omitempty"`
 }
-type SearchQuery struct {
-	Query string `json:"query"`
-}
+type SearchQuery = search.Request
 type Usage struct {
 	Agents   []domain.Agent        `json:"agents"`
 	Sessions []domain.Session      `json:"sessions"`
@@ -442,15 +441,27 @@ func (a *API) resources() {
 		defer cancel()
 		return h.Models.Verify(ctx, r.PathValue("id"))
 	})
+	route[httpcontract.Empty, []search.Adapter](a, "GET", "/search-adapters", "listSearchAdapters", "Search", func(_ *http.Request, _ httpcontract.Empty) ([]search.Adapter, error) {
+		return search.Adapters(), nil
+	})
 	route[httpcontract.Empty, []domain.SearchProvider](a, "GET", "/search-providers", "listSearchProviders", "Search", func(r *http.Request, _ httpcontract.Empty) ([]domain.SearchProvider, error) {
 		return readAll[domain.SearchProvider](r.Context(), h.Store, "search")
 	})
 	route[SearchInput, domain.SearchProvider](a, "POST", "/search-providers", "saveSearchProvider", "Search", func(r *http.Request, input SearchInput) (domain.SearchProvider, error) {
-		err := h.Search.Save(r.Context(), &input.SearchProvider, input.APIKey)
+		if input.APIKey != nil {
+			if input.Credentials == nil {
+				input.Credentials = map[string]string{}
+			}
+			if value, ok := input.Credentials["api_key"]; ok && value != *input.APIKey {
+				return domain.SearchProvider{}, domain.Invalid("conflicting api_key credentials")
+			}
+			input.Credentials["api_key"] = *input.APIKey
+		}
+		err := h.Search.Save(r.Context(), &input.SearchProvider, input.Credentials)
 		return input.SearchProvider, err
 	})
 	route[SearchQuery, search.Response](a, "POST", "/search-providers/{id}/test", "testSearchProvider", "Search", func(r *http.Request, input SearchQuery) (search.Response, error) {
-		return h.Search.Query(r.Context(), r.PathValue("id"), input.Query)
+		return h.Search.Query(r.Context(), r.PathValue("id"), input)
 	})
 	route[httpcontract.Empty, []ConnectionView](a, "GET", "/connections", "listConnections", "Channels", func(r *http.Request, _ httpcontract.Empty) ([]ConnectionView, error) {
 		all, err := readAll[domain.Connection](r.Context(), h.Store, "connections")

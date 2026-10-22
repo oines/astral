@@ -271,6 +271,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .preference-row > span { display: flex; flex-direction: column; gap: 4px; }
 .preference-row > select { width: 180px; font-size: 13px; }
 .resource-list { border: 1px solid var(--panel-line); border-radius: 12px; overflow: hidden; background: var(--bg); }
+.modal-content > .resource-list { min-height: 0; overflow-y: auto; }
 .resource-row { display: flex; align-items: center; width: 100%; gap: 12px; padding: var(--settings-row-padding) var(--settings-group-padding); min-height: 72px; border: 0; background: transparent; text-align: left; }
 :is(button, a).resource-row { color: var(--ink); text-decoration: none; }
 :is(button, a).resource-row:not(:disabled):is(:hover, :focus-visible) { background: var(--hover); }

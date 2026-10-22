@@ -26,6 +26,20 @@ The tagged platform integration tests require the distribution binaries and a ru
 
 `check-desktop-service.mjs` launches the real Go binary through the desktop service class, verifies private Owner handoff, graceful shutdown, shutdown after a killed parent process, release of the data lock, and preservation of Local Computer identity on restart.
 
+## Search adapters and untruncated output, 2026-10-22
+
+Search now supports the 11 retained Memoh providers plus DeepSeek Search. Bing is absent from the catalog. The model tool and Owner test endpoint share `query`, optional `domains`, `recency` and `limit`; see the [search contract and provider matrix](search.md).
+
+- The adapter tests cover all 12 request formats and authentication mechanisms, omission of optional defaults, unchanged explicit count values, domain normalization, date mappings, unsupported-option errors, proxy/version/full-endpoint URL handling, provider error envelopes, nested Tencent JSON, DuckDuckGo HTML and Yandex Base64 XML. The routing test still proves that one selected provider is called once and another provider is never used as fallback.
+- A real local HTTP search response contains 8 results and more than 4 MiB of summary text. The complete response survives the service boundary. A separate model/tool integration test invokes `web_search` with all optional parameters and verifies all 8 long summaries in the next model request, beyond the former result-count and text limits.
+- Persistence checks cover legacy single-key records, partial Tencent credential replacement, cross-adapter credential isolation, stale revision rejection, rejecting secret fields in public configuration, and ignoring caller-supplied credential references. Owner HTTP tests cover the 12-entry catalog, new credential dictionaries, the legacy `api_key` input, invalid limits and the test endpoint's parameter forwarding.
+- Browser checks at 1280 × 720 inspected all 12 choices, scrolled to and opened the final Yandex entry, and checked Google `cx`, Tencent SecretId/SecretKey and Yandex folder/region fields. Tencent and DeepSeek connections were created using clearly labeled local fixture credentials; each returned 8 visible results. Replacing only Tencent's SecretKey preserved its saved SecretId. Unsaved connection edits disabled testing; a successful save cleared the draft and restored testing. The temporary test connections were unassigned to Bots and removed afterwards. No existing Bot selection or connection was changed.
+- `GOWORK=off go test -race ./...`, `go vet ./...`, Go lint, frontend typechecks, 37 frontend tests and the macOS/Linux distribution build passed. Existing large-chunk and mixed static/dynamic import build warnings remain. The browser reported no warnings or errors in the exercised flow.
+
+Browser evidence: [service catalog](../artifacts/search-review/provider-catalog.png), [catalog after scrolling](../artifacts/search-review/provider-catalog-bottom.png), [Tencent settings](../artifacts/search-review/tencent-settings.png), [Tencent results](../artifacts/search-review/tencent-results.png), [DeepSeek settings](../artifacts/search-review/deepseek-settings.png), [DeepSeek results](../artifacts/search-review/deepseek-results.png).
+
+These are local protocol and UI checks, not paid-account production certification for all 12 services. No real search API key was used. Google Custom Search is limited to existing customers until its announced retirement; DuckDuckGo's public HTML endpoint may require browser verification, and SearXNG must allow JSON output.
+
 ## Settings rework, 2026-10-22
 
 The implementation follows [UI/UX specification v1.2](ui-ux-spec.md). Global settings retain the Bot entry; entering a Bot replaces the global navigation with that Bot's basic settings, Computer access and connected platforms. Each platform leads to an account list even when only one account exists. Account configuration, access scope and individual chat operations keep separate submission boundaries.
