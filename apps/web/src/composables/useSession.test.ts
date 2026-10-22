@@ -43,6 +43,29 @@ function connect(id = 'one') {
   return { sessionID, ...connection }
 }
 describe('recovering a session connection', () => {
+  it('keeps the last Core usage while waiting and restores it from a reconnect snapshot without polling', async () => {
+    const fetch = vi.fn(() => { throw new Error('usage must come from the Core subscription') })
+    vi.stubGlobal('fetch', fetch)
+    const live = connect()
+    const first = snapshot('one', 'server')
+    first.view.context_usage = { entry_id: 'reported', model_ref: 'model', input_tokens: 27707, context_window: 1000000 }
+    const stream = Stream.instances[0]!
+    stream.send('snapshot', first)
+    stream.send('event', { epoch: 'server', core: { sequence: 1, session_id: 'one', type: 'attempt_start' } })
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(live.state.value.view?.context_usage).toEqual(first.view.context_usage)
+    expect(fetch).not.toHaveBeenCalled()
+    const newer = { ...first.view, event_sequence: 2, context_usage: { ...first.view.context_usage, entry_id: 'newer', input_tokens: 29000 } }
+    stream.send('event', { epoch: 'server', core: { sequence: 2, session_id: 'one', type: 'entry_committed' }, view: newer })
+    expect(live.state.value.view?.context_usage?.input_tokens).toBe(29000)
+    stream.fail()
+    await vi.advanceTimersByTimeAsync(1000)
+    const restored = snapshot('one', 'restarted')
+    restored.view = newer
+    Stream.instances[1]!.send('snapshot', restored)
+    expect(live.state.value.view?.context_usage).toEqual(newer.context_usage)
+    expect(fetch).not.toHaveBeenCalled()
+  })
   it('restores retry state from a new snapshot without submitting or continuing a model request', async () => {
     const fetch = vi.fn(() => { throw new Error('reconnection must only open the event stream') })
     vi.stubGlobal('fetch', fetch)

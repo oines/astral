@@ -166,6 +166,12 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 					gateway.RemoveImageData(reflect.ValueOf(&entry))
 					thinEntry(&entry)
 					envelope.Entry = &entry
+					if entry.Kind == core.EntryMessage && entry.Message != nil && entry.Message.Role == core.RoleAssistant && entry.Usage.Available {
+						if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
+							envelope.View = &view
+							lastView, _ = json.Marshal(view)
+						}
+					}
 				}
 			}
 			if !send("event", fmt.Sprintf("%s:%d", h.RuntimeID, event.Sequence), envelope) {

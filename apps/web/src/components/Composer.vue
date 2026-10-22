@@ -2,8 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQuery } from '@pinia/colada'
-import { useIntervalFn } from '@vueuse/core'
-import { listProvidersQuery, sessionContextQuery } from '@astral/sdk/colada'
+import { listProvidersQuery } from '@astral/sdk/colada'
 import { createSession, continueSession, decideApproval, inputReceipt, movePending, removePending, updatePending, resolveTool, selectComputer, selectModel, stopSession, submitInput, uploadAttachment } from '@astral/sdk'
 import { ArrowUp, ArrowDown, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, User, ListEnd, CornerDownRight, Trash2, Ellipsis, Pencil } from '@astral/icons'
 import { Button, Modal, Popover, ModelPicker } from '@astral/ui'
@@ -53,9 +52,8 @@ const profile = computed(() => app.models.find(p => p.id === view.value.profile_
 const values = computed(() => ({ ...profile.value?.recommendations, ...profile.value?.overrides }))
 const caps = computed(() => object(values.value.reasoning))
 const efforts = computed(() => Array.isArray(caps.value.efforts) ? caps.value.efforts.filter((x): x is string => typeof x === 'string') : [])
-const context = useQuery(() => ({ ...sessionContextQuery({ path: { id: view.value.id } }), key: ['context', view.value.id, view.value.head_id, view.value.profile_id ?? '', view.value.run_id ?? ''], staleTime: 5000, enabled: Boolean(view.value.id) }))
-useIntervalFn(() => { if (running.value && document.visibilityState === 'visible') void context.refetch() }, 2000)
-const ratio = computed(() => context.data.value ? Math.min(100, Math.round(context.data.value.estimated_input / context.data.value.context_window * 100)) : 0)
+const contextUsage = computed(() => view.value.context_usage)
+const ratio = computed(() => contextUsage.value?.context_window ? Math.min(100, Math.round(contextUsage.value.input_tokens / contextUsage.value.context_window * 100)) : undefined)
 const resolution = ref('')
 const note = ref('')
 const computer = computed(() => computers.value.find(c => c.id === view.value.computer_id))
@@ -627,22 +625,25 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
             <button
               type="button"
               class="context-button"
-              :title="`${t('context')}: ${ratio}%`"
+              :title="`${t('context')}: ${ratio === undefined ? '—' : `${ratio}%`}`"
               :aria-label="t('context')"
             >
               <span
                 class="context-ring"
-                :style="{ '--progress': `${ratio}%` }"
+                :style="{ '--progress': `${ratio ?? 0}%` }"
               ><span /></span>
             </button>
           </template>
           <div class="context-menu">
-            <strong>{{ t('context') }} <span>{{ ratio }}%</span></strong>
+            <strong>{{ t('context') }} <span>{{ ratio === undefined ? '—' : `${ratio}%` }}</span></strong>
             <div class="context-meter">
-              <span :style="{ width: `${ratio}%` }" />
+              <span :style="{ width: `${ratio ?? 0}%` }" />
             </div>
             <p class="muted">
-              {{ context.data.value?.estimated_input?.toLocaleString() ?? '—' }} / {{ context.data.value?.context_window?.toLocaleString() ?? '—' }} tokens
+              {{ contextUsage?.input_tokens.toLocaleString() ?? '—' }} / {{ contextUsage?.context_window?.toLocaleString() ?? '—' }} tokens
+            </p>
+            <p class="muted small">
+              {{ t(contextUsage ? 'contextReportedHint' : 'contextNotReported') }}
             </p>
             <Button
               variant="secondary"

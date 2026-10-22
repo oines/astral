@@ -2317,6 +2317,27 @@
         ],
         "type": "object"
       },
+      "astral_internal_harness_ContextUsage": {
+        "properties": {
+          "context_window": {
+            "type": "integer"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "input_tokens": {
+            "type": "integer"
+          },
+          "model_ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entry_id",
+          "input_tokens"
+        ],
+        "type": "object"
+      },
       "astral_internal_harness_InputReceipt": {
         "properties": {
           "accepted_at": {
@@ -2480,6 +2501,9 @@
           },
           "computer_id": {
             "type": "string"
+          },
+          "context_usage": {
+            "$ref": "#/components/schemas/astral_internal_harness_ContextUsage"
           },
           "conversation_id": {
             "type": "string"

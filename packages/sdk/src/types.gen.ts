@@ -732,6 +732,13 @@ export type AstralInternalGatewaySendText = {
     text: string;
 };
 
+export type AstralInternalHarnessContextUsage = {
+    context_window?: number;
+    entry_id: string;
+    input_tokens: number;
+    model_ref?: string;
+};
+
 export type AstralInternalHarnessInputReceipt = {
     accepted_at: string;
     digest: string;
@@ -783,6 +790,7 @@ export type AstralInternalHarnessView = {
     can_continue: boolean;
     channel_platform?: string;
     computer_id?: string;
+    context_usage?: AstralInternalHarnessContextUsage;
     conversation_id?: string;
     created_at: string;
     cwd?: string;

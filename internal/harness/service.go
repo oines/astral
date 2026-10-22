@@ -50,6 +50,8 @@ type runtime struct {
 	environmentMu sync.Mutex
 	processMu     sync.Mutex
 	processes     map[string]standardtools.Process
+	usageHead     string
+	contextUsage  *ContextUsage
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {

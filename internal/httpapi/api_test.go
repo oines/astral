@@ -244,6 +244,9 @@ func TestEventSubscriptionPrecedesSnapshotAndReconcilesCommit(t *testing.T) {
 	if snapshot.View.ID != p.Session.ID {
 		t.Fatal("snapshot Session differs")
 	}
+	if snapshot.View.ContextUsage != nil {
+		t.Fatal("snapshot invented usage before the first response")
+	}
 	if _, err := p.Harness.Submit(p.Context, p.Session.ID, harness.InputRequest{ID: "stream-input", Text: "run"}); err != nil {
 		t.Fatal(err)
 	}
@@ -265,6 +268,9 @@ func TestEventSubscriptionPrecedesSnapshotAndReconcilesCommit(t *testing.T) {
 			entries[event.Entry.ID] = true
 			if event.Entry.Message != nil && event.Entry.Message.Role == "assistant" {
 				assistantID = event.Entry.ID
+				if event.View == nil || event.View.ContextUsage == nil || event.View.ContextUsage.InputTokens != 20 || event.View.ContextUsage.EntryID != assistantID || event.View.ContextUsage.ContextWindow != 128000 {
+					t.Fatalf("committed model usage did not reach the subscription: %+v", event.View)
+				}
 			}
 		}
 		if event.Core != nil && event.Core.Type == "run_end" {
@@ -289,6 +295,9 @@ func TestEventSubscriptionPrecedesSnapshotAndReconcilesCommit(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("streaming commit has no matching durable Entry ID on reconnect")
+	}
+	if after.View.ContextUsage == nil || after.View.ContextUsage.InputTokens != 20 || after.View.ContextUsage.EntryID != assistantID {
+		t.Fatal("reconnection snapshot lost the last reported usage")
 	}
 }
 

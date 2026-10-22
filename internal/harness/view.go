@@ -28,6 +28,7 @@ type View struct {
 	Pending       []PendingInput             `json:"pending"`
 	Approvals     []sessions.PendingApproval `json:"approvals"`
 	Unresolved    []sessions.ToolRecord      `json:"unresolved"`
+	ContextUsage  *ContextUsage              `json:"context_usage,omitempty"`
 }
 
 // InspectContext describes persisted context without refreshing environment or
@@ -57,6 +58,9 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	}
 	state := snapshot.State
 	view.RolloutID, view.HeadID, view.LastRun = state.RolloutID, state.Branch.HeadID, state.LastRun
+	if view.ContextUsage, err = r.reportedContextUsage(ctx, view.HeadID); err != nil {
+		return view, err
+	}
 	if view.HeadID != "" {
 		if head, readErr := r.core.History().Get(ctx, view.HeadID); readErr == nil && head.Time.After(view.UpdatedAt) {
 			view.UpdatedAt = head.Time
