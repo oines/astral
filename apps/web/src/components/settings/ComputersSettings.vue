@@ -1,20 +1,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useQuery } from '@pinia/colada'
-import { useIntervalFn } from '@vueuse/core'
 import { listComputersQuery, listComputersQueryKey } from '@astral/sdk/colada'
-import { createLocalContainer, enrollComputer, getComputerOperation, getEnrollment, revokeComputer, listComputers, updateComputer, useLocalComputer, type AstralInternalDomainProvisioning, type AstralInternalDomainEnrollment, type AstralInternalComputersEnrollmentResult } from '@astral/sdk'
+import { revokeComputer, listComputers, updateComputer } from '@astral/sdk'
 import { Button, Modal, SettingsSection, SettingsRow } from '@astral/ui'
-import { ArrowLeft, Check, ChevronRight, Copy, Monitor, Plus, Server, Terminal, Search } from '@astral/icons'
+import { ArrowLeft, ChevronRight, Monitor, Plus, Server, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Computer } from '../../lib/types'
-import { errorText, operatingSystem, request } from '../../lib/api'
+import { operatingSystem, request } from '../../lib/api'
 import { useAction } from '../../composables/useAction'
 import { useSettingsSave } from '../../composables/useSettingsSave'
 import SettingsText from './SettingsText.vue'
 import SettingsFeedback from './SettingsFeedback.vue'
 import { useAppStore } from '../../stores/app'
 import ResourceDelete from './ResourceDelete.vue'
+import AddComputerDialog from './AddComputerDialog.vue'
 const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
@@ -25,87 +25,10 @@ const visibleComputers = computed(() => (list.data.value || []).filter(c => `${c
 const selectedID = ref('')
 const selected = computed(() => list.data.value?.find(c => c.id === selectedID.value))
 const adding = ref(false)
-const mode = ref<'choose' | 'local' | 'container' | 'remote'>('choose')
-const container = ref(false)
-const operation = ref<AstralInternalDomainProvisioning>()
-const enrollment = ref<AstralInternalDomainEnrollment>()
-const enrollmentResult = ref<AstralInternalComputersEnrollmentResult>()
-const computerID = ref('')
-const connected = computed(() => list.data.value?.find(c => c.id === computerID.value && c.online))
-const intent = ref('')
-const copied = ref(false)
 const assign = ref(false)
 const deleting = ref(false)
-const activeOperationKey = 'astral:pending-container'
-const pending = localStorage.getItem(activeOperationKey)
-if (pending) {
-  try {
-    const saved = JSON.parse(pending) as { id: string; intent: string }
-    void request(getComputerOperation({ path: { id: saved.id } })).then(value => {
-      operation.value = value
-      intent.value = saved.intent
-      computerID.value = value.computer_id || ''
-      if (value.state !== 'connected') { mode.value = 'container'; adding.value = true }
-      else localStorage.removeItem(activeOperationKey)
-    }).catch(() => localStorage.removeItem(activeOperationKey))
-  } catch { localStorage.removeItem(activeOperationKey) }
-}
 function edit(computer: Computer) { selectedID.value = computer.id; action.success.value = ''; action.error.value = '' }
-function add() {
-  mode.value = 'choose'
-  operation.value = undefined
-  enrollment.value = undefined
-  enrollmentResult.value = undefined
-  computerID.value = ''
-  copied.value = false
-  intent.value = crypto.randomUUID()
-  action.error.value = ''
-  adding.value = true
-}
-async function local() {
-  mode.value = 'local'
-  await action.run(async () => {
-    const c = await request(useLocalComputer())
-    computerID.value = c.id
-    await list.refetch()
-    await app.refresh()
-  })
-}
-async function localContainer() {
-  mode.value = 'container'
-  await action.run(async () => {
-    operation.value = await request(createLocalContainer({ body: { id: intent.value } }))
-    computerID.value = operation.value.computer_id || ''
-    localStorage.setItem(activeOperationKey, JSON.stringify({ id: operation.value.id, intent: intent.value }))
-  })
-}
-async function remote() {
-  mode.value = 'remote'
-  copied.value = false
-  await action.run(async () => {
-    enrollmentResult.value = await request(enrollComputer({ body: { container: container.value } }))
-    enrollment.value = enrollmentResult.value.enrollment
-  })
-}
-let polling = false
-useIntervalFn(async () => {
-  if (polling || document.visibilityState === 'hidden') return
-  polling = true
-  try {
-    await list.refetch()
-    if (!adding.value) return
-    if (operation.value && !['connected', 'failed'].includes(operation.value.state)) {
-      operation.value = await request(getComputerOperation({ path: { id: operation.value.id } }))
-      if (operation.value.computer_id) computerID.value = operation.value.computer_id
-      if (operation.value.state === 'connected') { localStorage.removeItem(activeOperationKey); await app.refresh() }
-    }
-    if (enrollment.value?.state === 'waiting') {
-      enrollment.value = await request(getEnrollment({ path: { id: enrollment.value.id } }))
-      if (enrollment.value.computer_id) { computerID.value = enrollment.value.computer_id; await app.refresh() }
-    }
-  } catch (e) { if (adding.value) action.error.value = errorText(e) }
-  finally { polling = false }
-}, 3000)
+function add() { adding.value = true }
 async function rename(id: string, name: string) {
   await saves.run(`computer:${id}`, 'name', {
     write: async () => {
@@ -126,10 +49,6 @@ async function revoke() {
   await action.run(async () => { if (selected.value) await request(revokeComputer({ path: { id: selected.value.id } })); deleting.value = false; await app.refresh() })
 }
 function openAssignment() { assign.value = true }
-async function copyCommand() {
-  if (!enrollmentResult.value) return
-  await action.run(async () => { await navigator.clipboard.writeText(enrollmentResult.value!.command); copied.value = true })
-}
 const assigned = computed(() => app.agents.filter(a => a.allowed_computers.includes(selectedID.value)))
 </script>
 <template>
@@ -279,148 +198,10 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
         @confirm="revoke"
       />
     </template>
-    <Modal
+    <AddComputerDialog
       v-model:open="adding"
-      :title="t('newComputer')"
-    >
-      <p
-        v-if="action.error.value"
-        class="error-box"
-      >
-        {{ action.error.value }}
-      </p>
-      <template v-if="mode === 'choose'">
-        <p class="muted">
-          {{ t('serverMachine', { name: app.data?.host.hostname }) }}
-        </p>
-        <button
-          class="computer-option"
-          @click="local"
-        >
-          <Monitor /><span><strong>{{ t('useServerMachine') }}</strong><small>{{ t('serverMachineHint') }}</small></span><ChevronRight />
-        </button>
-        <button
-          class="computer-option"
-          @click="localContainer"
-        >
-          <Server /><span><strong>{{ t('localContainer') }}</strong><small>{{ t('containerMachineHint') }}</small></span><ChevronRight />
-        </button>
-        <button
-          class="computer-option"
-          @click="mode = 'remote'"
-        >
-          <Terminal /><span><strong>{{ t('remote') }}</strong><small>{{ t('remoteMachineHint') }}</small></span><ChevronRight />
-        </button>
-      </template>
-      <template v-else-if="!connected">
-        <button
-          type="button"
-          class="provider-back"
-          :disabled="action.busy.value"
-          @click="mode = 'choose'; action.error.value = ''"
-        >
-          <ArrowLeft />{{ t('backToComputerOptions') }}
-        </button>
-        <div
-          v-if="mode === 'remote'"
-          class="stack"
-        >
-          <template v-if="!enrollmentResult">
-            <p class="muted">
-              {{ t('commandHint') }}
-            </p><label class="row"><input
-              v-model="container"
-              type="checkbox"
-            >{{ t('useContainer') }}</label><Button
-              variant="primary"
-              :busy="action.busy.value"
-              @click="remote"
-            >
-              {{ t('generateCommand') }}
-            </Button>
-          </template>
-          <template v-else>
-            <pre class="connection-command">{{ enrollmentResult.command }}</pre><Button
-              :busy="action.busy.value"
-              @click="copyCommand"
-            >
-              <Check v-if="copied" /><Copy v-else />{{ t('copy') }}
-            </Button>
-            <p
-              v-if="enrollment?.state === 'waiting'"
-              class="row muted"
-            >
-              <span class="spinner" />{{ t('waitingComputer') }}
-            </p><template v-else-if="enrollment?.state === 'expired'">
-              <p class="muted">
-                {{ t('enrollmentExpired') }}
-              </p><Button
-                :busy="action.busy.value"
-                @click="remote"
-              >
-                {{ t('generateCommand') }}
-              </Button>
-            </template><p class="muted small">
-              {{ t('expires') }}: {{ new Date(enrollmentResult.enrollment.expires_at).toLocaleString() }}
-            </p>
-          </template>
-        </div>
-        <div
-          v-else-if="mode === 'container'"
-          class="stack"
-        >
-          <p class="row">
-            <span
-              v-if="operation && operation.state !== 'failed'"
-              class="spinner"
-            />{{ operation?.phase ? t(`containerPhase.${operation.phase}`) : t('loading') }}
-          </p>
-          <pre
-            v-if="operation?.log?.length"
-            class="connection-command"
-          >{{ operation.log.join('\n') }}</pre><p
-            v-if="operation?.error"
-            class="error-box"
-          >
-            {{ operation.error }}
-          </p>
-          <Button
-            v-if="operation?.state === 'failed' || action.error.value"
-            :busy="action.busy.value"
-            @click="localContainer"
-          >
-            {{ t('retry') }}
-          </Button>
-        </div>
-        <div
-          v-else
-          class="row"
-        >
-          <span
-            v-if="action.busy.value"
-            class="spinner"
-          /><span v-if="!action.error.value">{{ t('waitingComputer') }}</span><Button
-            v-if="action.error.value"
-            @click="local"
-          >
-            {{ t('retry') }}
-          </Button>
-        </div>
-      </template>
-      <div
-        v-else
-        class="stack"
-      >
-        <span class="badge good align-start"><Check />{{ t('online') }}</span><h2>{{ connected.name }}</h2><p class="muted">
-          {{ operatingSystem(connected.os) }} · {{ connected.arch }}
-        </p><Button
-          variant="primary"
-          @click="adding = false; openAssignment()"
-        >
-          {{ t('chooseBotAccess') }}
-        </Button>
-      </div>
-    </Modal>
+      @connected="openAssignment"
+    />
     <Modal
       v-model:open="assign"
       :title="t('chooseBotAccess')"

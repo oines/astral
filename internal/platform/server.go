@@ -177,6 +177,9 @@ func New(config Config) (server *Server, err error) {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.Hub = computers.NewHub(s.Store)
 	s.Harness = harness.New(s.Store, s.CoreStore, &modelbridge.Bridge{Store: s.Store}, s.Hub)
+	if err = s.Harness.InitializeOnboarding(s.ctx); err != nil {
+		return nil, err
+	}
 	s.Channels = channels.New(s.Store, s.Harness)
 	agentGateway := gateway.New(s.Harness, s.Channels)
 	s.Hub.Gateway = agentGateway.Handle

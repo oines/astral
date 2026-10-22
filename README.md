@@ -37,7 +37,9 @@ Open `http://127.0.0.1:4545`. The server prints the path of its private Owner to
 
 Use a new, empty data directory for this version. Host schema 3 and Core format 9 replace the previous formats; older data is rejected, with no migration or compatibility mode. Choose a persistent location instead of `/tmp` for regular use.
 
-Start in **Settings → Models** to connect a provider and add models, then open **Settings → Bots** to create a Bot. Choose its default model in **Basic settings** and grant machine access in **Computer access**. Saved models are immediately usable; no capability probe is required. New sessions inherit the Bot defaults. Provider keys and endpoints are global resources, so Bots do not need separate copies. Independent settings save automatically; connection parameters are submitted together with the local **Save connection** action.
+A fresh installation includes a Bot named **Astral**, which you can rename later in Settings. The two-step setup connects a model service and selects a model, then selects or connects a Computer. **Start using Astral** grants access to the selected online Computer and saves both defaults together. The first conversation is ready to use those resources; there is no separate Bot creation step. Existing installations keep their Bots and resource choices, and setup does not reappear after completion or recreate a renamed or deleted Bot.
+
+After setup, manage services in **Settings → Models** and Bot names, defaults and permissions in **Settings → Bots**. Saved models are immediately usable; no capability probe is required. New sessions inherit the Bot defaults. Provider keys and endpoints are global resources, so Bots do not need separate copies. Independent settings save automatically; connection parameters are submitted together with the local **Save connection** action.
 
 The model adapters support Chat Completions for OpenAI, DeepSeek, Qwen and OpenRouter, and Responses for OpenAI and DeepSeek. Connection and capability failures are reported from actual model requests. Native reasoning options are preserved. Search uses one selected resource per Bot: Tavily, Exa, DeepSeek Search, Brave, Google Custom Search, Sogou/Tencent, Serper, SearXNG, Jina, Bocha, DuckDuckGo or Yandex. The unified `web_search` tool accepts `query` and optional `domains`, `recency` (days), and `limit`; omitted options keep upstream defaults, and Astral does not truncate result counts or search text. See [search setup and provider capabilities](docs/search.md).
 
@@ -63,7 +65,7 @@ The macOS app stores current data in `~/Library/Application Support/astral/schem
 - **Use a local container** creates a persistent container through the server's local Docker-compatible runtime.
 - **Connect another machine** produces an expiring enrollment command. Its container option creates a separate Computer on the machine where the command runs.
 
-Registration does not automatically grant a Bot access to a Computer. Open the Bot's **Computer access** page to grant access and optionally set its default. A session can change its current Computer while idle. Existing process handles and file references remain attached to their original Computer.
+Registration does not automatically grant a Bot access to a Computer. The initial setup explicitly grants access when you finish; subsequently, open the Bot's **Computer access** page to grant access and optionally set its default. A session can change its current Computer while idle. Existing process handles and file references remain attached to their original Computer.
 
 AgentHome is shared by sessions of the same Agent on the same Computer. Forking a conversation preserves history and its branch relationship; it does not copy working files or Telegram bindings.
 

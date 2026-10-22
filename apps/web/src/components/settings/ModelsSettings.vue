@@ -16,6 +16,7 @@ import ModelProfileEditor from './ModelProfileEditor.vue'
 import ProviderForm from './ProviderForm.vue'
 import ProviderPresetPicker from './ProviderPresetPicker.vue'
 import ResourceDelete from './ResourceDelete.vue'
+defineProps<{ embedded?: boolean }>()
 const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
@@ -196,7 +197,10 @@ async function copyCode() { if (authorization.value?.user_code) await action.run
       {{ action.success.value }}
     </p>
     <template v-if="!detail">
-      <div class="settings-title">
+      <div
+        v-if="!embedded"
+        class="settings-title"
+      >
         <h1>{{ t('providerPageTitle') }}</h1>
       </div>
       <div class="settings-toolbar">

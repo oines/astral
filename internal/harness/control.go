@@ -368,5 +368,18 @@ func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) er
 			return domain.Conflict("this Agent still owns retained Sessions; their history requires its configuration")
 		}
 	}
-	return s.Store.Update(ctx, func(tx *persistence.Tx) error { return tx.Delete(ctx, "agents", id, revision) })
+	return s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		if err := tx.Delete(ctx, "agents", id, revision); err != nil {
+			return err
+		}
+		var setup Onboarding
+		if err := tx.Get(ctx, "onboarding", "owner", &setup); err != nil && !domain.IsMissing(err) {
+			return err
+		}
+		if setup.AgentID == id && !setup.Completed {
+			setup.Completed = true
+			return tx.Save(ctx, "onboarding", &setup.Meta, &setup)
+		}
+		return nil
+	})
 }

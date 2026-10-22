@@ -2375,6 +2375,53 @@
         ],
         "type": "object"
       },
+      "astral_internal_harness_Onboarding": {
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "completed": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "created_at",
+          "updated_at",
+          "completed"
+        ],
+        "type": "object"
+      },
+      "astral_internal_harness_OnboardingInput": {
+        "properties": {
+          "computer_id": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "computer_id"
+        ],
+        "type": "object"
+      },
       "astral_internal_harness_PendingEdit": {
         "properties": {
           "mode": {
@@ -2588,6 +2635,9 @@
             },
             "type": "array"
           },
+          "onboarding": {
+            "$ref": "#/components/schemas/astral_internal_harness_Onboarding"
+          },
           "preferences": {
             "$ref": "#/components/schemas/astral_internal_httpapi_Preferences"
           },
@@ -2609,6 +2659,7 @@
           "public_url",
           "host",
           "preferences",
+          "onboarding",
           "agents",
           "sessions",
           "computers",
@@ -5221,6 +5272,54 @@
         ],
         "tags": [
           "Channels"
+        ]
+      }
+    },
+    "/api/v1/onboarding/complete": {
+      "post": {
+        "operationId": "completeOnboarding",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_harness_OnboardingInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_Agent"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "System"
         ]
       }
     },

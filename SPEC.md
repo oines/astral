@@ -951,13 +951,17 @@ Settings 使用独立视图、紧凑左侧导航和稳定的单列内容，不�
 
 ### 首次使用与主要流程
 
-- **macOS**：安装应用 → 启动本地 Server 与 Daemon、注册 Local Mac → 配置模型 → 创建 Agent 并选择默认模型和 Computer → 新 Session → 发任务、执行、查看成果。首启不要求先配置 IM、容器或远程设备。
-- **Linux**：运行 `astral serve` 及本地 Daemon → 浏览器进入共享 Web UI → 配置模型与 Agent → 授予 Local Linux Computer → 新 Session。日常操作不依赖 macOS 应用。
+- **macOS**：安装应用 → 启动本地 Server 与 Daemon、注册 Local Mac → 使用已创建的 Astral Bot 完成“模型 → 电脑”两步引导 → 新 Session → 发任务、执行、查看成果。模型步骤保存服务连接并选定模型；电脑步骤选择在线电脑并明确授权。首启不要求先配置 IM、搜索、容器或远程设备。
+- **Linux**：运行 `astral serve` 及本地 Daemon → 浏览器进入共享 Web UI → 使用预置 Astral Bot 配置模型、选择并授权在线电脑 → 新 Session。日常操作不依赖 macOS 应用；浏览器所在机器不自动成为可用电脑。
 - **使用本机**：Settings → Computers → Add Computer → 使用本机 → 复用或自动接入 Server 本机的 Computer → 分配给 Agent → 可选设为默认；Desktop 与 Headless 均支持。
 - **使用本机容器**：同一添加入口 → 使用本机容器 → 平台自动在 Server 本机创建容器并接入 Daemon → 分配给 Agent；Desktop 与 Headless 均支持。
 - **连接其他机器**：Settings → Computers → Add Computer → 连接其他机器 → 复制接入命令 → 在目标机器执行 → Daemon 自动连接并注册 → 分配给 Agent → 可选设为默认。
 - **连接其他机器上的容器**：连接其他机器时勾选“使用容器” → 复制接入命令 → 在已安装容器运行时的目标机器执行 → 容器内 Daemon 自动连接并注册为另一台 Computer → 分配给 Agent。
 - **Telegram**：设置 → Bot 列表 → 具体 Bot → Telegram → 账号列表 → 配置具体账号 → 选择全部或指定聊天 → 自动激活或手动选择 Session → 持续上下文与直接/可选 Probe 唤起 → 显式发送。
+
+预置 Bot 使用普通 Agent 记录及独立 ID，可以改名；仅在尚未初始化且没有 Agent 的部署创建一次。首次引导是部署级持久状态，不根据 Bot 名称或前端缓存推断。已有 Agent 的部署保留原有配置；改名、重启和主动删除不会再创建预置 Bot。
+
+Owner 的完成引导操作同时选择默认模型、授权所选 Computer 并设置默认 Computer，服务端在同一事务中保存 Agent 和完成状态。模型及其 Provider 必须启用，Computer 必须在线且未撤销。请求不接受任意 Agent ID；只作用于本部署初始化的 Bot。同一选择可安全重试，不覆盖已经完成后的其他配置。接入本机或其他 Computer 本身不完成引导，也不授予 Agent 权限。
 
 ## 14 持久化与恢复
 

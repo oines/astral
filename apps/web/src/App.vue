@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ChatPage from './pages/ChatPage.vue'
 import SettingsPage from './pages/SettingsPage.vue'
+import OnboardingPage from './pages/OnboardingPage.vue'
 import { useI18n } from 'vue-i18n'
 import { login } from '@astral/sdk'
 import { Button } from '@astral/ui'
@@ -72,7 +73,8 @@ async function signIn() {
     </form>
   </div>
   <template v-else-if="app.data">
-    <KeepAlive>
+    <OnboardingPage v-if="app.data.onboarding?.completed === false" />
+    <KeepAlive v-else>
       <component :is="inSettings ? SettingsPage : ChatPage" />
     </KeepAlive>
   </template>

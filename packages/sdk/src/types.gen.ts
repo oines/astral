@@ -749,6 +749,20 @@ export type AstralInternalHarnessInputRequest = {
     text: string;
 };
 
+export type AstralInternalHarnessOnboarding = {
+    agent_id?: string;
+    completed: boolean;
+    created_at: string;
+    id: string;
+    revision: number;
+    updated_at: string;
+};
+
+export type AstralInternalHarnessOnboardingInput = {
+    computer_id: string;
+    model_id: string;
+};
+
 export type AstralInternalHarnessPendingEdit = {
     mode?: string;
     text?: string;
@@ -810,6 +824,7 @@ export type AstralInternalHttpapiBootstrap = {
     computers: Array<AstralInternalDomainComputerStatus>;
     host: AstralInternalDomainHostInfo;
     models: Array<AstralInternalDomainModelProfile>;
+    onboarding: AstralInternalHarnessOnboarding;
     preferences: AstralInternalHttpapiPreferences;
     public_url: string;
     sessions: Array<AstralInternalDomainSession>;
@@ -1961,6 +1976,31 @@ export type ObservationDeliveryResponses = {
 };
 
 export type ObservationDeliveryResponse = ObservationDeliveryResponses[keyof ObservationDeliveryResponses];
+
+export type CompleteOnboardingData = {
+    body: AstralInternalHarnessOnboardingInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/onboarding/complete';
+};
+
+export type CompleteOnboardingErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type CompleteOnboardingError = CompleteOnboardingErrors[keyof CompleteOnboardingErrors];
+
+export type CompleteOnboardingResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainAgent;
+};
+
+export type CompleteOnboardingResponse = CompleteOnboardingResponses[keyof CompleteOnboardingResponses];
 
 export type ListOutboxData = {
     body?: never;

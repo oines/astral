@@ -25,6 +25,8 @@ const live = useSession(id)
 const view = computed(() => live.state.value.view)
 const error = ref('')
 const busy = ref(false)
+const activeAgent = computed(() => app.agents.find(agent => agent.id === app.activeAgentID))
+const readyToStart = computed(() => activeAgent.value && app.availableModels.some(model => model.id === activeAgent.value?.default_model_id))
 watch(() => view.value?.id === id.value ? view.value?.agent_id : app.sessions.find(session => session.id === id.value)?.agent_id, agentID => {
   if (agentID) app.activeAgentID = agentID
 }, { immediate: true })
@@ -126,7 +128,7 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
       <template v-if="!id">
         <div class="welcome">
           <AstralLogo class="welcome-logo" />
-          <template v-if="app.agents.length && app.models.length">
+          <template v-if="readyToStart">
             <h1>{{ t('welcome') }}</h1>
             <Composer
               :key="app.activeAgentID"
@@ -140,14 +142,23 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
             class="welcome-setup"
           >
             <h1>{{ t('setup') }}</h1><p class="muted">
-              {{ t('setupText') }}
+              {{ activeAgent ? t('setupMissingModel', { name: activeAgent.name }) : t('setupNoBots') }}
             </p><div class="row wrap">
               <RouterLink
+                v-if="!app.availableModels.length"
                 to="/settings/models"
                 class="button button-primary"
               >
                 {{ t('setupModels') }}<ArrowRight />
               </RouterLink><RouterLink
+                v-if="activeAgent"
+                :to="{ path: '/settings/agents', query: { agent: activeAgent.id } }"
+                class="button"
+                :class="app.availableModels.length ? 'button-primary' : 'button-secondary'"
+              >
+                {{ t('setupBotSettings') }}
+              </RouterLink><RouterLink
+                v-else
                 to="/settings/agents"
                 class="button button-secondary"
               >

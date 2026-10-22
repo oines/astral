@@ -53,6 +53,7 @@ type Bootstrap struct {
 	PublicURL   string                  `json:"public_url"`
 	Host        domain.HostInfo         `json:"host"`
 	Preferences Preferences             `json:"preferences"`
+	Onboarding  harness.Onboarding      `json:"onboarding"`
 	Agents      []domain.Agent          `json:"agents"`
 	Sessions    []domain.Session        `json:"sessions"`
 	Computers   []domain.ComputerStatus `json:"computers"`
@@ -221,6 +222,9 @@ func (a *API) systemRoutes() {
 			v.Host = a.Config.HostInfo(r.Context())
 		}
 		var err error
+		if v.Onboarding, err = h.Onboarding(r.Context()); err != nil {
+			return v, err
+		}
 		if v.Preferences, err = a.preferences(r.Context()); err != nil {
 			return v, err
 		}
@@ -252,6 +256,9 @@ func (a *API) systemRoutes() {
 			}
 		}
 		return v, err
+	})
+	route[harness.OnboardingInput, domain.Agent](a, "POST", "/onboarding/complete", "completeOnboarding", "System", func(r *http.Request, input harness.OnboardingInput) (domain.Agent, error) {
+		return h.CompleteOnboarding(r.Context(), input)
 	})
 	route[httpcontract.Empty, Preferences](a, "GET", "/preferences", "getPreferences", "System", func(r *http.Request, _ httpcontract.Empty) (Preferences, error) { return a.preferences(r.Context()) })
 	route[Preferences, Preferences](a, "PUT", "/preferences", "savePreferences", "System", func(r *http.Request, p Preferences) (Preferences, error) {
