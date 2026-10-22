@@ -94,6 +94,9 @@ type Compact struct {
 type ClearInputs struct {
 	Kind string `json:"kind" enum:"all,steer,follow_up"`
 }
+type MovePending struct {
+	BeforeID string `json:"before_id"`
+}
 type Fork struct {
 	ID      string `json:"id"`
 	EntryID string `json:"entry_id"`
@@ -122,7 +125,11 @@ type ConversationInput struct {
 }
 type BindingInput struct {
 	ConversationID string `json:"conversation_id"`
-	AgentID        string `json:"agent_id"`
+	SessionID      string `json:"session_id,omitempty"`
+}
+type ProactiveInput struct {
+	Revision int64 `json:"revision"`
+	Enabled  bool  `json:"enabled"`
 }
 type ResolveSend struct {
 	Status     string   `json:"status" enum:"accepted,failed"`
@@ -360,7 +367,7 @@ func (a *API) usage(ctx context.Context, kind, id string) (Usage, error) {
 		}
 	}
 	for _, agent := range agents {
-		used := kind == "search" && agent.SearchProviderID == id || (kind == "models" || kind == "providers") && modelIDs[agent.DefaultModelID]
+		used := kind == "search" && agent.SearchProviderID == id || (kind == "models" || kind == "providers") && (modelIDs[agent.DefaultModelID] || modelIDs[agent.ProbeModelID])
 		if kind == "computers" {
 			for _, computer := range agent.AllowedComputers {
 				if computer == id {
@@ -474,7 +481,10 @@ func (a *API) resources() {
 		return readAll[domain.ConversationBinding](r.Context(), h.Store, "bindings")
 	})
 	route[BindingInput, domain.ConversationBinding](a, "POST", "/bindings", "bindConversation", "Channels", func(r *http.Request, input BindingInput) (domain.ConversationBinding, error) {
-		return c.Bind(r.Context(), input.ConversationID, input.AgentID)
+		return c.Bind(r.Context(), input.ConversationID, input.SessionID)
+	})
+	route[ProactiveInput, domain.Conversation](a, "PATCH", "/conversations/{id}/proactive", "setConversationProactive", "Channels", func(r *http.Request, input ProactiveInput) (domain.Conversation, error) {
+		return c.SetProactive(r.Context(), r.PathValue("id"), input.Revision, input.Enabled)
 	})
 	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/bindings/{id}", "unbindConversation", "Channels", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, c.Unbind(r.Context(), r.PathValue("id"), revision(r))
@@ -572,6 +582,15 @@ func (a *API) sessionRoutes() {
 	})
 	route[ClearInputs, httpcontract.OK](a, "POST", "/sessions/{id}/pending/clear", "clearPending", "Sessions", func(r *http.Request, input ClearInputs) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.ClearPending(r.Context(), r.PathValue("id"), input.Kind)
+	})
+	route[harness.PendingEdit, httpcontract.OK](a, "PATCH", "/sessions/{id}/pending/{input}", "updatePending", "Sessions", func(r *http.Request, input harness.PendingEdit) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.UpdatePending(r.Context(), r.PathValue("id"), r.PathValue("input"), input)
+	})
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/sessions/{id}/pending/{input}", "removePending", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.RemovePending(r.Context(), r.PathValue("id"), r.PathValue("input"))
+	})
+	route[MovePending, httpcontract.OK](a, "POST", "/sessions/{id}/pending/{input}/move", "movePending", "Sessions", func(r *http.Request, input MovePending) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.MovePending(r.Context(), r.PathValue("id"), r.PathValue("input"), input.BeforeID)
 	})
 	route[Fork, domain.Session](a, "POST", "/sessions/{id}/fork", "forkSession", "Sessions", func(r *http.Request, input Fork) (domain.Session, error) {
 		return h.Fork(r.Context(), r.PathValue("id"), input.EntryID, input.Title, input.ID)

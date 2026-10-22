@@ -9,10 +9,9 @@ import (
 	"strings"
 	"time"
 
-	core "github.com/oines/astral-core"
-
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/filestream"
+	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/persistence"
 )
 
@@ -20,12 +19,42 @@ type SendRequest struct {
 	IntentID         string                   `json:"intent_id"`
 	ConversationID   string                   `json:"conversation_id,omitempty"`
 	Text             string                   `json:"text,omitempty"`
+	ReplyTo          string                   `json:"reply_to,omitempty"`
 	FileURI          string                   `json:"file_uri,omitempty"`
 	Path             string                   `json:"path,omitempty"`
 	SourceComputerID string                   `json:"source_computer_id,omitempty"`
 	AssistantEntryID string                   `json:"-"`
 	BindingID        string                   `json:"-"`
 	SourceBinding    *domain.ExecutionBinding `json:"-"`
+}
+
+func (s *Service) SendMessage(ctx context.Context, agentID, sessionID, executionID string, target harness.MessageTarget, args harness.MessageArgs) ([]domain.Outbox, error) {
+	request := SendRequest{IntentID: executionID, ConversationID: target.ConversationID, BindingID: target.BindingID, Text: args.Text, ReplyTo: args.ReplyTo, SourceBinding: target.Source}
+	if target.Source != nil {
+		request.SourceComputerID = target.Source.ComputerID
+	}
+	if len(args.Attachments) == 0 {
+		return s.Enqueue(ctx, agentID, sessionID, request)
+	}
+	var receipts []domain.Outbox
+	for i, attachment := range args.Attachments {
+		request.IntentID = fmt.Sprintf("%s:%d", executionID, i)
+		request.FileURI, request.Path = "", ""
+		if strings.HasPrefix(attachment, "astral-file://") {
+			request.FileURI = attachment
+		} else {
+			request.Path = attachment
+		}
+		if i > 0 {
+			request.Text = ""
+		}
+		queued, err := s.Enqueue(ctx, agentID, sessionID, request)
+		if err != nil {
+			return receipts, err
+		}
+		receipts = append(receipts, queued...)
+	}
+	return receipts, nil
 }
 
 func (s *Service) group(ctx context.Context, id string) ([]domain.Outbox, error) {
@@ -59,6 +88,9 @@ func (s *Service) existing(ctx context.Context, key, hash string) ([]domain.Outb
 func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, request SendRequest) ([]domain.Outbox, error) {
 	if request.IntentID == "" || len(request.IntentID) > 200 {
 		return nil, domain.Invalid("a stable send intent is required")
+	}
+	if strings.TrimSpace(request.Text) == "" && request.FileURI == "" && request.Path == "" {
+		return nil, domain.Invalid("text or attachment is required")
 	}
 	key := stableID("send", agentID, sessionID, request.IntentID)
 	hash := stableID("digest", string(encoded(request)))
@@ -160,7 +192,7 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 			}
 			record := domain.Outbox{Meta: domain.Meta{ID: id}, GroupID: key, IntentKey: fmt.Sprintf("%s:%d", key, index), RequestDigest: hash,
 				AgentID: agentID, SessionID: sessionID, BindingID: binding.ID, ConversationID: conversation.ID, ConnectionID: connection.ID, ConnectionAccountID: connection.AccountID,
-				ExternalID: conversation.ExternalID, TopicID: conversation.TopicID, AssistantEntryID: request.AssistantEntryID, Fragment: index, Text: text, FileRefID: file.ID, Status: "pending"}
+				ExternalID: conversation.ExternalID, TopicID: conversation.TopicID, AssistantEntryID: request.AssistantEntryID, Fragment: index, Text: text, ReplyTo: request.ReplyTo, FileRefID: file.ID, Status: "pending"}
 			if claimErr = tx.Save(ctx, "outbox", &record.Meta, &record); claimErr != nil {
 				return claimErr
 			}
@@ -180,49 +212,6 @@ var bareFileLink = regexp.MustCompile(`astral-file://[^\s<>)]+`)
 func presentText(text string) string {
 	text = internalFileLink.ReplaceAllString(text, `$1 (file available in Astral)`)
 	return bareFileLink.ReplaceAllString(text, "[file available in Astral]")
-}
-func (s *Service) collect(ctx context.Context, b domain.ConversationBinding) error {
-	session, err := s.Harness.Core(ctx, b.SessionID)
-	if err != nil {
-		return err
-	}
-	position := cursor{Meta: domain.Meta{ID: b.ID}}
-	if err = s.Store.Get(ctx, "outbox_cursors", b.ID, &position); err != nil && !domain.IsMissing(err) {
-		return err
-	}
-	page, err := session.History().Scan(ctx, core.Query{SessionID: b.SessionID, Kind: core.EntryMessage, Cursor: position.Value, Limit: 100, MaxBytes: 64 << 20})
-	if err != nil {
-		return err
-	}
-	previousSequence, previousCursor := position.Sequence, position.Value
-	for _, entry := range page.Entries {
-		if entry.Sequence <= uint64(position.Sequence) {
-			continue
-		}
-		if entry.Message != nil && entry.Message.Role == core.RoleAssistant && !entry.Message.Failed() {
-			var text strings.Builder
-			for _, part := range entry.Message.Content {
-				if part.Type == "text" {
-					text.WriteString(part.Text)
-				}
-			}
-			if strings.TrimSpace(text.String()) != "" {
-				if _, err = s.Enqueue(ctx, b.AgentID, b.SessionID, SendRequest{IntentID: "assistant:" + entry.ID, ConversationID: b.ConversationID, Text: text.String(), AssistantEntryID: entry.ID, BindingID: b.ID}); err != nil {
-					return err
-				}
-			}
-		}
-		position.Sequence = int64(entry.Sequence)
-	}
-	// Core's terminal cursor may be empty; retain the last page cursor and
-	// sequence so appends are observed without missing the previous tail.
-	if page.NextCursor != "" {
-		position.Value = page.NextCursor
-	}
-	if position.Sequence == previousSequence && position.Value == previousCursor {
-		return nil
-	}
-	return s.Store.Save(ctx, "outbox_cursors", &position.Meta, &position)
 }
 func (s *Service) dispatchPending() {
 	all, err := list[domain.Outbox](s.ctx, s.Store, "outbox")
@@ -274,11 +263,13 @@ func (s *Service) authorizeOutbound(ctx context.Context, r domain.Outbox) (domai
 	var binding domain.ConversationBinding
 	var conversation domain.Conversation
 	var connection domain.Connection
-	if err := s.Store.Get(ctx, "bindings", r.BindingID, &binding); err != nil {
-		return connection, err
-	}
-	if !binding.Enabled || binding.AgentID != r.AgentID || binding.ConversationID != r.ConversationID {
-		return connection, domain.Conflict("the original outbound binding is no longer active")
+	if r.BindingID != "" {
+		if err := s.Store.Get(ctx, "bindings", r.BindingID, &binding); err != nil {
+			return connection, err
+		}
+		if !binding.Enabled || binding.AgentID != r.AgentID || binding.ConversationID != r.ConversationID {
+			return connection, domain.Conflict("the original outbound binding is no longer active")
+		}
 	}
 	if err := s.Store.Get(ctx, "conversations", r.ConversationID, &conversation); err != nil {
 		return connection, err
@@ -289,8 +280,11 @@ func (s *Service) authorizeOutbound(ctx context.Context, r domain.Outbox) (domai
 	if err := s.Store.Get(ctx, "connections", r.ConnectionID, &connection); err != nil {
 		return connection, err
 	}
-	if !connection.Enabled || connection.AccountID != r.ConnectionAccountID {
+	if !connection.Enabled || connection.AccountID != r.ConnectionAccountID || connection.AgentID != r.AgentID {
 		return connection, domain.Conflict("the original channel account is unavailable")
+	}
+	if r.BindingID == "" && connection.AccessMode != "all" {
+		return connection, domain.Conflict("chat is no longer in this account's scope")
 	}
 	return connection, nil
 }
@@ -322,7 +316,7 @@ func (s *Service) dispatch(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	send := Send{Target: domain.Conversation{ConnectionID: record.ConnectionID, ExternalID: record.ExternalID, TopicID: record.TopicID}, Text: record.Text}
+	send := Send{Target: domain.Conversation{ConnectionID: record.ConnectionID, ExternalID: record.ExternalID, TopicID: record.TopicID}, Text: record.Text, ReplyTo: record.ReplyTo}
 	if record.FileRefID != "" {
 		var file domain.FileRef
 		err = s.Store.Get(ctx, "files", record.FileRefID, &file)
@@ -355,7 +349,47 @@ func (s *Service) finish(ctx context.Context, record *domain.Outbox, receipt Rec
 	} else if len(receipt.MessageIDs) == 0 {
 		record.Status, record.Error = "unknown", "platform response did not identify an accepted message"
 	}
-	return s.Store.Save(persist, "outbox", &record.Meta, record)
+	return s.Store.Update(persist, func(tx *persistence.Tx) error {
+		if err := tx.Save(persist, "outbox", &record.Meta, record); err != nil {
+			return err
+		}
+		if record.Status != "accepted" {
+			return nil
+		}
+		var connection domain.Connection
+		if err := tx.Get(persist, "connections", record.ConnectionID, &connection); err != nil {
+			return err
+		}
+		for _, messageID := range record.PlatformMessageIDs {
+			event := domain.Observation{SchemaVersion: 1, ConnectionID: record.ConnectionID, ConversationID: record.ConversationID, Kind: "message.created", MessageID: messageID,
+				Sender: domain.Sender{ID: connection.AccountID, Name: connection.Name, Username: connection.Username}, Self: true,
+				Text: record.Text, ReplyID: record.ReplyTo, SentAt: time.Now().UTC(), ReceivedAt: time.Now().UTC()}
+			if record.FileRefID != "" {
+				var file domain.FileRef
+				if err := tx.Get(persist, "files", record.FileRefID, &file); err != nil {
+					return err
+				}
+				kind := "file"
+				if strings.HasPrefix(file.MediaType, "image/") {
+					kind = "image"
+				}
+				event.Attachments = []domain.Attachment{{Ref: "outbox:" + record.ID, Kind: kind, Name: file.DisplayName, MediaType: file.MediaType, Size: file.Size, FileURI: filestream.URL(file)}}
+			}
+			if _, err := tx.Archive(persist, normalizeSelf(event)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func normalizeSelf(event domain.Observation) domain.Observation {
+	if event.Self && event.Kind == "message.created" {
+		event.ExternalEventID = "self:" + event.ConversationID + ":" + event.MessageID
+		event.ID = stableID("event", event.ConnectionID, event.ExternalEventID)
+		event.Trigger = ""
+	}
+	return event
 }
 func (s *Service) Retry(ctx context.Context, id string) error {
 	s.gate.Lock()
@@ -380,6 +414,9 @@ func (s *Service) Resolve(ctx context.Context, id, status, note string, messageI
 	if strings.TrimSpace(note) == "" {
 		return domain.Invalid("record the evidence used to resolve this send")
 	}
+	if status == "accepted" && len(messageIDs) == 0 {
+		return domain.Invalid("accepted resolution requires platform message IDs")
+	}
 	s.gate.Lock()
 	defer s.gate.Unlock()
 	var record domain.Outbox
@@ -391,5 +428,8 @@ func (s *Service) Resolve(ctx context.Context, id, status, note string, messageI
 	}
 	record.Status, record.ResolutionNote, record.PlatformMessageIDs, record.Error = status, note, messageIDs, ""
 	record.Retryable = status == "failed"
+	if status == "accepted" {
+		return s.finish(ctx, &record, Receipt{MessageIDs: messageIDs}, nil)
+	}
 	return s.Store.Save(ctx, "outbox", &record.Meta, &record)
 }

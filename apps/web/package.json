@@ -8,8 +8,8 @@
     "./App.vue": "./src/App.vue"
   },
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "vite build",
+    "dev": "node ../../scripts/build-icons.mjs --web && vite --host 127.0.0.1",
+    "build": "node ../../scripts/build-icons.mjs --web && vite build",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

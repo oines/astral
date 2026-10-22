@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,13 +22,18 @@ func Escape(value string) string {
 }
 
 type Metadata struct {
-	Source         string           `json:"source"`
-	DeliveryID     string           `json:"delivery_id"`
-	EventID        string           `json:"event_id,omitempty"`
-	ConversationID string           `json:"conversation_id,omitempty"`
-	DisplayText    string           `json:"display_text"`
-	Sender         domain.Sender    `json:"sender"`
-	Files          []domain.FileRef `json:"files,omitempty"`
+	Source         string              `json:"source"`
+	DeliveryID     string              `json:"delivery_id"`
+	EventID        string              `json:"event_id,omitempty"`
+	ConversationID string              `json:"conversation_id,omitempty"`
+	DisplayText    string              `json:"display_text"`
+	Sender         domain.Sender       `json:"sender"`
+	Files          []domain.FileRef    `json:"files,omitempty"`
+	Attachments    []domain.Attachment `json:"attachments,omitempty"`
+}
+
+func AttachmentDownloadPath(conversationID, messageID, ref string) string {
+	return "/v1/conversations/" + url.PathEscape(conversationID) + "/messages/" + url.PathEscape(messageID) + "/attachments/" + url.PathEscape(ref) + "/content"
 }
 
 // AttachmentParts exposes original paths and stable URIs in text while adding
@@ -82,7 +88,7 @@ func Observation(event domain.Observation, connection domain.Connection, convers
 		}
 		body.WriteString(Escape(event.Text))
 		for _, a := range event.Attachments {
-			fmt.Fprintf(&body, "\n<attachment type=\"%s\" name=\"%s\" mime=\"%s\" file-id=\"%s\"/>", Escape(a.Kind), Escape(a.Name), Escape(a.MediaType), Escape(a.Ref))
+			fmt.Fprintf(&body, "\n<attachment type=\"%s\" name=\"%s\" mime=\"%s\" file-id=\"%s\" size=\"%d\" download-url=\"%s\"/>", Escape(a.Kind), Escape(a.Name), Escape(a.MediaType), Escape(a.Ref), a.Size, Escape(AttachmentDownloadPath(conversation.ID, event.MessageID, a.Ref)))
 		}
 		local, _ := AttachmentParts(files)
 		body.WriteString(local)
@@ -92,7 +98,7 @@ func Observation(event domain.Observation, connection domain.Connection, convers
 		body.WriteString("\n</message>")
 	}
 	_, images := AttachmentParts(files)
-	metadata, _ := json.Marshal(Metadata{Source: "im", DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: event.Text, Sender: event.Sender, Files: files})
+	metadata, _ := json.Marshal(Metadata{Source: "im", DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: event.Text, Sender: event.Sender, Files: files, Attachments: event.Attachments})
 	return core.Message{Role: core.RoleUser, ContextKind: "im.observation", Content: append(core.Text(body.String()), images...), Metadata: metadata}
 }
 

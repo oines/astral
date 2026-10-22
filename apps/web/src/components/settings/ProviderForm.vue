@@ -1,45 +1,78 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { saveProvider, type AstralInternalModelbridgeProviderPreset as Preset } from '@astral/sdk'
+import { computed, ref, watch } from 'vue'
+import { listProviders, saveProvider, type AstralInternalModelbridgeProviderPreset as Preset } from '@astral/sdk'
+import { listProvidersQueryKey } from '@astral/sdk/colada'
 import { Button, Select, SettingsRow, SettingsSection } from '@astral/ui'
 import { ExternalLink } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Provider } from '../../lib/types'
 import { request, newMeta } from '../../lib/api'
-import { useAction } from '../../composables/useAction'
+import { useSettingsSave } from '../../composables/useSettingsSave'
+import SettingsFeedback from './SettingsFeedback.vue'
 const props = defineProps<{ provider?: Provider; preset?: Preset; compact?: boolean }>()
-const emit = defineEmits<{ saved: [provider: Provider, autoImport: boolean]; cancel: [] }>()
+const emit = defineEmits<{ saved: [provider: Provider, autoImport: boolean, origin: string]; cancel: [] }>()
 const { t } = useI18n()
-const action = useAction()
-const form = reactive({ name: '', base_url: '', protocol: 'openai-completions', dialect: 'compatible', api_key: '', headers: '' })
+const saves = useSettingsSave()
+type Fields = { name: string; base_url: string; protocol: string; dialect: string; api_key: string; headers: string }
+function fields(): Fields { return { name: props.provider?.name || props.preset?.name || '', base_url: props.provider?.base_url || props.preset?.base_url || '', protocol: props.provider?.protocol || props.preset?.protocol || 'openai-completions', dialect: props.provider?.dialect || props.preset?.dialect || 'compatible', api_key: '', headers: '' } }
+const resource = computed(() => `provider:${props.provider?.id || `new:${props.preset?.id || 'custom'}`}`)
+const draft = computed(() => saves.form(resource.value, () => { const value = fields(); return { fields: value, baseline: JSON.stringify(value) } }))
+const form = computed(() => draft.value.fields)
 const autoImport = ref(true)
-const savedForm = ref('')
-watch(() => [props.provider, props.preset], () => {
-  Object.assign(form, { name: props.provider?.name || props.preset?.name || '', base_url: props.provider?.base_url || props.preset?.base_url || '', protocol: props.provider?.protocol || props.preset?.protocol || 'openai-completions', dialect: props.provider?.dialect || props.preset?.dialect || 'compatible', api_key: '', headers: '' })
-  savedForm.value = JSON.stringify(form)
-  action.error.value = ''; action.success.value = ''
-}, { immediate: true })
-const dirty = computed(() => JSON.stringify(form) !== savedForm.value)
-const region = computed(() => props.preset?.regions?.find(r => r.base_url === form.base_url)?.id || '')
+const dirty = computed(() => JSON.stringify(form.value) !== draft.value.baseline)
+watch(() => props.provider, () => {
+  if (!dirty.value) { draft.value.fields = fields(); draft.value.baseline = JSON.stringify(draft.value.fields) }
+})
+const region = computed(() => props.preset?.regions?.find(r => r.base_url === form.value.base_url)?.id || '')
 const protocols = [{ value: 'openai-completions', label: 'Chat Completions' }, { value: 'openai-responses', label: 'Responses' }, { value: 'anthropic-messages', label: 'Anthropic Messages' }, { value: 'google-generative-ai', label: 'Google Gemini' }]
 function selectProtocol(value: string) {
-  form.protocol = value
-  if (value === 'anthropic-messages') form.dialect = 'anthropic'
-  else if (value === 'google-generative-ai') form.dialect = 'google'
-  else if (value === 'openai-responses') form.dialect = 'openai'
-  else if (['anthropic', 'google'].includes(form.dialect)) form.dialect = 'compatible'
+  form.value.protocol = value
+  if (value === 'anthropic-messages') form.value.dialect = 'anthropic'
+  else if (value === 'google-generative-ai') form.value.dialect = 'google'
+  else if (value === 'openai-responses') form.value.dialect = 'openai'
+  else if (['anthropic', 'google'].includes(form.value.dialect)) form.value.dialect = 'compatible'
 }
 async function submit() {
-  await action.run(async () => {
-    let headers: Record<string, string> | undefined
-    if (form.headers.trim()) {
-      const data: unknown = JSON.parse(form.headers)
-      if (!data || Array.isArray(data) || typeof data !== 'object' || !Object.values(data).every(x => typeof x === 'string')) throw new Error(t('headersObjectRequired'))
-      headers = data as Record<string, string>
-    }
-    const saved = await request(saveProvider({ body: { ...(props.provider || newMeta()), preset_id: props.preset?.id, enabled: props.provider?.enabled ?? true, name: form.name.trim(), base_url: form.base_url.trim(), protocol: form.protocol, dialect: form.dialect, ...(form.api_key ? { api_key: form.api_key } : {}), ...(headers ? { headers } : {}) } }))
-    form.api_key = ''; form.headers = ''; savedForm.value = JSON.stringify(form)
-    emit('saved', saved, !props.provider && autoImport.value && props.preset?.auth !== 'oauth')
+  const snapshot = { ...form.value }
+  const id = props.provider?.id
+  const preset = props.preset
+  const key = resource.value
+  const editing = draft.value
+  const importModels = !id && autoImport.value && preset?.auth !== 'oauth'
+  let beforeCredential: string | undefined
+  let beforeHeaders: string | undefined
+  const accept = (saved: Provider) => {
+    saves.confirm(listProvidersQueryKey(), saved)
+    const confirmed = { ...snapshot, name: saved.name, base_url: saved.base_url, protocol: saved.protocol, dialect: saved.dialect, api_key: '', headers: '' }
+    for (const field of Object.keys(snapshot) as (keyof Fields)[]) if (editing.fields[field] === snapshot[field]) editing.fields[field] = confirmed[field]
+    editing.baseline = JSON.stringify(confirmed)
+    if (!id) saves.discardForm(key)
+    emit('saved', saved, importModels, key)
+  }
+  await saves.run(key, 'config', {
+    write: async () => {
+      let headers: Record<string, string> | undefined
+      if (snapshot.headers.trim()) {
+        let data: unknown
+        try { data = JSON.parse(snapshot.headers) } catch { throw { code: 'invalid', message: t('headersObjectRequired') } }
+        if (!data || Array.isArray(data) || typeof data !== 'object' || !Object.values(data).every(x => typeof x === 'string')) throw { code: 'invalid', message: t('headersObjectRequired') }
+        headers = data as Record<string, string>
+      }
+      const current = id ? (await request(listProviders())).find(p => p.id === id) : undefined
+      if (id && !current) throw { code: 'not_found', message: t('missing') }
+      beforeCredential = current?.credential_id
+      beforeHeaders = current?.headers_credential_id
+      const saved = await request(saveProvider({ body: { ...(current || newMeta()), preset_id: preset?.id, enabled: current?.enabled ?? true, name: snapshot.name.trim(), base_url: snapshot.base_url.trim(), protocol: snapshot.protocol, dialect: snapshot.dialect, ...(snapshot.api_key ? { api_key: snapshot.api_key } : {}), ...(headers ? { headers } : {}) } }))
+      accept(saved)
+    },
+    reconcile: async () => {
+      if (!id) return 'unknown'
+      const current = (await request(listProviders())).find(p => p.id === id)
+      if (!current || current.name !== snapshot.name.trim() || current.base_url !== snapshot.base_url.trim() || current.protocol !== snapshot.protocol || current.dialect !== snapshot.dialect) return 'not-applied'
+      if (snapshot.api_key && current.credential_id === beforeCredential || snapshot.headers.trim() && current.headers_credential_id === beforeHeaders) return 'unknown'
+      accept(current)
+      return 'applied'
+    },
   })
 }
 </script>
@@ -152,41 +185,30 @@ async function submit() {
           v-model="autoImport"
           type="checkbox"
         >{{ t('autoImportModels') }}</label>
-        <p
-          v-if="!compact && action.error.value"
-          class="error-box"
-          role="alert"
-        >
-          {{ action.error.value }}
-        </p><p
-          v-if="action.success.value"
-          class="success-note"
-          role="status"
-        >
-          {{ action.success.value }}
-        </p>
         <div
           v-if="!compact"
-          class="form-footer"
+          class="settings-submit-row"
         >
+          <p>{{ t('connectionDraftHint') }}</p>
           <Button
             type="submit"
             variant="primary"
-            :busy="action.busy.value"
+            :busy="saves.state(`${resource}/config`).status === 'saving'"
             :disabled="!!provider && !dirty"
           >
-            {{ provider ? t('save') : preset?.auth === 'oauth' ? t('continueToSignIn') : t('saveConnection') }}
+            {{ preset?.auth === 'oauth' && !provider ? t('continueToSignIn') : t('saveConnectionSettings') }}
           </Button>
         </div>
+        <SettingsFeedback
+          v-if="!compact"
+          :scope="`${resource}/config`"
+        />
       </SettingsSection>
     </div>
-    <p
-      v-if="compact && action.error.value"
-      class="error-box form-error"
-      role="alert"
-    >
-      {{ action.error.value }}
-    </p>
+    <SettingsFeedback
+      v-if="compact"
+      :scope="`${resource}/config`"
+    />
     <div
       v-if="compact"
       class="form-footer"
@@ -197,7 +219,7 @@ async function submit() {
       <Button
         type="submit"
         variant="primary"
-        :busy="action.busy.value"
+        :busy="saves.state(`${resource}/config`).status === 'saving'"
       >
         {{ preset?.auth === 'oauth' ? t('continueToSignIn') : t('saveConnection') }}
       </Button>

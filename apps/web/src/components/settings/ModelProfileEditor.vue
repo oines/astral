@@ -14,9 +14,12 @@ const form = ref<Profile>()
 const defaultsJSON = ref('{}')
 const reasoningJSON = ref('{}')
 const effective = computed(() => ({ ...form.value?.recommendations, ...form.value?.overrides }))
+function editableProfile(profile: Profile): Profile {
+  return { ...profile, recommendations: object(profile.recommendations), overrides: object(profile.overrides) }
+}
 function initialize() {
   if (!props.open || !props.provider) return
-  form.value = props.profile ? clone(props.profile) : { ...newMeta(), name: '', model_id: '', provider_id: props.provider.id, recommendations: {}, overrides: { max_output_tokens: 4096 } }
+  form.value = editableProfile(props.profile ? clone(props.profile) : { ...newMeta(), name: '', model_id: '', provider_id: props.provider.id, recommendations: {}, overrides: { max_output_tokens: 4096 } })
   if (props.suggestion) chooseModel(props.suggestion.id)
   syncJSON()
   action.error.value = ''; action.success.value = ''
@@ -62,7 +65,7 @@ async function save() {
 async function refresh() {
   await action.run(async () => {
     if (!form.value?.id) return
-    form.value = await request(refreshModel({ path: { id: form.value.id } }))
+    form.value = editableProfile(await request(refreshModel({ path: { id: form.value.id } })))
     syncJSON(); emit('saved', form.value)
   })
 }

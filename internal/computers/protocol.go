@@ -2,6 +2,8 @@ package computers
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"time"
 
 	core "github.com/oines/astral-core"
@@ -61,8 +63,10 @@ type GatewayRequest struct {
 	Intent  string                  `json:"intent,omitempty"`
 }
 type GatewayResponse struct {
-	Status int             `json:"status"`
-	Body   json.RawMessage `json:"body"`
+	Status  int           `json:"status"`
+	Headers http.Header   `json:"headers"`
+	Body    []byte        `json:"-"`
+	Stream  io.ReadCloser `json:"-"`
 }
 type processStart struct {
 	ID string `json:"id"`

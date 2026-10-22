@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -15,20 +16,23 @@ import (
 )
 
 type Service struct {
-	Store    *persistence.Store
-	Harness  *harness.Service
-	Registry Registry
-	Client   *http.Client
-	gate     sync.Mutex
-	mu       sync.Mutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	done     chan struct{}
-	workers  sync.WaitGroup
-	pollers  map[string]poller
-	inboxes  map[string]context.CancelFunc
-	sending  map[string]bool
-	statuses map[string]Status
+	Store        *persistence.Store
+	Harness      *harness.Service
+	Registry     Registry
+	Client       *http.Client
+	gate         sync.Mutex
+	bindings     sync.Mutex
+	mu           sync.Mutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	done         chan struct{}
+	workers      sync.WaitGroup
+	pollers      map[string]poller
+	inboxes      map[string]context.CancelFunc
+	sending      map[string]bool
+	statuses     map[string]Status
+	probeQuiet   time.Duration
+	probeMaxWait time.Duration
 }
 type poller struct {
 	revision int64
@@ -48,8 +52,10 @@ type cursor struct {
 }
 
 func New(store *persistence.Store, service *harness.Service) *Service {
-	return &Service{Store: store, Harness: service, Registry: DefaultRegistry(), Client: http.DefaultClient,
-		pollers: map[string]poller{}, inboxes: map[string]context.CancelFunc{}, sending: map[string]bool{}, statuses: map[string]Status{}}
+	s := &Service{Store: store, Harness: service, Registry: DefaultRegistry(), Client: http.DefaultClient,
+		pollers: map[string]poller{}, inboxes: map[string]context.CancelFunc{}, sending: map[string]bool{}, statuses: map[string]Status{}, probeQuiet: 10 * time.Second, probeMaxWait: time.Minute}
+	service.IM = s
+	return s
 }
 func decodeRecords[T any](records []persistence.Record) ([]T, error) {
 	result := make([]T, 0, len(records))
@@ -95,6 +101,16 @@ func (s *Service) SaveConnection(ctx context.Context, c *domain.Connection, toke
 	if strings.TrimSpace(c.Name) == "" {
 		return domain.Invalid("connection name is required")
 	}
+	var owner domain.Agent
+	if err := s.Store.Get(ctx, "agents", c.AgentID, &owner); err != nil {
+		return err
+	}
+	if c.AccessMode == "" {
+		c.AccessMode = "specified"
+	}
+	if c.AccessMode != "all" && c.AccessMode != "specified" {
+		return domain.Invalid("access mode must be all or specified")
+	}
 	var prior domain.Connection
 	if c.ID != "" {
 		if err := s.Store.Get(ctx, "connections", c.ID, &prior); err != nil {
@@ -103,6 +119,9 @@ func (s *Service) SaveConnection(ctx context.Context, c *domain.Connection, toke
 	}
 	if prior.ID != "" && prior.Adapter != c.Adapter {
 		return domain.Conflict("create a new Connection to change its adapter")
+	}
+	if prior.ID != "" && prior.AgentID != c.AgentID {
+		return domain.Conflict("create a new account to change its Agent")
 	}
 	credential := ""
 	if token != nil {
@@ -123,9 +142,10 @@ func (s *Service) SaveConnection(ctx context.Context, c *domain.Connection, toke
 		return err
 	}
 	identity := Identity{ID: prior.AccountID, Username: prior.Username, Diagnostics: prior.Diagnostics}
-	// Disabling an existing account must remain possible during a platform
-	// outage or after its token was revoked. Enabling always verifies identity.
-	if c.Enabled || prior.ID == "" || token != nil {
+	// Metadata and access changes must remain available during a platform
+	// outage. New credentials, connection parameters and re-enabling an
+	// account still require a verified platform identity.
+	if prior.ID == "" || token != nil || !bytes.Equal(prior.Config, c.Config) || c.Enabled && !prior.Enabled {
 		identity, err = adapter.Validate(ctx)
 		if err != nil {
 			return err
@@ -210,144 +230,34 @@ func (s *Service) saveConversation(ctx context.Context, c *domain.Conversation) 
 		}
 		if err == nil {
 			c.Meta = prior.Meta
+			c.ProactiveEnabled = prior.ProactiveEnabled
 			if c.Title == prior.Title && c.Kind == prior.Kind {
 				return nil
 			}
 		}
-		return tx.Save(ctx, "conversations", &c.Meta, c)
+		if err = tx.Save(ctx, "conversations", &c.Meta, c); err != nil {
+			return err
+		}
+		records, err := tx.List(ctx, "sessions")
+		if err != nil {
+			return err
+		}
+		sessions, err := decodeRecords[domain.Session](records)
+		if err != nil {
+			return err
+		}
+		for _, session := range sessions {
+			if session.ConversationID == c.ID && session.BindingID != "" {
+				session.Title = c.Title
+				if err = tx.Save(ctx, "sessions", &session.Meta, &session); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	})
 }
 
-// Bind creates a fresh Session when assigning a Conversation. Reassignment
-// retains the previous Session and freezes all old outbound destinations.
-func (s *Service) Bind(ctx context.Context, conversationID, agentID string) (domain.ConversationBinding, error) {
-	s.gate.Lock()
-	defer s.gate.Unlock()
-	var conversation domain.Conversation
-	if err := s.Store.Get(ctx, "conversations", conversationID, &conversation); err != nil {
-		return domain.ConversationBinding{}, err
-	}
-	var agent domain.Agent
-	if err := s.Store.Get(ctx, "agents", agentID, &agent); err != nil {
-		return domain.ConversationBinding{}, err
-	}
-	ref, options, err := s.Harness.Models.Selection(ctx, agent.DefaultModelID)
-	if err != nil {
-		return domain.ConversationBinding{}, err
-	}
-	head, err := s.Store.ObservationHead(ctx, conversationID)
-	if err != nil {
-		return domain.ConversationBinding{}, err
-	}
-	binding := domain.ConversationBinding{Meta: domain.Meta{ID: domain.ID("binding")}, ConversationID: conversationID, AgentID: agentID, SessionID: domain.ID("session"), Enabled: true, StartSequence: head}
-	record := domain.Session{Meta: domain.Meta{ID: binding.SessionID}, AgentID: agentID, Title: conversation.Title, Source: "im", ProfileID: agent.DefaultModelID, ModelRef: ref, Options: options, ComputerID: agent.DefaultComputerID, ConversationID: conversationID, BindingID: binding.ID}
-	err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
-		records, err := tx.List(ctx, "bindings")
-		if err != nil {
-			return err
-		}
-		bindings, err := decodeRecords[domain.ConversationBinding](records)
-		if err != nil {
-			return err
-		}
-		for _, old := range bindings {
-			if old.ConversationID != conversationID || !old.Enabled {
-				continue
-			}
-			if old.AgentID == agentID {
-				binding = old
-				return nil
-			}
-			old.Enabled = false
-			if err = tx.Save(ctx, "bindings", &old.Meta, &old); err != nil {
-				return err
-			}
-		}
-		if err = tx.Save(ctx, "sessions", &record.Meta, &record); err != nil {
-			return err
-		}
-		return tx.Save(ctx, "bindings", &binding.Meta, &binding)
-	})
-	if err == nil {
-		err = s.Harness.InitializeSession(ctx, binding.SessionID)
-	}
-	return binding, err
-}
-func (s *Service) Unbind(ctx context.Context, id string, revision int64) error {
-	s.gate.Lock()
-	defer s.gate.Unlock()
-	var binding domain.ConversationBinding
-	if err := s.Store.Get(ctx, "bindings", id, &binding); err != nil {
-		return err
-	}
-	if binding.Revision != revision {
-		return domain.Conflict("binding changed; reload before unbinding")
-	}
-	binding.Enabled = false
-	return s.Store.Save(ctx, "bindings", &binding.Meta, &binding)
-}
-func (s *Service) VisibleConversations(ctx context.Context, agentID string) ([]domain.Conversation, error) {
-	bindings, err := list[domain.ConversationBinding](ctx, s.Store, "bindings")
-	if err != nil {
-		return nil, err
-	}
-	result := []domain.Conversation{}
-	for _, binding := range bindings {
-		if !binding.Enabled || binding.AgentID != agentID {
-			continue
-		}
-		var c domain.Conversation
-		if err = s.Store.Get(ctx, "conversations", binding.ConversationID, &c); err != nil {
-			return nil, err
-		}
-		result = append(result, c)
-	}
-	return result, nil
-}
-func (s *Service) target(ctx context.Context, agentID, sessionID, conversationID string) (domain.ConversationBinding, domain.Conversation, domain.Connection, error) {
-	var binding domain.ConversationBinding
-	var conversation domain.Conversation
-	var connection domain.Connection
-	if conversationID == "" {
-		var session domain.Session
-		if err := s.Store.Get(ctx, "sessions", sessionID, &session); err != nil {
-			return binding, conversation, connection, err
-		}
-		if session.AgentID != agentID {
-			return binding, conversation, connection, domain.Forbidden("Session is outside the current Agent view")
-		}
-		if session.BindingID == "" {
-			return binding, conversation, connection, domain.Invalid("this Session has no default external destination")
-		}
-		if err := s.Store.Get(ctx, "bindings", session.BindingID, &binding); err != nil {
-			return binding, conversation, connection, err
-		}
-	} else {
-		bindings, err := list[domain.ConversationBinding](ctx, s.Store, "bindings")
-		if err != nil {
-			return binding, conversation, connection, err
-		}
-		for _, candidate := range bindings {
-			if candidate.Enabled && candidate.AgentID == agentID && candidate.ConversationID == conversationID {
-				binding = candidate
-				break
-			}
-		}
-	}
-	if !binding.Enabled || binding.AgentID != agentID {
-		return binding, conversation, connection, domain.Forbidden("Conversation is not enabled in this Agent view")
-	}
-	if err := s.Store.Get(ctx, "conversations", binding.ConversationID, &conversation); err != nil {
-		return binding, conversation, connection, err
-	}
-	if err := s.Store.Get(ctx, "connections", conversation.ConnectionID, &connection); err != nil {
-		return binding, conversation, connection, err
-	}
-	if !connection.Enabled {
-		return binding, conversation, connection, domain.Offline("the Conversation's Connection is disabled")
-	}
-	return binding, conversation, connection, nil
-}
 func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -459,11 +369,6 @@ func (s *Service) reconcile() {
 		}
 	}
 	s.mu.Unlock()
-	for _, binding := range bindings {
-		if binding.Enabled {
-			_ = s.collect(s.ctx, binding)
-		}
-	}
 	s.dispatchPending()
 }
 func (s *Service) setStatus(status Status) {
@@ -498,8 +403,31 @@ func (s *Service) poll(ctx context.Context, c domain.Connection) {
 				if pollErr = s.saveConversation(ctx, &event.Conversation); pollErr != nil {
 					break
 				}
+				event.Observation = normalizeSelf(event.Observation)
 				if _, pollErr = s.Store.Archive(ctx, event.Observation); pollErr != nil {
 					break
+				}
+				if !event.Observation.Self && event.Observation.Trigger != "" {
+					sequence, seqErr := s.Store.ObservationSequence(ctx, event.Observation.ID)
+					if seqErr != nil {
+						pollErr = seqErr
+						break
+					}
+					var binding domain.ConversationBinding
+					if c.AccessMode == "all" {
+						binding, pollErr = s.bind(ctx, event.Conversation.ID, "", &sequence)
+					} else {
+						binding, pollErr = s.activeBinding(ctx, event.Conversation.ID)
+					}
+					if pollErr != nil {
+						break
+					}
+					if binding.ID != "" {
+						pollErr = s.coverProbe(ctx, binding, sequence)
+					}
+					if pollErr != nil {
+						break
+					}
 				}
 			}
 			if pollErr == nil && batch.NextCursor != offset.Value {

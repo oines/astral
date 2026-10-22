@@ -6,7 +6,7 @@ import SettingsPage from './pages/SettingsPage.vue'
 import { useI18n } from 'vue-i18n'
 import { login } from '@astral/sdk'
 import { Button } from '@astral/ui'
-import { ArrowRight } from '@astral/icons'
+import { ArrowRight, AstralLogo } from '@astral/icons'
 import { useAppStore } from './stores/app'
 import { request, errorText } from './lib/api'
 
@@ -44,7 +44,7 @@ async function signIn() {
       class="login-form stack"
       @submit.prevent="signIn"
     >
-      <span class="wordmark">Astral</span>
+      <AstralLogo lockup />
       <h1>{{ t('signIn') }}</h1>
       <p class="muted">
         {{ t('tokenHint') }}
@@ -81,7 +81,7 @@ async function signIn() {
     class="login-screen"
   >
     <div class="stack">
-      <span class="wordmark">Astral</span>
+      <AstralLogo lockup />
       <p
         v-if="app.query.error"
         class="error-box"

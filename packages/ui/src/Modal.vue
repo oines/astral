@@ -10,7 +10,7 @@ onActivated(() => { active.value = true })
 onDeactivated(() => { active.value = false })
 function focusFirstField(event: Event) {
   if (!(event.target instanceof HTMLElement)) return
-  const field = event.target.querySelector<HTMLElement>('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(:disabled), textarea:not(:disabled), [role="combobox"]:not([disabled])')
+  const field = event.target.querySelector<HTMLElement>('[autofocus]:not(:disabled)') || event.target.querySelector<HTMLElement>('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(:disabled), textarea:not(:disabled), [role="combobox"]:not([disabled])')
   if (!field) return
   event.preventDefault()
   field.focus({ preventScroll: true })

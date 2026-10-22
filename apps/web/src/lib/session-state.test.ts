@@ -8,7 +8,7 @@ function entry(id: string, sequence: number, rest: Partial<Entry>): Entry {
 const view: SessionView = {
   id: 'session', agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Work',
   archived: false, pinned: false, source: 'web', rollout_id: 'rollout', head_id: 'head',
-  status: 'running', run_id: 'run', options: {}, approvals: [], pending: [], unresolved: [], event_sequence: 0,
+  status: 'running', can_continue: false, run_id: 'run', options: {}, approvals: [], pending: [], unresolved: [], event_sequence: 0,
 }
 function snapshot(history: Entry[] = [], trace: Entry[] = []): Snapshot {
   return { epoch: 'server-a', view, history: { entries: history, head_id: 'head' }, trace: { entries: trace, head_id: 'head' } }
@@ -18,6 +18,20 @@ function event(sequence: number, rest: Partial<CoreEvent>) {
 }
 
 describe('reconciling live previews with durable history', () => {
+  it('does not invent assistant turns for failed retries that produced no output', () => {
+    const history = [
+      entry('question', 1, { run_id: 'first', message: { role: 'user', content: [{ type: 'text', text: 'Run it' }] } }),
+      entry('answer', 2, { run_id: 'first', message: { role: 'assistant', content: [{ type: 'text', text: 'Work completed' }] } }),
+    ]
+    const failures = Array.from({ length: 5 }, (_, i) => entry(`failure-${i}`, i + 3, { kind: 'run', run: { id: i === 0 ? 'first' : `retry-${i}`, status: 'failed', error: 'delivery failed' } }))
+    const restored = snapshot(history, failures)
+    restored.view = { ...view, run_id: undefined, status: 'needs_attention', error: 'delivery failed' }
+    const groups = transcriptGroups(fromSnapshot(restored))
+    expect(groups).toHaveLength(2)
+    expect(groups[1]).toMatchObject({ role: 'assistant', status: 'needs_attention' })
+    expect(groups[1]?.blocks).toEqual([{ kind: 'text', key: 'answer:0', text: 'Work completed' }])
+  })
+
   it('shows retry progress, replaces it on the next attempt, and rejects stale view payloads', () => {
     const state = fromSnapshot(snapshot())
     const attempt = { attempt_id: 'attempt', run_id: 'run', turn_id: 'turn', purpose: 'generation', attempt: 1, max_attempts: 3, state: 'retrying', next_retry_at: '2026-10-22T00:00:10Z' }
@@ -84,11 +98,11 @@ describe('transcript facts', () => {
     addEntry(state, entry('commentary', 3, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'Checking it now.' }] } }))
     addEntry(state, entry('answer', 6, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'The file is valid.' }] } }))
     addEntry(state, entry('follow-up', 8, { message: { role: 'user', content: [{ type: 'text', text: 'Observe quietly.' }] } }))
-    addEntry(state, entry('silent', 12, { kind: 'run', run: { id: 'silent-run', status: 'completed', end_reason: 'no_reply' } }))
+    addEntry(state, entry('silent', 12, { kind: 'run', run: { id: 'silent-run', status: 'completed' } }))
     const groups = transcriptGroups(state)
     expect(groups.map(group => [group.role, group.runID, group.entries.map(entry => entry.id)])).toEqual([
       ['user', undefined, ['question']], ['assistant', 'run', ['commentary', 'answer']],
-      ['user', undefined, ['follow-up']], ['assistant', 'silent-run', []],
+      ['user', undefined, ['follow-up']],
     ])
     state.view = { ...view, run_id: 'live-run' }
     expect(transcriptGroups(state).at(-1)).toMatchObject({ role: 'assistant', runID: 'live-run', entries: [] })
@@ -97,7 +111,7 @@ describe('transcript facts', () => {
   it('places silent completion before later user input without an empty assistant message', () => {
     const state = emptyState()
     addEntry(state, entry('first', 1, { message: { role: 'user', content: [{ type: 'text', text: 'Observe quietly' }] } }))
-    addEntry(state, entry('silent', 4, { kind: 'run', run: { id: 'silent-run', status: 'completed', end_reason: 'no_reply' } }))
+    addEntry(state, entry('silent', 4, { kind: 'run', run: { id: 'silent-run', status: 'completed' } }))
     addEntry(state, entry('second', 5, { message: { role: 'user', content: [{ type: 'text', text: 'Now respond' }] } }))
     addEntry(state, entry('answer', 8, { run_id: 'second-run', message: { role: 'assistant', content: [{ type: 'text', text: 'Response' }] } }))
     const rows = transcriptRows(state).map(row => row.kind === 'message' ? row.entry.id : row.runID)
@@ -111,12 +125,85 @@ describe('transcript facts', () => {
     expect(visibleEntry(entry('trigger', 3, { message: { role: 'user', metadata: { source: 'im.trigger' }, content: [{ type: 'text', text: '<trigger/>' }] } }))).toBe(false)
     expect(visibleEntry(entry('failure', 4, { message: { role: 'assistant', finish_reason: 'error', content: [{ type: 'text', text: 'Do not show' }] } }))).toBe(false)
   })
+
+  it.each(['user', 'assistant'])('keeps passive context out of the transcript even with role %s and displayable content', role => {
+    const context = [
+      entry('environment', 1, { kind: 'context', message: { role, context_kind: 'astral.environment', content: [{ type: 'text', text: 'Current Astral environment snapshot: {}' }] } }),
+      entry('observation', 2, { kind: 'context', message: { role, context_kind: 'im.observation', metadata: { source: 'im', display_text: 'A quiet group message' }, content: [{ type: 'text', text: '<message>internal envelope</message>' }, { type: 'image', media_type: 'image/png' }] } }),
+      entry('untagged', 3, { kind: 'context', message: { role, content: [{ type: 'text', text: 'Other passive context' }] } }),
+      entry('tagged-message', 4, { message: { role, context_kind: 'summary', content: [{ type: 'text', text: 'Model-only summary' }] } }),
+    ]
+    const restored = snapshot(context, context)
+    restored.view = { ...view, status: 'idle', can_continue: false, run_id: undefined }
+    const state = fromSnapshot(restored)
+    expect(transcriptGroups(state)).toEqual([])
+    expect(transcriptRows(state)).toEqual([])
+    // Filtering is a presentation rule; history remains available unchanged.
+    expect(Object.values(state.entries)).toEqual(context)
+    expect(Object.values(state.trace)).toEqual(context)
+  })
+
+  it('filters live and paginated context without splitting replies or matching user text', () => {
+    const question = entry('question', 3, { message: { role: 'user', content: [{ type: 'text', text: 'Current Astral environment snapshot: explain this label' }] } })
+    const commentary = entry('commentary', 4, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'Checking now.' }] } })
+    const state = fromSnapshot(snapshot([question, commentary]))
+    applyEvent(state, { ...event(1, { type: 'context_applied' }), entry: entry('live-context', 5, { kind: 'context', message: { role: 'user', context_kind: 'im.observation', metadata: { display_text: 'Quiet observation' }, content: [{ type: 'image', media_type: 'image/png' }] } }) })
+    applyEvent(state, { ...event(2, { type: 'message_end' }), entry: entry('answer', 6, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } }) })
+    addEntry(state, entry('older-context', 1, { kind: 'context', message: { role: 'user', context_kind: 'astral.environment', content: [{ type: 'text', text: 'Old snapshot' }] } }), true)
+    addEntry(state, entry('trigger', 2, { message: { role: 'user', metadata: { source: 'im.trigger', display_text: 'Internal activation' }, content: [{ type: 'text', text: '<im_trigger/>' }] } }), true)
+    expect(transcriptGroups(state).map(group => group.entries.map(entry => entry.id))).toEqual([['question'], ['commentary', 'answer']])
+    expect(transcriptRows(state).filter(row => row.kind === 'message').map(row => row.entry.id)).toEqual(['question', 'commentary', 'answer'])
+    expect(messageText(question)).toBe('Current Astral environment snapshot: explain this label')
+  })
 })
 
 describe('ordered transcript process', () => {
   function toolEntry(id: string, sequence: number, assistantID: string, executionID: string, kind = 'tool_result'): Entry {
     return entry(id, sequence, { kind, run_id: 'run', tool: { invocation: { session_id: 'session', run_id: 'run', turn_id: 'turn', assistant_id: assistantID, execution_id: executionID, call: { id: 'reused-call-id', name: 'exec_command', arguments: { cmd: 'pwd' } } }, ...(kind === 'tool_result' ? { result: { outcome: 'succeeded', content: [{ type: 'text', text: 'output' }] } } : {}) } })
   }
+
+  it('keeps the current aggregate mounted through streaming, commits and the next text boundary', () => {
+    const state = fromSnapshot(snapshot())
+    const initial = transcriptGroups(state)[0]!
+    const initialKey = initial.blocks[0]!.key
+    applyEvent(state, event(1, { model: { type: 'reasoning_delta', content_index: 0, text: 'Inspecting the workspace' } }))
+    expect(transcriptGroups(state)[0]).toMatchObject({ key: initial.key, blocks: [{ key: initialKey, active: true }] })
+    applyEvent(state, {
+      ...event(2, { type: 'message_end' }),
+      entry: entry('thought', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'reasoning', text: 'Inspecting the workspace' }] } }),
+    })
+    expect(transcriptGroups(state)[0]!.blocks[0]).toMatchObject({ key: initialKey, active: true })
+    applyEvent(state, event(3, { attempt_id: 'next', model: { type: 'text_delta', content_index: 0, text: 'I found the project.' } }))
+    const split = transcriptGroups(state)[0]!.blocks
+    expect(split.map(block => block.kind)).toEqual(['process', 'text', 'process'])
+    expect(split[0]).not.toHaveProperty('active')
+    expect(split[2]).toMatchObject({ active: true, items: [] })
+    applyEvent(state, {
+      ...event(4, { type: 'message_end', attempt_id: 'next' }),
+      entry: entry('commentary', 4, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'I found the project.' }] } }),
+    })
+    expect(transcriptGroups(state)[0]!.blocks[2]!.key).toBe(split[2]!.key)
+  })
+
+  it('keeps earlier shell items live without adding later items across an assistant text boundary', () => {
+    const state = fromSnapshot(snapshot())
+    addEntry(state, toolEntry('old-start', 1, 'first', 'old-shell', 'tool_started'))
+    addEntry(state, entry('commentary', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'The command is still running; checking another file.' }] } }))
+    addEntry(state, toolEntry('new-start', 3, 'second', 'new-shell', 'tool_started'))
+    const before = transcriptGroups(state)[0]!.blocks
+    expect(before.map(block => block.kind === 'process' ? block.items.map(item => item.key) : block.text)).toEqual([
+      ['old-shell'], 'The command is still running; checking another file.', ['new-shell'],
+    ])
+    applyEvent(state, event(4, { type: 'tool_execution_update', execution_id: 'old-shell', progress: { text: 'Command is making progress\n' } }))
+    expect(state.tools['old-shell']).toMatchObject({ text: 'Command is making progress\n', started: true, ended: false })
+    addEntry(state, toolEntry('old-result', 5, 'first', 'old-shell'))
+    const after = transcriptGroups(state)[0]!.blocks
+    expect(after.map(block => block.key)).toEqual(before.map(block => block.key))
+    expect(after[0]).toMatchObject({ items: [{ key: 'old-shell', entry: { id: 'old-result', tool: { result: { outcome: 'succeeded' } } } }] })
+    expect(after[2]).toMatchObject({ active: true, items: [{ key: 'new-shell' }] })
+    expect(state.tools['old-shell']).toMatchObject({ text: 'Command is making progress\n', ended: true })
+    expect(state.tools['new-shell']).toMatchObject({ started: true, ended: false })
+  })
 
   it('keeps reasoning, commentary, tools and final text in their original order, with one item per execution', () => {
     const state = emptyState()

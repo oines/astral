@@ -1,0 +1,30 @@
+{
+  "sends": [
+    {
+      "chat_id": "-100",
+      "text": "这条消息由 send_message 显式发送。"
+    }
+  ],
+  "models": [
+    {
+      "type": "main",
+      "model": "fixture"
+    },
+    {
+      "type": "send-tool",
+      "model": "fixture"
+    },
+    {
+      "type": "main",
+      "model": "fixture"
+    },
+    {
+      "type": "probe",
+      "model": "probe-fixture"
+    },
+    {
+      "type": "main",
+      "model": "fixture"
+    }
+  ]
+}

@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { resourceUsage, type AstralInternalHttpapiUsage } from '@astral/sdk'
 import { Button, Modal } from '@astral/ui'
 import { useI18n } from 'vue-i18n'
 import { request, errorText } from '../../lib/api'
-const props = defineProps<{ open: boolean; kind: string; id: string; name: string; busy?: boolean; actionLabel?: string }>()
+const props = defineProps<{ open: boolean; kind: string; id: string; name: string; busy?: boolean; actionLabel?: string; errorMessage?: string }>()
 defineEmits<{ 'update:open': [value: boolean]; confirm: [] }>()
 const { t } = useI18n()
 const usage = ref<AstralInternalHttpapiUsage>()
+const groups = computed(() => [
+  { name: t('agents'), items: usage.value?.agents },
+  { name: t('profiles'), items: usage.value?.profiles },
+  { name: t('recent'), items: usage.value?.sessions },
+].filter(group => group.items?.length))
 const error = ref('')
 watch(() => [props.open, props.id], async () => {
   if (!props.open || !props.id) return
@@ -24,13 +29,14 @@ watch(() => [props.open, props.id], async () => {
     @update:open="$emit('update:open', $event)"
   >
     <p class="muted">
-      {{ t('resourceDeleteHint') }}
+      {{ t(kind === 'computers' ? 'revokeComputerHint' : 'resourceDeleteHint') }}
     </p>
     <p
-      v-if="error"
+      v-if="error || errorMessage"
       class="error-box"
+      role="alert"
     >
-      {{ error }}
+      {{ error || errorMessage }}
     </p>
     <p
       v-if="!usage && !error"
@@ -40,7 +46,7 @@ watch(() => [props.open, props.id], async () => {
     </p>
     <template v-if="usage">
       <div
-        v-for="group in [{ name: t('agents'), items: usage.agents }, { name: t('profiles'), items: usage.profiles }, { name: t('recent'), items: usage.sessions }]"
+        v-for="group in groups"
         :key="group.name"
         class="stack usage-group"
       >
@@ -52,6 +58,12 @@ watch(() => [props.open, props.id], async () => {
           {{ 'name' in item ? item.name : item.title }}
         </p>
       </div>
+      <p
+        v-if="!groups.length"
+        class="muted"
+      >
+        {{ t('noResourceUsage') }}
+      </p>
     </template>
     <div class="row">
       <Button @click="$emit('update:open', false)">

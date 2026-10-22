@@ -170,7 +170,18 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		return out.JSON(result)
+		if result.Stream != nil {
+			defer result.Stream.Close()
+		}
+		if err := out.Headers(result); err != nil {
+			return err
+		}
+		if result.Stream != nil {
+			_, err = io.Copy(out, result.Stream)
+		} else {
+			_, err = out.Write(result.Body)
+		}
+		return err
 	})
 	h.mu.Lock()
 	old := h.live[id]
@@ -226,11 +237,11 @@ func (h *Hub) Bind(ctx context.Context, agentID, sessionID, computerID, cwd stri
 	if err := active.peer.JSON(ctx, "environment", Call{Binding: b}, &prepared); err != nil {
 		return b, err
 	}
-	// Only the target's absolute paths are supplied by the Daemon.
+	// The Daemon supplies its absolute paths and this binding's local API URL.
 	if !strings.HasPrefix(prepared.CWD, "/") || !strings.HasPrefix(prepared.AgentHome, "/") {
 		return b, domain.Invalid("daemon returned invalid directories")
 	}
-	b.CWD, b.AgentHome = prepared.CWD, prepared.AgentHome
+	b.CWD, b.AgentHome, b.APIURL = prepared.CWD, prepared.AgentHome, prepared.APIURL
 	h.mu.Lock()
 	if h.live[computerID] != active {
 		h.mu.Unlock()

@@ -95,13 +95,13 @@ astral sessions export SESSION_ID
 astral sessions stop SESSION_ID
 ```
 
-Use `astral request METHOD /api/v1/PATH --body-file FILE` for other documented Owner API operations. The running server exposes `/openapi.json`. Agent commands use their bound loopback `ASTRAL_API_URL`; they do not receive Owner, model-provider or Telegram credentials.
+Use `astral request METHOD /api/v1/PATH --body-file FILE` for other documented Owner API operations. The running server exposes `/openapi.json`. Agent commands use the bound loopback URL in the latest environment snapshot’s `local_api`; each Agent on a Computer receives its own port and view. they do not receive Owner, model-provider or Telegram credentials.
 
 ## Telegram
 
 The bot must be available to Astral long polling. An existing webhook is reported as a conflict. The UI verifies the bot identity and shows platform diagnostics. If Telegram privacy mode prevents ordinary group observations, adjust that bot's settings or group access deliberately; Astral does not claim to receive events Telegram withholds.
 
-Verify a Chat ID from Channels or the Agent's Conversation picker. Topics use the same Chat ID with a separate Topic ID. A Conversation has one enabled binding. Reassignment creates a new persistent Session, preserving the old history and the original destination of pending outbound intents.
+Configure accounts in Settings → Bots → choose a Bot → Connect a platform → Telegram. Existing accounts are listed under that Bot's Telegram navigation item. Verify a Chat ID from the account's chat picker. Topics use the same Chat ID with a separate Topic ID. A Conversation has one enabled binding. Choose a new Session or an existing unbound Session belonging to the account's Bot. Reassignment stops both Sessions before changing the binding, preserving their histories and the original destination of pending outbound intents. See [IM accounts and Computer API](im.md) for scope, proactive mode and explicit sending.
 
 For sends with an uncertain result, inspect the receipt and the destination before deciding on any manual resend. Re-enabling a Connection does not turn an unknown receipt into a confirmed success.
 

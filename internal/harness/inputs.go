@@ -21,6 +21,87 @@ type InputRequest struct {
 	Mode  string   `json:"mode,omitempty"`
 }
 
+type PendingEdit struct {
+	Text *string `json:"text,omitempty"`
+	Mode string  `json:"mode,omitempty"`
+}
+
+// UpdatePending changes one accepted input. Attachments are already frozen;
+// editing its text never reads them from the Computer again.
+func (s *Service) UpdatePending(ctx context.Context, id, inputID string, edit PendingEdit) error {
+	if edit.Mode != "" && edit.Mode != "steer" && edit.Mode != "follow_up" {
+		return domain.Invalid("input mode must be steer or follow_up")
+	}
+	r, err := s.open(ctx, id)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var message *core.Message
+	if edit.Text != nil {
+		receipt, err := r.core.LookupInput(ctx, inputID)
+		if err != nil {
+			return err
+		}
+		var metadata messages.Metadata
+		if receipt.Message == nil {
+			return domain.Invalid("input is not editable")
+		}
+		if err = json.Unmarshal(receipt.Message.Metadata, &metadata); err != nil {
+			return err
+		}
+		if metadata.Source != "web" {
+			return domain.Invalid("only owner messages can be edited")
+		}
+		if strings.TrimSpace(*edit.Text) == "" && len(metadata.Files) == 0 {
+			return domain.Invalid("message or attachment is required")
+		}
+		updated := messages.Web(inputID, *edit.Text, metadata.Sender.Name, receipt.AcceptedAt, metadata.Files)
+		updated.Content = append(updated.Content[:1], receipt.Message.Content[1:]...)
+		message = &updated
+	}
+	if err = r.core.UpdateQueuedInput(ctx, inputID, core.InputKind(edit.Mode), message); err != nil {
+		return err
+	}
+	if edit.Mode == "steer" {
+		err = r.continueLocked(ctx)
+		if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
+			err = nil
+		}
+	}
+	s.notify(id)
+	return err
+}
+
+func (s *Service) RemovePending(ctx context.Context, id, inputID string) error {
+	r, err := s.open(ctx, id)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err = r.core.ClearQueuedInput(ctx, inputID); err != nil {
+		return err
+	}
+	s.notify(id)
+	return nil
+}
+
+func (s *Service) MovePending(ctx context.Context, id, inputID, beforeID string) error {
+	r, err := s.open(ctx, id)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err = r.core.MoveQueuedInput(ctx, inputID, beforeID); err != nil {
+		return err
+	}
+	s.notify(id)
+	return nil
+}
+
 // InputReceipt is a presentation of Core's authoritative receipt. There is no
 // Host admission journal or history scan to reconstruct input state.
 type InputReceipt struct {
@@ -73,6 +154,14 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 	if receipt, exists, err := r.existingReceipt(ctx, input.ID, hash); err != nil || exists {
 		return receipt, err
 	}
+	var record domain.Session
+	if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
+		return InputReceipt{}, err
+	}
+	kind := core.InputKind(input.Mode)
+	if record.BindingID != "" {
+		kind = core.InputSteer
+	}
 	files := make([]domain.FileRef, 0, len(input.Files))
 	for _, uri := range input.Files {
 		file, err := s.Files.Get(ctx, r.agentID, uri)
@@ -85,18 +174,32 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 	if err = s.Files.FreezeImages(ctx, r.agentID, id, &message); err != nil {
 		return InputReceipt{}, err
 	}
-	return r.accept(ctx, core.Input{ID: input.ID, Digest: hash, Message: message}, core.InputKind(input.Mode))
+	receipt, err := r.accept(ctx, core.Input{ID: input.ID, Digest: hash, Message: message}, kind)
+	if err == nil {
+		r.maybeGenerateSessionTitle(input.Text)
+	}
+	return receipt, err
 }
 
 // Deliver admits each observation/trigger group atomically. Observations alone
 // remain passive, including when the session has no driving conversation yet.
-func (s *Service) Deliver(ctx context.Context, id string, observation core.Message, trigger *core.Message) (InputReceipt, error) {
+func (s *Service) Deliver(ctx context.Context, id string, observation core.Message, trigger *core.Message, bindingID ...string) (InputReceipt, error) {
 	r, err := s.open(ctx, id)
 	if err != nil {
 		return InputReceipt{}, err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if len(bindingID) > 0 {
+		var session domain.Session
+		if err = s.Store.Get(ctx, "sessions", id, &session); err != nil {
+			return InputReceipt{}, err
+		}
+		if session.BindingID != bindingID[0] {
+			return InputReceipt{}, domain.Conflict("the inbound binding is no longer active")
+		}
+	}
+
 	var metadata messages.Metadata
 	if err = json.Unmarshal(observation.Metadata, &metadata); err != nil || metadata.EventID == "" {
 		return InputReceipt{}, domain.Invalid("observation needs an event identity")
@@ -104,7 +207,7 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 	inputID, kind := metadata.EventID, core.InputContext
 	if trigger != nil {
 		inputID += ":trigger"
-		kind = core.InputFollowUp
+		kind = core.InputSteer
 	}
 	hash := digest(struct {
 		Observation core.Message
@@ -138,7 +241,11 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 			return InputReceipt{}, err
 		}
 	}
-	return r.accept(ctx, input, kind)
+	receipt, err := r.accept(ctx, input, kind)
+	if err == nil && trigger != nil {
+		r.maybeGenerateSessionTitle(metadata.DisplayText)
+	}
+	return receipt, err
 }
 func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputKind) (InputReceipt, error) {
 	var receipt core.InputReceipt
@@ -178,4 +285,21 @@ func (s *Service) Receipt(ctx context.Context, sessionID, inputID string) (Input
 		return InputReceipt{}, domain.Missing("inputs", inputID)
 	}
 	return r.receiptView(receipt), err
+}
+
+// ResumeContext re-admits an already durable item to resume Core's passive
+// maintenance after Host recovery. It neither reconstructs media nor drives a turn.
+func (s *Service) ResumeContext(ctx context.Context, id string) error {
+	return s.WithSession(ctx, id, func(session *core.Session) error {
+		if session.State().PendingInputs[core.InputContext] == 0 {
+			return nil
+		}
+		page, err := s.CoreStore.Pending(ctx, id, core.PendingQuery{Kind: core.EntryInputQueued, InputKind: core.InputContext, Limit: 1, MaxBytes: 128 << 20})
+		if err != nil || len(page.Records) == 0 {
+			return err
+		}
+		q := page.Records[0].Entry.Input
+		_, err = session.InjectContext(ctx, core.Input{ID: q.ID, Digest: q.Digest, Contexts: q.Contexts})
+		return err
+	})
 }

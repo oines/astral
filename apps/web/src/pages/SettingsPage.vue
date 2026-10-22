@@ -5,25 +5,29 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useQuery } from '@pinia/colada'
 import { storageInfoQuery } from '@astral/sdk/colada'
-import { logout, updateSession } from '@astral/sdk'
-import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, MessageCircle, User, HardDrive, Shield, Terminal, Download } from '@astral/icons'
+import { getPreferences, logout, updateSession } from '@astral/sdk'
+import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, User, HardDrive, Shield, Terminal, Download, AstralLogo, Copy, Search } from '@astral/icons'
 import { Button, Select, Switch, SettingsSection, SettingsRow } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { useAction } from '../composables/useAction'
-import { bytes, operatingSystem, request } from '../lib/api'
+import { useSettingsSave } from '../composables/useSettingsSave'
+import { bytes, request } from '../lib/api'
 import ModelsSettings from '../components/settings/ModelsSettings.vue'
 import ComputersSettings from '../components/settings/ComputersSettings.vue'
 import AgentsSettings from '../components/settings/AgentsSettings.vue'
-import ChannelsSettings from '../components/settings/ChannelsSettings.vue'
 import SearchSettings from '../components/settings/SearchSettings.vue'
+import BotSettingsNav from '../components/settings/BotSettingsNav.vue'
+import SettingsFeedback from '../components/settings/SettingsFeedback.vue'
 const app = useAppStore()
 const route = useRoute()
 const { t } = useI18n()
 const action = useAction()
+const saves = useSettingsSave()
 const section = ref(typeof route.params.section === 'string' ? route.params.section : 'general')
 watch(() => route.path, path => { if (path.startsWith('/settings')) section.value = typeof route.params.section === 'string' ? route.params.section : 'general' })
-const panes = { models: ModelsSettings, computers: ComputersSettings, agents: AgentsSettings, channels: ChannelsSettings, search: SearchSettings }
+const panes = { models: ModelsSettings, computers: ComputersSettings, agents: AgentsSettings, search: SearchSettings }
 const activeComponent = computed(() => panes[section.value as keyof typeof panes])
+const currentBot = computed(() => section.value === 'agents' ? app.agents.find(a => a.id === route.query.agent) : undefined)
 const scroll = ref<HTMLElement>()
 const content = ref<HTMLElement>()
 const reducedMotion = usePreferredReducedMotion()
@@ -33,7 +37,8 @@ onBeforeUnmount(cancelReveal)
 onDeactivated(cancelReveal)
 watch(reducedMotion, cancelReveal)
 const scrollPositions: Record<string, number> = {}
-watch(section, async (next, previous) => {
+watch(() => route.fullPath, async (next, previous) => {
+  if (!next.startsWith('/settings')) return
   scrollPositions[previous] = scroll.value?.scrollTop || 0
   await nextTick()
   if (scroll.value) scroll.value.scrollTop = scrollPositions[next] || 0
@@ -45,21 +50,37 @@ watch(section, async (next, previous) => {
 async function copyDiagnostics() { await action.run(() => navigator.clipboard.writeText(JSON.stringify({ version: app.data?.version, host: app.data?.host, computers: app.computers.map(c => ({ name: c.name, online: c.online, error: c.last_error })) }, null, 2)), t('copied')) }
 const storage = useQuery({ ...storageInfoQuery(), enabled: () => section.value === 'storage' })
 const links = [
-  ['general', 'general', Settings2], ['appearance', 'appearance', Sun], ['models', 'models', SlidersHorizontal], ['search', 'webSearch', Globe], ['computers', 'computers', Monitor], ['channels', 'channels', MessageCircle], ['agents', 'agents', User], ['storage', 'storage', HardDrive], ['security', 'security', Shield], ['advanced', 'advanced', Terminal],
+  ['general', 'general', Settings2], ['appearance', 'appearance', Sun], ['models', 'models', SlidersHorizontal], ['search', 'webSearch', Globe], ['computers', 'computers', Monitor], ['agents', 'agents', User], ['storage', 'storage', HardDrive], ['security', 'security', Shield], ['advanced', 'advanced', Terminal],
 ] as const
 watch(section, () => { action.success.value = ''; action.error.value = '' })
 const title = computed(() => links.find(l => l[0] === section.value)?.[1] || 'general')
 const desktop = Boolean(window.astralDesktop)
 const archives = ref(false)
-const sessions = computed(() => app.sessions.filter(s => s.archived === archives.value))
+const sessionSearch = ref('')
+const sessions = computed(() => app.sessions.filter(s => s.archived === archives.value && s.title.toLocaleLowerCase().includes(sessionSearch.value.toLocaleLowerCase())))
+async function copyText(value: string) { await action.run(() => navigator.clipboard.writeText(value), t('copied')) }
 async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
-  await action.run(() => app.preferences(patch))
-  if (!action.error.value) action.success.value = t('saved')
+  const field = Object.keys(patch)[0] || 'preferences'
+  await saves.run('preferences', field, {
+    write: () => app.preferences(patch),
+    reconcile: async () => {
+      const current = await request(getPreferences())
+      await app.refresh().catch(() => undefined)
+      return Object.entries(patch).every(([key, value]) => current[key as keyof typeof current] === value) ? 'applied' : 'not-applied'
+    },
+  }, Object.values(patch)[0])
 }
 </script>
 <template>
   <div class="settings-layout">
-    <aside class="settings-nav">
+    <BotSettingsNav
+      v-if="currentBot"
+      :bot="currentBot"
+    />
+    <aside
+      v-else
+      class="settings-nav"
+    >
       <RouterLink
         :to="app.lastChatPath"
         class="settings-back"
@@ -73,7 +94,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           :key="path"
         >
           <p
-            v-if="index === 2 || index === 7"
+            v-if="index === 2 || index === 6"
             class="settings-nav-group"
           >
             {{ t(index === 2 ? 'workspace' : 'application') }}
@@ -86,7 +107,6 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           </RouterLink>
         </template>
       </nav>
-      <span class="settings-version">v{{ app.data?.version }}</span>
     </aside>
     <main
       ref="scroll"
@@ -97,7 +117,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
         class="settings-content"
       >
         <div
-          v-if="section !== 'models'"
+          v-if="section !== 'models' && !currentBot"
           class="settings-title"
         >
           <h1>{{ t(title) }}</h1><span
@@ -123,14 +143,16 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           v-if="section === 'general'"
           class="settings-sections"
         >
-          <SettingsSection :title="t('application')">
+          <SettingsSection
+            v-if="desktop"
+            :title="t('application')"
+          >
             <SettingsRow
               :label="t('loginStart')"
               :description="t('loginStartHint')"
             >
               <Switch
-                :model-value="app.data?.preferences.login_start"
-                :disabled="!desktop || action.busy.value"
+                :model-value="saves.value('preferences/login_start', app.data?.preferences.login_start)"
                 :label="t('loginStart')"
                 @update:model-value="setPreference({ login_start: $event })"
               />
@@ -140,33 +162,32 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
               :description="t('keepRunningHint')"
             >
               <Switch
-                :model-value="app.data?.preferences.keep_running"
-                :disabled="!desktop || action.busy.value"
+                :model-value="saves.value('preferences/keep_running', app.data?.preferences.keep_running)"
                 :label="t('keepRunning')"
                 @update:model-value="setPreference({ keep_running: $event })"
               />
             </SettingsRow>
+            <SettingsFeedback :scope="['preferences/login_start', 'preferences/keep_running']" />
           </SettingsSection>
-          <SettingsSection :title="t('conversation')">
-            <SettingsRow
-              :label="t('inputDefault')"
-              :description="t('inputDefaultHint')"
-            >
-              <Select
-                :model-value="app.data?.preferences.running_input"
-                :disabled="action.busy.value"
-                :label="t('inputDefault')"
-                :options="[{ value: 'follow_up', label: t('followUp') }, { value: 'steer', label: t('steer') }]"
-                @update:model-value="setPreference({ running_input: $event })"
-              />
-            </SettingsRow>
-          </SettingsSection>
-          <p
-            v-if="!desktop"
-            class="muted"
+          <SettingsSection
+            :title="t('inputDefault')"
+            :description="t('runningInputScope')"
           >
-            {{ t('desktopOnly') }}
-          </p>
+            <label
+              v-for="choice in [{ value: 'follow_up', label: 'followUp', hint: 'followUpHint' }, { value: 'steer', label: 'steer', hint: 'steerHint' }]"
+              :key="choice.value"
+              class="settings-choice"
+            >
+              <input
+                type="radio"
+                name="running-input"
+                :checked="saves.value('preferences/running_input', app.data?.preferences.running_input) === choice.value"
+                @change="setPreference({ running_input: choice.value })"
+              >
+              <span><strong>{{ t(choice.label) }}</strong><small>{{ t(choice.hint) }}</small></span>
+            </label>
+            <SettingsFeedback scope="preferences/running_input" />
+          </SettingsSection>
         </div>
         <div
           v-else-if="section === 'appearance'"
@@ -177,8 +198,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
               :label="t('theme')"
             >
               <Select
-                :model-value="app.data?.preferences.theme"
-                :disabled="action.busy.value"
+                :model-value="saves.value('preferences/theme', app.data?.preferences.theme)"
                 :label="t('theme')"
                 :options="[{ value: 'system', label: t('system') }, { value: 'light', label: t('light') }, { value: 'dark', label: t('dark') }]"
                 @update:model-value="setPreference({ theme: $event })"
@@ -188,13 +208,13 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
               :label="t('language')"
             >
               <Select
-                :model-value="app.data?.preferences.language"
-                :disabled="action.busy.value"
+                :model-value="saves.value('preferences/language', app.data?.preferences.language)"
                 :label="t('language')"
                 :options="[{ value: 'zh', label: '简体中文' }, { value: 'en', label: 'English' }]"
                 @update:model-value="setPreference({ language: $event })"
               />
             </SettingsRow>
+            <SettingsFeedback :scope="['preferences/theme', 'preferences/language']" />
           </SettingsSection>
         </div>
         <div
@@ -202,28 +222,9 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           class="settings-sections"
         >
           <SettingsSection
-            v-if="storage.data.value"
-            :title="t('dataOverview')"
+            :title="t('manageConversations')"
+            :description="t('archiveHint')"
           >
-            <SettingsRow :label="t('configurationData')">
-              <span class="muted">{{ bytes(storage.data.value.database_bytes) }}</span>
-            </SettingsRow>
-            <SettingsRow :label="t('conversationData')">
-              <span class="muted">{{ bytes(storage.data.value.rollout_bytes) }}</span>
-            </SettingsRow>
-          </SettingsSection>
-          <p class="section-caption">
-            {{ t('storageFilesHint') }}
-          </p>
-          <details
-            v-if="storage.data.value"
-            class="form-disclosure"
-          >
-            <summary>{{ t('dataDirectory') }}</summary><p class="mono muted">
-              {{ storage.data.value.directory }}
-            </p>
-          </details>
-          <SettingsSection :title="t('manageConversations')">
             <template #actions>
               <Select
                 :label="t('manageConversations')"
@@ -232,6 +233,13 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
                 @update:model-value="archives = $event === 'archived'"
               />
             </template>
+            <div class="settings-list-search search-input">
+              <Search /><input
+                v-model="sessionSearch"
+                :placeholder="t('search')"
+                :aria-label="t('search')"
+              >
+            </div>
             <div
               v-for="s in sessions"
               :key="s.id"
@@ -250,6 +258,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
                 <Button
                   variant="ghost"
                   size="small"
+                  :disabled="action.busy.value"
                   @click="action.run(async () => { await request(updateSession({ path: { id: s.id }, body: { archived: !s.archived } })); await app.refresh() })"
                 >
                   {{ t(s.archived ? 'unarchive' : 'archive') }}
@@ -260,56 +269,101 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
               v-if="!sessions.length"
               class="empty"
             >
-              {{ t(archives ? 'noArchived' : 'noSessions') }}
+              {{ t(sessionSearch ? 'noResults' : archives ? 'noArchived' : 'noSessions') }}
             </p>
           </SettingsSection>
+          <SettingsSection
+            v-if="storage.data.value"
+            :title="t('dataOverview')"
+          >
+            <div class="storage-summary">
+              <span>{{ t('configurationData') }} <strong>{{ bytes(storage.data.value.database_bytes) }}</strong></span>
+              <span>{{ t('conversationData') }} <strong>{{ bytes(storage.data.value.rollout_bytes) }}</strong></span>
+            </div>
+            <div class="storage-location">
+              <div>
+                <strong>{{ t('dataDirectory') }}</strong><code>{{ storage.data.value.directory }}</code><p class="muted small">
+                  {{ t('storageLocationHint') }}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                :aria-label="t('copyDirectory')"
+                :title="t('copyDirectory')"
+                @click="copyText(storage.data.value.directory)"
+              >
+                <Copy />
+              </Button>
+            </div>
+          </SettingsSection>
+          <p
+            v-else-if="storage.error.value"
+            class="error-box"
+            role="alert"
+          >
+            {{ t('storageLoadFailed') }}
+          </p>
         </div>
         <div
           v-else-if="section === 'security'"
           class="settings-sections"
         >
-          <SettingsSection :title="t('accessSession')">
-            <SettingsRow
-              :label="t('signedIn')"
-              :description="t('accessDescription')"
-            >
-              <span class="badge good">{{ t('connectionReady') }}</span>
-            </SettingsRow>
+          <SettingsSection
+            :title="t('accessSession')"
+            :description="t('accessDescription')"
+          >
             <SettingsRow :label="t('connectionAddress')">
-              <span class="muted mono">{{ app.data?.public_url }}</span>
+              <span class="muted mono break-word">{{ app.data?.public_url }}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                :aria-label="t('copy')"
+                :title="t('copy')"
+                @click="copyText(app.data?.public_url || '')"
+              >
+                <Copy />
+              </Button>
             </SettingsRow>
           </SettingsSection>
-          <details class="form-disclosure">
-            <summary>{{ t('technicalDetails') }}</summary><p class="muted">
-              {{ t('ownerCookie') }}
-            </p><p class="muted">
-              {{ t('ownerCommand') }}
-            </p>
-          </details>
-          <div class="danger-row">
-            <p class="muted">
-              {{ t('signOutHint') }}
-            </p><Button @click="action.run(async () => { await request(logout()); app.authorized = false })">
-              {{ t('disconnect') }}
-            </Button>
-          </div>
+          <SettingsSection>
+            <SettingsRow
+              :label="t('disconnect')"
+              :description="t('signOutHint')"
+            >
+              <Button
+                :busy="action.busy.value"
+                @click="action.run(async () => { await request(logout()); app.authorized = false })"
+              >
+                {{ t('disconnect') }}
+              </Button>
+            </SettingsRow>
+          </SettingsSection>
         </div>
         <div
           v-else-if="section === 'advanced'"
           class="settings-sections"
         >
-          <SettingsSection :title="t('aboutAstral')">
-            <SettingsRow :label="t('versionLabel')">
-              <span class="muted">Astral {{ app.data?.version }}</span>
-            </SettingsRow>
-            <SettingsRow :label="t('host')">
-              <span class="muted">{{ app.data?.host.hostname }}</span>
-            </SettingsRow>
-            <SettingsRow :label="t('operatingSystem')">
-              <span class="muted">{{ operatingSystem(app.data?.host.os) }} / {{ app.data?.host.arch }}</span>
-            </SettingsRow>
-            <SettingsRow :label="t('containerRuntime')">
-              <span class="muted">{{ app.data?.host.container_runtime || t('unavailable') }}</span>
+          <SettingsSection>
+            <div class="about-identity">
+              <AstralLogo decorative /><div>
+                <h2>Astral</h2><p class="muted">
+                  {{ t('versionLabel') }} {{ app.data?.version }}
+                </p>
+              </div>
+            </div>
+          </SettingsSection>
+          <SettingsSection :title="t('diagnostics')">
+            <SettingsRow
+              :label="t('copyDiagnostics')"
+              :description="t('diagnosticsHint')"
+            >
+              <Button
+                :busy="action.busy.value"
+                @click="copyDiagnostics"
+              >
+                <Copy />{{ t('copy') }}
+              </Button>
             </SettingsRow>
           </SettingsSection>
           <p
@@ -318,37 +372,18 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           >
             {{ app.data.host.local_error || app.data.host.container_error }}
           </p>
-          <SettingsSection :title="t('computerStatus')">
-            <SettingsRow
-              v-for="c in app.computers"
-              :key="c.id"
-              :label="c.name"
-              :description="c.last_error"
-            >
-              <span
-                class="badge"
-                :class="{ good: c.online }"
-              >{{ t(c.online ? 'online' : 'offline') }}</span>
-            </SettingsRow>
-            <p
-              v-if="!app.computers.length"
-              class="empty"
-            >
-              {{ t('noComputers') }}
-            </p>
-          </SettingsSection>
-          <div class="row">
-            <Button
-              :busy="action.busy.value"
-              @click="action.run(app.refresh)"
-            >
-              {{ t('refresh') }}
-            </Button><Button @click="copyDiagnostics">
-              {{ t('copyDiagnostics') }}
-            </Button>
-          </div>
+          <RouterLink
+            v-if="app.data?.host.local_error || app.data?.host.container_error"
+            to="/settings/computers"
+            class="small"
+          >
+            {{ t('manageComputers') }}
+          </RouterLink>
           <SettingsSection :title="t('developerResources')">
-            <SettingsRow :label="t('apiReference')">
+            <SettingsRow
+              :label="t('apiReference')"
+              :description="t('apiReferenceHint')"
+            >
               <a
                 href="/openapi.json"
                 target="_blank"

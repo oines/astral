@@ -31,6 +31,7 @@ type Agent struct {
 	Name              string   `json:"name"`
 	Avatar            string   `json:"avatar,omitempty"`
 	DefaultModelID    string   `json:"default_model_id,omitempty"`
+	ProbeModelID      string   `json:"probe_model_id,omitempty"`
 	SearchProviderID  string   `json:"search_provider_id,omitempty"`
 	AllowedComputers  []string `json:"allowed_computers"`
 	DefaultComputerID string   `json:"default_computer_id,omitempty"`
@@ -40,6 +41,7 @@ type Session struct {
 	Meta
 	AgentID         string                 `json:"agent_id"`
 	Title           string                 `json:"title"`
+	TitleSource     string                 `json:"title_source,omitempty"`
 	Source          string                 `json:"source"`
 	ProfileID       string                 `json:"profile_id,omitempty"`
 	ModelRef        string                 `json:"model_ref,omitempty"`
@@ -49,11 +51,19 @@ type Session struct {
 	CWD             string                 `json:"cwd,omitempty"`
 	ConversationID  string                 `json:"conversation_id,omitempty"`
 	BindingID       string                 `json:"binding_id,omitempty"`
+	ChannelPlatform string                 `json:"channel_platform,omitempty"`
 	ParentSessionID string                 `json:"parent_session_id,omitempty"`
 	ForkEntryID     string                 `json:"fork_entry_id,omitempty"`
 	Pinned          bool                   `json:"pinned"`
 	Archived        bool                   `json:"archived"`
 }
+
+const (
+	TitleDefault   = "default"
+	TitlePrompt    = "prompt"
+	TitleGenerated = "generated"
+	TitleManual    = "manual"
+)
 
 type Provider struct {
 	Meta
@@ -202,6 +212,7 @@ type ExecutionBinding struct {
 	CWD        string `json:"cwd"`
 	Shell      string `json:"shell"`
 	AgentHome  string `json:"agent_home"`
+	APIURL     string `json:"api_url"`
 }
 
 type FileRef struct {
@@ -217,6 +228,8 @@ type FileRef struct {
 
 type Connection struct {
 	Meta
+	AgentID      string          `json:"agent_id"`
+	AccessMode   string          `json:"access_mode" enum:"all,specified"`
 	Name         string          `json:"name"`
 	Platform     string          `json:"platform"`
 	Adapter      string          `json:"adapter"`
@@ -231,11 +244,12 @@ type Connection struct {
 
 type Conversation struct {
 	Meta
-	ConnectionID string `json:"connection_id"`
-	ExternalID   string `json:"external_id"`
-	TopicID      string `json:"topic_id,omitempty"`
-	Kind         string `json:"kind"`
-	Title        string `json:"title"`
+	ConnectionID     string `json:"connection_id"`
+	ExternalID       string `json:"external_id"`
+	TopicID          string `json:"topic_id,omitempty"`
+	Kind             string `json:"kind"`
+	Title            string `json:"title"`
+	ProactiveEnabled bool   `json:"proactive_enabled"`
 }
 
 type ConversationBinding struct {
@@ -260,6 +274,7 @@ type Attachment struct {
 	Name       string `json:"name"`
 	MediaType  string `json:"media_type,omitempty"`
 	Size       int64  `json:"size,omitempty"`
+	FileURI    string `json:"file_uri,omitempty"`
 }
 
 type Observation struct {
@@ -293,6 +308,7 @@ type Outbox struct {
 	ConversationID      string   `json:"conversation_id"`
 	AssistantEntryID    string   `json:"assistant_entry_id,omitempty"`
 	Text                string   `json:"text,omitempty"`
+	ReplyTo             string   `json:"reply_to,omitempty"`
 	FileRefID           string   `json:"file_ref_id,omitempty"`
 	Status              string   `json:"status"`
 	PlatformMessageIDs  []string `json:"platform_message_ids,omitempty"`

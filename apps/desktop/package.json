@@ -9,7 +9,7 @@
   "main": "./out/main/index.js",
   "dependencies": {},
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node ../../scripts/build-icons.mjs && electron-vite dev",
     "build": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --dir",
     "package": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --mac --arm64 --x64",
     "typecheck": "tsc --noEmit -p tsconfig.json"

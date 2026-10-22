@@ -27,6 +27,11 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 			return err
 		}
 	}
+	if agent.ProbeModelID != "" {
+		if _, _, err := s.Models.Selection(ctx, agent.ProbeModelID); err != nil {
+			return err
+		}
+	}
 	if agent.SearchProviderID != "" {
 		var search domain.SearchProvider
 		if err := s.Store.Get(ctx, "search", agent.SearchProviderID, &search); err != nil {
@@ -66,8 +71,15 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 		options.Reasoning = *record.Reasoning
 	}
 	configuration := r.core.Configuration()
-	if configuration.SystemPrompt != systemPrompt {
+	definitions := []core.ToolDefinition{}
+	for _, tool := range r.hostTools() {
+		if tool.Definition().Name != "send_message" || record.BindingID != "" {
+			definitions = append(definitions, tool.Definition())
+		}
+	}
+	if configuration.SystemPrompt != systemPrompt || !jsonEqual(configuration.Tools, definitions) {
 		configuration.SystemPrompt = systemPrompt
+		configuration.Tools = definitions
 		if err = r.core.Configure(ctx, configuration); err != nil {
 			return err
 		}
@@ -275,9 +287,10 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 		return record, found
 	}
 	record.Meta = domain.Meta{ID: newID}
-	record.Source, record.ConversationID, record.BindingID = "web", "", ""
+	record.Source, record.ConversationID, record.BindingID, record.ChannelPlatform = "web", "", "", ""
 	record.Pinned, record.Archived = false, false
 	record.ParentSessionID, record.ForkEntryID = id, head
+	record.TitleSource = domain.TitleManual
 	if strings.TrimSpace(title) != "" {
 		record.Title = title
 	} else {
@@ -314,10 +327,14 @@ func (s *Service) SaveSessionPresentation(ctx context.Context, id string, title 
 		return err
 	}
 	if title != nil {
+		if record.BindingID != "" {
+			return domain.Conflict("a bound Session uses the chat's title")
+		}
 		if strings.TrimSpace(*title) == "" {
 			return domain.Invalid("title cannot be empty")
 		}
 		record.Title = *title
+		record.TitleSource = domain.TitleManual
 	}
 	if pinned != nil {
 		record.Pinned = *pinned
@@ -331,6 +348,16 @@ func (s *Service) SaveSessionPresentation(ctx context.Context, id string, title 
 }
 
 func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) error {
+	connections, err := s.Store.List(ctx, "connections")
+	if err != nil {
+		return err
+	}
+	for _, item := range connections {
+		var c domain.Connection
+		if json.Unmarshal(item.Data, &c) == nil && c.AgentID == id {
+			return domain.Conflict("this Agent still owns IM accounts")
+		}
+	}
 	items, err := s.Store.List(ctx, "sessions")
 	if err != nil {
 		return err

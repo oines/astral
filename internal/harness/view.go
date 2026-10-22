@@ -19,6 +19,7 @@ type View struct {
 	RolloutID     string                     `json:"rollout_id"`
 	HeadID        string                     `json:"head_id"`
 	Status        string                     `json:"status"`
+	CanContinue   bool                       `json:"can_continue"`
 	EventSequence uint64                     `json:"event_sequence"`
 	Attempt       *sessions.AttemptStatus    `json:"attempt,omitempty"`
 	RunID         string                     `json:"run_id,omitempty"`
@@ -49,7 +50,7 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	snapshot := r.core.Snapshot()
-	view := View{Status: "idle", Pending: []PendingInput{}, Approvals: snapshot.Approvals, Unresolved: snapshot.Unresolved}
+	view := View{Status: "idle", CanContinue: snapshot.CanContinue, Pending: []PendingInput{}, Approvals: snapshot.Approvals, Unresolved: snapshot.Unresolved}
 	view.EventSequence = snapshot.EventSequence
 	if err = s.Store.Get(ctx, "sessions", id, &view.Session); err != nil {
 		return view, err

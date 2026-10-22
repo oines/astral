@@ -307,7 +307,7 @@ func TestSessionKeepsProcessOnOriginalComputerAndRetiresHandlesAcrossRestart(t *
 			return toolReply("long", "exec_command", map[string]any{"cmd": "sleep 30", "login": false, "yield_time_ms": 250})
 		case 5:
 			old.Store(int64(lastHandle(request)))
-			return toolReply("silent", "no_reply", map[string]any{})
+			return textReply("Finished.")
 		case 6:
 			return toolReply("stale", "write_stdin", map[string]any{"session_id": old.Load(), "chars": "\u0003"})
 		case 7:
@@ -317,7 +317,7 @@ func TestSessionKeepsProcessOnOriginalComputerAndRetiresHandlesAcrossRestart(t *
 			return toolReply("new", "exec_command", map[string]any{"cmd": "sleep 30", "login": false, "yield_time_ms": 250})
 		case 8:
 			newHandle.Store(int64(lastHandle(request)))
-			return toolReply("silent-new", "no_reply", map[string]any{})
+			return textReply("Finished.")
 		default:
 			t.Errorf("unexpected generation %d", n)
 			return textReply("unexpected")
@@ -327,8 +327,8 @@ func TestSessionKeepsProcessOnOriginalComputerAndRetiresHandlesAcrossRestart(t *
 		t.Fatal(err)
 	}
 	view := f.idle(t, f.session.ID)
-	if view.ComputerID != f.daemons[1].Credentials.ComputerID || view.LastRun.EndReason != "no_reply" {
-		t.Fatalf("switch/no_reply failed: %+v", view)
+	if view.ComputerID != f.daemons[1].Credentials.ComputerID || view.LastRun.Status != "completed" {
+		t.Fatalf("switch/completion failed: %+v", view)
 	}
 	f.restart(t)
 	if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: "second", Text: "continue"}); err != nil {
@@ -354,7 +354,7 @@ func TestPassiveObservationAndAtomicTriggerDoNotDuplicateOrInventActivation(t *t
 			case <-ctx.Done():
 				return nil
 			}
-			return toolReply("silent", "no_reply", map[string]any{})
+			return textReply("Finished.")
 		}
 		return textReply("queued independent input")
 	})
@@ -421,7 +421,7 @@ func TestStopPreservesQueuedInputUntilExplicitContinue(t *testing.T) {
 		t.Fatal(err)
 	}
 	view := f.idle(t, f.session.ID)
-	if len(view.Pending) != 1 || view.LastRun.Status != "cancelled" || f.count() != 1 {
+	if len(view.Pending) != 1 || !view.CanContinue || view.LastRun.Status != "cancelled" || f.count() != 1 {
 		t.Fatalf("Stop consumed or restarted pending input: %+v", view)
 	}
 	if err := f.service.Continue(f.ctx, f.session.ID); err != nil {
@@ -430,5 +430,136 @@ func TestStopPreservesQueuedInputUntilExplicitContinue(t *testing.T) {
 	f.idle(t, f.session.ID)
 	if f.count() != 2 {
 		t.Fatal("explicit Continue did not consume the retained input")
+	}
+}
+
+func TestInterruptedWorkWithoutQueueCanContinueAfterRestart(t *testing.T) {
+	entered := make(chan struct{})
+	f := newFixture(t, 0, func(ctx context.Context, n int, _ map[string]any) any {
+		if n == 1 {
+			close(entered)
+			<-ctx.Done()
+			return nil
+		}
+		return textReply("continued")
+	})
+	if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: "work", Text: "work in progress"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-f.ctx.Done():
+		t.Fatal(f.ctx.Err())
+	}
+	if err := f.service.Stop(f.ctx, f.session.ID); err != nil {
+		t.Fatal(err)
+	}
+	view := f.idle(t, f.session.ID)
+	if len(view.Pending) != 0 || !view.CanContinue {
+		t.Fatalf("unfinished work lost: %+v", view)
+	}
+	f.restart(t)
+	view, err := f.service.View(f.ctx, f.session.ID)
+	if err != nil || !view.CanContinue || len(view.Pending) != 0 || f.count() != 1 {
+		t.Fatalf("reopen did not restore an idle resumable execution: %+v %v", view, err)
+	}
+	if err = f.service.Continue(f.ctx, f.session.ID); err != nil {
+		t.Fatal(err)
+	}
+	view = f.idle(t, f.session.ID)
+	if view.CanContinue || f.count() != 2 {
+		t.Fatalf("completed work still offers Continue: %+v", view)
+	}
+}
+
+func TestEditedQueueRetainsFrozenImageAcrossRestart(t *testing.T) {
+	entered := make(chan struct{})
+	f := newFixture(t, 1, func(ctx context.Context, n int, request map[string]any) any {
+		if n == 1 {
+			close(entered)
+			<-ctx.Done()
+			return nil
+		}
+		if n == 2 {
+			body := string(encode(request))
+			if !strings.Contains(body, "edited image message") || !strings.Contains(body, "data:image/png;base64,") {
+				t.Error("edited message lost its frozen image")
+			}
+		}
+		return textReply("done")
+	})
+	if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: "first", Text: "start"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-f.ctx.Done():
+		t.Fatal(f.ctx.Err())
+	}
+	binding, err := f.hub.Bind(f.ctx, f.agent.ID, f.session.ID, f.session.ComputerID, f.session.CWD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK7kAAAAASUVORK5CYII=")
+	file, err := f.service.Files.Upload(f.ctx, binding, "queued.png", bytes.NewReader(png))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageInput := InputRequest{ID: "b", Text: "original image message", Files: []string{filestream.URL(file)}}
+	for _, input := range []InputRequest{{ID: "a", Text: "later"}, imageInput, {ID: "c", Text: "remove me"}} {
+		if _, err = f.service.Submit(f.ctx, f.session.ID, input); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = f.service.Stop(f.ctx, f.session.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.idle(t, f.session.ID)
+	coreSession, err := f.service.Core(f.ctx, f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := coreSession.LookupInput(f.ctx, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Remove(file.Path); err != nil {
+		t.Fatal(err)
+	}
+	edited := "edited image message"
+	if err = f.service.UpdatePending(f.ctx, f.session.ID, "b", PendingEdit{Text: &edited}); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.service.MovePending(f.ctx, f.session.ID, "b", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.service.RemovePending(f.ctx, f.session.ID, "c"); err != nil {
+		t.Fatal(err)
+	}
+	f.restart(t)
+	view, err := f.service.View(f.ctx, f.session.ID)
+	if err != nil || len(view.Pending) != 2 || view.Pending[0].ID != "b" || view.Pending[0].Metadata.DisplayText != edited || view.Pending[1].ID != "a" {
+		t.Fatalf("queue not restored: %+v %v", view.Pending, err)
+	}
+	coreSession, err = f.service.Core(f.ctx, f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := coreSession.LookupInput(f.ctx, "b")
+	if err != nil || before.Digest != after.Digest || !before.AcceptedAt.Equal(after.AcceptedAt) || !bytes.Equal(encode(before.Message.Content[1:]), encode(after.Message.Content[1:])) {
+		t.Fatalf("edit changed frozen attachment or identity: %v", err)
+	}
+	if err = f.service.UpdatePending(f.ctx, f.session.ID, "b", PendingEdit{Mode: "steer"}); err != nil {
+		t.Fatal(err)
+	}
+	f.idle(t, f.session.ID)
+	if f.count() != 3 {
+		t.Fatalf("wrong consumption count: %d", f.count())
+	}
+	if _, err = f.service.Submit(f.ctx, f.session.ID, imageInput); err != nil {
+		t.Fatal(err)
+	}
+	if f.count() != 3 {
+		t.Fatal("retry resubmitted edited input")
 	}
 }

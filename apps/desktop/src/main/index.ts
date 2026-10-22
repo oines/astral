@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, Tray, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, session, shell, Tray, type IpcMainInvokeEvent } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LocalService } from './service'
@@ -15,6 +15,13 @@ let shutdownComplete = false
 let keepRunning = true
 let serverURL = ''
 const directory = fileURLToPath(new URL('.', import.meta.url))
+const resourcePath = (name: string) => app.isPackaged ? join(process.resourcesPath, name) : join(directory, '../../resources', name)
+const applicationIcon = () => resourcePath(nativeTheme.shouldUseDarkColors ? 'icon-dark.png' : 'icon.png')
+
+function updateApplicationIcon() {
+  app.dock?.setIcon(applicationIcon())
+  if (process.platform !== 'darwin' && window && !window.isDestroyed()) window.setIcon(applicationIcon())
+}
 
 function show() {
   if (window?.isDestroyed()) window = undefined
@@ -29,6 +36,7 @@ function assertSender(event: IpcMainInvokeEvent) {
 function createWindow() {
   window = new BrowserWindow({
     title: 'Astral', width: 1240, height: 860, minWidth: 700, minHeight: 540,
+    icon: applicationIcon(),
     show: false, backgroundColor: '#f4f4f1',
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 17, y: 16 } } : {}),
     webPreferences: {
@@ -60,7 +68,10 @@ function createWindow() {
   void window.loadURL(serverURL).catch(error => dialog.showErrorBox('Astral could not open', String(error)))
 }
 async function start() {
-  const root = process.env.ASTRAL_DESKTOP_DATA_DIR || join(app.getPath('appData'), 'astral')
+  updateApplicationIcon()
+  nativeTheme.on('updated', updateApplicationIcon)
+  // Keep incompatible legacy data intact when starting the current host format.
+  const root = process.env.ASTRAL_DESKTOP_DATA_DIR || join(app.getPath('appData'), 'astral', 'schema-3')
   const bins = app.isPackaged ? join(process.resourcesPath, 'bin') : fileURLToPath(new URL('../../../../dist/bin/', import.meta.url))
   const architecture = process.arch === 'x64' ? 'amd64' : process.arch
   const binary = join(bins, `astral-${process.platform}-${architecture}`)
@@ -90,9 +101,9 @@ async function start() {
     { label: 'Astral', submenu: [{ role: 'about' }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => { show(); window?.webContents.send('astral:open-settings') } }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
     { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
   ]))
-  const trayPath = app.isPackaged ? join(process.resourcesPath, 'trayTemplate.png') : join(directory, '../../resources/trayTemplate.png')
-  const icon = nativeImage.createFromPath(trayPath).resize({ width: 22, height: 22 })
-  icon.setTemplateImage(true)
+  // Electron loads the adjacent @2x representation for Retina displays.
+  const icon = nativeImage.createFromPath(resourcePath('trayTemplate.png'))
+  icon.setTemplateImage(process.platform === 'darwin')
   tray = new Tray(icon)
   tray.setToolTip('Astral')
   tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Astral', click: show }, { type: 'separator' }, { label: 'Quit Astral', click: () => app.quit() }]))

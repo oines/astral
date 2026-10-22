@@ -1,8 +1,8 @@
 import { computed, ref, watch } from 'vue'
-import { defineStore } from 'pinia'
+import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useQuery, useQueryCache } from '@pinia/colada'
-import { bootstrapQuery, listComputersQuery, listSessionsQuery } from '@astral/sdk/colada'
-import { savePreferences } from '@astral/sdk'
+import { bootstrapQuery, bootstrapQueryKey, listComputersQuery, listSessionsQuery } from '@astral/sdk/colada'
+import { getPreferences, savePreferences } from '@astral/sdk'
 import { useIntervalFn, usePreferredDark } from '@vueuse/core'
 import { i18n } from '../i18n'
 import { request } from '../lib/api'
@@ -62,10 +62,20 @@ export const useAppStore = defineStore('app', () => {
   }
   async function preferences(patch: Partial<NonNullable<typeof data.value>['preferences']>) {
     if (!data.value) return
-    const saved = await request(savePreferences({ body: { ...data.value.preferences, ...patch } }))
-    if (window.astralDesktop) await window.astralDesktop.preferences({ keepRunning: saved.keep_running, loginStart: saved.login_start })
-    await refresh()
+    const current = await request(getPreferences())
+    const saved = await request(savePreferences({ body: { ...current, ...patch } }))
+    if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, preferences: saved })
+    if (window.astralDesktop) {
+      try { await window.astralDesktop.preferences({ keepRunning: saved.keep_running, loginStart: saved.login_start }) }
+      catch (error) {
+        await refresh().catch(() => undefined)
+        throw { code: 'desktop_preferences', message: error instanceof Error ? error.message : 'The desktop preference could not be applied.' }
+      }
+    }
+    await refresh().catch(() => undefined)
   }
   const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).map(s => [s.id, sessionViews.value[s.id] ?? s])))
   return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences }
 })
+
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAppStore, import.meta.hot))

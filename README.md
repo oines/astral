@@ -4,6 +4,8 @@ Astral is a self-hosted workspace for persistent agents. The macOS app and Linux
 
 The implementation follows [SPEC.md](SPEC.md). The server owns configuration, credentials, sessions, Telegram connections and delivery receipts. [Astral Core](https://github.com/oines/astral-core) owns the persistent agent loop. [astral-models](https://github.com/oines/astral-models) translates Core requests into provider protocols.
 
+UI changes must follow the [UI/UX specification](docs/ui-ux-spec.md), including product naming, settings navigation, shared visual language, and automatic saving with feedback. [AGENTS.md](AGENTS.md) links the requirements for future contributors and coding agents. The specification defines the target behavior; historical design reports are not acceptance evidence for the ongoing redesign.
+
 ## Build and start
 
 The pinned development tools are in [mise.toml](mise.toml). Install those versions, then:
@@ -33,9 +35,9 @@ Start the binary for your machine, for example:
 
 Open `http://127.0.0.1:4545`. The server prints the path of its private Owner token file; enter that token at the Web sign-in screen. The token is stored in an HttpOnly cookie after sign-in. The desktop app performs this local handoff in its main process.
 
-Use a new, empty data directory for this version. Host schema 2 and Core format 9 replace the previous formats; older data is rejected, with no migration or compatibility mode. Choose a persistent location instead of `/tmp` for regular use.
+Use a new, empty data directory for this version. Host schema 3 and Core format 9 replace the previous formats; older data is rejected, with no migration or compatibility mode. Choose a persistent location instead of `/tmp` for regular use.
 
-The first-use path is **Settings → Models → add Provider → add Profile**, then **Settings → Agents → select that model and a Computer**. Saved models are immediately usable; no capability probe is required. New sessions inherit the Agent defaults. Provider keys and endpoints are global resources, so Agents do not need separate copies.
+Start in **Settings → Models** to connect a provider and add models, then open **Settings → Bots** to create a Bot. Choose its default model in **Basic settings** and grant machine access in **Computer access**. Saved models are immediately usable; no capability probe is required. New sessions inherit the Bot defaults. Provider keys and endpoints are global resources, so Bots do not need separate copies. Independent settings save automatically; connection parameters are submitted together with the local **Save connection** action.
 
 The model adapters support Chat Completions for OpenAI, DeepSeek, Qwen and OpenRouter, and Responses for OpenAI and DeepSeek. Connection and capability failures are reported from actual model requests. Native reasoning options are preserved. Search uses one selected Tavily or Exa resource per Agent.
 
@@ -51,6 +53,8 @@ The application, DMG and ZIP for Apple Silicon and Intel are written to `apps/de
 
 Electron manages the local Go server, local Daemon, window, menu, tray and login preference. Closing the window follows the General setting; quitting stops the managed service. A server also stops if its desktop parent dies. Renderer code receives neither the Owner token nor a general native filesystem API.
 
+The macOS app stores current data in `~/Library/Application Support/astral/schema-3/`. Data from earlier formats stays in its original directory. `ASTRAL_DESKTOP_DATA_DIR` can select another directory; it must be empty or already use the current formats.
+
 ## Computers, files and conversations
 
 **Settings → Computers → Add Computer** offers three paths:
@@ -59,7 +63,7 @@ Electron manages the local Go server, local Daemon, window, menu, tray and login
 - **Use a local container** creates a persistent container through the server's local Docker-compatible runtime.
 - **Connect another machine** produces an expiring enrollment command. Its container option creates a separate Computer on the machine where the command runs.
 
-Registration does not automatically add a Computer to an Agent. Assign it explicitly and optionally set it as the default. A session can change its current Computer while idle. Existing process handles and file references remain attached to their original Computer.
+Registration does not automatically grant a Bot access to a Computer. Open the Bot's **Computer access** page to grant access and optionally set its default. A session can change its current Computer while idle. Existing process handles and file references remain attached to their original Computer.
 
 AgentHome is shared by sessions of the same Agent on the same Computer. Forking a conversation preserves history and its branch relationship; it does not copy working files or Telegram bindings.
 
@@ -71,9 +75,15 @@ Discovery runs on the selected Computer: global skills come from its OS user's `
 
 Uploaded originals and generated files live on Computers. `astral-file://` links stream from the source Computer for preview or download. Images actually supplied to the model are also frozen inside the durable rollout, so history and replay remain valid after an original is removed or its source goes offline. That preserved model input does not substitute for an unavailable original-file download.
 
-Telegram is the V1 messaging adapter. Configure a bot Connection, verify a Chat ID and optional Topic ID, then bind it from Agent settings. Ordinary group messages are observations; private messages, mentions and replies can activate the Agent. Only committed assistant text is automatically delivered. `no_reply` ends an activation without sending a placeholder. Explicit file sends and other outbound actions have persisted receipts; uncertain delivery is not blindly retried.
+Telegram is the V1 messaging adapter. Open **Settings → Bots**, choose a Bot, then use **Connect a platform → Telegram** to connect an account. The **Telegram** navigation item opens the account list; each account has its own credentials, access settings and chats. New accounts use **Only specified chats** with an empty list; add a chat and choose a new or existing unbound Session. **All chats the account can access** activates private chats on their first message and groups on their first mention/reply. Activation starts at that message without importing earlier history. Scope changes retain bindings and per-chat settings; changing a binding stops both Sessions first.
 
-Core `Session` owns execution, queues, cancellation, compaction and model retries. Each input has a caller-supplied stable ID and an indexed durable receipt; resubmitting it returns the same receipt without reloading attachments or starting another run. Astral queues Web/IM input as Steer or FollowUp, then explicitly calls `Continue`. Queuing alone does not start execution. Stop and failure leave pending inputs for explicit continuation; `no_reply` can finish its run and process already queued independent inputs.
+Bound chats continuously contribute context and compact as needed. Private messages, mentions, replies and Web input use Steer. **Proactive mode** is off by default; when enabled for a group, one LLM Probe decides after 10 seconds of quiet or a 60-second window. It returns only `decide({participate:boolean})`, never a reason or an instruction. Probe follows the Session’s current model unless the Agent selects an override.
+
+A bound Session is fully usable in Web. Assistant text is displayed there; IM messages are sent only by the bound `send_message` tool or an explicit Computer API call. File sends and text sends retain stable targets, source files and persisted receipts. Unknown delivery is inspected before retry. Received IM images are processed in memory into frozen native model payloads; other attachments remain metadata until downloaded. Original bytes are available from the current Computer API, without creating a Computer file during reception.
+
+The Computer API exposes owned accounts, authorized chat resolution, filtered message pagination, message-ID lookup, original attachment streaming, send receipts and a catalog of chat-scoped Telegram operations. See [the IM API guide](docs/im.md).
+
+Core `Session` owns execution, queues, cancellation, compaction and model retries. Each input has a caller-supplied stable ID and an indexed durable receipt; resubmitting it returns the same receipt without reloading attachments or starting another run. Astral queues Web/IM input as Steer or FollowUp, then explicitly calls `Continue`. Queuing alone does not start execution. Stop and failure leave pending inputs for explicit continuation. Normal completion without an explicit send leaves IM silent. Passive maintenance uses Core’s ordinary compaction and drains accumulated input batches without starting the main Agent.
 
 Normal generation and summaries use the same retry policy: at most three total attempts, a four-minute timeout per attempt, and cancellable exponential waits starting at one second and capped at five seconds unless a valid longer Retry-After applies. Retries reuse the frozen request. Failed stream fragments and retry errors remain execution records and never become model conversation. The Web UI shows attempt and retry progress; reconnecting only restores the event stream.
 
@@ -87,6 +97,8 @@ pnpm dev
 ```
 
 The development Web app proxies the API to port 4545. For desktop development, build the native binary first, then run `pnpm dev:desktop`.
+
+Brand artwork lives in `packages/icons/assets/`: the color mark and light/dark wordmarks are shared by the Web app, while the layered monochrome mark is used for the tray and favicon. Run `pnpm build:icons` to regenerate the desktop SVG/PNG/ICNS and favicon from these SVG sources. The app icon uses a white or graphite rounded tile with macOS sizing and padding; the Dock switches between them with the system appearance. Web and desktop development/build commands also regenerate their icons automatically; macOS tray resources include both 1× and 2× versions.
 
 The versions pinned in `go.mod` support standalone builds with `GOWORK=off`. For coordinated development across Astral, `../agent-core` and `../astral-models`, use a local Go workspace containing the three checkouts. Distribution builds honor the active workspace (or an explicit `GOWORK` path), including its dependency notices.
 

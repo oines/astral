@@ -22,7 +22,7 @@ class Stream extends EventTarget {
 function snapshot(id: string, epoch: string): Snapshot {
   return {
     epoch,
-    view: { id, agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Work', archived: false, pinned: false, source: 'web', rollout_id: 'rollout', head_id: 'head', event_sequence: 0, status: 'idle', options: {}, approvals: [], pending: [], unresolved: [] },
+    view: { id, agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Work', archived: false, pinned: false, source: 'web', rollout_id: 'rollout', head_id: 'head', event_sequence: 0, status: 'idle', can_continue: false, options: {}, approvals: [], pending: [], unresolved: [] },
     history: { entries: [], head_id: 'head' }, trace: { entries: [], head_id: 'head' },
   }
 }
@@ -52,7 +52,7 @@ describe('recovering a session connection', () => {
     original.fail()
     await vi.advanceTimersByTimeAsync(1000)
     const restored = snapshot('one', 'server')
-    restored.view = { ...restored.view, event_sequence: 20, status: 'running', run_id: 'run', attempt: { attempt_id: 'a', run_id: 'run', turn_id: 'turn', purpose: 'generation', attempt: 1, max_attempts: 3, state: 'retrying', next_retry_at: '2026-10-22T00:00:10Z' } }
+    restored.view = { ...restored.view, event_sequence: 20, status: 'running', can_continue: false, run_id: 'run', attempt: { attempt_id: 'a', run_id: 'run', turn_id: 'turn', purpose: 'generation', attempt: 1, max_attempts: 3, state: 'retrying', next_retry_at: '2026-10-22T00:00:10Z' } }
     Stream.instances[1]!.send('snapshot', restored)
     expect(live.state.value.view?.attempt).toEqual(restored.view.attempt)
     expect(live.state.value.sequence).toBe(20)

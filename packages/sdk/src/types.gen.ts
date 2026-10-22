@@ -352,6 +352,27 @@ export type AstralInternalChannelsStatus = {
     state: string;
 };
 
+export type AstralInternalChannelsTelegramOperation = {
+    documentation: string;
+    name: string;
+    parameters: Array<string>;
+};
+
+export type AstralInternalChannelsTelegramRequest = {
+    conversation_id: string;
+    files?: {
+        [key: string]: string;
+    };
+    parameters: {
+        [key: string]: unknown;
+    };
+    source_conversation_id?: string;
+};
+
+export type AstralInternalChannelsTelegramResult = {
+    result: unknown;
+};
+
 export type AstralInternalComputersEnrollmentResult = {
     command: string;
     enrollment: AstralInternalDomainEnrollment;
@@ -366,6 +387,7 @@ export type AstralInternalDomainAgent = {
     default_model_id?: string;
     id: string;
     name: string;
+    probe_model_id?: string;
     revision: number;
     search_provider_id?: string;
     updated_at: string;
@@ -373,6 +395,7 @@ export type AstralInternalDomainAgent = {
 
 export type AstralInternalDomainAttachment = {
     external_id: string;
+    file_uri?: string;
     kind: string;
     media_type?: string;
     name: string;
@@ -402,8 +425,10 @@ export type AstralInternalDomainComputerStatus = {
 };
 
 export type AstralInternalDomainConnection = {
+    access_mode: 'all' | 'specified';
     account_id?: string;
     adapter: string;
+    agent_id: string;
     config?: unknown;
     created_at: string;
     credential_id?: string;
@@ -424,6 +449,7 @@ export type AstralInternalDomainConversation = {
     external_id: string;
     id: string;
     kind: string;
+    proactive_enabled: boolean;
     revision: number;
     title: string;
     topic_id?: string;
@@ -550,6 +576,7 @@ export type AstralInternalDomainOutbox = {
     id: string;
     intent_key: string;
     platform_message_ids?: Array<string>;
+    reply_to?: string;
     request_digest: string;
     resolution_note?: string;
     retryable: boolean;
@@ -615,6 +642,7 @@ export type AstralInternalDomainSession = {
     agent_id: string;
     archived: boolean;
     binding_id?: string;
+    channel_platform?: string;
     computer_id?: string;
     conversation_id?: string;
     created_at: string;
@@ -630,6 +658,7 @@ export type AstralInternalDomainSession = {
     revision: number;
     source: string;
     title: string;
+    title_source?: string;
     updated_at: string;
 };
 
@@ -680,15 +709,22 @@ export type AstralInternalGatewayReferenceResponse = {
     uri: string;
 };
 
+export type AstralInternalGatewayResolveConversation = {
+    external_id: string;
+    topic_id?: string;
+};
+
 export type AstralInternalGatewaySendFile = {
     conversation_id?: string;
     file_uri?: string;
     path?: string;
+    reply_to?: string;
     text?: string;
 };
 
 export type AstralInternalGatewaySendText = {
     conversation_id?: string;
+    reply_to?: string;
     text: string;
 };
 
@@ -709,6 +745,11 @@ export type AstralInternalHarnessInputRequest = {
     text: string;
 };
 
+export type AstralInternalHarnessPendingEdit = {
+    mode?: string;
+    text?: string;
+};
+
 export type AstralInternalHarnessPendingInput = {
     id: string;
     kind: string;
@@ -721,6 +762,8 @@ export type AstralInternalHarnessView = {
     archived: boolean;
     attempt?: AstralCoreAttemptStatus;
     binding_id?: string;
+    can_continue: boolean;
+    channel_platform?: string;
     computer_id?: string;
     conversation_id?: string;
     created_at: string;
@@ -744,6 +787,7 @@ export type AstralInternalHarnessView = {
     source: string;
     status: string;
     title: string;
+    title_source?: string;
     unresolved: Array<AstralCoreToolRecord>;
     updated_at: string;
 };
@@ -753,8 +797,8 @@ export type AstralInternalHttpapiApproval = {
 };
 
 export type AstralInternalHttpapiBindingInput = {
-    agent_id: string;
     conversation_id: string;
+    session_id?: string;
 };
 
 export type AstralInternalHttpapiBootstrap = {
@@ -782,8 +826,10 @@ export type AstralInternalHttpapiComputerUpdate = {
 };
 
 export type AstralInternalHttpapiConnectionInput = {
+    access_mode: 'all' | 'specified';
     account_id?: string;
     adapter: string;
+    agent_id: string;
     config?: unknown;
     created_at: string;
     credential_id?: string;
@@ -800,8 +846,10 @@ export type AstralInternalHttpapiConnectionInput = {
 };
 
 export type AstralInternalHttpapiConnectionView = {
+    access_mode: 'all' | 'specified';
     account_id?: string;
     adapter: string;
+    agent_id: string;
     capabilities: AstralInternalChannelsCapabilities;
     config?: unknown;
     created_at: string;
@@ -857,6 +905,10 @@ export type AstralInternalHttpapiLoginRequest = {
     token: string;
 };
 
+export type AstralInternalHttpapiMovePending = {
+    before_id: string;
+};
+
 export type AstralInternalHttpapiPreferences = {
     created_at: string;
     id: string;
@@ -867,6 +919,11 @@ export type AstralInternalHttpapiPreferences = {
     running_input: string;
     theme: string;
     updated_at: string;
+};
+
+export type AstralInternalHttpapiProactiveInput = {
+    enabled: boolean;
+    revision: number;
 };
 
 export type AstralInternalHttpapiProviderInput = {
@@ -969,6 +1026,7 @@ export type AstralInternalHttpcontractOk = {
 };
 
 export type AstralInternalMessagesMetadata = {
+    attachments?: Array<AstralInternalDomainAttachment>;
     conversation_id?: string;
     delivery_id: string;
     display_text: string;
@@ -1629,6 +1687,33 @@ export type ConversationMessagesResponses = {
 };
 
 export type ConversationMessagesResponse = ConversationMessagesResponses[keyof ConversationMessagesResponses];
+
+export type SetConversationProactiveData = {
+    body: AstralInternalHttpapiProactiveInput;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/conversations/{id}/proactive';
+};
+
+export type SetConversationProactiveErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SetConversationProactiveError = SetConversationProactiveErrors[keyof SetConversationProactiveErrors];
+
+export type SetConversationProactiveResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainConversation;
+};
+
+export type SetConversationProactiveResponse = SetConversationProactiveResponses[keyof SetConversationProactiveResponses];
 
 export type EventSchemaData = {
     body?: never;
@@ -2876,6 +2961,90 @@ export type ClearPendingResponses = {
 
 export type ClearPendingResponse = ClearPendingResponses[keyof ClearPendingResponses];
 
+export type RemovePendingData = {
+    body?: never;
+    path: {
+        id: string;
+        input: string;
+    };
+    query?: never;
+    url: '/api/v1/sessions/{id}/pending/{input}';
+};
+
+export type RemovePendingErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type RemovePendingError = RemovePendingErrors[keyof RemovePendingErrors];
+
+export type RemovePendingResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type RemovePendingResponse = RemovePendingResponses[keyof RemovePendingResponses];
+
+export type UpdatePendingData = {
+    body: AstralInternalHarnessPendingEdit;
+    path: {
+        id: string;
+        input: string;
+    };
+    query?: never;
+    url: '/api/v1/sessions/{id}/pending/{input}';
+};
+
+export type UpdatePendingErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type UpdatePendingError = UpdatePendingErrors[keyof UpdatePendingErrors];
+
+export type UpdatePendingResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type UpdatePendingResponse = UpdatePendingResponses[keyof UpdatePendingResponses];
+
+export type MovePendingData = {
+    body: AstralInternalHttpapiMovePending;
+    path: {
+        id: string;
+        input: string;
+    };
+    query?: never;
+    url: '/api/v1/sessions/{id}/pending/{input}/move';
+};
+
+export type MovePendingErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type MovePendingError = MovePendingErrors[keyof MovePendingErrors];
+
+export type MovePendingResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type MovePendingResponse = MovePendingResponses[keyof MovePendingResponses];
+
 export type ExportRolloutData = {
     body?: never;
     path: {
@@ -3063,6 +3232,113 @@ export type LoginResponses = {
 
 export type LoginResponse = LoginResponses[keyof LoginResponses];
 
+export type AgentAccountsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/accounts';
+};
+
+export type AgentAccountsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentAccountsError = AgentAccountsErrors[keyof AgentAccountsErrors];
+
+export type AgentAccountsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalDomainConnection>;
+};
+
+export type AgentAccountsResponse = AgentAccountsResponses[keyof AgentAccountsResponses];
+
+export type AgentResolveConversationData = {
+    body: AstralInternalGatewayResolveConversation;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/accounts/{id}/conversations/resolve';
+};
+
+export type AgentResolveConversationErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentResolveConversationError = AgentResolveConversationErrors[keyof AgentResolveConversationErrors];
+
+export type AgentResolveConversationResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainConversation;
+};
+
+export type AgentResolveConversationResponse = AgentResolveConversationResponses[keyof AgentResolveConversationResponses];
+
+export type AgentTelegramOperationsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/accounts/{id}/telegram/operations';
+};
+
+export type AgentTelegramOperationsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentTelegramOperationsError = AgentTelegramOperationsErrors[keyof AgentTelegramOperationsErrors];
+
+export type AgentTelegramOperationsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalChannelsTelegramOperation>;
+};
+
+export type AgentTelegramOperationsResponse = AgentTelegramOperationsResponses[keyof AgentTelegramOperationsResponses];
+
+export type AgentTelegramOperationData = {
+    body: AstralInternalChannelsTelegramRequest;
+    path: {
+        id: string;
+        operation: string;
+    };
+    query?: never;
+    url: '/v1/accounts/{id}/telegram/{operation}';
+};
+
+export type AgentTelegramOperationErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentTelegramOperationError = AgentTelegramOperationErrors[keyof AgentTelegramOperationErrors];
+
+export type AgentTelegramOperationResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalChannelsTelegramResult;
+};
+
+export type AgentTelegramOperationResponse = AgentTelegramOperationResponses[keyof AgentTelegramOperationResponses];
+
 export type AgentDownloadAttachmentData = {
     body: AstralInternalGatewayDownloadRequest;
     path?: never;
@@ -3218,6 +3494,63 @@ export type AgentMessagesResponses = {
 };
 
 export type AgentMessagesResponse = AgentMessagesResponses[keyof AgentMessagesResponses];
+
+export type AgentMessageData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}';
+};
+
+export type AgentMessageErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessageError = AgentMessageErrors[keyof AgentMessageErrors];
+
+export type AgentMessageResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainObservation;
+};
+
+export type AgentMessageResponse = AgentMessageResponses[keyof AgentMessageResponses];
+
+export type AgentAttachmentContentData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content';
+};
+
+export type AgentAttachmentContentErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentAttachmentContentError = AgentAttachmentContentErrors[keyof AgentAttachmentContentErrors];
+
+export type AgentAttachmentContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type AgentAttachmentContentResponse = AgentAttachmentContentResponses[keyof AgentAttachmentContentResponses];
 
 export type AgentFileReferenceData = {
     body: AstralInternalGatewayReferenceRequest;

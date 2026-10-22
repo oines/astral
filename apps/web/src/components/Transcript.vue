@@ -94,6 +94,8 @@ function older() { stick.value = false; emit('older') }
               <ActivityLine
                 v-if="block.kind === 'process'"
                 :items="block.items"
+                :active="block.active"
+                :status="block.active && group.status !== 'working' && group.status !== 'preparing' ? statusText(group) : undefined"
                 :session-i-d="sessionID"
                 :state="state"
                 @expand="stick = false"
@@ -107,15 +109,12 @@ function older() { stick.value = false; emit('older') }
               />
             </div>
             <p
-              v-if="group.status"
+              v-if="group.status && !group.active"
               class="run-status"
               :class="{ 'text-danger': group.status === 'needs_attention' }"
               role="status"
             >
-              <span
-                v-if="group.active"
-                class="spinner"
-              />{{ statusText(group) }}
+              {{ statusText(group) }}
             </p>
           </template>
           <article

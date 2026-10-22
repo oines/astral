@@ -1,62 +1,68 @@
-import { deflateSync } from 'node:zlib'
-import { Buffer } from 'node:buffer'
-import { mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
+import { Resvg } from '@resvg/resvg-js'
 import { root } from './build-lib.mjs'
 
-// The app mark is deliberately geometric: four points, warm white on deep green.
-function crc32(bytes) {
-  let value = 0xffffffff
-  for (const byte of bytes) {
-    value ^= byte
-    for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0)
-  }
-  return (value ^ 0xffffffff) >>> 0
+const assets = path.join(root, 'packages/icons/assets')
+const [mark, tray] = await Promise.all([
+  readFile(path.join(assets, 'astral-mark.svg'), 'utf8'),
+  readFile(path.join(assets, 'astral-tray.svg'), 'utf8'),
+])
+
+function png(svg, size) {
+  return new Resvg(svg, {
+    fitTo: { mode: 'width', value: size },
+    font: { loadSystemFonts: false },
+  }).render().asPng()
 }
-function chunk(name, data) {
-  const label = Buffer.from(name)
-  const size = Buffer.alloc(4), crc = Buffer.alloc(4)
-  size.writeUInt32BE(data.length)
-  crc.writeUInt32BE(crc32(Buffer.concat([label, data])))
-  return Buffer.concat([size, label, data, crc])
+
+function appIcon(dark = false) {
+  // Match the 824px tile and 100px inset used by the macOS ICNS grid.
+  const logo = mark.replace(/<svg\b[^>]*>/, '<svg x="128" y="170" width="768" height="768" viewBox="0 0 24 24" fill="none">')
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Astral ${dark ? 'Dark' : 'Light'} App Icon">
+  <defs>
+    <filter id="appTileShadow" x="-15%" y="-15%" width="130%" height="135%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000" flood-opacity="${dark ? '.24' : '.16'}"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185.4" fill="${dark ? '#25252b' : '#ffffff'}" filter="url(#appTileShadow)"/>
+  <rect x="101" y="101" width="822" height="822" rx="184.4" fill="none" stroke="${dark ? '#ffffff' : '#000000'}" stroke-opacity="${dark ? '.10' : '.05'}" stroke-width="2"/>
+  ${logo}
+</svg>
+`
 }
-function png(size, template = false) {
-  const raw = Buffer.alloc((size * 4 + 1) * size)
-  const sample = 4
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    let alpha = 0, star = 0
-    for (let sy = 0; sy < sample; sy++) for (let sx = 0; sx < sample; sx++) {
-      const u = (x + (sx + 0.5) / sample) / size - 0.5
-      const v = (y + (sy + 0.5) / sample) / size - 0.5
-      const a = Math.abs(u), b = Math.abs(v)
-      const inside = Math.hypot(Math.max(a - 0.29, 0), Math.max(b - 0.29, 0)) < 0.17
-      // The central diamond with concave edges forms a simple four-point star.
-      const inStar = a + b <= 0.13 || (a <= 0.1 * (1 - b / 0.38) && b <= 0.38) || (b <= 0.1 * (1 - a / 0.38) && a <= 0.38)
-      if (template ? inStar : inside) alpha++
-      if (inStar) star++
+
+// The small monochrome mark stays legible on both browser tab themes.
+const web = path.join(root, 'apps/web/public')
+await mkdir(web, { recursive: true })
+await writeFile(path.join(web, 'favicon.svg'), tray.replace('</svg>', `<style>
+  svg { color: #171a26; }
+  @media (prefers-color-scheme: dark) { svg { color: #f7f6fc; } }
+</style></svg>`))
+
+if (!process.argv.includes('--web')) {
+  const resources = path.join(root, 'apps/desktop/resources')
+  const icons = [['icon', appIcon()], ['icon-dark', appIcon(true)]]
+  await mkdir(resources, { recursive: true })
+  await Promise.all([
+    writeFile(path.join(resources, 'trayTemplate.png'), png(tray, 22)),
+    writeFile(path.join(resources, 'trayTemplate@2x.png'), png(tray, 44)),
+  ])
+  for (const [name, svg] of icons) {
+    await writeFile(path.join(resources, `${name}.svg`), svg)
+    await writeFile(path.join(resources, `${name}.png`), png(svg, 1024))
+    if (process.platform === 'darwin') {
+      const set = path.join(resources, 'icon.iconset')
+      await mkdir(set, { recursive: true })
+      for (const size of [16, 32, 128, 256, 512]) {
+        await writeFile(path.join(set, `icon_${size}x${size}.png`), png(svg, size))
+        await writeFile(path.join(set, `icon_${size}x${size}@2x.png`), png(svg, size * 2))
+      }
+      const result = spawnSync('iconutil', ['-c', 'icns', set, '-o', path.join(resources, `${name}.icns`)], { stdio: 'inherit' })
+      if (result.error) throw result.error
+      if (result.status !== 0) throw new Error('macOS icon generation failed.')
+      await rm(set, { recursive: true })
     }
-    const offset = y * (size * 4 + 1) + 1 + x * 4
-    const mix = template ? 0 : star / (sample * sample)
-    for (let c = 0; c < 3; c++) raw[offset + c] = template ? 0 : Math.round([30, 61, 50][c] * (1 - mix) + [241, 244, 226][c] * mix)
-    raw[offset + 3] = Math.round(255 * alpha / (sample * sample))
   }
-  const header = Buffer.alloc(13)
-  header.writeUInt32BE(size, 0); header.writeUInt32BE(size, 4); header[8] = 8; header[9] = 6
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
-}
-const resources = path.join(root, 'apps/desktop/resources')
-await mkdir(resources, { recursive: true })
-await writeFile(path.join(resources, 'trayTemplate.png'), png(44, true))
-await writeFile(path.join(resources, 'icon.png'), png(1024))
-if (process.platform === 'darwin') {
-  const set = path.join(resources, 'icon.iconset')
-  await mkdir(set, { recursive: true })
-  for (const size of [16, 32, 128, 256, 512]) {
-    await writeFile(path.join(set, `icon_${size}x${size}.png`), png(size))
-    await writeFile(path.join(set, `icon_${size}x${size}@2x.png`), png(size * 2))
-  }
-  const result = spawnSync('iconutil', ['-c', 'icns', set, '-o', path.join(resources, 'icon.icns')], { stdio: 'inherit' })
-  if (result.status !== 0) throw new Error('macOS icon generation failed.')
-  await rm(set, { recursive: true })
 }

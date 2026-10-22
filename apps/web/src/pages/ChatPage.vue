@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { compactSession, forkSession, updateSession } from '@astral/sdk'
 import { Button, Modal, Popover } from '@astral/ui'
-import { ArrowRight, Ellipsis, PanelLeftClose, PanelLeftOpen, Sparkle, GitBranch, Pencil, Pin, Download, FolderOpen } from '@astral/icons'
+import { ArrowRight, Ellipsis, PanelLeftClose, PanelLeftOpen, AstralLogo, GitBranch, Pencil, Pin, Download, FolderOpen } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { useSurfaceStore } from '../stores/surface'
 import { useSession } from '../composables/useSession'
@@ -44,7 +44,7 @@ function sidebarOpened(element: Element) {
 }
 const initialView = computed<SessionView>(() => {
   const agent = app.agents.find(a => a.id === app.activeAgentID)
-  return { ...newMeta(), agent_id: app.activeAgentID, title: t('newSession'), archived: false, pinned: false, source: 'web', options: {}, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', approvals: [], pending: [], unresolved: [], profile_id: agent?.default_model_id || '', computer_id: agent?.default_computer_id || '' }
+  return { ...newMeta(), agent_id: app.activeAgentID, title: t('newSession'), archived: false, pinned: false, source: 'web', options: {}, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', can_continue: false, approvals: [], pending: [], unresolved: [], profile_id: agent?.default_model_id || '', computer_id: agent?.default_computer_id || '' }
 })
 async function started(sessionID: string) {
   await router.push(`/sessions/${sessionID}`)
@@ -57,9 +57,6 @@ async function presentation(patch: { title?: string; pinned?: boolean; archived?
     rename.value = false
     menu.value = false
   } catch (e) { error.value = errorText(e) }
-}
-function sent(text: string) {
-  if (view.value && ['New session', '新建会话', 'Untitled Session'].includes(view.value.title) && text.trim()) void presentation({ title: text.trim().slice(0, 64) })
 }
 async function fork(entryID: string) {
   error.value = ''
@@ -128,6 +125,7 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
     <main class="chat-main">
       <template v-if="!id">
         <div class="welcome">
+          <AstralLogo class="welcome-logo" />
           <template v-if="app.agents.length && app.models.length">
             <h1>{{ t('welcome') }}</h1>
             <Composer
@@ -178,10 +176,11 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
             <div class="session-menu">
               <div class="popover-label">
                 {{ view.title }}<p class="session-agent">
-                  {{ app.agents.find(a => a.id === view?.agent_id)?.name || t('missing') }}<span v-if="view.source === 'im'"> · Telegram</span>
+                  {{ app.agents.find(a => a.id === view?.agent_id)?.name || t('missing') }}<span v-if="view.channel_platform === 'telegram'"> · Telegram</span>
                 </p>
               </div>
               <button
+                v-if="!view.binding_id"
                 class="menu-item"
                 @click="title = view.title; rename = true; menu = false"
               >
@@ -230,7 +229,6 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
           :key="id"
           :view="view"
           :live="live.connection.value === 'connected'"
-          @sent="sent"
           @compact="compact = true"
         />
       </template>
@@ -238,7 +236,7 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
         v-else
         class="empty"
       >
-        <Sparkle /><p>{{ t(live.connection.value) }}</p><p
+        <AstralLogo decorative /><p>{{ t(live.connection.value) }}</p><p
           v-if="live.error.value"
           class="error-box"
         >

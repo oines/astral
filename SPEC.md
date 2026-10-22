@@ -1,14 +1,16 @@
 # Astral 系统规格
 
-版本：1.6
+版本：1.8
 
-日期：2026-10-21，Asia/Singapore
+日期：2026-10-22，Asia/Singapore
 
 状态：V1 实现规范，尚非功能交付声明
 
 Astral 是一个可自托管、持久运行的个人 Agent 平台。一个 Server 管理多个 Agent、持久 Session、模型、搜索服务、IM 连接和 Computer；Agent 在 Session 中理解消息，通过基础工具操作 Computer，通过本地 HTTP API 使用平台能力。
 
-本规格汇总 PRD v1.1 与本轮确认的系统决策，并收敛前端工程选型。冲突处采用本规格中的最新行为：首版 IM 仅支持 Telegram、普通 IM 回复自动路由、文件保留在 Computer、通过本机快捷入口或目标机器上的接入命令添加 Computer、Daemon 提供按 Agent 绑定视图的 localhost API、Bash 直接执行、提供 `no_reply`。Core 的实现依据为本地 `../agent-core`，消息表达参考 `../Cahciua`，前端技术与工程组织参考 `../memoh`。
+本规格中的技术对象 Agent，在产品界面中称为 Bot；Computer 的中文名称为“电脑”。产品命名、页面关系、统一设计语言、设置生效方式与反馈以 [UI UX 规范](docs/ui-ux-spec.md)为准；代码类型和 API 字段不因显示名称变化而自动重命名。
+
+本规格汇总 PRD v1.1 与本轮确认的系统决策，并收敛前端工程选型。冲突处采用本规格中的最新行为：首版 IM 仅支持 Telegram、IM 显式发送与可选 LLM Probe、文件保留在 Computer、通过本机快捷入口或目标机器上的接入命令添加 Computer、Daemon 提供按 Agent 绑定视图的 localhost API、Bash 直接执行、通过正常结束保持沉默。Core 的实现依据为本地 `../agent-core`，消息表达参考 `../Cahciua`，前端技术与工程组织参考 `../memoh`。
 
 “必须”表示实现和验收要求。“示例”表示数据结构或接口表达，字段的最终编码由正式接口契约统一。尚未选择的实现细节集中列于第 17 节，不削减已确认的产品范围。
 
@@ -22,7 +24,7 @@ Astral 是一个可自托管、持久运行的个人 Agent 平台。一个 Serve
 6. [技术栈与工程组织](#6-技术栈与工程组织)
 7. [模型视角与基础工具](#7-模型视角与基础工具)
 8. [入站消息与上下文](#8-入站消息与上下文)
-9. [Loop 与 no_reply](#9-loop-与-no_reply)
+9. [Loop 与显式发送](#9-loop-与显式发送)
 10. [平台 HTTP Gateway](#10-平台-http-gateway)
 11. [文件与媒体](#11-文件与媒体)
 12. [模型与搜索资源](#12-模型与搜索资源)
@@ -39,7 +41,7 @@ Astral 是一个可自托管、持久运行的个人 Agent 平台。一个 Serve
 
 用户可以创建多个 Agent，为其选择模型、搜索服务、可用 Computer 和 IM Conversation；从 Web 或桌面进入任何 Session，发送任务、观察进度、停止执行、查看结果。Agent 可以读写文件、执行命令、搜索互联网、参与 IM 对话，并在多台 Computer 之间切换。
 
-Session 的历史与工作状态持久保存。关闭窗口、浏览器断线或切换 Computer，不会把它变成一个新的无状态聊天。IM 普通群消息持续提供上下文，需要行动的消息再激活模型；模型也可以通过 `no_reply` 结束一次激活而不回复。
+Session 的历史与工作状态持久保存。关闭窗口、浏览器断线或切换 Computer，不会把它变成一个新的无状态聊天。IM 普通群消息持续提供上下文，需要行动的消息再激活模型；模型正常结束且未显式发送时保持 IM 沉默。
 
 ### V1 完整范围
 
@@ -52,7 +54,7 @@ Session 的历史与工作状态持久保存。关闭窗口、浏览器断线或
 | Computer | Local macOS/Linux、Container、Remote macOS/Linux；使用本机/本机容器快捷入口、复制命令接入及可选容器模式、AgentHome、运行中由 Agent 切换 |
 | 模型 | Provider 配置、可编辑 Model Profile、直接使用、Session 临时选模 |
 | 搜索 | 全局搜索 Provider，每个 Agent 单选一个统一 `web_search` 后端 |
-| IM | 仅 Telegram，支持群、私聊与 Topic；独立 Conversation Session、静默观察、触发激活、文本自动回复、API 主动发送 |
+| IM | 仅 Telegram，支持群、私聊与 Topic；独立 Conversation Session、静默观察、触发激活、持续上下文、可选主动模式、显式工具/API 发送 |
 | 文件 | Computer 本地存储、来源明确的引用、流式预览与下载、IM 文件发送 |
 | UI | Sidebar、Transcript、Activity Line、Composer、Settings、按需 Contextual Surface |
 | 运行支撑 | 真实状态、错误与不确定效果呈现、连接诊断、历史对账 |
@@ -83,20 +85,20 @@ IM 架构从首版按多平台设计。后续明确支持 QQ（NapCat 接入、�
 | D03 | 前端使用 Vue 与 `markstream-vue`，其余技术与工程组织参考 Memoh。 |
 | D04 | macOS Desktop 和 Linux 浏览器复用同一 Web 应用及核心产品功能。 |
 | D05 | 首版单 Owner、多 Agent、多 Session；全局资源、Agent 选择、Session 当前状态分层。 |
-| D06 | 每个启用的 IM Conversation 独占一个持久 Session，最多绑定一个 Agent。 |
-| D07 | Conversation 启用名单构成 IM 接入白名单；白名单群内任何成员都可以向 Agent 发起请求，不再增加成员级白名单。 |
-| D08 | 普通群消息静默进入上下文；@、回复 Agent、私聊产生激活候选。Web prompt 始终是驱动输入。 |
+| D06 | 每个接入聊天稳定绑定一个持久 Session；一个 Session 最多绑定一个聊天。Topic 独立识别。 |
+| D07 | IM 账号属于 Agent，范围为全部聊天或指定聊天；默认指定且为空，不使用绑定码或群成员权限名单。 |
+| D08 | 普通群消息持续 InjectContext 并按预算 compact；私聊、@、回复 Bot 和已绑定 Session 的 Web 输入直接 Steer。 |
 | D09 | 模型可见消息沿用 Cahciua 的紧凑 XML，并补充 Astral 的来源与稳定身份信息。 |
-| D10 | IM Session 的普通 assistant text 由 Server 自动发到绑定 Conversation；主动发送和文件发送通过平台 API 完成。 |
-| D11 | 模型可调用 `no_reply` 正常结束本次激活；无普通 tool result、无后续模型续问，等待下一次激活。 |
+| D10 | assistant text 在 Web 正常显示；IM 只由 send_message 或显式 Computer API 调用发送。 |
+| D11 | 聊天主动模式默认关闭；开启时 LLM Probe 只返回参与布尔值，Host 中性唤起，主 Agent 独立决定行为。 |
 | D12 | 基础文件和命令工具使用 Session 当前 Computer/CWD；Agent 可调用 `switch_computer`。 |
 | D13 | 已派发调用、已有进程和文件引用绑定原 Computer，不随之后的切换漂移。 |
 | D14 | AgentHome 属于 Agent 与 Computer 的组合，同一 Agent 的多个 Session 可以共享它。 |
 | D15 | Bash 命令直接执行，不增加逐命令审批；操作系统与所选 Computer 的实际执行环境决定可执行范围。 |
 | D16 | Daemon 将平台 HTTP Gateway 暴露为 Computer 内的 localhost 入口；模型调用时无需 Token。 |
 | D17 | 调用身份由 Daemon 与平台绑定和验证；每个 Agent 得到自己的数据与能力视图。 |
-| D18 | 工作文件、附件原件及需保留的文件版本留在 Computer；文件服务由 Server 流式透传。Rollout 独立保存模型实际收到的多模态 payload（例如 base64），不依赖原附件重放。 |
-| D19 | Web 中由 assistant text 引用文件，UI 解析并渲染；IM 文件由 Agent 主动调用 API 发送。 |
+| D18 | 工作文件与 Web 附件留在 Computer；IM 接收不创建 Computer 文件，图片在内存处理并冻结到 Core，原附件通过 API 按需流式下载。 |
+| D19 | Web FileRef 可预览下载；绑定聊天使用 send_message 发送文字及文件，跨聊天发送通过 Computer API 明确指定。 |
 | D20 | 模型与搜索凭据按全局资源配置；一个 Agent 同一时间仅选用一个搜索 Provider。 |
 | D21 | Transcript 是产品中心；普通工具过程折叠为 Activity Line，详情按需展开。 |
 | D22 | 持久事实、临时流式事件和平台业务状态分别管理，再由 Presenter 合成界面。 |
@@ -112,11 +114,11 @@ Owner
 ├── 全局资源
 │   ├── Model Providers / Model Profiles
 │   ├── Web Search Providers
-│   ├── Computers
-│   └── Channel Connections
-│       └── Conversations
+│   └── Computers
 └── Agents
     ├── 默认资源与 Allowed Computers
+    ├── Channel Connections
+    │   └── Conversations
     ├── Web Sessions
     └── Conversation Bindings
         └── 每个 Conversation 的独立 IM Session
@@ -139,7 +141,7 @@ Session
 | Daemon | Computer 侧的 Go 服务，承担执行、进程交互、文件流和本地 Gateway 入口。 |
 | AgentHome | 同一 Agent 在某个 Computer 上的默认工作目录；不是 Session 专属目录，也不等同于文件沙箱。 |
 | Model Profile | 模型身份、限制、能力、价格和兼容性配置；多个 Agent 可引用。 |
-| Channel Connection | 某个平台账号或 Bot 的连接实例，记录所属平台与具体接入方式；同平台、同接入方式均可有多个独立 Connection。 |
+| Channel Connection | 属于一个 Agent 的平台账号连接实例，记录所属平台与具体接入方式；同平台、同接入方式均可有多个凭据、权限和聊天相互独立的 Connection。 |
 | Conversation | Connection 下的群、私聊或 Topic；平台内 ID 必须与 Connection 一起解释。 |
 | Conversation Binding | Conversation 到 Agent 和持久 Session 的入站关联。 |
 | FileRef | 指向文件来源 Computer 与路径或源端版本的引用；不是 Server 上的文件副本。 |
@@ -266,7 +268,7 @@ QQ NapCat 与 QQ 官方是同一平台下的两种接入方式，分别实现凭
 - 将统一的文本或文件发送意图转换为平台调用，完成格式处理、必要拆分与平台回执关联。
 - 声明并暴露实际能力，例如 Conversation 枚举、回复引用、消息编辑、事件撤回通知、文件发送和大小限制。
 
-平台能力不齐时明确表示“不支持”或“平台未提供”。统一事件格式描述可表达的事件集合，不要求所有平台都能提供每类事件；Adapter 不伪造删除通知、消息回显或送达事实。自动 assistant text 路由、静默观察与激活、独立 Session、FileRef 来源和 `no_reply` 语义继续由统一业务层处理。
+平台能力不齐时明确表示“不支持”或“平台未提供”。统一事件格式描述可表达的事件集合，不要求所有平台都能提供每类事件；Adapter 不伪造删除通知、消息回显或送达事实。持续观察、直接激活、LLM Probe、显式发送、Session 绑定与 FileRef 来源由统一业务层处理。
 
 首版只注册和展示已实现的 Telegram Adapter。新增 QQ、飞书等适配器时，按实际能力增加对应连接配置和展示，不在首版放置无法使用的连接入口，也不为每个平台复制 Harness、Gateway 或 Session 系统。
 
@@ -456,7 +458,7 @@ Skills 由选中 Computer 的 Daemon 发现：全局根为其操作系统用户 
 
 文件和根目录缺失是正常空状态；不可读、格式错误、扫描限额、Computer 离线、权限收回及旧 Daemon 不支持发现均显式记录，不以 Server 文件系统代替，也不沿用旧 CWD 的发现结果。单文件最多 1 MiB，一次扫描读取最多 16 MiB、目录条目预算 8192、递归深度 32；超限结果标记 partial。发现不可用仍允许纯文本对话，重新连接后的下次运行边界更新快照。
 
-消息来源、执行机器和回复目的地分别确定。例如，在 Web 中打开一个 IM Session 输入 prompt，来源是 Web，执行机器仍由 Current Computer 决定，普通回复的 IM 目的地仍由该 Session 的绑定决定。
+消息来源、执行机器和回复目的地分别确定。例如，在 Web 中打开一个 IM Session 输入 prompt，来源是 Web，执行机器仍由 Current Computer 决定，send_message 的目的地仍由该 Session 的绑定决定，assistant text 只显示在 Web。
 
 ### 模型工具
 
@@ -469,11 +471,11 @@ Skills 由选中 Computer 的 Daemon 发现：全局根为其操作系统用户 
 | `write_stdin` | 输入、轮询、发送中断等进程交互 | 进程原来所属的 Computer |
 | `switch_computer` | 修改当前 Session 后续执行的 Computer/CWD | Host 控制工具 |
 | `web_search` | 调用 Agent 当前选中的一个搜索 Provider | Server |
-| `no_reply` | 无回复地结束当前激活 | Harness 控制工具 |
+| `send_message` | 向当前绑定聊天发送文本或附件，返回持久回执 | 仅绑定 Session 提供的 Host 工具 |
 
 讨论中的 Bash 能力由 `exec_command` 提供，不需要另注册一套重复的命令工具。基础文件和命令行为优先复用 Core 的 standardtools，Host 提供连接 Daemon 的 Backend。Core 当前标准工具没有现成的远程 Daemon 传输或产品级 Computer 注册能力，这些由 Astral 实现。
 
-消息发送、文件发送、IM 查询、历史查询等平台能力由 localhost API 提供。模型通过 `exec_command` 运行 curl 或脚本即可使用，无需逐个扩张模型工具列表。
+跨聊天发送、文件发送、IM 查询、历史查询等平台能力由 localhost API 提供；当前绑定聊天另提供 send_message。模型通过 `exec_command` 运行 curl 或脚本即可使用，无需逐个扩张模型工具列表。
 
 ### 执行目标与切换
 
@@ -614,8 +616,8 @@ Astral 补充 `sender-id` 等稳定身份信息；Cahciua 当前 `<message>` 的
 | 类型 | 模型内容 | 执行行为 |
 | --- | --- | --- |
 | IM 普通群消息 | 消息 XML，`RoleUser`，`ContextKind=im.observation` | `InjectContext`，不单独激活模型 |
-| IM @、回复 Agent、私聊等触发 | 同样的观察内容与一条引用目标消息的驱动输入 | 按 Session 状态 Start、FollowUp 或明确的 Steer |
-| Web UI prompt | 带 Web 来源的 User Message | 始终是驱动输入，没有静默分支 |
+| IM @、回复 Agent、私聊等触发 | 同样的观察内容与一条引用目标消息的驱动输入 | 观察与触发一次提交为 Steer；空闲 Continue，忙碌在安全边界应用 |
+| Web UI prompt | 带 Web 来源的 User Message | 始终是驱动输入；绑定 Session 使用 Steer，没有 Probe 分支 |
 
 静默表示不因该观察单独创建一次模型执行。若 Session 已经运行，观察可能在安全边界进入正在使用的上下文，参与后续推理。
 
@@ -659,64 +661,41 @@ Web 输入采用相同消息风格：
 5. Context 按实际安全边界加入；不得插进尚未完整的工具调用与结果批次中。
 6. 外部消息使用 User Role。`ContextKind` 只是来源标签，不能自动把群消息提升为 System/Developer 指令。
 
-### IM 激活与白名单
+### 账号范围、激活与主动模式
 
-启用 Conversation Binding 后，该 Conversation 进入接入白名单。群内任何成员都可以请求 Agent，不再建立成员级指挥权限名单。普通群消息仍按静默观察处理；“任何成员可请求”不等于“每条消息都唤醒”。
+Connection 增加 `agent_id` 与 `access_mode: all | specified`。默认指定模式且列表为空。在 Agent → IM 账号下配置，指定模式可新建 Session 或选择同 Agent 的未绑定 Session。全部模式中，私聊首条消息、群聊首次 @ 或回复 Bot 才创建 Session；以触发消息为起点，不预填接入前历史。API 访问未激活聊天不创建 Session。
 
-默认触发条件为 @Agent、回复 Agent、私聊。运行中的普通新任务进入 FollowUp；需要改变当前工作的显式指令才使用 Steer。V1 由内建 Scheduler 处理合理合并与排队，不强制增加 Probe 模型、用户配置的复杂触发规则或逐成员审批。
+一个聊天绑定一个 Session，Topic 独立。全部与指定互切保留所有已激活绑定和聊天设置；全部模式不能单独移除聊天。换绑先校验同 Agent 且未占用的目标，停止原 Session 和目标 Session，再原子提交。旧历史和已经接受的出站目标不会转投。
 
-IM 编辑、撤回和自身发送回显需要去重和明确事件类型。自身回显不再次唤醒，也不把已经作为 Assistant 保存的普通回复再重复塞进模型上下文。
+`Conversation.proactive_enabled` 默认关闭，属于聊天，平台资料更新、换绑或切换范围均保留。普通群消息持续进入 Core 并正常 compact；开启主动模式后，10 秒安静或首条未处理消息累计 60 秒可运行一次 Probe。每聊天最多一个 Probe，消息先应用再读取快照。自身发送记录只同步上下文，不触发 Probe。
 
-## 9 Loop 与 no_reply
+Probe 模型默认跟随 Session 当前模型，Agent 可在默认模型下方单独选择 `probe_model_id`。旁观视图保留摘要、IM 消息及有界工具活动，去除 assistant 正文、reasoning 和 Probe 记录；按 Probe 模型窗口裁剪，支持视觉时携带原生图片。首版只有一次 LLM 判断请求，唯一工具 `decide({participate:boolean})`，按返回顺序取首个有效调用。无工具、错误工具、非法参数或请求失败均覆盖本次快照并等待新消息，不纠错重试，不执行其他工具。
 
-### 生命周期
+正向结果只提交中性 Host 唤起，不含 reason、分析或行动指令。主 Agent 独立决定后续行为，可保持沉默。直接 @/回复覆盖当时待 Probe 的消息；关闭主动模式或换绑使旧结果失效。新消息留待下一轮，稳定输入 ID 与 Core 回执防止重复唤起。
 
-Session 的 Idle 表示当前没有活跃 Run，不代表没有历史、没有静默消息或没有排队输入。一次激活可以产生多次模型调用和工具步骤，结束原因包括普通完成、`no_reply`、用户 Stop 或实际错误。
+IMStore 默认无限期保留收到的消息、已接受的发送及平台实际提供的编辑/撤回事实。出站消息与自身平台回显按身份去重，同步一份观察；未收到的平台删除通知不伪造。
 
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Running : 有效驱动输入
-    Idle --> Idle : 静默观察
-    Running --> Running : 工具步骤或边界输入
-    Running --> Idle : 普通完成
-    Running --> Idle : no_reply
-    Running --> Stopping : 用户 Stop
-    Stopping --> Idle : Core 确认停止
-    Running --> NeedsAttention : 阻塞或效果不明
-    NeedsAttention --> Running : 问题解决并明确继续
-```
+## 9 Loop 与显式发送
 
-普通工具完成后是否续问由 Core 的执行规则决定。`no_reply` 提供一个模型明确选择结束激活的控制出口。
+Session 的 Idle 表示当前没有活跃 Run，不代表没有历史、静默消息或排队输入。一次激活可产生多次模型调用和工具步骤，正常结束、用户 Stop、失败分别保留真实状态。
 
-### no_reply 模型契约
+绑定聊天的 Session 保持完整 Web 功能。assistant 正文正常持久保存和展示，但不会自动发送至 IM。模型可调用 `send_message({text,reply_to?,attachments?})`，Host 自动选择账号、聊天和 Topic；附件是当前 Computer 路径或 FileRef，纯附件允许空文本。工具返回持久出站回执，以执行 ID 幂等并固定目的地和文件来源。跨聊天动作通过 Computer API 明确选择目标。
 
-```text
-name: no_reply
-arguments: {}
-meaning: 结束本次激活，不发送回复，不等待工具返回。
-```
-
-- 由 Harness 处理，属于执行控制，不在 Computer 上执行命令。
-- 必须作为独立调用，不附带 assistant text，不与其他工具同批调用。
-- 被接受后正常结束当前 Run，进入 Idle；不返回普通 tool result，不再产生一轮模型调用。
-- 不向 IM 发送“已结束”“保持沉默”或类似占位消息，不生成空 Assistant 气泡。
-- Session、历史和已经应用的观察保留；后续静默观察继续入档和入上下文。
-- 新的有效激活继续使用同一 Session；不能仅因为 `no_reply` 收尾而自动续跑旧请求。
-- 已排队的独立驱动输入保留，由 Session 收尾时作为新 Run 处理。
-- 结束 loop 不回滚之前已完成的外部操作，也不等同于终止所有 Computer 上的长进程。
-
-Host 在完整模型回复校验后执行控制决策。`no_reply` 与文本或其他调用混合的批次必须在派发前判为非法组合，不先执行其他副作用再把整批伪装成一次静默结束。
-
-UI 可在展开的 execution trace 中记录 `no_reply` 结束原因；普通聊天表面不把它当作一条对用户的回复。
+正常结束而没有显式发送即表示沉默。不补占位文本、不强制发送、不创建空 Assistant 气泡；历史、排队工作与已完成副作用均保留。
 
 ### Core 执行契约
 
 Core 只提供一个 Session 执行实现，SQLite 与 Memory 共用。Host 直接创建、打开和关闭 Session，保留业务配置及 Computer、权限和渠道管理；运行、停止、维护和错误状态由 Core 的原子快照提供。没有独立 Agent 执行入口、Manager、SessionDriver 或 Host 等待后重启的协程。
 
-`Prompt` 仅在空闲且协议完整时接收输入并启动，忙时返回 Busy 且不接收；`Steer`、`FollowUp` 只入队。`Continue` 显式处理队列或未完成工作，不添加虚构消息；无工作时不请求模型。`InjectContext` 接收被动上下文，不自行启动模型或压缩。读取和重开不启动执行。
+`Prompt` 仅在空闲且协议完整时接收输入并启动，忙时返回 Busy 且不接收；`Steer`、`FollowUp` 只入队。`Continue` 显式处理队列或未完成工作，不添加虚构消息；无工作时不请求模型。`InjectContext` 接收被动上下文，空闲维护及 Run 收尾分批应用积压，可调用现有自动 compact；不启动主 Agent。取消、预算或摘要失败保留尚未提交的输入。读取和 Core 重开不启动执行；Host 恢复已绑定聊天时重新维护 pending Context。
 
-普通工具保持 `ToolCall → ToolResult` 配对。`no_reply` 使用 Core 的通用 EndRun 控制能力：控制事实和 Run 完成在同一提交中持久化，模型投影排除已完成控制调用，既保留原始审计事实，也不伪造普通 tool result。正常结束与取消、失败明确区分；重开、Compaction、Fork 和队列边界保持同一语义。
+Composer 在输入框上方展示已接受的驱动输入队列，支持逐条引导、编辑文字、删除和拖拽排序。“引导”将选定输入改为 Steer，在下一安全边界应用；其余输入保持 FollowUp。编辑和排序复用原输入身份，并通过 Core 的单次原子提交持久化。已经冻结的附件与关联上下文不重新读取。输入框支持文件选择、剪贴板图片和文件拖入，图片显示缩略图；未绑定 Session 可切换排队偏好，Command/Ctrl+Enter 可直接引导；绑定 Session 的 Web 输入使用 Steer。
+
+输入框默认保持紧凑单行，随正文和附件按需增高；Computer、Agent、模型和上下文选项位于输入框下方。
+
+Composer 右下角统一显示当前主操作：有草稿时发送，执行中且草稿为空时停止，空闲且 Core 判定可继续时继续。可继续由未完成执行或尚未消费的驱动输入决定，不通过错误标签或队列长度单独推断。退出重开只恢复现场，不自动执行；工作完成且队列为空时不提供继续操作。
+
+普通工具保持 `ToolCall → ToolResult` 配对。Core 通用 EndRun 能力保留，但 Host 不再提供业务专用静默结束工具。正常结束、取消和失败保持不同语义；重开、Compaction、Fork 和队列边界沿用 Core 契约。
 
 普通回答与摘要共用 Core 模型调用入口，默认最多三次总尝试（包含首次），单次超时四分钟；指数退避从一秒开始，上限五秒，合法的较长 Retry-After 优先，等待可取消。永久错误和用户取消直接停止。协议回放修复最多一次，占用同一总尝试预算，仅修改请求副本并重新检查完整预算。
 
@@ -726,7 +705,7 @@ Core 只提供一个 Session 执行实现，SQLite 与 Memory 共用。Host 直�
 
 ### localhost 入口
 
-Daemon 在 Computer 内提供 localhost HTTP 入口，将请求关联到平台内置 Gateway。入口绑定至少包含 Agent、Session 和 Computer；命令环境通过 `ASTRAL_API_URL` 获得地址，Harness 同时提供接口使用说明。
+Daemon 在 Computer 内提供 localhost HTTP 入口，将请求关联到平台内置 Gateway。入口绑定至少包含 Agent、Session 和 Computer；不同 Agent 在同一 Computer 上使用不同的 loopback 端口与各自视图。实际地址由 Harness 写入最新环境上下文的 `local_api`（`base_url`、`capabilities_url`、`openapi_url`）；system prompt 提供稳定的使用说明，命令无需 Token。
 
 ```text
 Agent 的 Bash / 脚本
@@ -749,12 +728,18 @@ Agent 的 Bash / 脚本
 | 能力 | 示例接口 | 行为 |
 | --- | --- | --- |
 | 当前上下文 | `GET /v1/context` | 当前 Agent、Session、调用来源 Computer、默认 Conversation 与可用能力 |
+| 账号发现 | `GET /v1/accounts` | 当前 Agent 所属账号和范围，不返回凭据 |
+| 聊天解析 | `POST /v1/accounts/{id}/conversations/resolve` | 解析允许范围内聊天，不激活 Session |
 | 可见会话 | `GET /v1/conversations` | 当前 Agent 可见的 Conversation |
-| IM 查询 | `GET /v1/conversations/{id}/messages` | 按目标会话检索消息与附件元数据 |
+| IM 查询 | `GET /v1/conversations/{id}/messages` | 先按 q 过滤，再按 after/limit 分页，保留消息与附件元数据 |
 | 历史查询 | `GET /v1/sessions/{id}/history` | 查询当前视图内的 Session 历史 |
 | 可用 Computer | `GET /v1/computers` | 当前 Agent 的允许集合和状态 |
 | 主动发文本 | `POST /v1/im/messages` | 向指定的可用 Conversation 发送文本 |
 | 发文件 | `POST /v1/im/files` | 从来源 Computer 读取并上传文件，可带说明文字 |
+| 消息 ID | `GET /v1/conversations/{id}/messages/{message_id}` | 最新归档版本 |
+| 原始附件 | `GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content` | 文件字节响应，沿现有 Daemon 分块通道流式传输 |
+| Telegram 目录 | `GET /v1/accounts/{id}/telegram/operations` | 聊天相关具名操作及官方参数说明 |
+| Telegram 操作 | `POST /v1/accounts/{id}/telegram/{operation}` | 分别验证目标、来源和嵌套聊天引用；不提供任意 HTTP 代理 |
 | 附件下载 | `POST /v1/attachments/download` | 将平台附件下载到调用方明确指定的 Computer 路径 |
 | 文件引用 | `POST /v1/files/reference` | 将当前 Computer 路径转为来源固定的 FileRef/可引用链接 |
 | API 说明 | `GET /v1/capabilities` | 当前视图支持的能力与文档入口 |
@@ -765,11 +750,11 @@ Agent 的 Bash / 脚本
 
 ### 外部动作与回执
 
-普通 assistant text 自动发送和 API 主动发送共享出站回执处理。每次发送保留意图标识、目标、内容引用、平台消息 ID 和真实终态。调用重试需要识别同一发送意图，不能用新的请求标识重复发出同一动作。
+send_message 和显式文本/文件 API 共享出站回执处理。每次发送保留意图标识、目标、内容引用、平台消息 ID 和真实终态。调用重试需要识别同一发送意图，不能用新的请求标识重复发出同一动作。
 
 HTTP 接收成功、平台接收上传、最终送达是不同事实。断线或超时不能直接解释为没有发送；回执不明时保留不确定状态并提供核查，不能盲目重发。
 
-`no_reply` 和 `switch_computer` 仍是 Harness 控制工具。其执行边界由 Harness 管理，不通过一次普通 HTTP 请求假装完成 Core 的状态转换。
+`switch_computer` 仍是 Harness 控制工具。其执行边界由 Harness 管理，不通过一次普通 HTTP 请求假装完成 Core 的状态转换。
 
 ## 11 文件与媒体
 
@@ -815,25 +800,20 @@ sequenceDiagram
 
 ### IM 文件发送
 
-Agent 通过 localhost API 发送文件。Daemon 从源 Computer 读取文件，目标 Connection 对应的适配器把字节流提交给平台，并将最终回执关联到发送意图；首版实现为 Telegram 适配器。模型与文件工具不承担平台协议转换。
+Agent 通过 send_message 或 localhost API 发送文件。Daemon 从源 Computer 读取文件，目标 Connection 对应的适配器把字节流提交给平台，并将最终回执关联到发送意图；首版实现为 Telegram 适配器。模型与文件工具不承担平台协议转换。
 
 适配器需要支持流式输入。若某平台库要求可持续读取的本地文件，应在来源 Daemon/Computer 一侧满足该生命周期，不能为了 SDK 便利把文件搬到 Server。上传期间源端文件需要保持可读，完成或失败由真实平台回执判定。
 
-普通 assistant text 自动路由只负责文本。文本中出现文件路径或 Web 文件引用，不自动等同于已向 IM 上传附件；需要附件交付时 Agent 明确调用文件发送 API。
+assistant text 不触发 IM 发送。文本中的路径或 FileRef 不等于附件已交付；需要显式调用发送工具或 API。
 
 ### 入站附件与模型媒体
 
-- IM 附件最初可以是平台附件引用，`file-id="502:0"` 在对应 Conversation 中解释；跨会话查询必须同时携带其来源。
-- 需要文件操作时，通过 API 下载到明确的 Computer；Server 仅传输。
-- Web 上传附件同样绑定上传时选定的目标 Computer，并通过 Server 流式写入 Daemon 管理的路径。
-- 切换 Computer 不迁移附件，不重写已有 FileRef。
-- 需要模型理解图像时，由 Bridge 提供真实的原生图片内容；alt text 和附件标签仅提供描述与索引。
-- 每张 Web/IM 入站图片同时提供三种能力：原文件写入来源 Computer 的 `AgentHome/.astral/attachments/` 专用目录；消息正文向 Agent 提供稳定 URI、文件名和绝对路径；同一轮模型请求包含原生图片内容。图片不能只保留内联多模态内容，也不能以 URI 或文字标签代替图片内容。
-- 原件、缩略图和需持久保留的附件版本遵循 Computer 存储规则；Rollout 另行冻结模型实际收到的媒体 payload。Bridge 从 Rollout 已保存的内容构造 Provider 请求，不在重放时重新读取可变附件来代替历史输入。
+- IM 附件以 Conversation、平台消息 ID 和附件 ref 共同定位。图片在内存中读取原件，其他附件仅提供名称、类型、大小与下载地址；接收不创建 Computer 文件或 FileRef，也不预提取普通文件内容。
+- Core 的共享图片入口供 Web、IM 和工具首次形成载荷时调用：方向校正、等比缩放、最长边 2048、32px patch 不超过 2500、base64 不超过 4.5 MiB，保留透明度及原始/显示尺寸。
+- Core 历史冻结模型实际看到的载荷，重放不重新下载或压缩。原文件仍可通过当前 Computer API 的原始内容 GET 按需下载；身份不包含某个旧 Computer 的 localhost 根地址。
+- Web 上传附件仍存于上传时选定的 Computer，FileRef 与已派发调用保留原来源。Server 流式透传，不建工作区缓存。
+- 原件不可用时，新的下载如实失败；历史已冻结的模型图片仍可读取、重放和 Fork。
 
-文件流需要正确处理取消、断线、大小、内容类型和读取错误。支持的媒体预览应提供必要的范围读取；不能以“必须先整文件下载到 Server”为实现前提。
-
-## 12 模型与搜索资源
 
 ### Model Provider 与 Profile
 
@@ -857,17 +837,25 @@ Settings 维护全局搜索实例，包括 Exa、Tavily、DeepSeek Search 类接
 
 ## 13 UI 与 Settings
 
+本节保留界面与业务行为的对应关系。完整的页面结构、命名、视觉和交互要求见 [UI UX 规范](docs/ui-ux-spec.md)；旧版截图与设计验收记录不覆盖该规范。
+
 ### 主界面
 
 Transcript 是主工作区。Sidebar 包含 New Session、Search、NOW、PINNED、RECENT 和 Settings；Agent 作为 Session 的身份或筛选信息，不默认展开为 Agent → Session 的多层后台导航。
 
 Sidebar 可以完全折叠，不保留固定 icon rail。主界面没有额外产品级 Top Bar、永久第三栏或常驻 Inspector。点击文件或附件时，才开启可调整大小、可关闭的 Contextual Surface。执行详情、命令输出、Diff 和搜索来源在 Transcript 原地展开，不挤出常驻侧栏。会话标题和分支信息不作为占用纵向空间的 Transcript banner。
 
+未命名的新 Session 在首条非空用户输入成功接收后，先保存去除 Markdown 的首行摘录，再使用接收时选中的当前模型异步生成一次短标题。标题请求不携带工具、环境或完整历史，不进入 Core Rollout；失败、超时或无有效结果时保留摘录，后续消息和重启均不重试。显式命名、手动改名和 Fork 标题优先，异步结果不能覆盖手动选择。
+
+模型标题到达后，Sidebar 按完整文字单元逐字显示，支持中文、组合字符和 emoji；同一标题的状态刷新不重播，初次加载历史标题直接显示。遵循系统的减少动态效果设置，读屏始终获得完整标题。
+
 macOS 与 Linux 使用共享 Web 应用中的同一页面、组件和状态文案。平台专属功能通过薄适配层处理，不复制一套 Headless 管理台。窄屏优先保证读消息、发消息、Stop 和处理需要关注的状态。
 
 ### Transcript 与执行呈现
 
-普通运行过程聚合为一条可点击、原地更新的 Activity Line；完成后收起为耗时与动作概览，后接 Assistant 正文。Assistant 正文使用 Markstream 渲染，用户消息使用轻量右对齐样式，不为每个工具事件插入大型卡片。
+普通运行过程聚合为可点击的 Activity Line，实时以纵向滚动切换最新思考或工具动作，并在聚合行内用转圈表示仍在工作，不另起“处理中”行。每次出现 Assistant 正文就结束前一聚合的条目追加，后续条目归入正文下方的新聚合；旧聚合内原有工具的状态、增量输出和最终结果继续更新，其中仍有命令运行时保留转圈。完成后聚合显示动作概览。Assistant 正文使用 Markstream 渲染，用户消息使用轻量右对齐样式，不为每个工具事件插入大型卡片。
+
+消息的模型 Role 不决定聊天可见性。环境快照、静默 IM 观察、压缩摘要等 Context，以及内部 IM 触发提示不显示为聊天消息，即使其 Role 为 User；这些内容仍完整保留在历史和模型上下文中。初次加载、实时事件、重连和加载更早历史使用同一规则，不按正文关键字识别内部消息。
 
 展开后的 execution trace 在 Activity Line 下方内联呈现，依据真实事件显示工具步骤、命令输出、搜索结果、文件变更及结果。分组与单步可独立折叠；展开状态由用户控制，消息与事件刷新不自动收起。过程和详情不用灰色方块或嵌套卡片包裹，使用缩进、字体层次与留白区分。重复读取等高频动作按语义聚合，详细调用仍可追溯。生成中的工具参数与实际执行必须有不同文案：
 
@@ -884,14 +872,18 @@ macOS 与 Linux 使用共享 Web 应用中的同一页面、组件和状态文�
 
 Contextual Surface 承载文件及附件预览。执行过程、完整 Diff、Terminal 输出、搜索来源和对应 Diagnostics 在 Transcript 内展开；Computer 详情属于 Settings。它是按需查看的第二工作区，不扩张为默认常开的 IDE 或任意停靠工作台。
 
-Settings 采用中性配色、统一圆角分组、组内缩进细线和共享开关、选择菜单。侧栏、表单、弹层与 Composer 共用字体、间距、圆角和颜色 token；参考 Memoh 的组件组织和交互，并按 Astral 的功能范围实现。
+Settings 采用中性配色、统一的轻量分组和共享控件。名称与必要说明在左，操作控件在右；通过间距、对齐和分组表达关系，组内默认不使用分割线。侧栏、表单、弹层与 Composer 共用字体、间距、圆角和颜色 token；设置页的外框不机械套到 Transcript 和执行详情上。
+
+设置默认自动保存：独立选择和短文本编辑不要求额外保存；多字段共同构成的连接配置，或需要区分草稿与生效内容的编辑，在局部区域整体提交。创建、删除、授权、更换绑定等业务操作使用明确的动作名称，按实际后果决定是否确认。确认后直接执行，不由全局保存按钮兜底；统一设计语言不要求所有设置采用同一种提交方式。
+
+提交范围必须可辨认。“保存连接”只负责对应连接参数，不负责同页名称、启停、权限或聊天设置。提交不得携带其他区域的陈旧值，也不得覆盖其他区域已生效或正在编辑的新值。反馈显示真实的提交中、短暂成功、持续失败或结果不确定状态；文本失败保留输入，选择控件失败恢复已确认状态，结果不确定时核对实际状态。迟到响应不能覆盖更新的编辑，草稿保存不能被表现为配置已生效，详细契约见 UI UX 规范。
 
 ### Composer
 
 | Session 状态 | 用户可见操作 |
 | --- | --- |
 | Idle | 输入、附件、Current Computer、模型与 Reasoning、Context 使用量、发送 |
-| Running | 继续输入、发送、独立 Stop；隐藏或禁用用户 Computer 切换 |
+| Running | 继续输入；右下角按钮在空草稿时停止、有草稿时发送；隐藏或禁用用户 Computer 切换 |
 | Stopping | 显示停止中，等待 Core 和执行端的真实确认 |
 | 等待实际授权 | Composer Takeover 显示需要用户决定的具体操作 |
 
@@ -909,49 +901,51 @@ Stop 按真实终态结算，不在点击瞬间宣告所有操作完成，也不
 
 ### Settings 结构
 
-Settings 使用独立视图、紧凑左侧导航和单列内容，不叠加聊天 Sidebar 与永久 Inspector。日常偏好直接编辑；全局资源和 Agent 使用 Collection → Detail。
+Settings 使用独立视图、紧凑左侧导航和稳定的单列内容，不叠加聊天 Sidebar 与永久 Inspector。全局资源和 Bot 使用列表进入详情。Bot 入口保留在全局设置中；进入某个 Bot 后，用它自己的导航替换全局设置导航，返回“所有 Bot”时恢复列表。
 
 | 页面 | 内容与边界 |
 | --- | --- |
-| General | macOS 登录启动、关闭窗口后驻留、运行中新消息默认处理方式等实际偏好 |
+| General | 当前环境可用的登录启动、关闭窗口后驻留、运行中新消息默认处理方式等实际偏好；浏览器不堆放不可用的桌面专属开关 |
 | Appearance | System / Light / Dark、语言及必要显示偏好 |
 | Models | 全局 Provider、Profile、能力与限制、推荐值和 override、连接测试 |
 | Web Search | 全局搜索实例、凭据、服务配置与测试 |
-| Computers | 使用本机/本机容器快捷入口、复制接入命令及可选“使用容器”、接入进度、名称、连接状态、诊断与 Agent 使用情况 |
-| Channels | 已支持平台及接入方式的 Connection 配置、连接状态、Conversation 获取与验证；首版仅展示 Telegram |
-| Agents | Agent 身份、资源选择与 Conversation 关联 |
+| Computers，中文为“电脑” | 使用本机/本机容器快捷入口、复制接入命令及可选“使用容器”、接入进度、名称、连接状态和必要诊断；使用情况链接到 Bot 权限页，不重复提供授权表单 |
+| Bot | Bot 列表进入独立设置，管理身份、资源选择、电脑权限及平台；平台下先选账号，再管理该账号的配置、聊天访问权限与聊天列表 |
 | Data & Storage | 各数据域的存储位置、用量与实际支持的数据维护操作 |
 | Security & Access | Owner 访问 Server 的认证与入口配置；不承担 Agent 的 Computer 选择 |
 | Advanced | 诊断、版本、连接与执行问题信息；不暴露无产品意义的 Core 内部旋钮 |
 
 数据维护必须说明对象范围；删除一类业务记录不能被表现为同时删除 Computer 工作文件。没有实现的数据管理能力不显示虚假操作入口。
 
-### Agent Settings
+### Bot Settings
 
-每个 Agent 使用单页设置，不增加冗余 Tabs：
+具体 Bot 使用独立设置布局，入口仍在全局设置中，不增加主界面一级功能区。导航包含基本设置、电脑权限以及已接入平台；“聊天平台”只是分组标题。平台下必须保留账号列表，即使只有一个账号也不自动跳过。每个账号的配置和聊天在同一详情页中按任务分组。
 
 | 字段 | 约束 |
 | --- | --- |
-| Name / Avatar | Agent 自身身份信息 |
-| Default Model | 从全局 Model Profiles 单选 |
-| Web Search | 从全局配置实例单选，可未配置 |
-| Allowed Computers | 多选全局 Computer，展示连接状态 |
-| Default Computer | 只能选择 Allowed Computers 中的目标，可为空 |
-| Conversations | 展示平台、连接账号、群 / 私聊 / Topic，支持添加、启停和解绑 |
+| Name / Avatar | Bot 自身身份信息，直接编辑并自动保存，不通过资料弹窗 |
+| Default Model | 从全局 Model Profiles 单选，选择后自动保存 |
+| Web Search | 从全局配置实例单选并自动保存，可未配置 |
+| Allowed Computers | Bot 电脑权限页中的机器列表，独立授权或撤销并展示真实状态，按实际后果决定是否确认，不等待页面保存 |
+| Default Computer | 同页独立设置块，选择后自动保存，只能选择 Allowed Computers 中的目标，可为空；影响新建 Session 的初始选择 |
+| Probe Model | 基本设置中直接选择并自动保存，默认跟随 Session 当前模型，可单独覆盖 |
+| 平台与账号 | 每个平台下选择账号；账号独立拥有凭据、启停、全部/指定访问权限、聊天列表、主动模式和 Session 更换 |
 
-API Key、Endpoint、模型限制在全局资源维护，不复制到每个 Agent。Agent 页面不增加独立 Instructions 编辑器、逐工具开关、Workspace 管理台、调度器或复杂触发策略编辑器。
+模型与搜索的 API Key、Endpoint、模型限制在全局资源维护，不复制到每个 Bot；平台账号的凭据属于具体账号。Bot 页面不增加独立 Instructions 编辑器、逐工具开关、Workspace 管理台、调度器或复杂触发策略编辑器。
 
-资源选择器展示 Connected、Offline、Missing configuration 等真实状态。移除 Default Computer 的勾选时要求重新选择默认或置空，不能保存非法组合。删除全局资源前展示受影响的 Agent 与当前 Session；Session 页面始终显示正在使用的当前资源。
+资源选择器展示真实且有用的连接或缺失状态。撤销默认电脑的使用权限时，同时取消授权并清空默认，不能提交非法组合。全局电脑页负责连接管理，授权在 Bot 电脑权限页完成。删除全局资源前展示受影响的 Bot 与当前 Session；Session 页面始终显示正在使用的当前资源。
 
-添加 Conversation 时先选择 Connection，再选择群、私聊或 Topic。平台不支持枚举时提供可验证的手工 ID 路径，不要求用户理解内部 `conversation_key` 或 `session_id`。
+在具体账号中添加聊天，再选择新建或同 Bot 的已有未绑定 Session。平台不支持枚举时提供可验证的手工 ID 路径，不要求用户理解内部 `conversation_key` 或 `session_id`。回复方式在聊天行直接修改；全部模式不能单独移除聊天，不能通过移除操作隐式切换整个账号的权限模式。
 
-Channels 的连接配置由实际 Adapter 提供，通用列表与 Agent 的 Conversation 选择复用同一套页面。后续 QQ NapCat、QQ 官方、飞书使用各自适用的配置字段和能力说明，不能沿用 Telegram 专属表单来假装兼容其他平台。
+账号配置位于所属 Bot 的平台分类下，由实际 Adapter 提供字段。账号信息、连接配置、聊天访问权限和聊天列表按提交范围分组：名称、启停和群聊回复方式自动保存，Token 与 Endpoint 等关联参数在连接配置块内显式整体提交，接入方式在必要确认后原子提交，添加、移除与换绑使用独立动作。局部连接保存不覆盖其他分组。
+
+后续 QQ NapCat、QQ 官方、飞书使用各自适用的配置字段，不能沿用 Telegram 专属表单来假装兼容其他平台。不常驻展示无操作意义的固定协议能力清单；真实错误和影响当前操作的限制在相应位置反馈。
 
 ### Add Computer
 
 添加面板先提供“使用本机”“使用本机容器”“连接其他机器”。两个快捷入口显示当前 Server 本机的名称与系统，点击后直接进入本机准备与连接流程；“连接其他机器”才进入复制命令面板，并提供“使用容器”选项。
 
-本机快捷入口按真实阶段显示准备、创建或连接状态；复用已有 Local Computer 时直接展示该资源。复制命令后，面板显示“等待 Computer 接入”。Daemon 成功连接并完成注册后，展示 Computer 的名称与真实在线状态，提供“分配给 Agent”入口。点击、生成或复制命令不等于已经接入，也不自动扩张任何 Agent 的 Allowed Computers。
+本机快捷入口按真实阶段显示准备、创建或连接状态；复用已有 Local Computer 时直接展示该资源。复制命令后，面板显示“等待电脑接入”。Daemon 成功连接并完成注册后，展示电脑的名称与真实在线状态，提供进入 Bot 电脑权限页的入口，在该页完成授权。点击、生成或复制命令不等于已经接入，也不自动扩张任何 Agent 的 Allowed Computers。
 
 本机容器拉取、创建和启动的实际进度直接呈现在 UI；命令接入的相应过程首先在目标机器终端显示，平台收到实际状态后同步展示。失败时根据具体原因重试或处理环境问题，不生成虚假成功状态。
 
@@ -963,7 +957,7 @@ Channels 的连接配置由实际 Adapter 提供，通用列表与 Agent 的 Con
 - **使用本机容器**：同一添加入口 → 使用本机容器 → 平台自动在 Server 本机创建容器并接入 Daemon → 分配给 Agent；Desktop 与 Headless 均支持。
 - **连接其他机器**：Settings → Computers → Add Computer → 连接其他机器 → 复制接入命令 → 在目标机器执行 → Daemon 自动连接并注册 → 分配给 Agent → 可选设为默认。
 - **连接其他机器上的容器**：连接其他机器时勾选“使用容器” → 复制接入命令 → 在已安装容器运行时的目标机器执行 → 容器内 Daemon 自动连接并注册为另一台 Computer → 分配给 Agent。
-- **Telegram**：配置并验证 Connection → 在 Agent 中选择群、私聊或 Topic → 启用并创建独立持久 Session → 静默观察与触发激活 → 自动普通文本回复或 API 文件发送。
+- **Telegram**：设置 → Bot 列表 → 具体 Bot → Telegram → 账号列表 → 配置具体账号 → 选择全部或指定聊天 → 自动激活或手动选择 Session → 持续上下文与直接/可选 Probe 唤起 → 显式发送。
 
 ## 14 持久化与恢复
 
@@ -977,7 +971,7 @@ Channels 的连接配置由实际 Adapter 提供，通用列表与 Agent 的 Con
 | 输入回执 | 稳定 Input ID、内容摘要、首次接收时间、冻结载荷、投递状态与应用 Entry ID | Core 的索引化持久存储 |
 | 渠道路由记录 | 事件、Session 与观察或触发路由关系；投递状态只读查询 Core | Server |
 | Core 持久历史 | Rollout、Pending、已应用输入、模型与工具事实、Summary、Fork、结束决策 | Core 的持久存储，由 Server 接入 |
-| 出站记录 | 自动文本及 API 发送意图、来源事实、平台回执、未知状态 | Server |
+| 出站记录 | 显式工具及 API 发送意图、来源事实、平台回执、未知状态 | Server |
 | 工作文件与媒体 | AgentHome、工作产物、入站附件副本、需保留的媒体版本 | 来源 Computer |
 | 进程状态 | Computer 上实际运行的进程、交互通道及 Daemon 管理信息 | 来源 Computer / Daemon |
 
@@ -991,7 +985,7 @@ Rollout 是追加的事实历史。编辑 IM 消息、更新 UI、Compaction、�
 
 重连需要先建立事件订阅并暂存增量，再读取持久历史和当前状态，按 Entry 等稳定标识合并，之后继续消费增量；等价实现必须消除读取历史与建立订阅之间的空窗。重复事件不得重复添加消息、工具结果或发送意图。
 
-模型流式 delta 在 Attempt 内暂存。只有已提交 Assistant 事实进入永久 Transcript 和自动 IM 出站处理；失败 Attempt 的未提交文字和参数不得被当作已完成回复、已执行动作或待发送内容。
+模型流式 delta 在 Attempt 内暂存。只有已提交 Assistant 事实进入永久 Transcript；IM 发送另由显式工具或 API 触发；失败 Attempt 的未提交文字和参数不得被当作已完成回复、已执行动作或待发送内容。
 
 ### Core 与业务状态对账
 
@@ -1033,25 +1027,13 @@ Provider 配置、Model Profile 和 Agent 选择的更新应具有可追溯版�
 
 ## 15 输出与接口契约
 
-### 普通 Assistant 文本
+### 普通 Assistant 文本与显式发送
 
-IM Binding 确定普通回复的目的地，模型不需要为每次普通回复选择工具或重复声明群 ID。IM Session 中已持久提交的 assistant text 自动进入该 Conversation 的出站处理；纯 Web Session 只在 Web 展示。
+所有 Session 在 Web 正常展示 assistant 文本、推理和工具活动。绑定聊天额外提供 send_message；assistant 正文、工具之间的说明和流式预览都不会自动进入 IM Outbox。
 
-该规则覆盖有效提交的 Assistant 文本，包括工具步骤之间的文字说明。Reasoning、工具调用参数、工具结果、execution trace 和未提交 delta 不作为普通文本发到 IM。Web Transcript 可以展示流式预览，但不能因此提前把不稳定的内容送出平台。
+send_message 与文本/文件 API 固定目的地、来源和幂等身份，按平台限制拆分文本并保持顺序。只有明确发送的内容建立出站意图。已接受的发送以平台消息身份写入 IMStore，自身回显去重后只补一份观察，不触发 Probe。
 
-Presenter 根据目标平台的格式和长度限制转换文本、拆分消息，并保持同一来源文本的发送顺序。出站记录关联 Session、Assistant Entry、文本片段和目标；重连或重新读取历史不会重复发送旧回复。
-
-内部 FileRef 链接通过平台对应 Presenter 表达文件名称或说明，不把 Server 内部访问地址当作任何 IM 用户都能打开的公共链接。自动文本发送不执行附件上传；附件交付依照第 11 节的显式文件 API。
-
-自身回显关联到已发送意图和平台消息 ID，更新 IM Store 与回执即可，不再作为一条新的外部 User 请求触发自己，也不在模型历史中重复正文。
-
-### 控制与主动输出
-
-`no_reply` 结束本次激活，不为其生成文本出站意图，也不撤回本次激活之前已提交或已发出的文字。它必须在模型选择保持沉默时独立调用；不能用来抹去已经发生的发送。
-
-主动向其他可见 Conversation 发文本、发送文件和其他平台操作通过 Gateway；实际目标来自显式参数或允许的 Session 默认绑定。Binding 是入站关系及普通回复的默认目的地，不自动授予任意目标的发送能力。
-
-绑定被停用、解绑或重分配时，尚未完成的出站意图保留其原目标和绑定身份，不重定向到新 Agent 或新群。无法确认原绑定仍有效时显示受阻状态，后续处理需要基于该意图核查。
+正常结束而没有发送就是沉默。绑定停用或更换后，未完成意图继续保留原账号、聊天和绑定；失效的原绑定阻止发送，不重定向新目标。文件仍从被接受时固定的 Computer/FileRef 读取。
 
 ### 三类接口边界
 
@@ -1084,25 +1066,25 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A09 | 原端点绑定 | 切换后 write_stdin 仍连接原进程；旧 FileRef 仍读取原 Computer |
 | A10 | AgentHome 共享 | 同 Agent、同 Computer 的 Session 使用真实共享文件；不宣称 Session 或 Fork 自动隔离 |
 | A11 | 直接 Bash | 正常命令无需逐条审批；结果、退出码与未知效果分别呈现 |
-| A12 | localhost Gateway | 命令从 ASTRAL_API_URL 调用，无需 Token；不同 Agent 得到各自视图，请求体伪造身份无效 |
+| A12 | localhost Gateway | 命令从环境上下文的 local_api 地址调用，无需 Token；不同 Agent 得到各自视图，请求体伪造身份无效 |
 | A13 | 并发 Gateway 绑定 | 同一 Computer 上多个 Agent/Session 并行运行，来源、文件路径与目标不串用 |
 | A14 | Telegram Conversation 唯一性 | 同一启用 Conversation 仅一个 Binding；不同群/私聊/Topic 的 Session 和历史独立 |
-| A15 | 群白名单与触发 | 启用群内任何成员可发起请求；普通群消息静默，@、回复 Agent、私聊产生激活 |
-| A16 | 静默观察 | Idle 时只入档和入上下文，不发模型请求；活跃时可在安全边界应用，不创建额外激活 |
+| A15 | 账号范围与触发 | 账号归属 Agent；全部模式首个直接触发激活，指定模式手动选择 Session；任何群成员都可请求 |
+| A16 | 持续被动上下文 | Idle 持续应用并在需要时 compact，不启动主 Agent；超过一个内部批次的积压持续处理 |
 | A17 | 触发输入完整性 | 新事件的观察与 Prompt 关联提交，正文只出现一次且观察先于驱动输入 |
 | A18 | 已接收但未应用 | Pending Context 未应用时不把接收成功当作模型已读；引用式触发等待应用确认 |
 | A19 | 消息表达 | 模型能识别平台、群、发送者稳定身份、时间、回复和附件；用户正文正确转义，Role 为 User |
 | A20 | 编辑、撤回与重试 | 平台实际提供的编辑、撤回等新事件追加观察，旧 Core 历史不改写；相同事件重试不重复投递，合法编辑不被误去重，不伪造未提供的事件 |
 | A21 | Web prompt | 每个 prompt 都是驱动输入，无静默分支；在 IM Session 输入不暗改该 Session 绑定 |
-| A22 | 普通 IM 回复 | 已提交 assistant text 自动路由；Reasoning、工具结果和失败 Attempt delta 不发送 |
+| A22 | 显式 IM 回复 | assistant text 正常显示在 Web 且不外发；send_message 自动采用绑定目标并返回回执 |
 | A23 | 主动发送与回显 | Gateway 可向视图内目标发送；保留回执，超时不盲重发，自身回显不再次激活或重复上下文 |
-| A24 | no_reply 结束 | 独立调用后正常 Idle，无普通 tool result、无额外模型续问、无 IM 占位和空消息气泡 |
-| A25 | no_reply 后续状态 | 新激活继续同一历史；静默观察仍有效，排队独立输入保留，已做外部操作不回滚 |
-| A26 | no_reply 持久协议 | 重开、Compaction、Fork 后不重执行该控制；下一次 Provider 请求没有孤立原生 tool_call |
-| A27 | no_reply 非法组合 | 与文本或其他工具混合时，在副作用派发前明确拒绝，不部分执行后假装静默结束 |
+| A24 | 正常沉默 | 正常结束无显式发送，不生成 IM 占位消息或强制回复 |
+| A25 | 主动模式 | 默认关闭；10 秒安静/60 秒窗口，Bot 自身消息不触发 Probe |
+| A26 | Probe 决策 | 首个合法 decide 布尔值；无工具、错误工具、非法参数及请求失败覆盖快照，不循环重试 |
+| A27 | Probe 竞争 | @/回复、关闭主动模式、换绑使旧结果失效；后到新消息保留，不传理由或指令 |
 | A28 | Web 文件交付 | assistant text 的 FileRef 可预览或下载；来源固定，文件字节不落 Server 磁盘 |
 | A29 | IM 文件交付 | Agent 显式调用 API，从来源 Computer 流式上传并获得回执；普通文件链接不冒充附件已发送 |
-| A30 | 上传与媒体 | Web/IM 图片原件写入指定 Computer 的附件专用目录；Agent 同时获得稳定 URI、文件名与路径及原生多模态图片内容。Rollout 冻结实际输入 payload；删除原件、源端离线、重开或 Fork 后，历史图片与模型重放保持一致 |
+| A30 | 图片与原始附件 | IM 接收不写 Computer；共享压缩保留透明度、方向与尺寸，载荷持久可重放，原件通过 Gateway 字节流按需获取 |
 | A31 | 文件异常与流取消 | 源端离线、删除、版本改变、读取失败和取消如实反馈，无隐藏 Server 副本回退 |
 | A32 | 模型配置 | 推荐值可覆盖且目录刷新不覆盖 override；保存后无需验证即可使用，实际请求反馈上游错误，非流式工具参数可正常执行 |
 | A33 | 单搜索后端 | 只调用 Agent 当前一个 Provider；无配置或失败明确报错，不聚合或隐式回退 |
@@ -1115,7 +1097,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A40 | 解绑与重分配 | 保留历史、不隐式迁移 Rollout；未完成出站意图不被重定向到新绑定 |
 | A41 | 配置生效与撤销 | 新派发使用有效选择与允许集合；既有进程和已开始 Attempt 状态不被配置变化虚构 |
 | A42 | 前端工程 | Web/Desktop 共用 Vue 与 Markstream 基线、SDK 和组件；OpenAPI 生成可重现，lint/typecheck/build 通过 |
-| A43 | 首版 IM 范围 | Telegram 群、私聊和 Topic 可配置并完成收发；Channels 只展示已支持的 Telegram 接入，其他 IM 平台不作为首版交付条件 |
+| A43 | 首版 IM 范围 | Telegram 群、私聊和 Topic 可配置并完成收发；Agent 的 IM 账号页只展示已支持的 Telegram 接入，其他 IM 平台不作为首版交付条件 |
 | A44 | 命令接入 Computer | 平台生成可复制的接入命令；在目标机器执行后自动注册，界面从等待接入变为真实在线状态，不要求填写远端端点 |
 | A45 | 容器模式接入 | 勾选“使用容器”后，在装有 OrbStack 等受支持运行时的目标机器执行命令，创建容器并注册为独立 Computer，无需在平台选择宿主机 |
 | A46 | 宿主机与容器并存 | 已接入 Mac mini 后可再接入其中的容器；保留两个 Computer 身份、独立执行目标和 Agent 关联，不替换原 Computer |
@@ -1136,7 +1118,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | Daemon 内部协议 | 传输、连接方向、握手、内部身份、流控、取消、进程句柄存活协议 | 支持本地/容器/远程；调用绑定原目标；网络由用户自备 |
 | Computer 接入 | 本机快捷入口与命令接入共用的准备流程、安装分发、注册凭据、重复执行、默认容器镜像与数据卷、运行时检测、升级和本地卸载方式 | Desktop/Headless 都支持使用本机及本机容器；其他机器复制命令接入；不要求跨机器宿主机调度或容器编排 |
 | localhost 绑定 | 端口或入口分配、生命周期、并发绑定、接口说明发现 | Agent 无需 Token；平台确定身份和视图；旧进程绑定不漂移 |
-| no_reply Core 扩展 | 通用控制类型、持久事件、模型投影、恢复和协议验证 | 无普通 tool result、立即正常结束、无额外续问、下次请求协议有效 |
+| 被动维护与图片入口 | Core 分批应用、自动摘要、共享图片处理 | 复用已有预算/取消/原子提交，不启动主 Agent |
 | API Schema | Owner、Daemon、Gateway 与事件字段、错误码、幂等关联 | 分离调用身份；接收、应用、执行、送达分别表达 |
 | FileRef 编码 | URI、源端版本/指纹、路径规则、预览范围、媒体引用解析 | 必须含来源 Computer；工作文件与持久媒体不进入 Server 资产库 |
 | Provider 适配 | 首批模型、Profile 字段、真实 Streaming/多模态/TokenEstimator 行为 | 不设置前置能力验证；能力按目录和配置表达，以实际请求结果为准 |
@@ -1156,6 +1138,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 
 | 资料 | 位置与参考状态 | 采用内容 |
 | --- | --- | --- |
+| UI UX 规范 | [docs/ui-ux-spec.md](docs/ui-ux-spec.md)，2026-10-22 | 产品命名、Bot 设置层级、统一设计语言、设置生效与局部提交、反馈及界面验收 |
 | 产品 PRD v1.1 | [Astral_完整产品设计_PRD_v1.1.md](/Users/oines/Downloads/Astral_完整产品设计_PRD_v1.1.md) | 产品范围、对象、UI/Settings、部署与验收基线 |
 | 本地 Core | [agent-core](/Users/oines/project/agent-core)，`f48c8320dcac32eb1ed160598a0802e30e063408` | 真实输入、执行、持久化、工具和控制契约 |
 | Cahciua | [Cahciua](/Users/oines/project/Cahciua)，`1fc8aa2a849606488d315d69186047ae9c4356e7` | 模型可见消息 XML、会话来源说明与附件表达 |
@@ -1175,13 +1158,13 @@ PRD 提到但本轮未取得的技术架构 v0.3、v0.2 和 UIUX v0.4 不作为�
 | --- | --- |
 | PRD 首版同时支持 Telegram 与 QQ/NapCat | 首版 IM 仅交付 Telegram；架构支持多平台，后续接入 QQ（NapCat/官方）、飞书等 |
 | 手工填写远端端点添加 Computer，或在平台选择远端宿主机创建容器 | 其他机器复制命令接入，可选“使用容器”；Server 本机提供“使用本机”“使用本机容器”快捷入口，两种部署都可使用 |
-| PRD 9.4 要求每次 IM 文本都显式调用 send_message | IM Session 的普通已提交 assistant text 自动路由；主动指定目标与文件发送走 localhost API |
+| 自动转发 IM Session 的 assistant text | 绑定聊天通过 send_message 显式发送，跨聊天通过 Computer API |
 | PRD 11.4 包含 Host Assets | 工作文件、附件与需要保留的媒体版本都在来源 Computer；Server 保存引用并透传 |
 | 泛化的命令审批示例 | 默认 Bash 直接执行；Composer 授权界面只处理确实存在的授权请求 |
-| 额外的群成员指挥白名单 | 启用的白名单群内任何成员都可请求 Agent |
-| 仅依赖 ToolResult.Terminate 实现 no_reply | 扩展 Core 控制终止路径，满足无普通 result、无续问与后续协议有效性 |
-| Cahciua 的 Probe、显式普通发送或运行时历史重建 | 仅借鉴消息表达；Astral 使用自己的持久观察、驱动输入与自动文本路由 |
+| 额外的群成员指挥白名单 | 已接入群聊内任何成员都可请求 Agent |
+| 业务专用静默结束工具 | 正常结束且未显式发送即保持沉默；Core 通用结束能力保留 |
+| 每轮重建全部群历史 | Astral 持续注入并 compact；Probe 只读取旁观快照，不改写主 Session 历史 |
 | Memoh 的全部后端与产品界面 | 参考前端技术和工程组织；Astral 按自己的 Go/Computer 架构与 Transcript UI 实现 |
 | 新增独立 Instructions、定时任务或复杂规则后台的讨论建议 | 未采纳为当前需求，不因此扩张本规格范围 |
 
-本规格是 Astral 当前实现与验收的统一基线。后续更改应更新相关决策、接口行为与验收场景，避免只改界面文案而留下相互冲突的系统规则。
+本规格与 UI UX 规范共同构成 Astral 当前实现与验收的基线：本文负责业务和执行契约，UI UX 规范负责界面组织与交互。后续更改应同步更新相关决策、接口行为与验收场景，避免留下互相冲突的规则。

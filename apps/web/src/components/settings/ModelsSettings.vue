@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onDeactivated, onUnmounted, ref, watch } from 'vue'
 import { useQuery } from '@pinia/colada'
-import { listModelsQuery, listProvidersQuery } from '@astral/sdk/colada'
-import { authorizeProvider, deleteModel, deleteProvider, importModels, listProviderPresets, modelCatalog, presetModels, providerAuthorization, saveModel, saveProvider, type AstralInternalModelbridgeAuthorization as Authorization, type AstralInternalModelbridgeDiscovery as Discovery, type AstralInternalModelbridgeProviderPreset as Preset } from '@astral/sdk'
+import { listModelsQuery, listModelsQueryKey, listProvidersQuery, listProvidersQueryKey } from '@astral/sdk/colada'
+import { authorizeProvider, deleteModel, deleteProvider, importModels, listProviderPresets, modelCatalog, presetModels, listProviders, listModels, providerAuthorization, saveModel, saveProvider, type AstralInternalModelbridgeAuthorization as Authorization, type AstralInternalModelbridgeDiscovery as Discovery, type AstralInternalModelbridgeProviderPreset as Preset } from '@astral/sdk'
 import { Button, Modal, SettingsSection, Switch } from '@astral/ui'
 import { ArrowLeft, Brain, ChevronRight, Copy, Eye, Pencil, Plus, ProviderIcon, RefreshCw, Search, Trash2, Wrench } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Profile, Provider } from '../../lib/types'
-import { clone, errorText, object, request } from '../../lib/api'
+import { errorText, object, request } from '../../lib/api'
 import { useAction } from '../../composables/useAction'
+import { useSettingsSave } from '../../composables/useSettingsSave'
+import SettingsFeedback from './SettingsFeedback.vue'
 import { useAppStore } from '../../stores/app'
 import ModelProfileEditor from './ModelProfileEditor.vue'
 import ProviderForm from './ProviderForm.vue'
@@ -17,6 +19,7 @@ import ResourceDelete from './ResourceDelete.vue'
 const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
+const saves = useSettingsSave()
 const providers = useQuery(listProvidersQuery())
 const profiles = useQuery(listModelsQuery())
 const presets = useQuery({ key: ['provider-presets'], query: () => request(listProviderPresets()) })
@@ -66,12 +69,15 @@ function openProvider(value?: Provider, template?: Preset) {
 }
 function host(url: string) { return url.replace(/^https?:\/\//, '').replace(/\/$/, '') }
 function contextLabel(value: unknown) { const n = Number(value); return n > 0 ? n >= 1000000 ? `${Math.round(n / 10000) / 100}M` : `${Math.round(n / 1000)}K` : '' }
-async function savedProvider(saved: Provider, autoImport: boolean) {
-  addOpen.value = false
-  await app.refresh()
-  openProvider(saved, presets.data.value?.find(p => p.id === saved.preset_id))
-  action.success.value = t('configurationSaved')
-  if (autoImport) await importCatalog(true)
+async function savedProvider(saved: Provider, autoImport: boolean, origin: string) {
+  const modal = addOpen.value && origin === `provider:new:${addPresetID.value || 'custom'}`
+  const current = detail.value && origin === `provider:${providerID.value || `new:${presetID.value || 'custom'}`}`
+  if (modal) addOpen.value = false
+  if (modal || current) {
+    if (providerID.value !== saved.id) openProvider(saved, presets.data.value?.find(p => p.id === saved.preset_id))
+    if (autoImport) await importCatalog(true)
+  }
+  await app.refresh().catch(() => undefined)
 }
 async function importCatalog(refresh: boolean) {
   await action.run(async () => {
@@ -90,10 +96,41 @@ async function fetchCatalog() {
   })
 }
 async function toggleProvider(enabled: boolean) {
-  await action.run(async () => { if (provider.value) { await request(saveProvider({ body: { ...provider.value, enabled } })); await app.refresh() } })
+  const id = provider.value?.id
+  if (!id) return
+  await saves.run(`provider:${id}`, 'enabled', {
+    write: async () => {
+      const current = (await request(listProviders())).find(p => p.id === id)
+      if (!current) throw { code: 'not_found', message: t('missing') }
+      saves.confirm(listProvidersQueryKey(), await request(saveProvider({ body: { ...current, enabled } })))
+      await app.refresh().catch(() => undefined)
+    },
+    reconcile: async () => {
+      const current = (await request(listProviders())).find(p => p.id === id)
+      if (current) saves.confirm(listProvidersQueryKey(), current)
+      await app.refresh().catch(() => undefined)
+      return !!current && (current.enabled !== false) === enabled ? 'applied' : 'not-applied'
+    },
+  }, enabled)
 }
 async function toggleModel(p: Profile, enabled: boolean) {
-  await action.run(async () => { await request(saveModel({ body: { ...clone(p), enabled } })); await app.refresh() })
+  const id = p.id
+  await saves.run(`model:${id}`, 'enabled', {
+    write: async () => {
+      const current = (await request(listModels())).find(m => m.id === id)
+      if (!current) throw { code: 'not_found', message: t('missing') }
+      const saved = await request(saveModel({ body: { ...current, enabled } }))
+      saves.confirm(listModelsQueryKey(), saved)
+      saves.confirmModel(saved)
+      await app.refresh().catch(() => undefined)
+    },
+    reconcile: async () => {
+      const current = (await request(listModels())).find(m => m.id === id)
+      if (current) { saves.confirm(listModelsQueryKey(), current); saves.confirmModel(current) }
+      await app.refresh().catch(() => undefined)
+      return !!current && (current.enabled !== false) === enabled ? 'applied' : 'not-applied'
+    },
+  }, enabled)
 }
 const modelOpen = ref(false)
 const editModel = ref<Profile>()
@@ -212,7 +249,7 @@ async function copyCode() { if (authorization.value?.user_code) await action.run
       >
         <ArrowLeft />{{ t('allProviders') }}
       </button>
-      <div class="provider-detail-heading">
+      <div class="provider-detail-heading settings-detail-heading">
         <span class="provider-icon-slot"><ProviderIcon :name="preset?.icon" /></span><h2>{{ provider?.name || preset?.name || t('customProvider') }}</h2>
         <Button
           v-if="provider"
@@ -224,10 +261,14 @@ async function copyCode() { if (authorization.value?.user_code) await action.run
           <Trash2 />
         </Button>
         <Switch
-          :model-value="!!provider && provider.enabled !== false"
+          :model-value="provider ? saves.value(`provider:${provider.id}/enabled`, provider.enabled !== false) : false"
           :disabled="!provider || action.busy.value"
           :label="t('enableProvider')"
           @update:model-value="toggleProvider"
+        />
+        <SettingsFeedback
+          v-if="provider"
+          :scope="`provider:${provider.id}/enabled`"
         />
       </div>
       <ProviderForm
@@ -355,7 +396,7 @@ async function copyCode() { if (authorization.value?.user_code) await action.run
             class="model-row-actions"
           >
             <Switch
-              :model-value="row.profile.enabled !== false"
+              :model-value="saves.value(`model:${row.profile.id}/enabled`, row.profile.enabled !== false)"
               :label="t('enableModel', { name: row.name })"
               :disabled="action.busy.value"
               @update:model-value="toggleModel(row.profile!, $event)"
@@ -387,6 +428,11 @@ async function copyCode() { if (authorization.value?.user_code) await action.run
           >
             <Plus />
           </Button>
+          <SettingsFeedback
+            v-if="row.profile"
+            :scope="`model:${row.profile.id}/enabled`"
+            class="model-row-feedback"
+          />
         </div>
         <p
           v-if="!modelRows.length"
@@ -461,6 +507,7 @@ async function copyCode() { if (authorization.value?.user_code) await action.run
       :kind="deleteTarget?.kind || ''"
       :name="deleteTarget?.name || ''"
       :busy="action.busy.value"
+      :error-message="action.error.value"
       @update:open="value => { if (!value) deleteTarget = undefined }"
       @confirm="remove"
     />

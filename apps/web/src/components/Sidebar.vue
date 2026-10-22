@@ -5,7 +5,10 @@ import { useI18n } from 'vue-i18n'
 import { Plus, Search, Settings2, CircleAlert, Pin } from '@astral/icons'
 import { Select } from '@astral/ui'
 import { useAppStore } from '../stores/app'
+import ChannelIcon from './ChannelIcon.vue'
+import { useSessionTitles } from '../composables/useSessionTitles'
 const app = useAppStore()
+const { titles, typing } = useSessionTitles(() => app.data ? app.sessions : undefined)
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
@@ -73,7 +76,16 @@ function selectAgent(id: string) {
           :aria-current="route.params.id === s.id ? 'page' : undefined"
           @click="navigate"
         >
-          <span class="session-label">{{ s.title }}</span>
+          <ChannelIcon
+            v-if="s.channel_platform"
+            :platform="s.channel_platform"
+          />
+          <span class="session-title-accessible">{{ s.title }}</span>
+          <span
+            class="session-label"
+            :class="{ 'is-typing': typing[s.id] }"
+            aria-hidden="true"
+          >{{ titles[s.id] ?? s.title }}</span>
           <span
             v-if="app.statuses[s.id]?.status === 'running'"
             class="running-dot"

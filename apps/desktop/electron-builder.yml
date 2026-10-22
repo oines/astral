@@ -14,8 +14,11 @@ extraResources:
       - checksums.txt
       - THIRD_PARTY_NOTICES.txt
       - LICENSE.txt
-  - from: resources/trayTemplate.png
-    to: trayTemplate.png
+  - from: resources
+    to: .
+    filter:
+      - trayTemplate*.png
+      - icon*.png
 mac:
   icon: resources/icon.icns
   category: public.app-category.productivity

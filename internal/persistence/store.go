@@ -32,7 +32,7 @@ CREATE INDEX IF NOT EXISTS observation_conversation ON observations(conversation
 CREATE TABLE IF NOT EXISTS deliveries(event_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT NOT NULL,error TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,kind TEXT NOT NULL,state TEXT NOT NULL,data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox_keys(intent_key TEXT PRIMARY KEY,outbox_id TEXT NOT NULL);
-PRAGMA user_version=2;
+PRAGMA user_version=3;
 `
 
 func Open(directory string) (*Store, error) {
@@ -85,7 +85,7 @@ func Open(directory string) (*Store, error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version != 0 && version != 2 {
+	if version != 0 && version != 3 {
 		return fail(fmt.Errorf("unsupported Astral database schema %d; initialize a new data directory", version))
 	}
 	if version == 0 {
@@ -339,11 +339,19 @@ type StoredObservation struct {
 }
 
 func (s *Store) Archive(ctx context.Context, event domain.Observation) (bool, error) {
+	return archive(ctx, s.db, event)
+}
+func (tx *Tx) Archive(ctx context.Context, event domain.Observation) (bool, error) {
+	return archive(ctx, tx.tx, event)
+}
+func archive(ctx context.Context, db interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, event domain.Observation) (bool, error) {
 	raw, err := json.Marshal(event)
 	if err != nil {
 		return false, err
 	}
-	result, err := s.db.ExecContext(ctx, "INSERT OR IGNORE INTO observations(id,connection_id,conversation_id,external_id,payload) VALUES(?,?,?,?,?)", event.ID, event.ConnectionID, event.ConversationID, event.ExternalEventID, raw)
+	result, err := db.ExecContext(ctx, "INSERT OR IGNORE INTO observations(id,connection_id,conversation_id,external_id,payload) VALUES(?,?,?,?,?)", event.ID, event.ConnectionID, event.ConversationID, event.ExternalEventID, raw)
 	if err != nil {
 		return false, err
 	}
@@ -351,10 +359,14 @@ func (s *Store) Archive(ctx context.Context, event domain.Observation) (bool, er
 	return n == 1, err
 }
 func (s *Store) Observations(ctx context.Context, conversation string, after int64, limit int) ([]StoredObservation, error) {
+	return s.SearchObservations(ctx, conversation, after, limit, "")
+}
+
+func (s *Store) SearchObservations(ctx context.Context, conversation string, after int64, limit int, query string) ([]StoredObservation, error) {
 	if limit < 1 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT sequence,payload FROM observations WHERE conversation_id=? AND sequence>? ORDER BY sequence LIMIT ?", conversation, after, limit)
+	rows, err := s.db.QueryContext(ctx, "SELECT sequence,payload FROM observations WHERE conversation_id=? AND sequence>? AND (?='' OR instr(lower(json_extract(payload,'$.text')),lower(?))>0) ORDER BY sequence LIMIT ?", conversation, after, query, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -406,6 +418,38 @@ func (s *Store) ObservationHead(ctx context.Context, conversation string) (int64
 	var sequence int64
 	err := s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence),0) FROM observations WHERE conversation_id=?", conversation).Scan(&sequence)
 	return sequence, err
+}
+
+func (s *Store) ObservationSequence(ctx context.Context, id string) (int64, error) {
+	var sequence int64
+	err := s.db.QueryRowContext(ctx, "SELECT sequence FROM observations WHERE id=?", id).Scan(&sequence)
+	return sequence, err
+}
+
+func (s *Store) Message(ctx context.Context, conversation, messageID string) (domain.Observation, error) {
+	var raw []byte
+	var event domain.Observation
+	err := s.db.QueryRowContext(ctx, "SELECT payload FROM observations WHERE conversation_id=? AND json_extract(payload,'$.message_id')=? ORDER BY sequence DESC LIMIT 1", conversation, messageID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return event, domain.Missing("message", messageID)
+	}
+	if err == nil {
+		err = json.Unmarshal(raw, &event)
+	}
+	return event, err
+}
+
+func (s *Store) MessageAttachment(ctx context.Context, conversation, messageID, ref string) (domain.Attachment, error) {
+	var raw []byte
+	var attachment domain.Attachment
+	err := s.db.QueryRowContext(ctx, `SELECT a.value FROM observations o, json_each(o.payload,'$.attachments') a WHERE o.conversation_id=? AND json_extract(o.payload,'$.message_id')=? AND json_extract(a.value,'$.ref')=? ORDER BY o.sequence DESC LIMIT 1`, conversation, messageID, ref).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return attachment, domain.Missing("attachment", ref)
+	}
+	if err == nil {
+		err = json.Unmarshal(raw, &attachment)
+	}
+	return attachment, err
 }
 func (s *Store) Observation(ctx context.Context, id string) (domain.Observation, error) {
 	var raw []byte

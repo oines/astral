@@ -93,12 +93,19 @@ export function messageText(entry: Entry): string {
   if (m.role === 'user' && typeof metadata.display_text === 'string') return metadata.display_text
   return (m.content ?? []).filter(p => p.type === 'text').map(p => p.text ?? '').join('\n')
 }
+function conversationMessage(entry: Entry) {
+  const message = entry.message
+  // Role describes model input, not UI visibility. Passive context and internal
+  // activation prompts stay in history without becoming conversation bubbles.
+  if (entry.kind !== 'message' || !message || message.context_kind || object(message.metadata).source === 'im.trigger') return
+  return message
+}
 export function visibleEntry(entry: Entry) {
-  if (!['message', 'context'].includes(entry.kind) || !entry.message || entry.message.is_error) return false
-  if (entry.message.role === 'assistant') return Boolean(messageText(entry))
-  if (entry.message.role !== 'user') return false
-  // IM trigger prompts reference observations already shown; never repeat the XML.
-  return object(entry.message.metadata).source !== 'im.trigger' && (Boolean(messageText(entry)) || Boolean(entry.message.content?.some(p => p.type === 'image')))
+  const message = conversationMessage(entry)
+  if (!message || message.is_error) return false
+  if (message.role === 'assistant') return Boolean(messageText(entry))
+  if (message.role !== 'user') return false
+  return Boolean(messageText(entry)) || Boolean(message.content?.some(p => p.type === 'image'))
 }
 export function sortedEntries(entries: Record<string, Entry>): Entry[] {
   return Object.values(entries).sort((a, b) => a.sequence - b.sequence)
@@ -125,7 +132,7 @@ export type ProcessItem =
   | { kind: 'tool'; key: string; entry: Entry }
 export type TranscriptBlock =
   | { kind: 'text'; key: string; text: string; streaming?: boolean }
-  | { kind: 'process'; key: string; items: ProcessItem[] }
+  | { kind: 'process'; key: string; items: ProcessItem[]; active?: boolean }
 export interface TranscriptGroup {
   key: string
   role: 'user' | 'assistant'
@@ -144,9 +151,12 @@ export function executionStatus(view: SessionView, fallback = 'working'): Pick<T
     status: attempt.purpose === 'compaction' ? 'retryingCompaction' : 'retryingModel',
     statusParams: { attempt: attempt.attempt + 1, max: attempt.max_attempts, time: attempt.next_retry_at ?? '' },
   }
-  if (attempt?.state === 'running') return {
-    status: attempt.purpose === 'compaction' ? 'compactionAttempt' : 'modelAttempt',
-    statusParams: { attempt: attempt.attempt, max: attempt.max_attempts },
+  if (attempt?.state === 'running') {
+    if (attempt.attempt <= 1) return { status: attempt.purpose === 'compaction' ? 'compacting' : fallback }
+    return {
+      status: attempt.purpose === 'compaction' ? 'compactionAttempt' : 'modelAttempt',
+      statusParams: { attempt: attempt.attempt, max: attempt.max_attempts },
+    }
   }
   return { status: fallback }
 }
@@ -166,24 +176,31 @@ export function transcriptGroups(state: SessionState): TranscriptGroup[] {
   function assistant(runID: string | undefined, key: string) {
     let group = groups.at(-1)
     if (group?.role !== 'assistant' || group.runID !== runID) {
-      group = { key, role: 'assistant', runID, entries: [], blocks: [] }
+      const boundary = group?.role === 'user' ? group.key : 'start'
+      group = { key: runID ? `run:${runID}:${boundary}` : key, role: 'assistant', runID, entries: [], blocks: [] }
       groups.push(group)
     }
     return group
   }
-  function process(group: TranscriptGroup, item: ProcessItem) {
+  function process(group: TranscriptGroup, item?: ProcessItem) {
     const last = group.blocks.at(-1)
-    if (last?.kind === 'process') last.items.push(item)
-    else group.blocks.push({ kind: 'process', key: item.key, items: [item] })
+    const block: Extract<TranscriptBlock, { kind: 'process' }> = last?.kind === 'process' ? last : {
+      kind: 'process' as const,
+      key: `${group.key}:process:${group.blocks.filter(block => block.kind === 'text').length}`,
+      items: [],
+    }
+    if (block !== last) group.blocks.push(block)
+    if (item) block.items.push(item)
+    return block
   }
   function tool(entry: Entry) {
     const invocation = entry.tool!.invocation
-    if (shownTools.has(invocation.execution_id) || invocation.call.name === 'no_reply') return
+    if (shownTools.has(invocation.execution_id)) return
     shownTools.add(invocation.execution_id)
     process(assistant(invocation.run_id, `run:${invocation.run_id}:${entry.id}`), { kind: 'tool', key: invocation.execution_id, entry })
   }
   for (const entry of entries) {
-    const message = entry.message
+    const message = conversationMessage(entry)
     if (message?.role === 'user' && visibleEntry(entry)) {
       groups.push({ key: entry.id, role: 'user', entries: [entry], blocks: [] })
     } else if (entry.kind === 'message' && message?.role === 'assistant' && !message.is_error && !['error', 'cancelled'].includes(message.finish_reason ?? '')) {
@@ -201,8 +218,15 @@ export function transcriptGroups(state: SessionState): TranscriptGroup[] {
     } else if (entry.tool) {
       tool(tools.get(entry.tool.invocation.execution_id)!)
     } else if (entry.run && entry.run.status !== 'started') {
-      const status = entry.run.status === 'failed' ? 'needs_attention' : entry.run.status === 'cancelled' ? 'stopped' : entry.run.end_reason === 'no_reply' ? 'endedSilently' : undefined
-      if (status) assistant(entry.run.id, `run:${entry.run.id}:${entry.id}`).status = status
+      const status = entry.run.status === 'failed' ? 'needs_attention' : entry.run.status === 'cancelled' ? 'stopped' : undefined
+      if (status) {
+        // A failed retry without output is reported by the current session
+        // error. It did not produce another assistant turn in the transcript.
+        const group = groups.at(-1)
+        if (entry.run.status !== 'failed' || (group?.role === 'assistant' && group.runID === entry.run.id && group.blocks.length)) {
+          assistant(entry.run.id, `run:${entry.run.id}:${entry.id}`).status = status
+        }
+      }
     }
   }
   for (const [attempt, preview] of Object.entries(state.previews)) {
@@ -219,8 +243,11 @@ export function transcriptGroups(state: SessionState): TranscriptGroup[] {
     group.active = true
     const preparing = Object.values(state.previews).some(p => p.runID === runID && Object.values(p.parts).some(part => part.type === 'tool_call_delta'))
     Object.assign(group, executionStatus(state.view!, preparing ? 'preparing' : 'working'))
+    process(group).active = true
   } else if (state.view && ['compacting', 'stopping'].includes(state.view.status) && !runID) {
-    groups.push({ key: 'maintenance', role: 'assistant', entries: [], blocks: [], active: true, ...executionStatus(state.view, 'compacting') })
+    const group: TranscriptGroup = { key: 'maintenance', role: 'assistant', entries: [], blocks: [], active: true, ...executionStatus(state.view, 'compacting') }
+    process(group).active = true
+    groups.push(group)
   }
   return groups.filter(group => group.role === 'user' || group.blocks.length || group.status)
 }

@@ -64,7 +64,7 @@ watch(() => props.entry.id, () => { loaded.value = undefined; error.value = '' }
         :class="{ expanded: open }"
       />
       <CircleAlert
-        v-if="tool?.needs_resolution || result?.is_error"
+        v-if="tool?.needs_resolution || (result?.is_error && result?.outcome !== 'succeeded')"
         class="tool-warning"
       />
     </button>
@@ -86,6 +86,12 @@ watch(() => props.entry.id, () => { loaded.value = undefined; error.value = '' }
           v-if="presentation.command"
           class="tool-command"
         >$ {{ presentation.command }}</pre>
+        <p
+          v-if="result?.is_error && result?.outcome === 'succeeded'"
+          class="muted small"
+        >
+          {{ t('resultDeliveryFailed') }}
+        </p>
         <div
           v-if="output"
           class="tool-output"

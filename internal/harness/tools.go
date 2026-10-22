@@ -36,11 +36,7 @@ func (r *runtime) hostTools() []core.Tool {
 		tools = append(tools, hostTool{Tool: tool, runtime: r})
 	}
 	tools = append(tools,
-		core.ToolFunc{Spec: core.ToolDefinition{Name: "no_reply", Version: "astral-1", Description: "End this activation without replying. Call alone with {}, without assistant text or other tool calls. Produces no tool result or continuation.", Exclusive: true, MayEndRun: true,
-			Parameters: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)},
-			Run: func(context.Context, core.Invocation, func(core.ToolProgress)) (core.ToolExecution, error) {
-				return core.ToolExecution{EndRun: &core.RunEnd{Reason: "no_reply"}}, nil
-			}},
+		sendMessageTool{runtime: r},
 		core.ToolFunc{Spec: core.ToolDefinition{Name: "switch_computer", Version: "astral-1", Description: "Select an allowed Computer for subsequent file and command calls. Call alone. Empty cwd uses this Agent's home on the target. Existing process and file references keep their original Computer.", Exclusive: true,
 			Parameters: json.RawMessage(`{"type":"object","properties":{"computer_id":{"type":"string","minLength":1},"cwd":{"type":"string"}},"required":["computer_id"],"additionalProperties":false}`)},
 			Run: func(ctx context.Context, inv core.Invocation, _ func(core.ToolProgress)) (core.ToolExecution, error) {
@@ -57,7 +53,7 @@ func (r *runtime) hostTools() []core.Tool {
 				if err != nil {
 					return core.ToolExecution{}, notExecuted("computer_selection", err)
 				}
-				return resultJSON(map[string]string{"computer_id": b.ComputerID, "cwd": b.CWD, "agent_home": b.AgentHome, "shell": b.Shell}), nil
+				return resultJSON(map[string]string{"computer_id": b.ComputerID, "cwd": b.CWD, "agent_home": b.AgentHome, "shell": b.Shell, "api_url": b.APIURL}), nil
 			}},
 		core.ToolFunc{Spec: core.ToolDefinition{Name: "web_search", Version: "astral-1", Description: "Search the web with this Agent's selected search provider. Returns titles, summaries and source URLs; there is no fallback provider.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1,"maxLength":8000}},"required":["query"],"additionalProperties":false}`)},

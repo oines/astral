@@ -2,25 +2,28 @@
 import { computed, ref } from 'vue'
 import { useQuery } from '@pinia/colada'
 import { useIntervalFn } from '@vueuse/core'
-import { listComputersQuery } from '@astral/sdk/colada'
-import { createLocalContainer, enrollComputer, getComputerOperation, getEnrollment, revokeComputer, saveAgent, updateComputer, useLocalComputer, type AstralInternalDomainProvisioning, type AstralInternalDomainEnrollment, type AstralInternalComputersEnrollmentResult } from '@astral/sdk'
-import { Button, Modal, Select, SettingsSection, SettingsRow } from '@astral/ui'
+import { listComputersQuery, listComputersQueryKey } from '@astral/sdk/colada'
+import { createLocalContainer, enrollComputer, getComputerOperation, getEnrollment, revokeComputer, listComputers, updateComputer, useLocalComputer, type AstralInternalDomainProvisioning, type AstralInternalDomainEnrollment, type AstralInternalComputersEnrollmentResult } from '@astral/sdk'
+import { Button, Modal, SettingsSection, SettingsRow } from '@astral/ui'
 import { ArrowLeft, Check, ChevronRight, Copy, Monitor, Plus, Server, Terminal, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Computer } from '../../lib/types'
-import { clone, errorText, operatingSystem, request } from '../../lib/api'
+import { errorText, operatingSystem, request } from '../../lib/api'
 import { useAction } from '../../composables/useAction'
+import { useSettingsSave } from '../../composables/useSettingsSave'
+import SettingsText from './SettingsText.vue'
+import SettingsFeedback from './SettingsFeedback.vue'
 import { useAppStore } from '../../stores/app'
 import ResourceDelete from './ResourceDelete.vue'
 const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
+const saves = useSettingsSave()
 const list = useQuery(listComputersQuery())
 const search = ref('')
 const visibleComputers = computed(() => (list.data.value || []).filter(c => `${c.name} ${c.hostname}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => Number(a.revoked) - Number(b.revoked) || Number(b.online) - Number(a.online)))
 const selectedID = ref('')
 const selected = computed(() => list.data.value?.find(c => c.id === selectedID.value))
-const name = ref('')
 const adding = ref(false)
 const mode = ref<'choose' | 'local' | 'container' | 'remote'>('choose')
 const container = ref(false)
@@ -32,8 +35,6 @@ const connected = computed(() => list.data.value?.find(c => c.id === computerID.
 const intent = ref('')
 const copied = ref(false)
 const assign = ref(false)
-const agentID = ref('')
-const isDefault = ref(false)
 const deleting = ref(false)
 const activeOperationKey = 'astral:pending-container'
 const pending = localStorage.getItem(activeOperationKey)
@@ -49,13 +50,14 @@ if (pending) {
     }).catch(() => localStorage.removeItem(activeOperationKey))
   } catch { localStorage.removeItem(activeOperationKey) }
 }
-function edit(computer: Computer) { selectedID.value = computer.id; name.value = computer.name; action.success.value = ''; action.error.value = '' }
+function edit(computer: Computer) { selectedID.value = computer.id; action.success.value = ''; action.error.value = '' }
 function add() {
   mode.value = 'choose'
   operation.value = undefined
   enrollment.value = undefined
   enrollmentResult.value = undefined
   computerID.value = ''
+  copied.value = false
   intent.value = crypto.randomUUID()
   action.error.value = ''
   adding.value = true
@@ -79,6 +81,7 @@ async function localContainer() {
 }
 async function remote() {
   mode.value = 'remote'
+  copied.value = false
   await action.run(async () => {
     enrollmentResult.value = await request(enrollComputer({ body: { container: container.value } }))
     enrollment.value = enrollmentResult.value.enrollment
@@ -103,25 +106,26 @@ useIntervalFn(async () => {
   } catch (e) { if (adding.value) action.error.value = errorText(e) }
   finally { polling = false }
 }, 3000)
-async function rename() {
-  await action.run(async () => { if (selected.value) await request(updateComputer({ path: { id: selected.value.id }, body: { name: name.value, revision: selected.value.revision } })); await app.refresh() }, t('saved'))
+async function rename(id: string, name: string) {
+  await saves.run(`computer:${id}`, 'name', {
+    write: async () => {
+      const current = (await request(listComputers())).find(c => c.id === id)
+      if (!current) throw { code: 'not_found', message: t('noComputers') }
+      if (current.name !== name) saves.confirm(listComputersQueryKey(), await request(updateComputer({ path: { id }, body: { name, revision: current.revision } })))
+      await app.refresh().catch(() => undefined)
+    },
+    reconcile: async () => {
+      const current = (await request(listComputers())).find(c => c.id === id)
+      if (current) saves.confirm(listComputersQueryKey(), current)
+      await app.refresh().catch(() => undefined)
+      return current?.name === name ? 'applied' : 'not-applied'
+    },
+  })
 }
 async function revoke() {
   await action.run(async () => { if (selected.value) await request(revokeComputer({ path: { id: selected.value.id } })); deleting.value = false; await app.refresh() })
 }
-async function assignComputer() {
-  await action.run(async () => {
-    const agent = app.agents.find(a => a.id === agentID.value)
-    if (!agent) return
-    const target = computerID.value || selectedID.value
-    const updated = clone(agent)
-    if (!updated.allowed_computers.includes(target)) updated.allowed_computers.push(target)
-    if (isDefault.value) updated.default_computer_id = target
-    await request(saveAgent({ body: updated }))
-    assign.value = false
-    await app.refresh()
-  }, t('saved'))
-}
+function openAssignment() { assign.value = true }
 async function copyCommand() {
   if (!enrollmentResult.value) return
   await action.run(async () => { await navigator.clipboard.writeText(enrollmentResult.value!.command); copied.value = true })
@@ -136,7 +140,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
     >
       {{ action.error.value }}
     </p><p
-      v-if="action.success.value"
+      v-if="action.success.value && !selected"
       class="success-note"
       role="status"
     >
@@ -147,7 +151,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
         <div class="search-input">
           <Search /><input
             v-model="search"
-            :placeholder="t('searchPlaceholder')"
+            :placeholder="t('settingsSearchComputers')"
             :aria-label="t('computers')"
           >
         </div><Button
@@ -175,7 +179,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
           v-if="!visibleComputers.length"
           class="empty"
         >
-          {{ t('noResults') }}
+          {{ t('computersNoMatch') }}
         </p>
       </div>
       <div
@@ -191,15 +195,18 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
       </div>
     </template>
     <template v-else>
-      <div class="object-heading">
-        <Button
-          variant="ghost"
-          size="icon"
-          :aria-label="t('computers')"
-          @click="selectedID = ''"
-        >
-          <ArrowLeft />
-        </Button><h2>{{ selected.name }}</h2><span
+      <button
+        type="button"
+        class="provider-back"
+        @click="selectedID = ''"
+      >
+        <ArrowLeft />{{ t('allComputers') }}
+      </button>
+      <div class="settings-detail-heading">
+        <span class="resource-symbol"><Monitor v-if="selected.kind !== 'container'" /><Server v-else /></span>
+        <div class="settings-detail-identity">
+          <h2>{{ selected.name }}</h2><p>{{ [selected.name !== selected.hostname ? selected.hostname : '', operatingSystem(selected.os)].filter(Boolean).join(' · ') }}</p>
+        </div><span
           class="badge"
           :class="{ good: selected.online, bad: selected.revoked }"
         >{{ t(selected.revoked ? 'revoked' : selected.online ? 'online' : 'offline') }}</span>
@@ -210,39 +217,26 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
       >
         {{ selected.last_error }}
       </p>
-      <form
-        class="settings-form"
-        @submit.prevent="rename"
-      >
-        <SettingsSection :title="t('basicInfo')">
-          <SettingsRow :label="t('name')">
-            <input
-              v-model="name"
-              :aria-label="t('name')"
-              required
-            >
-          </SettingsRow><SettingsRow :label="t('operatingSystem')">
-            <span class="muted">{{ operatingSystem(selected.os) }} / {{ selected.arch }}</span>
-          </SettingsRow><div class="form-footer">
-            <Button
-              type="submit"
-              variant="primary"
-              :busy="action.busy.value"
-              :disabled="name === selected.name"
-            >
-              {{ t('save') }}
-            </Button>
-          </div>
-        </SettingsSection>
-      </form>
+      <SettingsSection :title="t('basicInfo')">
+        <SettingsRow :label="t('name')">
+          <SettingsText
+            :value="selected.name"
+            :draft-key="`computer:${selected.id}/name`"
+            :label="t('name')"
+            required
+            @commit="rename(selected!.id, $event)"
+          />
+        </SettingsRow>
+        <SettingsFeedback :scope="`computer:${selected.id}/name`" />
+      </SettingsSection>
       <SettingsSection :title="t('computerAccess')">
         <template #actions>
           <Button
             size="small"
             :disabled="selected.revoked"
-            @click="computerID = selected.id; assign = true"
+            @click="openAssignment"
           >
-            <Plus />{{ t('assign') }}
+            {{ t('chooseBotAccess') }}
           </Button>
         </template>
         <RouterLink
@@ -256,32 +250,23 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
           v-if="!assigned.length"
           class="empty"
         >
-          {{ t('noComputerAccess') }}
+          {{ t('noComputerAssignments') }}
         </p>
       </SettingsSection>
-      <details class="form-disclosure">
-        <summary>{{ t('computerDetails') }}</summary><SettingsSection>
-          <SettingsRow :label="t('host')">
-            <span class="muted mono">{{ selected.hostname }}</span>
-          </SettingsRow><SettingsRow :label="t('shell')">
-            <span class="muted mono">{{ selected.shell }}</span>
-          </SettingsRow><SettingsRow :label="t('home')">
-            <span class="muted mono">{{ selected.home }}</span>
-          </SettingsRow>
-        </SettingsSection>
-      </details>
-      <div
-        v-if="!selected.revoked"
-        class="danger-row"
-      >
-        <strong>{{ t('revokeConnection') }}</strong><Button
-          variant="danger"
-          size="small"
-          @click="deleting = true"
+      <SettingsSection v-if="!selected.revoked">
+        <SettingsRow
+          :label="t('revokeConnection')"
+          :description="t('revokeComputerHint')"
         >
-          {{ t('revokeConnection') }}
-        </Button>
-      </div>
+          <Button
+            variant="danger"
+            size="small"
+            @click="action.error.value = ''; deleting = true"
+          >
+            {{ t('revokeConnection') }}
+          </Button>
+        </SettingsRow>
+      </SettingsSection>
       <ResourceDelete
         :id="selected.id"
         :open="deleting"
@@ -289,6 +274,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
         :name="selected.name"
         :action-label="t('revokeConnection')"
         :busy="action.busy.value"
+        :error-message="action.error.value"
         @update:open="deleting = $event"
         @confirm="revoke"
       />
@@ -305,28 +291,36 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
       </p>
       <template v-if="mode === 'choose'">
         <p class="muted">
-          {{ app.data?.host.hostname }} · {{ operatingSystem(app.data?.host.os) }} / {{ app.data?.host.arch }}
+          {{ t('serverMachine', { name: app.data?.host.hostname }) }}
         </p>
         <button
           class="computer-option"
           @click="local"
         >
-          <Monitor /><span><strong>{{ t('useLocal') }}</strong><small>{{ app.data?.host.hostname }} · {{ operatingSystem(app.data?.host.os) }}</small></span><ChevronRight />
+          <Monitor /><span><strong>{{ t('useServerMachine') }}</strong><small>{{ t('serverMachineHint') }}</small></span><ChevronRight />
         </button>
         <button
           class="computer-option"
           @click="localContainer"
         >
-          <Server /><span><strong>{{ t('localContainer') }}</strong><small>{{ app.data?.host.hostname }} · {{ app.data?.host.container_runtime || 'Docker' }}</small></span><ChevronRight />
+          <Server /><span><strong>{{ t('localContainer') }}</strong><small>{{ t('containerMachineHint') }}</small></span><ChevronRight />
         </button>
         <button
           class="computer-option"
           @click="mode = 'remote'"
         >
-          <Terminal /><span><strong>{{ t('remote') }}</strong><small>macOS / Linux</small></span><ChevronRight />
+          <Terminal /><span><strong>{{ t('remote') }}</strong><small>{{ t('remoteMachineHint') }}</small></span><ChevronRight />
         </button>
       </template>
       <template v-else-if="!connected">
+        <button
+          type="button"
+          class="provider-back"
+          :disabled="action.busy.value"
+          @click="mode = 'choose'; action.error.value = ''"
+        >
+          <ArrowLeft />{{ t('backToComputerOptions') }}
+        </button>
         <div
           v-if="mode === 'remote'"
           class="stack"
@@ -352,9 +346,21 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
             >
               <Check v-if="copied" /><Copy v-else />{{ t('copy') }}
             </Button>
-            <p class="row muted">
+            <p
+              v-if="enrollment?.state === 'waiting'"
+              class="row muted"
+            >
               <span class="spinner" />{{ t('waitingComputer') }}
-            </p><p class="muted small">
+            </p><template v-else-if="enrollment?.state === 'expired'">
+              <p class="muted">
+                {{ t('enrollmentExpired') }}
+              </p><Button
+                :busy="action.busy.value"
+                @click="remote"
+              >
+                {{ t('generateCommand') }}
+              </Button>
+            </template><p class="muted small">
               {{ t('expires') }}: {{ new Date(enrollmentResult.enrollment.expires_at).toLocaleString() }}
             </p>
           </template>
@@ -393,7 +399,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
           <span
             v-if="action.busy.value"
             class="spinner"
-          /><span>{{ t('waitingComputer') }}</span><Button
+          /><span v-if="!action.error.value">{{ t('waitingComputer') }}</span><Button
             v-if="action.error.value"
             @click="local"
           >
@@ -409,47 +415,38 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
           {{ operatingSystem(connected.os) }} · {{ connected.arch }}
         </p><Button
           variant="primary"
-          @click="adding = false; assign = true"
+          @click="adding = false; openAssignment()"
         >
-          {{ t('assign') }}
+          {{ t('chooseBotAccess') }}
         </Button>
       </div>
     </Modal>
     <Modal
       v-model:open="assign"
-      :title="t('assign')"
+      :title="t('chooseBotAccess')"
     >
-      <p
-        v-if="action.error.value"
-        class="error-box"
+      <div
+        v-if="app.agents.length"
+        class="resource-list"
       >
-        {{ action.error.value }}
-      </p>
-      <label class="label">{{ t('agent') }}<Select
-        v-model="agentID"
-        :label="t('agent')"
-        :placeholder="t('select')"
-        :options="app.agents.map(a => ({ value: a.id, label: a.name }))"
-      /></label>
-      <label class="row"><input
-        v-model="isDefault"
-        type="checkbox"
-      >{{ t('defaultComputer') }}</label>
+        <RouterLink
+          v-for="bot in app.agents"
+          :key="bot.id"
+          :to="{ path: '/settings/agents', query: { agent: bot.id, tab: 'computers' } }"
+          class="resource-row"
+          @click="assign = false"
+        >
+          <span class="agent-avatar">{{ bot.avatar || bot.name.slice(0, 1) }}</span><span><strong>{{ bot.name }}</strong></span><ChevronRight />
+        </RouterLink>
+      </div>
       <RouterLink
-        v-if="!app.agents.length"
+        v-else
         to="/settings/agents"
+        class="button button-primary"
         @click="assign = false"
       >
-        {{ t('setupAgent') }}
+        {{ t('newAgent') }}
       </RouterLink>
-      <Button
-        variant="primary"
-        :busy="action.busy.value"
-        :disabled="!agentID"
-        @click="assignComputer"
-      >
-        {{ t('save') }}
-      </Button>
     </Modal>
   </div>
 </template>

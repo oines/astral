@@ -4,26 +4,27 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
+	"strings"
 	"time"
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/filestream"
 	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/persistence"
 )
-
-type attachmentCopy struct {
-	domain.Meta
-	URI string `json:"uri"`
-}
 
 func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	position := cursor{Meta: domain.Meta{ID: b.ID}, Sequence: b.StartSequence}
 	if err := s.Store.Get(ctx, "inbox_cursors", b.ID, &position); err != nil && !domain.IsMissing(err) {
 		return
 	}
+	if err := s.Harness.ResumeContext(ctx, b.SessionID); err != nil && ctx.Err() == nil {
+		slog.WarnContext(ctx, "IM passive recovery failed", "session_id", b.SessionID, "error", err)
+	}
+	results := make(chan probeResult, 1)
+	probing := false
 	for ctx.Err() == nil {
 		events, err := s.Store.Observations(ctx, b.ConversationID, position.Sequence, 100)
 		if err != nil {
@@ -33,6 +34,11 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 			continue
 		}
 		for _, event := range events {
+			if event.Observation.Trigger != "" && !event.Observation.Self {
+				if err = s.coverProbe(ctx, b, event.Sequence); err != nil {
+					break
+				}
+			}
 			err = s.deliver(ctx, b, event.Observation)
 			if err != nil {
 				break
@@ -40,6 +46,37 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 			position.Sequence = event.Sequence
 			if err = s.Store.Save(ctx, "inbox_cursors", &position.Meta, &position); err != nil {
 				break
+			}
+		}
+		select {
+		case result := <-results:
+			probing = false
+			if probeErr := s.finishProbe(ctx, b, result); probeErr != nil && ctx.Err() == nil {
+				slog.WarnContext(ctx, "IM Probe completion failed", "conversation_id", b.ConversationID, "error", probeErr)
+			}
+		default:
+		}
+		if !probing && err == nil {
+			window, probeErr := s.pendingProbe(ctx, b, position.Sequence, time.Now())
+			if probeErr == nil && window.Through != 0 {
+				if _, lookupErr := s.Harness.Receipt(ctx, b.SessionID, probeInputID(b.ID, window.Through)); lookupErr == nil {
+					_ = s.finishProbe(ctx, b, probeResult{through: window.Through, participate: true})
+				} else {
+					view, viewErr := s.Harness.InspectContext(ctx, b.SessionID)
+					if viewErr == nil {
+						probing = true
+						s.workers.Add(1)
+						go func() {
+							defer s.workers.Done()
+							request, cancel := context.WithTimeout(ctx, time.Minute)
+							defer cancel()
+							participate, requestErr := s.shouldParticipate(request, b, view)
+							results <- probeResult{through: window.Through, participate: participate, err: requestErr}
+						}()
+					} else if !errors.Is(viewErr, core.ErrIncompleteBatch) {
+						_ = s.finishProbe(ctx, b, probeResult{through: window.Through, err: viewErr})
+					}
+				}
 			}
 		}
 		interval := 200 * time.Millisecond
@@ -52,18 +89,13 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	}
 }
 func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, event domain.Observation) (err error) {
-	if event.Self {
-		// The IM archive keeps the platform echo. Core already owns the original
-		// Assistant message, so the echo never becomes another model input.
-		return s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "self_echo"})
-	}
 	defer func() {
 		if err != nil && ctx.Err() == nil {
 			_ = s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "blocked", Error: err.Error()})
 		}
 	}()
 	deliveryID := event.ID
-	if event.Trigger != "" {
+	if event.Trigger != "" && !event.Self {
 		deliveryID += ":trigger"
 	}
 	// Reconcile the durable Core receipt before trying to fetch any source
@@ -84,67 +116,41 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 	if err = s.Store.Get(ctx, "conversations", event.ConversationID, &conversation); err != nil {
 		return err
 	}
-	files := make([]domain.FileRef, 0, len(event.Attachments))
+	observation := messages.Observation(event, connection, conversation, nil, "")
 	for _, attachment := range event.Attachments {
-		file, copyErr := s.copyAttachment(ctx, b, event, attachment, connection)
-		if copyErr != nil {
-			return copyErr
+		if attachment.Kind != "image" && !strings.HasPrefix(attachment.MediaType, "image/") {
+			continue
 		}
-		files = append(files, file)
+		download, err := s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
+		if err != nil {
+			return err
+		}
+		data, readErr := io.ReadAll(download.Body)
+		closeErr := download.Body.Close()
+		if err := errors.Join(readErr, closeErr); err != nil {
+			return err
+		}
+		processed, err := core.ProcessImage(ctx, data, core.ImageOptions{})
+		if err != nil {
+			return err
+		}
+		if processed.IsError {
+			return domain.Invalid(processed.Content[0].Text)
+		}
+		image := processed.Content[1]
+		image.URL = messages.AttachmentDownloadPath(conversation.ID, event.MessageID, attachment.Ref)
+		observation.Content = append(observation.Content, image)
 	}
-	observation := messages.Observation(event, connection, conversation, files, "")
 	var trigger *core.Message
-	if event.Trigger != "" {
+	if event.Trigger != "" && !event.Self {
 		value := messages.Trigger(event)
 		trigger = &value
 	}
-	s.gate.Lock()
-	defer s.gate.Unlock()
-	current, _, _, err := s.target(ctx, b.AgentID, b.SessionID, event.ConversationID)
-	if err != nil {
-		return err
-	}
-	if current.ID != b.ID {
-		return domain.Conflict("the original inbound binding is no longer active")
-	}
-	_, err = s.Harness.Deliver(ctx, b.SessionID, observation, trigger)
+	_, err = s.Harness.Deliver(ctx, b.SessionID, observation, trigger, b.ID)
 	if err != nil {
 		return err
 	}
 	return s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "routed"})
-}
-func (s *Service) copyAttachment(ctx context.Context, b domain.ConversationBinding, event domain.Observation, a domain.Attachment, c domain.Connection) (domain.FileRef, error) {
-	key := stableID("attachment", b.AgentID, event.ID, a.Ref)
-	var copy attachmentCopy
-	if err := s.Store.Get(ctx, "inbox_files", key, &copy); err == nil {
-		return s.Harness.Files.Get(ctx, b.AgentID, copy.URI)
-	} else if !domain.IsMissing(err) {
-		return domain.FileRef{}, err
-	}
-	var session domain.Session
-	if err := s.Store.Get(ctx, "sessions", b.SessionID, &session); err != nil {
-		return domain.FileRef{}, err
-	}
-	binding, err := s.Harness.Hub.Bind(ctx, b.AgentID, b.SessionID, session.ComputerID, session.CWD)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	adapter, err := s.adapter(ctx, c)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	download, err := adapter.Download(ctx, a)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	defer download.Body.Close()
-	ref, err := s.Harness.Files.Upload(ctx, binding, a.Name, download.Body)
-	if err != nil {
-		return ref, err
-	}
-	copy = attachmentCopy{Meta: domain.Meta{ID: key}, URI: filestream.URL(ref)}
-	err = s.Store.Save(ctx, "inbox_files", &copy.Meta, &copy)
-	return ref, err
 }
 
 // DeliveryView combines the fixed channel destination with Core's current
@@ -169,7 +175,7 @@ func (s *Service) Delivery(ctx context.Context, eventID string) (DeliveryView, e
 		return delivery, err
 	}
 	key := eventID
-	if event.Trigger != "" {
+	if event.Trigger != "" && !event.Self {
 		key += ":trigger"
 	}
 	receipt, err := s.Harness.Receipt(ctx, delivery.SessionID, key)
@@ -204,14 +210,10 @@ func (s *Service) DownloadAttachment(ctx context.Context, b domain.ExecutionBind
 			break
 		}
 	}
-	if attachment.ExternalID == "" {
+	if attachment.Ref == "" {
 		return domain.FileRef{}, domain.Missing("attachment", attachmentRef)
 	}
-	adapter, err := s.adapter(ctx, connection)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	download, err := adapter.Download(ctx, attachment)
+	download, err := s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
 	if err != nil {
 		return domain.FileRef{}, err
 	}

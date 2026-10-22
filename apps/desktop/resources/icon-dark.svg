@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Astral Dark App Icon">
+  <defs>
+    <filter id="appTileShadow" x="-15%" y="-15%" width="130%" height="135%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000" flood-opacity=".24"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185.4" fill="#25252b" filter="url(#appTileShadow)"/>
+  <rect x="101" y="101" width="822" height="822" rx="184.4" fill="none" stroke="#ffffff" stroke-opacity=".10" stroke-width="2"/>
+  <svg x="128" y="170" width="768" height="768" viewBox="0 0 24 24" fill="none">
+  <defs>
+    <linearGradient id="astralWebPearl" x1="15.4" y1="5.3" x2="9.8" y2="18.8" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff7e7"/><stop offset=".35" stop-color="#fff7ef"/>
+      <stop offset=".65" stop-color="#e8dafa"/><stop offset="1" stop-color="#b6a1ee"/>
+    </linearGradient>
+    <radialGradient id="astralWebLavender" cx="0" cy="0" r="1" gradientTransform="translate(7.3 14) rotate(-18) scale(7.2 7.7)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b3a0f0" stop-opacity=".54"/><stop offset=".55" stop-color="#bca7f6" stop-opacity=".27"/><stop offset="1" stop-color="#c9b8fc" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="astralWebRim" x1="8" y1="6" x2="16" y2="18" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c7bddd" stop-opacity=".74"/><stop offset=".4" stop-color="#d4c6ec" stop-opacity=".3"/><stop offset="1" stop-color="#a28bce" stop-opacity=".6"/>
+    </linearGradient>
+    <linearGradient id="astralWebBack" x1="2" y1="18" x2="22" y2="7" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8b70c9"/><stop offset=".45" stop-color="#9b84cd" stop-opacity=".7"/><stop offset="1" stop-color="#a28ad7"/>
+    </linearGradient>
+    <linearGradient id="astralWebFront" x1="2" y1="18" x2="22" y2="7" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8a6cc9"/><stop offset=".26" stop-color="#b198e7"/><stop offset=".52" stop-color="#e0cff9"/>
+      <stop offset=".73" stop-color="#d2c1f4"/><stop offset=".9" stop-color="#9c80d0"/><stop offset="1" stop-color="#a28ad7"/>
+    </linearGradient>
+    <linearGradient id="astralWebGlint" x1="2" y1="18" x2="22" y2="7" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff8ed" stop-opacity="0"/><stop offset=".42" stop-color="#fff8ed" stop-opacity=".65"/>
+      <stop offset=".64" stop-color="#fffaf0" stop-opacity=".95"/><stop offset="1" stop-color="#fff9ee" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="astralWebEyes" x1="11" y1="9" x2="12" y2="13" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2b2851"/><stop offset="1" stop-color="#171b3b"/>
+    </linearGradient>
+    <linearGradient id="astralWebGold" x1="3.6" y1="2.5" x2="5.5" y2="5.8" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f9d98b"/><stop offset=".5" stop-color="#f0c779"/><stop offset="1" stop-color="#dba85b"/>
+    </linearGradient>
+    <filter id="astralWebDepth" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy=".27" stdDeviation=".38" flood-color="#554078" flood-opacity=".14"/>
+    </filter>
+    <filter id="astralWebRingShade" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation=".13"/>
+    </filter>
+    <path id="astralWebBody" d="M19.3 11.7C19.3 15.676 16.076 18.9 12.1 18.9C8.124 18.9 4.9 15.676 4.9 11.7C4.9 7.724 8.124 4.5 12.1 4.5C16.076 4.5 19.3 7.724 19.3 11.7Z"/>
+    <path id="astralWebOrbit" d="M21.933 6.822C22.777 8.343 19.035 12.029 13.577 15.055C8.119 18.081 3.01 19.3 2.167 17.778C1.323 16.257 5.065 12.571 10.523 9.545C15.981 6.519 21.09 5.3 21.933 6.822Z"/>
+    <path id="astralWebFrontArc" d="M21.518 6.426C22.803 7.13 21.718 9.16 18.757 11.591C15.796 14.023 11.526 16.389 7.895 17.612C4.264 18.835 1.967 18.679 2.052 17.217"/>
+    <clipPath id="astralWebBodyClip"><use href="#astralWebBody"/></clipPath>
+    <linearGradient id="astralWebTaper" x1="1.8" y1="12" x2="22.3" y2="12" gradientUnits="userSpaceOnUse">
+      <stop stop-color="black"/><stop offset=".1" stop-color="white"/><stop offset=".9" stop-color="white"/><stop offset="1" stop-color="black"/>
+    </linearGradient>
+    <mask id="astralWebFrontMask" x="0" y="0" width="24" height="24" maskUnits="userSpaceOnUse">
+      <path d="M0 0h24v24H0z" fill="url(#astralWebTaper)"/>
+    </mask>
+  </defs>
+  <g fill="none">
+    <use href="#astralWebOrbit" stroke="url(#astralWebBack)" stroke-width=".87"/>
+    <use href="#astralWebBody" fill="url(#astralWebPearl)" filter="url(#astralWebDepth)"/>
+    <use href="#astralWebBody" fill="url(#astralWebLavender)"/>
+    <use href="#astralWebBody" stroke="url(#astralWebRim)" stroke-width=".17"/>
+    <path d="M14.684 9.942C14.916 10.869 14.729 11.714 14.269 11.829C13.808 11.944 13.247 11.285 13.016 10.358C12.784 9.431 12.971 8.586 13.431 8.471C13.892 8.356 14.453 9.015 14.684 9.942ZM10.184 11.142C10.416 12.069 10.229 12.914 9.769 13.029C9.308 13.144 8.747 12.485 8.516 11.558C8.284 10.631 8.471 9.786 8.931 9.671C9.392 9.556 9.953 10.215 10.184 11.142Z" fill="url(#astralWebEyes)"/>
+    <g clip-path="url(#astralWebBodyClip)">
+      <use href="#astralWebFrontArc" transform="translate(0 .23)" stroke="#65508c" stroke-width="1.1" opacity=".16" filter="url(#astralWebRingShade)"/>
+    </g>
+    <g mask="url(#astralWebFrontMask)">
+      <use href="#astralWebFrontArc" stroke="url(#astralWebFront)" stroke-width=".98" stroke-linecap="round"/>
+      <use href="#astralWebFrontArc" stroke="url(#astralWebGlint)" stroke-width=".27" stroke-linecap="round"/>
+    </g>
+    <path d="M4.34 2.5Q4.55 1.91 4.76 2.5L5.15 3.58Q5.23 3.82 5.49 3.91L6.56 4.3Q7.12 4.51 6.56 4.72L5.49 5.11Q5.23 5.2 5.15 5.44L4.76 6.52Q4.55 7.11 4.34 6.52L3.95 5.44Q3.87 5.2 3.61 5.11L2.54 4.72Q1.98 4.51 2.54 4.3L3.61 3.91Q3.87 3.82 3.95 3.58Z" fill="url(#astralWebGold)" stroke="#dcb16a" stroke-width=".065"/>
+  </g>
+</svg>
+
+</svg>

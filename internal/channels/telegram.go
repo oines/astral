@@ -491,6 +491,13 @@ func (t *telegram) SplitText(text string) ([]string, error) {
 }
 func (t *telegram) Send(ctx context.Context, send Send) (Receipt, error) {
 	body := map[string]any{"chat_id": send.Target.ExternalID}
+	if send.ReplyTo != "" {
+		id, err := strconv.ParseInt(send.ReplyTo, 10, 64)
+		if err != nil || id < 1 {
+			return Receipt{}, &SendError{Message: "invalid Telegram reply message ID"}
+		}
+		body["reply_parameters"] = map[string]any{"message_id": id}
+	}
 	if send.Target.TopicID != "" {
 		number, err := strconv.ParseInt(send.Target.TopicID, 10, 64)
 		if err != nil {
@@ -519,6 +526,9 @@ func (t *telegram) Send(ctx context.Context, send Send) (Receipt, error) {
 		go func() {
 			var writeErr error
 			for name, value := range body {
+				if name == "reply_parameters" {
+					value = string(encoded(value))
+				}
 				if writeErr = form.WriteField(name, fmt.Sprint(value)); writeErr != nil {
 					break
 				}

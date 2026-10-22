@@ -400,9 +400,6 @@ func (m *boundModel) wireImages(req core.Request, estimate bool) (core.Request, 
 			if m.images != "supported" {
 				return req, domain.Invalid("image input is not supported by this model profile")
 			}
-			if !strings.HasPrefix(part.URL, "astral-file:") {
-				return req, domain.Invalid("image content must retain its Computer attachment reference")
-			}
 			var encoded string
 			if json.Unmarshal(part.Data, &encoded) != nil || encoded == "" || !strings.HasPrefix(part.MediaType, "image/") {
 				return req, domain.Invalid("rollout image is missing its frozen pixel payload; reattach the image")

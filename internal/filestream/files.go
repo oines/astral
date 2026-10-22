@@ -132,8 +132,16 @@ func (s *Service) FreezeImages(ctx context.Context, agentID, sessionID string, m
 		if len(bytes) > 20<<20 {
 			return domain.Invalid("image exceeds the 20 MiB model input limit")
 		}
-		part.MediaType = ref.MediaType
-		part.Data, _ = json.Marshal(base64.StdEncoding.EncodeToString(bytes))
+		processed, err := core.ProcessImage(ctx, bytes, core.ImageOptions{})
+		if err != nil {
+			return err
+		}
+		if processed.IsError {
+			return domain.Invalid(processed.Content[0].Text)
+		}
+		image := processed.Content[1]
+		image.URL = part.URL
+		*part = image
 	}
 	return nil
 }

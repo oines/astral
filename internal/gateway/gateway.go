@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -51,15 +53,21 @@ type HistoryPage struct {
 	NextCursor string           `json:"next_cursor,omitempty"`
 	HeadID     string           `json:"head_id"`
 }
+type ResolveConversation struct {
+	ExternalID string `json:"external_id"`
+	TopicID    string `json:"topic_id,omitempty"`
+}
 type SendText struct {
 	ConversationID string `json:"conversation_id,omitempty"`
 	Text           string `json:"text"`
+	ReplyTo        string `json:"reply_to,omitempty"`
 }
 type SendFile struct {
 	ConversationID string `json:"conversation_id,omitempty"`
 	FileURI        string `json:"file_uri,omitempty"`
 	Path           string `json:"path,omitempty"`
 	Text           string `json:"text,omitempty"`
+	ReplyTo        string `json:"reply_to,omitempty"`
 }
 type ReferenceRequest struct {
 	Path     string `json:"path"`
@@ -101,6 +109,44 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		}
 		return value, nil
 	})
+	register[httpcontract.Empty, []channels.TelegramOperation](s, "GET", "/v1/accounts/{id}/telegram/operations", "agentTelegramOperations", func(r *http.Request, _ httpcontract.Empty) ([]channels.TelegramOperation, error) {
+		return c.TelegramOperations(r.Context(), binding(r).AgentID, r.PathValue("id"))
+	})
+	register[channels.TelegramRequest, channels.TelegramResult](s, "POST", "/v1/accounts/{id}/telegram/{operation}", "agentTelegramOperation", func(r *http.Request, request channels.TelegramRequest) (channels.TelegramResult, error) {
+		return c.TelegramOperation(r.Context(), binding(r), r.PathValue("id"), r.PathValue("operation"), request)
+	})
+	register[httpcontract.Empty, []domain.Connection](s, "GET", "/v1/accounts", "agentAccounts", func(r *http.Request, _ httpcontract.Empty) ([]domain.Connection, error) {
+		return c.VisibleConnections(r.Context(), binding(r).AgentID)
+	})
+	register[ResolveConversation, domain.Conversation](s, "POST", "/v1/accounts/{id}/conversations/resolve", "agentResolveConversation", func(r *http.Request, request ResolveConversation) (domain.Conversation, error) {
+		return c.ResolveForAgent(r.Context(), binding(r).AgentID, r.PathValue("id"), request.ExternalID, request.TopicID)
+	})
+	register[httpcontract.Empty, domain.Observation](s, "GET", "/v1/conversations/{id}/messages/{message_id}", "agentMessage", func(r *http.Request, _ httpcontract.Empty) (domain.Observation, error) {
+		if err := s.visibleConversation(r.Context(), binding(r).AgentID, r.PathValue("id")); err != nil {
+			return domain.Observation{}, err
+		}
+		return h.Store.Message(r.Context(), r.PathValue("id"), r.PathValue("message_id"))
+	})
+	const contentPath = "/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content"
+	s.Contract.Describe(httpcontract.Operation{Method: "GET", Path: contentPath, ID: "agentAttachmentContent", Tag: "Agent Gateway", ContentType: "application/octet-stream"})
+	s.mux.HandleFunc("GET "+contentPath, func(w http.ResponseWriter, r *http.Request) {
+		download, mediaType, err := c.AttachmentContent(r.Context(), binding(r), r.PathValue("id"), r.PathValue("message_id"), r.PathValue("ref"))
+		if err != nil {
+			httpcontract.Failure(w, r, err)
+			return
+		}
+		if mediaType == "" {
+			mediaType = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", mediaType)
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": download.Name}))
+		if download.Size > 0 {
+			w.Header().Set("Content-Length", strconv.FormatInt(download.Size, 10))
+		}
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.WriteHeader(http.StatusOK)
+		w.(*responseWriter).stream = download.Body
+	})
 	register[httpcontract.Empty, []domain.Conversation](s, "GET", "/v1/conversations", "agentConversations", func(r *http.Request, _ httpcontract.Empty) ([]domain.Conversation, error) {
 		return c.VisibleConversations(r.Context(), binding(r).AgentID)
 	})
@@ -110,16 +156,14 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		}
 		after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 		limit := queryLimit(r, 100)
-		items, err := h.Store.Observations(r.Context(), r.PathValue("id"), after, limit)
+		items, err := h.Store.SearchObservations(r.Context(), r.PathValue("id"), after, limit, r.URL.Query().Get("q"))
 		if err != nil {
 			return MessagePage{}, err
 		}
 		page := MessagePage{Items: []persistence.StoredObservation{}, NextSequence: after}
 		for _, item := range items {
 			page.NextSequence = item.Sequence
-			if query := r.URL.Query().Get("q"); query == "" || strings.Contains(strings.ToLower(item.Observation.Text), strings.ToLower(query)) {
-				page.Items = append(page.Items, item)
-			}
+			page.Items = append(page.Items, item)
 		}
 		return page, nil
 	}, httpcontract.Parameter{Name: "after", Type: "integer"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "q"})
@@ -147,14 +191,14 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	})
 	register[SendText, []domain.Outbox](s, "POST", "/v1/im/messages", "agentSendText", func(r *http.Request, request SendText) ([]domain.Outbox, error) {
 		b := binding(r)
-		return c.Enqueue(r.Context(), b.AgentID, b.SessionID, channels.SendRequest{IntentID: r.Header.Get("Idempotency-Key"), ConversationID: request.ConversationID, Text: request.Text})
+		return c.Enqueue(r.Context(), b.AgentID, b.SessionID, channels.SendRequest{IntentID: r.Header.Get("Idempotency-Key"), ConversationID: request.ConversationID, Text: request.Text, ReplyTo: request.ReplyTo})
 	})
 	register[SendFile, []domain.Outbox](s, "POST", "/v1/im/files", "agentSendFile", func(r *http.Request, request SendFile) ([]domain.Outbox, error) {
 		b := binding(r)
 		if request.FileURI == "" && request.Path == "" {
 			return nil, domain.Invalid("provide a source file URI or Computer path")
 		}
-		return c.Enqueue(r.Context(), b.AgentID, b.SessionID, channels.SendRequest{IntentID: r.Header.Get("Idempotency-Key"), ConversationID: request.ConversationID, Text: request.Text, FileURI: request.FileURI, Path: request.Path, SourceComputerID: b.ComputerID, SourceBinding: &b})
+		return c.Enqueue(r.Context(), b.AgentID, b.SessionID, channels.SendRequest{IntentID: r.Header.Get("Idempotency-Key"), ConversationID: request.ConversationID, Text: request.Text, ReplyTo: request.ReplyTo, FileURI: request.FileURI, Path: request.Path, SourceComputerID: b.ComputerID, SourceBinding: &b})
 	})
 	register[httpcontract.Empty, domain.Outbox](s, "GET", "/v1/im/receipts/{id}", "agentSendReceipt", func(r *http.Request, _ httpcontract.Empty) (domain.Outbox, error) {
 		var value domain.Outbox
@@ -180,7 +224,7 @@ func New(h *harness.Service, c *channels.Service) *Service {
 			Identity:    "Agent, Session and source Computer come from this listener. Request bodies cannot change them.",
 			Idempotency: "POST /im/messages and /im/files require a stable Idempotency-Key. They return queued receipts; query /im/receipts/{id}. Accepted means platform acceptance, not final delivery. Unknown sends must be inspected before retry.",
 			Files:       "Paths resolve on this listener's source Computer. File URIs retain their source. Ordinary assistant links do not upload files to IM.",
-			Endpoints:   map[string]string{"context": "GET /v1/context", "conversations": "GET /v1/conversations", "messages": "GET /v1/conversations/{id}/messages?after=0&limit=100&q=", "history": "GET /v1/sessions/{id}/history?cursor=&limit=50", "computers": "GET /v1/computers", "send_text": "POST /v1/im/messages {conversation_id?,text}", "send_file": "POST /v1/im/files {conversation_id?,file_uri?|path?,text?}", "receipt": "GET /v1/im/receipts/{id}", "download_attachment": "POST /v1/attachments/download {conversation_id,event_id,attachment_ref,path}", "reference": "POST /v1/files/reference {path,snapshot?}", "openapi": "GET /v1/openapi.json"},
+			Endpoints:   map[string]string{"context": "GET /v1/context", "accounts": "GET /v1/accounts", "resolve_chat": "POST /v1/accounts/{id}/conversations/resolve {external_id,topic_id?}", "message": "GET /v1/conversations/{id}/messages/{message_id}", "attachment_content": "GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content (original bytes)", "telegram_operations": "GET /v1/accounts/{id}/telegram/operations", "conversations": "GET /v1/conversations", "messages": "GET /v1/conversations/{id}/messages?after=0&limit=100&q=", "history": "GET /v1/sessions/{id}/history?cursor=&limit=50", "computers": "GET /v1/computers", "send_text": "POST /v1/im/messages {conversation_id?,text}", "send_file": "POST /v1/im/files {conversation_id?,file_uri?|path?,text?}", "receipt": "GET /v1/im/receipts/{id}", "download_attachment": "POST /v1/attachments/download {conversation_id,event_id,attachment_ref,path}", "reference": "POST /v1/files/reference {path,snapshot?}", "openapi": "GET /v1/openapi.json"},
 		}, nil
 	})
 	s.mux.HandleFunc("GET /v1/openapi.json", func(w http.ResponseWriter, r *http.Request) { httpcontract.JSON(w, 200, s.Contract.Document()) })
@@ -200,16 +244,7 @@ func queryLimit(r *http.Request, fallback int) int {
 	return min(n, 100)
 }
 func (s *Service) visibleConversation(ctx context.Context, agentID, id string) error {
-	all, err := s.Channels.VisibleConversations(ctx, agentID)
-	if err != nil {
-		return err
-	}
-	for _, c := range all {
-		if c.ID == id {
-			return nil
-		}
-	}
-	return domain.Forbidden("Conversation is outside the current Agent view")
+	return s.Channels.AuthorizeConversation(ctx, agentID, id)
 }
 func (s *Service) visibleSession(ctx context.Context, agentID, id string) error {
 	var session domain.Session
@@ -226,6 +261,7 @@ type responseWriter struct {
 	header http.Header
 	code   int
 	body   bytes.Buffer
+	stream io.ReadCloser
 }
 
 func (w *responseWriter) Header() http.Header  { return w.header }
@@ -255,11 +291,11 @@ func (s *Service) Handle(ctx context.Context, request computers.GatewayRequest) 
 	r.Header.Set("Idempotency-Key", request.Intent)
 	w := &responseWriter{header: http.Header{}}
 	s.mux.ServeHTTP(w, r)
-	if !json.Valid(w.body.Bytes()) {
+	if w.stream == nil && !json.Valid(w.body.Bytes()) {
 		w.body.Reset()
 		_ = json.NewEncoder(&w.body).Encode(httpcontract.Error{Code: "not_found", Message: "This Agent Gateway endpoint is unavailable."})
 	}
-	return computers.GatewayResponse{Status: w.code, Body: w.body.Bytes()}, nil
+	return computers.GatewayResponse{Status: w.code, Headers: w.header, Body: w.body.Bytes(), Stream: w.stream}, nil
 }
 
 // History returns branch history by default; a trace is the current writer's

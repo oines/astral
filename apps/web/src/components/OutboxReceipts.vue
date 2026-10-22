@@ -107,7 +107,7 @@ async function retry(id: string) { await action.run(async () => { await request(
       ></label>
       <div class="row">
         <Button
-          :disabled="!note.trim()"
+          :disabled="!note.trim() || !ids.trim()"
           :busy="action.busy.value"
           @click="resolve('accepted')"
         >

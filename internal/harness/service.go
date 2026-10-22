@@ -28,6 +28,7 @@ type Service struct {
 	Files     *filestream.Service
 	Search    *search.Service
 	RuntimeID string
+	IM        Messenger
 	ctx       context.Context
 	cancel    context.CancelFunc
 	mu        sync.Mutex
@@ -156,6 +157,9 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 			r.core, err = core.NewSession(ctx, config, core.SessionOptions{ID: r.id})
 		}
 	}
+	if err == nil {
+		err = r.syncSelection(ctx)
+	}
 	return err
 }
 
@@ -194,10 +198,11 @@ func (s *Service) CreateSession(ctx context.Context, agentID, title string) (dom
 	if err != nil {
 		return domain.Session{}, err
 	}
-	record := domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agentID, Title: strings.TrimSpace(title), Source: "web",
+	record := domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agentID, Title: strings.TrimSpace(title), TitleSource: domain.TitleManual, Source: "web",
 		ProfileID: agent.DefaultModelID, ModelRef: ref, Options: options, ComputerID: agent.DefaultComputerID}
-	if record.Title == "" {
+	if defaultSessionTitle(record.Title) {
 		record.Title = "New session"
+		record.TitleSource = domain.TitleDefault
 	}
 	if err = s.Store.Save(ctx, "sessions", &record.Meta, &record); err != nil {
 		return record, err

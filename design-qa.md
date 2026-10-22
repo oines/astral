@@ -1,5 +1,7 @@
 # Astral UI/UX rebuild — design QA
 
+Historical record for the 2026-10-21 implementation. Current UI work follows the [UI/UX specification](docs/ui-ux-spec.md), established on 2026-10-22. Earlier tab structures, disclosure choices, divider rules, and saving behavior below do not override that specification. This report does not certify the ongoing redesign.
+
 Date: 2026-10-21
 Final result: passed
 

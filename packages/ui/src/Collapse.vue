@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { CollapsibleRoot, CollapsibleContent } from 'reka-ui'
-defineProps<{ open: boolean }>()
+import { ref, watch } from 'vue'
+const props = defineProps<{ open: boolean }>()
+const rendered = ref(props.open)
+watch(() => props.open, open => { if (open) rendered.value = true })
 </script>
 <template>
-  <CollapsibleRoot :open="open">
-    <CollapsibleContent
-      class="collapse-content"
-      :inert="!open"
-    >
-      <slot />
-    </CollapsibleContent>
-  </CollapsibleRoot>
+  <div
+    class="collapse-content"
+    :data-state="open ? 'open' : 'closed'"
+    :inert="!open"
+    :aria-hidden="!open"
+  >
+    <div class="collapse-inner">
+      <slot v-if="rendered" />
+    </div>
+  </div>
 </template>

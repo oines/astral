@@ -4,7 +4,7 @@ go 1.25.7
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/oines/astral-core v0.0.0-20261021164907-a0cb8b3525af
+	github.com/oines/astral-core v0.0.0-20261022092116-f508cdea9069
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.38.2
 )

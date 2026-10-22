@@ -51,6 +51,7 @@ type Download struct {
 type Send struct {
 	Target    domain.Conversation
 	Text      string
+	ReplyTo   string
 	File      io.ReadCloser
 	FileName  string
 	MediaType string

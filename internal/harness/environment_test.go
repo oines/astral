@@ -71,6 +71,13 @@ func TestEnvironmentInitializationDedupAndReadsAcrossRestart(t *testing.T) {
 	if len(initial) != 1 || initial[0].Message.Role != core.RoleUser || f.count() != 0 {
 		t.Fatalf("initialization did not append exactly one passive snapshot: %+v", initial)
 	}
+	binding, err := f.hub.Bind(f.ctx, f.agent.ID, f.session.ID, f.session.ComputerID, f.session.CWD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(initial[0].Message.Content[0].Text, `"base_url":"`+binding.APIURL+`"`) || !strings.Contains(initial[0].Message.Content[0].Text, binding.APIURL+"/v1/capabilities") || !strings.Contains(initial[0].Message.Content[0].Text, binding.APIURL+"/v1/openapi.json") {
+		t.Fatal("environment did not expose bound API discovery URLs")
+	}
 	if f.session.CWD == "" {
 		t.Fatal("resolved default CWD was not persisted")
 	}
@@ -245,11 +252,12 @@ func TestEnvironmentOfflineStatusDoesNotKeepStaleDiscovery(t *testing.T) {
 	text := entries[len(entries)-1].Message.Content[0].Text
 	var snapshot struct {
 		Discovery computers.EnvironmentDiscovery `json:"discovery"`
+		LocalAPI  map[string]string              `json:"local_api"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(text, "Current Astral environment snapshot:\n")), &snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Discovery.Status != "unavailable" || snapshot.Discovery.AgentsMD.Content != "" || f.count() != 1 {
+	if snapshot.LocalAPI != nil || snapshot.Discovery.Status != "unavailable" || snapshot.Discovery.AgentsMD.Content != "" || f.count() != 1 {
 		t.Fatalf("offline state retained stale guidance or prevented chat: %+v", snapshot)
 	}
 }

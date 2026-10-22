@@ -93,7 +93,9 @@ func (p *Peer) Done() <-chan struct{} { return p.done }
 func (p *Peer) Close() error {
 	p.cancel(ErrDisconnected)
 	err := p.conn.Close(websocket.StatusGoingAway, "shutdown")
-	if errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) ||
+	// The peer may have closed its socket after our read loop was cancelled.
+	// EOF during this explicit shutdown is an already-closed connection.
+	if errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) ||
 		websocket.CloseStatus(err) == websocket.StatusNormalClosure || websocket.CloseStatus(err) == websocket.StatusGoingAway {
 		return nil
 	}

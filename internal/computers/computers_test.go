@@ -166,7 +166,7 @@ func TestTwoComputerFilesystemAndGatewayBindings(t *testing.T) {
 	// A process uses the listener attached to its original binding even after a
 	// separate binding has prepared the Session's other Computer.
 	process, err := backend.StartProcess(s.ctx, invocation(a), standardtools.ProcessRequest{
-		Command: `curl --fail --silent -X POST -H 'Content-Type: application/json' -d '{"agent_id":"forged"}' "$ASTRAL_API_URL/v1/context"`,
+		Command: `curl --fail --silent -X POST -H 'Content-Type: application/json' -d '{"agent_id":"forged"}' ` + a.APIURL + `/v1/context`,
 	})
 	if err != nil {
 		t.Fatal(err)

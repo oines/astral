@@ -41,7 +41,6 @@ type Daemon struct {
 }
 type localGateway struct {
 	binding domain.ExecutionBinding
-	url     string
 	server  *http.Server
 }
 type daemonProcess struct {
@@ -183,26 +182,28 @@ func (d *Daemon) backend(b domain.ExecutionBinding) (*local.Backend, error) {
 	if gateway == nil || gateway.binding != b {
 		return nil, domain.Forbidden("execution environment was not prepared")
 	}
-	return local.New(local.Options{CWD: b.CWD, Shell: b.Shell, Env: []string{"ASTRAL_API_URL=" + gateway.url, "ASTRAL_AGENT_HOME=" + b.AgentHome}})
+	return local.New(local.Options{CWD: b.CWD, Shell: b.Shell, Env: []string{"ASTRAL_AGENT_HOME=" + b.AgentHome}})
 }
 
-func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (string, error) {
+func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (domain.ExecutionBinding, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.closed {
-		return "", domain.Offline("daemon is closed")
+		return b, domain.Offline("daemon is closed")
 	}
 	if g := d.gateways[b.GrantID]; g != nil {
+		b.APIURL = g.binding.APIURL
 		if g.binding != b {
-			return "", domain.Forbidden("gateway binding changed")
+			return b, domain.Forbidden("gateway binding changed")
 		}
-		return g.url, nil
+		return b, nil
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return "", err
+		return b, err
 	}
-	g := &localGateway{binding: b, url: "http://" + listener.Addr().String()}
+	b.APIURL = "http://" + listener.Addr().String()
+	g := &localGateway{binding: b}
 	g.server = &http.Server{ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// A localhost endpoint is for command-line clients, never cross-origin
 		// browser script. The server uses this listener's fixed binding.
@@ -228,7 +229,14 @@ func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (string, error) {
 		}
 		call := GatewayRequest{Binding: b, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: raw, Intent: r.Header.Get("Idempotency-Key")}
 		var response GatewayResponse
-		if err = peer.JSON(r.Context(), "gateway", call, &response); err != nil {
+		meta, body, err := peer.Call(r.Context(), "gateway", call, nil)
+		if err == nil {
+			err = json.Unmarshal(meta, &response)
+		}
+		if body != nil {
+			defer body.Close()
+		}
+		if err != nil {
 			status, code := http.StatusBadGateway, "outcome_unknown"
 			var known *transport.Error
 			if errors.As(err, &known) && known.Outcome == "not_executed" {
@@ -239,16 +247,20 @@ func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (string, error) {
 			_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "message": err.Error()})
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
+		for key, values := range response.Headers {
+			w.Header()[key] = values
+		}
 		if response.Status < 100 || response.Status > 599 {
 			response.Status = http.StatusBadGateway
 		}
 		w.WriteHeader(response.Status)
-		_, _ = w.Write(response.Body)
+		if _, err := io.Copy(w, body); err != nil {
+			panic(http.ErrAbortHandler)
+		}
 	})}
 	d.gateways[b.GrantID] = g
 	go func() { _ = g.server.Serve(listener) }()
-	return g.url, nil
+	return b, nil
 }
 
 func (d *Daemon) handle(ctx context.Context, request transport.Request, out *transport.Responder) (err error) {
@@ -270,7 +282,7 @@ func (d *Daemon) handle(ctx context.Context, request transport.Request, out *tra
 		if err != nil {
 			return err
 		}
-		if _, err = d.ensureGateway(b); err != nil {
+		if b, err = d.ensureGateway(b); err != nil {
 			return err
 		}
 		return out.JSON(b)

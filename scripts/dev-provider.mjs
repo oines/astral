@@ -1,7 +1,9 @@
 import http from 'node:http'
 // Deterministic, loopback-only development fixture. No external model calls.
 // [file] exercises real Computer execution; [slow], [retry], and [silent]
-// exercise cancellation, attempt replacement, and no_reply.
+// exercise cancellation, attempt replacement, and normal silent completion. [title-fail]
+// rejects the independent title call; [title-slow] leaves time to observe the
+// fallback and manual renames while the independent title request is pending.
 const port = Number(process.env.ASTRAL_FIXTURE_PORT || 4556)
 const layoutReply = `已整理好本周工作笔记，完成事项和下一步安排如下。
 
@@ -44,15 +46,24 @@ http.createServer(async(req,res)=>{
  count++
  const messages=body.messages||[]
  const last=messages.at(-1)||{}
- const users=messages.filter(m=>m.role==='user')
+ const contentText=m=>typeof m.content==='string'?m.content:(m.content||[]).filter(p=>p.type==='text').map(p=>p.text).join('')
+ const isTitle=messages.length===1&&contentText(messages[0]).startsWith('Generate a short title for this conversation,')
+ const environment=messages.map(contentText).filter(text=>text.startsWith('Current Astral environment snapshot:\n')).at(-1)
+ const apiURL=environment?JSON.parse(environment.slice(environment.indexOf('\n')+1)).local_api?.base_url:undefined
+ const users=messages.filter(m=>m.role==='user'&&!contentText(m).startsWith('Current Astral environment snapshot:\n'))
  const user=users.at(-1)||{}
  const text=typeof user.content==='string'?user.content:JSON.stringify(user.content||'')
  const images=messages.flatMap(m=>Array.isArray(m.content)?m.content:[]).filter(p=>p.type==='image_url')
- diagnostics.push({request:count,stream:body.stream,image_count:images.length,native_data:images.every(p=>p.image_url?.url?.startsWith('data:image/')),reasoning_effort:body.reasoning_effort||null,last_role:last.role})
+ diagnostics.push({request:count,purpose:isTitle?'title':'chat',stream:body.stream,image_count:images.length,native_data:images.every(p=>p.image_url?.url?.startsWith('data:image/')),reasoning_effort:body.reasoning_effort||null,last_role:last.role})
  let message
- if(JSON.stringify(body.tools||[]).includes('astral_verify')) message=body.tool_choice==='none'?{role:'assistant',content:'pong'}:tools('astral_verify',{value:'ping'})
+ if(isTitle){
+  if(text.includes('[title-fail]')){res.writeHead(503,{'Content-Type':'application/json'});return res.end(JSON.stringify({error:{message:'Title generation fixture failure'}}))}
+  await new Promise(resolve=>setTimeout(resolve,text.includes('[title-slow]')?3500:1200))
+  message={role:'assistant',content:text.includes('本周工作笔记')?'工作笔记整理':/[\u4e00-\u9fff]/.test(text.slice(text.lastIndexOf('User: ')))?'Astral会话标题生成':'Astral session titles'}
+ }
+ else if(JSON.stringify(body.tools||[]).includes('astral_verify')) message=body.tool_choice==='none'?{role:'assistant',content:'pong'}:tools('astral_verify',{value:'ping'})
  else if(!body.tools?.length) message={role:'assistant',content:'The conversation validated Computer execution, stable file references and preserved native image inputs. Continue from the latest user request.'}
- else if(text.includes('[silent]')) message=tools('no_reply',{})
+ else if(text.includes('[silent]')) message={role:'assistant',content:''}
  else if(text.includes('[process]')) {
   const completed=messages.slice(messages.lastIndexOf(user)+1).filter(m=>m.role==='tool').length
   if(completed===0)message={...tools('exec_command',{cmd:"printf 'notes.md\\n'",yield_time_ms:1000,max_output_tokens:1000}),reasoning_content:'先查看工作记录，再逐项核对本周已完成的事项。'}
@@ -66,7 +77,7 @@ http.createServer(async(req,res)=>{
   const native=typeof last.content==='string'?last.content:JSON.stringify(last.content)
   const uri=/astral-file:\/\/[^\s"\\]+/.exec(native)?.[0]
   message={role:'assistant',content:uri?`Created the file on your Computer.\n\n[Open the validation note](${uri})\n\nThe command output and source are available in the activity details.`:`The tool completed.\n\n${native.slice(0,200)}`}
- }else if(text.includes('[file]')) message=tools('exec_command',{cmd:'fixture_dir=$(mktemp -d)\nprintf \'# Astral validation\\n\\nThis file was written by the real Computer daemon.\\n\' > "$fixture_dir/validation.md"\ncurl -fsS -X POST "$ASTRAL_API_URL/v1/files/reference" -H \'Content-Type: application/json\' --data "{\\"path\\":\\"$fixture_dir/validation.md\\"}"',yield_time_ms:1000,max_output_tokens:1000})
+ }else if(text.includes('[file]')) message=tools('exec_command',{cmd:'fixture_dir=$(mktemp -d)\nprintf \'# Astral validation\\n\\nThis file was written by the real Computer daemon.\\n\' > "$fixture_dir/validation.md"\ncurl -fsS -X POST "'+apiURL+'/v1/files/reference" -H \'Content-Type: application/json\' --data "{\\"path\\":\\"$fixture_dir/validation.md\\"}"',yield_time_ms:1000,max_output_tokens:1000})
  else message={role:'assistant',content:images.length?`Received **${images.length} native image block(s)** in the model request. The original attachment is on your Computer, and its model payload is preserved in this conversation.`:'The local model connection is working.\n\nThis reply came through the **real Server, model adapter and persistent Core session**.\n\n```js\nconst ready = true\n```'}
  const finish=message.tool_calls?'tool_calls':'stop'
  if(!body.stream){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:`reply_${count}`,choices:[{index:0,finish_reason:finish,message}],usage:{prompt_tokens:180,completion_tokens:65}}))}

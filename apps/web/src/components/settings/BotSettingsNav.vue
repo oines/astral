@@ -1,0 +1,88 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { useQuery } from '@pinia/colada'
+import { listConnectionsQuery } from '@astral/sdk/colada'
+import { ArrowLeft, ChevronRight, Monitor, Plus, Settings2 } from '@astral/icons'
+import { Modal } from '@astral/ui'
+import type { Agent } from '../../lib/types'
+import ChannelIcon from '../ChannelIcon.vue'
+
+const props = defineProps<{ bot: Agent }>()
+const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const connections = useQuery(listConnectionsQuery())
+const platforms = computed(() => [...new Set((connections.data.value || []).filter(c => c.agent_id === props.bot.id).map(c => c.platform))])
+const selectedPlatform = computed(() => typeof route.query.platform === 'string' ? route.query.platform : route.query.tab === 'channels' ? 'telegram' : '')
+const connecting = ref(false)
+function connect(platform: string) {
+  connecting.value = false
+  void router.push({ path: '/settings/agents', query: { agent: props.bot.id, platform, connect: '1' } })
+}
+</script>
+<template>
+  <aside class="settings-nav bot-settings-nav">
+    <RouterLink
+      to="/settings/agents"
+      class="settings-back"
+    >
+      <ArrowLeft />{{ t('allAgents') }}
+    </RouterLink>
+    <div class="bot-nav-identity">
+      <span class="agent-avatar">{{ bot.avatar || bot.name.slice(0, 1) }}</span>
+      <strong>{{ bot.name }}</strong>
+    </div>
+    <nav :aria-label="bot.name">
+      <RouterLink
+        :to="{ path: '/settings/agents', query: { agent: bot.id } }"
+        :class="{ selected: !selectedPlatform && route.query.tab !== 'computers' }"
+      >
+        <Settings2 />{{ t('botBasics') }}
+      </RouterLink>
+      <RouterLink
+        :to="{ path: '/settings/agents', query: { agent: bot.id, tab: 'computers' } }"
+        :class="{ selected: route.query.tab === 'computers' }"
+      >
+        <Monitor />{{ t('botComputerPermissions') }}
+      </RouterLink>
+      <p class="settings-nav-group">
+        {{ t('botPlatforms') }}
+      </p>
+      <RouterLink
+        v-for="platform in platforms"
+        :key="platform"
+        :to="{ path: '/settings/agents', query: { agent: bot.id, platform } }"
+        :class="{ selected: selectedPlatform === platform }"
+      >
+        <ChannelIcon
+          :platform="platform"
+          aria-hidden="true"
+        />{{ platform === 'telegram' ? 'Telegram' : platform }}
+      </RouterLink>
+      <button
+        type="button"
+        class="settings-nav-action"
+        @click="connecting = true"
+      >
+        <Plus />{{ t('connectPlatform') }}
+      </button>
+    </nav>
+    <Modal
+      v-model:open="connecting"
+      :title="t('choosePlatform')"
+    >
+      <button
+        type="button"
+        class="computer-option"
+        @click="connect('telegram')"
+      >
+        <ChannelIcon
+          platform="telegram"
+          aria-hidden="true"
+        /><span><strong>Telegram</strong><small>{{ t('telegramPlatformHint') }}</small></span><ChevronRight />
+      </button>
+    </Modal>
+  </aside>
+</template>

@@ -159,3 +159,32 @@ func TestConcurrentCallsAndRemoteErrors(t *testing.T) {
 		t.Fatalf("error classification lost: %v", err)
 	}
 }
+
+func TestCloseAfterRemoteSocketHasAlreadyClosed(t *testing.T) {
+	drop := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		<-drop
+		_ = conn.CloseNow()
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := transport.New(conn, nil)
+	close(drop)
+	select {
+	case <-peer.Done():
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if err := peer.Close(); err != nil {
+		t.Fatalf("closing an already-disconnected peer failed: %v", err)
+	}
+}

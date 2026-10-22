@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,15 +24,17 @@ import (
 )
 
 type botFixture struct {
-	server  *httptest.Server
-	updates chan []telegramUpdate
-	sends   atomic.Int64
-	unknown atomic.Bool
-	mu      sync.Mutex
-	texts   []string
-	targets []string
-	uploads [][]byte
-	png     []byte
+	server     *httptest.Server
+	updates    chan []telegramUpdate
+	sends      atomic.Int64
+	unknown    atomic.Bool
+	mu         sync.Mutex
+	operations []string
+	parameters []map[string]any
+	texts      []string
+	targets    []string
+	uploads    [][]byte
+	png        []byte
 }
 
 func newBot(t *testing.T) *botFixture {
@@ -59,6 +60,18 @@ func newBot(t *testing.T) *botFixture {
 			var id int64
 			_, _ = fmt.Sscan(body.ChatID, &id)
 			reply(telegramChat{ID: id, Title: body.ChatID, Type: "supergroup", IsForum: true})
+		case "setChatTitle", "deleteMessage", "forwardMessage", "editMessageText", "setMyCommands", "banChatSenderChat":
+			var parameters map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&parameters)
+			b.mu.Lock()
+			b.operations = append(b.operations, method)
+			b.parameters = append(b.parameters, parameters)
+			b.mu.Unlock()
+			if method == "forwardMessage" || method == "editMessageText" {
+				reply(telegramMessage{ID: 701})
+				return
+			}
+			reply(true)
 		case "getUpdates":
 			select {
 			case updates := <-b.updates:
@@ -135,9 +148,9 @@ func newBot(t *testing.T) *botFixture {
 	t.Cleanup(b.server.Close)
 	return b
 }
-func (b *botFixture) connection(t *testing.T, s *Service) domain.Connection {
+func (b *botFixture) connection(t *testing.T, s *Service, agentID string) domain.Connection {
 	t.Helper()
-	c := domain.Connection{Name: "test bot", Adapter: "telegram.bot", Enabled: true, Config: encoded(TelegramConfig{BaseURL: b.server.URL})}
+	c := domain.Connection{Name: "test bot", AgentID: agentID, Adapter: "telegram.bot", Enabled: true, Config: encoded(TelegramConfig{BaseURL: b.server.URL})}
 	token := "test-token"
 	if err := s.SaveConnection(context.Background(), &c, &token); err != nil {
 		t.Fatal(err)
@@ -153,7 +166,7 @@ func createBinding(t *testing.T, p *testkit.Platform, s *Service, c domain.Conne
 	if err != nil {
 		t.Fatal(err)
 	}
-	binding, err := s.Bind(p.Context, conversation.ID, p.Agent.ID)
+	binding, err := s.Bind(p.Context, conversation.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,8 +193,18 @@ func TestConnectionCanBeDisabledWhilePlatformIsUnavailable(t *testing.T) {
 	bot := newBot(t)
 	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return nil })
 	service := New(p.Store, p.Harness)
-	connection := bot.connection(t, service)
+	connection := bot.connection(t, service, p.Agent.ID)
 	bot.server.Close()
+	connection.Name = "Renamed while offline"
+	connection.AccessMode = "all"
+	if err := service.SaveConnection(p.Context, &connection, nil); err != nil {
+		t.Fatalf("platform outage blocked independent account settings: %v", err)
+	}
+	changed := connection
+	changed.Config = encoded(TelegramConfig{BaseURL: "http://127.0.0.1:1"})
+	if err := service.SaveConnection(p.Context, &changed, nil); err == nil {
+		t.Fatal("changing connection parameters skipped platform verification")
+	}
 	connection.Enabled = false
 	if err := service.SaveConnection(p.Context, &connection, nil); err != nil {
 		t.Fatalf("platform outage blocked disabling the account: %v", err)
@@ -200,24 +223,27 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 	p := testkit.New(t, 1, func(ctx context.Context, n int, request map[string]any) any {
 		body := string(encoded(request))
 		if n == 1 {
-			if !strings.Contains(body, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(bot.png)) || !strings.Contains(body, "astral-file://") || !strings.Contains(body, ".astral/attachments/") {
-				t.Error("IM image lost native pixels, source URI or Computer attachment")
+			if !strings.Contains(body, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(bot.png)) || !strings.Contains(body, "/v1/conversations/") || strings.Contains(body, ".astral/attachments/") {
+				t.Error("IM image lost native pixels or original-download URL, or wrote a Computer file")
 			}
 			if strings.Count(body, "photo request") != 1 || !strings.Contains(body, "background context") {
 				t.Error("observation/trigger was duplicated or prior passive context was lost")
 			}
 			reply := testkit.Tool("exec_command", map[string]any{"cmd": "printf tool-result", "login": false})
 			msg := reply["choices"].([]any)[0].(map[string]any)["message"].(map[string]any)
-			msg["content"], msg["reasoning_content"] = "I received the image.", "private reasoning"
+			msg["content"], msg["reasoning_content"] = "Web-only commentary.", "private reasoning"
 			return reply
 		}
-		if n == 3 && !strings.Contains(body, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(bot.png)) {
+		if n == 4 && !strings.Contains(body, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(bot.png)) {
 			t.Error("offline continuation did not replay frozen image")
 		}
-		return testkit.Tool("no_reply", map[string]any{})
+		if n == 2 {
+			return testkit.Tool("send_message", map[string]any{"text": "I received the image."})
+		}
+		return testkit.Text("Web-visible completion.")
 	})
 	s := New(p.Store, p.Harness)
-	c := bot.connection(t, s)
+	c := bot.connection(t, s, p.Agent.ID)
 	binding := createBinding(t, p, s, c, "-100", "")
 	startChannels(t, s, p.Context)
 	passive := update(1, "background context")
@@ -231,9 +257,9 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 	trigger.Message.Entities = []telegramEntity{{Type: "mention", Offset: 3, Length: 11}}
 	trigger.Message.Photo = []telegramFile{{ID: "small", Width: 1, Height: 1}, {ID: "image", Width: 10, Height: 10, Size: int64(len(bot.png)), MIME: "image/png", Name: "source.png"}}
 	bot.updates <- []telegramUpdate{trigger}
-	testkit.Await(t, p.Context, func() bool { return p.Requests.Load() >= 2 })
+	testkit.Await(t, p.Context, func() bool { return p.Requests.Load() >= 3 })
 	view := p.Idle(t, binding.SessionID)
-	if view.LastRun.EndReason != "no_reply" {
+	if view.LastRun.Status != "completed" {
 		t.Fatal("silent end did not persist")
 	}
 	delivery, err := s.Delivery(p.Context, event1)
@@ -257,6 +283,7 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 	}
 	self := update(3, "I received the image.")
 	self.Message.From = &telegramUser{ID: 999, IsBot: true}
+	self.Message.ID = 9001
 	edit := update(4, "edited background")
 	edit.EditedMessage, edit.Message = edit.Message, nil
 	edit.EditedMessage.ID = 101
@@ -270,7 +297,7 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 		d, err := s.Delivery(p.Context, stableID("event", c.ID, "4"))
 		return err == nil && d.InputID != ""
 	})
-	if p.Requests.Load() != 2 {
+	if p.Requests.Load() != 3 {
 		t.Fatal("duplicate, self echo or passive edit reactivated model")
 	}
 	if err := s.Close(p.Context); err != nil {
@@ -278,16 +305,9 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 	}
 	restarted := New(p.Store, p.Harness)
 	startChannels(t, restarted, p.Context)
-	var copy attachmentCopy
-	if err := p.Store.Get(p.Context, "inbox_files", stableID("attachment", p.Agent.ID, stableID("event", c.ID, "2"), "102:0"), &copy); err != nil {
-		t.Fatal(err)
-	}
-	ref, err := p.Harness.Files.Get(p.Context, p.Agent.ID, copy.URI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.Remove(ref.Path); err != nil {
-		t.Fatal(err)
+	files, err := p.Store.List(p.Context, "files")
+	if err != nil || len(files) != 0 {
+		t.Fatalf("receiving IM image created Computer file refs: %d %v", len(files), err)
 	}
 	if err = p.Daemons[0].Close(p.Context); err != nil {
 		t.Fatal(err)
@@ -311,11 +331,8 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 			}
 		}
 	}
-	if frozen != 3 {
+	if frozen != 4 {
 		t.Fatalf("actual rollout inputs lost images: %d", frozen)
-	}
-	if err = restarted.collect(p.Context, binding); err != nil {
-		t.Fatal(err)
 	}
 	if bot.sends.Load() != 1 {
 		t.Fatal("restart or silent end resent old assistant text")
@@ -326,7 +343,7 @@ func TestOutboundUnknownIdempotencyRebindingAndRestart(t *testing.T) {
 	bot := newBot(t)
 	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	s := New(p.Store, p.Harness)
-	c := bot.connection(t, s)
+	c := bot.connection(t, s, p.Agent.ID)
 	binding := createBinding(t, p, s, c, "-100", "")
 	request := SendRequest{IntentID: "one-send", ConversationID: binding.ConversationID, Text: "send once"}
 	out, err := s.Enqueue(p.Context, p.Agent.ID, binding.SessionID, request)
@@ -362,7 +379,14 @@ func TestOutboundUnknownIdempotencyRebindingAndRestart(t *testing.T) {
 	if err = p.Harness.SaveAgent(p.Context, &other); err != nil {
 		t.Fatal(err)
 	}
-	newBinding, err := s.Bind(p.Context, binding.ConversationID, other.ID)
+	otherSession, err := p.Harness.CreateSession(p.Context, other.ID, "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Bind(p.Context, binding.ConversationID, otherSession.ID); err == nil {
+		t.Fatal("accepted Session from another Agent")
+	}
+	newBinding, err := s.Bind(p.Context, binding.ConversationID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +423,7 @@ func TestFileSendRetainsSourceAndTextFragmentsStayOrdered(t *testing.T) {
 	bot := newBot(t)
 	p := testkit.New(t, 2, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	s := New(p.Store, p.Harness)
-	c := bot.connection(t, s)
+	c := bot.connection(t, s, p.Agent.ID)
 	binding := createBinding(t, p, s, c, "-100", "22")
 	b, err := p.Hub.Bind(p.Context, p.Agent.ID, binding.SessionID, p.Agent.DefaultComputerID, "")
 	if err != nil {
