@@ -377,6 +377,7 @@ func (f *feishu) normalize(in *larkim.P2MessageReceiveV1) (Event, error) {
 	}
 	observation.Self = observation.Sender.ID != "" && observation.Sender.ID == f.connection.AccountID
 	observation.Text, observation.Attachments = feishuContent(feishuValue(message.MessageType), feishuValue(message.Content), messageID)
+	utilityText := observation.Text
 	for _, mention := range message.Mentions {
 		if mention == nil {
 			continue
@@ -386,6 +387,11 @@ func (f *feishu) normalize(in *larkim.P2MessageReceiveV1) (Event, error) {
 		}
 		if mention.Id != nil && feishuValue(mention.Id.OpenId) != "" && feishuValue(mention.Id.OpenId) == f.connection.AccountID {
 			observation.Trigger = "mention"
+			for _, label := range []string{feishuValue(mention.Key), "@" + feishuValue(mention.Name), "@" + f.connection.AccountID} {
+				if label != "" && label != "@" {
+					utilityText = strings.ReplaceAll(utilityText, label, "")
+				}
+			}
 		}
 	}
 	millis, err := strconv.ParseInt(feishuValue(message.CreateTime), 10, 64)
@@ -400,7 +406,7 @@ func (f *feishu) normalize(in *larkim.P2MessageReceiveV1) (Event, error) {
 		observation.Trigger = ""
 	}
 	event := Event{Conversation: conversation, Observation: observation}
-	if strings.TrimSpace(observation.Text) == "/chat_id" {
+	if strings.TrimSpace(utilityText) == "/chat_id" {
 		event.Command = &Command{Name: "chat_id"}
 		if !observation.Self && feishuValue(sender.SenderType) != "bot" {
 			event.Command.Text = "Chat ID: " + chatID
@@ -654,10 +660,12 @@ func (f *feishu) SplitText(text string) ([]string, error) {
 				break
 			}
 		}
-		parts = append(parts, string(runes[:end]))
+		if part := string(runes[:end]); strings.TrimSpace(part) != "" {
+			parts = append(parts, part)
+		}
 		runes = runes[end:]
 	}
-	if len(runes) != 0 {
+	if strings.TrimSpace(string(runes)) != "" {
 		parts = append(parts, string(runes))
 	}
 	return parts, nil

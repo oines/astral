@@ -263,6 +263,27 @@ func TestFeishuNormalizeMentionsRichTextAndPrivateReplies(t *testing.T) {
 	if event.Observation.ID != again.Observation.ID {
 		t.Fatal("redelivered event got a different archive identity")
 	}
+	commandContent := `{"text":"@_user_1 /chat_id"}`
+	message.Event.Message.Content = &commandContent
+	command, err := f.adapter.normalize(&message)
+	if err != nil || command.Command == nil || command.Command.Text != "Chat ID: oc_chat" {
+		t.Fatalf("mentioned chat ID command: %#v, %v", command, err)
+	}
+	otherBot := "bot"
+	message.Event.Sender.SenderType = &otherBot
+	command, _ = f.adapter.normalize(&message)
+	if command.Command == nil || command.Command.Text != "" || command.Observation.Trigger != "" {
+		t.Fatalf("Bot utility command was not silently consumed: %#v", command)
+	}
+	human := "user"
+	message.Event.Sender.SenderType = &human
+	otherID := "ou_other"
+	message.Event.Message.Mentions[0].Id.OpenId = &otherID
+	command, _ = f.adapter.normalize(&message)
+	if command.Command != nil {
+		t.Fatal("removing another user's mention produced a utility command")
+	}
+	message.Event.Message.Content = duplicate.Event.Message.Content
 	parent := "om_parent"
 	message.Event.Message.ParentId = &parent
 	message.Event.Message.Mentions = nil
@@ -420,5 +441,9 @@ func TestFeishuConfigurationAndTextBounds(t *testing.T) {
 	}
 	if !feishuID("file_v2_abc-def") {
 		t.Fatal(fmt.Errorf("valid Feishu file key rejected"))
+	}
+	parts, err = f.adapter.SplitText(strings.Repeat(" ", f.adapter.Capabilities().TextLimit) + "message")
+	if err != nil || len(parts) != 1 || parts[0] != "message" {
+		t.Fatalf("split emitted a whitespace-only fragment: %#v, %v", parts, err)
 	}
 }
