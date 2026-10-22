@@ -117,6 +117,16 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 	if err != nil {
 		return nil, err
 	}
+	if request.ReplyTo != "" && !adapter.Capabilities().ReplyReferences {
+		return nil, domain.Invalid("this platform does not support outbound reply references")
+	}
+	// OneBot reply IDs are global to the account. Require a known message in
+	// this authorized chat before its preview can be exposed to recipients.
+	if request.ReplyTo != "" && connection.Adapter == "qq.napcat" {
+		if _, err := s.Store.Message(ctx, conversation.ID, request.ReplyTo); err != nil {
+			return nil, domain.Forbidden("reply message is not archived in the selected chat")
+		}
+	}
 	var file domain.FileRef
 	var fragments []string
 	if request.FileURI != "" || request.Path != "" {
@@ -152,6 +162,15 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 			return nil, domain.Invalid("file exceeds the selected adapter's upload limit")
 		}
 		fragments = []string{request.Text}
+		if adapter.Capabilities().CaptionLimit == 0 && strings.TrimSpace(request.Text) != "" {
+			// Some protocols accept exactly one media or text item per send.
+			// Keep each external side effect in its own durable receipt.
+			fragments, err = adapter.SplitText(presentText(request.Text))
+			if err != nil {
+				return nil, err
+			}
+			fragments = append(fragments, "")
+		}
 	} else {
 		fragments, err = adapter.SplitText(presentText(request.Text))
 		if err != nil {
@@ -190,9 +209,13 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 			if index > 0 {
 				id = domain.ID("outbox")
 			}
+			fileID := ""
+			if index == len(fragments)-1 {
+				fileID = file.ID
+			}
 			record := domain.Outbox{Meta: domain.Meta{ID: id}, GroupID: key, IntentKey: fmt.Sprintf("%s:%d", key, index), RequestDigest: hash,
 				AgentID: agentID, SessionID: sessionID, BindingID: binding.ID, ConversationID: conversation.ID, ConnectionID: connection.ID, ConnectionAccountID: connection.AccountID,
-				ExternalID: conversation.ExternalID, TopicID: conversation.TopicID, AssistantEntryID: request.AssistantEntryID, Fragment: index, Text: text, ReplyTo: request.ReplyTo, FileRefID: file.ID, Status: "pending"}
+				ExternalID: conversation.ExternalID, TopicID: conversation.TopicID, AssistantEntryID: request.AssistantEntryID, Fragment: index, Text: text, ReplyTo: request.ReplyTo, FileRefID: fileID, Status: "pending"}
 			if claimErr = tx.Save(ctx, "outbox", &record.Meta, &record); claimErr != nil {
 				return claimErr
 			}

@@ -470,6 +470,12 @@ func (a *API) resources() {
 	route[SearchQuery, search.Response](a, "POST", "/search-providers/{id}/test", "testSearchProvider", "Search", func(r *http.Request, input SearchQuery) (search.Response, error) {
 		return h.Search.Query(r.Context(), r.PathValue("id"), input)
 	})
+	route[channels.WeixinLoginInput, channels.WeixinLoginView](a, "POST", "/agents/{id}/weixin/login", "startWeixinLogin", "Channels", func(r *http.Request, input channels.WeixinLoginInput) (channels.WeixinLoginView, error) {
+		return c.StartWeixinLogin(r.Context(), r.PathValue("id"), input)
+	})
+	route[channels.WeixinLoginPoll, channels.WeixinLoginView](a, "POST", "/weixin/logins/{id}/poll", "pollWeixinLogin", "Channels", func(r *http.Request, input channels.WeixinLoginPoll) (channels.WeixinLoginView, error) {
+		return c.PollWeixinLogin(r.Context(), r.PathValue("id"), input)
+	})
 	route[httpcontract.Empty, []ConnectionView](a, "GET", "/connections", "listConnections", "Channels", func(r *http.Request, _ httpcontract.Empty) ([]ConnectionView, error) {
 		all, err := readAll[domain.Connection](r.Context(), h.Store, "connections")
 		if err != nil {

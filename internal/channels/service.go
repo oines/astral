@@ -31,6 +31,7 @@ type Service struct {
 	inboxes      map[string]context.CancelFunc
 	sending      map[string]bool
 	statuses     map[string]Status
+	weixinLogins map[string]*weixinLogin
 	probeQuiet   time.Duration
 	probeMaxWait time.Duration
 }
@@ -84,7 +85,15 @@ func (s *Service) adapter(ctx context.Context, connection domain.Connection) (Ad
 	if err != nil {
 		return nil, err
 	}
-	return factory(connection, token, s.Client)
+	adapter, err := factory(connection, token, s.Client)
+	if err == nil {
+		// A protocol may need durable per-chat tokens. They stay in the
+		// adapter's private records rather than Core or model-visible fields.
+		if persistent, ok := adapter.(interface{ setStore(*persistence.Store) }); ok {
+			persistent.setStore(s.Store)
+		}
+	}
+	return adapter, err
 }
 func (s *Service) Capabilities(ctx context.Context, id string) (Capabilities, error) {
 	var c domain.Connection
@@ -98,6 +107,12 @@ func (s *Service) Capabilities(ctx context.Context, id string) (Capabilities, er
 	return adapter.Capabilities(), nil
 }
 func (s *Service) SaveConnection(ctx context.Context, c *domain.Connection, token *string) error {
+	return s.saveConnection(ctx, c, token, false)
+}
+func (s *Service) saveConnection(ctx context.Context, c *domain.Connection, token *string, weixinGrant bool) error {
+	if c.Adapter == "weixin.ilink" && !weixinGrant && (c.ID == "" || token != nil) {
+		return domain.Invalid("Weixin credentials must be obtained through QR authorization")
+	}
 	if strings.TrimSpace(c.Name) == "" {
 		return domain.Invalid("connection name is required")
 	}
@@ -440,8 +455,12 @@ func (s *Service) poll(ctx context.Context, c domain.Connection) {
 				}
 			}
 			if pollErr == nil && batch.NextCursor != offset.Value {
-				offset.Value = batch.NextCursor
-				pollErr = s.Store.Save(ctx, "channel_cursors", &offset.Meta, &offset)
+				next := offset
+				next.Value = batch.NextCursor
+				pollErr = s.Store.Save(ctx, "channel_cursors", &next.Meta, &next)
+				if pollErr == nil {
+					offset = next
+				}
 			}
 		}
 		if ctx.Err() != nil {
