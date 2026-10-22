@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { useSettingsSave } from '../../composables/useSettingsSave'
 
-const props = defineProps<{ scope: string | string[]; saving?: string; saved?: string }>()
+const props = defineProps<{ scope: string | string[]; saving?: string; saved?: string; retry?: () => unknown }>()
 const { t } = useI18n()
 const saves = useSettingsSave()
 const active = computed(() => {
@@ -33,7 +33,7 @@ const active = computed(() => {
       <button
         type="button"
         class="text-button"
-        @click="saves.retry(active.key)"
+        @click="active.status === 'error' && props.retry ? props.retry() : saves.retry(active.key)"
       >
         {{ t(active.status === 'uncertain' ? 'settingsCheckStatus' : 'retry') }}
       </button>

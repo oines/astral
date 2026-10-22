@@ -1,4 +1,15 @@
 export const channelsEn = {
+  weixinQRFailed: 'Unable to display the QR code. Get a new code.',
+  qqPlatformHint: 'Connect through QQ Open Platform or a NapCat OneBot 11 service.',
+  qqOfficialHint: 'QQ Open Platform App ID and App Secret. Group events and proactive sending depend on Tencent permissions and reply windows.',
+  napcatHint: 'Enable NapCat OneBot 11 HTTP and forward WebSocket services. Both addresses must be reachable from the Astral server.',
+  weixinPlatformHint: 'Scan with Weixin and confirm ClawBot / iLink authorization. Only supported personal chats are available; sending requires recent inbound context.',
+  feishuPlatformHint: 'Use a Feishu custom app with Bot capability. Enable persistent connection events and subscribe to im.message.receive_v1; grant the message and resource permissions you need.',
+  appID: 'App ID', appSecret: 'App Secret', accessToken: 'Access token', tokenEndpoint: 'Token endpoint', napcatHTTP: 'NapCat HTTP address', napcatWebSocket: 'NapCat forward WebSocket address', connectionMethod: 'Connection method',
+  platformChatIDHint: 'Use a known chat above, or enter the exact platform ID: {example}. Resolving a chat does not start a conversation.',
+  weixinLogin: 'Weixin authorization', weixinReconnect: 'Authorize again', weixinStartQR: 'Get login QR code', weixinRefreshQR: 'Get a new QR code', weixinOpenQR: 'Open login link', weixinVerifyCode: 'Code shown in Weixin', weixinVerifyAction: 'Verify and continue',
+  weixinStatus_wait: 'Scan the QR code with Weixin.', weixinStatus_scaned: 'Confirm authorization in Weixin.', weixinStatus_scaned_but_redirect: 'Connecting to the Weixin login region…', weixinStatus_binded_redirect: 'This account needs a new authorization. Get a new code.', weixinStatus_verify_code_blocked: 'Verification is blocked. Get a new code and try again.', weixinStatus_expired: 'The QR code has expired. Get a new code.', weixinStatus_confirmed: 'Authorized. Connecting…', weixinStatus_need_verifycode: 'Enter the verification code shown in Weixin.',
+
   'probeModel': 'Participation model',
   'probeModelHint': 'Decides whether to wake the Bot for ordinary group messages when proactive mode is on.',
   'followSessionModel': 'Follow the Session’s current model',
@@ -19,6 +30,17 @@ export const channelsEn = {
   'sendMessage': 'Send message'
 }
 export const channelsZh = {
+  weixinQRFailed: '无法显示二维码，请获取新的二维码。',
+  qqPlatformHint: '通过 QQ 官方 Bot 或 NapCat OneBot 11 服务接入。',
+  qqOfficialHint: '使用 QQ 开放平台的 App ID 与 App Secret。群消息推送、主动发送和回复窗口由腾讯实际授予的权限决定。',
+  napcatHint: '在 NapCat 中启用 OneBot 11 HTTP 服务和正向 WebSocket 服务。两个地址都必须能从 Astral 服务器访问。',
+  weixinPlatformHint: '使用微信扫码并确认 ClawBot / iLink 授权。仅接入协议支持的个人聊天；发送依赖最近收到的聊天上下文。',
+  feishuPlatformHint: '使用开启机器人能力的飞书自建应用，选择长连接接收事件，订阅 im.message.receive_v1，并授予需要的消息与资源权限。',
+  appID: 'App ID', appSecret: 'App Secret', accessToken: 'Access Token', tokenEndpoint: 'Token 地址', napcatHTTP: 'NapCat HTTP 地址', napcatWebSocket: 'NapCat 正向 WebSocket 地址', connectionMethod: '接入方式',
+  platformChatIDHint: '优先选择上方已知聊天，或填写准确的平台 ID：{example}。查找聊天不会创建 Astral 会话。',
+  weixinLogin: '微信授权', weixinReconnect: '重新扫码授权', weixinStartQR: '获取登录二维码', weixinRefreshQR: '获取新的二维码', weixinOpenQR: '打开登录链接', weixinVerifyCode: '微信中显示的验证码', weixinVerifyAction: '验证并继续',
+  weixinStatus_wait: '请使用微信扫描二维码。', weixinStatus_scaned: '请在微信中确认授权。', weixinStatus_scaned_but_redirect: '正在连接微信登录区域。', weixinStatus_binded_redirect: '该账号需要重新授权，请获取新的二维码。', weixinStatus_verify_code_blocked: '验证码验证已被限制，请获取新的二维码后重试。', weixinStatus_expired: '二维码已过期，请获取新的二维码。', weixinStatus_confirmed: '已授权，正在连接。', weixinStatus_need_verifycode: '请输入微信中显示的验证码。',
+
   'probeModel': '群聊判断模型',
   'probeModelHint': '开启主动模式后，判断是否因普通群消息唤起 Bot。',
   'followSessionModel': '跟随 Session 当前模型',

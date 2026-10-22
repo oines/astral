@@ -6,7 +6,8 @@ import { bindConversation, resolveConversation } from '@astral/sdk'
 import { Button, Modal, Select } from '@astral/ui'
 import { useI18n } from 'vue-i18n'
 import { useAction } from '../../composables/useAction'
-import { request } from '../../lib/api'
+import { errorText, request } from '../../lib/api'
+import { chatIDHint } from '../../lib/im-platforms'
 import { useAppStore } from '../../stores/app'
 const props = defineProps<{ open: boolean; agentID: string; connectionID: string; conversationID?: string }>()
 const emit = defineEmits<{ 'update:open': [value: boolean]; saved: [] }>()
@@ -21,32 +22,50 @@ const sessionID = ref('')
 const externalID = ref('')
 const topicID = ref('')
 const manual = ref(false)
+let opening = 0
 const current = computed(() => connections.data.value?.find(c => c.id === props.connectionID && c.agent_id === props.agentID))
 const chatIDCommand = computed(() => current.value?.username ? `/chat_id@${current.value.username}` : '/chat_id')
 const options = computed(() => conversations.data.value?.filter(c => c.connection_id === props.connectionID && (c.id === props.conversationID || c.id === selectedConversationID.value || !bindings.data.value?.some(b => b.conversation_id === c.id && b.enabled))) ?? [])
 const selectedChat = computed(() => options.value.find(c => c.id === selectedConversationID.value))
 const sessions = computed(() => app.sessions.filter(s => s.agent_id === props.agentID && !s.binding_id && !s.archived))
-watch(() => props.open, value => {
+watch(() => [props.open, props.agentID, props.connectionID] as const, ([value]) => {
+  opening++; action.busy.value = false; action.error.value = ''
   if (!value) return
   selectedConversationID.value = props.conversationID || ''; sessionID.value = ''; externalID.value = ''; topicID.value = ''; manual.value = false; action.error.value = ''
   void Promise.allSettled([conversations.refetch(), bindings.refetch()])
 })
+function currentPicker(generation: number, agentID: string, connectionID: string) {
+  return props.open && generation === opening && props.agentID === agentID && props.connectionID === connectionID
+}
+async function pickerAction(generation: number, agentID: string, connectionID: string, work: () => Promise<void>) {
+  action.busy.value = true; action.error.value = ''
+  try { await work() }
+  catch (error) { if (currentPicker(generation, agentID, connectionID)) action.error.value = errorText(error) }
+  finally { if (currentPicker(generation, agentID, connectionID)) action.busy.value = false }
+}
 async function verify() {
-  await action.run(async () => {
-    const conversation = await request(resolveConversation({ path: { id: props.connectionID }, body: { external_id: externalID.value.trim(), topic_id: topicID.value.trim() } }))
+  const generation = opening; const agentID = props.agentID; const connectionID = props.connectionID
+  await pickerAction(generation, agentID, connectionID, async () => {
+    const conversation = await request(resolveConversation({ path: { id: connectionID }, body: { external_id: externalID.value.trim(), topic_id: topicID.value.trim() } }))
     await conversations.refetch()
+    if (!currentPicker(generation, agentID, connectionID)) return
     selectedConversationID.value = conversation.id
     manual.value = false
   })
 }
 async function save() {
-  await action.run(async () => {
-    await request(bindConversation({ body: { conversation_id: selectedConversationID.value, session_id: sessionID.value || undefined } }))
-    await app.refresh()
+  if (!selectedChat.value || selectedChat.value.connection_id !== props.connectionID || current.value?.agent_id !== props.agentID) return
+  const generation = opening; const agentID = props.agentID; const connectionID = props.connectionID
+  const conversationID = selectedChat.value.id; const targetSessionID = sessionID.value
+  await pickerAction(generation, agentID, connectionID, async () => {
+    await request(bindConversation({ body: { conversation_id: conversationID, session_id: targetSessionID || undefined } }))
+    await app.refresh().catch(() => undefined)
+    if (!currentPicker(generation, agentID, connectionID)) return
     emit('saved')
     emit('update:open', false)
   })
 }
+
 </script>
 <template>
   <Modal
@@ -84,6 +103,12 @@ async function save() {
         >
           {{ t('telegramChatIDHint', { command: chatIDCommand }) }}
         </p>
+        <p
+          v-if="current.adapter !== 'telegram.bot'"
+          class="muted small"
+        >
+          {{ t('platformChatIDHint', { example: chatIDHint(current.adapter) }) }}
+        </p>
         <button
           v-if="!manual"
           type="button"
@@ -100,10 +125,13 @@ async function save() {
           <div class="field-grid">
             <label class="label">{{ t('chatID') }}<input
               v-model="externalID"
-              placeholder="-100… / user ID"
+              :placeholder="chatIDHint(current.adapter)"
               required
             ></label>
-            <label class="label">{{ t('optionalTopicID') }}<input v-model="topicID"></label>
+            <label
+              v-if="current.capabilities.conversation_kinds?.includes('topic')"
+              class="label"
+            >{{ t('optionalTopicID') }}<input v-model="topicID"></label>
           </div>
           <div class="row">
             <Button
@@ -151,7 +179,7 @@ async function save() {
         </Button><Button
           variant="primary"
           :busy="action.busy.value"
-          :disabled="!selectedConversationID"
+          :disabled="!selectedChat"
           @click="save"
         >
           {{ t(props.conversationID ? 'changeSession' : 'addChat') }}

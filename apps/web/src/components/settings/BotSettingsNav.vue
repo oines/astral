@@ -8,9 +8,10 @@ import { ArrowLeft, ChevronRight, Monitor, Plus, Settings2 } from '@astral/icons
 import { Modal } from '@astral/ui'
 import type { Agent } from '../../lib/types'
 import ChannelIcon from '../ChannelIcon.vue'
+import { imAdapters, platformLabel } from '../../lib/im-platforms'
 
 const props = defineProps<{ bot: Agent }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const connections = useQuery(listConnectionsQuery())
@@ -59,7 +60,7 @@ function connect(platform: string) {
         <ChannelIcon
           :platform="platform"
           aria-hidden="true"
-        />{{ platform === 'telegram' ? 'Telegram' : platform }}
+        />{{ platformLabel(platform, locale) }}
       </RouterLink>
       <button
         type="button"
@@ -74,14 +75,17 @@ function connect(platform: string) {
       :title="t('choosePlatform')"
     >
       <button
+        v-for="platform in ['telegram', 'qq', 'weixin', 'feishu']"
+        :key="platform"
         type="button"
         class="computer-option"
-        @click="connect('telegram')"
+        @click="connect(platform)"
       >
         <ChannelIcon
-          platform="telegram"
+          :platform="platform"
           aria-hidden="true"
-        /><span><strong>Telegram</strong><small>{{ t('telegramPlatformHint') }}</small></span><ChevronRight />
+        />
+        <span><strong>{{ platformLabel(platform, locale) }}</strong><small>{{ t(platform === 'qq' ? 'qqPlatformHint' : imAdapters.find(a => a.platform === platform)!.hint) }}</small></span><ChevronRight />
       </button>
     </Modal>
   </aside>

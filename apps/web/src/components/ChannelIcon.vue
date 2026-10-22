@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { MessageCircle, Send } from '@astral/icons'
 defineProps<{ platform: string }>()
 </script>
 <template>
@@ -22,4 +23,16 @@ defineProps<{ platform: string }>()
       fill="white"
     />
   </svg>
+  <Send
+    v-else-if="platform === 'feishu'"
+    width="16"
+    height="16"
+    aria-label="Feishu"
+  />
+  <MessageCircle
+    v-else
+    width="16"
+    height="16"
+    :aria-label="platform"
+  />
 </template>

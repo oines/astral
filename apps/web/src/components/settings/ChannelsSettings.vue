@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import QRCode from 'qrcode'
 import { computed, onActivated, onDeactivated, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useIntervalFn } from '@vueuse/core'
 import { useQuery } from '@pinia/colada'
 import { listBindingsQuery, listConnectionsQuery, listConnectionsQueryKey, listConversationsQuery, listConversationsQueryKey } from '@astral/sdk/colada'
-import { deleteConnection, listConnections, listConversations, saveConnection, unbindConversation, setConversationProactive, type AstralInternalHttpapiConnectionInput, type AstralInternalHttpapiConnectionView, type AstralInternalDomainConversation, type AstralInternalDomainConnection } from '@astral/sdk'
+import { startWeixinLogin, pollWeixinLogin, deleteConnection, listConnections, listConversations, saveConnection, unbindConversation, setConversationProactive, type AstralInternalHttpapiConnectionInput, type AstralInternalHttpapiConnectionView, type AstralInternalDomainConversation, type AstralInternalDomainConnection } from '@astral/sdk'
 import { Button, Modal, Select, Switch, SettingsRow, SettingsSection } from '@astral/ui'
 import { ArrowLeft, ChevronRight, Plus, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
@@ -16,11 +17,13 @@ import ChannelIcon from '../ChannelIcon.vue'
 import ConversationPicker from './ConversationPicker.vue'
 import SettingsFeedback from './SettingsFeedback.vue'
 import SettingsText from './SettingsText.vue'
+import IMConnectionFields from './IMConnectionFields.vue'
+import { adapterInfo, adapterLabel, imAdapters, platformLabel } from '../../lib/im-platforms'
 
 type Connection = AstralInternalDomainConnection
 type Conversation = AstralInternalDomainConversation
 const props = defineProps<{ agentID: string; platform: string }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const app = useAppStore()
 const route = useRoute()
 const router = useRouter()
@@ -35,7 +38,7 @@ const polling = useIntervalFn(() => {
 }, 3000)
 onActivated(polling.resume)
 onDeactivated(polling.pause)
-const platformName = computed(() => props.platform === 'telegram' ? 'Telegram' : props.platform)
+const platformName = computed(() => platformLabel(props.platform, locale.value))
 const ownAccounts = computed(() => list.data.value?.filter(c => c.agent_id === props.agentID && c.platform === props.platform) || [])
 const accountID = computed(() => typeof route.query.account === 'string' ? route.query.account : '')
 const account = computed(() => ownAccounts.value.find(c => c.id === accountID.value))
@@ -43,11 +46,33 @@ const resource = computed(() => `connection:${accountID.value}`)
 const search = ref('')
 const ownConversations = computed(() => conversations.data.value?.filter(c => c.connection_id === accountID.value && chatBinding(c.id)) || [])
 const visibleConversations = computed(() => ownConversations.value.filter(c => c.title.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())))
-const drafts = reactive<Record<string, { endpoint: string; token: string; baseline: string }>>({})
+type Draft = { values: Record<string, string>; token: string; baseline: string }
+const drafts = reactive<Record<string, Draft>>({})
 const draft = computed(() => drafts[accountID.value])
-const dirty = computed(() => !!draft.value && (!!draft.value.token || draft.value.endpoint.trim() !== draft.value.baseline))
+const dirty = computed(() => !!draft.value && (!!draft.value.token || JSON.stringify(draft.value.values) !== draft.value.baseline))
 const hasHistory = computed(() => conversations.data.value?.some(c => c.connection_id === accountID.value))
-const creating = ref<{ agentID: string; name: string; token: string; endpoint: string }>()
+const creating = ref<{ agentID: string; platform: string; adapter: string; name: string; token: string; values: Record<string, string>; connectionID?: string }>()
+const login = ref<{ id: string; qrcode_url: string; status: string }>()
+const qrImage = ref('')
+watch(() => login.value?.qrcode_url, async content => {
+  qrImage.value = ''
+  if (!content) return
+  try {
+    const image = await QRCode.toDataURL(content, { width: 220, margin: 2 })
+    if (login.value?.qrcode_url === content) qrImage.value = image
+  } catch { createAction.error.value = t('weixinQRFailed') }
+})
+const qrLink = computed(() => login.value?.qrcode_url.startsWith('https://') ? login.value.qrcode_url : undefined)
+const verifyCode = ref('')
+const qrPolling = ref(false)
+const pageActive = ref(true)
+let connectionAttempt = 0
+const qrLoop = useIntervalFn(() => { if (login.value && !['expired', 'verify_code_blocked', 'binded_redirect', 'need_verifycode'].includes(login.value.status) && creating.value && !qrPolling.value && !createAction.busy.value) void pollQR() }, 2000)
+onActivated(() => { pageActive.value = true; qrLoop.resume() })
+onDeactivated(() => { pageActive.value = false; qrLoop.pause(); login.value = undefined })
+watch(() => `${props.agentID}:${props.platform}`, () => {
+  if (creating.value && (creating.value.agentID !== props.agentID || creating.value.platform !== props.platform)) { creating.value = undefined; login.value = undefined; connectionAttempt++; createAction.busy.value = false; createAction.error.value = '' }
+})
 const deleting = ref(false)
 const adding = ref(false)
 const rebindID = ref('')
@@ -55,14 +80,15 @@ const removing = ref<Conversation>()
 const expanding = ref<Connection>()
 watch(account, value => {
   if (!value) return
-  const endpoint = String(object(value.config).base_url || '')
+  const values = connectionValues(value)
+  const baseline = JSON.stringify(values)
   const existing = drafts[value.id]
-  if (!existing) drafts[value.id] = { endpoint, token: '', baseline: endpoint }
-  else if (existing.endpoint === existing.baseline) { existing.endpoint = endpoint; existing.baseline = endpoint }
+  if (!existing) drafts[value.id] = { values, token: '', baseline }
+  else if (JSON.stringify(existing.values) === existing.baseline) { existing.values = values; existing.baseline = baseline }
 }, { immediate: true })
 watch(accountID, () => { search.value = ''; action.error.value = ''; adding.value = false; removing.value = undefined; deleting.value = false })
-watch(() => route.fullPath, () => {
-  if (route.path === '/settings/agents' && route.query.agent === props.agentID && route.query.connect === '1' && props.platform === 'telegram') {
+watch(() => [route.fullPath, props.agentID, props.platform], () => {
+  if (route.path === '/settings/agents' && route.query.agent === props.agentID && route.query.connect === '1' && route.query.platform === props.platform && imAdapters.some(a => a.platform === props.platform)) {
     createAccount()
     const query = { ...route.query }
     delete query.connect
@@ -75,6 +101,7 @@ function connectionState(value: AstralInternalHttpapiConnectionView) {
   if (value.status.error) return 'needs_attention'
   return ['polling', 'connected'].includes(value.status.state) ? 'connectionReady' : 'connecting'
 }
+function accountIdentity(value: Connection) { return value.username ? (value.platform === 'telegram' ? '@' : '') + value.username : adapterLabel(value.adapter, locale.value) }
 function chatBinding(id: string) { return bindings.data.value?.find(b => b.conversation_id === id && b.enabled) }
 function chatKind(conversation: Conversation) {
   if (conversation.kind === 'topic') return t('topicChat', { id: conversation.topic_id })
@@ -104,17 +131,23 @@ async function patchAccount(id: string, field: string, patch: Partial<Connection
     },
   }, intent)
 }
+function connectionValues(value: Connection) {
+  const config = object(value.config)
+  return Object.fromEntries((adapterInfo(value.adapter)?.fields || []).map(f => [f.key, String(config[f.key] || '')]))
+}
 async function saveConnectionSettings() {
   const id = accountID.value
   const editing = drafts[id]
   if (!account.value || !editing) return
-  const endpoint = editing.endpoint.trim()
+  const values = Object.fromEntries(Object.entries(editing.values).map(([key, value]) => [key, value.trim()]))
   const token = editing.token.trim()
+  const submittedDraft = JSON.stringify(editing.values)
   let credentialID: string | undefined
   const accept = async () => {
     const current = drafts[id]
     if (current) {
-      current.baseline = endpoint
+      current.baseline = JSON.stringify(values)
+      if (JSON.stringify(current.values) === submittedDraft) current.values = { ...values }
       if (current.token.trim() === token) current.token = ''
     }
     await app.refresh().catch(() => undefined)
@@ -123,29 +156,72 @@ async function saveConnectionSettings() {
     write: async () => {
       const current = await latest(id)
       credentialID = current.credential_id
-      await request(saveConnection({ body: { ...input(current), config: { ...object(current.config), base_url: endpoint }, ...(token ? { token } : {}) } }))
+      await request(saveConnection({ body: { ...input(current), config: { ...object(current.config), ...values }, ...(token ? { token } : {}) } }))
       await accept()
     },
     reconcile: async () => {
       const current = await latest(id)
-      const applied = String(object(current.config).base_url || '') === endpoint && (!token || (!!credentialID && current.credential_id !== credentialID))
+      const applied = Object.entries(values).every(([key, value]) => String(object(current.config)[key] || '') === value) && (!token || (!!credentialID && current.credential_id !== credentialID))
       if (applied) await accept()
       else await app.refresh().catch(() => undefined)
       return applied ? 'applied' : token && !credentialID ? 'unknown' : 'not-applied'
     },
   })
 }
-function createAccount() { createAction.error.value = ''; creating.value = { agentID: props.agentID, name: 'Telegram', token: '', endpoint: '' } }
+function createAccount() {
+  connectionAttempt++; createAction.busy.value = false
+  createAction.error.value = ''; login.value = undefined; verifyCode.value = ''
+  creating.value = { agentID: props.agentID, platform: props.platform, adapter: imAdapters.find(a => a.platform === props.platform)?.id || '', name: platformName.value, token: '', values: {} }
+}
+function reconnectWeixin() {
+  createAccount()
+  if (creating.value && account.value) { creating.value.name = account.value.name; creating.value.connectionID = account.value.id }
+}
+function currentForm(form: NonNullable<typeof creating.value>) {
+  return pageActive.value && creating.value === form && form.agentID === props.agentID && form.platform === props.platform && route.path === '/settings/agents' && route.query.agent === form.agentID && (route.query.platform || (route.query.tab === 'channels' ? 'telegram' : '')) === form.platform
+}
+async function connected(id: string, form: NonNullable<typeof creating.value>) {
+  if (!currentForm(form)) return
+  const attempt = connectionAttempt
+  creating.value = undefined; login.value = undefined
+  await app.refresh().catch(() => undefined)
+  if (pageActive.value && attempt === connectionAttempt && route.query.agent === form.agentID && (route.query.platform || (route.query.tab === 'channels' ? 'telegram' : '')) === form.platform) await router.push({ path: '/settings/agents', query: { agent: form.agentID, platform: form.platform, account: id } })
+}
 async function connectAccount() {
   const form = creating.value
-  if (!form) return
-  await createAction.run(async () => {
-    const result = await request(saveConnection({ body: { ...newMeta(), name: form.name.trim(), agent_id: form.agentID, platform: 'telegram', adapter: 'telegram.bot', access_mode: 'specified', enabled: true, config: { base_url: form.endpoint.trim() }, token: form.token.trim() } }))
-    creating.value = undefined
-    await app.refresh()
-    await router.push({ path: '/settings/agents', query: { agent: form.agentID, platform: 'telegram', account: result.id } })
-  })
+  if (!form || !currentForm(form) || createAction.busy.value) return
+  const attempt = ++connectionAttempt
+  createAction.busy.value = true; createAction.error.value = ''
+  try {
+    if (form.adapter === 'weixin.ilink') {
+      login.value = undefined; verifyCode.value = ''
+      const result = await request(startWeixinLogin({ path: { id: form.agentID }, body: { name: form.name.trim(), connection_id: form.connectionID || undefined } }))
+      if (currentForm(form) && attempt === connectionAttempt) login.value = result
+      return
+    }
+    const config = Object.fromEntries(Object.entries(form.values).map(([key, value]) => [key, value.trim()]))
+    const result = await request(saveConnection({ body: { ...newMeta(), name: form.name.trim(), agent_id: form.agentID, platform: form.platform, adapter: form.adapter, access_mode: 'specified', enabled: true, config, token: form.token.trim() } }))
+    if (attempt === connectionAttempt) await connected(result.id, form)
+  } catch (error) {
+    if (currentForm(form) && attempt === connectionAttempt) createAction.error.value = errorText(error)
+  } finally { if (attempt === connectionAttempt) createAction.busy.value = false }
 }
+
+async function pollQR(submitCode = false) {
+  if (!login.value || !creating.value || !currentForm(creating.value) || qrPolling.value || submitCode && !/^\d{1,32}$/.test(verifyCode.value)) return
+  const pending = login.value; const form = creating.value
+  qrPolling.value = true
+  try {
+    const result = await request(pollWeixinLogin({ path: { id: pending.id }, body: { verify_code: submitCode ? verifyCode.value || undefined : undefined } }))
+    if (login.value !== pending || !currentForm(form)) return
+    pending.status = result.status
+    if (result.status !== 'need_verifycode') verifyCode.value = ''
+    createAction.error.value = ''
+    if (result.connection) await connected(result.connection.id, form)
+  } catch (error) { if (login.value === pending && currentForm(form)) createAction.error.value = errorText(error) }
+  finally { qrPolling.value = false }
+}
+
 function accessMode(mode: string) {
   if (!account.value || mode === account.value.access_mode) return
   if (mode === 'all') expanding.value = account.value
@@ -209,7 +285,7 @@ async function removeConnection() {
     <template v-if="!account">
       <div class="settings-title">
         <h1>{{ t('platformAccount', { platform: platformName }) }}</h1><Button
-          v-if="platform === 'telegram'"
+          v-if="imAdapters.some(a => a.platform === platform)"
           size="small"
           @click="createAccount"
         >
@@ -233,7 +309,7 @@ async function removeConnection() {
           :to="accountRoute(item.id)"
           class="resource-row"
         >
-          <span class="resource-symbol"><ChannelIcon :platform="item.platform" /></span><span><strong>{{ item.name }}</strong><small>{{ item.username ? '@' + item.username : platformName }}</small></span><span
+          <span class="resource-symbol"><ChannelIcon :platform="item.platform" /></span><span><strong>{{ item.name }}</strong><small>{{ accountIdentity(item) }}</small></span><span
             class="settings-inline-status"
             :class="{ 'danger-text': connectionState(item) === 'needs_attention' }"
           >{{ t(connectionState(item)) }}</span><ChevronRight />
@@ -261,7 +337,7 @@ async function removeConnection() {
       </RouterLink>
       <div class="settings-detail-heading">
         <span class="resource-symbol"><ChannelIcon :platform="account.platform" /></span><div class="settings-detail-identity">
-          <h1>{{ account.name }}</h1><p>{{ account.username ? '@' + account.username : platformName }}</p>
+          <h1>{{ account.name }}</h1><p>{{ accountIdentity(account) }}</p>
         </div><span
           class="settings-inline-status"
           :class="{ 'danger-text': connectionState(account) === 'needs_attention' }"
@@ -304,31 +380,17 @@ async function removeConnection() {
         <SettingsFeedback :scope="[`${resource}/name`, `${resource}/enabled`]" />
       </SettingsSection>
       <form
-        v-if="draft && account.adapter === 'telegram.bot'"
+        v-if="draft && account.adapter !== 'weixin.ilink'"
         class="settings-form"
         @submit.prevent="saveConnectionSettings"
       >
         <SettingsSection :title="t('connectionSettings')">
-          <SettingsRow :label="t('botToken')">
-            <input
-              v-model="draft.token"
-              :aria-label="t('botToken')"
-              type="password"
-              autocomplete="new-password"
-              :placeholder="t('storedSecret')"
-            >
-          </SettingsRow>
-          <SettingsRow
-            :label="t('botServerAddress')"
-            :description="t('botServerAddressHint')"
-          >
-            <input
-              v-model="draft.endpoint"
-              :aria-label="t('botServerAddress')"
-              type="url"
-              placeholder="https://api.telegram.org"
-            >
-          </SettingsRow>
+          <IMConnectionFields
+            v-model:token="draft.token"
+            :adapter="account.adapter"
+            :values="draft.values"
+            @field="(key, value) => { draft!.values[key] = value }"
+          />
           <div class="settings-submit-row">
             <p class="muted small">
               {{ t('connectionDraftHint') }}
@@ -344,9 +406,26 @@ async function removeConnection() {
           <SettingsFeedback
             :scope="`${resource}/config`"
             :saving="t('connectionChecking')"
+            :retry="saveConnectionSettings"
           />
         </SettingsSection>
       </form>
+      <SettingsSection
+        v-if="account.adapter === 'weixin.ilink'"
+        :title="t('connectionSettings')"
+      >
+        <SettingsRow
+          :label="t('weixinLogin')"
+          :description="t('weixinPlatformHint')"
+        >
+          <Button
+            size="small"
+            @click="reconnectWeixin"
+          >
+            {{ t('weixinReconnect') }}
+          </Button>
+        </SettingsRow>
+      </SettingsSection>
       <SettingsSection :title="t('chatAccess')">
         <label
           v-for="mode in ['all', 'specified']"
@@ -482,18 +561,66 @@ async function removeConnection() {
           required
           autofocus
         ></label>
-        <label class="label">{{ t('botToken') }}<input
-          v-model="creating.token"
-          type="password"
-          autocomplete="new-password"
-          required
-          :placeholder="t('botTokenHint')"
-        ></label>
-        <label class="label">{{ t('botServerAddress') }}<input
-          v-model="creating.endpoint"
-          type="url"
-          placeholder="https://api.telegram.org"
-        ><span class="muted small">{{ t('botServerAddressHint') }}</span></label>
+        <label
+          v-if="creating.platform === 'qq'"
+          class="label"
+        >{{ t('connectionMethod') }}<Select
+          v-model="creating.adapter"
+          :label="t('connectionMethod')"
+          :options="imAdapters.filter(a => a.platform === 'qq').map(a => ({ value: a.id, label: adapterLabel(a.id, locale) }))"
+          @update:model-value="creating.values = {}; creating.token = ''"
+        /></label>
+        <IMConnectionFields
+          v-if="creating.adapter !== 'weixin.ilink'"
+          v-model:token="creating.token"
+          :adapter="creating.adapter"
+          :values="creating.values"
+          creating
+          @field="(key, value) => { creating!.values[key] = value }"
+        />
+        <template v-else>
+          <p class="muted small">
+            {{ t('weixinPlatformHint') }}
+          </p>
+          <template v-if="login">
+            <p
+              class="muted"
+              role="status"
+            >
+              {{ t('weixinStatus_' + login.status) }}
+            </p>
+            <a
+              v-if="qrLink"
+              :href="qrLink"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ t('weixinOpenQR') }}</a>
+            <img
+              v-if="qrImage"
+              :src="qrImage"
+              :alt="t('weixinLogin')"
+              width="220"
+              height="220"
+            >
+            <label
+              v-if="login.status === 'need_verifycode'"
+              class="label"
+            >{{ t('weixinVerifyCode') }}<input
+              v-model="verifyCode"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              @keydown.enter.prevent="pollQR(true)"
+            ></label>
+            <Button
+              v-if="login.status === 'need_verifycode'"
+              :busy="qrPolling"
+              :disabled="!/^\d{1,32}$/.test(verifyCode)"
+              @click="pollQR(true)"
+            >
+              {{ t('weixinVerifyAction') }}
+            </Button>
+          </template>
+        </template>
         <div class="form-footer">
           <Button
             variant="ghost"
@@ -505,7 +632,7 @@ async function removeConnection() {
             variant="primary"
             :busy="createAction.busy.value"
           >
-            {{ t('connectAccountAction') }}
+            {{ t(creating.adapter === 'weixin.ilink' ? login ? 'weixinRefreshQR' : 'weixinStartQR' : 'connectAccountAction') }}
           </Button>
         </div>
       </form>
