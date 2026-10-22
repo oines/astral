@@ -24,17 +24,18 @@ import (
 )
 
 type botFixture struct {
-	server     *httptest.Server
-	updates    chan []telegramUpdate
-	sends      atomic.Int64
-	unknown    atomic.Bool
-	mu         sync.Mutex
-	operations []string
-	parameters []map[string]any
-	texts      []string
-	targets    []string
-	uploads    [][]byte
-	png        []byte
+	server         *httptest.Server
+	updates        chan []telegramUpdate
+	sends          atomic.Int64
+	unknown        atomic.Bool
+	mu             sync.Mutex
+	operations     []string
+	parameters     []map[string]any
+	sendParameters []map[string]any
+	texts          []string
+	targets        []string
+	uploads        [][]byte
+	png            []byte
 }
 
 func newBot(t *testing.T) *botFixture {
@@ -98,6 +99,9 @@ func newBot(t *testing.T) *botFixture {
 				_ = json.NewDecoder(r.Body).Decode(&data)
 				text, _ = data["text"].(string)
 				target, _ = data["chat_id"].(string)
+				b.mu.Lock()
+				b.sendParameters = append(b.sendParameters, data)
+				b.mu.Unlock()
 			} else {
 				reader, err := r.MultipartReader()
 				if err != nil {

@@ -51,6 +51,7 @@ export const settingsEn = {
   removeSpecifiedChatHint: 'The Bot will no longer receive or access this chat. Current work stops and conversation history is kept.',
   stopAutomaticAndRemove: 'Restrict access and remove',
   chooseChat: 'Choose a chat', discoverChatHint: 'Send the bot a message in the private or group chat first. You can then choose that chat here.',
+  telegramChatIDHint: 'Send {command} in the target chat to get its Chat ID. In a topic, the reply also includes the Topic ID.',
   findChatByID: 'Find a chat by ID…', findChatByIDAction: 'Find chat', chatConversation: 'Conversation to use',
   newChatConversationHint: 'A separate conversation will be created for new messages from this chat.',
 }
@@ -107,6 +108,7 @@ export const settingsZh: typeof settingsEn = {
   removeSpecifiedChatHint: 'Bot 将不能再接收或访问此聊天，当前工作会停止，会话记录会保留。',
   stopAutomaticAndRemove: '限制访问并移除',
   chooseChat: '选择聊天', discoverChatHint: '先让机器人收到私聊或群聊中的一条消息，再在这里选择该聊天。',
+  telegramChatIDHint: '在目标聊天发送 {command} 获取 Chat ID；在话题内发送时，还会返回 Topic ID。',
   findChatByID: '通过 Chat ID 查找…', findChatByIDAction: '查找聊天', chatConversation: '使用会话',
   newChatConversationHint: '会为这个聊天创建独立会话，用于处理之后的新消息。',
 }

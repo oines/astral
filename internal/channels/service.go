@@ -279,6 +279,9 @@ func (s *Service) Start(ctx context.Context) error {
 			return err
 		}
 	}
+	if err = s.recoverCommands(ctx); err != nil {
+		return err
+	}
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.done = make(chan struct{})
 	go s.run()
@@ -402,6 +405,12 @@ func (s *Service) poll(ctx context.Context, c domain.Connection) {
 			for _, event := range batch.Events {
 				if pollErr = s.saveConversation(ctx, &event.Conversation); pollErr != nil {
 					break
+				}
+				if event.Command != nil {
+					if pollErr = s.replyToCommand(ctx, adapter, event); pollErr != nil {
+						break
+					}
+					continue
 				}
 				event.Observation = normalizeSelf(event.Observation)
 				if _, pollErr = s.Store.Archive(ctx, event.Observation); pollErr != nil {

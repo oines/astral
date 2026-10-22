@@ -6,6 +6,12 @@ Each account belongs to one Agent, called a **Bot** in the product UI. The [UI/U
 
 Ordinary messages continuously enter Core as passive observations, including when proactive mode is off. Core applies them at safe boundaries and compacts with its ordinary budget and summary machinery. No fixed history window truncates received messages. IMStore retains received events, accepted outgoing messages, edits and deletions supplied by the platform, without automatic expiry. Telegram Bot polling does not provide arbitrary deletion notifications; explicit successful delete operations are recorded.
 
+## Find a Telegram Chat ID
+
+Send `/chat_id` or `/chat_id@bot_username` in a private chat, group, forum Topic or channel the connected bot can receive and reply to. Astral replies in that chat with `Chat ID: …`; a Topic also includes `Topic ID: …` and the reply stays in that Topic. Use the addressed form in groups with privacy mode enabled.
+
+This host utility works before adding or authorizing the chat and does not need a model or Computer. It discovers the chat for the picker but does not create a Session, grant access, invoke a model or schedule a Probe. Utility requests and replies stay outside normal model observations and have separate persisted receipts. Each incoming message can cause at most one send attempt, including after update replay or server restart; uncertain outcomes are not retried automatically. Edited commands and commands from bots are consumed without a reply. Commands addressed to a different bot, captions and text containing the command inside a longer message are ordinary messages, not utility requests.
+
 ## Proactive mode and output
 
 Proactive mode is a per-chat setting, off by default. For groups with it enabled, ordinary messages become eligible for one Probe after 10 seconds of quiet or 60 seconds from the first unhandled message. Probe reads an observer view of Core context: summaries, IM observations and bounded tool activity, without assistant text or reasoning. Images are included only when its model supports them. It uses the Session's current model unless the Agent's Probe model overrides it.

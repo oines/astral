@@ -38,6 +38,14 @@ type Identity struct {
 type Event struct {
 	Conversation domain.Conversation
 	Observation  domain.Observation
+	Command      *Command
+}
+
+// Command is a host-handled utility request. A blank reply consumes the request
+// without responding (for example, edits or messages sent by another bot).
+type Command struct {
+	Name string
+	Text string
 }
 type Batch struct {
 	Events     []Event

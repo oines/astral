@@ -363,7 +363,21 @@ func (t *telegram) normalize(updateID int64, message telegramMessage, edited boo
 	if message.Animation != nil {
 		add(*message.Animation, "video", "animation-"+observation.MessageID+".mp4", "video/mp4")
 	}
-	return Event{Conversation: conversation, Observation: observation}
+	event := Event{Conversation: conversation, Observation: observation}
+	command, username, addressed := strings.Cut(strings.TrimSpace(message.Text), "@")
+	if command == "/chat_id" && (!addressed || t.connection.Username != "" && strings.EqualFold(username, t.connection.Username)) {
+		event.Command = &Command{Name: "chat_id"}
+		// Anonymous administrators can have Telegram's synthetic bot sender;
+		// their sender_chat still identifies the human-operated chat identity.
+		sentByBot := message.From != nil && (strconv.FormatInt(message.From.ID, 10) == t.connection.AccountID || message.From.IsBot && message.SenderChat == nil)
+		if !edited && !observation.Self && !sentByBot {
+			event.Command.Text = "Chat ID: " + conversation.ExternalID
+			if topic != "" {
+				event.Command.Text += "\nTopic ID: " + topic
+			}
+		}
+	}
+	return event
 }
 func utf16Substring(text string, offset, length int) string {
 	units := utf16.Encode([]rune(text))

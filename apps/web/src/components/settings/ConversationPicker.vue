@@ -22,6 +22,7 @@ const externalID = ref('')
 const topicID = ref('')
 const manual = ref(false)
 const current = computed(() => connections.data.value?.find(c => c.id === props.connectionID && c.agent_id === props.agentID))
+const chatIDCommand = computed(() => current.value?.username ? `/chat_id@${current.value.username}` : '/chat_id')
 const options = computed(() => conversations.data.value?.filter(c => c.connection_id === props.connectionID && (c.id === props.conversationID || c.id === selectedConversationID.value || !bindings.data.value?.some(b => b.conversation_id === c.id && b.enabled))) ?? [])
 const selectedChat = computed(() => options.value.find(c => c.id === selectedConversationID.value))
 const sessions = computed(() => app.sessions.filter(s => s.agent_id === props.agentID && !s.binding_id && !s.archived))
@@ -76,6 +77,12 @@ async function save() {
           class="muted"
         >
           {{ t('discoverChatHint') }}
+        </p>
+        <p
+          v-if="current.adapter === 'telegram.bot'"
+          class="muted small"
+        >
+          {{ t('telegramChatIDHint', { command: chatIDCommand }) }}
         </p>
         <button
           v-if="!manual"
