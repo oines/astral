@@ -502,6 +502,7 @@ func feishuPost(raw, messageID string) (string, []domain.Attachment) {
 }
 
 type feishuMessage struct {
+	raw    json.RawMessage
 	ID     string `json:"message_id"`
 	ChatID string `json:"chat_id"`
 	Sender struct {
@@ -520,16 +521,18 @@ func (f *feishu) getMessage(ctx context.Context, id string) (feishuMessage, erro
 	}
 	var result struct {
 		Data struct {
-			Items []feishuMessage `json:"items"`
+			Items []json.RawMessage `json:"items"`
 		} `json:"data"`
 	}
 	if err := f.call(ctx, http.MethodGet, "/open-apis/im/v1/messages/"+url.PathEscape(id), nil, &result); err != nil {
 		return feishuMessage{}, err
 	}
-	if len(result.Data.Items) != 1 || result.Data.Items[0].ID != id {
+	var message feishuMessage
+	if len(result.Data.Items) != 1 || json.Unmarshal(result.Data.Items[0], &message) != nil || message.ID != id {
 		return feishuMessage{}, domain.Invalid("Feishu did not return the requested message")
 	}
-	return result.Data.Items[0], nil
+	message.raw = result.Data.Items[0]
+	return message, nil
 }
 
 func (f *feishu) enrichReply(ctx context.Context, event *Event) {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/oines/astral/internal/domain"
@@ -88,7 +89,7 @@ func (f *feishu) operation(ctx context.Context, name string, target domain.Conve
 			return nil, domain.Forbidden("Feishu message belongs to another chat")
 		}
 		if name == "get_message" {
-			return encoded(message), nil
+			return message.raw, nil
 		}
 	}
 	method, path := http.MethodGet, ""
@@ -138,7 +139,7 @@ func (f *feishu) operation(ctx context.Context, name string, target domain.Conve
 		method, path = http.MethodPost, messagePath+"/reactions"
 		payload = map[string]any{"reaction_type": map[string]string{"emoji_type": values.EmojiType}}
 	case "delete_reaction":
-		if !feishuID(values.ReactionID) {
+		if len(values.ReactionID) > 512 || !feishuID(strings.NewReplacer("=", "", "+", "").Replace(values.ReactionID)) {
 			return nil, domain.Invalid("Feishu reaction_id is required")
 		}
 		method, path = http.MethodDelete, messagePath+"/reactions/"+url.PathEscape(values.ReactionID)

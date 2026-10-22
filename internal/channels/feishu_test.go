@@ -131,7 +131,7 @@ func newFeishuFixture(t *testing.T) *feishuFixture {
 			if id == "om_other" {
 				chat = "oc_other"
 			}
-			reply(map[string]any{"items": []any{map[string]any{"message_id": id, "chat_id": chat, "msg_type": "text", "sender": map[string]string{"id": "cli_app", "sender_type": "app"}, "body": map[string]string{"content": `{"text":"Prior Bot answer"}`}}}})
+			reply(map[string]any{"items": []any{map[string]any{"message_id": id, "chat_id": chat, "thread_id": "omt_thread", "msg_type": "text", "sender": map[string]string{"id": "cli_app", "sender_type": "app"}, "body": map[string]string{"content": `{"text":"Prior Bot answer"}`}}}})
 		default:
 			t.Errorf("unexpected Feishu request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -377,6 +377,10 @@ func TestFeishuOperationsStayInSelectedChat(t *testing.T) {
 	}
 	if f.deleted.Load() != 1 || f.reactions.Load() != 1 {
 		t.Fatalf("operations did not reach platform: deleted=%d reactions=%d", f.deleted.Load(), f.reactions.Load())
+	}
+	message, err := f.adapter.operation(ctx, "get_message", target, json.RawMessage(`{"message_id":"om_parent"}`))
+	if err != nil || !bytes.Contains(message, []byte(`"thread_id":"omt_thread"`)) {
+		t.Fatalf("get_message dropped platform-specific fields: %s, %v", message, err)
 	}
 	for name, parameters := range map[string]string{
 		"get_chat": `{"chat_id":"oc_other"}`, "get_message": `{"message_id":"om_other"}`, "delete_message": `{"message_id":"om_other"}`,
