@@ -8,7 +8,7 @@ Astral builds on [Astral Core](https://github.com/oines/astral-core) for the age
 
 The shared frontend follows the engineering baseline identified in the Astral specification and the Memoh reference project: Vue, TypeScript, Vite, Pinia/Colada, Tailwind, Markstream, and an Electron shell. Astral's domain, API, components and desktop process integration are maintained in this repository.
 
-Runtime dependencies also include coder/websocket, modernc SQLite, go-yaml v3, Reka UI, Lucide, Inter, Monaco, xterm.js, Mermaid, KaTeX and their transitive dependencies. Their source packages retain their own licenses. Versions and provenance are recorded by `go.mod`, `go.sum`, `pnpm-lock.yaml` and the package manifests. Electron release bundles carry Electron and Chromium's license files.
+Runtime dependencies also include coder/websocket, modernc SQLite, go-yaml v3, the Feishu OpenPlatform Server SDK, node-qrcode, Reka UI, Lucide, Inter, Monaco, xterm.js, Mermaid, KaTeX and their transitive dependencies. Their source packages retain their own licenses. Versions and provenance are recorded by `go.mod`, `go.sum`, `pnpm-lock.yaml` and the package manifests. Electron release bundles carry Electron and Chromium's license files.
 
 Distribution builds collect the installed Node and Go packages' license and notice files into `THIRD_PARTY_NOTICES.txt`, embedded with the Web app and copied beside the binaries. This includes the original `astral-models` license text.
 
@@ -18,7 +18,15 @@ LobeHub Icons — Copyright (c) 2023 LobeHub.
 
 models.dev — Copyright (c) 2025 models.dev.
 
-Both projects are distributed under the MIT License, reproduced here:
+Astral uses the [Feishu OpenPlatform Server SDK](https://github.com/larksuite/oapi-sdk-go/tree/v3.12.2), `github.com/larksuite/oapi-sdk-go/v3 v3.12.2`, for application Bot long connections and event dispatch. Its upstream [MIT license](https://github.com/larksuite/oapi-sdk-go/blob/v3.12.2/LICENSE) and source notices remain in force.
+
+Feishu OpenPlatform Server SDK — Copyright (c) 2020 Lark Technologies Pte. Ltd.
+
+The Web app uses [node-qrcode](https://github.com/soldair/node-qrcode), npm package `qrcode` version `1.5.4` as recorded in `pnpm-lock.yaml`, to encode the Weixin authorization payload locally for display. Its upstream [MIT license](https://github.com/soldair/node-qrcode/blob/v1.5.4/license) remains in force.
+
+node-qrcode — Copyright (c) 2012 Ryan Day.
+
+LobeHub Icons, models.dev, the Feishu OpenPlatform Server SDK and node-qrcode are distributed under the MIT License, reproduced here:
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
