@@ -48,6 +48,22 @@ func (e *napcatAPIError) Error() string {
 	return fmt.Sprintf("NapCat rejected the request (HTTP %d, retcode %d)", e.Status, e.Code)
 }
 
+func (e *napcatAPIError) sendError() *SendError {
+	// NapCat maps all action exceptions to retcode=200 over HTTP, or 1200
+	// over WS, including timeouts after submitting a message to QQ. A failed
+	// envelope alone therefore does not establish that no side effect occurred.
+	unknown := true
+	if e.Status >= 400 && e.Status < 500 {
+		unknown = false
+	} else if e.Status >= 200 && e.Status < 300 {
+		switch e.Code {
+		case 400, 401, 403, 404, 429, 1400, 1401, 1403, 1404:
+			unknown = false
+		}
+	}
+	return &SendError{Message: e.Error(), Unknown: unknown, Retryable: !unknown && (e.Status == 429 || e.Code == 429)}
+}
+
 func NewNapCat(connection domain.Connection, token string, client *http.Client) (Adapter, error) {
 	var config NapCatConfig
 	decoder := json.NewDecoder(bytes.NewReader(connection.Config))
@@ -500,7 +516,7 @@ func (n *napcat) Send(ctx context.Context, send Send) (Receipt, error) {
 	if err := n.call(ctx, action, params, &result); err != nil {
 		var api *napcatAPIError
 		if errors.As(err, &api) {
-			return Receipt{}, &SendError{Message: err.Error(), Unknown: api.Status >= 500, Retryable: api.Status == 429}
+			return Receipt{}, api.sendError()
 		}
 		return Receipt{}, &SendError{Message: err.Error(), Unknown: true}
 	}

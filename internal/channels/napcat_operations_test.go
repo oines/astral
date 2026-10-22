@@ -84,7 +84,9 @@ func TestNapCatMutatingOperationsClassifyConfirmedFailure(t *testing.T) {
 		status   int
 		unknown  bool
 	}{
-		{`{"status":"failed","retcode":1200}`, 200, false},
+		{`{"status":"failed","retcode":1401}`, 200, false},
+		{`{"status":"failed","retcode":1200}`, 200, true},
+		{`{"status":"failed","retcode":200}`, 200, true},
 		{`{"status":"failed","retcode":500}`, 500, true},
 		{`broken`, 200, true},
 	} {

@@ -201,7 +201,9 @@ func TestNapCatSendReceiptErrorsAndLimits(t *testing.T) {
 		raw     string
 		unknown bool
 	}{
-		{`{"status":"failed","retcode":1200}`, false},
+		{`{"status":"failed","retcode":1400}`, false},
+		{`{"status":"failed","retcode":1200}`, true},
+		{`{"status":"failed","retcode":200,"message":"operation timed out"}`, true},
 		{`{"status":"ok","retcode":0,"data":{}}`, true},
 		{`broken`, true},
 	} {
