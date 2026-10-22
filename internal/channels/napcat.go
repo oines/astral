@@ -487,6 +487,13 @@ func (n *napcat) Send(ctx context.Context, send Send) (Receipt, error) {
 		if _, err := strconv.ParseInt(send.ReplyTo, 10, 64); err != nil {
 			return Receipt{}, &SendError{Message: "invalid NapCat reply message ID"}
 		}
+		var message json.RawMessage
+		if err := n.call(ctx, "get_msg", map[string]any{"message_id": send.ReplyTo}, &message); err != nil {
+			return Receipt{}, &SendError{Message: "NapCat reply reference could not be verified: " + err.Error(), Retryable: true}
+		}
+		if err := napcatMessageScope(ctx, n, send.Target, message, send.ReplyTo); err != nil {
+			return Receipt{}, &SendError{Message: err.Error()}
+		}
 		segments = append(segments, map[string]any{"type": "reply", "data": map[string]string{"id": send.ReplyTo}})
 	}
 	if send.Text != "" {

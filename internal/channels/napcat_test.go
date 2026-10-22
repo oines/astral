@@ -137,6 +137,10 @@ func TestNapCatValidateRejectsWrongWebSocketAccountAndAuthentication(t *testing.
 
 func TestNapCatSendPreservesLiteralTextAndSingleMediaReceipt(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/get_msg" {
+			fmt.Fprint(w, `{"status":"ok","retcode":0,"data":{"message_id":-42,"message_type":"group","group_id":456,"user_id":123}}`)
+			return
+		}
 		if r.URL.Path != "/send_group_msg" {
 			t.Errorf("wrong send route: %s", r.URL.Path)
 		}
@@ -164,6 +168,27 @@ func TestNapCatSendPreservesLiteralTextAndSingleMediaReceipt(t *testing.T) {
 	receipt, err := napcatTestAdapter(t, server).Send(context.Background(), Send{Target: domain.Conversation{ExternalID: "group:456"}, Text: "[CQ:at,qq=all]", ReplyTo: "-42", File: io.NopCloser(strings.NewReader("report")), FileName: "report.txt", MediaType: "text/plain"})
 	if err != nil || len(receipt.MessageIDs) != 1 || receipt.MessageIDs[0] != "-100" {
 		t.Fatalf("send: %+v %v", receipt, err)
+	}
+}
+
+func TestNapCatSendCannotQuoteMessageFromAnotherChat(t *testing.T) {
+	for _, message := range []string{
+		`{"message_id":-42,"message_type":"group","group_id":789,"user_id":123}`,
+		`{"message_id":-43,"message_type":"group","group_id":456,"user_id":123}`,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/get_msg" {
+				t.Error("a cross-chat quote reached the send endpoint")
+			}
+			fmt.Fprint(w, `{"status":"ok","retcode":0,"data":`+message+`}`)
+		}))
+		n := napcatTestAdapter(t, server)
+		_, err := n.Send(context.Background(), Send{Target: domain.Conversation{ExternalID: "group:456"}, Text: "quote", ReplyTo: "-42"})
+		var sendErr *SendError
+		if !errors.As(err, &sendErr) || sendErr.Unknown {
+			t.Fatalf("cross-chat quote should fail before sending: %v", err)
+		}
+		server.Close()
 	}
 }
 
