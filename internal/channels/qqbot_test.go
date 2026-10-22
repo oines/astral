@@ -250,3 +250,18 @@ func TestQQNormalizesOrdinaryGroupEventsAndSafeDownloads(t *testing.T) {
 		}
 	}
 }
+
+func TestQQChatIDUtilityRecognizesDirectBotMention(t *testing.T) {
+	q := &qqbot{connection: domain.Connection{Meta: domain.Meta{ID: "qq"}, AccountID: "123"}, config: QQBotConfig{AppID: "app-123"}}
+	for _, text := range []string{"/chat_id", "<@!123> /chat_id", "<@app-123> /chat_id"} {
+		raw := encoded(map[string]any{"id": "m", "group_openid": "g", "content": text, "author": map[string]string{"member_openid": "member"}})
+		event, err := q.normalize("GROUP_AT_MESSAGE_CREATE", raw)
+		if err != nil || event.Command == nil || event.Command.Text != "Chat ID: group:g" {
+			t.Fatalf("chat ID command %q: %+v %v", text, event, err)
+		}
+	}
+	event, err := q.normalize("GROUP_AT_MESSAGE_CREATE", encoded(map[string]any{"id": "m", "group_openid": "g", "content": "<@other> /chat_id", "author": map[string]string{"member_openid": "member"}}))
+	if err != nil || event.Command != nil {
+		t.Fatal("a command addressed to another bot was consumed")
+	}
+}

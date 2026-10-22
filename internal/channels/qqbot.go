@@ -437,7 +437,23 @@ func (q *qqbot) normalize(eventType string, raw json.RawMessage) (Event, error) 
 				Kind: kind, Name: file.Name, MediaType: file.Type, Size: file.Size})
 		}
 	}
-	return Event{Conversation: conversation, Observation: observation}, nil
+	event := Event{Conversation: conversation, Observation: observation}
+	command := strings.TrimSpace(message.Content)
+	if strings.HasPrefix(command, "<@") {
+		if end := strings.IndexByte(command, '>'); end >= 0 {
+			mentioned := strings.TrimPrefix(command[2:end], "!")
+			if mentioned == q.connection.AccountID || mentioned == q.config.AppID {
+				command = strings.TrimSpace(command[end+1:])
+			}
+		}
+	}
+	if command == "/chat_id" {
+		event.Command = &Command{Name: "chat_id"}
+		if !observation.Self && !message.Author.Bot {
+			event.Command.Text = "Chat ID: " + conversation.ExternalID
+		}
+	}
+	return event, nil
 }
 
 func (q *qqbot) ResolveConversation(_ context.Context, id, topic string) (domain.Conversation, error) {
