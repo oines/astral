@@ -1,8 +1,8 @@
 # Astral 系统规格
 
-版本：1.8
+版本：1.9
 
-日期：2026-10-22，Asia/Singapore
+日期：2026-10-23，Asia/Singapore
 
 状态：V1 实现规范，尚非功能交付声明
 
@@ -10,7 +10,7 @@ Astral 是一个可自托管、持久运行的个人 Agent 平台。一个 Serve
 
 本规格中的技术对象 Agent，在产品界面中称为 Bot；Computer 的中文名称为“电脑”。产品命名、页面关系、统一设计语言、设置生效方式与反馈以 [UI UX 规范](docs/ui-ux-spec.md)为准；代码类型和 API 字段不因显示名称变化而自动重命名。
 
-本规格汇总 PRD v1.1 与本轮确认的系统决策，并收敛前端工程选型。冲突处采用本规格中的最新行为：首版 IM 仅支持 Telegram、IM 显式发送与可选 LLM Probe、文件保留在 Computer、通过本机快捷入口或目标机器上的接入命令添加 Computer、Daemon 提供按 Agent 绑定视图的 localhost API、Bash 直接执行、通过正常结束保持沉默。Core 的实现依据为本地 `../agent-core`，消息表达参考 `../Cahciua`，前端技术与工程组织参考 `../memoh`。
+本规格汇总 PRD v1.1 与本轮确认的系统决策，并收敛前端工程选型。冲突处采用本规格中的最新行为：IM 支持 Telegram、QQ 官方 Bot、QQ NapCat、微信 ClawBot / iLink 和飞书 Bot，采用显式发送与可选 LLM Probe；文件保留在 Computer、通过本机快捷入口或目标机器上的接入命令添加 Computer、Daemon 提供按 Agent 绑定视图的 localhost API、Bash 直接执行、通过正常结束保持沉默。Core 的实现依据为本地 `../agent-core`，消息表达参考 `../Cahciua`，前端技术与工程组织参考 `../memoh`。
 
 “必须”表示实现和验收要求。“示例”表示数据结构或接口表达，字段的最终编码由正式接口契约统一。尚未选择的实现细节集中列于第 17 节，不削减已确认的产品范围。
 
@@ -54,14 +54,14 @@ Session 的历史与工作状态持久保存。关闭窗口、浏览器断线或
 | Computer | Local macOS/Linux、Container、Remote macOS/Linux；使用本机/本机容器快捷入口、复制命令接入及可选容器模式、AgentHome、运行中由 Agent 切换 |
 | 模型 | Provider 配置、可编辑 Model Profile、直接使用、Session 临时选模 |
 | 搜索 | 全局搜索 Provider，每个 Agent 单选一个统一 `web_search` 后端 |
-| IM | 仅 Telegram，支持群、私聊与 Topic；独立 Conversation Session、静默观察、触发激活、持续上下文、可选主动模式、显式工具/API 发送 |
+| IM | Telegram、QQ 官方、QQ NapCat、微信 iLink、飞书；按实际能力接入私聊、群聊和 Topic，复用独立 Conversation Session、静默观察、持续上下文、Probe 和显式工具/API 发送 |
 | 文件 | Computer 本地存储、来源明确的引用、流式预览与下载、IM 文件发送 |
 | UI | Sidebar、Transcript、Activity Line、Composer、Settings、按需 Contextual Surface |
 | 运行支撑 | 真实状态、错误与不确定效果呈现、连接诊断、历史对账 |
 
-工程可以按依赖顺序分阶段实现；上述能力共同构成首版，不以缩减为单端或单 Computer 的 MVP 替代。IM 首版范围以 Telegram 为准。
+工程可以按依赖顺序分阶段实现；上述能力共同构成首版，不以缩减为单端或单 Computer 的 MVP 替代。初版以 Telegram 为基线；本轮扩展的实际范围见下方多平台约定。
 
-IM 架构从首版按多平台设计。后续明确支持 QQ（NapCat 接入、官方接入）、飞书等平台；这些属于后续交付范围，通过新增 Channel Adapter 接入已有的事件、Session、Gateway 与出站处理，不重建一套平台专属 Agent 系统。
+IM 复用同一套 IMStore、Conversation、Session 绑定、持续上下文、Probe、Gateway 与出站回执。当前实现 Telegram、QQ 官方 Bot、QQ NapCat、微信 ClawBot / iLink、飞书自建应用 Bot；不增加 send_message 之外的 IM 模型工具，不改动 Core 通用执行语义。配置方法、平台能力差异和协议依据见 [平台接入指南](docs/im-platforms.md)。
 
 ### 明确非目标
 
@@ -69,7 +69,7 @@ IM 架构从首版按多平台设计。后续明确支持 QQ（NapCat 接入、�
 - Browser Automation、浏览器接管或截图、完整桌面自动化产品。
 - 多搜索引擎聚合、搜索 Provider 自动回退。
 - 多个 IM Conversation 合并为同一个共享 Session。
-- 首版内交付 QQ（NapCat/官方）、飞书等后续 IM 适配；它们是明确的后续扩展方向，不属于本轮交付范围。
+- 各平台尚未实现的能力（例如微信联系人枚举、群聊、出站引用与送达确认）不通过虚构能力或通用代理接口冒充支持。
 - 多 Host 自动同步、双主复制、内置 NAT 穿透、P2P 或托管 VPN。
 - 团队 SaaS、多用户 RBAC、计费门户。
 - 自动长期记忆、Embedding 平台、MCP 市场或技能商店。
@@ -102,7 +102,7 @@ IM 架构从首版按多平台设计。后续明确支持 QQ（NapCat 接入、�
 | D20 | 模型与搜索凭据按全局资源配置；一个 Agent 同一时间仅选用一个搜索 Provider。 |
 | D21 | Transcript 是产品中心；普通工具过程折叠为 Activity Line，详情按需展开。 |
 | D22 | 持久事实、临时流式事件和平台业务状态分别管理，再由 Presenter 合成界面。 |
-| D23 | 首版 IM 仅交付 Telegram；QQ（NapCat/官方）、飞书等平台后续支持，不属于首版适配器实现与验收范围。 |
+| D23 | 当前 IM 适配器为 Telegram、QQ 官方 Bot、QQ NapCat、微信 ClawBot / iLink、飞书 Bot。各平台按真实协议声明能力，权限和 Session 语义一致。 |
 | D24 | 命令接入方式为复制平台生成的一条命令，在目标机器执行后自动注册。勾选“使用容器”时，该命令在目标机器创建容器并运行 Daemon，将容器注册为独立 Computer。 |
 | D25 | Add Computer 提供“使用本机”“使用本机容器”快捷入口，Desktop 与 Headless 都支持，由平台自动完成本机接入步骤。“本机”指 Server 部署所在机器，不随访问网页的设备改变。 |
 | D26 | IM 从首版采用多平台适配架构，区分平台与接入方式。QQ NapCat 与 QQ 官方使用独立适配器，复用统一的消息、Conversation、Session、Gateway 和发送回执契约。 |
@@ -165,7 +165,7 @@ flowchart TB
     WEB["共享 Vue Web UI"]
     SHELL["macOS Electron 壳"]
     CLI["CLI"]
-    IM["IM 平台 · 首版 Telegram"]
+    IM["IM 平台 · Telegram / QQ / 微信 / 飞书"]
     MODEL["模型 Provider"]
     SEARCH["搜索 Provider"]
 
@@ -253,10 +253,11 @@ Server 的 Channel 层负责具体平台协议。核心业务只依赖统一的 
 
 | 平台 | 接入方式示例 | 交付范围 |
 | --- | --- | --- |
-| Telegram | `telegram.bot` | 首版 |
-| QQ | `qq.napcat` | 后续 |
-| QQ | `qq.official` | 后续 |
-| 飞书 | `feishu.app` | 后续 |
+| Telegram | `telegram.bot` | Bot API 长轮询，私聊、群、论坛 Topic 与频道 |
+| QQ | `qq.napcat` | HTTP API + 正向 WebSocket，私聊与群聊 |
+| QQ | `qq.bot` | 官方 QQ Bot v2 API + Gateway，单聊与群聊 |
+| 微信 | `weixin.ilink` | 腾讯 ClawBot / iLink 扫码授权 + 长轮询，仅私聊 |
+| 飞书 | `feishu.bot` | 自建应用 Bot + 官方 SDK 长连接，私聊与群聊 |
 
 QQ NapCat 与 QQ 官方是同一平台下的两种接入方式，分别实现凭据、连接、事件映射和能力适配。同一账号或相似的平台 ID 不使两个 Connection 自动合并，Conversation 与消息身份仍按 Connection 作用域解释。
 
@@ -270,7 +271,7 @@ QQ NapCat 与 QQ 官方是同一平台下的两种接入方式，分别实现凭
 
 平台能力不齐时明确表示“不支持”或“平台未提供”。统一事件格式描述可表达的事件集合，不要求所有平台都能提供每类事件；Adapter 不伪造删除通知、消息回显或送达事实。持续观察、直接激活、LLM Probe、显式发送、Session 绑定与 FileRef 来源由统一业务层处理。
 
-首版只注册和展示已实现的 Telegram Adapter。新增 QQ、飞书等适配器时，按实际能力增加对应连接配置和展示，不在首版放置无法使用的连接入口，也不为每个平台复制 Harness、Gateway 或 Session 系统。
+平台选择器只展示上述已实现的适配器。QQ 官方与 NapCat 位于同一个 QQ 平台下，创建账号时选择接入方式；接入方式不能原地更换。微信使用独立的 Owner 扫码授权流程，凭据不返回浏览器，不允许用普通账号保存 API 伪造扫码身份。其余账号按各自的凭据和连接参数配置，不复制 Harness、Gateway 或 Session 系统。
 
 ## 5 部署与进程生命周期
 
@@ -565,6 +566,14 @@ Telegram 的 `/chat_id`（或 `/chat_id@Bot用户名`）是 Host 直接处理的
 
 跨 Connection、跨群、跨 Topic 的标识必须可区分。平台未提供的用户名、引用正文或群标题可以为空，不虚构。
 
+### 多平台接收与发送边界
+
+QQ 官方与飞书的普通群消息推送取决于平台授予的权限；未收到的消息不能补成上下文。NapCat 正向 WebSocket 不提供离线历史重放；飞书 SDK 的事件成功 ACK 发生在对应归档 cursor 持久化之后。保存 cursor 失败不能向适配器确认新位置。
+
+微信 iLink 的扫码凭据、每个聊天的 context_token、媒体密钥和 CDN 下载能力按账号持久保存在 Server 的加密凭据存储中，不进入 Core、公开账号 config 或模型可见消息。发送适配器重建后继续使用该聊天的有效上下文。扫码二维码和登录状态仅向 Owner 提供；API 访问与扫码均不创建 Session。
+
+出站平台接受与最终送达分开。iLink 成功响应不包含服务端消息 ID 时，回执记录 `client:<实际 client_id>` 表示已接受的请求身份，不能冒充可引用的服务端消息 ID。结构化平台错误也可能表示提交后超时，例如 NapCat 的通用执行异常；此时保留 unknown 并要求核查，不自动重试。
+
 ### 模型可见格式
 
 会话说明参考 Cahciua 的 session-level chatroom information：
@@ -740,6 +749,8 @@ Agent 的 Bash / 脚本
 | 发文件 | `POST /v1/im/files` | 从来源 Computer 读取并上传文件，可带说明文字 |
 | 消息 ID | `GET /v1/conversations/{id}/messages/{message_id}` | 最新归档版本 |
 | 原始附件 | `GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content` | 文件字节响应，沿现有 Daemon 分块通道流式传输 |
+| 平台操作目录 | `GET /v1/accounts/{id}/operations` | 按账号发现已实现的具名操作，不暴露凭据或任意路径代理 |
+| 平台操作 | `POST /v1/accounts/{id}/operations/{operation}` | 验证账号、目标聊天、所有引用消息；不创建 Session；删除成功追加归档事实 |
 | Telegram 目录 | `GET /v1/accounts/{id}/telegram/operations` | 聊天相关具名操作及官方参数说明 |
 | Telegram 操作 | `POST /v1/accounts/{id}/telegram/{operation}` | 分别验证目标、来源和嵌套聊天引用；不提供任意 HTTP 代理 |
 | 附件下载 | `POST /v1/attachments/download` | 将平台附件下载到调用方明确指定的 Computer 路径 |
@@ -802,7 +813,7 @@ sequenceDiagram
 
 ### IM 文件发送
 
-Agent 通过 send_message 或 localhost API 发送文件。Daemon 从源 Computer 读取文件，目标 Connection 对应的适配器把字节流提交给平台，并将最终回执关联到发送意图；首版实现为 Telegram 适配器。模型与文件工具不承担平台协议转换。
+Agent 通过 send_message 或 localhost API 发送文件。Daemon 从源 Computer 读取文件，目标 Connection 对应的适配器把字节流提交给平台，并将最终回执关联到发送意图；各适配器分别处理真实上传协议。飞书和微信的文件与说明文字拆成独立消息及独立回执，避免一次回执隐藏多个副作用。模型与文件工具不承担平台协议转换。
 
 适配器需要支持流式输入。若某平台库要求可持续读取的本地文件，应在来源 Daemon/Computer 一侧满足该生命周期，不能为了 SDK 便利把文件搬到 Server。上传期间源端文件需要保持可读，完成或失败由真实平台回执判定。
 
@@ -941,7 +952,7 @@ Settings 使用独立视图、紧凑左侧导航和稳定的单列内容，不�
 
 账号配置位于所属 Bot 的平台分类下，由实际 Adapter 提供字段。账号信息、连接配置、聊天访问权限和聊天列表按提交范围分组：名称、启停和群聊回复方式自动保存，Token 与 Endpoint 等关联参数在连接配置块内显式整体提交，接入方式在必要确认后原子提交，添加、移除与换绑使用独立动作。局部连接保存不覆盖其他分组。
 
-后续 QQ NapCat、QQ 官方、飞书使用各自适用的配置字段，不能沿用 Telegram 专属表单来假装兼容其他平台。不常驻展示无操作意义的固定协议能力清单；真实错误和影响当前操作的限制在相应位置反馈。
+QQ NapCat、QQ 官方、微信和飞书使用各自适用的配置字段，不能沿用 Telegram 专属表单来假装兼容其他平台。不常驻展示无操作意义的固定协议能力清单；真实错误和影响当前操作的限制在相应位置反馈。
 
 ### Add Computer
 
@@ -1103,7 +1114,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A40 | 解绑与重分配 | 保留历史、不隐式迁移 Rollout；未完成出站意图不被重定向到新绑定 |
 | A41 | 配置生效与撤销 | 新派发使用有效选择与允许集合；既有进程和已开始 Attempt 状态不被配置变化虚构 |
 | A42 | 前端工程 | Web/Desktop 共用 Vue 与 Markstream 基线、SDK 和组件；OpenAPI 生成可重现，lint/typecheck/build 通过 |
-| A43 | 首版 IM 范围 | Telegram 群、私聊和 Topic 可配置并完成收发；Agent 的 IM 账号页只展示已支持的 Telegram 接入，其他 IM 平台不作为首版交付条件 |
+| A43 | IM 平台范围 | Telegram 群、私聊与 Topic；QQ 官方、NapCat 和飞书的单聊/群聊；微信 iLink 私聊。只展示实现的能力，区分协议夹具测试与真实账号验收 |
 | A44 | 命令接入 Computer | 平台生成可复制的接入命令；在目标机器执行后自动注册，界面从等待接入变为真实在线状态，不要求填写远端端点 |
 | A45 | 容器模式接入 | 勾选“使用容器”后，在装有 OrbStack 等受支持运行时的目标机器执行命令，创建容器并注册为独立 Computer，无需在平台选择宿主机 |
 | A46 | 宿主机与容器并存 | 已接入 Mac mini 后可再接入其中的容器；保留两个 Computer 身份、独立执行目标和 Agent 关联，不替换原 Computer |
@@ -1111,7 +1122,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A48 | 使用本机快捷入口 | Desktop 与 Headless 都能直接接入或复用 Server 本机的 Computer，无需复制命令；重复点击不创建重复 Local Computer |
 | A49 | 使用本机容器快捷入口 | Desktop 与 Headless 都能在 Server 本机创建并接入容器，展示真实进度；缺少运行时时提示处理，同次请求重试不重复创建 |
 | A50 | 本机目标识别 | 快捷入口显示 Server 本机的名称与系统；从其他设备访问 Headless 时，目标仍为服务器，不误指浏览器设备 |
-| A51 | 多 IM 架构 | Connection Schema 区分平台和接入方式，能表达 QQ NapCat/官方、飞书等后续适配；核心 Session/Gateway/Outbox 不依赖 Telegram 专属类型，首版无需交付后续适配器 |
+| A51 | 多 IM 架构 | QQ NapCat/官方、微信、飞书复用 IMStore、Session、Probe 与 Outbox。全部聊天操作受账号 all/specified 限制；API 访问不建 Session；Core 通用执行语义不变 |
 | A52 | Adapter 能力差异 | 配置、Conversation 类型、事件与发送能力按实际 Adapter 表达；不支持的能力明确反馈，不在 UI 或回执中伪造支持 |
 
 ## 17 实现时待细化
@@ -1129,7 +1140,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | FileRef 编码 | URI、源端版本/指纹、路径规则、预览范围、媒体引用解析 | 必须含来源 Computer；工作文件与持久媒体不进入 Server 资产库 |
 | Provider 适配 | 首批模型、Profile 字段、真实 Streaming/多模态/TokenEstimator 行为 | 不设置前置能力验证；能力按目录和配置表达，以实际请求结果为准 |
 | 搜索适配 | 候选服务的真实 API、返回映射、错误处理、测试凭据 | 一个 Agent 同时一个后端，无隐式聚合或回退 |
-| IM 适配契约 | 平台/接入方式 Schema、能力声明、统一事件与发送契约；首版 Telegram 的 Conversation、Topic、私聊发现、手工绑定、格式拆分及附件流实现 | 首版仅交付 Telegram；后续 QQ NapCat/官方、飞书等通过适配器扩展；独立 Session、真实事件与回执保留 |
+| IM 适配契约 | 平台/接入方式 Schema、能力声明、统一事件与发送契约；首版 Telegram 的 Conversation、Topic、私聊发现、手工绑定、格式拆分及附件流实现 | Telegram、QQ NapCat/官方、微信 iLink、飞书通过适配器接入；独立 Session、真实事件与回执保留 |
 | 高流量调度 | 合并窗口、积压保护、上下文预算、投递诊断 | 观察有序且不重复；引用式触发不可越过尚未应用的依赖 |
 | 重启调度 | 无人值守自动续跑的具体策略、待授权项恢复、显式继续入口 | 先恢复已知事实；未知副作用不能盲重放；该自动策略尚未决定 |
 | 长进程与撤销 | 回收、进程保活、Daemon 重启核查、权限撤销后的处理 | 不把断线或撤销等同进程已停止；新派发使用当前允许集合 |
@@ -1162,7 +1173,7 @@ PRD 提到但本轮未取得的技术架构 v0.3、v0.2 和 UIUX v0.4 不作为�
 
 | 旧表述或参考项目行为 | 本规格采用的规则 |
 | --- | --- |
-| PRD 首版同时支持 Telegram 与 QQ/NapCat | 首版 IM 仅交付 Telegram；架构支持多平台，后续接入 QQ（NapCat/官方）、飞书等 |
+| PRD 首版同时支持 Telegram 与 QQ/NapCat | 初版 IM 为 Telegram；本轮在原架构上扩展 QQ（NapCat/官方）、微信和飞书 |
 | 手工填写远端端点添加 Computer，或在平台选择远端宿主机创建容器 | 其他机器复制命令接入，可选“使用容器”；Server 本机提供“使用本机”“使用本机容器”快捷入口，两种部署都可使用 |
 | 自动转发 IM Session 的 assistant text | 绑定聊天通过 send_message 显式发送，跨聊天通过 Computer API |
 | PRD 11.4 包含 Host Assets | 工作文件、附件与需要保留的媒体版本都在来源 Computer；Server 保存引用并透传 |

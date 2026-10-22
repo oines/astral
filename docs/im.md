@@ -1,6 +1,8 @@
 # IM accounts and Computer API
 
-Each account belongs to one Agent, called a **Bot** in the product UI. The [UI/UX specification](ui-ux-spec.md) defines the settings hierarchy: Settings → Bot list → Bot → platform → account list → account settings and chats. Each account has independent credentials and access settings. New accounts use `specified` scope and have no chats. Add a chat by its platform ID and optional forum Topic, then select a new Session or an existing unbound Session owned by the same Agent. Replacing a binding stops the original and target Session, retains both histories and fixes previously accepted sends to their original destination.
+Supported adapters: Telegram (`telegram.bot`), QQ official Bot (`qq.bot`), QQ NapCat (`qq.napcat`), Weixin ClawBot / iLink (`weixin.ilink`) and Feishu custom app Bot (`feishu.bot`). See the [platform setup guide](im-platforms.md) for credentials, permissions, protocol references and capability differences.
+
+Each account belongs to one Agent, called a **Bot** in the product UI. The [UI/UX specification](ui-ux-spec.md) defines the settings hierarchy: Settings → Bot list → Bot → platform → account list → account settings and chats. Each account has independent credentials and access settings. New accounts use `specified` scope and have no chats. Add a chat by its platform ID and optional Topic when supported by the adapter, then select a new Session or an existing unbound Session owned by the same Agent. Replacing a binding stops the original and target Session, retains both histories and fixes previously accepted sends to their original destination.
 
 `all` scope allows API access to any reachable chat on that account. Private messages activate a Session immediately; a group's first mention or reply to the Bot activates it. Earlier messages remain in IMStore and are not prefilled. API resolution and sending do not activate a Session. Switching to `specified` retains every active binding and its settings. Switch to `specified` before removing an individual chat.
 
@@ -36,11 +38,15 @@ Read `local_api.base_url` from the current environment snapshot and append the p
 | `POST /v1/im/messages` | `{conversation_id?,text,reply_to?}` queues text |
 | `POST /v1/im/files` | `{conversation_id?,file_uri?|path?,text?,reply_to?}` queues a file |
 | `GET /v1/im/receipts/{id}` | Inspect queued, accepted, failed, blocked or unknown sends |
+| `GET /v1/accounts/{id}/operations` | Named chat operations supported by this account, parameters and official documentation |
+| `POST /v1/accounts/{id}/operations/{operation}` | Invoke a named operation within the selected account and chat scope |
 | `GET /v1/accounts/{id}/telegram/operations` | Explicit Bot chat operation names, parameters and official method documentation |
 | `POST /v1/accounts/{id}/telegram/{operation}` | Invoke a named, scoped Telegram operation |
 | `GET /v1/openapi.json` | Current request and response schemas |
 
-Text and file sends require a stable `Idempotency-Key`. Reusing it with different content fails; replaying the same intent returns its existing receipt. Accepted means platform acceptance, not final delivery. Unknown outcomes require inspection before retry. A manual accepted resolution includes the platform message IDs and archives the sent fact.
+All platform chat and message IDs are strings. QQ uses `private:<user ID>` and `group:<group ID>` to preserve its distinct address spaces. Topic IDs are only accepted by adapters that support them.
+
+Text and file sends require a stable `Idempotency-Key`. Reusing it with different content fails; replaying the same intent returns its existing receipt. Accepted means platform acceptance, not final delivery. Weixin may acknowledge only the sent `client_id`; a `client:` receipt identifies that accepted request, not a server-side message identity usable for quoting or editing. Files with text on Weixin or Feishu use separate ordered receipts for the text and file. Unknown outcomes require inspection before retry. A manual accepted resolution includes the platform message IDs and archives the sent fact.
 
 IM reception does not create Computer files. Images are downloaded into memory and processed once by Core: orientation correction, proportional resizing to a longest edge of 2048, at most 2500 32px patches and at most 4.5 MiB of base64. Transparency and original/display dimensions are retained. Core history stores the actual model payload, so replay does not download or recompress it. Other attachments contain only identity, name, type, size and the original-download path.
 
@@ -61,3 +67,13 @@ A request supplies `conversation_id`, optional `source_conversation_id` for copy
 The target, copy/forward source and nested chat references each require access through the same account. Topic-only grants also require an archived message identity before a chat-wide edit, delete or copy can act on it. Chat-wide management requires access to the parent chat. Command scopes are restricted to `chat` or `chat_member` for the selected chat. Alternate inline-message and business identities are not Bot chat grants; direct-message Topics are not resolved by this version's forum Topic adapter.
 
 Named operations return Telegram's result directly and archive accepted messages or deletion facts. They are not automatically retried. Use the queued text/file endpoints when persisted send-receipt reconciliation is needed.
+
+## Additional platform operations
+
+The account operation catalog uses the same Computer HTTP API and Agent view. No additional model tools are registered. Telegram's existing named-operation paths remain available. NapCat exposes chat/message lookup, deletion and selected group member operations; Feishu exposes chat/history/message lookup, deletion and reactions; Weixin exposes `set_typing`. QQ official Bot currently has no extra named operations; use the shared send and archive endpoints.
+
+Requests supply `conversation_id` and an allowlisted `parameters` object. Every target belongs to the selected account and must pass its `all | specified` scope. Globally addressed messages must already be archived in that chat, and adapters also verify remote chat membership where needed. Parameters cannot supply a URL or override the destination. A successful delete appends the deletion fact to IMStore. Reading platform history does not backfill Core or activate a Session.
+
+These direct operations are single attempts without queued send reconciliation; inspect uncertain effects before retrying. Use the shared queued endpoints for text and files. NapCat generic execution exceptions remain `unknown`, because its timeout response may follow submission to QQ.
+
+QQ official and Feishu only contribute ordinary group context when platform permissions deliver those events. NapCat forward WebSocket has no offline replay. Weixin persists per-chat context tokens and media download secrets in encrypted Server records; receiving does not create Computer files. Its QR authorization is Owner-only, supports Tencent region redirects and phone verification, and never returns credentials to the browser.

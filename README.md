@@ -2,7 +2,7 @@
 
 Astral is a self-hosted workspace for persistent agents. The macOS app and Linux server use the same Web interface. Agents run commands and read or write files through explicitly assigned Computers: the server's local machine, a container, or another Mac or Linux machine.
 
-The implementation follows [SPEC.md](SPEC.md). The server owns configuration, credentials, sessions, Telegram connections and delivery receipts. [Astral Core](https://github.com/oines/astral-core) owns the persistent agent loop. [astral-models](https://github.com/oines/astral-models) translates Core requests into provider protocols.
+The implementation follows [SPEC.md](SPEC.md). The server owns configuration, credentials, sessions, IM accounts and delivery receipts. [Astral Core](https://github.com/oines/astral-core) owns the persistent agent loop. [astral-models](https://github.com/oines/astral-models) translates Core requests into provider protocols.
 
 UI changes must follow the [UI/UX specification](docs/ui-ux-spec.md), including product naming, settings navigation, shared visual language, and automatic saving with feedback. [AGENTS.md](AGENTS.md) links the requirements for future contributors and coding agents. The specification defines the target behavior; historical design reports are not acceptance evidence for the ongoing redesign.
 
@@ -67,7 +67,7 @@ The macOS app stores current data in `~/Library/Application Support/astral/schem
 
 Registration does not automatically grant a Bot access to a Computer. The initial setup explicitly grants access when you finish; subsequently, open the Bot's **Computer access** page to grant access and optionally set its default. A session can change its current Computer while idle. Existing process handles and file references remain attached to their original Computer.
 
-AgentHome is shared by sessions of the same Agent on the same Computer. Forking a conversation preserves history and its branch relationship; it does not copy working files or Telegram bindings.
+AgentHome is shared by sessions of the same Agent on the same Computer. Forking a conversation preserves history and its branch relationship; it does not copy working files or IM bindings.
 
 New sessions use that AgentHome as their default CWD. `switch_computer` can change one session's Computer or CWD, including a directory change on the same Computer. A command's `workdir` or shell `cd` is temporary and does not change the session CWD.
 
@@ -77,7 +77,7 @@ Discovery runs on the selected Computer: global skills come from its OS user's `
 
 Uploaded originals and generated files live on Computers. `astral-file://` links stream from the source Computer for preview or download. Images actually supplied to the model are also frozen inside the durable rollout, so history and replay remain valid after an original is removed or its source goes offline. That preserved model input does not substitute for an unavailable original-file download.
 
-Telegram is the V1 messaging adapter. Open **Settings → Bots**, choose a Bot, then use **Connect a platform → Telegram** to connect an account. The **Telegram** navigation item opens the account list; each account has its own credentials, access settings and chats. New accounts use **Only specified chats** with an empty list; add a chat and choose a new or existing unbound Session. **All chats the account can access** activates private chats on their first message and groups on their first mention/reply. Activation starts at that message without importing earlier history. Scope changes retain bindings and per-chat settings; changing a binding stops both Sessions first.
+Messaging adapters cover **Telegram**, **QQ official Bot**, **QQ NapCat**, **Weixin ClawBot / iLink**, and **Feishu Bot**. Open **Settings → Bots**, choose a Bot, then use **Connect a platform**. QQ offers official and NapCat connection methods; Weixin uses QR authorization. See the [platform setup guide](docs/im-platforms.md) for credentials, permissions and actual protocol limits. Each platform navigation item opens its account list; each account has its own credentials, access settings and chats. New accounts use **Only specified chats** with an empty list; add a chat and choose a new or existing unbound Session. **All chats the account can access** activates private chats on their first message and groups on their first mention/reply. Activation starts at that message without importing earlier history. Scope changes retain bindings and per-chat settings; changing a binding stops both Sessions first.
 
 Bound chats continuously contribute context and compact as needed. Private messages, mentions, replies and Web input use Steer. **Proactive mode** is off by default; when enabled for a group, one LLM Probe decides after 10 seconds of quiet or a 60-second window. It returns only `decide({participate:boolean})`, never a reason or an instruction. Probe follows the Session’s current model unless the Agent selects an override.
 
