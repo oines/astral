@@ -1,4 +1,5 @@
 export { default as Button } from './Button.vue'
+export { default as Skeleton } from './Skeleton.vue'
 export { default as Collapse } from './Collapse.vue'
 export { default as Modal } from './Modal.vue'
 export { default as Popover } from './Popover.vue'

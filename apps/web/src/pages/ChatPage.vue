@@ -13,6 +13,7 @@ import { errorText, newMeta, request } from '../lib/api'
 import Sidebar from '../components/Sidebar.vue'
 import Composer from '../components/Composer.vue'
 import Transcript from '../components/Transcript.vue'
+import ChatLoading from '../components/ChatLoading.vue'
 import ContextSurface from '../components/ContextSurface.vue'
 const route = useRoute()
 const router = useRouter()
@@ -178,16 +179,23 @@ watch(id, () => { surface.close(); error.value = '' })
         />
       </template>
       <div
-        v-else
-        class="empty"
+        v-else-if="live.error.value"
+        class="chat-load-error"
+        role="alert"
       >
-        <AstralLogo decorative /><p>{{ t(live.connection.value) }}</p><p
-          v-if="live.error.value"
+        <p
           class="error-box"
         >
           {{ live.error.value }}
         </p>
+        <Button @click="live.reconnect">
+          {{ t('retry') }}
+        </Button>
       </div>
+      <ChatLoading
+        v-else
+        :reconnecting="live.connection.value === 'reconnecting'"
+      />
     </main>
     <ContextSurface />
     <Modal

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ChatPage from './pages/ChatPage.vue'
 import SettingsPage from './pages/SettingsPage.vue'
 import OnboardingPage from './pages/OnboardingPage.vue'
+import ChatPageSkeleton from './components/ChatPageSkeleton.vue'
 import { useI18n } from 'vue-i18n'
 import { login } from '@astral/sdk'
 import { Button } from '@astral/ui'
@@ -78,6 +79,11 @@ async function signIn() {
       <component :is="inSettings ? SettingsPage : ChatPage" />
     </KeepAlive>
   </template>
+  <ChatPageSkeleton
+    v-else-if="!inSettings && !app.query.error"
+    :sidebar="app.sidebar"
+    :welcome="!route.params.id"
+  />
   <div
     v-else
     class="login-screen"

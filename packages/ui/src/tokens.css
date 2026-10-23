@@ -194,6 +194,9 @@ input[type='radio'] { accent-color: var(--control-active); width: 14px; height: 
 .preference-control > :is(input, textarea, .select-trigger, .settings-text) { width: 100%; min-width: 0; }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.skeleton { display: block; height: 12px; border-radius: 4px; background: var(--hover); animation: skeleton-pulse 1.8s ease-in-out infinite; }
+@keyframes skeleton-pulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 @media (min-resolution: 2dppx) { :root { --hairline: .5px; } }
 @media (forced-colors: active) {
   :is(button, a, input, select, textarea, summary, [tabindex='0']):focus-visible { outline: 2px solid Highlight !important; outline-offset: 2px !important; }
