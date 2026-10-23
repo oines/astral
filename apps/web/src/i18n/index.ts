@@ -16,7 +16,7 @@ const en = {
   application: 'Application', conversation: 'Conversation', interface: 'Interface',
   loginStartHint: 'Open Astral automatically when you log in.', keepRunningHint: 'Let ongoing work continue after you close the window.',
   inputDefaultHint: 'Choose how a new message is handled during a run.', themeHint: 'Choose how Astral looks on this device.', languageHint: 'The language used throughout the app.',
-  worked: 'Worked', steps: 'steps', rawData: 'Raw data', arguments: 'Arguments', sessionOptions: 'Conversation options', earlierActivity: 'Load earlier activity',
+  worked: 'Worked', steps: 'steps', rawData: 'Raw data', arguments: 'Arguments', sessionOptions: 'Conversation options', sessionOptionsFor: 'Options for {name}', earlierActivity: 'Load earlier activity',
   personal: 'Personal', workspace: 'Workspace', sessionInfo: 'Conversation info',
 
   newSession: 'New session', search: 'Search sessions', settings: 'Settings', back: 'Back to chats', now: 'Now', pinned: 'Pinned', recent: 'Recent',
@@ -54,7 +54,7 @@ const zh: typeof en = {
   application: '应用', conversation: '对话', interface: '界面',
   loginStartHint: '登录电脑后自动打开 Astral。', keepRunningHint: '关闭窗口后，让正在进行的工作继续运行。',
   inputDefaultHint: '选择运行过程中收到的新消息如何处理。', themeHint: '选择 Astral 在这台设备上的外观。', languageHint: '应用界面使用的语言。',
-  worked: '已完成', steps: '个步骤', rawData: '原始数据', arguments: '参数', sessionOptions: '会话选项', earlierActivity: '加载更早的过程',
+  worked: '已完成', steps: '个步骤', rawData: '原始数据', arguments: '参数', sessionOptions: '会话选项', sessionOptionsFor: '{name}的会话选项', earlierActivity: '加载更早的过程',
   personal: '个人', workspace: '工作区', sessionInfo: '会话信息',
 
   newSession: '新建会话', search: '搜索会话', settings: '设置', back: '返回聊天', now: '进行中', pinned: '已固定', recent: '最近',

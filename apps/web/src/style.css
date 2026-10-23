@@ -1,14 +1,14 @@
 #app { height: 100dvh; }
-/* Native controls occupy their own 48px titlebar above the inset content. */
+/* Native controls share a compact titlebar above the inset content. */
 :root[data-desktop='mac'] :is(button, a, input, textarea, select, [role='combobox']) { -webkit-app-region: no-drag; }
-:root[data-desktop='mac'] .chat-layout { padding-top: 48px; }
+:root[data-desktop='mac'] .chat-layout { padding-top: var(--desktop-titlebar-height); }
 :root[data-desktop='mac'] .sidebar { padding-top: 0; }
 :root[data-desktop='mac'] .sidebar-heading { padding: 0; user-select: none; }
-:root[data-desktop='mac'] .sidebar-toggle { top: 7px; left: 92px; -webkit-app-region: no-drag; }
+:root[data-desktop='mac'] .sidebar-toggle { top: calc((var(--desktop-titlebar-height) - 34px) / 2); left: 92px; -webkit-app-region: no-drag; }
 /* Keep the native drag rectangle clear of the sidebar button's full hit area. */
-:root[data-desktop='mac'] .chat-layout::before { content: ''; position: absolute; top: 0; left: 136px; right: 0; height: 48px; -webkit-app-region: drag; user-select: none; }
-:root[data-desktop='mac'] .settings-nav { padding-top: 52px; }
-:root[data-desktop='mac'] :is(.settings-layout, .login-screen)::before { content: ''; position: fixed; inset: 0 0 auto; height: 40px; z-index: 4; -webkit-app-region: drag; user-select: none; }
+:root[data-desktop='mac'] .chat-layout::before { content: ''; position: absolute; top: 0; left: 136px; right: 0; height: var(--desktop-titlebar-height); -webkit-app-region: drag; user-select: none; }
+:root[data-desktop='mac'] .settings-nav { padding-top: calc(var(--desktop-titlebar-height) + 4px); }
+:root[data-desktop='mac'] :is(.settings-layout, .login-screen)::before { content: ''; position: fixed; inset: 0 0 auto; height: var(--desktop-titlebar-height); z-index: 4; -webkit-app-region: drag; user-select: none; }
 :root[data-desktop='mac'] .surface-heading { -webkit-app-region: drag; user-select: none; }
 .login-screen { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
 .login-form { width: min(380px, 100%); }
@@ -42,8 +42,8 @@
 .onboarding-actions { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .onboarding-actions > p { font-size: 13px; line-height: 1.5; }
 .onboarding-actions > .button:last-child { flex-shrink: 0; margin-left: auto; }
-:root[data-desktop='mac'] .onboarding-content { padding-top: 52px; }
-:root[data-desktop='mac'] .onboarding-layout::before { content: ''; position: fixed; inset: 0 0 auto; height: 40px; z-index: 4; -webkit-app-region: drag; user-select: none; }
+:root[data-desktop='mac'] .onboarding-content { padding-top: calc(var(--desktop-titlebar-height) + 4px); }
+:root[data-desktop='mac'] .onboarding-layout::before { content: ''; position: fixed; inset: 0 0 auto; height: var(--desktop-titlebar-height); z-index: 4; -webkit-app-region: drag; user-select: none; }
 @media (max-width: 600px) {
   .onboarding-heading { margin-top: 8px; }
   .onboarding-heading h1 { font-size: 23px; }
@@ -77,6 +77,15 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .session-link > svg { color: var(--muted); width: 13px; height: 13px; }
 .session-link:hover { background: var(--hover); text-decoration: none; }
 .session-link.selected { background: var(--selected); font-weight: 500; }
+.session-row { position: relative; margin: 2px 0; }
+.session-row .session-link { margin: 0; padding-right: 36px; }
+.session-row:hover .session-link { background: var(--hover); }
+.session-row.selected .session-link { background: var(--selected); }
+.session-menu-trigger { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; min-height: 26px; padding: 5px; border-radius: 6px; opacity: 0; pointer-events: none; color: var(--muted); }
+.session-menu-trigger svg { width: 16px; height: 16px; }
+.session-row:is(:hover, .selected, :focus-within) .session-menu-trigger, .session-menu-trigger[data-state='open'] { opacity: 1; pointer-events: auto; }
+.session-menu-trigger:active:not(:disabled) { transform: translateY(-50%); }
+.sidebar-action-error { padding: 6px 12px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 :is(.session-link, .new-session, .sidebar-settings, .settings-back, .settings-nav nav :is(a, .settings-nav-action)):focus-visible { outline: 1px solid var(--focus-ring); outline-offset: -1px; background: var(--hover); }
 .session-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-label.is-typing::after { content: ''; display: inline-block; height: 1em; margin-left: 2px; border-right: 1px solid currentColor; vertical-align: -.12em; }
@@ -96,14 +105,17 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .welcome-start { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
 .welcome-start .select-trigger { min-width: 160px; }
 .agent-avatar { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; font-size: 13px; background: var(--surface); color: var(--ink); font-weight: 550; flex-shrink: 0; }
-.session-utilities { position: absolute; right: 12px; top: 10px; z-index: 5; }
-.session-utilities .button { color: var(--muted); background: var(--bg); }
-.session-menu { min-width: 210px; max-width: 280px; }
-.session-menu .popover-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.session-menu { min-width: 172px; max-width: 240px; max-height: var(--reka-dropdown-menu-content-available-height); padding: 4px; }
+.session-menu .menu-item { min-height: 32px; padding: 7px 9px; gap: 8px; font-size: 13px; line-height: 18px; border-radius: 6px; cursor: pointer; }
+.session-menu .menu-item > svg { width: 16px; height: 16px; }
+.session-menu .menu-item[data-highlighted] { outline: none; background: var(--hover); }
 .chat-error { margin: 14px auto 0; width: min(752px, calc(100% - 80px)); }
 .transcript-viewport { min-height: 0; flex: 1; position: relative; display: flex; flex-direction: column; }
+/* Feather only the message edge; the composer and jump control stay crisp. */
+.transcript-viewport::after { content: ''; position: absolute; inset: auto 0 0; height: var(--chat-edge-fade); z-index: 1; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--bg) 16%, transparent) 28%, color-mix(in srgb, var(--bg) 70%, transparent) 72%, var(--bg)); }
 .transcript-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; scrollbar-width: thin; }
 .transcript-scroll:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: -6px; border-radius: 8px; }
+@media (forced-colors: active) { .transcript-viewport::after { display: none; } }
 /* A turn owns its process, response and actions; only the turn sets outer spacing. */
 /* The initial top gap belongs to the content and scrolls away with it. */
 .transcript { width: min(808px, 100%); padding: 40px 24px 28px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
@@ -198,7 +210,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .markdown .table-node { box-shadow: none; }
 .stream-preview { font-size: 15px; }
 .stream-preview + .stream-preview { margin-top: 14px; }
-.scroll-bottom { position: absolute; bottom: 12px; left: calc(50% - 17px); border-radius: 50%; background: var(--raised); box-shadow: var(--shadow); }
+.scroll-bottom { position: absolute; z-index: 2; bottom: 12px; left: calc(50% - 17px); border-radius: 50%; background: var(--raised); box-shadow: var(--shadow); }
 .composer-area { width: min(808px, 100%); padding: 8px 24px 14px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; max-height: 80dvh; overflow-y: auto; }
 .composer { position: relative; z-index: 1; text-align: left; background: var(--raised); border: 1px solid var(--field-line); border-radius: 16px; box-shadow: var(--composer-shadow); transition: border-color .18s ease, box-shadow .18s ease; }
 .composer:hover { border-color: color-mix(in srgb, var(--ink) 18%, transparent); }
@@ -368,10 +380,10 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .computer-check strong { font-size: 13px; font-weight: 500; }
 .computer-check small { font-size: 12px; color: var(--muted); }
 @media (max-width: 1100px) { .computer-picker > span { max-width: 105px; } .model-picker > span { max-width: 115px; } }
-@media (max-width: 1200px) { .context-surface { position: fixed; z-index: 20; right: 8px; top: 8px; bottom: 8px; max-width: calc(100vw - 32px); box-shadow: var(--shadow); } :root[data-desktop='mac'] .context-surface { top: 48px; }  }
+@media (max-width: 1200px) { .context-surface { position: fixed; z-index: 20; right: 8px; top: 8px; bottom: 8px; max-width: calc(100vw - 32px); box-shadow: var(--shadow); } :root[data-desktop='mac'] .context-surface { top: var(--desktop-titlebar-height); }  }
 @media (max-width: 760px) {
-  :root[data-desktop='mac'] .sidebar { top: 48px; padding-top: 0; }
-  :root[data-desktop='mac'] .sidebar-backdrop { top: 48px; }
+  :root[data-desktop='mac'] .sidebar { top: var(--desktop-titlebar-height); padding-top: 0; }
+  :root[data-desktop='mac'] .sidebar-backdrop { top: var(--desktop-titlebar-height); }
   .chat-layout, .chat-layout.sidebar-hidden { padding: 0; }
   .chat-main { border-radius: 0; }
   .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; width: 272px; background: var(--canvas); padding-top: 17px; }
