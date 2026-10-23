@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, provide } from 'vue'
 import MarkdownRender, { setCustomComponents, enableKatex, enableMermaid } from 'markstream-vue'
+import 'katex/dist/katex.min.css'
+import { configureMarkdown } from '../lib/markdown'
 import { useAppStore } from '../stores/app'
 import MarkdownLink from './MarkdownLink.vue'
 import MarkdownImage from './MarkdownImage.vue'
@@ -17,6 +19,7 @@ enableMermaid()
     html-policy="escape"
     mode="chat"
     :content="content"
+    :custom-markdown-it="configureMarkdown"
     :is-dark="app.dark"
     :typewriter="false"
     :fade="false"

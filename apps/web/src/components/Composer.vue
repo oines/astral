@@ -1,19 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useQuery } from '@pinia/colada'
-import { listProvidersQuery } from '@astral/sdk/colada'
 import { createSession, continueSession, decideApproval, inputReceipt, movePending, removePending, updatePending, resolveTool, selectComputer, selectModel, stopSession, submitInput, uploadAttachment } from '@astral/sdk'
-import { ArrowUp, ArrowDown, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, User, ListEnd, CornerDownRight, Trash2, Ellipsis, Pencil } from '@astral/icons'
-import { Button, Modal, Popover, ModelPicker } from '@astral/ui'
+import { ArrowUp, ArrowDown, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, Bot, ListEnd, CornerDownRight, Trash2, Ellipsis, Pencil } from '@astral/icons'
+import { Button, Modal, Popover } from '@astral/ui'
 import type { SessionView } from '../lib/types'
-import { errorText, fileURL, object, request } from '../lib/api'
+import { errorText, fileURL, request } from '../lib/api'
 import { prepareInputAttempt, sameInputContent } from '../lib/input-attempt'
 import { useAppStore } from '../stores/app'
+import ModelSelection from './ModelSelection.vue'
+import type { ModelSelection as Selection } from '../lib/model-reasoning'
 const props = defineProps<{ view: SessionView; live: boolean }>()
 const emit = defineEmits<{ compact: []; started: [id: string] }>()
 const app = useAppStore()
-const providers = useQuery(listProvidersQuery())
 const { t } = useI18n()
 const draftKey = props.view.id || `new:${props.view.agent_id}`
 if (!app.drafts[draftKey]) app.drafts[draftKey] = { text: '', files: [] }
@@ -47,27 +46,12 @@ const running = computed(() => ['running', 'stopping', 'compacting'].includes(vi
 const canContinue = computed(() => view.value.can_continue)
 const agent = computed(() => app.agents.find(a => a.id === view.value.agent_id))
 const computers = computed(() => app.computers.filter(c => agent.value?.allowed_computers.includes(c.id) && !c.revoked))
-const profile = computed(() => app.models.find(p => p.id === view.value.profile_id))
-const values = computed(() => ({ ...profile.value?.recommendations, ...profile.value?.overrides }))
-const caps = computed(() => object(values.value.reasoning))
-const efforts = computed(() => Array.isArray(caps.value.efforts) ? caps.value.efforts.filter((x): x is string => typeof x === 'string') : [])
 const contextUsage = computed(() => view.value.context_usage)
 const ratio = computed(() => contextUsage.value?.context_window ? Math.min(100, Math.round(contextUsage.value.input_tokens / contextUsage.value.context_window * 100)) : undefined)
 const resolution = ref('')
 const note = ref('')
 const computer = computed(() => computers.value.find(c => c.id === view.value.computer_id))
 const modelBusy = ref(false)
-const defaultReasoning = computed(() => object(object(values.value.defaults).reasoning))
-const reasoningValue = computed(() => view.value.reasoning?.enabled === false ? 'off' : view.value.reasoning?.effort || (view.value.reasoning?.enabled ? 'on' : 'default'))
-const defaultReasoningLabel = computed(() => defaultReasoning.value.enabled === false ? t('off') : typeof defaultReasoning.value.effort === 'string' ? t(defaultReasoning.value.effort) : defaultReasoning.value.enabled === true ? t('on') : t('default'))
-const reasoningLabel = computed(() => reasoningValue.value === 'default' ? defaultReasoningLabel.value : t(reasoningValue.value))
-const reasoningOptions = computed(() => !efforts.value.length && !caps.value.toggle && !caps.value.disable ? [] : [
-  { value: 'default', label: defaultReasoningLabel.value === t('default') ? t('default') : `${t('default')} · ${defaultReasoningLabel.value}` },
-  ...(caps.value.disable ? [{ value: 'off', label: t('off') }] : []),
-  ...(caps.value.toggle ? [{ value: 'on', label: t('on') }] : []),
-  ...efforts.value.map(value => ({ value, label: t(value) })),
-])
-const modelOptions = computed(() => app.availableModels.map(model => ({ value: model.id, label: model.name, group: model.provider_id, groupLabel: providers.data.value?.find(provider => provider.id === model.provider_id)?.name || t('providers'), keywords: model.model_id })))
 async function action(fn: () => Promise<unknown>) {
   error.value = ''
   try { await fn() } catch (e) { error.value = errorText(e) }
@@ -223,19 +207,11 @@ async function toggleQueue() {
   const next = mode.value === 'follow_up' ? 'steer' : 'follow_up'
   await action(async () => { await app.preferences({ running_input: next }); mode.value = next })
 }
-async function changeModel(id: string) {
-  if (modelBusy.value || id === view.value.profile_id) return
-  if (!props.view.id) { homeSelection.value = { ...homeSelection.value, profile_id: id, reasoning: undefined }; return }
+async function changeModel(selection: Selection) {
+  if (modelBusy.value) return
+  if (!props.view.id) { homeSelection.value = { ...homeSelection.value, ...selection }; return }
   modelBusy.value = true
-  try { await action(async () => { await request(selectModel({ path: { id: view.value.id }, body: { profile_id: id } })); if (draft.session) { draft.session.profile_id = id; draft.session.reasoning = undefined } }) }
-  finally { modelBusy.value = false }
-}
-async function changeReasoning(value: string) {
-  if (modelBusy.value || value === reasoningValue.value) return
-  const reasoning = value === 'default' ? undefined : value === 'off' ? { enabled: false } : value === 'on' ? { enabled: true } : { enabled: true, effort: value }
-  if (!props.view.id) { homeSelection.value = { ...homeSelection.value, reasoning }; return }
-  modelBusy.value = true
-  try { await action(async () => { await request(selectModel({ path: { id: view.value.id }, body: { profile_id: view.value.profile_id ?? '', reasoning } })); if (draft.session) draft.session.reasoning = reasoning }) }
+  try { await action(async () => { await request(selectModel({ path: { id: view.value.id }, body: selection })); if (draft.session) Object.assign(draft.session, selection) }) }
   finally { modelBusy.value = false }
 }
 async function resolve(outcome: 'succeeded' | 'failed') {
@@ -583,33 +559,19 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
           </template>
         </Popover>
         <div class="composer-agent">
-          <User /><span
+          <Bot /><span
             :title="view.id ? t('agentLocked') : agent?.name"
           >{{ agent?.name }}</span>
         </div>
       </div>
       <div class="composer-environment-right">
-        <ModelPicker
+        <ModelSelection
           :model-value="view.profile_id || ''"
-          :model-label="profile?.name || t('missing')"
-          :models="modelOptions"
-          :reasoning-value="reasoningValue"
-          :reasoning-label="reasoningLabel"
-          :reasoning-options="reasoningOptions"
-          :labels="{ model: t('model'), reasoning: t('reasoning'), search: t('searchModels'), empty: t('noModelMatch') }"
+          :reasoning="view.reasoning"
           :busy="modelBusy"
-          @update:model-value="changeModel"
-          @update:reasoning-value="changeReasoning"
-        >
-          <button
-            type="button"
-            class="composer-picker model-picker"
-            :aria-label="t('model')"
-            :title="profile?.name"
-          >
-            <span>{{ profile?.name || t('missing') }}</span><ChevronDown />
-          </button>
-        </ModelPicker>
+          composer
+          @select="changeModel"
+        />
         <Popover
           v-if="view.id"
           side="top"
@@ -637,8 +599,11 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
             <p class="muted">
               {{ contextUsage?.input_tokens.toLocaleString() ?? '—' }} / {{ contextUsage?.context_window?.toLocaleString() ?? '—' }} tokens
             </p>
-            <p class="muted small">
-              {{ t(contextUsage ? 'contextReportedHint' : 'contextNotReported') }}
+            <p
+              v-if="!contextUsage"
+              class="muted small"
+            >
+              {{ t('contextNotReported') }}
             </p>
             <Button
               variant="secondary"

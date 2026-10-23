@@ -10,7 +10,9 @@ export class ScrollFollow {
   private lastInputAt = -Infinity
 
   get distance() { return this.metrics ? Math.max(0, this.metrics.height - this.metrics.top - this.metrics.viewport) : 0 }
-  get showJump() { return !this.following && this.distance > 120 }
+  get showJump() {
+    return !this.following && !!this.metrics && this.metrics.viewport > 0 && this.metrics.height - this.metrics.viewport > 1 && this.distance > 1
+  }
 
   input(direction: 'up' | 'down' | 'pointer', metrics: ScrollMetrics, now: number) {
     this.lastInputAt = now

@@ -173,6 +173,8 @@ func (s *Service) shouldParticipate(ctx context.Context, b domain.ConversationBi
 	}
 	if agent.ProbeModelID == "" && session.Reasoning != nil {
 		options.Reasoning = *session.Reasoning
+	} else if agent.ProbeModelID != "" && agent.ProbeReasoning != nil {
+		options.Reasoning = *agent.ProbeReasoning
 	}
 	var profile domain.ModelProfile
 	if err = s.Store.Get(ctx, "models", profileID, &profile); err != nil {

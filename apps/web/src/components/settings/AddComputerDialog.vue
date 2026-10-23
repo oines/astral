@@ -8,7 +8,8 @@ import { Button, Modal } from '@astral/ui'
 import { ArrowLeft, Check, ChevronRight, Copy, Monitor, Server, Terminal } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Computer } from '../../lib/types'
-import { errorText, operatingSystem, request } from '../../lib/api'
+import { errorText, request } from '../../lib/api'
+import { computerSummary } from '../../lib/computer-info'
 import { useAction } from '../../composables/useAction'
 import { useAppStore } from '../../stores/app'
 defineProps<{ confirmLabel?: string }>()
@@ -266,7 +267,7 @@ function finish() {
       class="stack"
     >
       <span class="badge good align-start"><Check />{{ t('online') }}</span><h2>{{ connected.name }}</h2><p class="muted">
-        {{ operatingSystem(connected.os) }} · {{ connected.arch }}
+        {{ computerSummary(connected, t) }}
       </p><Button
         variant="primary"
         @click="finish"

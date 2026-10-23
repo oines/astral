@@ -74,7 +74,13 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Capabilities: []string{EnvironmentDiscoveryCapability}},
+	var container *domain.ContainerInfo
+	if raw := os.Getenv("ASTRAL_CONTAINER_INFO"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &container); err != nil {
+			return nil, fmt.Errorf("invalid container information: %w", err)
+		}
+	}
+	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability}},
 		gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, executions: map[string]string{}}, nil
 }
 

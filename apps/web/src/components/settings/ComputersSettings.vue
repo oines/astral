@@ -7,7 +7,8 @@ import { Button, Modal, SettingsSection, SettingsRow } from '@astral/ui'
 import { ArrowLeft, ChevronRight, Monitor, Plus, Server, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Computer } from '../../lib/types'
-import { operatingSystem, request } from '../../lib/api'
+import { request } from '../../lib/api'
+import { computerEnvironment, computerKind, computerStorage, computerSummary, containerIdentity } from '../../lib/computer-info'
 import { useAction } from '../../composables/useAction'
 import { useSettingsSave } from '../../composables/useSettingsSave'
 import SettingsText from './SettingsText.vue'
@@ -15,13 +16,14 @@ import SettingsFeedback from './SettingsFeedback.vue'
 import { useAppStore } from '../../stores/app'
 import ResourceDelete from './ResourceDelete.vue'
 import AddComputerDialog from './AddComputerDialog.vue'
+import CopyValue from '../CopyValue.vue'
 const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
 const saves = useSettingsSave()
 const list = useQuery(listComputersQuery())
 const search = ref('')
-const visibleComputers = computed(() => (list.data.value || []).filter(c => `${c.name} ${c.hostname}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => Number(a.revoked) - Number(b.revoked) || Number(b.online) - Number(a.online)))
+const visibleComputers = computed(() => (list.data.value || []).filter(c => `${c.name} ${c.hostname || ''} ${c.container?.name || ''} ${c.container?.host || ''}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => Number(a.revoked) - Number(b.revoked) || Number(b.online) - Number(a.online)))
 const selectedID = ref('')
 const selected = computed(() => list.data.value?.find(c => c.id === selectedID.value))
 const adding = ref(false)
@@ -90,7 +92,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
           class="resource-row"
           @click="edit(c)"
         >
-          <span class="resource-symbol"><Monitor v-if="c.kind !== 'container'" /><Server v-else /></span><span><strong>{{ c.name }}</strong><small>{{ operatingSystem(c.os) }} · {{ t('accessCount', { count: app.agents.filter(a => a.allowed_computers.includes(c.id)).length }) }}</small></span><span
+          <span class="resource-symbol"><Monitor v-if="c.kind !== 'container'" /><Server v-else /></span><span><strong>{{ c.name }}</strong><small>{{ computerSummary(c, t) }}</small></span><span
             class="badge"
             :class="{ good: c.online, bad: c.revoked }"
           >{{ t(c.revoked ? 'revoked' : c.online ? 'online' : 'offline') }}</span><ChevronRight />
@@ -124,7 +126,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
       <div class="settings-detail-heading">
         <span class="resource-symbol"><Monitor v-if="selected.kind !== 'container'" /><Server v-else /></span>
         <div class="settings-detail-identity">
-          <h2>{{ selected.name }}</h2><p>{{ [selected.name !== selected.hostname ? selected.hostname : '', operatingSystem(selected.os)].filter(Boolean).join(' · ') }}</p>
+          <h2>{{ selected.name }}</h2>
         </div><span
           class="badge"
           :class="{ good: selected.online, bad: selected.revoked }"
@@ -146,7 +148,46 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
             @commit="rename(selected!.id, $event)"
           />
         </SettingsRow>
+        <SettingsRow :label="t('computerInfo.type')">
+          <span>{{ t(`computerInfo.kind.${computerKind(selected)}`) }}</span>
+        </SettingsRow>
         <SettingsFeedback :scope="`computer:${selected.id}/name`" />
+      </SettingsSection>
+      <SettingsSection
+        v-if="selected.kind === 'container'"
+        :title="t('computerInfo.container')"
+      >
+        <SettingsRow
+          v-for="fact in containerIdentity(selected)"
+          :key="fact.key"
+          :label="t(fact.key)"
+        >
+          <CopyValue
+            :value="fact.value"
+            :label="t(fact.key)"
+          />
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection :title="t('computerInfo.environment')">
+        <SettingsRow
+          v-for="fact in computerEnvironment(selected)"
+          :key="fact.key"
+          :label="t(fact.key)"
+        >
+          <span class="computer-fact-value">{{ fact.value || '—' }}</span>
+        </SettingsRow>
+      </SettingsSection>
+      <SettingsSection :title="t('computerInfo.storage')">
+        <SettingsRow
+          v-for="fact in computerStorage(selected)"
+          :key="fact.key"
+          :label="t(fact.key)"
+        >
+          <CopyValue
+            :value="fact.value"
+            :label="t(fact.key)"
+          />
+        </SettingsRow>
       </SettingsSection>
       <SettingsSection :title="t('computerAccess')">
         <template #actions>

@@ -73,6 +73,7 @@ function toggle() { emit('expand'); open.value = !open.value }
       <div class="activity-details">
         <Markdown
           v-if="singleReasoning"
+          :data-scroll-anchor="singleReasoning.key"
           :content="singleReasoning.text"
           :streaming="singleReasoning.streaming"
           :session-i-d="sessionID"
@@ -81,6 +82,7 @@ function toggle() { emit('expand'); open.value = !open.value }
           <ProcessStep
             v-for="item in items"
             :key="item.key"
+            :data-scroll-anchor="item.key"
             :item="item"
             :session-i-d="sessionID"
             :state="state"

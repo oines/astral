@@ -28,13 +28,15 @@ type Meta struct {
 
 type Agent struct {
 	Meta
-	Name              string   `json:"name"`
-	Avatar            string   `json:"avatar,omitempty"`
-	DefaultModelID    string   `json:"default_model_id,omitempty"`
-	ProbeModelID      string   `json:"probe_model_id,omitempty"`
-	SearchProviderID  string   `json:"search_provider_id,omitempty"`
-	AllowedComputers  []string `json:"allowed_computers"`
-	DefaultComputerID string   `json:"default_computer_id,omitempty"`
+	Name              string                 `json:"name"`
+	Avatar            string                 `json:"avatar,omitempty"`
+	DefaultModelID    string                 `json:"default_model_id,omitempty"`
+	DefaultReasoning  *core.ReasoningOptions `json:"default_reasoning,omitempty"`
+	ProbeModelID      string                 `json:"probe_model_id,omitempty"`
+	ProbeReasoning    *core.ReasoningOptions `json:"probe_reasoning,omitempty"`
+	SearchProviderID  string                 `json:"search_provider_id,omitempty"`
+	AllowedComputers  []string               `json:"allowed_computers"`
+	DefaultComputerID string                 `json:"default_computer_id,omitempty"`
 }
 
 type Session struct {
@@ -168,19 +170,29 @@ type SearchProvider struct {
 	CredentialFields []string          `json:"credential_fields,omitempty"`
 }
 
+type ContainerInfo struct {
+	Name      string `json:"name"`
+	Host      string `json:"host,omitempty"`
+	Image     string `json:"image,omitempty"`
+	Volume    string `json:"volume,omitempty"`
+	MountPath string `json:"mount_path,omitempty"`
+}
+
 type Computer struct {
 	Meta
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	Hostname  string `json:"hostname,omitempty"`
-	OS        string `json:"os,omitempty"`
-	Arch      string `json:"arch,omitempty"`
-	Shell     string `json:"shell,omitempty"`
-	Home      string `json:"home,omitempty"`
-	TokenHash string `json:"-"`
-	TokenID   string `json:"token_id,omitempty"`
-	Local     bool   `json:"local"`
-	Revoked   bool   `json:"revoked"`
+	Name      string         `json:"name"`
+	Kind      string         `json:"kind"`
+	Hostname  string         `json:"hostname,omitempty"`
+	OS        string         `json:"os,omitempty"`
+	Arch      string         `json:"arch,omitempty"`
+	Shell     string         `json:"shell,omitempty"`
+	Home      string         `json:"home,omitempty"`
+	Root      string         `json:"root,omitempty"`
+	Container *ContainerInfo `json:"container,omitempty"`
+	TokenHash string         `json:"-"`
+	TokenID   string         `json:"token_id,omitempty"`
+	Local     bool           `json:"local"`
+	Revoked   bool           `json:"revoked"`
 }
 
 type ComputerStatus struct {

@@ -88,6 +88,45 @@ type DockerOptions struct {
 	Binary         string
 	EnrollmentFile string
 }
+
+// Older local containers have no reported metadata, but their creation records
+// retain the exact naming and volume identity. Recover only those known values;
+// host/image details must come from the creator, not from the current Server.
+func (s *Server) restoreContainerMetadata(ctx context.Context) error {
+	records, err := s.Store.List(ctx, "provisioning")
+	if err != nil {
+		return err
+	}
+	for _, raw := range records {
+		var operation domain.Provisioning
+		if err := json.Unmarshal(raw.Data, &operation); err != nil {
+			return err
+		}
+		if operation.Kind != "container" || operation.ComputerID == "" {
+			continue
+		}
+		var computer domain.Computer
+		if err := s.Store.Get(ctx, "computers", operation.ComputerID, &computer); err != nil {
+			if domain.IsMissing(err) {
+				continue
+			}
+			return err
+		}
+		if computer.Kind != "container" || computer.Container != nil {
+			continue
+		}
+		name := "astral-" + operation.ID
+		computer.Container = &domain.ContainerInfo{Name: name, Volume: name + "-data", MountPath: "/var/lib/astral"}
+		if computer.Root == "" {
+			computer.Root = "/var/lib/astral"
+		}
+		if err := s.Store.Save(ctx, "computers", &computer.Meta, &computer); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type lineOutput struct {
 	mu      sync.Mutex
 	pending []byte
@@ -213,8 +252,17 @@ ENTRYPOINT ["/usr/local/bin/astral"]
 	}
 	// Host networking supports a loopback Server on Linux and OrbStack. Docker
 	// Desktop must have its documented host-networking option enabled.
+	host, err := os.Hostname()
+	if err != nil {
+		return "", err
+	}
+	metadata, err := json.Marshal(domain.ContainerInfo{Name: name, Host: host, Image: image, Volume: volume, MountPath: "/var/lib/astral"})
+	if err != nil {
+		return "", err
+	}
 	raw, err = dockerOutput(ctx, "create", "--name", name, "--init", "--restart", "unless-stopped", "--network", "host",
 		"--label", "astral.operation="+options.Identity,
+		"--env", "ASTRAL_CONTAINER_INFO="+string(metadata),
 		"--mount", "type=volume,src="+volume+",dst=/var/lib/astral",
 		"--mount", "type=bind,src="+options.EnrollmentFile+",dst=/run/astral-enrollment.json,readonly",
 		image, "computer", "connect", "--enrollment-file", "/run/astral-enrollment.json", "--root", "/var/lib/astral", "--foreground")

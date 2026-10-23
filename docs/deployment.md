@@ -75,6 +75,8 @@ The installer executable is placed under `$XDG_DATA_HOME/astral/bin` or `~/.loca
 
 Container mode uses a Debian image with Bash, CA certificates, curl, Git, Python and ripgrep. It creates an independently identified container and a persistent volume. The generated enrollment file is mounted read-only. Linux Docker and OrbStack work with the current host-networking setup. Docker Desktop requires its [host-networking feature](https://docs.docker.com/engine/network/drivers/host/#docker-desktop) to be enabled. A remote Docker context is rejected by the local shortcut.
 
+The creator passes container name, creator hostname, image, data volume and mount path through `ASTRAL_CONTAINER_INFO`. The Daemon reports those values and its actual data root; the Server retains them for offline inspection. No Docker socket or host management service is added. Older local containers can recover their recorded name and volume from provisioning records; other unavailable fields remain unknown until reported by an updated Daemon.
+
 Container names are `astral-<operation-identity>` and volumes append `-data`; both carry an `astral.operation` label. Revocation disconnects the Computer and prevents further dispatch. It does not delete the container or its data volume. Stop or remove those explicitly on their host when no longer needed.
 
 For a remote network, the enrollment URL must be reachable from the target machine. Astral does not create a VPN, NAT tunnel or relay.

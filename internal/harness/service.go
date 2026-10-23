@@ -216,8 +216,11 @@ func (s *Service) CreateSession(ctx context.Context, agentID, title string) (dom
 	if err != nil {
 		return domain.Session{}, err
 	}
+	if agent.DefaultReasoning != nil {
+		options.Reasoning = *agent.DefaultReasoning
+	}
 	record := domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agentID, Title: strings.TrimSpace(title), TitleSource: domain.TitleManual, Source: "web",
-		ProfileID: agent.DefaultModelID, ModelRef: ref, Options: options, ComputerID: agent.DefaultComputerID}
+		ProfileID: agent.DefaultModelID, ModelRef: ref, Options: options, Reasoning: agent.DefaultReasoning, ComputerID: agent.DefaultComputerID}
 	if defaultSessionTitle(record.Title) {
 		record.Title = "New session"
 		record.TitleSource = domain.TitleDefault

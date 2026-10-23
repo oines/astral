@@ -151,7 +151,7 @@ Session
 
 1. `DefaultComputer ∈ AllowedComputers`，允许 Default 为空。
 2. 新增全局 Computer 不自动扩张现有 Agent 的 Allowed Computers。
-3. 新 Session 继承 Agent 的默认模型与默认 Computer；之后的 Session 临时选择不反写默认值。
+3. 新 Session 继承 Agent 的默认模型、默认推理级别与默认 Computer；之后的 Session 临时选择不反写默认值。
 4. 一个启用的 Conversation 只能绑定一个 Agent/Session；解绑保留旧历史，重新分配不隐式迁移历史。
 5. 切换 Computer 不改变 Agent、Session 或 Rollout 身份。
 6. 同一 Agent 的 Session 共享 AgentHome 时，文件操作可以互相影响；独立上下文不意味着独立文件系统。
@@ -325,6 +325,8 @@ Linux Server 的 Local Computer 是 Linux 服务所在机器。访问网页的�
 容器的创建动作发生在所选接入方式确定的机器上：本机快捷入口由平台调用本机容器运行时；命令接入由用户在目标机器执行命令调用当地运行时。Daemon 运行在容器内；平台维护 Computer 的注册、连接状态和 Agent 关联。首版支持当前部署本机的快捷创建，不要求远程选择宿主机、跨机器调度容器或提供完整的容器编排管理界面。
 
 目标机器需要具备对应容器运行时；缺失或不可用时，本机快捷入口在 UI 中显示具体错误和处理指引，命令接入在终端提供对应信息，不注册一台虚假的在线 Computer。持久工作数据保留在目标机器提供给容器的数据卷中。
+
+创建程序将实际容器名、创建所在电脑的主机名、镜像、数据卷及挂载路径作为只读元信息传给容器内 Daemon。Daemon 连同自身数据根目录一并上报，Server 持久保存并在已认证的电脑信息接口返回；重连更新元信息而不覆盖用户设置的电脑名称，旧版 Daemon 未上报的可选字段不清除已有值。该信息传递不挂载 Docker socket，不增加宿主机常驻管理服务或容器生命周期控制能力。旧本机容器可从持久创建记录补齐可确定的名称与数据卷；其他未上报字段保持未知，不将容器内主机名当作容器名或宿主机名。
 
 Remote Computer 同样通过在目标机器执行接入命令连接 Server，网络由用户自备。V1 不负责自动建立 VPN、NAT 穿透或中继网络。
 
@@ -692,7 +694,7 @@ Connection 增加 `agent_id` 与 `access_mode: all | specified`。默认指定�
 
 `Conversation.proactive_enabled` 默认关闭，属于聊天，平台资料更新、换绑或切换范围均保留。普通群消息持续进入 Core 并正常 compact；开启主动模式后，10 秒安静或首条未处理消息累计 60 秒可运行一次 Probe。每聊天最多一个 Probe，消息先应用再读取快照。自身发送记录只同步上下文，不触发 Probe。
 
-Probe 模型默认跟随 Session 当前模型，Agent 可在默认模型下方单独选择 `probe_model_id`。旁观视图保留摘要、IM 消息及有界工具活动，去除 assistant 正文、reasoning 和 Probe 记录；按 Probe 模型窗口裁剪，支持视觉时携带原生图片。首版只有一次 LLM 判断请求，唯一工具 `decide({participate:boolean})`，按返回顺序取首个有效调用。无工具、错误工具、非法参数或请求失败均覆盖本次快照并等待新消息，不纠错重试，不执行其他工具。
+Probe 模型默认跟随 Session 当前模型，Agent 可在默认模型下方单独选择 `probe_model_id`，并设置该模型的 `probe_reasoning`；跟随 Session 时同时使用 Session 的推理设置。Agent 的 `default_reasoning` 与默认模型一起保存，新建 Web 与 IM Session 时复制为 Session 自己的推理设置，之后修改 Agent 默认值不改变既有 Session。空推理配置使用对应 Model Profile 的默认值；切换模型时清除旧模型的推理覆盖值。旁观视图保留摘要、IM 消息及有界工具活动，去除 assistant 正文、reasoning 和 Probe 记录；按 Probe 模型窗口裁剪，支持视觉时携带原生图片。首版只有一次 LLM 判断请求，唯一工具 `decide({participate:boolean})`，按返回顺序取首个有效调用。无工具、错误工具、非法参数或请求失败均覆盖本次快照并等待新消息，不纠错重试，不执行其他工具。
 
 正向结果只提交中性 Host 唤起，不含 reason、分析或行动指令。主 Agent 独立决定后续行为，可保持沉默。直接 @/回复覆盖当时待 Probe 的消息；关闭主动模式或换绑使旧结果失效。新消息留待下一轮，稳定输入 ID 与 Core 回执防止重复唤起。
 
@@ -1118,7 +1120,7 @@ Fork 和新 Session 不复制 AgentHome，不对工作文件提供自动快照�
 
 ### 配置变化
 
-Agent 默认模型和默认 Computer 的变化影响新 Session，不强制迁移既有 Session。既有 Session 的当前选择、已绑定调用、旧进程和 FileRef 继续按各自身份解释。
+Agent 默认模型、默认推理级别和默认 Computer 的变化影响新 Session，不强制迁移既有 Session。既有 Session 的当前选择、已绑定调用、旧进程和 FileRef 继续按各自身份解释。
 
 Allowed Computers 的收紧在新派发前重新检查。资源失效或被删除时，引用它的 Session 明确显示缺失或不可用，不静默换模型、换 Computer、换搜索服务或换发送目标。
 

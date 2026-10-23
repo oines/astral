@@ -56,6 +56,7 @@ function images(entry: Entry) { return (entry.message?.content ?? []).filter(p =
       :aria-label="t('conversationMessages')"
       tabindex="0"
       @scroll.passive="scroll.onScroll"
+      @scrollend="scroll.onScrollEnd"
       @wheel.passive="scroll.onWheel"
       @touchstart.passive="scroll.onTouchStart"
       @touchmove.passive="scroll.onTouchMove"
@@ -77,6 +78,7 @@ function images(entry: Entry) { return (entry.message?.content ?? []).filter(p =
               v-for="block in group.blocks"
               :key="block.key"
               :data-scroll-anchor="block.key"
+              :data-scroll-anchor-items="block.kind === 'process' ? block.items.map(item => item.key).join(' ') : undefined"
               class="transcript-block"
             >
               <ActivityLine

@@ -8,7 +8,10 @@ import { Button, Modal, Select, Switch, SettingsRow, SettingsSection } from '@as
 import { ChevronRight, Plus, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Agent } from '../../lib/types'
-import { newMeta, operatingSystem, request } from '../../lib/api'
+import { newMeta, request } from '../../lib/api'
+import { computerSummary } from '../../lib/computer-info'
+import ModelSelection from '../ModelSelection.vue'
+import type { ModelSelection as Selection } from '../../lib/model-reasoning'
 import { useAction } from '../../composables/useAction'
 import { useSettingsSave } from '../../composables/useSettingsSave'
 import { useAppStore } from '../../stores/app'
@@ -56,7 +59,7 @@ async function update(id: string, field: string, patch: Partial<Agent> | ((agent
       const current = await latest(id)
       saves.confirmAgent(current)
       await app.refresh().catch(() => undefined)
-      return (matches ? matches(current) : applied && Object.entries(applied).every(([key, value]) => JSON.stringify(current[key as keyof Agent] ?? '') === JSON.stringify(value))) ? 'applied' : 'not-applied'
+      return (matches ? matches(current) : applied && Object.entries(applied).every(([key, value]) => JSON.stringify(current[key as keyof Agent] ?? '') === JSON.stringify(value ?? ''))) ? 'applied' : 'not-applied'
     },
   }, intent)
 }
@@ -66,10 +69,15 @@ function permission(id: string, computerID: string, enabled: boolean) {
     ...(!enabled && current.default_computer_id === computerID ? { default_computer_id: '' } : {}),
   }), enabled, current => !!current.allowed_computers?.includes(computerID) === enabled && (enabled || current.default_computer_id !== computerID))
 }
-function modelOptions(value: string | undefined, fallback: string) {
-  const options = [{ value: '', label: fallback }, ...app.availableModels.map(m => ({ value: m.id, label: m.name }))]
-  if (value && !options.some(o => o.value === value)) options.push({ value, label: `${app.models.find(m => m.id === value)?.name || t('missing')} · ${t('disabled')}` })
-  return options
+function modelSelection(kind: 'default' | 'probe'): Selection {
+  const bot = selected.value
+  return saves.value(`${resource.value}/${kind}-model`, { profile_id: (kind === 'default' ? bot?.default_model_id : bot?.probe_model_id) || '', reasoning: kind === 'default' ? bot?.default_reasoning : bot?.probe_reasoning })
+}
+function updateModel(kind: 'default' | 'probe', selection: Selection) {
+  if (!selected.value) return
+  return update(selected.value.id, `${kind}-model`, kind === 'default'
+    ? { default_model_id: selection.profile_id, default_reasoning: selection.reasoning }
+    : { probe_model_id: selection.profile_id, probe_reasoning: selection.reasoning }, selection)
 }
 async function create() {
   await action.run(async () => {
@@ -185,22 +193,26 @@ async function remove() {
             :label="t('defaultModel')"
             :description="t('defaultModelHint')"
           >
-            <Select
-              :model-value="saves.value(`${resource}/default-model`, selected.default_model_id || '')"
+            <ModelSelection
+              :model-value="modelSelection('default').profile_id"
+              :reasoning="modelSelection('default').reasoning"
               :label="t('defaultModel')"
-              :options="modelOptions(selected.default_model_id, t('chooseInConversation'))"
-              @update:model-value="update(selected!.id, 'default-model', { default_model_id: $event }, $event)"
+              :empty-label="t('chooseInConversation')"
+              :busy="saves.state(`${resource}/default-model`).status === 'saving'"
+              @select="updateModel('default', $event)"
             />
           </SettingsRow>
           <SettingsRow
             :label="t('probeModel')"
             :description="t('probeModelHint')"
           >
-            <Select
-              :model-value="saves.value(`${resource}/probe-model`, selected.probe_model_id || '')"
+            <ModelSelection
+              :model-value="modelSelection('probe').profile_id"
+              :reasoning="modelSelection('probe').reasoning"
               :label="t('probeModel')"
-              :options="modelOptions(selected.probe_model_id, t('followSessionModel'))"
-              @update:model-value="update(selected!.id, 'probe-model', { probe_model_id: $event }, $event)"
+              :empty-label="t('followSessionModel')"
+              :busy="saves.state(`${resource}/probe-model`).status === 'saving'"
+              @select="updateModel('probe', $event)"
             />
           </SettingsRow>
           <div class="settings-group-footer">
@@ -271,7 +283,7 @@ async function remove() {
             v-for="computer in computers"
             :key="computer.id"
             :label="computer.name"
-            :description="operatingSystem(computer.os)"
+            :description="computerSummary(computer, t)"
           >
             <span
               class="settings-inline-status"
@@ -355,10 +367,12 @@ async function remove() {
           maxlength="8"
           :placeholder="creating.name.slice(0, 1)"
         ></label>
-        <label class="label">{{ t('defaultModel') }}<Select
-          v-model="creating.default_model_id"
+        <label class="label">{{ t('defaultModel') }}<ModelSelection
+          :model-value="creating.default_model_id || ''"
+          :reasoning="creating.default_reasoning"
           :label="t('defaultModel')"
-          :options="modelOptions('', t('chooseInConversation'))"
+          :empty-label="t('chooseInConversation')"
+          @select="value => { if (creating) { creating.default_model_id = value.profile_id; creating.default_reasoning = value.reasoning } }"
         /></label>
         <div class="form-footer">
           <Button

@@ -422,9 +422,11 @@ export type AstralInternalDomainAgent = {
     created_at: string;
     default_computer_id?: string;
     default_model_id?: string;
+    default_reasoning?: AstralCoreReasoningOptions;
     id: string;
     name: string;
     probe_model_id?: string;
+    probe_reasoning?: AstralCoreReasoningOptions;
     revision: number;
     search_provider_id?: string;
     updated_at: string;
@@ -444,6 +446,7 @@ export type AstralInternalDomainComputerStatus = {
     arch?: string;
     boot_id?: string;
     connected_at?: string;
+    container?: AstralInternalDomainContainerInfo;
     created_at: string;
     home?: string;
     hostname?: string;
@@ -456,6 +459,7 @@ export type AstralInternalDomainComputerStatus = {
     os?: string;
     revision: number;
     revoked: boolean;
+    root?: string;
     shell?: string;
     token_id?: string;
     updated_at: string;
@@ -478,6 +482,14 @@ export type AstralInternalDomainConnection = {
     revision: number;
     updated_at: string;
     username?: string;
+};
+
+export type AstralInternalDomainContainerInfo = {
+    host?: string;
+    image?: string;
+    mount_path?: string;
+    name: string;
+    volume?: string;
 };
 
 export type AstralInternalDomainConversation = {

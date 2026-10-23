@@ -100,6 +100,7 @@ func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest
 		}
 		c := domain.Computer{Meta: domain.Meta{ID: domain.ID("computer")}, Name: request.Hello.Hostname, Hostname: request.Hello.Hostname,
 			Kind: kind, Local: e.Local && !e.Container, OS: request.Hello.OS, Arch: request.Hello.Arch, Shell: request.Hello.Shell, Home: request.Hello.Home, TokenID: credential}
+		applyEnvironment(&c, request.Hello)
 		if err = tx.Save(ctx, "computers", &c.Meta, &c); err != nil {
 			return err
 		}
@@ -124,7 +125,32 @@ func validateHello(hello Hello) error {
 		(hello.OS != "darwin" && hello.OS != "linux") || !strings.HasPrefix(hello.Home, "/") || !strings.HasPrefix(hello.Shell, "/") {
 		return domain.Invalid("daemon reported an unsupported or incomplete environment")
 	}
+	if hello.Root != "" && (!strings.HasPrefix(hello.Root, "/") || len(hello.Root) > 1024) {
+		return domain.Invalid("daemon reported an invalid data directory")
+	}
+	if c := hello.Container; c != nil {
+		if c.Name == "" || len(c.Name) > 250 || len(c.Host) > 250 || len(c.Image) > 512 || len(c.Volume) > 250 ||
+			c.MountPath != "" && (!strings.HasPrefix(c.MountPath, "/") || len(c.MountPath) > 1024) {
+			return domain.Invalid("daemon reported invalid container information")
+		}
+	}
 	return nil
+}
+
+// Optional fields survive older Daemons reconnecting without them. The display
+// name and Computer kind remain owned by the Server, not by reported metadata.
+func applyEnvironment(c *domain.Computer, hello Hello) bool {
+	previous := *c
+	c.Hostname, c.OS, c.Arch, c.Shell, c.Home = hello.Hostname, hello.OS, hello.Arch, hello.Shell, hello.Home
+	if hello.Root != "" {
+		c.Root = hello.Root
+	}
+	if c.Kind == "container" && hello.Container != nil {
+		value := *hello.Container
+		c.Container = &value
+	}
+	sameContainer := c.Container == previous.Container || c.Container != nil && previous.Container != nil && *c.Container == *previous.Container
+	return c.Hostname != previous.Hostname || c.OS != previous.OS || c.Arch != previous.Arch || c.Shell != previous.Shell || c.Home != previous.Home || c.Root != previous.Root || !sameContainer
 }
 
 func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +169,23 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 	var hello Hello
 	if err != nil || len(raw) > 4096 || json.Unmarshal(raw, &hello) != nil || validateHello(hello) != nil {
 		http.Error(w, "invalid daemon environment", http.StatusBadRequest)
+		return
+	}
+	// Persist the latest reported environment so the same information remains
+	// available offline. Read again in the transaction to preserve concurrent edits.
+	if err = h.Store.Update(r.Context(), func(tx *persistence.Tx) error {
+		if err := tx.Get(r.Context(), "computers", id, &c); err != nil {
+			return err
+		}
+		if c.Revoked {
+			return domain.Forbidden("computer is unavailable")
+		}
+		if !applyEnvironment(&c, hello) {
+			return nil
+		}
+		return tx.Save(r.Context(), "computers", &c.Meta, &c)
+	}); err != nil {
+		http.Error(w, "computer environment could not be saved", http.StatusServiceUnavailable)
 		return
 	}
 	conn, err := websocket.Accept(w, r, nil)
@@ -207,7 +250,7 @@ func (h *Hub) Status(c domain.Computer) domain.ComputerStatus {
 	if active != nil && !c.Revoked {
 		status.Online, status.BootID = true, active.hello.BootID
 		status.ConnectedAt = &active.connected
-		status.Hostname, status.OS, status.Arch, status.Shell, status.Home = active.hello.Hostname, active.hello.OS, active.hello.Arch, active.hello.Shell, active.hello.Home
+		applyEnvironment(&status.Computer, active.hello)
 	}
 	return status
 }

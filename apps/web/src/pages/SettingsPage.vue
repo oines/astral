@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { useQuery } from '@pinia/colada'
 import { storageInfoQuery } from '@astral/sdk/colada'
 import { getPreferences, logout, updateSession } from '@astral/sdk'
-import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, User, HardDrive, Shield, Terminal, Download, AstralLogo, Copy, Search } from '@astral/icons'
+import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, Bot, HardDrive, Shield, Terminal, Download, AstralLogo, Copy, Search } from '@astral/icons'
 import { Button, Select, Switch, SettingsSection, SettingsRow } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { useAction } from '../composables/useAction'
@@ -50,7 +50,7 @@ watch(() => route.fullPath, async (next, previous) => {
 async function copyDiagnostics() { await action.run(() => navigator.clipboard.writeText(JSON.stringify({ version: app.data?.version, host: app.data?.host, computers: app.computers.map(c => ({ name: c.name, online: c.online, error: c.last_error })) }, null, 2)), t('copied')) }
 const storage = useQuery({ ...storageInfoQuery(), enabled: () => section.value === 'storage' })
 const links = [
-  ['general', 'general', Settings2], ['appearance', 'appearance', Sun], ['models', 'models', SlidersHorizontal], ['search', 'webSearch', Globe], ['computers', 'computers', Monitor], ['agents', 'agents', User], ['storage', 'storage', HardDrive], ['security', 'security', Shield], ['advanced', 'advanced', Terminal],
+  ['general', 'general', Settings2], ['appearance', 'appearance', Sun], ['models', 'models', SlidersHorizontal], ['search', 'webSearch', Globe], ['computers', 'computers', Monitor], ['agents', 'agents', Bot], ['storage', 'storage', HardDrive], ['security', 'security', Shield], ['advanced', 'advanced', Terminal],
 ] as const
 watch(section, () => { action.success.value = ''; action.error.value = '' })
 const title = computed(() => links.find(l => l[0] === section.value)?.[1] || 'general')

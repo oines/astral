@@ -1,5 +1,5 @@
 export {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bot, Check, ChevronDown, ChevronRight,
   ChevronsUpDown, Circle, CircleAlert, CircleCheck, CircleHelp, CircleStop, Clock3,
   Code2, Copy, Download, Ellipsis, ExternalLink, Eye, File, FileCode, FileImage,
   FileText, FolderOpen, GitBranch, Globe, HardDrive, Image, Info, LoaderCircle,

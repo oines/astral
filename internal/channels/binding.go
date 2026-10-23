@@ -69,7 +69,10 @@ func (s *Service) bind(ctx context.Context, conversationID, sessionID string, fi
 		if selectionErr != nil {
 			return domain.ConversationBinding{}, selectionErr
 		}
-		record = domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agent.ID, Source: "im", ProfileID: agent.DefaultModelID, ModelRef: ref, Options: options, ComputerID: agent.DefaultComputerID}
+		if agent.DefaultReasoning != nil {
+			options.Reasoning = *agent.DefaultReasoning
+		}
+		record = domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agent.ID, Source: "im", ProfileID: agent.DefaultModelID, ModelRef: ref, Options: options, Reasoning: agent.DefaultReasoning, ComputerID: agent.DefaultComputerID}
 	}
 	binding := domain.ConversationBinding{Meta: domain.Meta{ID: domain.ID("binding")}, ConversationID: conversation.ID, AgentID: agent.ID, SessionID: record.ID, Enabled: true}
 	err = s.Harness.WithStoppedSessions(ctx, stop, func() error {

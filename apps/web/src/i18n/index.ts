@@ -7,8 +7,9 @@ import { detailEn, detailZh } from './details'
 import { redesignEn, redesignZh } from './redesign'
 import { settingsEn, settingsZh } from './settings'
 import { settingsUxEn, settingsUxZh } from './settings-ux'
+import { computersEn, computersZh } from './computers'
 const en = {
-  ...channelsEn, ...detailEn, ...redesignEn, ...providersEn, ...settingsEn, ...settingsUxEn, ...searchEn, ...onboardingEn,
+  ...channelsEn, ...detailEn, ...redesignEn, ...providersEn, ...settingsEn, ...settingsUxEn, ...searchEn, ...onboardingEn, ...computersEn,
   common: { more: 'More' }, stopped: 'Stopped', bottom: 'Jump to latest', thinkingProcess: 'Thinking', noModelMatch: 'No matching models.',
   runCommand: 'Run command', readFile: 'Read file', writeFile: 'Write file', editFile: 'Edit file',
   application: 'Application', conversation: 'Conversation', interface: 'Interface',
@@ -28,7 +29,7 @@ const en = {
   queuedMessages: 'Queued messages', queueMessage: 'Queue message', steerNow: 'Steer', editMessage: 'Edit message', dragToReorder: 'Drag to reorder', moveUp: 'Move up', moveDown: 'Move down', disableQueue: 'Turn off queuing', enableQueue: 'Turn on queuing', resultDeliveryFailed: 'The command completed, but its result could not be delivered to the model.',
   followUp: 'After the current work', steer: 'Apply to the current work', waiting: 'Waiting', applying: 'Applying', applied: 'Applied', clearPending: 'Clear queued inputs',
   computer: 'Current Computer', model: 'Model', reasoning: 'Reasoning', context: 'Context usage', compact: 'Compact context', export: 'Export rollout', fork: 'Fork from here',
-  contextReportedHint: 'Last reported input usage. Kept until the model reports a new value.', contextNotReported: 'No model usage reported yet.',
+  contextNotReported: 'No model usage reported yet.',
   archive: 'Archive session', unarchive: 'Unarchive', pin: 'Pin session', unpin: 'Unpin session', rename: 'Rename session', older: 'Load earlier messages', details: 'View details',
   welcome: 'What would you like to work on?', welcomeText: 'Choose a Bot to start a conversation. Its model and Computer are ready when you are.',
   setup: 'A little setup, then you’re ready.', setupModels: 'Configure a model', setupAgent: 'Create a Bot',
@@ -46,7 +47,7 @@ const en = {
   disconnect: 'Sign out', loading: 'Loading…', empty: 'Nothing here yet.', inspect: 'Inspect', result: 'Result', source: 'Source', terminal: 'Terminal output',
 }
 const zh: typeof en = {
-  ...channelsZh, ...detailZh, ...redesignZh, ...providersZh, ...settingsZh, ...settingsUxZh, ...searchZh, ...onboardingZh,
+  ...channelsZh, ...detailZh, ...redesignZh, ...providersZh, ...settingsZh, ...settingsUxZh, ...searchZh, ...onboardingZh, ...computersZh,
   common: { more: '更多' }, stopped: '已停止', bottom: '回到最新消息', thinkingProcess: '思考过程', noModelMatch: '没有匹配的模型。',
   runCommand: '运行命令', readFile: '读取文件', writeFile: '写入文件', editFile: '修改文件',
   application: '应用', conversation: '对话', interface: '界面',
@@ -66,7 +67,7 @@ const zh: typeof en = {
   queuedMessages: '排队中的消息', queueMessage: '加入队列', steerNow: '引导', editMessage: '编辑消息', dragToReorder: '拖拽调整顺序', moveUp: '上移', moveDown: '下移', disableQueue: '关闭排队', enableQueue: '开启排队', resultDeliveryFailed: '命令已完成，但结果未能送达模型。',
   followUp: '等当前工作完成', steer: '应用到当前工作', waiting: '等待应用', applying: '正在应用', applied: '已应用', clearPending: '清除待处理输入',
   computer: '当前电脑', model: '模型', reasoning: '推理', context: '上下文使用量', compact: '压缩上下文', export: '导出 Rollout', fork: '从这里创建分支',
-  contextReportedHint: '最近一次输入用量实报；新用量返回前保留此值。', contextNotReported: '模型尚未返回用量。',
+  contextNotReported: '模型尚未返回用量。',
   archive: '归档会话', unarchive: '取消归档', pin: '固定会话', unpin: '取消固定', rename: '重命名会话', older: '加载更早的消息', details: '查看详情',
   welcome: '今天想一起做些什么？', welcomeText: '选择一个 Bot，开始新的工作。会话将使用它的默认模型与电脑。',
   setup: '配置一下，就可以开始了。', setupModels: '配置模型', setupAgent: '创建 Bot',

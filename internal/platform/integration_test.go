@@ -141,6 +141,11 @@ func TestContainerShortcutAndInstallerUseIndependentRealComputers(t *testing.T) 
 	if operation.State != "connected" {
 		t.Fatalf("container did not connect: %s\n%s", operation.Error, strings.Join(operation.Log, "\n"))
 	}
+	var container domain.Computer
+	if err = s.Store.Get(ctx, "computers", operation.ComputerID, &container); err != nil {
+		t.Fatal(err)
+	}
+	checkContainerInfo(t, container, operation.ID)
 	again, err := s.CreateContainer(ctx, "integration-container")
 	if err != nil || again.ID != operation.ID || again.ComputerID != operation.ComputerID {
 		t.Fatal("retry duplicated the provisioning operation or Computer")
@@ -201,10 +206,23 @@ func TestContainerShortcutAndInstallerUseIndependentRealComputers(t *testing.T) 
 		t.Fatalf("container installer failed: %v\n%s", err, installed.String())
 	}
 	remote := enrollmentComputer(t, ctx, s, enrollment)
+	checkContainerInfo(t, remote, hex.EncodeToString(identity[:12]))
 	if remote.Kind != "container" || remote.ID == local.ID || remote.ID == operation.ComputerID {
 		t.Fatal("remote container registration replaced an existing Computer")
 	}
 	if err = s.Store.Get(ctx, "agents", agent.ID, &agent); err != nil || len(agent.AllowedComputers) != 2 {
 		t.Fatal("remote container registration changed Agent authorization")
+	}
+}
+
+func checkContainerInfo(t *testing.T, computer domain.Computer, identity string) {
+	t.Helper()
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := computer.Container
+	if computer.Root != "/var/lib/astral" || info == nil || info.Name != "astral-"+identity || info.Host != host || info.Volume != "astral-"+identity+"-data" || info.MountPath != "/var/lib/astral" || !strings.HasPrefix(info.Image, "astral-computer:") {
+		t.Fatalf("container did not report its actual creator and storage: %+v, %+v", computer, info)
 	}
 }

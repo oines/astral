@@ -18,7 +18,7 @@ This host utility works before adding or authorizing the chat and does not need 
 
 ## Proactive mode and output
 
-Proactive mode is a per-chat setting, off by default. For groups with it enabled, ordinary messages become eligible for one Probe after 10 seconds of quiet or 60 seconds from the first unhandled message. Probe reads an observer view of Core context: summaries, IM observations and bounded tool activity, without assistant text or reasoning. Images are included only when its model supports them. It uses the Session's current model unless the Agent's Probe model overrides it.
+Proactive mode is a per-chat setting, off by default. For groups with it enabled, ordinary messages become eligible for one Probe after 10 seconds of quiet or 60 seconds from the first unhandled message. Probe reads an observer view of Core context: summaries, IM observations and bounded tool activity, without assistant text or reasoning. Images are included only when its model supports them. It follows the Session's current model and reasoning settings unless the Agent selects an explicit Probe model, which has its own reasoning override.
 
 The only decision is `decide({"participate":true|false})`. The first valid decision wins. Missing tools, invalid arguments or request failure cover the snapshot without waking the Agent or retrying that snapshot. A positive result supplies a neutral Host wakeup. It supplies no analysis or action instruction; the main Agent may remain silent. Mentions, replies and private messages bypass Probe. Turning proactive mode off or changing a binding invalidates outstanding results.
 

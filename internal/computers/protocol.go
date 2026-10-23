@@ -12,13 +12,15 @@ import (
 )
 
 type Hello struct {
-	BootID       string   `json:"boot_id"`
-	Hostname     string   `json:"hostname"`
-	OS           string   `json:"os"`
-	Arch         string   `json:"arch"`
-	Shell        string   `json:"shell"`
-	Home         string   `json:"home"`
-	Capabilities []string `json:"capabilities,omitempty"`
+	BootID       string                `json:"boot_id"`
+	Hostname     string                `json:"hostname"`
+	OS           string                `json:"os"`
+	Arch         string                `json:"arch"`
+	Shell        string                `json:"shell"`
+	Home         string                `json:"home"`
+	Root         string                `json:"root,omitempty"`
+	Container    *domain.ContainerInfo `json:"container,omitempty"`
+	Capabilities []string              `json:"capabilities,omitempty"`
 }
 type EnrollmentRequest struct {
 	Token string `json:"token"`

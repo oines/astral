@@ -162,3 +162,45 @@ func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) 
 		t.Fatal("installer endpoint is unavailable")
 	}
 }
+
+func TestRestoreKnownLocalContainerMetadataWithoutRuntimeAccess(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	s, err := New(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers"), NoLocal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(ctx)
+	known := domain.Computer{Meta: domain.Meta{ID: "known"}, Name: "User name", Kind: "container"}
+	unknown := domain.Computer{Meta: domain.Meta{ID: "unknown"}, Name: "Remote container", Kind: "container"}
+	for _, computer := range []*domain.Computer{&known, &unknown} {
+		if err = s.Store.Save(ctx, "computers", &computer.Meta, computer); err != nil {
+			t.Fatal(err)
+		}
+	}
+	operation := domain.Provisioning{Meta: domain.Meta{ID: "container_original"}, Kind: "container", State: "connected", ComputerID: known.ID}
+	if err = s.Store.Save(ctx, "provisioning", &operation.Meta, &operation); err != nil {
+		t.Fatal(err)
+	}
+	// A machine with no Docker executable can recover stored identities.
+	t.Setenv("PATH", t.TempDir())
+	if err = s.restoreContainerMetadata(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Store.Get(ctx, "computers", known.ID, &known); err != nil {
+		t.Fatal(err)
+	}
+	if known.Name != "User name" || known.Container == nil || known.Container.Name != "astral-container_original" || known.Container.Volume != "astral-container_original-data" || known.Container.Host != "" || known.Container.Image != "" {
+		t.Fatalf("incorrect legacy metadata: %+v", known)
+	}
+	if err = s.Store.Get(ctx, "computers", unknown.ID, &unknown); err != nil || unknown.Container != nil {
+		t.Fatal("remote container metadata was invented")
+	}
+	revision := known.Revision
+	if err = s.restoreContainerMetadata(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Store.Get(ctx, "computers", known.ID, &known); err != nil || known.Revision != revision {
+		t.Fatal("restoring metadata repeatedly changed the Computer")
+	}
+}

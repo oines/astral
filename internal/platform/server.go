@@ -141,6 +141,9 @@ func New(config Config) (server *Server, err error) {
 	if err != nil {
 		return nil, err
 	}
+	if err = s.restoreContainerMetadata(context.Background()); err != nil {
+		return nil, err
+	}
 	s.CoreStore, err = sqlite.Open(filepath.Join(config.DataDirectory, "core.db"))
 	if err != nil {
 		return nil, err

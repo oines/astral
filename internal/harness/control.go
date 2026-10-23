@@ -22,14 +22,25 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 	if agent.DefaultComputerID != "" && !slices.Contains(agent.AllowedComputers, agent.DefaultComputerID) {
 		return domain.Invalid("default Computer must be allowed for this Agent")
 	}
-	if agent.DefaultModelID != "" {
-		if _, _, err := s.Models.Selection(ctx, agent.DefaultModelID); err != nil {
+	for _, selection := range []struct {
+		model     string
+		reasoning *core.ReasoningOptions
+	}{{agent.DefaultModelID, agent.DefaultReasoning}, {agent.ProbeModelID, agent.ProbeReasoning}} {
+		if selection.model == "" {
+			if selection.reasoning != nil {
+				return domain.Invalid("a reasoning override requires an explicit model")
+			}
+			continue
+		}
+		ref, options, err := s.Models.Selection(ctx, selection.model)
+		if err != nil {
 			return err
 		}
-	}
-	if agent.ProbeModelID != "" {
-		if _, _, err := s.Models.Selection(ctx, agent.ProbeModelID); err != nil {
-			return err
+		if selection.reasoning != nil {
+			options.Reasoning = *selection.reasoning
+			if err = s.Models.ValidateOptions(ctx, ref, options); err != nil {
+				return err
+			}
 		}
 	}
 	if agent.SearchProviderID != "" {

@@ -1240,6 +1240,9 @@
           "default_model_id": {
             "type": "string"
           },
+          "default_reasoning": {
+            "$ref": "#/components/schemas/astral_core_ReasoningOptions"
+          },
           "id": {
             "type": "string"
           },
@@ -1248,6 +1251,9 @@
           },
           "probe_model_id": {
             "type": "string"
+          },
+          "probe_reasoning": {
+            "$ref": "#/components/schemas/astral_core_ReasoningOptions"
           },
           "revision": {
             "type": "integer"
@@ -1314,6 +1320,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "container": {
+            "$ref": "#/components/schemas/astral_internal_domain_ContainerInfo"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -1350,6 +1359,9 @@
           },
           "revoked": {
             "type": "boolean"
+          },
+          "root": {
+            "type": "string"
           },
           "shell": {
             "type": "string"
@@ -1444,6 +1456,29 @@
           "platform",
           "adapter",
           "enabled"
+        ],
+        "type": "object"
+      },
+      "astral_internal_domain_ContainerInfo": {
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "mount_path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
