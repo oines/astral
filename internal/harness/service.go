@@ -174,8 +174,6 @@ func (r *runtime) coreConfig(model core.Model, options core.GenerationOptions) c
 		Model: model, Store: s.CoreStore, ResolveModel: r.resolveModel, EstimateTokens: modelbridge.EstimateTokens,
 		SystemPrompt: systemPrompt, Options: options, Tools: r.hostTools(),
 		CollectContext:  r.collectContext,
-		Budget:          core.BudgetPolicy{SafetyMargin: 1024, AutoCompactAt: 4096},
-		Compaction:      core.CompactionPolicy{KeepRecentTokens: 12000, OutputTokens: 4096},
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
 	}
 }

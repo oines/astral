@@ -59,7 +59,9 @@ func TestReportedContextUsageKeepsPreviousUntilNewUsageArrives(t *testing.T) {
 	if read().ContextUsage != nil {
 		t.Fatal("a fresh Session invented model usage")
 	}
-	first := prompt("first", strings.Repeat("Retained history. ", 2000)).ContextUsage
+	// Cross the default retention target with content-based estimation. The
+	// ring must still use provider usage, independently of that estimate.
+	first := prompt("first", strings.Repeat("Retained history. ", 6000)).ContextUsage
 	if first == nil || first.InputTokens != 27707 || first.ContextWindow != 128000 {
 		t.Fatalf("first real usage, including cached input, was not preserved: %+v", first)
 	}

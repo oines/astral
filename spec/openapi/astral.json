@@ -227,6 +227,9 @@
           "created": {
             "$ref": "#/components/schemas/astral_core_CreationRecord"
           },
+          "generation": {
+            "$ref": "#/components/schemas/astral_core_GenerationRecord"
+          },
           "id": {
             "type": "string"
           },
@@ -391,6 +394,29 @@
             "type": "number"
           }
         },
+        "type": "object"
+      },
+      "astral_core_GenerationRecord": {
+        "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "configuration_id": {
+            "type": "string"
+          },
+          "context_digest": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "request_id",
+          "configuration_id",
+          "context_digest"
+        ],
         "type": "object"
       },
       "astral_core_InputClear": {

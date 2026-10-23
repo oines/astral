@@ -24,8 +24,12 @@ github.com/ncruces/go-strftime v0.1.9 h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdh
 github.com/ncruces/go-strftime v0.1.9/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
 github.com/oines/astral-core v0.0.0-20261022092116-f508cdea9069 h1:0aSAixZbiMZ3o+S/nhonFenWglqHTId7jmtoTzHYgNI=
 github.com/oines/astral-core v0.0.0-20261022092116-f508cdea9069/go.mod h1:U3ERvZRC6nstFf1DKCw0D45MchoXmcykwNzQlBOkxKo=
+github.com/oines/astral-core v0.0.0-20261023034305-15b7220f37d8 h1:0Dr4dCJdCqOvY5aYaTTj4SKQMLml6TrjsppkllhsKpo=
+github.com/oines/astral-core v0.0.0-20261023034305-15b7220f37d8/go.mod h1:U3ERvZRC6nstFf1DKCw0D45MchoXmcykwNzQlBOkxKo=
 github.com/oines/astral-models v0.9.1-0.20261022163736-af24a13e7f0d h1:9o7itzX3V2CFP7f+VFqao1J8cn6FbHTcDlJBQznYnHA=
 github.com/oines/astral-models v0.9.1-0.20261022163736-af24a13e7f0d/go.mod h1:TXAZwFta7Nf0AjokE2zH6e9CZsb/Rx7P4V3mZPy2zik=
+github.com/oines/astral-models v0.9.1-0.20261023034443-77c4168ed477 h1:cOqK0jKLY5QOBta58ee5EFbZoJts6KLCla8KdSuCUBg=
+github.com/oines/astral-models v0.9.1-0.20261023034443-77c4168ed477/go.mod h1:rFGs0zT6SXMnA6PRl3hK1xuPpEJm4fGR09lfFFaZs7s=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=

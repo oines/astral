@@ -235,7 +235,7 @@ func (b *Bridge) ValidateOptions(ctx context.Context, ref string, options core.G
 	if err != nil {
 		return err
 	}
-	_, err = EstimateTokens(ctx, model, core.Request{ModelID: ref, ModelRevision: ref,
+	err = core.ValidateRequest(ctx, model, core.Request{ModelID: ref, ModelRevision: ref,
 		Messages:        []core.Message{core.User("Validate generation settings.")},
 		MaxOutputTokens: min(256, model.Spec().MaxOutputTokens), Options: options})
 	return err
@@ -279,11 +279,6 @@ func (b *Bridge) construct(ctx context.Context, p domain.ModelProfile, provider 
 		Model: p.ModelID, BaseURL: baseURL, APIKey: key, Headers: headers, HTTPClient: b.HTTPClient,
 		Dialect: models.Dialect(dialect), ReplayScope: provider.ID + ":" + strconv.FormatInt(replayRevision, 10),
 		Streaming: v.Streaming, ReasoningReplay: v.ReasoningReplay, RequireReasoningReplay: v.RequireReasoningReplay, ImageTokenBudget: v.ImageTokenBudget,
-	}
-	if config.ImageTokenBudget == 0 && v.Images == "supported" && provider.PresetID != "" {
-		// Host reservation, not a vendor-published model limit. Users can
-		// override it for their image sizes in the model's advanced settings.
-		config.ImageTokenBudget = min(32768, max(1, v.ContextWindow/2))
 	}
 	if preset := FindPreset(provider.PresetID); preset != nil && preset.Auth == "oauth" {
 		config.APIKey = ""
@@ -451,6 +446,14 @@ func (m *boundModel) RecoverRequest(ctx context.Context, req core.Request, cause
 	}
 	return core.Request{}, false, nil
 }
+func (m *boundModel) ValidateRequest(ctx context.Context, req core.Request) error {
+	req, err := m.wireImages(req, true)
+	if err != nil {
+		return err
+	}
+	return core.ValidateRequest(ctx, m.adapter, req)
+}
+
 func (m *boundModel) EstimateTokens(ctx context.Context, req core.Request) (int, error) {
 	req, err := m.wireImages(req, true)
 	if err != nil {

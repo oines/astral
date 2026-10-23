@@ -79,6 +79,7 @@ export type AstralCoreEntry = {
     compaction?: AstralCoreCompactionRecord;
     configuration?: AstralCoreConfiguration;
     created?: AstralCoreCreationRecord;
+    generation?: AstralCoreGenerationRecord;
     id: string;
     input?: AstralCoreQueuedInput;
     input_id?: string;
@@ -132,6 +133,13 @@ export type AstralCoreGenerationOptions = {
     temperature?: number;
     tool_choice?: AstralCoreToolChoice;
     top_p?: number;
+};
+
+export type AstralCoreGenerationRecord = {
+    attempt_id: string;
+    configuration_id: string;
+    context_digest: string;
+    request_id: string;
 };
 
 export type AstralCoreInputClear = {
