@@ -413,6 +413,7 @@ export type AstralInternalChannelsWeixinLoginView = {
 export type AstralInternalComputersEnrollmentResult = {
     command: string;
     enrollment: AstralInternalDomainEnrollment;
+    powershell_command: string;
     token: string;
 };
 
@@ -442,12 +443,19 @@ export type AstralInternalDomainAttachment = {
     size?: number;
 };
 
+export type AstralInternalDomainComputerMaintenance = {
+    command?: string;
+    manager: 'desktop' | 'docker' | 'launchd' | 'systemd-user' | 'task-scheduler' | 'unknown';
+    powershell_command?: string;
+};
+
 export type AstralInternalDomainComputerStatus = {
     arch?: string;
     boot_id?: string;
     connected_at?: string;
     container?: AstralInternalDomainContainerInfo;
     created_at: string;
+    daemon_version?: string;
     home?: string;
     hostname?: string;
     id: string;
@@ -1771,6 +1779,33 @@ export type UseLocalComputerResponses = {
 };
 
 export type UseLocalComputerResponse = UseLocalComputerResponses[keyof UseLocalComputerResponses];
+
+export type ComputerMaintenanceData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/computers/maintenance/{id}';
+};
+
+export type ComputerMaintenanceErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ComputerMaintenanceError = ComputerMaintenanceErrors[keyof ComputerMaintenanceErrors];
+
+export type ComputerMaintenanceResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainComputerMaintenance;
+};
+
+export type ComputerMaintenanceResponse = ComputerMaintenanceResponses[keyof ComputerMaintenanceResponses];
 
 export type GetComputerOperationData = {
     body?: never;

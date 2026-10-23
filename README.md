@@ -1,6 +1,6 @@
 # Astral
 
-Astral is a self-hosted workspace for persistent agents. The macOS app and Linux server use the same Web interface. Agents run commands and read or write files through explicitly assigned Computers: the server's local machine, a container, or another Mac or Linux machine.
+Astral is a self-hosted workspace for persistent agents. The macOS, Windows and Linux desktop apps and headless server use the same Web interface. Agents run commands and read or write files through explicitly assigned Computers: the server's local machine, a container, or another macOS, Windows or Linux machine.
 
 The implementation follows [SPEC.md](SPEC.md). The server owns configuration, credentials, sessions, IM accounts and delivery receipts. [Astral Core](https://github.com/oines/astral-core) owns the persistent agent loop. [astral-models](https://github.com/oines/astral-models) translates Core requests into provider protocols.
 
@@ -15,13 +15,15 @@ pnpm install --frozen-lockfile
 pnpm build:distribution
 ```
 
-The build generates OpenAPI and the TypeScript SDK, builds the shared Web app, and embeds it in four binaries:
+The build generates OpenAPI and the TypeScript SDK, builds the shared Web app, and embeds it in six binaries:
 
 ```text
 dist/bin/astral-darwin-arm64
 dist/bin/astral-darwin-amd64
 dist/bin/astral-linux-arm64
 dist/bin/astral-linux-amd64
+dist/bin/astral-windows-arm64.exe
+dist/bin/astral-windows-amd64.exe
 dist/bin/checksums.txt
 dist/bin/THIRD_PARTY_NOTICES.txt
 dist/bin/LICENSE.txt
@@ -43,19 +45,23 @@ After setup, manage services in **Settings → Models** and Bot names, defaults 
 
 The model adapters support Chat Completions for OpenAI, DeepSeek, Qwen and OpenRouter, and Responses for OpenAI and DeepSeek. Connection and capability failures are reported from actual model requests. Native reasoning options are preserved. Search uses one selected resource per Bot: Tavily, Exa, DeepSeek Search, Brave, Google Custom Search, Sogou/Tencent, Serper, SearXNG, Jina, Bocha, DuckDuckGo or Yandex. The unified `web_search` tool accepts `query` and optional `domains`, `recency` (days), and `limit`; omitted options keep upstream defaults, and Astral does not truncate result counts or search text. See [search setup and provider capabilities](docs/search.md).
 
-## macOS application
+## Desktop applications
 
 After building the distribution:
 
 ```sh
-pnpm --filter @astral/desktop package
+pnpm --filter @astral/desktop package          # macOS DMG / ZIP
+pnpm --filter @astral/desktop package:windows  # current-user Windows installer
+pnpm --filter @astral/desktop package:linux    # Linux AppImage / deb
 ```
 
-The application, DMG and ZIP for Apple Silicon and Intel are written to `apps/desktop/release/`. The default build is unsigned; signing and notarization require the distributor's Apple credentials and release process.
+Native platform packages are written to `apps/desktop/release/`. Windows installs for the current user without administrator privileges. Linux supports AppImage and Debian packages. The default build is unsigned; signing and notarization require the distributor's Apple credentials and release process.
 
 Electron manages the local Go server, local Daemon, window, menu, tray and login preference. Closing the window follows the General setting; quitting stops the managed service. A server also stops if its desktop parent dies. Renderer code receives neither the Owner token nor a general native filesystem API.
 
-The macOS app stores current data in `~/Library/Application Support/astral/schema-3/`. Data from earlier formats stays in its original directory. `ASTRAL_DESKTOP_DATA_DIR` can select another directory; it must be empty or already use the current formats.
+Desktop stores current data under the OS user configuration directory in `astral/schema-3/`: `~/Library/Application Support/astral/schema-3/` on macOS, `%APPDATA%\astral\schema-3\` on Windows, and `$XDG_CONFIG_HOME/astral/schema-3/` (normally `~/.config/astral/schema-3/`) on Linux. Data from earlier formats stays in its original directory. `ASTRAL_DESKTOP_DATA_DIR` can select another directory; it must be empty or already use the current formats.
+
+Enrolling a native Windows Computer uses PowerShell and does not require WSL. Local containers use Docker Desktop in Linux-container mode; on macOS use Docker Desktop or OrbStack, and on Linux use the local Docker Engine. Docker Desktop itself may use WSL 2 internally, but Astral does not ask the user to run enrollment commands there.
 
 ## Computers, files and conversations
 
@@ -64,6 +70,10 @@ The macOS app stores current data in `~/Library/Application Support/astral/schem
 - **Use this machine** reuses the server's local Computer.
 - **Use a local container** creates a persistent container through the server's local Docker-compatible runtime.
 - **Connect another machine** produces an expiring enrollment command. Its container option creates a separate Computer on the machine where the command runs.
+
+Native enrollment installs a visible **Astral Daemon** service for the current user: a macOS LaunchAgent, Windows logon task in Task Scheduler, or Linux `systemctl --user` unit. It never installs a system-wide daemon or requests elevation. The daemon runs with that user’s permissions after login.
+
+New containers use Ubuntu 24.04 with development languages, build/network tools, Python data and document libraries, office/PDF/media/OCR tools, Chinese fonts and Playwright Chromium. **Computer details → Update Daemon** provides a local shell or PowerShell command. Updating restarts the native user service or the same existing container; it retains the Computer identity, Agent files and container-installed software. Existing containers are not rebuilt to adopt a new base image. Running tasks are interrupted by the restart.
 
 Registration does not automatically grant a Bot access to a Computer. The initial setup explicitly grants access when you finish; subsequently, open the Bot's **Computer access** page to grant access and optionally set its default. A session can change its current Computer while idle. Existing process handles and file references remain attached to their original Computer.
 

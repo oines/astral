@@ -16,6 +16,7 @@ import (
 	"github.com/oines/astral/internal/httpapi"
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/testkit"
+	testshell "github.com/oines/astral/internal/testkit/shell"
 )
 
 func TestDefaultBotIsCreatedOnceAndRespectsRenamingAndDeletion(t *testing.T) {
@@ -142,7 +143,7 @@ func TestOnboardingRequiresBothResourcesAndStartsAWorkingSession(t *testing.T) {
 		}
 		response := testkit.Text("Ready")
 		if len(body.Tools) > 0 {
-			response = testkit.Tool("exec_command", map[string]any{"cmd": "printf onboarding-command-ok", "login": false, "yield_time_ms": 1000})
+			response = testkit.Tool("exec_command", map[string]any{"cmd": testshell.Print("onboarding-command-ok"), "login": false, "yield_time_ms": 3000})
 			for _, message := range body.Messages {
 				if message.Role == "tool" {
 					commandWorked.Store(strings.Contains(string(testkit.JSON(message.Content)), "onboarding-command-ok"))

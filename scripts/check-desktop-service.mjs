@@ -9,7 +9,8 @@ import { LocalService } from '../apps/desktop/src/main/service.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const binaries = path.join(root, 'dist/bin')
-const binary = path.join(binaries, `astral-${process.platform}-${process.arch === 'x64' ? 'amd64' : process.arch}`)
+const system = process.platform === 'win32' ? 'windows' : process.platform
+const binary = path.join(binaries, `astral-${system}-${process.arch === 'x64' ? 'amd64' : process.arch}${system === 'windows' ? '.exe' : ''}`)
 process.env.ASTRAL_SERVER_LISTEN = '127.0.0.1:0'
 
 if (process.argv[2] === '--child') {
@@ -17,7 +18,7 @@ if (process.argv[2] === '--child') {
   await service.start(binary, process.argv[3], binaries)
   process.send({ pid: service.child.pid, url: service.url })
 } else {
-  const directory = await mkdtemp(path.join(tmpdir(), 'astral-desktop-service-'))
+  const directory = await mkdtemp(path.join(tmpdir(), 'astral 中文 desktop service '))
   const service = new LocalService()
   let parent
   try {
@@ -29,6 +30,7 @@ if (process.argv[2] === '--child') {
     const first = await bootstrap.json()
     assert.equal(first.computers.length, 1)
     await service.stop()
+    assert.equal(service.child.exitCode, 0, 'The managed Server did not shut down gracefully')
 
     parent = fork(fileURLToPath(import.meta.url), ['--child', directory], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] })
     const ready = await new Promise((resolve, reject) => {

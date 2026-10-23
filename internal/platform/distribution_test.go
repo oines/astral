@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -44,7 +45,7 @@ func TestDistributionDownloadChecksBytesBeforeReplacingExecutable(t *testing.T) 
 		t.Fatalf("corrupt download replaced the working executable: %q, %v", data, err)
 	}
 	info, err := os.Stat(target)
-	if err != nil || info.Mode().Perm() != 0700 {
+	if err != nil || !info.Mode().IsRegular() || runtime.GOOS != "windows" && info.Mode().Perm() != 0700 {
 		t.Fatalf("unexpected executable permissions: %v", err)
 	}
 }

@@ -15,7 +15,9 @@ async function notices(directory) {
 
 export async function buildNotices(root, target) {
   const commandOptions = { cwd: root, encoding: 'utf8', maxBuffer: 20 << 20 }
-  const nodePackages = JSON.parse(execFileSync('pnpm', ['licenses', 'list', '--prod', '--json'], commandOptions))
+  const packageManager = process.platform === 'win32' ? process.env.npm_execpath : undefined
+  if (process.platform === 'win32' && !packageManager) throw new Error('Run this build through pnpm (for example, pnpm build:distribution).')
+  const nodePackages = JSON.parse(execFileSync(packageManager ? process.execPath : 'pnpm', [...(packageManager ? [packageManager] : []), 'licenses', 'list', '--prod', '--json'], commandOptions))
   const goPackages = execFileSync('go', ['list', '-m', '-f', '{{if not (eq .Path "github.com/oines/astral")}}{{.Path}}\t{{.Version}}\t{{.Dir}}{{end}}', 'all'], { ...commandOptions, env: { ...process.env, GOWORK: process.env.GOWORK || 'auto' } })
     .split('\n').filter(Boolean).map(line => {
       const [Path, Version, Dir] = line.split('\t')

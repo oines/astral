@@ -1,10 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, session, shell, Tray, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, session, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LocalService } from './service'
 import { externalURL, trustedSender } from './policy'
+import { setLinuxLoginStart } from './login'
 
 app.setName('Astral')
+if (process.platform === 'win32') app.setAppUserModelId('com.oines.astral')
 const single = app.requestSingleInstanceLock()
 if (!single) app.quit()
 const service = new LocalService()
@@ -29,6 +31,17 @@ function show() {
   window?.show()
   window?.focus()
   app.dock?.show()
+}
+async function setLoginStart(enabled: boolean) {
+  if (!app.isPackaged) {
+    if (enabled) throw new Error('Login startup is available in the installed Astral application.')
+    return
+  }
+  if (process.platform === 'linux') {
+    await setLinuxLoginStart(enabled, process.env.APPIMAGE || process.execPath)
+  } else {
+    app.setLoginItemSettings({ openAtLogin: enabled, ...(process.platform === 'win32' ? { path: process.execPath, args: [], enabled, name: 'Astral' } : {}) })
+  }
 }
 function assertSender(event: IpcMainInvokeEvent) {
   if (event.sender !== window?.webContents || !trustedSender(event.senderFrame?.url, event.senderFrame?.parent, serverURL)) throw new Error('Native access is unavailable to this page.')
@@ -64,6 +77,9 @@ function createWindow() {
       window?.hide()
     } else app.quit()
   })
+  // Windows does not emit app.before-quit for logoff or system shutdown.
+  // Request cleanup promptly without blocking the user's session ending.
+  if (process.platform === 'win32') window.on('query-session-end', () => { void service.stop() })
   window.once('ready-to-show', () => window?.show())
   void window.loadURL(serverURL).catch(error => dialog.showErrorBox('Astral could not open', String(error)))
 }
@@ -74,7 +90,8 @@ async function start() {
   const root = process.env.ASTRAL_DESKTOP_DATA_DIR || join(app.getPath('appData'), 'astral', 'schema-3')
   const bins = app.isPackaged ? join(process.resourcesPath, 'bin') : fileURLToPath(new URL('../../../../dist/bin/', import.meta.url))
   const architecture = process.arch === 'x64' ? 'amd64' : process.arch
-  const binary = join(bins, `astral-${process.platform}-${architecture}`)
+  const system = process.platform === 'win32' ? 'windows' : process.platform
+  const binary = join(bins, `astral-${system}-${architecture}${system === 'windows' ? '.exe' : ''}`)
   const token = await service.start(binary, root, bins)
   serverURL = service.url
   // Renderer code never receives the Owner token or a general native file API.
@@ -83,26 +100,30 @@ async function start() {
   if (!initial.ok) throw new Error(`Local service initialization failed (HTTP ${initial.status}).`)
   const data = await initial.json() as { preferences: { keep_running: boolean; login_start: boolean } }
   keepRunning = data.preferences.keep_running
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: data.preferences.login_start })
+  await setLoginStart(data.preferences.login_start)
   session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'))
   session.defaultSession.setPermissionCheckHandler((_contents, permission, origin) => permission === 'clipboard-sanitized-write' && origin === serverURL)
-  ipcMain.handle('astral:preferences', (event, value: unknown) => {
+  ipcMain.handle('astral:preferences', async (event, value: unknown) => {
     assertSender(event)
     if (!value || typeof value !== 'object' || !('keepRunning' in value) || typeof value.keepRunning !== 'boolean' || !('loginStart' in value) || typeof value.loginStart !== 'boolean') throw new Error('Invalid desktop preferences.')
+    await setLoginStart(value.loginStart)
     keepRunning = value.keepRunning
-    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: value.loginStart })
-    else if (value.loginStart) throw new Error('Login startup is available in the installed Astral application.')
   })
   ipcMain.handle('astral:open-external', async (event, url: unknown) => {
     assertSender(event)
     await shell.openExternal(externalURL(url))
   })
+  const settings: MenuItemConstructorOptions = { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => { show(); window?.webContents.send('astral:open-settings') } }
+  const applicationMenu: MenuItemConstructorOptions = process.platform === 'darwin'
+    ? { label: 'Astral', submenu: [{ role: 'about' }, settings, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }
+    : { label: 'File', submenu: [settings, { type: 'separator' }, { role: 'quit' }] }
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'Astral', submenu: [{ role: 'about' }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => { show(); window?.webContents.send('astral:open-settings') } }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] },
+    applicationMenu,
     { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
+    ...(process.platform === 'darwin' ? [] : [{ role: 'help' as const, submenu: [{ role: 'about' as const }] }]),
   ]))
   // Electron loads the adjacent @2x representation for Retina displays.
-  const icon = nativeImage.createFromPath(resourcePath('trayTemplate.png'))
+  const icon = nativeImage.createFromPath(resourcePath(process.platform === 'darwin' ? 'trayTemplate.png' : process.platform === 'win32' ? 'icon.ico' : 'icon.png'))
   icon.setTemplateImage(process.platform === 'darwin')
   tray = new Tray(icon)
   tray.setToolTip('Astral')

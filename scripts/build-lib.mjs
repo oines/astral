@@ -6,7 +6,11 @@ import { buildNotices } from './build-notices.mjs'
 
 export const root = fileURLToPath(new URL('../', import.meta.url))
 export function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', ...options })
+  // pnpm is normally a .cmd shim on Windows. Inside a pnpm script, execute
+  // the package manager's JavaScript entry point without involving cmd.exe.
+  const packageManager = process.platform === 'win32' && command === 'pnpm' ? process.env.npm_execpath : undefined
+  if (process.platform === 'win32' && command === 'pnpm' && !packageManager) throw new Error('Run this build through pnpm (for example, pnpm build:distribution).')
+  const result = spawnSync(packageManager ? process.execPath : command, packageManager ? [packageManager, ...args] : args, { cwd: root, stdio: 'inherit', ...options })
   if (result.error) throw result.error
   if (result.status !== 0) throw new Error(`${command} exited with status ${result.status}`)
 }
@@ -27,7 +31,7 @@ export async function embedWeb() {
 }
 export async function buildServer(system, arch) {
   const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
-  const output = path.join(root, 'dist/bin', `astral-${system}-${arch}`)
+  const output = path.join(root, 'dist/bin', `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`)
   await mkdir(path.dirname(output), { recursive: true })
   run('go', ['build', '-trimpath', '-ldflags', `-s -w -X github.com/oines/astral/internal/cli.Version=${manifest.version}`, '-o', output, './cmd/astral'], {
     env: { ...process.env, GOWORK: process.env.GOWORK || 'auto', CGO_ENABLED: '0', GOOS: system, GOARCH: arch },

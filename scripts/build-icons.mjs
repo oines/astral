@@ -17,6 +17,26 @@ function png(svg, size) {
   }).render().asPng()
 }
 
+function ico(svg) {
+  const sizes = [16, 24, 32, 48, 64, 128, 256]
+  const images = sizes.map(size => png(svg, size))
+  const header = Buffer.alloc(6 + sizes.length * 16)
+  header.writeUInt16LE(1, 2)
+  header.writeUInt16LE(sizes.length, 4)
+  let offset = header.length
+  for (const [index, size] of sizes.entries()) {
+    const entry = 6 + index * 16
+    header[entry] = size === 256 ? 0 : size
+    header[entry + 1] = size === 256 ? 0 : size
+    header.writeUInt16LE(1, entry + 4)
+    header.writeUInt16LE(32, entry + 6)
+    header.writeUInt32LE(images[index].length, entry + 8)
+    header.writeUInt32LE(offset, entry + 12)
+    offset += images[index].length
+  }
+  return Buffer.concat([header, ...images])
+}
+
 function appIcon(dark = false) {
   // Match the 824px tile and 100px inset used by the macOS ICNS grid.
   const logo = mark.replace(/<svg\b[^>]*>/, '<svg x="128" y="170" width="768" height="768" viewBox="0 0 24 24" fill="none">')
@@ -48,6 +68,7 @@ if (!process.argv.includes('--web')) {
   await Promise.all([
     writeFile(path.join(resources, 'trayTemplate.png'), png(tray, 22)),
     writeFile(path.join(resources, 'trayTemplate@2x.png'), png(tray, 44)),
+    writeFile(path.join(resources, 'icon.ico'), ico(appIcon())),
   ])
   for (const [name, svg] of icons) {
     await writeFile(path.join(resources, `${name}.svg`), svg)

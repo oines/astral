@@ -1208,6 +1208,9 @@
           "enrollment": {
             "$ref": "#/components/schemas/astral_internal_domain_Enrollment"
           },
+          "powershell_command": {
+            "type": "string"
+          },
           "token": {
             "type": "string"
           }
@@ -1215,7 +1218,8 @@
         "required": [
           "enrollment",
           "token",
-          "command"
+          "command",
+          "powershell_command"
         ],
         "type": "object"
       },
@@ -1308,6 +1312,31 @@
         ],
         "type": "object"
       },
+      "astral_internal_domain_ComputerMaintenance": {
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "manager": {
+            "enum": [
+              "desktop",
+              "docker",
+              "launchd",
+              "systemd-user",
+              "task-scheduler",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "powershell_command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "manager"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_ComputerStatus": {
         "properties": {
           "arch": {
@@ -1325,6 +1354,9 @@
           },
           "created_at": {
             "format": "date-time",
+            "type": "string"
+          },
+          "daemon_version": {
             "type": "string"
           },
           "home": {
@@ -5127,6 +5159,54 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_domain_ComputerStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Computers"
+        ]
+      }
+    },
+    "/api/v1/computers/maintenance/{id}": {
+      "get": {
+        "operationId": "computerMaintenance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_ComputerMaintenance"
                 }
               }
             },

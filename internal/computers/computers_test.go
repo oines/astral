@@ -26,6 +26,7 @@ import (
 	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
+	testshell "github.com/oines/astral/internal/testkit/shell"
 )
 
 type setup struct {
@@ -166,7 +167,7 @@ func TestTwoComputerFilesystemAndGatewayBindings(t *testing.T) {
 	// A process uses the listener attached to its original binding even after a
 	// separate binding has prepared the Session's other Computer.
 	process, err := backend.StartProcess(s.ctx, invocation(a), standardtools.ProcessRequest{
-		Command: `curl --fail --silent -X POST -H 'Content-Type: application/json' -d '{"agent_id":"forged"}' ` + a.APIURL + `/v1/context`,
+		Command: testshell.HTTP("POST", a.APIURL+"/v1/context", `{"agent_id":"forged"}`),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +237,7 @@ func TestProcessOriginalComputerAndBootCannotBeRebound(t *testing.T) {
 	s := fixture(t, 2)
 	a := s.bind(t, 0)
 	backend := &computers.Backend{Hub: s.hub}
-	process, err := backend.StartProcess(s.ctx, invocation(a), standardtools.ProcessRequest{Command: `read line; printf 'original:%s' "$line"`, TTY: true})
+	process, err := backend.StartProcess(s.ctx, invocation(a), standardtools.ProcessRequest{Command: testshell.ReadLine("original:"), TTY: true, Login: false})
 	if err != nil {
 		t.Fatal(err)
 	}

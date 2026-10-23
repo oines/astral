@@ -15,6 +15,7 @@ import (
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
+	testshell "github.com/oines/astral/internal/testkit/shell"
 )
 
 func environmentEntries(t *testing.T, f *fixture, id string) []core.Entry {
@@ -44,6 +45,31 @@ func writeEnvironmentFile(t *testing.T, path, text string) {
 	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Shells can expand a Windows 8.3 temp path to its long spelling. Verify the
+// directory in the actual tool output instead of comparing serialized slashes
+// or relying on the spelling retained in an assistant's command arguments.
+func toolOutputHasDirectory(request map[string]any, directory string) bool {
+	want, err := os.Stat(directory)
+	if err != nil {
+		return false
+	}
+	messages, _ := request["messages"].([]any)
+	for _, value := range messages {
+		message, _ := value.(map[string]any)
+		if message["role"] != "tool" {
+			continue
+		}
+		content, _ := message["content"].(string)
+		for _, line := range strings.Split(content, "\n") {
+			got, err := os.Stat(strings.TrimSpace(line))
+			if err == nil && os.SameFile(want, got) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func wireEnvironments(request map[string]any) []string {
@@ -148,8 +174,8 @@ func TestEnvironmentRefreshFollowsCompleteToolBatchInSameRun(t *testing.T) {
 		if n == 1 {
 			firstMessages = messages
 			return map[string]any{"id": "batch", "choices": []any{map[string]any{"index": 0, "finish_reason": "tool_calls", "message": map[string]any{"role": "assistant", "tool_calls": []any{
-				map[string]any{"id": "write", "type": "function", "function": map[string]any{"name": "exec_command", "arguments": string(encode(map[string]any{"cmd": "printf 'changed by tool' > AGENTS.md", "login": false}))}},
-				map[string]any{"id": "read", "type": "function", "function": map[string]any{"name": "exec_command", "arguments": string(encode(map[string]any{"cmd": "pwd", "login": false}))}},
+				map[string]any{"id": "write", "type": "function", "function": map[string]any{"name": "exec_command", "arguments": string(encode(map[string]any{"cmd": testshell.WriteFile("AGENTS.md", "changed by tool"), "login": false}))}},
+				map[string]any{"id": "read", "type": "function", "function": map[string]any{"name": "exec_command", "arguments": string(encode(map[string]any{"cmd": testshell.CWD(), "login": false}))}},
 			}}}}}
 		}
 		if n != 2 {
@@ -197,9 +223,9 @@ func TestEnvironmentCWDChangesReturnToPriorStateAndCommandWorkdirIsTemporary(t *
 			if !strings.Contains(last, "workspace A") || strings.Contains(last, "workspace B") {
 				t.Error("A -> B -> A incorrectly deduplicated the returning snapshot")
 			}
-			return toolReply("temporary", "exec_command", map[string]any{"cmd": "pwd", "workdir": temporary, "login": false})
+			return toolReply("temporary", "exec_command", map[string]any{"cmd": testshell.CWD(), "workdir": temporary, "login": false})
 		case 4:
-			if !strings.Contains(last, "workspace A") || !strings.Contains(string(encode(request)), temporary) {
+			if !strings.Contains(last, "workspace A") || !toolOutputHasDirectory(request, temporary) {
 				t.Error("temporary workdir changed the Session CWD or failed to reach the tool")
 			}
 			return textReply("done")

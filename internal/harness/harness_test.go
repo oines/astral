@@ -25,6 +25,7 @@ import (
 	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
+	testshell "github.com/oines/astral/internal/testkit/shell"
 )
 
 type fixture struct {
@@ -296,7 +297,7 @@ func TestSessionKeepsProcessOnOriginalComputerAndRetiresHandlesAcrossRestart(t *
 	f = newFixture(t, 2, func(_ context.Context, n int, request map[string]any) any {
 		switch n {
 		case 1:
-			return toolReply("interactive", "exec_command", map[string]any{"cmd": "read value; printf 'original-%s' \"$value\"", "tty": true, "login": false, "yield_time_ms": 250})
+			return toolReply("interactive", "exec_command", map[string]any{"cmd": testshell.ReadLine("original-"), "tty": true, "login": false, "yield_time_ms": 1000})
 		case 2:
 			first.Store(int64(lastHandle(request)))
 			return toolReply("switch", "switch_computer", map[string]any{"computer_id": f.daemons[1].Credentials.ComputerID})
@@ -306,7 +307,7 @@ func TestSessionKeepsProcessOnOriginalComputerAndRetiresHandlesAcrossRestart(t *
 			if !strings.Contains(string(encode(request)), "original-hello") {
 				t.Error("process output did not come from original Computer")
 			}
-			return toolReply("long", "exec_command", map[string]any{"cmd": "sleep 30", "login": false, "yield_time_ms": 250})
+			return toolReply("long", "exec_command", map[string]any{"cmd": testshell.Sleep(30 * time.Second), "login": false, "yield_time_ms": 250})
 		case 5:
 			old.Store(int64(lastHandle(request)))
 			return textReply("Finished.")
@@ -316,7 +317,7 @@ func TestSessionKeepsProcessOnOriginalComputerAndRetiresHandlesAcrossRestart(t *
 			if !strings.Contains(string(encode(request)), "earlier Server runtime") {
 				t.Error("old process handle was not rejected")
 			}
-			return toolReply("new", "exec_command", map[string]any{"cmd": "sleep 30", "login": false, "yield_time_ms": 250})
+			return toolReply("new", "exec_command", map[string]any{"cmd": testshell.Sleep(30 * time.Second), "login": false, "yield_time_ms": 250})
 		case 8:
 			newHandle.Store(int64(lastHandle(request)))
 			return textReply("Finished.")

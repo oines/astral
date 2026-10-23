@@ -12,6 +12,8 @@
     "dev": "node ../../scripts/build-icons.mjs && electron-vite dev",
     "build": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --dir",
     "package": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --mac --arm64 --x64",
+    "package:windows": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --win --arm64 --x64",
+    "package:linux": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --linux --arm64 --x64",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

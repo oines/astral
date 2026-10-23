@@ -296,6 +296,7 @@ func (a *API) systemRoutes() {
 	route[httpcontract.Empty, []domain.ComputerStatus](a, "GET", "/computers", "listComputers", "Computers", func(r *http.Request, _ httpcontract.Empty) ([]domain.ComputerStatus, error) {
 		return a.computers(r.Context())
 	})
+	a.registerComputerMaintenance()
 	route[ComputerUpdate, domain.ComputerStatus](a, "PATCH", "/computers/{id}", "updateComputer", "Computers", func(r *http.Request, input ComputerUpdate) (domain.ComputerStatus, error) {
 		var c domain.Computer
 		if err := h.Store.Get(r.Context(), "computers", r.PathValue("id"), &c); err != nil {

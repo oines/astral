@@ -39,8 +39,19 @@ jobs:
         with:
           name: astral-server-binaries
           path: dist/bin/
-  desktop:
-    runs-on: macos-14
+  native:
+    name: Native ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            package: package:windows
+          - os: ubuntu-latest
+            package: package:linux
+          - os: macos-14
+            package: package
+    runs-on: ${{ matrix.os }}
     env:
       GOWORK: "off"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -57,11 +68,20 @@ jobs:
           node-version: "26.7.0"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: go test -race ./...
+      - run: go test -v github.com/oines/astral-core/standardtools/... -timeout 4m
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm build:distribution
-      - run: pnpm --filter @astral/desktop package
+      - run: pnpm test:desktop-service
+      - run: pnpm --filter @astral/desktop ${{ matrix.package }}
       - uses: actions/upload-artifact@v4
         with:
-          name: astral-macos
+          name: astral-desktop-${{ matrix.os }}
           path: |
-            apps/desktop/release/*.dmg
+            apps/desktop/release/*.exe
             apps/desktop/release/*.zip
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb

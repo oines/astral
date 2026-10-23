@@ -195,19 +195,20 @@ type ContainerInfo struct {
 
 type Computer struct {
 	Meta
-	Name      string         `json:"name"`
-	Kind      string         `json:"kind"`
-	Hostname  string         `json:"hostname,omitempty"`
-	OS        string         `json:"os,omitempty"`
-	Arch      string         `json:"arch,omitempty"`
-	Shell     string         `json:"shell,omitempty"`
-	Home      string         `json:"home,omitempty"`
-	Root      string         `json:"root,omitempty"`
-	Container *ContainerInfo `json:"container,omitempty"`
-	TokenHash string         `json:"-"`
-	TokenID   string         `json:"token_id,omitempty"`
-	Local     bool           `json:"local"`
-	Revoked   bool           `json:"revoked"`
+	Name          string         `json:"name"`
+	Kind          string         `json:"kind"`
+	Hostname      string         `json:"hostname,omitempty"`
+	OS            string         `json:"os,omitempty"`
+	Arch          string         `json:"arch,omitempty"`
+	Shell         string         `json:"shell,omitempty"`
+	Home          string         `json:"home,omitempty"`
+	Root          string         `json:"root,omitempty"`
+	DaemonVersion string         `json:"daemon_version,omitempty"`
+	Container     *ContainerInfo `json:"container,omitempty"`
+	TokenHash     string         `json:"-"`
+	TokenID       string         `json:"token_id,omitempty"`
+	Local         bool           `json:"local"`
+	Revoked       bool           `json:"revoked"`
 }
 
 type ComputerStatus struct {

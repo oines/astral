@@ -3,7 +3,6 @@ package platform
 import (
 	"context"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,10 +55,7 @@ func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testin
 	if bootstrap.Host.Hostname == "" || bootstrap.Host.OS == "" || len(bootstrap.Computers) != 1 {
 		t.Fatal("bootstrap confused Server host with browser")
 	}
-	info, err := os.Stat(filepath.Join(s.Config.DataDirectory, "owner.token"))
-	if err != nil || info.Mode().Perm() != 0600 {
-		t.Fatal("Owner credential is not private")
-	}
+	assertPrivate(t, filepath.Join(s.Config.DataDirectory, "owner.token"))
 	enrollment, err := s.Hub.Enroll(ctx, s.URL, false, false)
 	if err != nil {
 		t.Fatal(err)
