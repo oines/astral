@@ -148,6 +148,11 @@ func TestUserServicesInstallIdempotentlyAndPreserveData(t *testing.T) {
 				if err != nil || !strings.Contains(string(script), "$env:PATH = '") {
 					t.Fatalf("PATH was not persisted: %v", err)
 				}
+				if !strings.HasPrefix(string(script), "\ufeff$ErrorActionPreference = 'Stop'\r\n") ||
+					!strings.Contains(string(script), "$LASTEXITCODE = 1\r\n$ErrorActionPreference = 'Continue'\r\n& ") ||
+					!strings.HasSuffix(string(script), "2>&1\r\nexit $LASTEXITCODE\r\n") {
+					t.Fatal("native diagnostics must not terminate Windows PowerShell 5.1; retain strict setup and the native exit code")
+				}
 			} else if platform == "darwin" {
 				var document any
 				if err = xml.Unmarshal(definition, &document); err != nil {

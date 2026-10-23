@@ -582,7 +582,10 @@ func (m *Manager) windowsScript(spec Spec) string {
 	for _, arg := range m.args(spec) {
 		args = append(args, psQuote(arg))
 	}
-	return "\ufeff$ErrorActionPreference = 'Stop'\r\n[Console]::OutputEncoding = [Text.UTF8Encoding]::new()\r\n$OutputEncoding = [Console]::OutputEncoding\r\n$env:PATH = " + psQuote(spec.EnvironmentPATH) + "\r\n& " + psQuote(spec.Executable) + " " + strings.Join(args, " ") + " >> " + psQuote(filepath.Join(m.root, "service-launch.log")) + " 2>&1\r\nexit $LASTEXITCODE\r\n"
+	// Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
+	// Daemon startup diagnostics use stderr, so keep only native execution in
+	// Continue mode. A failed launch must retain a nonzero exit code.
+	return "\ufeff$ErrorActionPreference = 'Stop'\r\n[Console]::OutputEncoding = [Text.UTF8Encoding]::new()\r\n$OutputEncoding = [Console]::OutputEncoding\r\n$env:PATH = " + psQuote(spec.EnvironmentPATH) + "\r\n$LASTEXITCODE = 1\r\n$ErrorActionPreference = 'Continue'\r\n& " + psQuote(spec.Executable) + " " + strings.Join(args, " ") + " >> " + psQuote(filepath.Join(m.root, "service-launch.log")) + " 2>&1\r\nexit $LASTEXITCODE\r\n"
 }
 func utf16XML(value string) []byte {
 	raw := []byte{0xff, 0xfe}
