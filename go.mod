@@ -5,7 +5,7 @@ go 1.25.7
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
-	github.com/oines/astral-core v0.0.0-20261023144011-ff1dc72a68c3
+	github.com/oines/astral-core v0.0.0-20261023145120-451f775ae554
 	github.com/yuin/goldmark v1.8.6
 	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1

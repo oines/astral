@@ -273,7 +273,7 @@ func (m *Manager) definitionMatches(spec Spec) bool {
 
 func (m *Manager) Start(ctx context.Context) error {
 	if _, err := os.Stat(m.definition); err != nil {
-		return fmt.Errorf("Daemon service is not installed: %w", err)
+		return fmt.Errorf("daemon service is not installed: %w", err)
 	}
 	state, err := m.Status(ctx)
 	if err != nil {
@@ -368,7 +368,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 				return nil
 			}
 			if err = wait(deadline, 100*time.Millisecond); err != nil {
-				return fmt.Errorf("Windows task stopped but its Daemon did not release the data directory; inspect %s: %w", filepath.Join(m.root, "daemon.log"), err)
+				return fmt.Errorf("windows task stopped but its Daemon did not release the data directory; inspect %s: %w", filepath.Join(m.root, "daemon.log"), err)
 			}
 		}
 	}

@@ -153,7 +153,7 @@ func UpdateContainerDaemon(ctx context.Context, identity, binaryPath, expectedVe
 			keepBackup = true
 			updateErr = errors.Join(updateErr, fmt.Errorf("previous Daemon restore failed; original container %s and volume remain intact; previous program retained at host %s and container %s: %w", id, previous, backup, restoreErr))
 		} else {
-			updateErr = fmt.Errorf("Daemon update failed; previous program restored in the original container: %w", updateErr)
+			updateErr = fmt.Errorf("daemon update failed; previous program restored in the original container: %w", updateErr)
 		}
 	}()
 	// A lost Docker response cannot prove that mv did not happen. Restore the

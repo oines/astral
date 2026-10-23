@@ -93,16 +93,26 @@ func newFixture(t *testing.T, computerCount int, generate func(context.Context, 
 	t.Cleanup(func() {
 		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
 		defer done()
-		_ = f.service.Close(cleanup)
+		if err := f.service.Close(cleanup); err != nil {
+			t.Errorf("close fixture Harness workers: %v", err)
+		}
 		cancel()
 		for _, d := range f.daemons {
-			_ = d.Close(cleanup)
+			if err := d.Close(cleanup); err != nil {
+				t.Errorf("close fixture Daemon: %v", err)
+			}
 		}
-		_ = f.hub.Close()
+		if err := f.hub.Close(); err != nil {
+			t.Errorf("close fixture Computer hub: %v", err)
+		}
 		server.Close()
 		provider.Close()
-		_ = f.coreStore.Close()
-		_ = f.store.Close()
+		if err := f.coreStore.Close(); err != nil {
+			t.Errorf("close fixture Core database: %v", err)
+		}
+		if err := f.store.Close(); err != nil {
+			t.Errorf("close fixture Astral database: %v", err)
+		}
 	})
 	for range computerCount {
 		d, err := computers.NewDaemon(t.TempDir(), computers.Credentials{ServerURL: server.URL})

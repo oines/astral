@@ -64,9 +64,10 @@ func liveModelRecommendations(provider domain.Provider, item json.RawMessage) (m
 		}
 	}
 	modalitiesPaths := [][]string{{"input_modalities"}, {"architecture", "input_modalities"}}
-	if provider.PresetID == "floway" {
+	switch provider.PresetID {
+	case "floway":
 		modalitiesPaths = append([][]string{{"chat", "modalities", "input"}}, modalitiesPaths...)
-	} else if provider.PresetID == "magpie" {
+	case "magpie":
 		modalitiesPaths = append([][]string{{"modalities", "input"}}, modalitiesPaths...)
 	}
 	if inputs, present := firstJSONField(fields, modalitiesPaths...); present {

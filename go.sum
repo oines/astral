@@ -32,6 +32,8 @@ github.com/oines/astral-core v0.0.0-20261023143332-45d039d28c17 h1:mv7ndZFXFwZi/
 github.com/oines/astral-core v0.0.0-20261023143332-45d039d28c17/go.mod h1:OuTyxMcKBfeE6Zpw65kcKS1QjlstAmJRTWkrTb3qseI=
 github.com/oines/astral-core v0.0.0-20261023144011-ff1dc72a68c3 h1:R1a4O7Ii+rMKjGBUA1yAisteaxqdx8RrSdbfbnKXW80=
 github.com/oines/astral-core v0.0.0-20261023144011-ff1dc72a68c3/go.mod h1:OuTyxMcKBfeE6Zpw65kcKS1QjlstAmJRTWkrTb3qseI=
+github.com/oines/astral-core v0.0.0-20261023145120-451f775ae554 h1:lNjq6nogw6WHmTFtAu5SGA7YuP04LIKcGc8kI6sFEdI=
+github.com/oines/astral-core v0.0.0-20261023145120-451f775ae554/go.mod h1:OuTyxMcKBfeE6Zpw65kcKS1QjlstAmJRTWkrTb3qseI=
 github.com/oines/astral-models v0.9.1-0.20261022163736-af24a13e7f0d h1:9o7itzX3V2CFP7f+VFqao1J8cn6FbHTcDlJBQznYnHA=
 github.com/oines/astral-models v0.9.1-0.20261022163736-af24a13e7f0d/go.mod h1:TXAZwFta7Nf0AjokE2zH6e9CZsb/Rx7P4V3mZPy2zik=
 github.com/oines/astral-models v0.9.1-0.20261023034443-77c4168ed477 h1:cOqK0jKLY5QOBta58ee5EFbZoJts6KLCla8KdSuCUBg=

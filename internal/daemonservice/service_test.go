@@ -41,6 +41,9 @@ func (f *fakeService) run(_ context.Context, name string, args ...string) (comma
 		}
 	}
 	if name == "powershell.exe" {
+		if !strings.Contains(call, `-TaskPath '\Astral\'`) {
+			return commandResult{}, errors.New("Windows task lookup used a different folder from registration")
+		}
 		if !f.installed {
 			return commandResult{output: "not-installed"}, nil
 		}
@@ -239,5 +242,48 @@ func TestInstancesAndAccountsCannotOverwriteEachOther(t *testing.T) {
 	}
 	if _, err := newManager(root, home, "windows", "S-1--", fake.run); err == nil {
 		t.Fatal("invalid SID accepted")
+	}
+}
+
+func TestInterruptedRegistrationReinstallsActualPreviousDefinition(t *testing.T) {
+	m, previous, fake := serviceFixture(t, "windows")
+	ctx := context.Background()
+	if err := m.Install(ctx, previous); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	next := previous
+	next.Executable = filepath.Join(m.root, "new-astral")
+	if err := os.WriteFile(next.Executable, []byte("next"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	fake.failRegister = true
+	if err := m.Install(ctx, next); err == nil {
+		t.Fatal("native task registration unexpectedly succeeded")
+	}
+	if m.definitionMatches(previous) {
+		t.Fatal("fixture did not create the partial-registration state")
+	}
+	fake.failRegister = false
+	// The old manifest still matches. Install must inspect the definition and
+	// launcher as well, rather than treating a stopped service as a good copy.
+	if err := m.Install(ctx, previous); err != nil {
+		t.Fatal(err)
+	}
+	if !m.definitionMatches(previous) {
+		t.Fatal("rollback retained new launcher behind the old manifest")
+	}
+	before := len(fake.calls)
+	if err := m.Reinstall(ctx, previous); err != nil {
+		t.Fatal(err)
+	}
+	registered := false
+	for _, call := range fake.calls[before:] {
+		registered = registered || strings.Contains(call, "/create")
+	}
+	if !registered {
+		t.Fatal("forced reinstall skipped native definition registration")
 	}
 }

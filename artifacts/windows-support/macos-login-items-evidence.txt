@@ -1,0 +1,23 @@
+macOS current-user Daemon service verification (2026-10-23, Asia/Singapore)
+
+A disposable Daemon root was installed and started through the release CLI.
+Service: Astral Daemon (d86a7f120a16)
+The native System Settings app was opened read-only through CUA.
+Observed location: General > Login Items & Extensions > Allow in Background.
+Actual native accessibility state:
+Window: "登录项与扩展", App: 系统设置.
+70 标题 允许在后台
+76 开关按钮 Description: 在访达中显示, Value: on, ID: background-switch-Astral Daemon (d86a7f120a16)
+77 转换 项目来自身份不明的开发者。, Value: on, ID: background-switch-Astral Daemon (d86a7f120a16)
+
+This confirms the name in macOS's actual background-item UI, not merely in the plist source.
+The item was marked as coming from an unidentified developer, matching the unsigned local build.
+No background-item toggle was changed.
+
+sfltool dumpbtm required administrator authorization on this Mac and was canceled; no privileged inspection was used.
+
+Native launchd observation while the item was visible:
+state = running
+program = /var/folders/gd/rg7jch6j5bl7q5_2f0wkl3mr0000gn/T/astral 登录项 QA BYGV00/remote 电脑/service/Astral Daemon (d86a7f120a16)
+/var/folders/gd/rg7jch6j5bl7q5_2f0wkl3mr0000gn/T/astral 登录项 QA BYGV00/remote 电脑/service/Astral Daemon (d86a7f120a16)
+pid = 64574

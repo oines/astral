@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { fork } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { execFile, fork } from 'node:child_process'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir, userInfo } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { LocalService } from '../apps/desktop/src/main/service.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -12,6 +13,19 @@ const binaries = path.join(root, 'dist/bin')
 const system = process.platform === 'win32' ? 'windows' : process.platform
 const binary = path.join(binaries, `astral-${system}-${process.arch === 'x64' ? 'amd64' : process.arch}${system === 'windows' ? '.exe' : ''}`)
 process.env.ASTRAL_SERVER_LISTEN = '127.0.0.1:0'
+const execute = promisify(execFile)
+
+async function assertNoLocalService(directory) {
+  const localRoot = path.join(directory, 'computers', 'local')
+  await assert.rejects(readFile(path.join(localRoot, 'service', 'spec.json')), { code: 'ENOENT' })
+  const { stdout } = await execute(binary, ['computer', 'service', 'status', '--root', localRoot], { windowsHide: true, timeout: 5000 })
+  const status = JSON.parse(stdout)
+  assert.equal(status.state, 'not-installed', 'The desktop local Daemon was registered as a user service')
+  const args = system === 'darwin'
+    ? ['/bin/launchctl', ['print', `gui/${userInfo().uid}/app.astral.daemon.${status.id}`]]
+    : system === 'windows' ? ['schtasks.exe', ['/query', '/tn', `\\Astral\\${status.display_name}`]] : undefined
+  if (args) await assert.rejects(execute(args[0], args[1], { windowsHide: true, timeout: 5000 }), error => typeof error.code === 'number', 'A separate desktop local Daemon job exists')
+}
 
 if (process.argv[2] === '--child') {
   const service = new LocalService()
@@ -29,8 +43,10 @@ if (process.argv[2] === '--child') {
     assert.equal(bootstrap.status, 200)
     const first = await bootstrap.json()
     assert.equal(first.computers.length, 1)
+    await assertNoLocalService(directory)
     await service.stop()
     assert.equal(service.child.exitCode, 0, 'The managed Server did not shut down gracefully')
+    await assertNoLocalService(directory)
 
     parent = fork(fileURLToPath(import.meta.url), ['--child', directory], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] })
     const ready = await new Promise((resolve, reject) => {
@@ -54,10 +70,11 @@ if (process.argv[2] === '--child') {
       const response = await fetch(`${reopened.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${reopenedToken}` } })
       const next = await response.json()
       assert.equal(next.computers[0].id, first.computers[0].id)
+      await assertNoLocalService(directory)
     } finally {
       await reopened.stop()
     }
-    console.log('Desktop service startup, private Owner handoff, graceful stop, parent crash, and identity-preserving restart passed.')
+    console.log('Desktop service startup, private Owner handoff, graceful stop, parent crash, identity-preserving restart, and absence of a separate local Daemon service passed.')
   } finally {
     parent?.kill('SIGTERM')
     await service.stop()

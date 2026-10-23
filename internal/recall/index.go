@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -82,7 +83,11 @@ func (s *Service) database(ctx context.Context) (*sql.DB, error) {
 		return s.db, nil
 	}
 	path := filepath.Join(s.store.Directory, "recall.db")
-	uri := url.URL{Scheme: "file", Path: path}
+	uriPath := filepath.ToSlash(path)
+	if runtime.GOOS == "windows" && len(uriPath) >= 2 && uriPath[1] == ':' {
+		uriPath = "/" + uriPath
+	}
+	uri := url.URL{Scheme: "file", Path: uriPath}
 	options := url.Values{}
 	options.Set("_txlock", "immediate")
 	for _, pragma := range []string{"journal_mode(WAL)", "synchronous(NORMAL)", "busy_timeout(5000)", "foreign_keys(ON)"} {

@@ -49,24 +49,24 @@ func (s *Server) containerAccess(w http.ResponseWriter, r *http.Request) {
 		Hostname string `json:"hostname"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request) != nil {
-		http.Error(w, "invalid container access request", 400)
+		http.Error(w, "invalid container access request", http.StatusBadRequest)
 		return
 	}
 	local, _ := os.Hostname()
 	if local == "" || request.Hostname != local {
-		http.Error(w, "the Server belongs to another host; use its container-reachable address", 409)
+		http.Error(w, "the Server belongs to another host; use its container-reachable address", http.StatusConflict)
 		return
 	}
 	var enrollment domain.Enrollment
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	hash := sha256.Sum256([]byte(token))
 	if s.Store.Get(r.Context(), "enrollments", r.PathValue("id"), &enrollment) != nil || !enrollment.Container || time.Now().After(enrollment.ExpiresAt) || token == "" || subtle.ConstantTimeCompare([]byte(hex.EncodeToString(hash[:])), []byte(enrollment.TokenHash)) != 1 {
-		http.Error(w, "invalid or expired container enrollment", 403)
+		http.Error(w, "invalid or expired container enrollment", http.StatusForbidden)
 		return
 	}
 	address, ca, err := s.ensureContainerBridge(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), 503)
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

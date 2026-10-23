@@ -110,9 +110,9 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 		restore = manager.Restart(recovery)
 	}
 	if restore != nil {
-		return errors.Join(fmt.Errorf("Daemon update failed: %w", err), fmt.Errorf("restore previous service failed; credentials and Agent files remain at %s: %w", root, restore))
+		return errors.Join(fmt.Errorf("daemon update failed: %w", err), fmt.Errorf("restore previous service failed; credentials and Agent files remain at %s: %w", root, restore))
 	}
-	return fmt.Errorf("Daemon update failed; the previous service executable was restored: %w", err)
+	return fmt.Errorf("daemon update failed; the previous service executable was restored: %w", err)
 }
 
 func waitUpdatedComputer(ctx context.Context, credentials computers.Credentials, previousBoot, version string) error {

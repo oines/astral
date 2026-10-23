@@ -18,6 +18,7 @@
     "test": "vitest run",
     "test:integration": "go test -race -tags=integration -count=1 -timeout=8m ./internal/platform",
     "test:desktop-service": "node scripts/check-desktop-service.mjs",
+    "test:daemon-service": "node scripts/check-daemon-service.mjs",
     "openapi-generate": "go run ./cmd/openapi",
     "sdk-generate": "openapi-ts",
     "prepare": "husky"

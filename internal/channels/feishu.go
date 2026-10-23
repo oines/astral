@@ -85,7 +85,7 @@ func feishuID(value string) bool {
 		return false
 	}
 	for _, r := range value {
-		if !(r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r == '_' || r == '-') {
+		if (r < '0' || r > '9') && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && r != '_' && r != '-' {
 			return false
 		}
 	}

@@ -74,7 +74,14 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 		return fixed, nil
 	}
 	if _, err := exec.LookPath("docker"); err != nil {
-		return DockerInfo{}, domain.Offline("Install and start OrbStack or Docker before creating a Computer container.")
+		message := "Install and start Docker Engine before creating a Computer container."
+		switch runtime.GOOS {
+		case "windows":
+			message = "Install and start Docker Desktop in Linux-container mode before creating a Computer container."
+		case "darwin":
+			message = "Install and start OrbStack or Docker Desktop before creating a Computer container."
+		}
+		return DockerInfo{}, domain.Offline(message)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -431,7 +438,10 @@ func (s *Server) CreateContainer(ctx context.Context, intent string) (domain.Pro
 	return operation, nil
 }
 func (s *Server) provision(operation domain.Provisioning) {
-	ctx, cancel := context.WithTimeout(s.ctx, 20*time.Minute)
+	// The complete workspace image can take time on a first install or a slow
+	// network. Leave ten minutes inside the fixed 90-minute enrollment window
+	// for the actual Daemon registration and online confirmation.
+	ctx, cancel := context.WithTimeout(s.ctx, 80*time.Minute)
 	defer cancel()
 	save := func() {
 		persist, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

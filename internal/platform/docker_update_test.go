@@ -161,7 +161,7 @@ func containerUpdateFixture(t *testing.T, mode string) (context.Context, string,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer enrolled-token" {
-			http.Error(w, "invalid token", 403)
+			http.Error(w, "invalid token", http.StatusForbidden)
 			return
 		}
 		state := read()

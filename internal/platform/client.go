@@ -60,6 +60,7 @@ func httpJSONWithCA(ctx context.Context, method, url, token string, input, outpu
 	if err != nil {
 		return err
 	}
+	defer client.CloseIdleConnections()
 	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("astral server could not be reached: %w", err)
@@ -167,10 +168,10 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 		report("Installing " + state.DisplayName + " as a current-user service (" + state.Backend + ").")
 	}
 	if err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: credentialsPath, EnvironmentPATH: os.Getenv("PATH")}); err != nil {
-		return fmt.Errorf("Computer registered, but its current-user service could not be installed: %w", err)
+		return fmt.Errorf("computer registered, but its current-user service could not be installed: %w", err)
 	}
 	if err = manager.Start(ctx); err != nil {
-		return fmt.Errorf("Daemon service installed but could not start: %w", err)
+		return fmt.Errorf("daemon service installed but could not start: %w", err)
 	}
 	wait, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -186,7 +187,7 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 		}
 		select {
 		case <-wait.Done():
-			return fmt.Errorf("Daemon service was installed but did not become running and online; inspect %s", filepath.Join(root, "daemon.log"))
+			return fmt.Errorf("daemon service was installed but did not become running and online; inspect %s", filepath.Join(root, "daemon.log"))
 		case <-timer.C:
 		}
 	}

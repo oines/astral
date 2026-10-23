@@ -145,12 +145,13 @@ func splitHTML(source string, limit int) ([]string, error) {
 			break
 		}
 		current.Write(z.Raw())
-		if kind == xhtml.StartTagToken {
+		switch kind {
+		case xhtml.StartTagToken:
 			tag, _ := z.TagName()
 			if !strings.Contains(" area base br col embed hr img input link meta param source track wbr ", " "+string(tag)+" ") {
 				depth++
 			}
-		} else if kind == xhtml.EndTagToken {
+		case xhtml.EndTagToken:
 			depth--
 		}
 		if depth == 0 {

@@ -176,7 +176,7 @@ func (w *weixinAdapter) mediaURL(full, endpoint string, query url.Values) (strin
 	base, _ := url.Parse(w.config.CDNBaseURL)
 	host := strings.ToLower(u.Hostname())
 	ip := net.ParseIP(host)
-	if u.Scheme != "https" && !(u.Scheme == "http" && (host == "localhost" || ip != nil && ip.IsLoopback())) {
+	if u.Scheme != "https" && (u.Scheme != "http" || host != "localhost" && (ip == nil || !ip.IsLoopback())) {
 		return "", domain.Invalid("Weixin CDN requires HTTPS")
 	}
 	if !strings.EqualFold(u.Host, base.Host) && !strings.HasSuffix(host, ".weixin.qq.com") {

@@ -19,7 +19,7 @@ import (
 func TestContainerCAIsPinnedAndRedirectsAreNotFollowed(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/redirect" {
-			http.Redirect(w, r, "https://untrusted.invalid/", 302)
+			http.Redirect(w, r, "https://untrusted.invalid/", http.StatusFound)
 			return
 		}
 		_, _ = io.WriteString(w, "trusted")

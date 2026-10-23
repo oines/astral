@@ -29,6 +29,30 @@ func TestContainerUpdateKeepsContainerAndInstalledEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx = dockerContext(ctx, probe)
+	// Verify the advertised Agent environment through a running Computer,
+	// including a real browser process and CJK fonts rather than package names.
+	tooling := `set -eu
+. /etc/os-release
+test "$ID:$VERSION_ID" = ubuntu:24.04
+node --version; pnpm --version; uv --version; go version; rustc --version; cargo --version
+java -version; mvn --version >/dev/null
+libreoffice --version; pandoc --version >/dev/null; pdftotext -v; ffmpeg -version >/dev/null; convert -version >/dev/null
+tesseract --list-langs 2>&1 | grep -q chi_sim
+test -n "$(fc-list :lang=zh)"
+python - <<'PY'
+import numpy, pandas, scipy, matplotlib, docx, pptx, openpyxl, pypdf, pdfplumber, reportlab
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    browser = p.chromium.launch(args=['--no-sandbox'])
+    page = browser.new_page()
+    page.set_content('<h1>中文 Astral</h1>')
+    assert page.text_content('h1') == '中文 Astral'
+    browser.close()
+print('Agent environment smoke passed')
+PY`
+	if output, err := dockerOutput(ctx, "exec", operation.ContainerID, "/bin/bash", "-lc", tooling); err != nil {
+		t.Fatalf("Agent environment: %v\n%s", err, output)
+	}
 	before, err := dockerOutput(ctx, "inspect", "--format", "{{.Id}} {{.Image}} {{json .Mounts}}", operation.ContainerID)
 	if err != nil {
 		t.Fatal(err)
