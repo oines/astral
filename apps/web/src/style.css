@@ -7,7 +7,6 @@
 :root[data-desktop='mac'] .sidebar-toggle { top: 7px; left: 92px; -webkit-app-region: no-drag; }
 /* Keep the native drag rectangle clear of the sidebar button's full hit area. */
 :root[data-desktop='mac'] .chat-layout::before { content: ''; position: absolute; top: 0; left: 136px; right: 0; height: 48px; -webkit-app-region: drag; user-select: none; }
-:root[data-desktop='mac'] .transcript { padding-top: 8px; }
 :root[data-desktop='mac'] .settings-nav { padding-top: 52px; }
 :root[data-desktop='mac'] :is(.settings-layout, .login-screen)::before { content: ''; position: fixed; inset: 0 0 auto; height: 40px; z-index: 4; -webkit-app-region: drag; user-select: none; }
 :root[data-desktop='mac'] .surface-heading { -webkit-app-region: drag; user-select: none; }
@@ -102,11 +101,12 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .session-menu { min-width: 210px; max-width: 280px; }
 .session-menu .popover-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .chat-error { margin: 14px auto 0; width: min(752px, calc(100% - 80px)); }
-.transcript-viewport { padding-top: 32px; min-height: 0; flex: 1; position: relative; display: flex; flex-direction: column; }
+.transcript-viewport { min-height: 0; flex: 1; position: relative; display: flex; flex-direction: column; }
 .transcript-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; scrollbar-width: thin; }
 .transcript-scroll:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: -6px; border-radius: 8px; }
 /* A turn owns its process, response and actions; only the turn sets outer spacing. */
-.transcript { width: min(808px, 100%); padding: 8px 24px 28px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+/* The initial top gap belongs to the content and scrolls away with it. */
+.transcript { width: min(808px, 100%); padding: 40px 24px 28px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
 .transcript-turn { min-width: 0; }
 .transcript-block { font-size: 15px; line-height: 1.65; }
 .transcript-block + .transcript-block { margin-top: 14px; }
@@ -377,8 +377,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
   .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; width: 272px; background: var(--canvas); padding-top: 17px; }
   .chat-layout:not(.sidebar-hidden) > .sidebar-toggle { z-index: 31; }
   .sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 29; background: #0004; }
-  .transcript-viewport { padding-top: 48px; }
-  .transcript { padding: 8px 18px 24px; }
+  .transcript { padding: 56px 18px 24px; }
   .composer-area { padding: 8px 12px 12px; }
   .composer-input-row { gap: 6px; }
   .computer-picker > span { max-width: 150px; }
