@@ -8,6 +8,8 @@ Each account belongs to one Agent, called a **Bot** in the product UI. The [UI/U
 
 Ordinary messages continuously enter Core as passive observations, including when proactive mode is off. Core applies them at safe boundaries and compacts with its ordinary budget and summary machinery. No fixed history window truncates received messages. IMStore retains received events, accepted outgoing messages, edits and deletions supplied by the platform, without automatic expiry. Telegram Bot polling does not provide arbitrary deletion notifications; explicit successful delete operations are recorded.
 
+For currently bound Sessions, the Host overrides the compaction system prompt with the [continuity-preservation prompt](../internal/harness/prompts/im-compaction.md). It preserves task context, shared experiences, interaction patterns, ongoing topics and changes over time in a coherent summary without a mandatory task-checkpoint template. Binding changes and reopening refresh this selection. Unbound Sessions, including unbound forks, use Core's default prompt. Message order, tool-call/result preservation and compaction budgets remain governed by Core.
+
 ## Find a Telegram Chat ID
 
 Send `/chat_id` or `/chat_id@bot_username` in a private chat, group, forum Topic or channel the connected bot can receive and reply to. Astral replies in that chat with `Chat ID: …`; a Topic also includes `Topic ID: …` and the reply stays in that Topic. Use the addressed form in groups with privacy mode enabled.

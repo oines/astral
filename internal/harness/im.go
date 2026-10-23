@@ -51,12 +51,13 @@ func (r *runtime) messageToolFor(ctx context.Context, record domain.Session) (co
 	return r.service.IM.MessageTool(ctx, record.AgentID, record.ConversationID)
 }
 
-// Core registers immutable tool declarations. A stopped binding change opens
-// the same committed Session with its new declaration, keeping the tool backend
-// (including running Computer processes) and all history intact.
-func (r *runtime) syncMessageTool(ctx context.Context, record domain.Session) error {
+// Core registers immutable tool declarations and compaction policy. A stopped
+// binding change opens the same committed Session with its new configuration,
+// keeping the tool backend (including running Computer processes) and history.
+func (r *runtime) syncBindingConfig(ctx context.Context, record domain.Session) error {
 	definition, err := r.messageToolFor(ctx, record)
-	if err != nil || jsonEqual(definition, r.messageTool) {
+	prompt := compactionPromptFor(record)
+	if err != nil || jsonEqual(definition, r.messageTool) && prompt == r.compactionPrompt {
 		return err
 	}
 	model, err := r.resolveModel(ctx, record.ModelRef)
@@ -66,11 +67,11 @@ func (r *runtime) syncMessageTool(ctx context.Context, record domain.Session) er
 	if err = r.core.Load().Close(ctx); err != nil {
 		return err
 	}
-	previous := r.messageTool
-	r.messageTool = definition
+	previousTool, previousPrompt := r.messageTool, r.compactionPrompt
+	r.messageTool, r.compactionPrompt = definition, prompt
 	next, err := core.OpenSession(ctx, r.coreConfig(model, record.Options), r.id)
 	if err != nil {
-		r.messageTool = previous
+		r.messageTool, r.compactionPrompt = previousTool, previousPrompt
 		return err
 	}
 	r.core.Store(next)

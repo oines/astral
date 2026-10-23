@@ -70,7 +70,7 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 	if record.Reasoning != nil {
 		options.Reasoning = *record.Reasoning
 	}
-	if err = r.syncMessageTool(ctx, record); err != nil {
+	if err = r.syncBindingConfig(ctx, record); err != nil {
 		return err
 	}
 	configuration := r.core.Load().Configuration()

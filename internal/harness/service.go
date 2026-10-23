@@ -42,20 +42,21 @@ type Service struct {
 }
 
 type runtime struct {
-	service       *Service
-	id            string
-	agentID       string
-	ready         chan struct{}
-	openErr       error
-	mu            sync.Mutex
-	core          atomic.Pointer[core.Session]
-	tools         *standardtools.Set
-	environmentMu sync.Mutex
-	processMu     sync.Mutex
-	processes     map[string]standardtools.Process
-	usageHead     string
-	messageTool   core.ToolDefinition
-	contextUsage  *ContextUsage
+	service          *Service
+	id               string
+	agentID          string
+	ready            chan struct{}
+	openErr          error
+	mu               sync.Mutex
+	core             atomic.Pointer[core.Session]
+	tools            *standardtools.Set
+	environmentMu    sync.Mutex
+	processMu        sync.Mutex
+	processes        map[string]standardtools.Process
+	usageHead        string
+	messageTool      core.ToolDefinition
+	compactionPrompt string
+	contextUsage     *ContextUsage
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
@@ -112,6 +113,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		return err
 	}
 	r.agentID = record.AgentID
+	r.compactionPrompt = compactionPromptFor(record)
 	r.messageTool, err = r.messageToolFor(ctx, record)
 	if err != nil {
 		return err
@@ -173,6 +175,7 @@ func (r *runtime) coreConfig(model core.Model, options core.GenerationOptions) c
 	return core.Config{
 		Model: model, Store: s.CoreStore, ResolveModel: r.resolveModel, EstimateTokens: modelbridge.EstimateTokens,
 		SystemPrompt: systemPrompt, Options: options, Tools: r.hostTools(),
+		Compaction:      core.CompactionPolicy{SystemPrompt: r.compactionPrompt},
 		CollectContext:  r.collectContext,
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
 	}
