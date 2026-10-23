@@ -29,9 +29,12 @@ import commandcode from '@lobehub/icons-static-svg/icons/commandcode.svg'
 import opencode from '@lobehub/icons-static-svg/icons/opencode.svg'
 import xiaomimimo from '@lobehub/icons-static-svg/icons/xiaomimimo.svg'
 import kimi from '@lobehub/icons-static-svg/icons/kimi-color.svg'
+import floway from './assets/floway.svg'
+import litellm from './assets/litellm.svg'
+import magpie from './assets/magpie.svg'
 const props = defineProps<{ name?: string }>()
-const logos: Record<string, string> = { anthropic, azure, cerebras, cloudflare, openai, deepseek, fireworks, githubcopilot, google, groq, huggingface, lmstudio, minimax, mistral, moonshot, newapi, ollama, openrouter, perplexity, bailian, together, grok, zai, zhipu, commandcode, opencode, xiaomimimo, kimi }
-const monochrome = new Set(['anthropic', 'openai', 'githubcopilot', 'groq', 'lmstudio', 'moonshot', 'ollama', 'openrouter', 'grok', 'zai', 'commandcode', 'opencode', 'xiaomimimo'])
+const logos: Record<string, string> = { anthropic, azure, cerebras, cloudflare, openai, deepseek, fireworks, githubcopilot, google, groq, huggingface, lmstudio, minimax, mistral, moonshot, newapi, ollama, openrouter, perplexity, bailian, together, grok, zai, zhipu, commandcode, opencode, xiaomimimo, kimi, floway, litellm, magpie }
+const monochrome = new Set(['anthropic', 'openai', 'githubcopilot', 'groq', 'lmstudio', 'moonshot', 'ollama', 'openrouter', 'grok', 'zai', 'commandcode', 'opencode', 'xiaomimimo', 'magpie'])
 const source = computed(() => logos[props.name || ''])
 </script>
 <template>

@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/persistence"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -183,5 +185,122 @@ func TestAuthorizationRejectsRedirectsAndExpiresWithoutPolling(t *testing.T) {
 	flow, err := b.PollAuthorization(ctx, "expired")
 	if err != nil || flow.Status != "expired" || calls != 1 {
 		t.Fatal("expired flow contacted upstream")
+	}
+}
+
+func TestOAuthReauthorizationPreservesFrozenGrant(t *testing.T) {
+	b := testBridge(t)
+	ctx := context.Background()
+	p := saveAuthProvider(t, b, "github-copilot")
+	grants := 0
+	b.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Host {
+		case "github.com":
+			if r.URL.Path == "/login/device/code" {
+				return authResponse(200, `{"device_code":"device","user_code":"USER","verification_uri":"https://github.com/login/device"}`), nil
+			}
+			grants++
+			return authResponse(200, `{"access_token":"grant-`+strconv.Itoa(grants)+`"}`), nil
+		case "api.githubcopilot.com":
+			if r.Header.Get("Authorization") != "Bearer grant-1" {
+				t.Fatal("frozen grant silently changed accounts")
+			}
+			return authResponse(200, `{}`), nil
+		}
+		t.Fatalf("unexpected OAuth destination %s", r.URL)
+		return nil, nil
+	})}
+	connect := func() domain.Provider {
+		flow, err := b.StartAuthorization(ctx, p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done, err := b.PollAuthorization(ctx, flow.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return *done.Provider
+	}
+	old := connect()
+	next := connect()
+	if old.CredentialID == next.CredentialID || old.ReplayRevision == next.ReplayRevision {
+		t.Fatal("new authorization reused frozen credential or replay scope")
+	}
+	req, _ := http.NewRequest(http.MethodPost, "https://api.githubcopilot.com/responses", nil)
+	resp, err := b.oauthClient(old).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+}
+
+func TestCodexRefreshRejectsAccountSwitchAndKeepsTransientFailureRetryable(t *testing.T) {
+	for _, status := range []int{200, 503} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			b := testBridge(t)
+			ctx := context.Background()
+			p := saveAuthProvider(t, b, "codex")
+			original := string(raw(oauthTokens{AccessToken: "original", RefreshToken: "refresh", AccountID: "first"}))
+			if err := b.Store.Update(ctx, func(tx *persistence.Tx) error {
+				id, err := tx.PutSecret(ctx, original)
+				p.CredentialID = id
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			idToken := "e30." + base64.RawURLEncoding.EncodeToString([]byte(`{"chatgpt_account_id":"second"}`)) + ".signature"
+			b.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				return authResponse(status, string(raw(map[string]any{"access_token": "changed", "id_token": idToken, "expires_in": 3600}))), nil
+			})}
+			_, err := b.oauthCredentials(ctx, p)
+			if err == nil {
+				t.Fatal("invalid refresh accepted")
+			}
+			if status == 503 && strings.Contains(err.Error(), "sign in") {
+				t.Fatal("temporary refresh failure discarded valid grant")
+			}
+			after, err := b.Store.Secret(ctx, p.CredentialID)
+			if err != nil || after != original {
+				t.Fatal("failed refresh altered frozen credential")
+			}
+		})
+	}
+}
+
+func TestOAuthInferenceDoesNotFollowRedirectOrRetryPermissionFailure(t *testing.T) {
+	for _, status := range []int{307, 401, 403} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			b := testBridge(t)
+			ctx := context.Background()
+			p := saveAuthProvider(t, b, "github-copilot")
+			if err := b.Store.Update(ctx, func(tx *persistence.Tx) error {
+				id, err := tx.PutSecret(ctx, `{"access_token":"fixture"}`)
+				p.CredentialID = id
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			b.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				if r.Header.Get("ChatGPT-Account-Id") != "" || r.Header.Get("Proxy-Authorization") != "" {
+					t.Fatal("foreign credentials reached Copilot")
+				}
+				resp := authResponse(status, `{}`)
+				resp.Header.Set("Location", "https://api.githubcopilot.com/other")
+				return resp, nil
+			})}
+			req, _ := http.NewRequest(http.MethodPost, "https://api.githubcopilot.com/responses", strings.NewReader(`{}`))
+			req.Header.Set("ChatGPT-Account-Id", "unrelated")
+			req.Header.Set("Proxy-Authorization", "secret")
+			resp, err := b.oauthClient(p).Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if calls != 1 || resp.StatusCode != status {
+				t.Fatalf("OAuth transport changed request intent calls=%d status=%d", calls, resp.StatusCode)
+			}
+		})
 	}
 }

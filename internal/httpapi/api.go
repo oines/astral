@@ -15,6 +15,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
+	models "github.com/oines/astral-models"
 
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/computers"
@@ -237,7 +238,7 @@ func (a *API) systemRoutes() {
 		if v.Computers, err = a.computers(r.Context()); err != nil {
 			return v, err
 		}
-		v.Models, err = readAll[domain.ModelProfile](r.Context(), h.Store, "models")
+		v.Models, err = h.Models.ListProfiles(r.Context())
 		if err != nil {
 			return v, err
 		}
@@ -420,8 +421,11 @@ func (a *API) resources() {
 	route[httpcontract.Empty, []modelbridge.ProviderPreset](a, "GET", "/provider-presets", "listProviderPresets", "Models", func(_ *http.Request, _ httpcontract.Empty) ([]modelbridge.ProviderPreset, error) {
 		return modelbridge.ProviderPresets(), nil
 	})
+	route[httpcontract.Empty, []models.ReasoningFormat](a, "GET", "/reasoning-formats", "reasoningFormats", "Models", func(r *http.Request, _ httpcontract.Empty) ([]models.ReasoningFormat, error) {
+		return models.ReasoningFormats(r.URL.Query().Get("protocol")), nil
+	}, httpcontract.Parameter{Name: "protocol", Type: "string"})
 	route[httpcontract.Empty, []modelbridge.Discovery](a, "GET", "/provider-presets/{id}/models", "presetModels", "Models", func(r *http.Request, _ httpcontract.Empty) ([]modelbridge.Discovery, error) {
-		return modelbridge.PresetModels(r.PathValue("id"))
+		return h.Models.PresetCatalog(r.Context(), r.PathValue("id"))
 	})
 	route[modelbridge.ImportModelsInput, modelbridge.ImportModelsResult](a, "POST", "/providers/{id}/import", "importModels", "Models", func(r *http.Request, input modelbridge.ImportModelsInput) (modelbridge.ImportModelsResult, error) {
 		return h.Models.ImportModels(r.Context(), r.PathValue("id"), input)
@@ -433,15 +437,25 @@ func (a *API) resources() {
 	route[httpcontract.Empty, []modelbridge.Discovery](a, "GET", "/providers/{id}/catalog", "modelCatalog", "Models", func(r *http.Request, _ httpcontract.Empty) ([]modelbridge.Discovery, error) {
 		return h.Models.Catalog(r.Context(), r.PathValue("id"))
 	})
+	route[httpcontract.Empty, modelbridge.Discovery](a, "GET", "/providers/{id}/model-recommendation", "modelRecommendation", "Models", func(r *http.Request, _ httpcontract.Empty) (modelbridge.Discovery, error) {
+		return h.Models.ModelRecommendation(r.Context(), r.PathValue("id"), r.URL.Query().Get("model_id"))
+	}, httpcontract.Parameter{Name: "model_id", Type: "string", Required: true})
 	route[httpcontract.Empty, []domain.ModelProfile](a, "GET", "/models", "listModels", "Models", func(r *http.Request, _ httpcontract.Empty) ([]domain.ModelProfile, error) {
-		return readAll[domain.ModelProfile](r.Context(), h.Store, "models")
+		return h.Models.ListProfiles(r.Context())
 	})
 	route[domain.ModelProfile, domain.ModelProfile](a, "POST", "/models", "saveModel", "Models", func(r *http.Request, input domain.ModelProfile) (domain.ModelProfile, error) {
 		err := h.Models.SaveProfile(r.Context(), &input)
-		return input, err
+		if err != nil {
+			return input, err
+		}
+		return h.Models.DescribeProfile(r.Context(), input), nil
 	})
 	route[httpcontract.Empty, domain.ModelProfile](a, "POST", "/models/{id}/refresh", "refreshModel", "Models", func(r *http.Request, _ httpcontract.Empty) (domain.ModelProfile, error) {
-		return h.Models.Refresh(r.Context(), r.PathValue("id"))
+		profile, err := h.Models.Refresh(r.Context(), r.PathValue("id"))
+		if err != nil {
+			return profile, err
+		}
+		return h.Models.DescribeProfile(r.Context(), profile), nil
 	})
 	route[httpcontract.Empty, domain.ModelVerification](a, "POST", "/models/{id}/verify", "verifyModel", "Models", func(r *http.Request, _ httpcontract.Empty) (domain.ModelVerification, error) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)

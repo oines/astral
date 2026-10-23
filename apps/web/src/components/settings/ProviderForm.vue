@@ -6,15 +6,16 @@ import { Button, Select, SettingsRow, SettingsSection } from '@astral/ui'
 import { ExternalLink } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Provider } from '../../lib/types'
-import { request, newMeta } from '../../lib/api'
+import { request, newMeta, jsonEqual } from '../../lib/api'
 import { useSettingsSave } from '../../composables/useSettingsSave'
 import SettingsFeedback from './SettingsFeedback.vue'
+import ReasoningFormatSelect from './ReasoningFormatSelect.vue'
 const props = defineProps<{ provider?: Provider; preset?: Preset; compact?: boolean }>()
 const emit = defineEmits<{ saved: [provider: Provider, autoImport: boolean, origin: string]; cancel: [] }>()
 const { t } = useI18n()
 const saves = useSettingsSave()
-type Fields = { name: string; base_url: string; protocol: string; dialect: string; api_key: string; headers: string }
-function fields(): Fields { return { name: props.provider?.name || props.preset?.name || '', base_url: props.provider?.base_url || props.preset?.base_url || '', protocol: props.provider?.protocol || props.preset?.protocol || 'openai-completions', dialect: props.provider?.dialect || props.preset?.dialect || 'compatible', api_key: '', headers: '' } }
+type Fields = { name: string; base_url: string; protocol: string; dialect: string; reasoning_format: string; reasoning_mapping: string; api_key: string; headers: string }
+function fields(): Fields { return { name: props.provider?.name || props.preset?.name || '', base_url: props.provider?.base_url || props.preset?.base_url || '', protocol: props.provider?.protocol || props.preset?.protocol || 'openai-completions', dialect: props.provider?.dialect || props.preset?.dialect || 'compatible', reasoning_format: props.provider?.reasoning_format || (props.preset ? '' : props.provider ? '' : 'protocol-default'), reasoning_mapping: JSON.stringify(props.provider?.reasoning_mapping || {}, null, 2), api_key: '', headers: '' } }
 const resource = computed(() => `provider:${props.provider?.id || `new:${props.preset?.id || 'custom'}`}`)
 const draft = computed(() => saves.form(resource.value, () => { const value = fields(); return { fields: value, baseline: JSON.stringify(value) } }))
 const form = computed(() => draft.value.fields)
@@ -24,13 +25,15 @@ watch(() => props.provider, () => {
   if (!dirty.value) { draft.value.fields = fields(); draft.value.baseline = JSON.stringify(draft.value.fields) }
 })
 const region = computed(() => props.preset?.regions?.find(r => r.base_url === form.value.base_url)?.id || '')
-const protocols = [{ value: 'openai-completions', label: 'Chat Completions' }, { value: 'openai-responses', label: 'Responses' }, { value: 'anthropic-messages', label: 'Anthropic Messages' }, { value: 'google-generative-ai', label: 'Google Gemini' }]
+const protocolOptions = [{ value: 'openai-responses', label: 'Responses' }, { value: 'openai-completions', label: 'Chat Completions' }, { value: 'anthropic-messages', label: 'Anthropic Messages' }, { value: 'google-generative-ai', label: 'Google Gemini' }]
+const protocols = computed(() => protocolOptions.filter(option => !props.preset?.protocols?.length || props.preset.protocols.includes(option.value) || option.value === form.value.protocol))
 function selectProtocol(value: string) {
   form.value.protocol = value
   if (value === 'anthropic-messages') form.value.dialect = 'anthropic'
   else if (value === 'google-generative-ai') form.value.dialect = 'google'
   else if (value === 'openai-responses') form.value.dialect = 'openai'
   else if (['anthropic', 'google'].includes(form.value.dialect)) form.value.dialect = 'compatible'
+  form.value.reasoning_format = props.preset ? '' : 'protocol-default'
 }
 async function submit() {
   const snapshot = { ...form.value }
@@ -43,7 +46,7 @@ async function submit() {
   let beforeHeaders: string | undefined
   const accept = (saved: Provider) => {
     saves.confirm(listProvidersQueryKey(), saved)
-    const confirmed = { ...snapshot, name: saved.name, base_url: saved.base_url, protocol: saved.protocol, dialect: saved.dialect, api_key: '', headers: '' }
+    const confirmed = { ...snapshot, name: saved.name, base_url: saved.base_url, protocol: saved.protocol, dialect: saved.dialect, reasoning_format: saved.reasoning_format || '', reasoning_mapping: JSON.stringify(saved.reasoning_mapping || {}, null, 2), api_key: '', headers: '' }
     for (const field of Object.keys(snapshot) as (keyof Fields)[]) if (editing.fields[field] === snapshot[field]) editing.fields[field] = confirmed[field]
     editing.baseline = JSON.stringify(confirmed)
     if (!id) saves.discardForm(key)
@@ -58,17 +61,25 @@ async function submit() {
         if (!data || Array.isArray(data) || typeof data !== 'object' || !Object.values(data).every(x => typeof x === 'string')) throw { code: 'invalid', message: t('headersObjectRequired') }
         headers = data as Record<string, string>
       }
+      let mapping: Provider['reasoning_mapping']
+      if (snapshot.reasoning_format === 'custom') {
+        let parsed: unknown
+        try { parsed = JSON.parse(snapshot.reasoning_mapping) } catch { throw { code: 'invalid', message: t('modelObjectRequired') } }
+        if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw { code: 'invalid', message: t('modelObjectRequired') }
+        mapping = parsed as Provider['reasoning_mapping']
+      }
       const current = id ? (await request(listProviders())).find(p => p.id === id) : undefined
       if (id && !current) throw { code: 'not_found', message: t('missing') }
       beforeCredential = current?.credential_id
       beforeHeaders = current?.headers_credential_id
-      const saved = await request(saveProvider({ body: { ...(current || newMeta()), preset_id: preset?.id, enabled: current?.enabled ?? true, name: snapshot.name.trim(), base_url: snapshot.base_url.trim(), protocol: snapshot.protocol, dialect: snapshot.dialect, ...(snapshot.api_key ? { api_key: snapshot.api_key } : {}), ...(headers ? { headers } : {}) } }))
+      const saved = await request(saveProvider({ body: { ...(current || newMeta()), preset_id: preset?.id, enabled: current?.enabled ?? true, name: snapshot.name.trim(), base_url: snapshot.base_url.trim(), protocol: snapshot.protocol, dialect: snapshot.dialect, reasoning_format: snapshot.reasoning_format, reasoning_mapping: mapping, ...(snapshot.api_key ? { api_key: snapshot.api_key } : {}), ...(headers ? { headers } : {}) } }))
       accept(saved)
     },
     reconcile: async () => {
       if (!id) return 'unknown'
       const current = (await request(listProviders())).find(p => p.id === id)
-      if (!current || current.name !== snapshot.name.trim() || current.base_url !== snapshot.base_url.trim() || current.protocol !== snapshot.protocol || current.dialect !== snapshot.dialect) return 'not-applied'
+      if (!current || current.name !== snapshot.name.trim() || current.base_url !== snapshot.base_url.trim() || current.protocol !== snapshot.protocol || current.dialect !== snapshot.dialect || (current.reasoning_format || '') !== snapshot.reasoning_format) return 'not-applied'
+      if (snapshot.reasoning_format === 'custom' && !jsonEqual(current.reasoning_mapping, JSON.parse(snapshot.reasoning_mapping))) return 'not-applied'
       if (snapshot.api_key && current.credential_id === beforeCredential || snapshot.headers.trim() && current.headers_credential_id === beforeHeaders) return 'unknown'
       accept(current)
       return 'applied'
@@ -133,10 +144,7 @@ async function submit() {
             class="provider-key-link"
           >{{ t('getAPIKey') }}<ExternalLink /></a>
         </SettingsRow>
-        <SettingsRow
-          v-if="!preset"
-          :label="t('protocol')"
-        >
+        <SettingsRow :label="t('protocol')">
           <Select
             :model-value="form.protocol"
             :label="t('protocol')"
@@ -145,28 +153,37 @@ async function submit() {
           />
         </SettingsRow>
         <details
-          v-if="preset?.auth !== 'oauth'"
+          v-if="!preset"
           class="form-disclosure"
         >
           <summary>{{ t('advancedOptions') }}</summary>
           <div class="stack">
-            <SettingsRow
-              v-if="preset"
-              :label="t('protocol')"
-            >
-              <Select
-                :model-value="form.protocol"
-                :label="t('protocol')"
-                :options="protocols"
-                @update:model-value="selectProtocol"
-              />
-            </SettingsRow>
             <SettingsRow :label="t('dialect')">
               <Select
                 v-model="form.dialect"
                 :label="t('dialect')"
                 :options="[{ value: 'compatible', label: 'OpenAI compatible' }, { value: 'openai', label: 'OpenAI' }, { value: 'deepseek', label: 'DeepSeek' }, { value: 'qwen', label: 'Qwen' }, { value: 'openrouter', label: 'OpenRouter' }, { value: 'mimo', label: 'MiMo' }, { value: 'anthropic', label: 'Anthropic' }, { value: 'google', label: 'Google' }]"
               />
+            </SettingsRow>
+            <SettingsRow :label="t('reasoningRequestFormat')">
+              <ReasoningFormatSelect
+                v-model="form.reasoning_format"
+                :protocol="form.protocol"
+                :inherit-label="preset ? t('presetReasoningDefault') : t('legacyReasoningDefault')"
+              />
+            </SettingsRow>
+            <SettingsRow
+              v-if="form.reasoning_format === 'custom'"
+              :label="t('reasoningParameterMapping')"
+            >
+              <textarea
+                v-model="form.reasoning_mapping"
+                class="mono"
+                :aria-label="t('reasoningParameterMapping')"
+                rows="7"
+                :placeholder="t('reasoningMappingExample')"
+              />
+              <span class="muted small">{{ t('reasoningMappingHint') }}</span>
             </SettingsRow>
             <SettingsRow :label="t('extraHeaders')">
               <textarea

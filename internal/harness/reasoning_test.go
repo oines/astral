@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	core "github.com/oines/astral-core"
@@ -105,5 +106,57 @@ func TestAgentReasoningRejectsMissingModelAndUnsupportedEffort(t *testing.T) {
 	}
 	if f.count() != 0 {
 		t.Fatal("saving defaults sent a provider request")
+	}
+}
+
+func TestExplicitInterfaceDefaultBypassesProfileDefaultsAcrossRestart(t *testing.T) {
+	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("done") })
+	var profile domain.ModelProfile
+	if err := f.store.Get(f.ctx, "models", f.agent.DefaultModelID, &profile); err != nil {
+		t.Fatal(err)
+	}
+	profile.Recommendations["reasoning"] = encode(map[string]any{"efforts": []string{"low", "high"}})
+	profile.Overrides = map[string]json.RawMessage{"defaults": encode(core.GenerationOptions{Reasoning: core.ReasoningOptions{Effort: "high"}})}
+	if err := f.service.Models.SaveProfile(f.ctx, &profile); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct {
+		id        string
+		selection *core.ReasoningOptions
+		want      string
+		restart   bool
+	}{
+		{"inherit", nil, "high", false},
+		{"api-default", &core.ReasoningOptions{}, "", true},
+		{"inherit-again", nil, "high", false},
+	} {
+		if err := f.service.SelectModel(f.ctx, f.session.ID, profile.ID, step.selection); err != nil {
+			t.Fatal(err)
+		}
+		if step.restart {
+			f.restart(t)
+		}
+		var saved domain.Session
+		if err := f.store.Get(f.ctx, "sessions", f.session.ID, &saved); err != nil {
+			t.Fatal(err)
+		}
+		if (saved.Reasoning == nil) != (step.selection == nil) {
+			t.Fatalf("%s: empty override and inheritance were conflated", step.id)
+		}
+		if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: step.id, Text: "hello"}); err != nil {
+			t.Fatal(err)
+		}
+		f.idle(t, f.session.ID)
+		f.mu.Lock()
+		var body map[string]any
+		err := json.Unmarshal(f.requests[len(f.requests)-1], &body)
+		f.mu.Unlock()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, exists := body["reasoning_effort"]
+		if step.want == "" && exists || step.want != "" && got != step.want {
+			t.Fatalf("%s: actual reasoning_effort=%v (present=%v), want %q", step.id, got, exists, step.want)
+		}
 	}
 }

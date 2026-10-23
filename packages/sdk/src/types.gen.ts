@@ -581,6 +581,11 @@ export type AstralInternalDomainModelProfile = {
     };
     protocol?: string;
     provider_id: string;
+    reasoning_controls?: AstralModelsReasoningControls;
+    reasoning_error?: string;
+    recommendation_sources?: {
+        [key: string]: AstralInternalDomainRecommendationSource;
+    };
     recommendations: {
         [key: string]: unknown;
     };
@@ -665,6 +670,8 @@ export type AstralInternalDomainProvider = {
     name: string;
     preset_id?: string;
     protocol: string;
+    reasoning_format?: string;
+    reasoning_mapping?: AstralModelsReasoningMapping;
     replay_revision?: number;
     revision: number;
     updated_at: string;
@@ -683,6 +690,11 @@ export type AstralInternalDomainProvisioning = {
     phase: string;
     revision: number;
     state: string;
+    updated_at: string;
+};
+
+export type AstralInternalDomainRecommendationSource = {
+    source: string;
     updated_at: string;
 };
 
@@ -1045,6 +1057,8 @@ export type AstralInternalHttpapiProviderInput = {
     name: string;
     preset_id?: string;
     protocol: string;
+    reasoning_format?: string;
+    reasoning_mapping?: AstralModelsReasoningMapping;
     replay_revision?: number;
     revision: number;
     updated_at: string;
@@ -1157,6 +1171,9 @@ export type AstralInternalModelbridgeDiscovery = {
     id: string;
     name: string;
     protocol?: string;
+    recommendation_sources?: {
+        [key: string]: AstralInternalDomainRecommendationSource;
+    };
     recommendations: {
         [key: string]: unknown;
     };
@@ -1194,6 +1211,8 @@ export type AstralInternalModelbridgeProviderPreset = {
     model_count: number;
     name: string;
     protocol: string;
+    protocols?: Array<string>;
+    reasoning_format?: string;
     regions?: Array<AstralInternalModelbridgePresetRegion>;
     requires_url?: boolean;
 };
@@ -1357,6 +1376,38 @@ export type AstralInternalSearchResult = {
     summary: string;
     title: string;
     url: string;
+};
+
+export type AstralModelsReasoningBudgetControl = {
+    max?: number;
+    min?: number;
+};
+
+export type AstralModelsReasoningControls = {
+    budget?: AstralModelsReasoningBudgetControl;
+    diagnostics?: Array<AstralModelsReasoningDiagnostic>;
+    format: string;
+    options: Array<AstralModelsReasoningOption>;
+};
+
+export type AstralModelsReasoningDiagnostic = {
+    code: string;
+    message: string;
+    path: string;
+};
+
+export type AstralModelsReasoningMapping = {
+    efforts?: {
+        [key: string]: unknown;
+    };
+    fields: Array<string>;
+    off?: unknown;
+    on?: unknown;
+};
+
+export type AstralModelsReasoningOption = {
+    id: string;
+    value: AstralCoreReasoningOptions;
 };
 
 export type ListAgentsData = {
@@ -2599,6 +2650,62 @@ export type ImportModelsResponses = {
 };
 
 export type ImportModelsResponse = ImportModelsResponses[keyof ImportModelsResponses];
+
+export type ModelRecommendationData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        model_id: string;
+    };
+    url: '/api/v1/providers/{id}/model-recommendation';
+};
+
+export type ModelRecommendationErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ModelRecommendationError = ModelRecommendationErrors[keyof ModelRecommendationErrors];
+
+export type ModelRecommendationResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalModelbridgeDiscovery;
+};
+
+export type ModelRecommendationResponse = ModelRecommendationResponses[keyof ModelRecommendationResponses];
+
+export type ReasoningFormatsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        protocol?: string;
+    };
+    url: '/api/v1/reasoning-formats';
+};
+
+export type ReasoningFormatsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ReasoningFormatsError = ReasoningFormatsErrors[keyof ReasoningFormatsErrors];
+
+export type ReasoningFormatsResponses = {
+    /**
+     * OK
+     */
+    200: Array<string>;
+};
+
+export type ReasoningFormatsResponse = ReasoningFormatsResponses[keyof ReasoningFormatsResponses];
 
 export type ResourceUsageData = {
     body?: never;

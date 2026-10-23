@@ -174,8 +174,8 @@ func TestCatalogRefreshRetainsOverridesAndNativeEfforts(t *testing.T) {
 	}
 	delete(profile.Overrides, "defaults")
 	values, _, _ = profile.Effective()
-	if values.Defaults.Reasoning.Effort != "high" || strings.Contains(string(values.Reasoning), "medium") {
-		t.Fatal("native effort vocabulary/default was changed")
+	if values.Defaults.Reasoning.Effort != "" || !strings.Contains(string(values.Reasoning), `"default_effort":"high"`) || strings.Contains(string(values.Reasoning), "medium") {
+		t.Fatal("native effort metadata changed or upstream default became a request override")
 	}
 }
 

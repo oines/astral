@@ -65,5 +65,6 @@ func modelRoute(profile domain.ModelProfile, provider domain.Provider) (protocol
 			baseURL += "/openai/v1"
 		}
 	}
+	baseURL = presetProtocolBaseURL(provider.PresetID, protocol, baseURL)
 	return protocol, dialect, baseURL, nil
 }

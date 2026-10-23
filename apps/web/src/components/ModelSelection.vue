@@ -29,6 +29,9 @@ function chooseModel(profile_id: string) {
 function chooseReasoning(value: string) {
   if (!props.busy && value !== reasoningState.value.value) emit('select', { profile_id: props.modelValue, reasoning: reasoningSelection(value, profile.value) })
 }
+function chooseBudget(value: number) {
+  if (!props.busy && value !== props.reasoning?.budget_tokens) emit('select', { profile_id: props.modelValue, reasoning: { budget_tokens: value } })
+}
 </script>
 <template>
   <ModelPicker
@@ -37,18 +40,21 @@ function chooseReasoning(value: string) {
     :reasoning-value="reasoningState.value"
     :reasoning-label="reasoningState.label"
     :reasoning-options="reasoningState.options"
-    :labels="{ model: label || t('model'), reasoning: t('reasoning'), search: t('searchModels'), empty: t('noModelMatch') }"
+    :reasoning-budget="reasoningState.budget"
+    :reasoning-budget-value="reasoning?.budget_tokens"
+    :labels="{ model: label || t('model'), reasoning: t('reasoning'), search: t('searchModels'), empty: t('noModelMatch'), budget: t('reasoningBudget'), useBudget: t('useReasoningBudget') }"
     :busy="busy"
     :side="composer ? 'top' : 'bottom'"
     :align="composer ? 'end' : 'start'"
     @update:model-value="chooseModel"
     @update:reasoning-value="chooseReasoning"
+    @update:reasoning-budget-value="chooseBudget"
   >
     <button
       type="button"
       :class="composer ? 'composer-picker model-picker' : 'select-trigger model-selection-trigger'"
       :aria-label="label || t('model')"
-      :title="[modelLabel, ...(reasoningState.options.length ? [reasoningState.label] : [])].join(' · ')"
+      :title="[modelLabel, ...(reasoningState.options.length ? [reasoningState.label] : []), ...(profile?.reasoning_error ? [profile.reasoning_error] : [])].join(' · ')"
     >
       <span>{{ modelLabel }}</span><small v-if="reasoningState.options.length">· {{ reasoningState.label }}</small><ChevronDown />
     </button>

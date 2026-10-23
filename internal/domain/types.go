@@ -9,6 +9,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
+	models "github.com/oines/astral-models"
 )
 
 func ID(prefix string) string {
@@ -69,15 +70,17 @@ const (
 
 type Provider struct {
 	Meta
-	PresetID            string   `json:"preset_id,omitempty"`
-	Enabled             *bool    `json:"enabled,omitempty"`
-	Name                string   `json:"name"`
-	Protocol            string   `json:"protocol"`
-	Dialect             string   `json:"dialect"`
-	BaseURL             string   `json:"base_url"`
-	HeaderNames         []string `json:"header_names,omitempty"`
-	HeadersCredentialID string   `json:"headers_credential_id,omitempty"`
-	CredentialID        string   `json:"credential_id,omitempty"`
+	PresetID            string                   `json:"preset_id,omitempty"`
+	Enabled             *bool                    `json:"enabled,omitempty"`
+	Name                string                   `json:"name"`
+	Protocol            string                   `json:"protocol"`
+	Dialect             string                   `json:"dialect"`
+	BaseURL             string                   `json:"base_url"`
+	HeaderNames         []string                 `json:"header_names,omitempty"`
+	HeadersCredentialID string                   `json:"headers_credential_id,omitempty"`
+	CredentialID        string                   `json:"credential_id,omitempty"`
+	ReasoningFormat     models.ReasoningFormat   `json:"reasoning_format,omitempty"`
+	ReasoningMapping    *models.ReasoningMapping `json:"reasoning_mapping,omitempty"`
 	// ReplayRevision changes with API credentials/routing, not display labels
 	// or enable switches. Zero keeps the legacy provider-revision scope.
 	ReplayRevision int64 `json:"replay_revision,omitempty"`
@@ -88,18 +91,28 @@ type Provider struct {
 // a catalog refresh. Unknown capability values remain unknown.
 type ModelProfile struct {
 	Meta
-	Description     string                     `json:"description,omitempty"`
-	Enabled         *bool                      `json:"enabled,omitempty"`
-	ProviderID      string                     `json:"provider_id"`
-	Protocol        string                     `json:"protocol,omitempty"`
-	Dialect         string                     `json:"dialect,omitempty"`
-	ModelID         string                     `json:"model_id"`
-	Name            string                     `json:"name"`
-	Recommendations map[string]json.RawMessage `json:"recommendations"`
-	Overrides       map[string]json.RawMessage `json:"overrides"`
-	CatalogSource   string                     `json:"catalog_source,omitempty"`
-	CatalogAt       *time.Time                 `json:"catalog_at,omitempty"`
-	Verification    *ModelVerification         `json:"verification,omitempty"`
+	Description           string                          `json:"description,omitempty"`
+	Enabled               *bool                           `json:"enabled,omitempty"`
+	ProviderID            string                          `json:"provider_id"`
+	Protocol              string                          `json:"protocol,omitempty"`
+	Dialect               string                          `json:"dialect,omitempty"`
+	ModelID               string                          `json:"model_id"`
+	Name                  string                          `json:"name"`
+	Recommendations       map[string]json.RawMessage      `json:"recommendations"`
+	Overrides             map[string]json.RawMessage      `json:"overrides"`
+	CatalogSource         string                          `json:"catalog_source,omitempty"`
+	CatalogAt             *time.Time                      `json:"catalog_at,omitempty"`
+	Verification          *ModelVerification              `json:"verification,omitempty"`
+	RecommendationSources map[string]RecommendationSource `json:"recommendation_sources,omitempty"`
+	// Controls are derived from the saved connection and profile. They are never
+	// trusted as input or used as a second configuration source.
+	ReasoningControls *models.ReasoningControls `json:"reasoning_controls,omitempty"`
+	ReasoningError    string                    `json:"reasoning_error,omitempty"`
+}
+
+type RecommendationSource struct {
+	Source    string    `json:"source"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type ModelVerification struct {
@@ -112,19 +125,21 @@ type ModelVerification struct {
 }
 
 type ModelValues struct {
-	ContextWindow          int                    `json:"context_window"`
-	MaxInputTokens         int                    `json:"max_input_tokens,omitempty"`
-	MaxOutputTokens        int                    `json:"max_output_tokens"`
-	ToolCalling            string                 `json:"tool_calling,omitempty"`
-	Images                 string                 `json:"images,omitempty"`
-	Streaming              *bool                  `json:"streaming,omitempty"`
-	Reasoning              json.RawMessage        `json:"reasoning,omitempty"`
-	ReasoningReplay        string                 `json:"reasoning_replay,omitempty"`
-	RequireReasoningReplay bool                   `json:"require_reasoning_replay,omitempty"`
-	ImageTokenBudget       int                    `json:"image_token_budget,omitempty"`
-	Defaults               core.GenerationOptions `json:"defaults"`
-	InputPrice             *float64               `json:"input_price,omitempty"`
-	OutputPrice            *float64               `json:"output_price,omitempty"`
+	ContextWindow          int                      `json:"context_window"`
+	MaxInputTokens         int                      `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens        int                      `json:"max_output_tokens"`
+	ToolCalling            string                   `json:"tool_calling,omitempty"`
+	Images                 string                   `json:"images,omitempty"`
+	Streaming              *bool                    `json:"streaming,omitempty"`
+	Reasoning              json.RawMessage          `json:"reasoning,omitempty"`
+	ReasoningFormat        models.ReasoningFormat   `json:"reasoning_format,omitempty"`
+	ReasoningMapping       *models.ReasoningMapping `json:"reasoning_mapping,omitempty"`
+	ReasoningReplay        string                   `json:"reasoning_replay,omitempty"`
+	RequireReasoningReplay bool                     `json:"require_reasoning_replay,omitempty"`
+	ImageTokenBudget       int                      `json:"image_token_budget,omitempty"`
+	Defaults               core.GenerationOptions   `json:"defaults"`
+	InputPrice             *float64                 `json:"input_price,omitempty"`
+	OutputPrice            *float64                 `json:"output_price,omitempty"`
 }
 
 func (p ModelProfile) Effective() (ModelValues, map[string]string, error) {

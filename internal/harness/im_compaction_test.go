@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
@@ -14,6 +15,11 @@ func TestCompactionPromptFollowsCurrentIMBinding(t *testing.T) {
 	f := newFixture(t, 0, func(context.Context, int, map[string]any) any {
 		return textReply("confirmed context")
 	})
+	// Seven large-history compactions exceed the shared fixture's 35 second
+	// deadline under the race detector. Keep the assertions and request sizes.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	t.Cleanup(cancel)
+	f.ctx = ctx
 	compactPrompt := func(id string) string {
 		t.Helper()
 		if _, err := f.service.Submit(f.ctx, id, InputRequest{ID: domain.ID("input"), Text: strings.Repeat("conversation context ", 5000)}); err != nil {

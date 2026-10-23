@@ -20,6 +20,9 @@ import (
 // Public native-app client IDs use device authorization. No existing CLI or
 // browser credentials are imported, and the user approves each new grant.
 const codexClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+
+// Copilot CLI OAuth tokens are accepted directly by api.githubcopilot.com.
+// Do not mix this client with the VS Code client's internal token exchange.
 const copilotClientID = "Ov23li8tweQw6odWQebz"
 
 type Authorization struct {
@@ -170,6 +173,9 @@ func (b *Bridge) PollAuthorization(ctx context.Context, id string) (Authorizatio
 	if flow.public.Status == "connected" {
 		return flow.public, nil
 	}
+	if flow.public.Status == "failed" {
+		return flow.public, domain.Conflict("authorization has failed; start a new sign-in")
+	}
 	if time.Since(flow.lastPoll) < time.Duration(flow.public.Interval)*time.Second {
 		return flow.public, nil
 	}
@@ -307,7 +313,10 @@ func (b *Bridge) oauthCredentials(ctx context.Context, p domain.Provider) (oauth
 		return tokens, err
 	}
 	if status < 200 || status >= 300 {
-		return tokens, domain.Conflict("provider authorization expired; sign in again")
+		if status == http.StatusBadRequest || status == http.StatusUnauthorized {
+			return tokens, domain.Conflict("provider authorization expired; sign in again")
+		}
+		return tokens, domain.Offline(fmt.Sprintf("authorization token refresh failed (HTTP %d)", status))
 	}
 	var next oauthTokens
 	if json.Unmarshal(data, &next) != nil || next.AccessToken == "" {
@@ -318,6 +327,9 @@ func (b *Bridge) oauthCredentials(ctx context.Context, p domain.Provider) (oauth
 	}
 	next.ExpiresAt = time.Now().Add(time.Duration(max(60, next.ExpiresIn)) * time.Second)
 	next.AccountID = accountID(next)
+	if tokens.AccountID != "" && next.AccountID != "" && next.AccountID != tokens.AccountID {
+		return tokens, domain.Conflict("authorization refresh returned a different account; sign in again")
+	}
 	if next.AccountID == "" {
 		next.AccountID = tokens.AccountID
 	}
@@ -351,6 +363,8 @@ func (t oauthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	clone.Header = req.Header.Clone()
 	clone.Header.Del("X-Api-Key")
 	clone.Header.Del("X-Goog-Api-Key")
+	clone.Header.Del("Proxy-Authorization")
+	clone.Header.Del("ChatGPT-Account-Id")
 	clone.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
 	if tokens.AccountID != "" {
 		clone.Header.Set("ChatGPT-Account-Id", tokens.AccountID)
@@ -376,5 +390,8 @@ func (b *Bridge) oauthClient(p domain.Provider) *http.Client {
 		base = http.DefaultTransport
 	}
 	client.Transport = oauthTransport{base: base, bridge: b, provider: p}
+	// Even an official-host redirect can change a POST into a GET and silently
+	// alter a model request. Let the caller observe the actual redirect result.
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	return &client
 }

@@ -233,7 +233,10 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .model-choice-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .model-choice-reasoning { flex-shrink: 0; padding-top: 5px; }
 .model-choice-reasoning > .model-choice-row { width: 100%; }
-.reasoning-options-menu { width: 164px; max-height: var(--reka-dropdown-menu-content-available-height); overflow-y: auto; scrollbar-width: thin; }
+.reasoning-options-menu { width: 220px; max-height: var(--reka-dropdown-menu-content-available-height); overflow-y: auto; scrollbar-width: thin; }
+.reasoning-budget-input { display: grid; gap: 8px; padding: 8px 10px; }
+.reasoning-budget-input label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+.reasoning-budget-input input { width: 100%; min-width: 0; }
 .model-choice-label { color: var(--muted); font-size: 11px; padding: 8px 10px 4px; }
 .model-choice-search { flex-shrink: 0; padding: 3px 3px 8px; }
 .model-choice-search input { border: 0 !important; box-shadow: none !important; background: var(--surface) !important; }

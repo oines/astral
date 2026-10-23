@@ -22,7 +22,7 @@ func testBridge(t *testing.T) *Bridge {
 	return &Bridge{Store: store}
 }
 
-func TestImportableBuiltInCatalogConstructsNativeAdapters(t *testing.T) {
+func TestProviderPresetsConstructNativeAdapters(t *testing.T) {
 	b := testBridge(t)
 	ctx := context.Background()
 	seen := map[string]bool{}
@@ -36,35 +36,9 @@ func TestImportableBuiltInCatalogConstructsNativeAdapters(t *testing.T) {
 		if provider.BaseURL == "" {
 			provider.BaseURL = "https://example.com/v1"
 		}
-		items, err := PresetModels(preset.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(items) != preset.ModelCount {
-			t.Fatalf("wrong count for %s", preset.ID)
-		}
-		modelIDs := map[string]bool{}
-		for _, item := range items {
-			if modelIDs[item.ID] {
-				t.Fatalf("duplicate %s/%s", preset.ID, item.ID)
-			}
-			modelIDs[item.ID] = true
-			profile := domain.ModelProfile{ModelID: item.ID, ProviderID: preset.ID, Name: item.Name, Protocol: item.Protocol, Dialect: item.Dialect, Recommendations: item.Recommendations, Overrides: map[string]json.RawMessage{}}
-			if item.Source == "" {
-				t.Errorf("missing source for %s/%s", preset.ID, item.ID)
-			}
-			var contextWindow, output int
-			_ = json.Unmarshal(item.Recommendations["context_window"], &contextWindow)
-			_ = json.Unmarshal(item.Recommendations["max_output_tokens"], &output)
-			if contextWindow < 1 {
-				continue
-			} // Import requires a published context limit.
-			if output < 1 {
-				profile.Overrides["max_output_tokens"] = raw(min(4096, max(1, contextWindow/4)))
-			}
-			if _, err := b.construct(ctx, profile, provider); err != nil {
-				t.Errorf("%s/%s: %v", preset.ID, item.ID, err)
-			}
+		profile := domain.ModelProfile{ModelID: "test-model", ProviderID: preset.ID, Name: "Test model", Recommendations: map[string]json.RawMessage{"context_window": raw(128000), "max_output_tokens": raw(4096)}}
+		if _, err := b.construct(ctx, profile, provider); err != nil {
+			t.Errorf("%s: %v", preset.ID, err)
 		}
 	}
 	for _, id := range []string{"commandcode", "opencode", "opencode-go", "mimo", "mimo-token-plan", "minimax-token-plan", "zai-coding-plan", "zhipu-coding-plan", "bailian-coding-plan", "kimi-code"} {
@@ -90,18 +64,12 @@ func TestModelRoutesAndSessionHeaders(t *testing.T) {
 	if sessionHeaders("opencode-go", "s1")["X-Opencode-Session"] != "s1" || sessionHeaders("github-copilot", "s2")["X-Interaction-Id"] != "s2" || sessionHeaders("openai", "s3") != nil {
 		t.Fatal("session metadata escaped its provider")
 	}
-	items, _ := PresetModels("mimo")
-	items[0].Recommendations["context_window"] = raw(1)
-	again, _ := PresetModels("mimo")
-	if string(again[0].Recommendations["context_window"]) == "1" {
-		t.Fatal("catalog shares mutable recommendations")
-	}
 }
 
 func TestCatalogImportKeepsEditsAndSkipsUnknownLimits(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"known","context_window":128000,"max_output_tokens":16000,"supported_endpoints":["/chat/completions","/responses"]},{"id":"unknown"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"known","context_window":128000,"max_output_tokens":16000,"supported_endpoints":["/chat/completions","/responses"]},{"id":"unknown"},{"id":"missing-output","context_window":64000}]}`))
 	}))
 	defer server.Close()
 	b := testBridge(t)
@@ -111,7 +79,7 @@ func TestCatalogImportKeepsEditsAndSkipsUnknownLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	first, err := b.ImportModels(ctx, provider.ID, ImportModelsInput{Refresh: true})
-	if err != nil || len(first.Imported) != 1 || len(first.Skipped) != 1 || first.Skipped[0] != "unknown" {
+	if err != nil || len(first.Imported) != 1 || len(first.Skipped) != 2 || first.Skipped[0] != "unknown" || first.Skipped[1] != "missing-output" {
 		t.Fatalf("first import: %+v %v", first, err)
 	}
 	profile := first.Imported[0]
@@ -125,7 +93,7 @@ func TestCatalogImportKeepsEditsAndSkipsUnknownLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, err := b.ImportModels(ctx, provider.ID, ImportModelsInput{Refresh: true})
-	if err != nil || len(second.Imported) != 0 || len(second.Skipped) != 2 {
+	if err != nil || len(second.Imported) != 0 || len(second.Skipped) != 3 {
 		t.Fatalf("second import: %+v %v", second, err)
 	}
 	var saved domain.ModelProfile

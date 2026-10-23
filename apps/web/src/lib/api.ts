@@ -24,6 +24,14 @@ export function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 export function clone<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T }
+export function jsonEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false
+  if (Array.isArray(left) || Array.isArray(right)) return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((value, index) => jsonEqual(value, right[index]))
+  const a = left as Record<string, unknown>
+  const b = right as Record<string, unknown>
+  return Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => Object.hasOwn(b, key) && jsonEqual(a[key], b[key]))
+}
 export function fileURL(id: string, sessionID: string, download = false) {
   return `/api/v1/files/${encodeURIComponent(id)}/content?session_id=${encodeURIComponent(sessionID)}&download=${download}`
 }

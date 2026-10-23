@@ -29,11 +29,12 @@ import (
 type RequestValidator func(context.Context) error
 
 type Bridge struct {
-	Store      *persistence.Store
-	HTTPClient *http.Client
-	authMu     sync.Mutex
-	authFlows  map[string]*authFlow
-	refreshMu  sync.Mutex
+	Store        *persistence.Store
+	HTTPClient   *http.Client
+	ModelCatalog *ModelCatalog
+	authMu       sync.Mutex
+	authFlows    map[string]*authFlow
+	refreshMu    sync.Mutex
 }
 
 func ValidateURL(raw string) error {
@@ -66,11 +67,11 @@ func (b *Bridge) SaveProvider(ctx context.Context, p *domain.Provider, key *stri
 	if p.Protocol != completions.Protocol && p.Protocol != responses.Protocol && p.Protocol != anthropic.Protocol && p.Protocol != google.Protocol {
 		return domain.Invalid("unsupported provider protocol")
 	}
-	if p.Protocol == responses.Protocol && p.Dialect != string(models.OpenAI) && p.Dialect != string(models.DeepSeek) && p.Dialect != string(models.Compatible) && p.Dialect != string(models.MiMo) {
-		return domain.Invalid("this provider does not have a supported Responses adapter")
-	}
 	if p.PresetID != "" && FindPreset(p.PresetID) == nil {
 		return domain.Invalid("unknown provider preset")
+	}
+	if _, err := models.ResolveReasoningControls(p.Protocol, models.Config{Dialect: models.Dialect(p.Dialect), ReasoningFormat: p.ReasoningFormat, ReasoningMapping: p.ReasoningMapping}); err != nil {
+		return domain.Invalid(err.Error())
 	}
 	if preset := FindPreset(p.PresetID); preset != nil && preset.Auth == "oauth" {
 		if p.BaseURL != preset.BaseURL {
@@ -118,6 +119,8 @@ func (b *Bridge) SaveProvider(ctx context.Context, p *domain.Provider, key *stri
 				p.HeaderNames = append(p.HeaderNames, name)
 			}
 		}
+		oldReasoning, _ := json.Marshal([]any{old.ReasoningFormat, old.ReasoningMapping})
+		newReasoning, _ := json.Marshal([]any{p.ReasoningFormat, p.ReasoningMapping})
 		connectionUnchanged := old.Revision > 0 && old.Protocol == p.Protocol && old.Dialect == p.Dialect && old.BaseURL == p.BaseURL && old.CredentialID == p.CredentialID && old.HeadersCredentialID == p.HeadersCredentialID
 		// The scope is server-owned. Metadata edits must not invalidate signed
 		// model history when the user selects the updated profile revision.
@@ -132,7 +135,7 @@ func (b *Bridge) SaveProvider(ctx context.Context, p *domain.Provider, key *stri
 			return err
 		}
 		// Labels and enable switches do not change the tested API connection.
-		if connectionUnchanged {
+		if connectionUnchanged && string(oldReasoning) == string(newReasoning) {
 			records, err := tx.List(ctx, "models")
 			if err != nil {
 				return err
@@ -158,6 +161,7 @@ func (b *Bridge) SaveProvider(ctx context.Context, p *domain.Provider, key *stri
 }
 
 func (b *Bridge) SaveProfile(ctx context.Context, p *domain.ModelProfile) error {
+	p.ReasoningControls, p.ReasoningError = nil, ""
 	if p.ProviderID == "" || strings.TrimSpace(p.ModelID) == "" || strings.TrimSpace(p.Name) == "" {
 		return domain.Invalid("provider, model ID and display name are required")
 	}
@@ -188,8 +192,14 @@ func (b *Bridge) SaveProfile(ctx context.Context, p *domain.ModelProfile) error 
 		}
 	}
 	// Constructing the adapter also checks native compatibility options.
-	if _, err := b.construct(ctx, *p, provider); err != nil {
+	model, err := b.construct(ctx, *p, provider)
+	if err != nil {
 		return err
+	}
+	values, _, _ := p.Effective()
+	if err := core.ValidateRequest(ctx, model, core.Request{ModelID: model.Spec().ID, ModelRevision: model.Spec().Revision,
+		Messages: []core.Message{core.User("Validate model defaults.")}, MaxOutputTokens: values.MaxOutputTokens, Options: values.Defaults}); err != nil {
+		return domain.Invalid(err.Error())
 	}
 	return b.Store.Save(ctx, "models", &p.Meta, p)
 }
@@ -237,7 +247,7 @@ func (b *Bridge) ValidateOptions(ctx context.Context, ref string, options core.G
 	}
 	err = core.ValidateRequest(ctx, model, core.Request{ModelID: ref, ModelRevision: ref,
 		Messages:        []core.Message{core.User("Validate generation settings.")},
-		MaxOutputTokens: min(256, model.Spec().MaxOutputTokens), Options: options})
+		MaxOutputTokens: model.Spec().MaxOutputTokens, Options: options})
 	return err
 }
 
@@ -266,8 +276,8 @@ func (b *Bridge) construct(ctx context.Context, p domain.ModelProfile, provider 
 		return nil, err
 	}
 	headers["User-Agent"] = "Astral/0.1.0"
-	if strings.HasPrefix(provider.PresetID, "opencode") {
-		// OpenCode's native Messages/Gemini gateways authenticate with Bearer.
+	if key != "" && (strings.HasPrefix(provider.PresetID, "opencode") || isSelfHostedGateway(provider.PresetID) || provider.PresetID == "moonshot" || provider.PresetID == "ollama") {
+		// These compatible endpoints use Bearer auth even on Messages/Gemini.
 		headers["Authorization"] = "Bearer " + key
 	}
 	replayRevision := provider.ReplayRevision
@@ -280,16 +290,25 @@ func (b *Bridge) construct(ctx context.Context, p domain.ModelProfile, provider 
 		Dialect: models.Dialect(dialect), ReplayScope: provider.ID + ":" + strconv.FormatInt(replayRevision, 10),
 		Streaming: v.Streaming, ReasoningReplay: v.ReasoningReplay, RequireReasoningReplay: v.RequireReasoningReplay, ImageTokenBudget: v.ImageTokenBudget,
 	}
+	reasoning, _, err := reasoningConfig(p, provider, v)
+	if err != nil {
+		return nil, err
+	}
+	config.Reasoning, config.ReasoningFormat, config.ReasoningMapping = reasoning.Reasoning, reasoning.ReasoningFormat, reasoning.ReasoningMapping
+	if protocol == responses.Protocol {
+		config.ResponsesCompatibility = presetResponsesCompatibility(provider.PresetID)
+		if cloudflareNonStreamingResponses(provider.PresetID, p.ModelID) {
+			if config.Streaming != nil && *config.Streaming {
+				return nil, domain.Invalid("this Cloudflare Responses model does not support streaming")
+			}
+			no := false
+			config.Streaming = &no
+		}
+	}
 	if preset := FindPreset(provider.PresetID); preset != nil && preset.Auth == "oauth" {
 		config.APIKey = ""
 		config.HTTPClient = b.oauthClient(provider)
 		config.Codex = provider.PresetID == "codex"
-	}
-	if len(v.Reasoning) > 0 && string(v.Reasoning) != "null" {
-		config.Reasoning = &models.ReasoningCapabilities{}
-		if err = json.Unmarshal(v.Reasoning, config.Reasoning); err != nil {
-			return nil, domain.Invalid("invalid reasoning capabilities")
-		}
 	}
 	switch protocol {
 	case completions.Protocol:

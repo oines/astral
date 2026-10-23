@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { saveModel, refreshModel, type AstralInternalModelbridgeDiscovery as Discovery } from '@astral/sdk'
+import { saveModel, refreshModel, modelRecommendation, type AstralInternalModelbridgeDiscovery as Discovery } from '@astral/sdk'
 import { Button, Modal, Select } from '@astral/ui'
 import { useI18n } from 'vue-i18n'
 import type { Profile, Provider } from '../../lib/types'
-import { clone, newMeta, object, request } from '../../lib/api'
+import { clone, newMeta, object, request, jsonEqual } from '../../lib/api'
 import { useAction } from '../../composables/useAction'
+import ReasoningFormatSelect from './ReasoningFormatSelect.vue'
 const props = defineProps<{ open: boolean; provider?: Provider; profile?: Profile; suggestion?: Discovery; catalog: Discovery[] }>()
 const emit = defineEmits<{ 'update:open': [value: boolean]; saved: [profile: Profile] }>()
 const { t } = useI18n()
@@ -13,43 +14,106 @@ const action = useAction()
 const form = ref<Profile>()
 const defaultsJSON = ref('{}')
 const reasoningJSON = ref('{}')
+const mappingJSON = ref('{}')
+const lookupBusy = ref(false)
+const lookupError = ref('')
+let lookupEpoch = 0
+let lastSuggestedName = ''
+let routeExplicit = false
+let nameExplicit = false
+let pendingLookup: Promise<void> | undefined
 const effective = computed(() => ({ ...form.value?.recommendations, ...form.value?.overrides }))
 function editableProfile(profile: Profile): Profile {
   return { ...profile, recommendations: object(profile.recommendations), overrides: object(profile.overrides) }
 }
 function initialize() {
+  lookupEpoch++
+  lookupBusy.value = false; lookupError.value = ''; lastSuggestedName = ''
   if (!props.open || !props.provider) return
-  form.value = editableProfile(props.profile ? clone(props.profile) : { ...newMeta(), name: '', model_id: '', provider_id: props.provider.id, recommendations: {}, overrides: { max_output_tokens: 4096 } })
+  pendingLookup = undefined
+  form.value = editableProfile(props.profile ? clone(props.profile) : { ...newMeta(), name: '', model_id: '', provider_id: props.provider.id, recommendations: {}, overrides: {} })
+  routeExplicit = !!(props.profile?.protocol || props.profile?.dialect)
+  nameExplicit = !!props.profile?.name
   if (props.suggestion) chooseModel(props.suggestion.id)
   syncJSON()
   action.error.value = ''; action.success.value = ''
 }
 watch(() => props.open, initialize, { immediate: true })
-function syncJSON() { defaultsJSON.value = JSON.stringify(effective.value.defaults || {}, null, 2); reasoningJSON.value = JSON.stringify(effective.value.reasoning || {}, null, 2) }
+function syncJSON() { defaultsJSON.value = JSON.stringify(effective.value.defaults || {}, null, 2); reasoningJSON.value = JSON.stringify(effective.value.reasoning || {}, null, 2); mappingJSON.value = JSON.stringify(effective.value.reasoning_mapping || {}, null, 2) }
 function chooseModel(id: string) {
-  const match = props.catalog.find(m => m.id === id) || (props.suggestion?.id === id ? props.suggestion : undefined)
-  if (!match || !form.value || props.profile && props.profile.model_id === id) return
+  if (!form.value || !props.provider || !id.trim()) return
+  const modelID = id.trim()
+  const oldValues = effective.value
+  const cleanJSON = { defaults: jsonMatches(defaultsJSON.value, oldValues.defaults), reasoning: jsonMatches(reasoningJSON.value, oldValues.reasoning), mapping: jsonMatches(mappingJSON.value, oldValues.reasoning_mapping) }
+  form.value.model_id = modelID
+  // Until the new ID resolves, no recommendation from the previous identity
+  // may be saved under it. Explicit user overrides and edited JSON survive.
+  form.value.recommendations = {}; form.value.recommendation_sources = {}
+  form.value.catalog_source = ''; form.value.catalog_at = undefined
+  if (!routeExplicit) { form.value.protocol = undefined; form.value.dialect = undefined }
+  if (cleanJSON.defaults) defaultsJSON.value = JSON.stringify(effective.value.defaults || {}, null, 2)
+  if (cleanJSON.reasoning) reasoningJSON.value = JSON.stringify(effective.value.reasoning || {}, null, 2)
+  if (cleanJSON.mapping) mappingJSON.value = JSON.stringify(effective.value.reasoning_mapping || {}, null, 2)
+  const providerID = props.provider.id
+  const previousRoute = { protocol: form.value.protocol, dialect: form.value.dialect }
+  const previousJSON = { defaults: defaultsJSON.value, reasoning: reasoningJSON.value, mapping: mappingJSON.value }
+  const epoch = ++lookupEpoch
+  lookupBusy.value = true; lookupError.value = ''
+  pendingLookup = (async () => {
+    try {
+      const original = props.profile?.model_id === modelID ? { id: modelID, name: props.profile.name, recommendations: props.profile.recommendations, protocol: props.profile.protocol, dialect: props.profile.dialect, source: props.profile.catalog_source, recommendation_sources: props.profile.recommendation_sources } : undefined
+      const match = original || props.catalog.find(m => m.id === modelID) || (props.suggestion?.id === modelID ? props.suggestion : undefined) || await request(modelRecommendation({ path: { id: providerID }, query: { model_id: modelID } }))
+      if (epoch !== lookupEpoch || !props.open || !form.value || form.value.model_id.trim() !== modelID || props.provider?.id !== providerID) return
+      applyRecommendation(match, modelID, previousJSON, previousRoute)
+    } catch (error) {
+      if (epoch === lookupEpoch) lookupError.value = error instanceof Error ? error.message : t('recommendationUnavailable')
+    } finally {
+      if (epoch === lookupEpoch) lookupBusy.value = false
+    }
+  })()
+}
+function jsonMatches(text: string, value: unknown) {
+  try { return jsonEqual(JSON.parse(text), value || {}) } catch { return false }
+}
+function applyRecommendation(match: Discovery, id: string, previousJSON: { defaults: string; reasoning: string; mapping: string }, previousRoute: { protocol?: string; dialect?: string }) {
+  if (!form.value) return
   form.value.model_id = id
-  if (!form.value.name || form.value.name === props.suggestion?.name) form.value.name = match.name
+  if (!nameExplicit && (!form.value.name || form.value.name === lastSuggestedName)) form.value.name = match.name
+  lastSuggestedName = match.name
   form.value.recommendations = clone(match.recommendations)
-  form.value.protocol = match.protocol; form.value.dialect = match.dialect
+  if (!routeExplicit && form.value.protocol === previousRoute.protocol && form.value.dialect === previousRoute.dialect) {
+    form.value.protocol = match.protocol; form.value.dialect = match.dialect
+  }
   form.value.catalog_source = match.source; form.value.catalog_at = new Date().toISOString()
-  if (!props.profile && match.recommendations.max_output_tokens) delete form.value.overrides.max_output_tokens
-  syncJSON()
+  form.value.recommendation_sources = clone(match.recommendation_sources || {})
+  if (defaultsJSON.value === previousJSON.defaults) defaultsJSON.value = JSON.stringify(effective.value.defaults || {}, null, 2)
+  if (reasoningJSON.value === previousJSON.reasoning) reasoningJSON.value = JSON.stringify(effective.value.reasoning || {}, null, 2)
+  if (mappingJSON.value === previousJSON.mapping) mappingJSON.value = JSON.stringify(effective.value.reasoning_mapping || {}, null, 2)
 }
 function override(key: string, value: unknown) { if (form.value) form.value.overrides[key] = value }
+function selectProtocol(value: string) {
+  if (!form.value) return
+  routeExplicit = true
+  form.value.protocol = value; form.value.dialect = undefined
+}
 function reset(key: string) { if (form.value) delete form.value.overrides[key] }
+function selectReasoningFormat(value: string) {
+  if (value) override('reasoning_format', value)
+  else reset('reasoning_format')
+  if (value !== 'custom') reset('reasoning_mapping')
+}
 function numeric(key: string, event: Event) { const value = (event.target as HTMLInputElement).value; if (value === '') reset(key); else override(key, Number(value)) }
 function capability(key: string, event: Event) { override(key, (event.target as HTMLInputElement).checked ? 'supported' : 'unsupported') }
-const reasoning = computed(() => Object.keys(object(effective.value.reasoning)).length > 0)
+const reasoning = computed(() => object(effective.value.reasoning).supported !== false && Object.keys(object(effective.value.reasoning)).length > 0)
 function toggleReasoning(event: Event) {
   const enabled = (event.target as HTMLInputElement).checked
   if (enabled && form.value?.recommendations.reasoning) reset('reasoning')
-  else override('reasoning', enabled ? { toggle: true, efforts: [] } : {})
+  else override('reasoning', enabled ? { supported: true } : { supported: false, toggle: false, disable: false, efforts: [], budget: false })
   syncJSON()
 }
 async function save() {
   await action.run(async () => {
+    await pendingLookup
     if (!form.value) return
     const copy = clone(form.value)
     copy.model_id = copy.model_id.trim(); copy.name = copy.name.trim() || copy.model_id
@@ -57,6 +121,11 @@ async function save() {
       const parsed: unknown = JSON.parse(json!)
       if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(t('modelObjectRequired'))
       if (JSON.stringify(parsed) !== JSON.stringify(object(effective.value[key!]))) copy.overrides[key!] = parsed
+    }
+    if (effective.value.reasoning_format === 'custom') {
+      const parsed: unknown = JSON.parse(mappingJSON.value)
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(t('modelObjectRequired'))
+      copy.overrides.reasoning_mapping = parsed
     }
     const saved = await request(saveModel({ body: copy }))
     emit('saved', saved); emit('update:open', false)
@@ -101,8 +170,23 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
             v-model="form.name"
             :aria-label="t('modelDisplayName')"
             :placeholder="form.model_id || t('optional')"
+            @input="nameExplicit = true"
           ></label>
         </div>
+        <p
+          v-if="lookupBusy"
+          class="muted small"
+          role="status"
+        >
+          {{ t('loadingRecommendations') }}
+        </p>
+        <p
+          v-if="lookupError"
+          class="error-box"
+          role="alert"
+        >
+          {{ lookupError }}
+        </p>
         <label class="label">{{ t('modelDescription') }}<textarea
           v-model="form.description"
           :aria-label="t('modelDescription')"
@@ -184,7 +268,16 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
                 :model-value="form.protocol || ''"
                 :label="t('protocol')"
                 :options="[{ value: '', label: t('providerDefault') }, { value: 'openai-completions', label: 'Chat Completions' }, { value: 'openai-responses', label: 'Responses' }, { value: 'anthropic-messages', label: 'Anthropic Messages' }, { value: 'google-generative-ai', label: 'Google Gemini' }]"
-                @update:model-value="form.protocol = $event; form.dialect = undefined"
+                @update:model-value="selectProtocol"
+              /></label>
+              <label
+                v-if="!provider?.preset_id"
+                class="label"
+              >{{ t('reasoningRequestFormat') }}<ReasoningFormatSelect
+                :model-value="typeof effective.reasoning_format === 'string' ? effective.reasoning_format : ''"
+                :protocol="form.protocol || provider?.protocol || 'openai-completions'"
+                :inherit-label="t('providerDefault')"
+                @update:model-value="selectReasoningFormat"
               /></label>
               <label class="label">{{ t('streaming') }}<Select
                 :model-value="effective.streaming === false ? 'false' : 'true'"
@@ -193,6 +286,16 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
                 @update:model-value="override('streaming', $event === 'true')"
               /></label>
             </div>
+            <label
+              v-if="!provider?.preset_id && effective.reasoning_format === 'custom'"
+              class="label"
+            >{{ t('reasoningParameterMapping') }}<textarea
+              v-model="mappingJSON"
+              class="mono"
+              :aria-label="t('reasoningParameterMapping')"
+              rows="7"
+              :placeholder="t('reasoningMappingExample')"
+            /><span class="muted small">{{ t('reasoningMappingHint') }}</span></label>
             <label class="label">{{ t('reasoningCapabilities') }}<textarea
               v-model="reasoningJSON"
               class="mono"
@@ -233,7 +336,7 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
         </Button><Button
           type="submit"
           variant="primary"
-          :busy="action.busy.value"
+          :busy="action.busy.value || lookupBusy"
         >
           {{ profile ? t('confirm') : t('addModel') }}
         </Button>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onDeactivated, ref, watch } from 'vue'
 import { Check, ChevronRight } from '@astral/icons'
+import Button from './Button.vue'
 import { DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuItemIndicator, DropdownMenuLabel, DropdownMenuFilter, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from 'reka-ui'
 
 const props = defineProps<{
@@ -9,14 +10,24 @@ const props = defineProps<{
   reasoningValue: string
   reasoningLabel: string
   reasoningOptions: Array<{ value: string; label: string }>
-  labels: { model: string; reasoning: string; search: string; empty: string }
+  reasoningBudget?: { min?: number; max?: number }
+  reasoningBudgetValue?: number
+  labels: { model: string; reasoning: string; search: string; empty: string; budget?: string; useBudget?: string }
   busy?: boolean
   side?: 'top' | 'bottom'
   align?: 'start' | 'end'
 }>()
-const emit = defineEmits<{ 'update:modelValue': [value: string]; 'update:reasoningValue': [value: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string]; 'update:reasoningValue': [value: string]; 'update:reasoningBudgetValue': [value: number] }>()
 const open = ref(false)
 const search = ref('')
+const budget = ref('')
+watch(() => [props.modelValue, props.reasoningBudgetValue], () => { budget.value = props.reasoningBudgetValue === undefined ? '' : String(props.reasoningBudgetValue) }, { immediate: true })
+function applyBudget() {
+  const value = Number(budget.value)
+  if (!props.busy && budget.value.trim() && Number.isSafeInteger(value) && value >= (props.reasoningBudget?.min ?? 0) && (props.reasoningBudget?.max === undefined || value <= props.reasoningBudget.max)) {
+    emit('update:reasoningBudgetValue', value)
+  }
+}
 const showSearch = computed(() => props.models.filter(model => model.value && !model.disabled).length >= 20)
 const showGroups = computed(() => new Set(props.models.map(model => model.group)).size > 1)
 const groups = computed(() => {
@@ -129,6 +140,30 @@ onDeactivated(() => { open.value = false })
                       <span class="model-choice-name">{{ option.label }}</span><DropdownMenuItemIndicator><Check /></DropdownMenuItemIndicator>
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
+                  <form
+                    v-if="reasoningBudget"
+                    class="reasoning-budget-input"
+                    @submit.prevent="applyBudget"
+                    @keydown.stop
+                  >
+                    <label>{{ labels.budget }}<input
+                      v-model="budget"
+                      type="number"
+                      :min="reasoningBudget.min ?? 0"
+                      :max="reasoningBudget.max"
+                      step="1"
+                      :aria-label="labels.budget"
+                      :disabled="busy"
+                      required
+                    ></label>
+                    <Button
+                      type="submit"
+                      size="small"
+                      :disabled="busy || !budget.trim()"
+                    >
+                      {{ labels.useBudget }}
+                    </Button>
+                  </form>
                 </DropdownMenuSubContent>
               </DropdownMenuPortal>
             </DropdownMenuSub>

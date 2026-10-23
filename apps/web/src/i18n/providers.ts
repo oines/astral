@@ -6,7 +6,7 @@ export const providersEn = {
   catalogConnectionOK: 'Connected. The provider returned {count} models.', saveBeforeTest: 'Save your changes before testing.', testConnection: 'Test connection',
   editModel: 'Edit model', modelDisplayName: 'Display name (optional)', modelDescription: 'Description (optional)', modelDescriptionHint: 'What this model is useful for',
   vision: 'Vision', providerDefault: 'Provider default', refreshModelDefaults: 'Refresh recommendations', confirm: 'Confirm',
-  modelsImported: 'Imported {count} models.', usingBuiltInCatalog: 'The live catalog is unavailable; built-in models were used.',
+  modelsImported: 'Imported {count} models.', usingBuiltInCatalog: 'The live catalog is unavailable; only explicitly selected models were imported.',
   catalogNeedsLimits: 'These models have no published context limit. Add a model and set its limit.',
   modelTestPassed: '{name}: tool calling and tool result replay passed.', deleteProvider: 'Delete provider', enableProvider: 'Enable provider',
   accountAuthorization: 'Account', accountConnected: 'Account connected.', authorizationHint: 'Sign in on the provider’s website to connect this account.',
@@ -14,7 +14,7 @@ export const providersEn = {
   reconnectAccount: 'Reconnect account', connectAccount: 'Connect account', searchModels: 'Search models…', refreshModels: 'Refresh models',
   enableModel: 'Enable {name}', testModel: 'Test {name}', editModelNamed: 'Edit {name}', deleteModelNamed: 'Delete {name}', addModelNamed: 'Add {name}',
   modelPage: '{page} / {pages} · {count} models', previousPage: 'Previous page', nextPage: 'Next page', modelNoMatch: 'No matching models.',
-  catalogPreviewHint: 'Built-in model preview. Add a model to configure it.', saveProviderToUseModels: 'Save the connection to import and use these models.',
+  catalogPreviewHint: 'Model recommendations. Add a model to configure it.', saveProviderToUseModels: 'Save the connection, then discover its models or add one manually.',
 }
 export const providersZh: typeof providersEn = {
   providerPageTitle: '模型服务商', chooseProvider: '服务商', customProvider: '自定义服务商', customEndpoint: '自定义 API 地址',
@@ -24,7 +24,7 @@ export const providersZh: typeof providersEn = {
   catalogConnectionOK: '连接成功，服务商返回了 {count} 个模型。', saveBeforeTest: '请先保存修改，再测试连接。', testConnection: '测试连接',
   editModel: '编辑模型', modelDisplayName: '显示名称（可选）', modelDescription: '模型说明（可选）', modelDescriptionHint: '简要说明模型的用途或特点',
   vision: '视觉', providerDefault: '跟随服务商', refreshModelDefaults: '刷新推荐配置', confirm: '确认',
-  modelsImported: '已导入 {count} 个模型。', usingBuiltInCatalog: '在线目录暂不可用，已使用预置模型。',
+  modelsImported: '已导入 {count} 个模型。', usingBuiltInCatalog: '连接模型列表暂不可用，仅导入了明确选择的模型。',
   catalogNeedsLimits: '这些模型未公布上下文限制，请添加模型并填写限制。',
   modelTestPassed: '{name}：工具调用与结果回传测试通过。', deleteProvider: '删除服务商', enableProvider: '启用服务商',
   accountAuthorization: '账号授权', accountConnected: '账号已连接。', authorizationHint: '在服务商网站完成登录，连接这个账号。',
@@ -32,5 +32,5 @@ export const providersZh: typeof providersEn = {
   reconnectAccount: '重新连接账号', connectAccount: '连接账号', searchModels: '搜索模型…', refreshModels: '刷新模型',
   enableModel: '启用 {name}', testModel: '测试 {name}', editModelNamed: '编辑 {name}', deleteModelNamed: '删除 {name}', addModelNamed: '添加 {name}',
   modelPage: '{page} / {pages} · 共 {count} 个模型', previousPage: '上一页', nextPage: '下一页', modelNoMatch: '没有匹配的模型。',
-  catalogPreviewHint: '预置模型预览，添加后即可修改配置。', saveProviderToUseModels: '保存连接后即可导入并使用这些模型。',
+  catalogPreviewHint: '模型推荐资料，添加后即可修改配置。', saveProviderToUseModels: '保存连接后获取可用模型，也可以手工添加模型。',
 }

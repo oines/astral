@@ -2,13 +2,12 @@ package modelbridge
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
+	models "github.com/oines/astral-models"
 	"github.com/oines/astral/internal/domain"
 )
 
@@ -18,39 +17,27 @@ type PresetRegion struct {
 	BaseURL string `json:"base_url"`
 }
 type ProviderPreset struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name"`
-	Icon           string         `json:"icon"`
-	Category       string         `json:"category"`
-	Protocol       string         `json:"protocol"`
-	Dialect        string         `json:"dialect"`
-	BaseURL        string         `json:"base_url"`
-	Auth           string         `json:"auth"`
-	KeyURL         string         `json:"key_url,omitempty"`
-	DocsURL        string         `json:"docs_url,omitempty"`
-	KeyPlaceholder string         `json:"key_placeholder,omitempty"`
-	RequiresURL    bool           `json:"requires_url,omitempty"`
-	Regions        []PresetRegion `json:"regions,omitempty"`
-	ModelCount     int            `json:"model_count"`
-	CatalogDate    string         `json:"catalog_date"`
+	ID              string                 `json:"id"`
+	Name            string                 `json:"name"`
+	Icon            string                 `json:"icon"`
+	Category        string                 `json:"category"`
+	Protocol        string                 `json:"protocol"`
+	Protocols       []string               `json:"protocols,omitempty"`
+	Dialect         string                 `json:"dialect"`
+	BaseURL         string                 `json:"base_url"`
+	Auth            string                 `json:"auth"`
+	KeyURL          string                 `json:"key_url,omitempty"`
+	DocsURL         string                 `json:"docs_url,omitempty"`
+	KeyPlaceholder  string                 `json:"key_placeholder,omitempty"`
+	RequiresURL     bool                   `json:"requires_url,omitempty"`
+	Regions         []PresetRegion         `json:"regions,omitempty"`
+	ModelCount      int                    `json:"model_count"`
+	CatalogDate     string                 `json:"catalog_date"`
+	ReasoningFormat models.ReasoningFormat `json:"reasoning_format,omitempty"`
 }
 
-// This snapshot contains model identities and published limits, never saved
-// credentials or verification results. Its sources remain attached per model.
-//
-//go:embed preset_models.json
-var presetModelJSON []byte
-
-var presetModels = func() map[string][]Discovery {
-	var data map[string][]Discovery
-	if err := json.Unmarshal(presetModelJSON, &data); err != nil {
-		panic(err)
-	}
-	return data
-}()
-
 func preset(id, name, icon, category, protocol, dialect, base, keyURL, docs string) ProviderPreset {
-	return ProviderPreset{ID: id, Name: name, Icon: icon, Category: category, Protocol: protocol, Dialect: dialect, BaseURL: base, Auth: "api_key", KeyURL: keyURL, DocsURL: docs, KeyPlaceholder: "sk-…", ModelCount: len(presetModels[id]), CatalogDate: "2026-10-21"}
+	return ProviderPreset{ID: id, Name: name, Icon: icon, Category: category, Protocol: protocol, Dialect: dialect, BaseURL: base, Auth: "api_key", KeyURL: keyURL, DocsURL: docs, KeyPlaceholder: "sk-…"}
 }
 
 func ProviderPresets() []ProviderPreset {
@@ -63,26 +50,26 @@ func ProviderPresets() []ProviderPreset {
 		preset("cerebras", "Cerebras", "cerebras", "api", chat, "compatible", "https://api.cerebras.ai/v1", "https://cloud.cerebras.ai/", "https://inference-docs.cerebras.ai/"),
 		preset("cloudflare", "Cloudflare Workers AI", "cloudflare", "api", chat, "compatible", "https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1", "https://dash.cloudflare.com/", "https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/"),
 		preset("codex", "OpenAI Codex", "openai", "subscription", responses, "openai", "https://chatgpt.com/backend-api/codex", "", "https://developers.openai.com/codex/auth"),
-		preset("deepseek", "DeepSeek", "deepseek", "api", chat, "deepseek", "https://api.deepseek.com/v1", "https://platform.deepseek.com/api_keys", "https://api-docs.deepseek.com/"),
-		preset("fireworks", "Fireworks AI", "fireworks", "api", chat, "compatible", "https://api.fireworks.ai/inference/v1", "https://fireworks.ai/account/api-keys", "https://docs.fireworks.ai/api-reference/introduction"),
+		preset("deepseek", "DeepSeek", "deepseek", "api", responses, "deepseek", "https://api.deepseek.com", "https://platform.deepseek.com/api_keys", "https://api-docs.deepseek.com/"),
+		preset("fireworks", "Fireworks AI", "fireworks", "api", responses, "compatible", "https://api.fireworks.ai/inference/v1", "https://fireworks.ai/account/api-keys", "https://docs.fireworks.ai/api-reference/introduction"),
 		preset("github-copilot", "GitHub Copilot", "githubcopilot", "subscription", chat, "compatible", "https://api.githubcopilot.com", "", "https://docs.github.com/en/copilot"),
 		preset("google", "Google", "google", "api", "google-generative-ai", "google", "https://generativelanguage.googleapis.com/v1beta", "https://aistudio.google.com/apikey", "https://ai.google.dev/gemini-api/docs"),
-		preset("groq", "Groq", "groq", "api", chat, "compatible", "https://api.groq.com/openai/v1", "https://console.groq.com/keys", "https://console.groq.com/docs/openai"),
-		preset("huggingface", "Hugging Face", "huggingface", "api", chat, "compatible", "https://router.huggingface.co/v1", "https://huggingface.co/settings/tokens", "https://huggingface.co/docs/inference-providers"),
-		preset("lmstudio", "LM Studio", "lmstudio", "local", chat, "compatible", "http://127.0.0.1:1234/v1", "", "https://lmstudio.ai/docs/developer/openai-compat"),
+		preset("groq", "Groq", "groq", "api", responses, "compatible", "https://api.groq.com/openai/v1", "https://console.groq.com/keys", "https://console.groq.com/docs/openai"),
+		preset("huggingface", "Hugging Face", "huggingface", "api", responses, "compatible", "https://router.huggingface.co/v1", "https://huggingface.co/settings/tokens", "https://huggingface.co/docs/inference-providers"),
+		preset("lmstudio", "LM Studio", "lmstudio", "local", responses, "compatible", "http://127.0.0.1:1234/v1", "", "https://lmstudio.ai/docs/developer/openai-compat"),
 		preset("minimax", "MiniMax", "minimax", "api", messages, "anthropic", "https://api.minimax.io/anthropic/v1", "https://platform.minimax.io/user-center/basic-information/interface-key", "https://platform.minimax.io/docs/api-reference/text-anthropic-api"),
 		preset("mistral", "Mistral", "mistral", "api", chat, "compatible", "https://api.mistral.ai/v1", "https://console.mistral.ai/api-keys/", "https://docs.mistral.ai/api/"),
 		preset("moonshot", "Moonshot", "moonshot", "api", chat, "compatible", "https://api.moonshot.cn/v1", "https://platform.moonshot.cn/console/api-keys", "https://platform.moonshot.cn/docs"),
 		preset("newapi", "New API", "newapi", "api", responses, "openai", "", "", "https://docs.newapi.pro/"),
-		preset("ollama", "Ollama", "ollama", "local", chat, "compatible", "http://127.0.0.1:11434/v1", "", "https://docs.ollama.com/openai"),
+		preset("ollama", "Ollama", "ollama", "local", responses, "compatible", "http://127.0.0.1:11434/v1", "", "https://docs.ollama.com/openai"),
 		preset("openai", "OpenAI", "openai", "api", responses, "openai", "https://api.openai.com/v1", "https://platform.openai.com/api-keys", "https://developers.openai.com/api/docs/guides/responses"),
 		preset("openrouter", "OpenRouter", "openrouter", "api", responses, "openai", "https://openrouter.ai/api/v1", "https://openrouter.ai/settings/keys", "https://openrouter.ai/docs"),
-		preset("perplexity", "Perplexity", "perplexity", "api", chat, "compatible", "https://api.perplexity.ai", "https://www.perplexity.ai/account/api/keys", "https://docs.perplexity.ai/"),
-		preset("qwen", "Aliyun Bailian", "bailian", "api", chat, "qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1", "https://bailian.console.aliyun.com/", "https://help.aliyun.com/zh/model-studio/"),
+		preset("perplexity", "Perplexity", "perplexity", "api", responses, "openai", "https://api.perplexity.ai/v1", "https://www.perplexity.ai/account/api/keys", "https://docs.perplexity.ai/docs/agent-api/openai-compatibility"),
+		preset("qwen", "Aliyun Bailian", "bailian", "api", responses, "qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1", "https://bailian.console.aliyun.com/", "https://help.aliyun.com/zh/model-studio/"),
 		preset("together", "Together AI", "together", "api", chat, "compatible", "https://api.together.xyz/v1", "https://api.together.ai/settings/api-keys", "https://docs.together.ai/"),
 		preset("xai", "xAI (Grok)", "grok", "api", responses, "openai", "https://api.x.ai/v1", "https://console.x.ai/", "https://docs.x.ai/"),
 		preset("zai", "Z.AI (GLM)", "zai", "api", chat, "compatible", "https://api.z.ai/api/paas/v4", "https://z.ai/manage-apikey/apikey-list", "https://docs.z.ai/"),
-		preset("zhipu", "Zhipu AI", "zhipu", "api", chat, "compatible", "https://open.bigmodel.cn/api/paas/v4", "https://bigmodel.cn/usercenter/proj-mgmt/apikeys", "https://docs.bigmodel.cn/"),
+		preset("zhipu", "Zhipu AI", "zhipu", "api", responses, "compatible", "https://open.bigmodel.cn/api/v1", "https://bigmodel.cn/usercenter/proj-mgmt/apikeys", "https://docs.bigmodel.cn/"),
 		preset("commandcode", "Command Code", "commandcode", "subscription", responses, "openai", "https://api.commandcode.ai/provider/v1", "https://commandcode.ai/studio", "https://commandcode.ai/docs/provider-api"),
 		preset("opencode", "OpenCode Console", "opencode", "api", chat, "compatible", "https://opencode.ai/inference", "https://opencode.ai/auth", "https://opencode.ai/v2/docs/console/models/"),
 		preset("opencode-go", "OpenCode Go", "opencode", "subscription", chat, "compatible", "https://opencode.ai/inference/go", "https://opencode.ai/auth", "https://opencode.ai/v2/docs/console/go/"),
@@ -90,12 +77,14 @@ func ProviderPresets() []ProviderPreset {
 		preset("mimo-token-plan", "MiMo Token Plan", "xiaomimimo", "subscription", responses, "openai", "https://token-plan-cn.xiaomimimo.com/v1", "https://platform.xiaomimimo.com/", "https://mimo.mi.com/docs/zh-CN/tokenplan/Token%20Plan/quick-access"),
 		preset("minimax-token-plan", "MiniMax Token Plan", "minimax", "subscription", messages, "anthropic", "https://api.minimax.io/anthropic/v1", "https://platform.minimax.io/subscribe/token-plan", "https://platform.minimax.io/docs/token-plan/intro"),
 		preset("zai-coding-plan", "Z.AI Coding Plan", "zai", "subscription", chat, "compatible", "https://api.z.ai/api/coding/paas/v4", "https://z.ai/manage-apikey/apikey-list", "https://zcode.z.ai/en/docs/configuration"),
-		preset("zhipu-coding-plan", "GLM Coding Plan", "zhipu", "subscription", chat, "compatible", "https://open.bigmodel.cn/api/coding/paas/v4", "https://bigmodel.cn/usercenter/proj-mgmt/apikeys", "https://zcode.z.ai/cn/docs/configuration"),
+		preset("zhipu-coding-plan", "GLM Coding Plan", "zhipu", "subscription", responses, "compatible", "https://open.bigmodel.cn/api/v1", "https://bigmodel.cn/usercenter/proj-mgmt/apikeys", "https://zcode.z.ai/cn/docs/configuration"),
 		preset("bailian-coding-plan", "Bailian Coding Plan", "bailian", "subscription", chat, "qwen", "https://coding.dashscope.aliyuncs.com/v1", "https://bailian.console.aliyun.com/", "https://www.alibabacloud.com/help/en/model-studio/coding-plan-faq"),
 		preset("kimi-code", "Kimi Code", "kimi", "subscription", responses, "openai", "https://api.kimi.com/coding/v1", "https://www.kimi.com/code/console", "https://www.kimi.com/code/docs/"),
 	}
+	items = append(items, gatewayPresets()...)
 	for i := range items {
 		p := &items[i]
+		applyPresetReasoning(p)
 		switch p.ID {
 		case "codex", "github-copilot":
 			p.Auth = "oauth"
@@ -135,20 +124,6 @@ func FindPreset(id string) *ProviderPreset {
 	}
 	return nil
 }
-func PresetModels(id string) ([]Discovery, error) {
-	if FindPreset(id) == nil {
-		return nil, domain.Missing("provider preset", id)
-	}
-	items := presetModels[id]
-	if items == nil {
-		return []Discovery{}, nil
-	}
-	// Each consumer owns mutable recommendations.
-	data, _ := json.Marshal(items)
-	var result []Discovery
-	_ = json.Unmarshal(data, &result)
-	return result, nil
-}
 
 type ImportModelsInput struct {
 	IDs     []string `json:"ids,omitempty"`
@@ -168,20 +143,36 @@ func (b *Bridge) ImportModels(ctx context.Context, providerID string, input Impo
 	if err := b.Store.Get(ctx, "providers", providerID, &provider); err != nil {
 		return result, err
 	}
-	items := []Discovery{}
-	if provider.PresetID != "" {
-		items, _ = PresetModels(provider.PresetID)
+	items, catalogErr := b.Catalog(ctx, providerID)
+	accountInventory := false
+	if preset := FindPreset(provider.PresetID); preset != nil {
+		accountInventory = preset.Auth == "oauth"
 	}
-	if input.Refresh || len(items) == 0 {
-		live, err := b.Catalog(ctx, providerID)
-		if err != nil {
-			if len(items) == 0 {
-				return result, err
-			}
-			result.CatalogError = "The live catalog is unavailable; built-in models were used."
-		} else {
-			items = live
+	if catalogErr != nil {
+		if accountInventory || len(input.IDs) == 0 {
+			return result, catalogErr
 		}
+		result.CatalogError = "The provider model list is unavailable; only explicitly selected model IDs were considered."
+	}
+	listed := map[string]bool{}
+	for _, item := range items {
+		listed[item.ID] = true
+	}
+	for _, id := range input.IDs {
+		if listed[id] {
+			continue
+		}
+		// Public metadata can describe a manually configured model, but it
+		// cannot expand an authenticated subscription's discovered inventory.
+		if accountInventory {
+			return result, domain.Invalid("model is not available in this account's model catalog: " + id)
+		}
+		item, err := b.ModelRecommendation(ctx, providerID, id)
+		if err != nil {
+			return result, err
+		}
+		items = append(items, item)
+		listed[id] = true
 	}
 	existing, err := b.Store.List(ctx, "models")
 	if err != nil {
@@ -208,15 +199,12 @@ func (b *Bridge) ImportModels(ctx context.Context, providerID string, input Impo
 		var contextWindow, output int
 		_ = json.Unmarshal(item.Recommendations["context_window"], &contextWindow)
 		_ = json.Unmarshal(item.Recommendations["max_output_tokens"], &output)
-		if contextWindow < 1 {
+		if contextWindow < 1 || output < 1 {
 			result.Skipped = append(result.Skipped, item.ID)
 			continue
 		}
 		now := time.Now().UTC()
-		p := domain.ModelProfile{ProviderID: providerID, ModelID: item.ID, Name: item.Name, Protocol: item.Protocol, Dialect: item.Dialect, Recommendations: item.Recommendations, Overrides: map[string]json.RawMessage{}, CatalogSource: item.Source, CatalogAt: &now}
-		if output < 1 {
-			p.Overrides["max_output_tokens"] = raw(min(4096, max(1, contextWindow/4)))
-		}
+		p := domain.ModelProfile{ProviderID: providerID, ModelID: item.ID, Name: item.Name, Protocol: item.Protocol, Dialect: item.Dialect, Recommendations: item.Recommendations, RecommendationSources: item.RecommendationSources, Overrides: map[string]json.RawMessage{}, CatalogSource: item.Source, CatalogAt: &now}
 		if err := b.SaveProfile(ctx, &p); err != nil {
 			return result, fmt.Errorf("import %s: %w", item.ID, err)
 		}
@@ -224,43 +212,4 @@ func (b *Bridge) ImportModels(ctx context.Context, providerID string, input Impo
 		seen[item.ID] = true
 	}
 	return result, nil
-}
-
-func mergePresetDiscovery(provider domain.Provider, item Discovery) Discovery {
-	for _, known := range presetModels[provider.PresetID] {
-		if known.ID != item.ID {
-			continue
-		}
-		r := map[string]json.RawMessage{}
-		for k, v := range known.Recommendations {
-			r[k] = v
-		}
-		for k, v := range item.Recommendations {
-			if k == "tool_calling" && string(v) == `"unknown"` {
-				continue
-			}
-			r[k] = v
-		}
-		item.Recommendations = r
-		if item.Protocol == "" {
-			item.Protocol = known.Protocol
-		}
-		if item.Dialect == "" {
-			item.Dialect = known.Dialect
-		}
-		if item.Name == item.ID {
-			item.Name = known.Name
-		}
-		break
-	}
-	if item.Protocol == "" {
-		item.Protocol = provider.Protocol
-	}
-	if item.Dialect == "" {
-		item.Dialect = provider.Dialect
-	}
-	if item.Source == "" {
-		item.Source = strings.TrimRight(provider.BaseURL, "/") + "/models"
-	}
-	return item
 }
