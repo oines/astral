@@ -119,8 +119,24 @@ jobs:
       - name: Packaged App startup and shutdown
         if: ${{ !cancelled() && steps.package.outcome == 'success' && runner.os != 'Linux' }}
         run: pnpm test:packaged-desktop
-      - name: Packaged Linux App startup and shutdown
+      - name: Install native Linux DEB
+        id: deb_install
         if: ${{ !cancelled() && steps.package.outcome == 'success' && runner.os == 'Linux' }}
+        run: |
+          desktop_deb_arch=$(dpkg --print-architecture)
+          for desktop_deb in apps/desktop/release/*.deb; do
+            if [ "$(dpkg-deb --field "$desktop_deb" Architecture)" = "$desktop_deb_arch" ]; then
+              sudo apt-get update
+              sudo apt-get install --yes "./$desktop_deb"
+              exit 0
+            fi
+          done
+          echo "::error::No DEB package matches native architecture $desktop_deb_arch."
+          exit 1
+      - name: Installed Linux DEB App startup and shutdown
+        if: ${{ !cancelled() && steps.deb_install.outcome == 'success' && runner.os == 'Linux' }}
+        env:
+          ASTRAL_PACKAGED_APP_EXECUTABLE: /opt/Astral/astral
         run: xvfb-run -a pnpm test:packaged-desktop
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() && steps.package.outcome == 'success' }}

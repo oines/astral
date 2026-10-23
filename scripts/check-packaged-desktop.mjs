@@ -17,8 +17,9 @@ const repository = fileURLToPath(new URL('../', import.meta.url))
 const release = path.join(repository, 'apps/desktop/release')
 const arch = process.arch
 const unpacked = process.platform === 'darwin' ? (arch === 'arm64' ? 'mac-arm64' : 'mac') : `${process.platform === 'win32' ? 'win' : 'linux'}${arch === 'x64' ? '' : `-${arch}`}-unpacked`
-const executable = process.platform === 'darwin' ? path.join(release, unpacked, 'Astral.app/Contents/MacOS/Astral') : path.join(release, unpacked, process.platform === 'win32' ? 'Astral.exe' : 'astral')
+const executable = process.env.ASTRAL_PACKAGED_APP_EXECUTABLE || (process.platform === 'darwin' ? path.join(release, unpacked, 'Astral.app/Contents/MacOS/Astral') : path.join(release, unpacked, process.platform === 'win32' ? 'Astral.exe' : 'astral'))
 await access(executable)
+console.log(`Packaged App executable: ${executable}`)
 const temporary = await mkdtemp(path.join(tmpdir(), 'astral 打包 App '))
 const data = path.join(temporary, 'Astral 数据')
 const runningFile = path.join(data, 'server/running.json')
