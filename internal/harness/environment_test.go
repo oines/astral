@@ -265,7 +265,7 @@ func TestEnvironmentOfflineStatusDoesNotKeepStaleDiscovery(t *testing.T) {
 func TestEnvironmentAfterCompactScansAgainAndAppendsFullSnapshot(t *testing.T) {
 	var f *fixture
 	f = newFixture(t, 1, func(_ context.Context, _ int, request map[string]any) any {
-		if strings.Contains(string(encode(request["messages"])), "Summarize this agent conversation") {
+		if _, hasTools := request["tools"]; !hasTools {
 			writeEnvironmentFile(t, filepath.Join(f.session.CWD, "AGENTS.md"), "changed during compaction")
 			return textReply("Short summary of the completed work.")
 		}
@@ -318,7 +318,7 @@ func (f *environmentApplyFault) Commit(ctx context.Context, id string, commit co
 
 func TestEnvironmentCompactionAndSnapshotCommitAtomicallyAfterRestart(t *testing.T) {
 	f := newFixture(t, 1, func(_ context.Context, _ int, request map[string]any) any {
-		if strings.Contains(string(encode(request["messages"])), "Summarize this agent conversation") {
+		if _, hasTools := request["tools"]; !hasTools {
 			return textReply("A short summary.")
 		}
 		return textReply("done")
