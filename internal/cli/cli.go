@@ -184,7 +184,7 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 }
 func computer(ctx context.Context, args []string, out, stderr io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: astral computer connect|daemon")
+		return fmt.Errorf("usage: astral computer connect|daemon|service|update")
 	}
 	switch args[0] {
 	case "connect":

@@ -25,7 +25,7 @@ import (
 
 func distributionServer(t *testing.T) (*Server, context.Context) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	t.Cleanup(cancel)
 	binaries, err := filepath.Abs("../../dist/bin")
 	if err != nil {
@@ -75,6 +75,9 @@ func installerCommand(t *testing.T, ctx context.Context, s *Server, root string,
 	}
 	command := nativeInstallerCommand(ctx, script, s.URL, enrollment.Enrollment.ID, enrollment.Token, filepath.Join(root, "daemon"), container)
 	command.Env = append(os.Environ(), "XDG_DATA_HOME="+filepath.Join(root, "installed"))
+	if runtime.GOOS == "windows" {
+		command.Env = append(command.Env, "LOCALAPPDATA="+filepath.Join(root, "installed"))
+	}
 	return command, enrollment.Enrollment.ID
 }
 

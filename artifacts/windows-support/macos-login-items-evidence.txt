@@ -21,3 +21,8 @@ state = running
 program = /var/folders/gd/rg7jch6j5bl7q5_2f0wkl3mr0000gn/T/astral 登录项 QA BYGV00/remote 电脑/service/Astral Daemon (d86a7f120a16)
 /var/folders/gd/rg7jch6j5bl7q5_2f0wkl3mr0000gn/T/astral 登录项 QA BYGV00/remote 电脑/service/Astral Daemon (d86a7f120a16)
 pid = 64574
+
+Cleanup verified:
+- launchctl reports no job for app.astral.daemon.d86a7f120a16.
+- The unique LaunchAgent plist and disposable data directory were removed.
+- The System Settings background-permission row remained visible after navigating away and back; its allowed toggle is not a live-process indicator. No global BTM reset or unrelated background-item change was performed.

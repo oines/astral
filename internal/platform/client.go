@@ -166,6 +166,16 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 	}
 	if report != nil {
 		report("Installing " + state.DisplayName + " as a current-user service (" + state.Backend + ").")
+		report("Daemon program: " + executable)
+		report("Daemon data: " + root)
+		report("Daemon log: " + state.LogPath)
+		quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
+		prefix := ""
+		if runtime.GOOS == "windows" {
+			quote = func(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
+			prefix = "& "
+		}
+		report("Service status: " + prefix + quote(executable) + " computer service status --root " + quote(root))
 	}
 	if err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: credentialsPath, EnvironmentPATH: os.Getenv("PATH")}); err != nil {
 		return fmt.Errorf("computer registered, but its current-user service could not be installed: %w", err)

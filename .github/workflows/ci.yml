@@ -35,13 +35,35 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build:distribution
-      - run: go test -tags=integration -count=1 -timeout=8m ./internal/platform
       - run: pnpm test:desktop-service
       - run: git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
       - uses: actions/upload-artifact@v4
         with:
           name: astral-server-binaries
           path: dist/bin/
+  containers:
+    name: Container environment and in-place update
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reserve space for the full Ubuntu environment
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker builder prune --force
+          df -h /
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+          # Do not restore the six-target compile cache into an image-build job.
+          cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: astral-server-binaries
+          path: dist/bin/
+      - run: go test -tags=integration -count=1 -timeout=20m ./internal/platform
   native:
     name: Native ${{ matrix.os }}
     strategy:
@@ -53,7 +75,7 @@ jobs:
           - os: ubuntu-latest
             package: package:linux
           - os: macos-14
-            package: package
+            package: package:mac-ci
     runs-on: ${{ matrix.os }}
     env:
       GOWORK: "off"
@@ -78,8 +100,23 @@ jobs:
       - run: pnpm test
       - run: pnpm build:distribution
       - run: pnpm test:desktop-service
+      - name: Native downloaded installer
+        run: go test -tags=integration -run '^TestDistributionInstallerRegistersActualDaemon$' -count=1 -timeout=3m ./internal/platform
+      - name: Prepare Linux user session for native service test
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo systemctl start user@$(id -u).service
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
       - run: pnpm test:daemon-service
       - run: pnpm --filter @astral/desktop ${{ matrix.package }}
+      - name: Packaged App startup and shutdown
+        if: runner.os != 'Linux'
+        run: pnpm test:packaged-desktop
+      - name: Packaged Linux App startup and shutdown
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm test:packaged-desktop
       - uses: actions/upload-artifact@v4
         with:
           name: astral-desktop-${{ matrix.os }}

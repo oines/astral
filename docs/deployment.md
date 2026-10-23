@@ -132,7 +132,7 @@ For sends with an uncertain result, inspect the receipt and the destination befo
 
 ## Desktop troubleshooting
 
-The default app uses the same macOS data root as the CLI. Do not run two servers against that directory simultaneously; the process lock reports the conflict. For an isolated desktop test, set `ASTRAL_DESKTOP_DATA_DIR` and optionally `ASTRAL_SERVER_LISTEN`. `ASTRAL_PUBLIC_URL`, `ASTRAL_TLS_CERT` and `ASTRAL_TLS_KEY` expose the corresponding managed-server configuration.
+Desktop stores its current data under the OS user configuration directory in `astral/schema-3/`. The CLI accepts explicit `--data` and `--computers-dir` paths when opening that same data through headless mode. Do not run two servers against one data directory simultaneously; the process lock reports the conflict. For an isolated desktop test, set `ASTRAL_DESKTOP_DATA_DIR` and optionally `ASTRAL_SERVER_LISTEN`. `ASTRAL_PUBLIC_URL`, `ASTRAL_TLS_CERT` and `ASTRAL_TLS_KEY` expose the corresponding managed-server configuration.
 
 The desktop main process owns the Go child. A normal quit waits for service shutdown; a crashed parent is detected by the server. An enrolled user-service Daemon and a container Computer have their own lifecycles.
 

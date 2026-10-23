@@ -20,6 +20,7 @@ const binary = path.join(binaries, `astral-${system}-${process.arch === 'x64' ? 
 if (system === 'linux') {
   try { await execute('systemctl', ['--user', 'show-environment'], { timeout: 5000 }) }
   catch {
+    if (process.env.CI) throw new Error('The native Linux CI job must prepare its systemd user session before testing Daemon supervision.')
     console.log('SKIP native Daemon service lifecycle: this Linux session has no systemd user manager. Run in a logged-in Linux session to validate it.')
     process.exit(0)
   }

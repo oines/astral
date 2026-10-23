@@ -16,7 +16,9 @@ $Server = $Server.TrimEnd('/')
 $cpu = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITEW6432')
 if (-not $cpu) { $cpu = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE') }
 switch ($cpu.ToUpperInvariant()) { 'AMD64' { $arch = 'amd64' }; 'ARM64' { $arch = 'arm64' }; default { throw "Unsupported CPU architecture: $cpu" } }
-$installBase = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Astral\bin'
+$localData = $env:LOCALAPPDATA
+if (-not $localData) { $localData = [Environment]::GetFolderPath('LocalApplicationData') }
+$installBase = Join-Path $localData 'Astral\bin'
 $temporary = Join-Path $installBase ([Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($temporary) | Out-Null
 try {
