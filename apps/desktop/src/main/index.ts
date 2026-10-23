@@ -87,7 +87,10 @@ function createWindow() {
   // Request cleanup promptly without blocking the user's session ending.
   if (process.platform === 'win32') window.on('query-session-end', () => { void service.stop() })
   window.once('ready-to-show', () => window?.show())
-  void window.loadURL(serverURL).catch(error => dialog.showErrorBox('Astral could not open', String(error)))
+  void window.loadURL(serverURL).catch(error => {
+    traceLifecycle(`window loadURL rejected: quitting=${quitting}, error=${String(error)}`)
+    if (!quitting) dialog.showErrorBox('Astral could not open', String(error))
+  })
 }
 async function start() {
   updateApplicationIcon()

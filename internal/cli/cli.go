@@ -214,11 +214,20 @@ func computer(ctx context.Context, args []string, out, stderr io.Writer) error {
 		root := f.String("root", "", "Daemon data directory")
 		credentials := f.String("credentials", "", "private credentials file")
 		logPath := f.String("log", "", "append Daemon diagnostics to this file")
+		parentPID := f.Int("parent-pid", 0, "stop this managed Daemon when its service launcher exits")
 		if err := f.Parse(args[1:]); err != nil {
 			return err
 		}
 		if *root == "" || *credentials == "" {
 			return fmt.Errorf("--root and --credentials are required")
+		}
+		if *parentPID != 0 {
+			managed, cancel, err := platform.ManagedContext(ctx, *parentPID, nil)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			ctx = managed
 		}
 		return platform.RunDaemonLogged(ctx, *root, *credentials, *logPath, func(message string) { fmt.Fprintln(stderr, message) })
 	case "service":

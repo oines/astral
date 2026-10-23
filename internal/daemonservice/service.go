@@ -582,6 +582,9 @@ func (m *Manager) windowsScript(spec Spec) string {
 	for _, arg := range m.args(spec) {
 		args = append(args, psQuote(arg))
 	}
+	// Task Scheduler stops the PowerShell action; the Daemon watches this
+	// actual parent so an ended or crashed launcher cannot leave it running.
+	args = append(args, psQuote("--parent-pid"), "$PID")
 	// Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
 	// Daemon startup diagnostics use stderr, so keep only native execution in
 	// Continue mode. A failed launch must retain a nonzero exit code.

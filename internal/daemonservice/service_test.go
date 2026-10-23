@@ -153,6 +153,9 @@ func TestUserServicesInstallIdempotentlyAndPreserveData(t *testing.T) {
 					!strings.HasSuffix(string(script), "2>&1\r\nexit $LASTEXITCODE\r\n") {
 					t.Fatal("native diagnostics must not terminate Windows PowerShell 5.1; retain strict setup and the native exit code")
 				}
+				if !strings.Contains(string(script), "'--parent-pid' $PID >> ") {
+					t.Fatal("Daemon must watch the actual PowerShell launcher PID when its task is stopped")
+				}
 			} else if platform == "darwin" {
 				var document any
 				if err = xml.Unmarshal(definition, &document); err != nil {
