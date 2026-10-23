@@ -147,7 +147,12 @@ app.on('before-quit', event => {
   if (quitting) return
   quitting = true
   tray?.destroy()
-  void service.stop().finally(() => { shutdownComplete = true; app.quit() })
+  void service.stop().finally(() => {
+    shutdownComplete = true
+    // Leave Electron's native before-quit dispatch before requesting Quit again.
+    // A Promise callback can reenter it and have its quitting state overwritten.
+    setTimeout(() => app.quit(), 0)
+  })
 })
 if (single) void app.whenReady().then(start).catch(async error => {
   dialog.showErrorBox('Astral could not start', `${error instanceof Error ? error.message : String(error)}\n\nIf another Astral server already uses this data directory, stop it before opening the desktop application.`)

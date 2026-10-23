@@ -2,7 +2,11 @@
   "name": "@astral/desktop",
   "productName": "Astral",
   "description": "A self-hosted workspace for agents and Computers.",
-  "author": "Astral contributors",
+  "author": {
+    "name": "Astral contributors",
+    "email": "74654777+oines@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/oines/astral",
   "version": "0.1.0",
   "private": true,
   "type": "module",
