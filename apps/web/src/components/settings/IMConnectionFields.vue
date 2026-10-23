@@ -10,7 +10,10 @@ const info = computed(() => adapterInfo(props.adapter))
 </script>
 <template>
   <template v-if="info">
-    <p class="settings-context-note">
+    <p
+      v-if="creating"
+      class="muted small"
+    >
       {{ t(info.hint) }}
     </p>
     <SettingsRow

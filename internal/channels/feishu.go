@@ -96,8 +96,9 @@ func (f *feishu) Capabilities() Capabilities {
 	// Text fragments stay safely under Feishu's 150 KB JSON request limit,
 	// including JSON's two layers of escaping and all addressing fields.
 	return Capabilities{Adapter: "feishu.bot", Platform: "feishu", Name: "飞书 Bot",
+		MessageFormats: []string{"text", "markdown"}, MessageParameters: []string{"title"},
 		ConversationKinds: []string{"private", "group"}, ReplyReferences: true, FileSending: true,
-		DownloadLimit: 30_000_000, UploadLimit: 30_000_000, TextLimit: 16000}
+		TextLimit: 16000}
 }
 
 func (f *feishu) redact(value string) string {
@@ -611,8 +612,8 @@ func (f *feishu) ResolveConversation(ctx context.Context, id, topic string) (dom
 
 func (f *feishu) Download(ctx context.Context, attachment domain.Attachment) (Download, error) {
 	messageID, fileKey, found := strings.Cut(attachment.ExternalID, "/")
-	if !found || !feishuID(messageID) || !feishuID(fileKey) || attachment.Size > f.Capabilities().DownloadLimit {
-		return Download{}, domain.Invalid("Feishu attachment is invalid or exceeds the download limit")
+	if !found || !feishuID(messageID) || !feishuID(fileKey) {
+		return Download{}, domain.Invalid("Feishu attachment is invalid")
 	}
 	token, err := f.accessToken(ctx)
 	if err != nil {
@@ -635,15 +636,11 @@ func (f *feishu) Download(ctx context.Context, attachment domain.Attachment) (Do
 		response.Body.Close()
 		return Download{}, domain.Offline(fmt.Sprintf("Feishu attachment download returned HTTP %d", response.StatusCode))
 	}
-	if response.ContentLength > f.Capabilities().DownloadLimit {
-		response.Body.Close()
-		return Download{}, domain.Invalid("Feishu attachment exceeds the download limit")
-	}
 	name := attachment.Name
 	if _, parameters, err := mime.ParseMediaType(response.Header.Get("Content-Disposition")); err == nil && parameters["filename"] != "" {
 		name = filepath.Base(strings.ReplaceAll(parameters["filename"], "\\", "/"))
 	}
-	return Download{Body: &limitedBody{ReadCloser: response.Body, left: f.Capabilities().DownloadLimit}, Size: response.ContentLength, Name: name}, nil
+	return Download{Body: response.Body, Size: response.ContentLength, Name: name}, nil
 }
 
 func (f *feishu) SplitText(text string) ([]string, error) {
@@ -675,8 +672,11 @@ func (f *feishu) Send(ctx context.Context, send Send) (Receipt, error) {
 	if !feishuID(send.Target.ExternalID) || send.Target.TopicID != "" || send.ReplyTo != "" && !feishuID(send.ReplyTo) {
 		return Receipt{}, &SendError{Message: "invalid Feishu chat or reply target"}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
+	if send.File == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+	}
 	token, err := f.accessToken(ctx)
 	if err != nil {
 		return Receipt{}, &SendError{Message: "Feishu authentication failed before any chat message was sent", Retryable: true}
@@ -692,15 +692,17 @@ func (f *feishu) Send(ctx context.Context, send Send) (Receipt, error) {
 			return Receipt{}, &SendError{Message: "Feishu reply message belongs to another chat"}
 		}
 	}
-	kind, content := "text", map[string]string{"text": send.Text}
+	kind := "text"
+	var content any = map[string]string{"text": send.Text}
 	if send.File == nil {
-		if strings.TrimSpace(send.Text) == "" || utf8.RuneCountInString(send.Text) > f.Capabilities().TextLimit {
+		if strings.TrimSpace(send.Text) == "" || send.TextFormat() == "text" && utf8.RuneCountInString(send.Text) > f.Capabilities().TextLimit {
 			return Receipt{}, &SendError{Message: "Feishu text fragment is empty or too long"}
 		}
-	} else {
-		if send.Size <= 0 || send.Size > f.Capabilities().UploadLimit {
-			return Receipt{}, &SendError{Message: "Feishu files must be nonempty and no larger than 30 MB"}
+		if send.TextFormat() == "markdown" {
+			kind = "post"
+			content = map[string]any{"zh_cn": map[string]any{"title": send.Title, "content": [][]map[string]string{{{"tag": "md", "text": send.Text}}}}}
 		}
+	} else {
 		if strings.TrimSpace(send.Text) != "" {
 			return Receipt{}, &SendError{Message: "Feishu file messages do not support captions; send text and file as separate messages"}
 		}

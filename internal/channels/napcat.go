@@ -3,7 +3,6 @@ package channels
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,17 +85,28 @@ func NewNapCat(connection domain.Connection, token string, client *http.Client) 
 
 func (n *napcat) Capabilities() Capabilities {
 	return Capabilities{Adapter: "qq.napcat", Platform: "qq", Name: "QQ NapCat", ConversationKinds: []string{"private", "group"},
-		ReplyReferences: true, DeletionEvents: true, FileSending: true, DownloadLimit: 50 << 20, UploadLimit: 20 << 20, TextLimit: 4000, CaptionLimit: 4000}
+		MessageFormats: []string{"text"}, MessageParameters: []string{},
+		ReplyReferences: true, DeletionEvents: true, FileSending: true, TextLimit: 4000, CaptionLimit: 4000}
 }
 
 func (n *napcat) setStore(store *persistence.Store) { n.store = store }
 
 func (n *napcat) call(ctx context.Context, action string, params, result any) error {
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, n.config.BaseURL+"/"+action, bytes.NewReader(encoded(params)))
+	var body io.Reader = bytes.NewReader(encoded(params))
+	if stream, ok := params.(*fileJSONBody); ok {
+		body = stream
+		defer stream.Close()
+	} else {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 45*time.Second)
+		defer cancel()
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, n.config.BaseURL+"/"+action, body)
 	if err != nil {
 		return domain.Invalid("invalid NapCat endpoint")
+	}
+	if stream, ok := params.(*fileJSONBody); ok {
+		request.ContentLength = stream.length
 	}
 	request.Header.Set("Content-Type", "application/json")
 	if n.token != "" {
@@ -107,12 +117,7 @@ func (n *napcat) call(ctx context.Context, action string, params, result any) er
 		return domain.Offline("NapCat request could not be completed")
 	}
 	defer response.Body.Close()
-	limit := int64(8 << 20)
-	if action == "get_file" || action == "get_image" || action == "get_record" {
-		// enableLocalFile2Url returns base64 for remote NapCat hosts; cap the
-		// JSON before decoding, and cap the decoded bytes separately.
-		limit = n.Capabilities().DownloadLimit*4/3 + 1<<20
-	}
+	limit := int64(8 << 20) // API metadata, never attachment bodies.
 	raw, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil || int64(len(raw)) > limit {
 		return domain.Offline("NapCat response was interrupted or exceeded the size limit")
@@ -428,9 +433,6 @@ func (n *napcat) ResolveConversation(ctx context.Context, id, topic string) (dom
 }
 
 func (n *napcat) Download(ctx context.Context, attachment domain.Attachment) (Download, error) {
-	if attachment.Size > n.Capabilities().DownloadLimit {
-		return Download{}, domain.Invalid("attachment exceeds the NapCat download limit")
-	}
 	var locator struct {
 		File string `json:"file"`
 		URL  string `json:"url"`
@@ -439,35 +441,11 @@ func (n *napcat) Download(ctx context.Context, attachment domain.Attachment) (Do
 		return Download{}, domain.Invalid("invalid NapCat attachment handle")
 	}
 	if locator.URL != "" {
-		if result, err := qqDownloadURL(ctx, n.client, locator.URL, attachment, n.Capabilities().DownloadLimit); err == nil {
+		if result, err := qqDownloadURL(ctx, n.client, locator.URL, attachment); err == nil {
 			return result, nil
 		}
 	}
-	var result struct {
-		URL    string  `json:"url"`
-		Base64 string  `json:"base64"`
-		Size   qqValue `json:"file_size"`
-	}
-	if err := n.call(ctx, "get_file", map[string]any{"file": locator.File}, &result); err != nil {
-		return Download{}, err
-	}
-	if size, _ := strconv.ParseInt(string(result.Size), 10, 64); size > n.Capabilities().DownloadLimit {
-		return Download{}, domain.Invalid("attachment exceeds the NapCat download limit")
-	}
-	if result.Base64 != "" {
-		if int64(base64.StdEncoding.DecodedLen(len(result.Base64))) > n.Capabilities().DownloadLimit+2 {
-			return Download{}, domain.Invalid("attachment exceeds the NapCat download limit")
-		}
-		data, err := base64.StdEncoding.DecodeString(result.Base64)
-		if err != nil || int64(len(data)) > n.Capabilities().DownloadLimit {
-			return Download{}, domain.Invalid("NapCat returned invalid attachment data")
-		}
-		return Download{Body: io.NopCloser(bytes.NewReader(data)), Name: attachment.Name, Size: int64(len(data))}, nil
-	}
-	if strings.HasPrefix(result.URL, "https://") || strings.HasPrefix(result.URL, "http://") {
-		return qqDownloadURL(ctx, n.client, result.URL, attachment, n.Capabilities().DownloadLimit)
-	}
-	return Download{}, domain.Invalid("NapCat returned a host-local path; enableLocalFile2Url is required to download this attachment")
+	return n.downloadFile(ctx, locator.File, attachment)
 }
 
 func (n *napcat) SplitText(text string) ([]string, error) {
@@ -475,6 +453,7 @@ func (n *napcat) SplitText(text string) ([]string, error) {
 }
 
 func (n *napcat) Send(ctx context.Context, send Send) (Receipt, error) {
+	filePlaceholderValue := filePlaceholder()
 	kind, id, err := qqTarget(send.Target.ExternalID)
 	if err != nil || !napcatID.MatchString(id) || send.Target.TopicID != "" {
 		return Receipt{}, &SendError{Message: "invalid NapCat destination"}
@@ -500,15 +479,11 @@ func (n *napcat) Send(ctx context.Context, send Send) (Receipt, error) {
 		segments = append(segments, map[string]any{"type": "text", "data": map[string]string{"text": send.Text}})
 	}
 	if send.File != nil {
-		data, err := qqReadUpload(send, n.Capabilities().UploadLimit)
-		if err != nil {
-			return Receipt{}, err
-		}
 		fileType := "file"
 		if strings.HasPrefix(send.MediaType, "image/") {
 			fileType = "image"
 		}
-		segments = append(segments, map[string]any{"type": fileType, "data": map[string]string{"file": "base64://" + base64.StdEncoding.EncodeToString(data), "name": send.FileName}})
+		segments = append(segments, map[string]any{"type": fileType, "data": map[string]string{"file": "base64://" + filePlaceholderValue, "name": send.FileName}})
 	}
 	params := map[string]any{"message": segments}
 	action := "send_private_msg"
@@ -520,7 +495,11 @@ func (n *napcat) Send(ctx context.Context, send Send) (Receipt, error) {
 	var result struct {
 		ID qqValue `json:"message_id"`
 	}
-	if err := n.call(ctx, action, params, &result); err != nil {
+	var sendBody any = params
+	if send.File != nil {
+		sendBody = streamFileJSON(params, filePlaceholderValue, send.File, send.Size)
+	}
+	if err := n.call(ctx, action, sendBody, &result); err != nil {
 		var api *napcatAPIError
 		if errors.As(err, &api) {
 			return Receipt{}, api.sendError()

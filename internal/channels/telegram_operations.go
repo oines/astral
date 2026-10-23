@@ -173,9 +173,6 @@ func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBindi
 			return TelegramResult{}, err
 		}
 		uploads[field] = Download{Body: body, Size: ref.Size, Name: ref.DisplayName}
-		if ref.Size > t.Capabilities().UploadLimit {
-			return TelegramResult{}, domain.Invalid("file exceeds the Telegram upload limit")
-		}
 		if slices.Contains(operation.Parameters, field) {
 			parameters[field] = "attach://" + field
 		}

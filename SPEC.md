@@ -267,7 +267,7 @@ QQ NapCat 与 QQ 官方是同一平台下的两种接入方式，分别实现凭
 - 将真实收到的平台事件转换为规范化事件，保留源平台与 Connection 信息。
 - 获取或验证 Conversation，将群、私聊、Topic、线程等映射到实际支持的能力。
 - 将统一的文本或文件发送意图转换为平台调用，完成格式处理、必要拆分与平台回执关联。
-- 声明并暴露实际能力，例如 Conversation 枚举、回复引用、消息编辑、事件撤回通知、文件发送和大小限制。
+- 声明并暴露实际能力，例如 Conversation 枚举、回复引用、消息格式及平台参数、消息编辑、事件撤回通知和文件发送。原始文件传输不设 Astral 大小上限，平台限制由实际响应反馈。
 
 平台能力不齐时明确表示“不支持”或“平台未提供”。统一事件格式描述可表达的事件集合，不要求所有平台都能提供每类事件；Adapter 不伪造删除通知、消息回显或送达事实。持续观察、直接激活、LLM Probe、显式发送、Session 绑定与 FileRef 来源由统一业务层处理。
 
@@ -476,6 +476,8 @@ Skills 由选中 Computer 的 Daemon 发现：全局根为其操作系统用户 
 
 讨论中的 Bash 能力由 `exec_command` 提供，不需要另注册一套重复的命令工具。基础文件和命令行为优先复用 Core 的 standardtools，Host 提供连接 Daemon 的 Backend。Core 当前标准工具没有现成的远程 Daemon 传输或产品级 Computer 注册能力，这些由 Astral 实现。
 
+Computer Backend 对 `read` 和 `edit` 读取的原文件设置 32 MiB 上限。`read.offset/limit` 在读入文件后选取文本行，不绕过此上限；更大的文件由 Agent 使用 `exec_command` 按范围读取。该限制是保留的资源边界，与文本返回的 2000 行 / 50 KiB 截断上限分别生效。
+
 跨聊天发送、文件发送、IM 查询、历史查询等平台能力由 localhost API 提供；当前绑定聊天另提供 send_message。模型通过 `exec_command` 运行 curl 或脚本即可使用，无需逐个扩张模型工具列表。
 
 ### 执行目标与切换
@@ -572,7 +574,7 @@ QQ 官方与飞书的普通群消息推送取决于平台授予的权限；未�
 
 微信 iLink 的扫码凭据、每个聊天的 context_token、媒体密钥和 CDN 下载能力按账号持久保存在 Server 的加密凭据存储中，不进入 Core、公开账号 config 或模型可见消息。发送适配器重建后继续使用该聊天的有效上下文。扫码二维码和登录状态仅向 Owner 提供；API 访问与扫码均不创建 Session。
 
-出站平台接受与最终送达分开。iLink 成功响应不包含服务端消息 ID 时，回执记录 `client:<实际 client_id>` 表示已接受的请求身份，不能冒充可引用的服务端消息 ID。结构化平台错误也可能表示提交后超时，例如 NapCat 的通用执行异常；此时保留 unknown 并要求核查，不自动重试。
+出站平台接受与最终送达分开。iLink 成功响应不包含服务端消息 ID 时，回执记录 `client:<实际 client_id>` 表示已接受的请求身份，不能冒充可引用的服务端消息 ID。结构化平台错误也可能表示提交后超时，例如 NapCat 的通用执行异常；此时保留 unknown 并在工具/API 结果中报告，不自动重试，也不要求人类通过弹窗核对。
 
 ### 模型可见格式
 
@@ -690,7 +692,9 @@ IMStore 默认无限期保留收到的消息、已接受的发送及平台实际
 
 Session 的 Idle 表示当前没有活跃 Run，不代表没有历史、静默消息或排队输入。一次激活可产生多次模型调用和工具步骤，正常结束、用户 Stop、失败分别保留真实状态。
 
-绑定聊天的 Session 保持完整 Web 功能。assistant 正文正常持久保存和展示，但不会自动发送至 IM。模型可调用 `send_message({text,reply_to?,attachments?})`，Host 自动选择账号、聊天和 Topic；附件是当前 Computer 路径或 FileRef，纯附件允许空文本。工具返回持久出站回执，以执行 ID 幂等并固定目的地和文件来源。跨聊天动作通过 Computer API 明确选择目标。
+绑定聊天的 Session 保持完整 Web 功能。assistant 正文正常持久保存和展示，但不会自动发送至 IM。模型可调用 `send_message`，Host 自动选择账号、聊天和 Topic；附件是当前 Computer 路径或 FileRef，纯附件允许空文本。工具的说明与参数按当前平台能力提供：Telegram 支持普通文本、Markdown、HTML、静默发送和图片作为文档；飞书提供 Markdown post 及标题；QQ 官方提供原生 Markdown 和模板；微信提供部分 Markdown；NapCat 仅将正文原样发送为普通文本，保留普通图片、文件和引用。未指定格式默认普通文本。跨聊天动作通过 Computer API 明确选择目标，也可查询目标聊天的 message-tool schema。
+
+工具等到平台接受或报错后返回持久出站回执，以执行 ID 幂等并固定目的地、呈现格式、分片和文件来源。失败或结果不确定通过同次 ToolResult 返回 Agent，不能以 pending 冒充发送成功。Composer 不额外显示发送失败卡片、重试按钮或人工核对弹窗。
 
 正常结束而没有显式发送即表示沉默。不补占位文本、不强制发送、不创建空 Assistant 气泡；历史、排队工作与已完成副作用均保留。
 
@@ -743,7 +747,9 @@ Agent 的 Bash / 脚本
 | 聊天解析 | `POST /v1/accounts/{id}/conversations/resolve` | 解析允许范围内聊天，不激活 Session |
 | 可见会话 | `GET /v1/conversations` | 当前 Agent 可见的 Conversation |
 | IM 查询 | `GET /v1/conversations/{id}/messages` | 先按 q 过滤，再按 after/limit 分页，保留消息与附件元数据 |
-| 历史查询 | `GET /v1/sessions/{id}/history` | 查询当前视图内的 Session 历史 |
+| Session 目录 | `GET /v1/sessions` | 当前 Agent 的全部 Session，按最近活动排序，可过滤并完整分页 |
+| 历史搜索 | `POST /v1/sessions/search` | 跨 Session 或限定 Session 的关键词命中片段，每个命中可直接展开 |
+| 历史读取 | `GET /v1/sessions/{id}/history` | 分页读取文本，或围绕搜索位置展开前后文与长文本范围 |
 | 可用 Computer | `GET /v1/computers` | 当前 Agent 的允许集合和状态 |
 | 主动发文本 | `POST /v1/im/messages` | 向指定的可用 Conversation 发送文本 |
 | 发文件 | `POST /v1/im/files` | 从来源 Computer 读取并上传文件，可带说明文字 |
@@ -761,11 +767,75 @@ Agent 的 Bash / 脚本
 
 模型不需要持有 Channel、模型或搜索 Provider 的凭据。业务接口不能因采用 curl 调用而变成 Owner 管理接口。
 
+### Session 历史召回与 CodeAct
+
+历史召回直接读取 Core 持久记录，不打开 Session 运行时、不解析模型、不采集环境、不触发执行。旧模型已移除或不可用时，仍能查找和读取已有历史。权限范围来自调用入口绑定的 Agent，覆盖它在不同 Computer 上的 Session，默认包含当前及已归档 Session。
+
+脚本负责分页、分组、排序、选择要展开的结果，以及最终打印给模型的内容。HTTP 响应大小与模型上下文大小是不同作用域；服务端不按 Session 分配命中配额、不设置模型总字符预算，也不把命中改写成摘要。
+
+| 接口 | 主要参数与返回 |
+| --- | --- |
+| `GET /v1/sessions` | `source`、`conversation_id`、`archived`、标题子串 `title`；`limit` 默认 50、最大 200；返回 `items` 与 `next_cursor`。元数据包含标题、来源、归档状态、创建时间、最近活动时间和当前 `head_id`。 |
+| `POST /v1/sessions/search` | JSON 中传 `query`，可限定 `session_ids`、来源、聊天、归档状态、`roles`、`kinds` 和原记录时间 `after`（包含）/`before`（不包含）；返回扁平 `hits` 与 `next_cursor`。`limit` 默认 50、最大 200，单位是片段。 |
+| `GET /v1/sessions/{id}/history` | 默认返回最近 20 个文本部分；`limit` 最大 200。`around=<ref>` 精确定位，并用 `before`/`after` 指定前后各多少个文本部分（默认各 2、最大各 100）。返回按时间顺序的 `items`、`older_cursor`、`newer_cursor`。 |
+
+目录按最后一条实际消息或工具结果的时间倒序；纯重命名、配置更新和环境快照不改变活动时间。没有消息的新会话以创建时间为准。目录只读取必要的末尾记录，不为列出会话建立全文索引。
+
+搜索使用字面子串匹配，默认不区分大小写。`match=all`（默认）要求所有以 Unicode 空白分隔的关键词命中同一文本部分；`any` 命中任意关键词，`phrase` 将整个查询作为连续字面文本。关键词不必在同一个返回片段内，不能把整段 Session 中分散的词当成同一条匹配。单字、两个字的中文、路径、标点和代码标识符均可查询，不暴露底层 FTS 表达式。查询最多 512 个 Unicode 字符、16 个关键词；`phrase` 不拆词。
+
+`context_chars` 指定命中附近片段的目标宽度，默认 600，范围 32–4096；关键词本身更长时保留完整关键词。相邻命中合并为片段，分散命中分别返回，同一 Session 可以占多条结果；密集命中也可继续分页。排序由 `order=newest|oldest` 指定，默认按原记录时间从新到旧，同一文本部分内按偏移顺序。分页能枚举全部匹配，不存在隐藏的每会话上限。
+
+文本投影收录用户消息、assistant 回复、已应用的 IM 观察、工具调用参数、工具结果和附件的名称/类型/引用。默认搜索排除压缩摘要；用 `kinds=["summary"]` 显式检索摘要。压缩前的原始历史仍可搜索和读取。冻结模型请求、重试过程、环境快照、内部触发提示、reasoning 与图片编码不进入文本索引。附件正文不隐式下载、OCR 或全文索引。
+
+每个命中包含可读取的 `session_id`、原写入者 `source_session_id`、`entry_id`、`part`、`kind`、`role`、工具名、原时间、`text`、`start`、`end`、`total_chars`、`match_count`、`ref` 和 `read_url`。`source_session_id` 在独立副本中仍可指向原写入者；读取使用命中的 `session_id`/`read_url`，不跳回原会话。不同独立 Rollout 的副本是各自的结果；已有共享 Rollout 的同一祖先记录只返回一次，限定 Session 时仍包含其祖先，不包含其他分支后续内容。
+
+偏移均为文本部分内从零开始的 Unicode code point，区间为 `[start,end)`。`length` 控制每个返回文本部分的字符数，默认 4000、最大 16384。围绕命中读取时，默认在引用位置附近展开；用 `offset` 指定该部分的精确位置，结合 `before=0&after=0` 可连续读取很长的工具输出。`before`/`after` 计数的是文本部分，不是消息、turn 或 Core 事件。一个消息可以含正文、工具参数、附件等多个部分。
+
+目录与搜索的首个请求冻结所选 Session 的元数据和持久 head。后续只传 `cursor` 和可选 `limit`；新增消息、重命名和归档不改变已有分页。游标有效期 24 小时，过期、索引重建后不可恢复或不属于当前 Agent 时返回 `410 cursor_expired`，由脚本发起新查询。历史前后翻页也固定初始 head。来源 `ref` 不依赖索引行号或搜索快照，在服务重启、索引重建后仍可用，但每次读取都重新校验 Session 权限及实际历史路径。
+
+Server 在数据目录的 `recall.db` 中维护可重建文本索引，Core Rollout 始终是事实来源。首次搜索会将所选 Session 的索引补齐到冻结 head，之后只补新增记录；索引、源读取失败或取消返回错误，不能把尚未索引的历史伪装成零命中。该数据库可在停止 Server 后删除并重建，不改变原始执行状态。
+
+CodeAct 可直接用标准库组合搜索与读取，以下 `base_url` 取自最新环境快照的 `local_api.base_url`：
+
+```python
+import json
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+
+def api(path, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(
+        base_url.rstrip("/") + path, data=data,
+        headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(request) as response:
+        return json.load(response)
+
+hits = []
+query = {"query": "电脑 权限", "limit": 100, "context_chars": 500}
+while True:
+    page = api("/v1/sessions/search", query)
+    hits.extend(page["hits"])
+    if not page.get("next_cursor"):
+        break
+    query = {"cursor": page["next_cursor"], "limit": 100}
+
+# 在脚本内选择和分组，按需要决定展开哪些片段。
+selected = hits[:5]
+with ThreadPoolExecutor(max_workers=4) as pool:
+    contexts = list(pool.map(
+        lambda hit: api(hit["read_url"] + "&before=1&after=1&length=2000"),
+        selected))
+for context in contexts:
+    print(json.dumps(context, ensure_ascii=False))
+```
+
+此重构将 Computer API 的 `/v1/sessions/{id}/history` 从 Core 原始事件改为上述文本部分契约，旧脚本需要改用 `items` 与新的前后游标；`trace`/`media` 不属于这个接口。Owner API `/api/v1/sessions/{id}/history` 继续返回原始 Core 记录，Rollout 导出保持原契约。
+
 ### 外部动作与回执
 
 send_message 和显式文本/文件 API 共享出站回执处理。每次发送保留意图标识、目标、内容引用、平台消息 ID 和真实终态。调用重试需要识别同一发送意图，不能用新的请求标识重复发出同一动作。
 
-HTTP 接收成功、平台接收上传、最终送达是不同事实。断线或超时不能直接解释为没有发送；回执不明时保留不确定状态并提供核查，不能盲目重发。
+HTTP 接收成功、平台接收上传、最终送达是不同事实。send_message 与 Computer 文本/文件发送接口等待平台结果，明确拒绝在当前工具/API 结果中报错；断线或超时不能直接解释为没有发送，不确定结果保留 unknown 交给 Agent 决定后续行动。Host 不自动重发，也不弹出人工核对界面。失败只停止同次发送组的后续分片，不阻塞同一聊天中后来的独立发送。
 
 `switch_computer` 仍是 Harness 控制工具。其执行边界由 Harness 管理，不通过一次普通 HTTP 请求假装完成 Core 的状态转换。
 
@@ -816,6 +886,8 @@ sequenceDiagram
 Agent 通过 send_message 或 localhost API 发送文件。Daemon 从源 Computer 读取文件，目标 Connection 对应的适配器把字节流提交给平台，并将最终回执关联到发送意图；各适配器分别处理真实上传协议。飞书和微信的文件与说明文字拆成独立消息及独立回执，避免一次回执隐藏多个副作用。模型与文件工具不承担平台协议转换。
 
 适配器需要支持流式输入。若某平台库要求可持续读取的本地文件，应在来源 Daemon/Computer 一侧满足该生命周期，不能为了 SDK 便利把文件搬到 Server。上传期间源端文件需要保持可读，完成或失败由真实平台回执判定。
+
+所有 IM 适配器的原始文件上传与下载均不设 Astral 大小上限。QQ/NapCat 的 Base64 编解码、微信的摘要与加解密均流式处理；微信按协议计算摘要后重新打开同一冻结 Computer 文件版本进行上传。平台返回的文件限制或传输失败如实传给调用方，不将整个文件读进 Server 内存，也不在 Server 磁盘暂存。
 
 assistant text 不触发 IM 发送。文本中的路径或 FileRef 不等于附件已交付；需要显式调用发送工具或 API。
 
@@ -1030,7 +1102,7 @@ Daemon 重启、网络断线和进程退出分别处理。当前 Core standardto
 
 Compaction 只改变模型的有效请求投影，保留原始 Rollout。摘要需要维持 Agent 身份、当前来源、Computer、文件引用以及控制结束状态的可解释性；必要环境信息由 Host 重新提供。
 
-Fork 保留明确的父分支与分叉位置，不把不同分支历史混为同一个顺序。为保持 Conversation 唯一入站绑定，普通 Fork 创建独立 Web Session，不复制一份同时生效的 IM Binding；需要改变绑定时必须经过显式绑定操作。
+产品中的 Fork 从选定位置（含该位置）复制出独立 Web Session 和独立 Rollout；原会话与副本后续的写入互不进入对方历史。父 Session ID 与复制位置仅记录来源，不表示两者属于共享分支树。创建与恢复路径均显式使用 Core 的 detached 模式；共享树能力留给未来 sub-agent，已有共享历史仍按实际父链读取。为保持 Conversation 唯一入站绑定，Fork 不复制一份同时生效的 IM Binding；需要改变绑定时必须经过显式绑定操作。
 
 Fork 和新 Session 不复制 AgentHome，不对工作文件提供自动快照。同一 Agent 在同一 Computer 的多个 Session 可以并发修改共享文件；产品必须展示真实路径和变更，不能宣称各自拥有隔离的工作副本。需要文件版本时由源 Computer 保存。
 
@@ -1110,7 +1182,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A36 | 需要关注的状态 | 实际授权使用 Composer Takeover；阻塞或未知效果突破折叠呈现，默认 Bash 仍直接执行 |
 | A37 | 历史与重连 | 以持久标识对账，无订阅空窗、重复事实或失败 Attempt 幽灵文字 |
 | A38 | 恢复与未知效果 | 重启可重开持久 Session；不盲目重放未知命令或发送，不把失效进程句柄绑定新进程 |
-| A39 | Compaction 与 Fork | 原始历史保留、分支清楚；普通 Fork 不复制 IM 入站绑定或工作文件 |
+| A39 | Compaction 与 Fork | 原始历史保留；Fork 在选定位置复制为独立 Session 与 Rollout，后续历史互不影响，不复制 IM 入站绑定或工作文件 |
 | A40 | 解绑与重分配 | 保留历史、不隐式迁移 Rollout；未完成出站意图不被重定向到新绑定 |
 | A41 | 配置生效与撤销 | 新派发使用有效选择与允许集合；既有进程和已开始 Attempt 状态不被配置变化虚构 |
 | A42 | 前端工程 | Web/Desktop 共用 Vue 与 Markstream 基线、SDK 和组件；OpenAPI 生成可重现，lint/typecheck/build 通过 |

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -100,7 +99,8 @@ func (q *qqbot) setStore(store *persistence.Store) { q.store = store }
 
 func (q *qqbot) Capabilities() Capabilities {
 	return Capabilities{Adapter: "qq.bot", Platform: "qq", Name: "QQ 官方 Bot", ConversationKinds: []string{"private", "group"},
-		ReplyReferences: true, FileSending: true, DownloadLimit: 50 << 20, UploadLimit: 20 << 20, TextLimit: 5000, CaptionLimit: 5000}
+		MessageFormats: []string{"text", "markdown", "markdown_template"}, MessageParameters: []string{"markdown_template"},
+		ReplyReferences: true, FileSending: true, TextLimit: 5000, CaptionLimit: 5000}
 }
 
 func (q *qqbot) accessToken(ctx context.Context) (string, error) {
@@ -126,15 +126,24 @@ func (q *qqbot) accessToken(ctx context.Context) (string, error) {
 }
 
 func (q *qqbot) request(ctx context.Context, method, endpoint, token string, body, result any) error {
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
 	var reader io.Reader
-	if body != nil {
+	if stream, ok := body.(*fileJSONBody); ok {
+		reader = stream
+		defer stream.Close()
+	} else if body != nil {
 		reader = bytes.NewReader(encoded(body))
+	}
+	if _, streaming := body.(*fileJSONBody); !streaming {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 45*time.Second)
+		defer cancel()
 	}
 	request, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
 		return domain.Invalid("invalid QQ Bot endpoint")
+	}
+	if stream, ok := body.(*fileJSONBody); ok {
+		request.ContentLength = stream.length
 	}
 	request.Header.Set("Content-Type", "application/json")
 	if token != "" {
@@ -468,7 +477,7 @@ func (q *qqbot) ResolveConversation(_ context.Context, id, topic string) (domain
 }
 
 func (q *qqbot) Download(ctx context.Context, attachment domain.Attachment) (Download, error) {
-	return qqDownloadURL(ctx, q.client, attachment.ExternalID, attachment, q.Capabilities().DownloadLimit)
+	return qqDownloadURL(ctx, q.client, attachment.ExternalID, attachment)
 }
 
 func (q *qqbot) SplitText(text string) ([]string, error) {
@@ -502,7 +511,7 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 	if err != nil || send.Target.TopicID != "" {
 		return Receipt{}, &SendError{Message: "invalid QQ Bot destination"}
 	}
-	if len([]rune(send.Text)) > q.Capabilities().TextLimit || send.File == nil && strings.TrimSpace(send.Text) == "" {
+	if send.TextFormat() == "text" && len([]rune(send.Text)) > q.Capabilities().TextLimit || send.File == nil && send.TextFormat() != "markdown_template" && strings.TrimSpace(send.Text) == "" {
 		return Receipt{}, &SendError{Message: "QQ Bot text is empty or exceeds 5000 characters"}
 	}
 	if _, err := q.accessToken(ctx); err != nil {
@@ -519,6 +528,15 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 		return Receipt{}, &SendError{Message: "QQ message sequence could not be generated", Retryable: true}
 	}
 	body := map[string]any{"content": send.Text, "msg_type": 0, "msg_seq": int(binary.BigEndian.Uint16(random[:]))%65535 + 1}
+	if send.TextFormat() == "markdown" || send.TextFormat() == "markdown_template" {
+		delete(body, "content")
+		body["msg_type"] = 2
+		if send.TextFormat() == "markdown_template" {
+			body["markdown"] = send.MarkdownTemplate
+		} else {
+			body["markdown"] = map[string]string{"content": send.Text}
+		}
+	}
 	if reply != "" {
 		body["msg_id"] = reply
 	}
@@ -527,10 +545,6 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 		route = "/v2/groups/" + id
 	}
 	if send.File != nil {
-		data, err := qqReadUpload(send, q.Capabilities().UploadLimit)
-		if err != nil {
-			return Receipt{}, err
-		}
 		fileType := 4
 		for i, prefix := range []string{"image/", "video/", "audio/"} {
 			if strings.HasPrefix(send.MediaType, prefix) {
@@ -540,7 +554,10 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 		var upload struct {
 			Info string `json:"file_info"`
 		}
-		if err := q.call(ctx, http.MethodPost, route+"/files", map[string]any{"file_type": fileType, "file_data": base64.StdEncoding.EncodeToString(data), "file_name": send.FileName, "srv_send_msg": false}, &upload); err != nil {
+		placeholder := filePlaceholder()
+		uploadBody := streamFileJSON(map[string]any{"file_type": fileType, "file_data": placeholder, "file_name": send.FileName, "srv_send_msg": false}, placeholder, send.File, send.Size)
+		defer uploadBody.Close()
+		if err := q.call(ctx, http.MethodPost, route+"/files", uploadBody, &upload); err != nil {
 			return Receipt{}, &SendError{Message: err.Error(), Retryable: true}
 		}
 		if upload.Info == "" {

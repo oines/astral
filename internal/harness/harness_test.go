@@ -272,8 +272,10 @@ func TestSessionImagesRemainSelfContainedAcrossDeletionReopenAndFork(t *testing.
 			}
 		}
 	}
-	if frozen != 3 {
-		t.Fatalf("actual request snapshots did not retain the original pixels: %d", frozen)
+	// A detached copy imports conversation history, including its pixels.
+	// Its operational trace contains only the child's own request.
+	if frozen != 1 {
+		t.Fatalf("child request did not retain the copied pixels: %d", frozen)
 	}
 }
 

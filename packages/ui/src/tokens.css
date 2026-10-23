@@ -181,6 +181,7 @@ input[type='radio'] { accent-color: var(--control-active); width: 14px; height: 
 .settings-section { display: flex; flex-direction: column; gap: 12px; }
 .settings-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .settings-section-heading h2 { font-size: 13px; font-weight: 500; color: var(--muted); }
+.settings-section-heading p { font-size: 12px; line-height: 1.6; margin-top: 6px; }
 .settings-group { position: relative; border: 1px solid var(--panel-line); border-radius: var(--radius-panel); padding: 0 var(--settings-group-padding); background: var(--bg); }
 .preference-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 68px; padding: var(--settings-row-padding) 0; }
 .preference-copy { flex: 1; min-width: 0; }
@@ -215,6 +216,11 @@ input[type='radio'] { accent-color: var(--control-active); width: 14px; height: 
 .settings-form .preference-control .field-error { font-weight: 400; }
 .settings-form .settings-group > .form-footer { padding: 12px 0 var(--settings-row-padding); }
 .settings-form .settings-group > .form-disclosure { padding: var(--settings-row-padding) 0; }
+
+@container settings (max-width: 600px) {
+  .preference-row:has(input:not([type='checkbox']):not([type='radio']), textarea, .select-trigger, .settings-text) { flex-direction: column; align-items: stretch; gap: 10px; }
+  .preference-row:has(input:not([type='checkbox']):not([type='radio']), textarea, .select-trigger, .settings-text) .preference-control { width: 100%; max-width: 100%; }
+}
 
 /* Reka keeps closing surfaces mounted until these animations finish. */
 :is(.popover, .select-content, .model-choice-menu) {

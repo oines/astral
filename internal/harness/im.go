@@ -10,6 +10,7 @@ import (
 )
 
 type MessageArgs struct {
+	domain.MessageOptions
 	Text        string   `json:"text"`
 	ReplyTo     string   `json:"reply_to,omitempty"`
 	Attachments []string `json:"attachments,omitempty"`
@@ -22,15 +23,58 @@ type MessageTarget struct {
 }
 
 type Messenger interface {
+	MessageTool(context.Context, string, string) (core.ToolDefinition, error)
 	SendMessage(context.Context, string, string, string, MessageTarget, MessageArgs) ([]domain.Outbox, error)
 }
 
 type sendMessageTool struct{ runtime *runtime }
 
 func (t sendMessageTool) Definition() core.ToolDefinition {
+	if t.runtime != nil && t.runtime.messageTool.Name != "" {
+		return t.runtime.messageTool
+	}
+	return DefaultMessageTool()
+}
+
+// DefaultMessageTool is registered while a Session has no IM binding; it is
+// omitted from model requests until a destination has been selected.
+func DefaultMessageTool() core.ToolDefinition {
 	return core.ToolDefinition{Name: "send_message", Version: "astral-1", Sequential: true,
-		Description: "Send to this Session's bound chat. The Host selects the account, chat and Topic. Text may be empty when sending attachments. Attachments are Computer paths or astral-file:// references. Returns queued receipts; assistant text alone is never sent to IM.",
+		Description: "Send to this Session's bound chat. The Host selects the account, chat and Topic. Text may be empty when sending attachments. Attachments are Computer paths or astral-file:// references. Waits for platform acceptance or a reported failure and returns durable receipts. Acceptance is not final delivery. Inspect unknown effects before retrying. Assistant text alone is never sent to IM.",
 		Parameters:  json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"},"reply_to":{"type":"string"},"attachments":{"type":"array","items":{"type":"string","minLength":1}}},"required":["text"],"additionalProperties":false}`)}
+}
+
+func (r *runtime) messageToolFor(ctx context.Context, record domain.Session) (core.ToolDefinition, error) {
+	if record.BindingID == "" || r.service.IM == nil {
+		return DefaultMessageTool(), nil
+	}
+	return r.service.IM.MessageTool(ctx, record.AgentID, record.ConversationID)
+}
+
+// Core registers immutable tool declarations. A stopped binding change opens
+// the same committed Session with its new declaration, keeping the tool backend
+// (including running Computer processes) and all history intact.
+func (r *runtime) syncMessageTool(ctx context.Context, record domain.Session) error {
+	definition, err := r.messageToolFor(ctx, record)
+	if err != nil || jsonEqual(definition, r.messageTool) {
+		return err
+	}
+	model, err := r.resolveModel(ctx, record.ModelRef)
+	if err != nil {
+		return err
+	}
+	if err = r.core.Load().Close(ctx); err != nil {
+		return err
+	}
+	previous := r.messageTool
+	r.messageTool = definition
+	next, err := core.OpenSession(ctx, r.coreConfig(model, record.Options), r.id)
+	if err != nil {
+		r.messageTool = previous
+		return err
+	}
+	r.core.Store(next)
+	return nil
 }
 
 func (t sendMessageTool) Bind(ctx context.Context, inv core.Invocation) (json.RawMessage, error) {
@@ -76,7 +120,13 @@ func (t sendMessageTool) Execute(ctx context.Context, inv core.Invocation, _ fun
 	receipts, err := r.service.IM.SendMessage(ctx, r.agentID, r.id, inv.ExecutionID, target, args)
 	if err != nil {
 		if len(receipts) > 0 {
-			return core.ToolExecution{Result: &core.ToolResult{Content: core.Text(string(encode(receipts)) + "\nSome attachments were not queued: " + err.Error()), IsError: true, Outcome: core.OutcomeFailed}}, nil
+			outcome := core.OutcomeFailed
+			for _, receipt := range receipts {
+				if receipt.Status == "unknown" || receipt.Status == "dispatching" || receipt.Status == "pending" {
+					outcome = core.OutcomeUnknown
+				}
+			}
+			return core.ToolExecution{Result: &core.ToolResult{Content: core.Text(string(encode(receipts)) + "\nMessage send did not complete: " + err.Error()), IsError: true, Outcome: outcome}}, nil
 		}
 		return core.ToolExecution{}, notExecuted("im_send_failed", err)
 	}

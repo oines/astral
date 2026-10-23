@@ -2,6 +2,7 @@
 import { inject, type ComputedRef } from 'vue'
 import { LinkNode, type LinkNodeProps } from 'markstream-vue'
 import { useSurfaceStore } from '../stores/surface'
+import { fileReferenceID } from '../lib/api'
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{ node: LinkNodeProps['node']; indexKey: LinkNodeProps['indexKey'] }>()
 const sessionID = inject<ComputedRef<string>>('markdownSession')
@@ -12,11 +13,8 @@ function open(event: MouseEvent) {
   if (href.startsWith('astral-file:')) {
     event.preventDefault()
     event.stopPropagation()
-    try {
-      const url = new URL(href)
-      const id = url.pathname.replace(/^\/+/, '')
-      if (id && sessionID?.value) surface.open({ kind: 'file', id, sessionID: sessionID.value })
-    } catch { /* Incomplete streamed links become clickable once valid. */ }
+    const id = fileReferenceID(href)
+    if (id && sessionID?.value) surface.open({ kind: 'file', id, sessionID: sessionID.value })
   } else if (!/^(https?:|mailto:|#)/i.test(href)) {
     event.preventDefault()
     event.stopPropagation()

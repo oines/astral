@@ -7,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"mime/multipart"
 	"net/http"
-	"net/textproto"
 	"net/url"
 	"path"
 	"strconv"
@@ -70,8 +68,9 @@ func NewTelegram(connection domain.Connection, token string, client *http.Client
 }
 func (t *telegram) Capabilities() Capabilities {
 	return Capabilities{Adapter: "telegram.bot", Platform: "telegram", Name: "Telegram Bot",
+		MessageFormats: []string{"text", "markdown", "html"}, MessageParameters: []string{"disable_notification", "as_document"},
 		ConversationKinds: []string{"private", "group", "topic", "channel"}, ReplyReferences: true, MessageEdits: true, FileSending: true,
-		DownloadLimit: 20 << 20, UploadLimit: 50 << 20, TextLimit: 4096, CaptionLimit: 1024}
+		TextLimit: 4096, CaptionLimit: 1024}
 }
 
 func (t *telegram) request(ctx context.Context, method string, body io.Reader, contentType string, result any) error {
@@ -183,24 +182,25 @@ type telegramFile struct {
 	Height   int    `json:"height"`
 }
 type telegramMessage struct {
-	ID              int64            `json:"message_id"`
-	ThreadID        int64            `json:"message_thread_id"`
-	Date            int64            `json:"date"`
-	EditDate        int64            `json:"edit_date"`
-	From            *telegramUser    `json:"from"`
-	SenderChat      *telegramChat    `json:"sender_chat"`
-	Chat            telegramChat     `json:"chat"`
-	Text            string           `json:"text"`
-	Caption         string           `json:"caption"`
-	Entities        []telegramEntity `json:"entities"`
-	CaptionEntities []telegramEntity `json:"caption_entities"`
-	Reply           *telegramMessage `json:"reply_to_message"`
-	Photo           []telegramFile   `json:"photo"`
-	Document        *telegramFile    `json:"document"`
-	Audio           *telegramFile    `json:"audio"`
-	Voice           *telegramFile    `json:"voice"`
-	Video           *telegramFile    `json:"video"`
-	Animation       *telegramFile    `json:"animation"`
+	ID              int64                `json:"message_id"`
+	ThreadID        int64                `json:"message_thread_id"`
+	Date            int64                `json:"date"`
+	EditDate        int64                `json:"edit_date"`
+	From            *telegramUser        `json:"from"`
+	SenderChat      *telegramChat        `json:"sender_chat"`
+	Chat            telegramChat         `json:"chat"`
+	Text            string               `json:"text"`
+	Caption         string               `json:"caption"`
+	RichMessage     *telegramRichMessage `json:"rich_message,omitempty"`
+	Entities        []telegramEntity     `json:"entities"`
+	CaptionEntities []telegramEntity     `json:"caption_entities"`
+	Reply           *telegramMessage     `json:"reply_to_message"`
+	Photo           []telegramFile       `json:"photo"`
+	Document        *telegramFile        `json:"document"`
+	Audio           *telegramFile        `json:"audio"`
+	Voice           *telegramFile        `json:"voice"`
+	Video           *telegramFile        `json:"video"`
+	Animation       *telegramFile        `json:"animation"`
 }
 type telegramUpdate struct {
 	ID                int64            `json:"update_id"`
@@ -278,6 +278,10 @@ func (t *telegram) normalize(updateID int64, message telegramMessage, edited boo
 		ExternalEventID: strconv.FormatInt(updateID, 10), Kind: "message.created", MessageID: strconv.FormatInt(message.ID, 10), Text: message.Text,
 		SentAt: time.Unix(message.Date, 0).UTC(), ReceivedAt: time.Now().UTC()}
 	entities := message.Entities
+	if message.RichMessage != nil {
+		observation.Text = telegramRichBlocks(message.RichMessage.Blocks)
+		observation.Format = "rich"
+	}
 	if observation.Text == "" {
 		observation.Text = message.Caption
 		entities = message.CaptionEntities
@@ -411,18 +415,12 @@ func (t *telegram) ResolveConversation(ctx context.Context, id, topic string) (d
 	return result, nil
 }
 func (t *telegram) Download(ctx context.Context, attachment domain.Attachment) (Download, error) {
-	if attachment.Size > t.Capabilities().DownloadLimit {
-		return Download{}, domain.Invalid("Telegram Bot API cannot download files larger than 20 MiB")
-	}
 	var file struct {
 		Path string `json:"file_path"`
 		Size int64  `json:"file_size"`
 	}
 	if err := t.call(ctx, "getFile", map[string]any{"file_id": attachment.ExternalID}, &file); err != nil {
 		return Download{}, err
-	}
-	if file.Size > t.Capabilities().DownloadLimit {
-		return Download{}, domain.Invalid("Telegram attachment exceeds the download limit")
 	}
 	if file.Path == "" || strings.HasPrefix(file.Path, "/") || path.Clean(file.Path) != file.Path || strings.HasPrefix(file.Path, "../") {
 		return Download{}, domain.Invalid("Telegram returned an unsupported file path")
@@ -443,32 +441,9 @@ func (t *telegram) Download(ctx context.Context, attachment domain.Attachment) (
 		response.Body.Close()
 		return Download{}, domain.Offline(fmt.Sprintf("Telegram attachment download returned HTTP %d", response.StatusCode))
 	}
-	if response.ContentLength > t.Capabilities().DownloadLimit {
-		response.Body.Close()
-		return Download{}, domain.Invalid("Telegram attachment exceeds the download limit")
-	}
-	return Download{Body: &limitedBody{ReadCloser: response.Body, left: t.Capabilities().DownloadLimit}, Size: file.Size, Name: attachment.Name}, nil
+	return Download{Body: response.Body, Size: file.Size, Name: attachment.Name}, nil
 }
 
-type limitedBody struct {
-	io.ReadCloser
-	left int64
-}
-
-func (b *limitedBody) Read(data []byte) (int, error) {
-	if b.left < 0 {
-		return 0, domain.Invalid("attachment exceeds the download limit")
-	}
-	if int64(len(data)) > b.left+1 {
-		data = data[:b.left+1]
-	}
-	n, err := b.ReadCloser.Read(data)
-	b.left -= int64(n)
-	if b.left < 0 {
-		return 0, domain.Invalid("attachment exceeds the download limit")
-	}
-	return n, err
-}
 func utf16Length(value string) int { return len(utf16.Encode([]rune(value))) }
 func (t *telegram) SplitText(text string) ([]string, error) {
 	if strings.TrimSpace(text) == "" {
@@ -505,6 +480,9 @@ func (t *telegram) SplitText(text string) ([]string, error) {
 }
 func (t *telegram) Send(ctx context.Context, send Send) (Receipt, error) {
 	body := map[string]any{"chat_id": send.Target.ExternalID}
+	if send.DisableNotification {
+		body["disable_notification"] = true
+	}
 	if send.ReplyTo != "" {
 		id, err := strconv.ParseInt(send.ReplyTo, 10, 64)
 		if err != nil || id < 1 {
@@ -519,19 +497,31 @@ func (t *telegram) Send(ctx context.Context, send Send) (Receipt, error) {
 		}
 		body["message_thread_id"] = number
 	}
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
+	if send.File == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+	}
 	var message telegramMessage
 	var err error
 	if send.File == nil {
-		if strings.TrimSpace(send.Text) == "" || utf16Length(send.Text) > t.Capabilities().TextLimit {
+		if strings.TrimSpace(send.Text) == "" || send.TextFormat() == "text" && utf16Length(send.Text) > t.Capabilities().TextLimit {
 			return Receipt{}, &SendError{Message: "Telegram text fragment is empty or too long"}
 		}
-		body["text"] = send.Text
-		err = t.call(ctx, "sendMessage", body, &message)
+		if send.TextFormat() == "text" {
+			body["text"] = send.Text
+			err = t.call(ctx, "sendMessage", body, &message)
+		} else {
+			body["rich_message"] = map[string]string{send.TextFormat(): send.Text}
+			err = t.call(ctx, "sendRichMessage", body, &message)
+		}
 	} else {
-		if send.Size > t.Capabilities().UploadLimit || utf16Length(send.Text) > t.Capabilities().CaptionLimit {
-			return Receipt{}, &SendError{Message: "Telegram file or caption exceeds the supported limit"}
+		if utf16Length(send.Text) > t.Capabilities().CaptionLimit {
+			return Receipt{}, &SendError{Message: "Telegram caption exceeds the supported limit"}
+		}
+		method, field := "sendDocument", "document"
+		if !send.AsDocument && (send.MediaType == "image/png" || send.MediaType == "image/jpeg" || send.MediaType == "image/webp") {
+			method, field = "sendPhoto", "photo"
 		}
 		body["caption"] = send.Text
 		reader, writer := io.Pipe()
@@ -548,11 +538,11 @@ func (t *telegram) Send(ctx context.Context, send Send) (Receipt, error) {
 				}
 			}
 			if writeErr == nil {
-				header := textproto.MIMEHeader{}
-				header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": "document", "filename": send.FileName}))
-				header.Set("Content-Type", send.MediaType)
 				var part io.Writer
-				part, writeErr = form.CreatePart(header)
+				// Telegram requires the literal filename parameter. FormatMediaType
+				// emits filename*= for Unicode names, which Telegram can mistake
+				// for a text field containing a file URL.
+				part, writeErr = form.CreateFormFile(field, send.FileName)
 				if writeErr == nil {
 					_, writeErr = io.CopyBuffer(part, send.File, make([]byte, 32<<10))
 				}
@@ -569,7 +559,7 @@ func (t *telegram) Send(ctx context.Context, send Send) (Receipt, error) {
 				_ = closer.Close()
 			}
 		})
-		err = t.request(ctx, "sendDocument", reader, form.FormDataContentType(), &message)
+		err = t.request(ctx, method, reader, form.FormDataContentType(), &message)
 		_ = reader.CloseWithError(err)
 		// An early platform response also ends the source stream. In particular
 		// a remote source must not keep a cancelled multipart producer blocked.

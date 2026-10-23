@@ -20,7 +20,19 @@ Proactive mode is a per-chat setting, off by default. For groups with it enabled
 
 The only decision is `decide({"participate":true|false})`. The first valid decision wins. Missing tools, invalid arguments or request failure cover the snapshot without waking the Agent or retrying that snapshot. A positive result supplies a neutral Host wakeup. It supplies no analysis or action instruction; the main Agent may remain silent. Mentions, replies and private messages bypass Probe. Turning proactive mode off or changing a binding invalidates outstanding results.
 
-Bound Sessions remain normal Web Sessions with full tool use and history. Their title follows the chat and the sidebar shows its platform. Web input and direct IM triggers use Steer. Assistant text remains in Web. Only `send_message({text,reply_to?,attachments?})` or an explicit API call sends to IM. The tool supplies the current bound destination automatically and returns persisted receipts. Attachments are Computer paths or `astral-file://` references; text may be empty for attachment-only sends.
+Bound Sessions remain normal Web Sessions with full tool use and history. Their title follows the chat and the sidebar shows its platform. Web input and direct IM triggers use Steer. Assistant text remains in Web. Only `send_message` or an explicit API call sends to IM. The tool supplies the current bound destination automatically. Its description and parameters reflect the selected adapter, and change with the binding without losing Session history. Attachments are Computer paths or `astral-file://` references; text may be empty for attachment-only sends.
+
+| Adapter | Body formats and extra parameters |
+| --- | --- |
+| Telegram | `text` (default), `markdown`, `html`; `disable_notification`, `as_document` |
+| QQ official Bot | `text` (default), `markdown`, `markdown_template`; `markdown_template` contains `custom_template_id` and `params` |
+| QQ NapCat | Literal text only; Markdown characters are sent unchanged. Ordinary images, files and reply references remain supported. No rich-message, JSON/XML-card or Markdown parameters. |
+| Weixin iLink | `text` (default), partial `markdown`; no outbound `reply_to` |
+| Feishu | `text` (default), `markdown`; optional Markdown post `title` |
+
+Telegram Markdown/HTML use Rich Messages rather than MarkdownV2. Feishu Markdown uses a `post` containing an `md` block. QQ Markdown and templates depend on the account's platform permissions; rejection is reported rather than silently falling back to text. Weixin Markdown simplifies unsupported CJK italics and level 5/6 headings and preserves inline image references as readable text; actual images use attachments. Formatted bodies and files have separate ordered receipts. Format, platform parameters and prepared fragments are frozen in Outbox before dispatch. Retrying an intent does not reformat its source.
+
+The tool waits for platform acceptance or failure. A failed, blocked or uncertain send returns an error in the same tool result, with persisted receipts; the Agent decides the next action. Failure stops later fragments of the same send group, but does not freeze unrelated later messages in the chat. Astral does not automatically resend uncertain effects. There is no detached receipt/retry card or human reconciliation dialog in the Composer.
 
 ## Computer API
 
@@ -31,12 +43,13 @@ Read `local_api.base_url` from the current environment snapshot and append the p
 | `GET /v1/accounts` | Owned account identities and chat scope |
 | `POST /v1/accounts/{id}/conversations/resolve` | Resolve `{external_id,topic_id?}` without creating a Session |
 | `GET /v1/conversations` | Known authorized chats |
+| `GET /v1/conversations/{id}/message-tool` | Current adapter's `send_message` description and parameter schema |
 | `GET /v1/conversations/{id}/messages?after=0&limit=100&q=` | Archive search; filtering happens before pagination; continue from `next_sequence` |
 | `GET /v1/conversations/{id}/messages/{message_id}` | Latest archived version of one platform message |
 | `GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content` | Original file bytes, streamed over the Daemon transport |
 | `POST /v1/attachments/download` | `{conversation_id,event_id,attachment_ref,path}` writes to an explicit path on the calling Computer |
-| `POST /v1/im/messages` | `{conversation_id?,text,reply_to?}` queues text |
-| `POST /v1/im/files` | `{conversation_id?,file_uri?|path?,text?,reply_to?}` queues a file |
+| `POST /v1/im/messages` | `{conversation_id?,text,reply_to?,format?,…}` sends text and waits for the platform result |
+| `POST /v1/im/files` | `{conversation_id?,file_uri?|path?,text?,reply_to?,format?,…}` sends a file and waits for the platform result |
 | `GET /v1/im/receipts/{id}` | Inspect queued, accepted, failed, blocked or unknown sends |
 | `GET /v1/accounts/{id}/operations` | Named chat operations supported by this account, parameters and official documentation |
 | `POST /v1/accounts/{id}/operations/{operation}` | Invoke a named operation within the selected account and chat scope |
@@ -46,9 +59,11 @@ Read `local_api.base_url` from the current environment snapshot and append the p
 
 All platform chat and message IDs are strings. QQ uses `private:<user ID>` and `group:<group ID>` to preserve its distinct address spaces. Topic IDs are only accepted by adapters that support them.
 
-Text and file sends require a stable `Idempotency-Key`. Reusing it with different content fails; replaying the same intent returns its existing receipt. Accepted means platform acceptance, not final delivery. Weixin may acknowledge only the sent `client_id`; a `client:` receipt identifies that accepted request, not a server-side message identity usable for quoting or editing. Files with text on Weixin or Feishu use separate ordered receipts for the text and file. Unknown outcomes require inspection before retry. A manual accepted resolution includes the platform message IDs and archives the sent fact.
+Text and file sends require a stable `Idempotency-Key`. Reusing it with different content fails; replaying the same intent reads its existing outcome rather than sending it again. Successful calls return accepted receipts; send failures return an HTTP error containing the receipt ID and actual send error. Receipt lookup remains available after cancellation or disconnection. Accepted means platform acceptance, not final delivery. Weixin may acknowledge only the sent `client_id`; a `client:` receipt identifies that accepted request, not a server-side message identity usable for quoting or editing. Files with text on Weixin or Feishu use separate ordered receipts for the text and file. An uncertain outcome stays `unknown`, with no automatic retry.
 
-IM reception does not create Computer files. Images are downloaded into memory and processed once by Core: orientation correction, proportional resizing to a longest edge of 2048, at most 2500 32px patches and at most 4.5 MiB of base64. Transparency and original/display dimensions are retained. Core history stores the actual model payload, so replay does not download or recompress it. Other attachments contain only identity, name, type, size and the original-download path.
+All adapters stream original file uploads and downloads without an Astral file-size ceiling. QQ and NapCat stream Base64 JSON; Weixin streams digest calculation and encryption from the immutable source Computer snapshot, reopening that snapshot for the encrypted upload. Server memory does not grow with the file, and files are not staged on Server disk. Platform errors, including an upstream size rejection, return to the caller. Telegram sends JPEG/PNG/WebP attachments with `sendPhoto` by default; `as_document:true` preserves an image as a document. Other files use `sendDocument`.
+
+IM reception does not create Computer files. Model image preparation reads an original image into a bounded buffer (20 MiB budget), then Core processes it once: orientation correction, proportional resizing to a longest edge of 2048, at most 2500 32px patches and at most 4.5 MiB of base64. Images exceeding the inline preparation budget are represented by attachment metadata and a preview-omitted note; they remain downloadable as original streamed attachments and do not block later incoming messages. Transparency and original/display dimensions are retained. Core history stores the actual model payload, so replay does not download or recompress it. Other attachments contain only identity, name, type, size and the original-download path.
 
 ## Named Telegram operations
 

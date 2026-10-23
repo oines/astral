@@ -27,7 +27,6 @@ import (
 // Astral owns delivery, access, sessions, and receipts; this adapter only handles
 // iLink transport, normalization, and the per-peer context needed by that API.
 const weixinProtocolVersion = "2.4.10"
-const weixinMediaLimit int64 = 50 << 20 // Astral's bounded-memory safety limit.
 
 type WeixinConfig struct {
 	BaseURL    string `json:"base_url,omitempty"`
@@ -91,7 +90,8 @@ func NewWeixin(connection domain.Connection, secret string, client *http.Client)
 
 func (w *weixinAdapter) Capabilities() Capabilities {
 	return Capabilities{Adapter: "weixin.ilink", Platform: "weixin", Name: "微信 Bot (iLink)", ConversationKinds: []string{"private"}, FileSending: true,
-		DownloadLimit: weixinMediaLimit, UploadLimit: weixinMediaLimit, TextLimit: 4000, CaptionLimit: 0}
+		MessageFormats: []string{"text", "markdown"}, MessageParameters: []string{},
+		TextLimit: 4000, CaptionLimit: 0}
 }
 
 type weixinAPIError struct{ Code int }
@@ -184,7 +184,7 @@ func (w *weixinAdapter) Validate(ctx context.Context) (Identity, error) {
 	}
 	return Identity{ID: w.credential.BotID, Name: w.credential.BotID, Diagnostics: []string{
 		"iLink supports private chats received by this account. Contact enumeration, group chats, outbound quote references, edits and delivery confirmations are not exposed by this adapter.",
-		"The account identity comes from QR authorization; iLink has no separate bot identity endpoint. Files use Astral's 50 MiB transfer limit; file captions are separate messages.",
+		"The account identity comes from QR authorization; iLink has no separate bot identity endpoint. Files are streamed; file captions are separate messages and platform file limits are reported by iLink.",
 	}}, nil
 }
 
@@ -380,8 +380,11 @@ func (w *weixinAdapter) Send(ctx context.Context, send Send) (Receipt, error) {
 	if contextToken == "" {
 		return Receipt{}, &SendError{Message: "this Weixin user must message the Bot before it can reply"}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
-	defer cancel()
+	if send.File == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 120*time.Second)
+		defer cancel()
+	}
 	var item weixinItem
 	if send.File == nil {
 		if !utf8.ValidString(send.Text) || strings.TrimSpace(send.Text) == "" || len([]rune(send.Text)) > w.Capabilities().TextLimit {

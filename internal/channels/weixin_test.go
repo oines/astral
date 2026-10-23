@@ -326,7 +326,7 @@ func TestWeixinUploadEncryptsBeforeSingleMessageSend(t *testing.T) {
 			defer server.Close()
 			w := weixinTestAdapter(t, server.URL, nil)
 			_ = w.putWire(t.Context(), "context", "peer", "context-for-peer")
-			receipt, err := w.Send(t.Context(), Send{Target: w.conversation("peer"), File: io.NopCloser(bytes.NewReader(plain)), FileName: "../../report.txt", MediaType: test.mime, Size: int64(len(plain))})
+			receipt, err := w.Send(t.Context(), Send{Target: w.conversation("peer"), File: io.NopCloser(bytes.NewReader(plain)), OpenFile: func(context.Context) (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(plain)), nil }, FileName: "../../report.txt", MediaType: test.mime, Size: int64(len(plain))})
 			if err != nil || len(receipt.MessageIDs) != 1 || receipt.MessageIDs[0] != "42" || sends.Load() != 1 || uploads.Load() != 1 {
 				t.Fatalf("media receipt = %#v, %v, sends=%d uploads=%d", receipt, err, sends.Load(), uploads.Load())
 			}

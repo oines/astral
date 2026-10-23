@@ -4,7 +4,9 @@ go 1.25.7
 
 require (
 	github.com/coder/websocket v1.8.15
+	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
 	github.com/oines/astral-core v0.0.0-20261022092116-f508cdea9069
+	github.com/yuin/goldmark v1.8.6
 	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.38.2
@@ -14,7 +16,6 @@ require (
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
-	github.com/larksuite/oapi-sdk-go/v3 v3.12.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/image v0.24.0 // indirect
 )

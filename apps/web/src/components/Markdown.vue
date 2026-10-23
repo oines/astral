@@ -3,10 +3,11 @@ import { computed, provide } from 'vue'
 import MarkdownRender, { setCustomComponents, enableKatex, enableMermaid } from 'markstream-vue'
 import { useAppStore } from '../stores/app'
 import MarkdownLink from './MarkdownLink.vue'
+import MarkdownImage from './MarkdownImage.vue'
 const props = defineProps<{ content: string; sessionID: string; streaming?: boolean }>()
 const app = useAppStore()
 provide('markdownSession', computed(() => props.sessionID))
-setCustomComponents('astral', { link: MarkdownLink })
+setCustomComponents('astral', { link: MarkdownLink, image: MarkdownImage })
 enableKatex()
 enableMermaid()
 </script>
@@ -19,6 +20,8 @@ enableMermaid()
     :is-dark="app.dark"
     :typewriter="false"
     :fade="false"
+    :defer-nodes-until-visible="false"
+    :node-virtual="false"
     :show-tooltips="false"
     :final="!streaming"
     class="markdown"

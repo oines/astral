@@ -52,6 +52,7 @@ func (c *Contract) Merge(other *Contract) {
 
 type Operation struct {
 	Method, Path, ID, Tag string
+	Description           string
 	Request, Response     reflect.Type
 	Status                int
 	Auth                  bool
@@ -59,9 +60,10 @@ type Operation struct {
 	Query                 []Parameter
 }
 type Parameter struct {
-	Name     string
-	Type     string
-	Required bool
+	Name        string
+	Type        string
+	Required    bool
+	Description string
 }
 
 var pathParameter = regexp.MustCompile(`\{([^}]+)\}`)
@@ -90,6 +92,9 @@ func (c *Contract) Describe(o Operation) {
 	delete(responses, http.StatusText(o.Status))
 	responses[statusString(o.Status)] = map[string]any{"description": http.StatusText(o.Status), "content": map[string]any{o.ContentType: map[string]any{"schema": responseSchema}}}
 	operation := map[string]any{"operationId": o.ID, "tags": []string{o.Tag}, "responses": responses}
+	if o.Description != "" {
+		operation["description"] = o.Description
+	}
 	if o.Auth {
 		operation["security"] = []any{map[string]any{"owner": []string{}}, map[string]any{"ownerCookie": []string{}}}
 	}
@@ -102,7 +107,11 @@ func (c *Contract) Describe(o Operation) {
 		if kind == "" {
 			kind = "string"
 		}
-		parameters = append(parameters, map[string]any{"name": p.Name, "in": "query", "required": p.Required, "schema": map[string]any{"type": kind}})
+		parameter := map[string]any{"name": p.Name, "in": "query", "required": p.Required, "schema": map[string]any{"type": kind}}
+		if p.Description != "" {
+			parameter["description"] = p.Description
+		}
+		parameters = append(parameters, parameter)
 	}
 	if len(parameters) > 0 {
 		operation["parameters"] = parameters
@@ -192,6 +201,9 @@ func (c *Contract) structSchema(t reflect.Type) map[string]any {
 			schema := c.schema(f.Type)
 			if enum := f.Tag.Get("enum"); enum != "" {
 				schema["enum"] = strings.Split(enum, ",")
+			}
+			if description := f.Tag.Get("description"); description != "" {
+				schema["description"] = description
 			}
 			properties[name] = schema
 			if !strings.Contains(f.Tag.Get("json"), "omitempty") {

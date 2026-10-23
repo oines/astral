@@ -125,10 +125,14 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 		if err != nil {
 			return err
 		}
-		data, readErr := io.ReadAll(download.Body)
+		data, readErr := io.ReadAll(io.LimitReader(download.Body, (20<<20)+1))
 		closeErr := download.Body.Close()
 		if err := errors.Join(readErr, closeErr); err != nil {
 			return err
+		}
+		if len(data) > 20<<20 {
+			observation.Content = append(observation.Content, core.Text("[Image preview omitted: original exceeds the 20 MiB inline image preparation budget. The attachment remains available through its download-url.]")...)
+			continue
 		}
 		processed, err := core.ProcessImage(ctx, data, core.ImageOptions{})
 		if err != nil {

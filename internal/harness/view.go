@@ -40,7 +40,7 @@ func (s *Service) InspectContext(ctx context.Context, id string) (sessions.Conte
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.core.InspectContext(context.WithValue(ctx, inspectContextKey{}, true))
+	return r.core.Load().InspectContext(context.WithValue(ctx, inspectContextKey{}, true))
 }
 
 func (s *Service) View(ctx context.Context, id string) (View, error) {
@@ -50,7 +50,7 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snapshot := r.core.Snapshot()
+	snapshot := r.core.Load().Snapshot()
 	view := View{Status: "idle", CanContinue: snapshot.CanContinue, Pending: []PendingInput{}, Approvals: snapshot.Approvals, Unresolved: snapshot.Unresolved}
 	view.EventSequence = snapshot.EventSequence
 	if err = s.Store.Get(ctx, "sessions", id, &view.Session); err != nil {
@@ -62,7 +62,7 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 		return view, err
 	}
 	if view.HeadID != "" {
-		if head, readErr := r.core.History().Get(ctx, view.HeadID); readErr == nil && head.Time.After(view.UpdatedAt) {
+		if head, readErr := r.core.Load().History().Get(ctx, view.HeadID); readErr == nil && head.Time.After(view.UpdatedAt) {
 			view.UpdatedAt = head.Time
 		}
 	}
@@ -82,7 +82,7 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	if len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started"))) {
 		view.Status = "needs_attention"
 	}
-	pending, err := r.core.PeekQueuedInputs(ctx)
+	pending, err := r.core.Load().PeekQueuedInputs(ctx)
 	if err != nil {
 		return view, err
 	}

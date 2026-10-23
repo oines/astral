@@ -289,6 +289,7 @@ type Observation struct {
 	MessageID       string       `json:"message_id"`
 	Sender          Sender       `json:"sender"`
 	Text            string       `json:"text"`
+	Format          string       `json:"format,omitempty"`
 	SentAt          time.Time    `json:"sent_at"`
 	EditedAt        *time.Time   `json:"edited_at,omitempty"`
 	ReceivedAt      time.Time    `json:"received_at"`
@@ -302,6 +303,7 @@ type Observation struct {
 
 type Outbox struct {
 	Meta
+	MessageOptions
 	IntentKey           string   `json:"intent_key"`
 	GroupID             string   `json:"group_id"`
 	AgentID             string   `json:"agent_id"`

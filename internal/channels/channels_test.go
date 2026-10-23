@@ -84,7 +84,7 @@ func newBot(t *testing.T) *botFixture {
 			}
 		case "getFile":
 			reply(map[string]any{"file_path": "photos/source.png", "file_size": len(b.png)})
-		case "sendMessage", "sendDocument":
+		case "sendMessage", "sendRichMessage", "sendPhoto", "sendDocument":
 			n := b.sends.Add(1)
 			if b.unknown.Load() {
 				conn, _, err := w.(http.Hijacker).Hijack()
@@ -94,10 +94,16 @@ func newBot(t *testing.T) *botFixture {
 				return
 			}
 			var text, target string
-			if method == "sendMessage" {
+			if method == "sendMessage" || method == "sendRichMessage" {
 				var data map[string]any
 				_ = json.NewDecoder(r.Body).Decode(&data)
 				text, _ = data["text"].(string)
+				if rich, ok := data["rich_message"].(map[string]any); ok {
+					text, _ = rich["markdown"].(string)
+					if value, ok := rich["html"].(string); ok {
+						text = value
+					}
+				}
 				target, _ = data["chat_id"].(string)
 				b.mu.Lock()
 				b.sendParameters = append(b.sendParameters, data)
@@ -128,7 +134,7 @@ func newBot(t *testing.T) *botFixture {
 						target = string(data)
 					case "caption":
 						text = string(data)
-					case "document":
+					case "document", "photo":
 						b.mu.Lock()
 						b.uploads = append(b.uploads, data)
 						b.mu.Unlock()

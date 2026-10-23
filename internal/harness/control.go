@@ -70,7 +70,10 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 	if record.Reasoning != nil {
 		options.Reasoning = *record.Reasoning
 	}
-	configuration := r.core.Configuration()
+	if err = r.syncMessageTool(ctx, record); err != nil {
+		return err
+	}
+	configuration := r.core.Load().Configuration()
 	definitions := []core.ToolDefinition{}
 	for _, tool := range r.hostTools() {
 		if tool.Definition().Name != "send_message" || record.BindingID != "" {
@@ -80,12 +83,12 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 	if configuration.SystemPrompt != systemPrompt || !jsonEqual(configuration.Tools, definitions) {
 		configuration.SystemPrompt = systemPrompt
 		configuration.Tools = definitions
-		if err = r.core.Configure(ctx, configuration); err != nil {
+		if err = r.core.Load().Configure(ctx, configuration); err != nil {
 			return err
 		}
 	}
-	if ref != r.core.Configuration().ModelID || !jsonEqual(options, r.core.Configuration().Options) {
-		if err = r.core.SelectModel(ctx, ref, options); err != nil {
+	if ref != r.core.Load().Configuration().ModelID || !jsonEqual(options, r.core.Load().Configuration().Options) {
+		if err = r.core.Load().SelectModel(ctx, ref, options); err != nil {
 			return err
 		}
 	}
@@ -104,7 +107,7 @@ func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoni
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.core.Snapshot().Maintenance {
+	if r.core.Load().Snapshot().Maintenance {
 		return core.ErrBusy
 	}
 	ref, options, err := s.Models.Selection(ctx, profileID)
@@ -129,7 +132,7 @@ func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoni
 	if err = s.Store.Save(ctx, "sessions", &record.Meta, &record); err != nil {
 		return err
 	}
-	err = r.core.SelectModel(ctx, ref, options)
+	err = r.core.Load().SelectModel(ctx, ref, options)
 	s.notify(id)
 	return err
 }
@@ -141,7 +144,7 @@ func (s *Service) SelectComputer(ctx context.Context, id, computerID, cwd string
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.core.Snapshot().Running || r.core.Snapshot().Maintenance {
+	if r.core.Load().Snapshot().Running || r.core.Load().Snapshot().Maintenance {
 		return domain.Conflict("stop the Session before changing its Computer")
 	}
 	_, err = r.selectComputer(ctx, computerID, cwd)
@@ -170,13 +173,13 @@ func (r *runtime) selectComputer(ctx context.Context, id, cwd string) (domain.Ex
 }
 
 func (r *runtime) continueLocked(ctx context.Context) error {
-	if snapshot := r.core.Snapshot(); snapshot.Running || snapshot.Maintenance {
+	if snapshot := r.core.Load().Snapshot(); snapshot.Running || snapshot.Maintenance {
 		return core.ErrBusy
 	}
 	if err := r.syncSelection(ctx); err != nil {
 		return err
 	}
-	_, err := r.core.Continue(ctx)
+	_, err := r.core.Load().Continue(ctx)
 	r.service.notify(r.id)
 	return err
 }
@@ -195,7 +198,7 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	r.core.Cancel()
+	r.core.Load().Cancel()
 	s.notify(id)
 	return nil
 }
@@ -212,7 +215,7 @@ func (s *Service) Compact(ctx context.Context, id, instructions string) error {
 	}
 	// Core exposes maintenance state and owns cancellation. The HTTP handler
 	// may wait, while the operation is tied to the service rather than its client.
-	_, err = r.core.Compact(s.ctx, instructions)
+	_, err = r.core.Load().Compact(s.ctx, instructions)
 	s.notify(id)
 	return err
 }
@@ -225,11 +228,11 @@ func (s *Service) ClearPending(ctx context.Context, id, kind string) error {
 	defer r.mu.Unlock()
 	switch kind {
 	case "steer":
-		err = r.core.ClearSteering(ctx)
+		err = r.core.Load().ClearSteering(ctx)
 	case "follow_up":
-		err = r.core.ClearFollowUps(ctx)
+		err = r.core.Load().ClearFollowUps(ctx)
 	case "all":
-		err = r.core.ClearQueuedInputs(ctx)
+		err = r.core.Load().ClearQueuedInputs(ctx)
 	default:
 		return domain.Invalid("unknown pending-input kind")
 	}
@@ -243,10 +246,10 @@ func (s *Service) Resolve(ctx context.Context, id, executionID string, execution
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.core.Snapshot().Running || r.core.Snapshot().Maintenance {
+	if r.core.Load().Snapshot().Running || r.core.Load().Snapshot().Maintenance {
 		return core.ErrBusy
 	}
-	err = r.core.ResolveTool(ctx, executionID, execution)
+	err = r.core.Load().ResolveTool(ctx, executionID, execution)
 	s.notify(id)
 	return err
 }
@@ -255,7 +258,7 @@ func (s *Service) DecideApproval(ctx context.Context, id, approvalID string, dec
 	if err != nil {
 		return err
 	}
-	err = r.core.DecideApproval(ctx, approvalID, decision)
+	err = r.core.Load().DecideApproval(ctx, approvalID, decision)
 	s.notify(id)
 	return err
 }
@@ -296,7 +299,7 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 	} else {
 		record.Title += " · fork"
 	}
-	child, err := parent.core.Fork(ctx, head, core.ForkOptions{ID: newID})
+	child, err := parent.core.Load().Fork(ctx, head, core.ForkOptions{ID: newID, Mode: core.ForkDetached})
 	if err != nil {
 		return record, err
 	}

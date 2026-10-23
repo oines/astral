@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"strings"
@@ -16,6 +17,7 @@ import (
 )
 
 type SendRequest struct {
+	domain.MessageOptions
 	IntentID         string                   `json:"intent_id"`
 	ConversationID   string                   `json:"conversation_id,omitempty"`
 	Text             string                   `json:"text,omitempty"`
@@ -29,12 +31,12 @@ type SendRequest struct {
 }
 
 func (s *Service) SendMessage(ctx context.Context, agentID, sessionID, executionID string, target harness.MessageTarget, args harness.MessageArgs) ([]domain.Outbox, error) {
-	request := SendRequest{IntentID: executionID, ConversationID: target.ConversationID, BindingID: target.BindingID, Text: args.Text, ReplyTo: args.ReplyTo, SourceBinding: target.Source}
+	request := SendRequest{MessageOptions: args.MessageOptions, IntentID: executionID, ConversationID: target.ConversationID, BindingID: target.BindingID, Text: args.Text, ReplyTo: args.ReplyTo, SourceBinding: target.Source}
 	if target.Source != nil {
 		request.SourceComputerID = target.Source.ComputerID
 	}
 	if len(args.Attachments) == 0 {
-		return s.Enqueue(ctx, agentID, sessionID, request)
+		return s.Send(ctx, agentID, sessionID, request)
 	}
 	var receipts []domain.Outbox
 	for i, attachment := range args.Attachments {
@@ -47,6 +49,7 @@ func (s *Service) SendMessage(ctx context.Context, agentID, sessionID, execution
 		}
 		if i > 0 {
 			request.Text = ""
+			request.MessageOptions = fileMessageOptions(args.MessageOptions)
 		}
 		queued, err := s.Enqueue(ctx, agentID, sessionID, request)
 		if err != nil {
@@ -54,7 +57,48 @@ func (s *Service) SendMessage(ctx context.Context, agentID, sessionID, execution
 		}
 		receipts = append(receipts, queued...)
 	}
-	return receipts, nil
+	return s.waitReceipts(ctx, receipts)
+}
+
+// Send persists the intent, then returns the platform outcome to the caller.
+// Enqueue remains available for internal scheduling and idempotent recovery.
+func (s *Service) Send(ctx context.Context, agentID, sessionID string, request SendRequest) ([]domain.Outbox, error) {
+	receipts, err := s.Enqueue(ctx, agentID, sessionID, request)
+	if err != nil {
+		return receipts, err
+	}
+	return s.waitReceipts(ctx, receipts)
+}
+
+// A rejection reaches the model or HTTP caller in the same result; no
+// automatic retry or silent conversion to another format occurs here.
+func (s *Service) waitReceipts(ctx context.Context, receipts []domain.Outbox) ([]domain.Outbox, error) {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		complete := true
+		for i := range receipts {
+			if err := s.Store.Get(ctx, "outbox", receipts[i].ID, &receipts[i]); err != nil {
+				return receipts, err
+			}
+			record := receipts[i]
+			switch record.Status {
+			case "accepted":
+			case "failed", "blocked", "unknown":
+				return receipts, domain.Invalid("send " + record.ID + " is " + record.Status + ": " + record.Error)
+			default:
+				complete = false
+			}
+		}
+		if complete {
+			return receipts, nil
+		}
+		select {
+		case <-ctx.Done():
+			return receipts, ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *Service) group(ctx context.Context, id string) ([]domain.Outbox, error) {
@@ -89,7 +133,7 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 	if request.IntentID == "" || len(request.IntentID) > 200 {
 		return nil, domain.Invalid("a stable send intent is required")
 	}
-	if strings.TrimSpace(request.Text) == "" && request.FileURI == "" && request.Path == "" {
+	if strings.TrimSpace(request.Text) == "" && request.MarkdownTemplate == nil && request.FileURI == "" && request.Path == "" {
 		return nil, domain.Invalid("text or attachment is required")
 	}
 	key := stableID("send", agentID, sessionID, request.IntentID)
@@ -128,7 +172,6 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 		}
 	}
 	var file domain.FileRef
-	var fragments []string
 	if request.FileURI != "" || request.Path != "" {
 		if !adapter.Capabilities().FileSending {
 			return nil, domain.Invalid("this adapter cannot send files")
@@ -158,24 +201,10 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 				return nil, err
 			}
 		}
-		if file.Size > adapter.Capabilities().UploadLimit {
-			return nil, domain.Invalid("file exceeds the selected adapter's upload limit")
-		}
-		fragments = []string{request.Text}
-		if adapter.Capabilities().CaptionLimit == 0 && strings.TrimSpace(request.Text) != "" {
-			// Some protocols accept exactly one media or text item per send.
-			// Keep each external side effect in its own durable receipt.
-			fragments, err = adapter.SplitText(presentText(request.Text))
-			if err != nil {
-				return nil, err
-			}
-			fragments = append(fragments, "")
-		}
-	} else {
-		fragments, err = adapter.SplitText(presentText(request.Text))
-		if err != nil {
-			return nil, err
-		}
+	}
+	fragments, err := prepareMessages(adapter, request.Text, request.MessageOptions, file.ID != "")
+	if err != nil {
+		return nil, err
 	}
 	s.gate.Lock()
 	defer s.gate.Unlock()
@@ -204,18 +233,19 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 			}
 			return nil
 		}
-		for index, text := range fragments {
+		for index, fragment := range fragments {
 			id := firstID
 			if index > 0 {
 				id = domain.ID("outbox")
 			}
 			fileID := ""
-			if index == len(fragments)-1 {
+			if fragment.File {
 				fileID = file.ID
 			}
 			record := domain.Outbox{Meta: domain.Meta{ID: id}, GroupID: key, IntentKey: fmt.Sprintf("%s:%d", key, index), RequestDigest: hash,
-				AgentID: agentID, SessionID: sessionID, BindingID: binding.ID, ConversationID: conversation.ID, ConnectionID: connection.ID, ConnectionAccountID: connection.AccountID,
-				ExternalID: conversation.ExternalID, TopicID: conversation.TopicID, AssistantEntryID: request.AssistantEntryID, Fragment: index, Text: text, ReplyTo: request.ReplyTo, FileRefID: fileID, Status: "pending"}
+				MessageOptions: fragment.MessageOptions,
+				AgentID:        agentID, SessionID: sessionID, BindingID: binding.ID, ConversationID: conversation.ID, ConnectionID: connection.ID, ConnectionAccountID: connection.AccountID,
+				ExternalID: conversation.ExternalID, TopicID: conversation.TopicID, AssistantEntryID: request.AssistantEntryID, Fragment: index, Text: fragment.Text, ReplyTo: request.ReplyTo, FileRefID: fileID, Status: "pending"}
 			if claimErr = tx.Save(ctx, "outbox", &record.Meta, &record); claimErr != nil {
 				return claimErr
 			}
@@ -251,8 +281,18 @@ func (s *Service) dispatchPending() {
 		return strings.Compare(a.ID, b.ID)
 	})
 	blocked := map[string]bool{}
+	failedGroups := map[string]bool{}
 	for _, record := range all {
 		if record.Status == "accepted" {
+			continue
+		}
+		// Terminal errors stop dependent fragments, not unrelated later sends.
+		// Unknown effects are never retried by the scheduler.
+		if record.Status == "failed" || record.Status == "blocked" || record.Status == "unknown" {
+			failedGroups[record.GroupID] = true
+			continue
+		}
+		if failedGroups[record.GroupID] {
 			continue
 		}
 		bucket := record.BindingID + ":" + record.ConversationID
@@ -339,7 +379,7 @@ func (s *Service) dispatch(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	send := Send{Target: domain.Conversation{ConnectionID: record.ConnectionID, ExternalID: record.ExternalID, TopicID: record.TopicID}, Text: record.Text, ReplyTo: record.ReplyTo}
+	send := Send{MessageOptions: record.MessageOptions, Target: domain.Conversation{ConnectionID: record.ConnectionID, ExternalID: record.ExternalID, TopicID: record.TopicID}, Text: record.Text, ReplyTo: record.ReplyTo}
 	if record.FileRefID != "" {
 		var file domain.FileRef
 		err = s.Store.Get(ctx, "files", record.FileRefID, &file)
@@ -349,6 +389,10 @@ func (s *Service) dispatch(ctx context.Context, id string) error {
 			if err == nil {
 				defer body.Close()
 				send.File, send.FileName, send.MediaType, send.Size = body, file.DisplayName, file.MediaType, file.Size
+				send.OpenFile = func(openCtx context.Context) (io.ReadCloser, error) {
+					_, _, source, openErr := s.Harness.Files.Read(openCtx, record.AgentID, record.SessionID, filestream.URL(file), 0, nil)
+					return source, openErr
+				}
 			}
 		}
 		if err != nil {
@@ -386,7 +430,7 @@ func (s *Service) finish(ctx context.Context, record *domain.Outbox, receipt Rec
 		for _, messageID := range record.PlatformMessageIDs {
 			event := domain.Observation{SchemaVersion: 1, ConnectionID: record.ConnectionID, ConversationID: record.ConversationID, Kind: "message.created", MessageID: messageID,
 				Sender: domain.Sender{ID: connection.AccountID, Name: connection.Name, Username: connection.Username}, Self: true,
-				Text: record.Text, ReplyID: record.ReplyTo, SentAt: time.Now().UTC(), ReceivedAt: time.Now().UTC()}
+				Text: archiveMessageText(*record), Format: record.Format, ReplyID: record.ReplyTo, SentAt: time.Now().UTC(), ReceivedAt: time.Now().UTC()}
 			if record.FileRefID != "" {
 				var file domain.FileRef
 				if err := tx.Get(persist, "files", record.FileRefID, &file); err != nil {

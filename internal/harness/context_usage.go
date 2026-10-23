@@ -25,7 +25,7 @@ func (r *runtime) reportedContextUsage(ctx context.Context, head string) (*Conte
 	var report *ContextUsage
 	cursor := ""
 	for {
-		page, err := r.core.History().Path(ctx, head, core.Query{Cursor: cursor, Limit: 32, MaxBytes: 128 << 20})
+		page, err := r.core.Load().History().Path(ctx, head, core.Query{Cursor: cursor, Limit: 32, MaxBytes: 128 << 20})
 		if err != nil {
 			return nil, err
 		}

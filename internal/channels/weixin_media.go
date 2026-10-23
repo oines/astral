@@ -1,7 +1,6 @@
 package channels
 
 import (
-	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/md5"
@@ -251,9 +250,6 @@ func weixinDecrypt(ciphertext, key []byte) ([]byte, error) {
 }
 
 func (w *weixinAdapter) Download(ctx context.Context, attachment domain.Attachment) (Download, error) {
-	if attachment.Size > weixinMediaLimit {
-		return Download{}, domain.Invalid("Weixin attachment exceeds Astral's 50 MiB transfer limit")
-	}
 	value, err := w.getWire(ctx, "media", attachment.ExternalID)
 	if err != nil {
 		return Download{}, err
@@ -270,8 +266,6 @@ func (w *weixinAdapter) Download(ctx context.Context, attachment domain.Attachme
 	if err != nil {
 		return Download{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return Download{}, domain.Invalid("invalid Weixin media request")
@@ -280,62 +274,53 @@ func (w *weixinAdapter) Download(ctx context.Context, attachment domain.Attachme
 	if err != nil {
 		return Download{}, domain.Offline("Weixin attachment download could not start")
 	}
-	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
+		response.Body.Close()
 		return Download{}, domain.Offline(fmt.Sprintf("Weixin attachment download returned HTTP %d", response.StatusCode))
 	}
-	if response.ContentLength > weixinMediaLimit+aes.BlockSize {
-		return Download{}, domain.Invalid("Weixin attachment exceeds Astral's transfer limit")
-	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, weixinMediaLimit+aes.BlockSize+1))
-	if err != nil {
-		return Download{}, domain.Offline("Weixin attachment download was interrupted")
-	}
-	if int64(len(data)) > weixinMediaLimit+aes.BlockSize {
-		return Download{}, domain.Invalid("Weixin attachment exceeds Astral's transfer limit")
-	}
-	if key != nil {
-		data, err = weixinDecrypt(data, key)
-		if err != nil {
-			return Download{}, err
+	body := transformStream(response.Body, func(dst io.Writer, src io.Reader) error {
+		checksum := md5.New() // The iLink media protocol uses plaintext MD5.
+		out := io.MultiWriter(dst, checksum)
+		var copyErr error
+		if key == nil {
+			_, copyErr = io.Copy(out, src)
+		} else {
+			copyErr = weixinDecryptStream(out, src, key)
 		}
-	}
-	if int64(len(data)) > weixinMediaLimit {
-		return Download{}, domain.Invalid("Weixin attachment exceeds Astral's transfer limit")
-	}
-	if stored.MD5 != "" {
-		checksum := md5.Sum(data) // The iLink media protocol uses plaintext MD5.
-		expected, decodeErr := hex.DecodeString(stored.MD5)
-		if decodeErr != nil || subtle.ConstantTimeCompare(checksum[:], expected) != 1 {
-			return Download{}, domain.Invalid("Weixin attachment checksum did not match")
+		if copyErr != nil {
+			return copyErr
 		}
+		if stored.MD5 != "" {
+			expected, decodeErr := hex.DecodeString(stored.MD5)
+			if decodeErr != nil || subtle.ConstantTimeCompare(checksum.Sum(nil), expected) != 1 {
+				return domain.Invalid("Weixin attachment checksum did not match")
+			}
+		}
+		return nil
+	})
+	size := attachment.Size
+	if key == nil {
+		size = response.ContentLength
 	}
-	return Download{Body: io.NopCloser(bytes.NewReader(data)), Size: int64(len(data)), Name: attachment.Name}, nil
+	return Download{Body: body, Size: size, Name: attachment.Name}, nil
 }
 
 func (w *weixinAdapter) upload(ctx context.Context, send Send) (weixinItem, error) {
-	if send.Size < 0 || send.Size > weixinMediaLimit {
-		return weixinItem{}, domain.Invalid("Weixin file exceeds Astral's 50 MiB transfer limit")
-	}
-	// Closing a remote Computer stream unblocks ReadAll when the request is
-	// cancelled, before its owner dispatches any chat message.
+	// iLink requires the plaintext checksum before providing an upload URL.
+	// Hash once, then reopen the same immutable Computer snapshot for encryption.
 	stopClose := context.AfterFunc(ctx, func() { _ = send.File.Close() })
 	defer stopClose()
-	plain, err := io.ReadAll(io.LimitReader(send.File, weixinMediaLimit+1))
+	checksum := md5.New()
+	size, err := io.Copy(checksum, send.File)
+	_ = send.File.Close()
 	if err != nil {
 		return weixinItem{}, domain.Offline("Weixin source file could not be read")
-	}
-	if int64(len(plain)) > weixinMediaLimit {
-		return weixinItem{}, domain.Invalid("Weixin file exceeds Astral's 50 MiB transfer limit")
 	}
 	key := make([]byte, aes.BlockSize)
 	if _, err = rand.Read(key); err != nil {
 		return weixinItem{}, domain.Offline("could not generate Weixin media key")
 	}
-	ciphertext, err := weixinEncrypt(plain, key)
-	if err != nil {
-		return weixinItem{}, err
-	}
+	encryptedSize := (size/aes.BlockSize + 1) * aes.BlockSize
 	mediaType := 3
 	if strings.HasPrefix(send.MediaType, "image/") {
 		mediaType = 1
@@ -343,13 +328,12 @@ func (w *weixinAdapter) upload(ctx context.Context, send Send) (weixinItem, erro
 		mediaType = 2
 	}
 	fileKey := domain.ID("astral_weixin_file")
-	checksum := md5.Sum(plain)
 	var upload struct {
 		URL   string `json:"upload_full_url"`
 		Query string `json:"upload_param"`
 	}
 	err = w.call(ctx, "getuploadurl", map[string]any{"filekey": fileKey, "media_type": mediaType, "to_user_id": send.Target.ExternalID,
-		"rawsize": len(plain), "rawfilemd5": hex.EncodeToString(checksum[:]), "filesize": len(ciphertext), "no_need_thumb": true, "aeskey": hex.EncodeToString(key)}, &upload)
+		"rawsize": size, "rawfilemd5": hex.EncodeToString(checksum.Sum(nil)), "filesize": encryptedSize, "no_need_thumb": true, "aeskey": hex.EncodeToString(key)}, &upload)
 	if err != nil {
 		return weixinItem{}, err
 	}
@@ -360,11 +344,18 @@ func (w *weixinAdapter) upload(ctx context.Context, send Send) (weixinItem, erro
 	if err != nil {
 		return weixinItem{}, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(ciphertext))
+	source, err := send.OpenFile(ctx)
+	if err != nil {
+		return weixinItem{}, err
+	}
+	ciphertext := transformStream(source, func(dst io.Writer, src io.Reader) error { return weixinEncryptStream(dst, src, key) })
+	defer ciphertext.Close()
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, ciphertext)
 	if err != nil {
 		return weixinItem{}, domain.Invalid("invalid Weixin CDN upload URL")
 	}
 	request.Header.Set("Content-Type", "application/octet-stream")
+	request.ContentLength = encryptedSize
 	response, err := w.client.Do(request)
 	if err != nil {
 		return weixinItem{}, domain.Offline("Weixin CDN upload could not be completed")
@@ -380,14 +371,14 @@ func (w *weixinAdapter) upload(ctx context.Context, send Send) (weixinItem, erro
 	media := &weixinMedia{Query: downloadParam, AESKey: base64.StdEncoding.EncodeToString([]byte(hex.EncodeToString(key))), EncryptType: 1}
 	switch mediaType {
 	case 1:
-		return weixinItem{Type: 2, Image: &weixinImage{Media: media, Size: int64(len(ciphertext))}}, nil
+		return weixinItem{Type: 2, Image: &weixinImage{Media: media, Size: encryptedSize}}, nil
 	case 2:
-		return weixinItem{Type: 5, Video: &weixinVideo{Media: media, Size: int64(len(ciphertext))}}, nil
+		return weixinItem{Type: 5, Video: &weixinVideo{Media: media, Size: encryptedSize}}, nil
 	default:
 		name := path.Base(strings.ReplaceAll(send.FileName, "\\", "/"))
 		if name == "" || name == "." || name == "/" {
 			name = "attachment"
 		}
-		return weixinItem{Type: 4, File: &weixinFile{Media: media, Name: name, Size: weixinID(strconv.Itoa(len(plain)))}}, nil
+		return weixinItem{Type: 4, File: &weixinFile{Media: media, Name: name, Size: weixinID(strconv.FormatInt(size, 10))}}, nil
 	}
 }

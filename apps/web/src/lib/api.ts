@@ -27,6 +27,11 @@ export function clone<T>(value: T): T { return JSON.parse(JSON.stringify(value))
 export function fileURL(id: string, sessionID: string, download = false) {
   return `/api/v1/files/${encodeURIComponent(id)}/content?session_id=${encodeURIComponent(sessionID)}&download=${download}`
 }
+export function fileReferenceID(uri: string) {
+  if (!uri.startsWith('astral-file:')) return undefined
+  try { return new URL(uri).pathname.replace(/^\/+/, '') || undefined }
+  catch { return undefined } // A streamed Markdown destination may still be incomplete.
+}
 export function imageURL(sessionID: string, entryID: string, index: number) {
   return `/api/v1/sessions/${encodeURIComponent(sessionID)}/entries/${encodeURIComponent(entryID)}/images/${index}`
 }

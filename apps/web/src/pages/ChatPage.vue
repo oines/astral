@@ -232,8 +232,7 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
         <Transcript
           :state="live.state.value"
           :session-i-d="id"
-          :loading-history="live.loadingHistory.value"
-          @older="live.older"
+          :load-older="live.older"
           @fork="fork"
         />
         <Composer
@@ -275,14 +274,19 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
       v-model:open="compact"
       :title="t('compact')"
     >
-      <p class="muted">
-        {{ t('compactHint') }}
-      </p><label class="label">{{ t('instructions') }}<textarea v-model="instructions" /></label><Button
+      <div class="label">
+        <label for="compact-instructions">{{ t('compactInstructions') }}</label>
+        <textarea
+          id="compact-instructions"
+          v-model="instructions"
+        />
+      </div>
+      <Button
         variant="primary"
         :busy="busy"
         @click="doCompact"
       >
-        {{ t('compact') }}
+        {{ t('compactAction') }}
       </Button>
     </Modal>
   </div>

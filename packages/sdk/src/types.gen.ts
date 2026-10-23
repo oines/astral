@@ -329,6 +329,8 @@ export type AstralInternalChannelsCapabilities = {
     enumerate_conversations: boolean;
     file_sending: boolean;
     message_edits: boolean;
+    message_formats: Array<string>;
+    message_parameters: Array<string>;
     name: string;
     platform: string;
     reply_references: boolean;
@@ -534,6 +536,16 @@ export type AstralInternalDomainHostInfo = {
     os: string;
 };
 
+export type AstralInternalDomainMarkdownTemplate = {
+    custom_template_id: string;
+    params: Array<AstralInternalDomainMarkdownTemplateParam>;
+};
+
+export type AstralInternalDomainMarkdownTemplateParam = {
+    key: string;
+    values: Array<string>;
+};
+
 export type AstralInternalDomainModelProfile = {
     catalog_at?: string;
     catalog_source?: string;
@@ -572,6 +584,7 @@ export type AstralInternalDomainObservation = {
     conversation_id: string;
     edited_at?: string;
     external_event_id: string;
+    format?: string;
     id: string;
     kind: string;
     message_id: string;
@@ -589,19 +602,23 @@ export type AstralInternalDomainObservation = {
 
 export type AstralInternalDomainOutbox = {
     agent_id: string;
+    as_document?: boolean;
     assistant_entry_id?: string;
     binding_id?: string;
     connection_account_id: string;
     connection_id: string;
     conversation_id: string;
     created_at: string;
+    disable_notification?: boolean;
     error?: string;
     external_id: string;
     file_ref_id?: string;
+    format?: string;
     fragment: number;
     group_id: string;
     id: string;
     intent_key: string;
+    markdown_template?: AstralInternalDomainMarkdownTemplate;
     platform_message_ids?: Array<string>;
     reply_to?: string;
     request_digest: string;
@@ -611,6 +628,7 @@ export type AstralInternalDomainOutbox = {
     session_id: string;
     status: string;
     text?: string;
+    title?: string;
     topic_id?: string;
     updated_at: string;
 };
@@ -698,6 +716,7 @@ export type AstralInternalGatewayCapabilities = {
         [key: string]: string;
     };
     files: string;
+    history: string;
     idempotency: string;
     identity: string;
 };
@@ -746,17 +765,27 @@ export type AstralInternalGatewayResolveConversation = {
 };
 
 export type AstralInternalGatewaySendFile = {
+    as_document?: boolean;
     conversation_id?: string;
+    disable_notification?: boolean;
     file_uri?: string;
+    format?: string;
+    markdown_template?: AstralInternalDomainMarkdownTemplate;
     path?: string;
     reply_to?: string;
     text?: string;
+    title?: string;
 };
 
 export type AstralInternalGatewaySendText = {
+    as_document?: boolean;
     conversation_id?: string;
+    disable_notification?: boolean;
+    format?: string;
+    markdown_template?: AstralInternalDomainMarkdownTemplate;
     reply_to?: string;
     text: string;
+    title?: string;
 };
 
 export type AstralInternalHarnessContextUsage = {
@@ -1152,6 +1181,123 @@ export type AstralInternalModelbridgeProviderPreset = {
 export type AstralInternalPersistenceStoredObservation = {
     observation: AstralInternalDomainObservation;
     sequence: number;
+};
+
+export type AstralInternalRecallExcerpt = {
+    end: number;
+    entry_id: string;
+    kind: string;
+    part: number;
+    read_url: string;
+    ref: string;
+    role: string;
+    source_session_id: string;
+    start: number;
+    text: string;
+    time: string;
+    tool_name?: string;
+    total_chars: number;
+};
+
+export type AstralInternalRecallHistoryPage = {
+    head_id: string;
+    items: Array<AstralInternalRecallExcerpt>;
+    newer_cursor?: string;
+    older_cursor?: string;
+    session_id: string;
+};
+
+export type AstralInternalRecallHit = {
+    end: number;
+    entry_id: string;
+    kind: string;
+    match_count: number;
+    part: number;
+    read_url: string;
+    ref: string;
+    role: string;
+    session_id: string;
+    session_title: string;
+    source_session_id: string;
+    start: number;
+    text: string;
+    time: string;
+    tool_name?: string;
+    total_chars: number;
+};
+
+export type AstralInternalRecallSearchPage = {
+    hits: Array<AstralInternalRecallHit>;
+    next_cursor?: string;
+};
+
+export type AstralInternalRecallSearchRequest = {
+    /**
+     * Inclusive original entry time, RFC3339.
+     */
+    after?: string;
+    archived?: boolean;
+    /**
+     * Exclusive original entry time, RFC3339.
+     */
+    before?: string;
+    case_sensitive?: boolean;
+    /**
+     * Target passage width in Unicode code points, including the match. Default 600; 32–4096. No per-Session quota or overall model-context budget is applied.
+     */
+    context_chars?: number;
+    conversation_id?: string;
+    /**
+     * Resume a fixed search snapshot with cursor and optional limit only. Cursors expire after 24 hours; source references do not.
+     */
+    cursor?: string;
+    /**
+     * message, observation, tool_call, tool_result, attachment, summary. Default excludes summary; original pre-compaction history remains searchable.
+     */
+    kinds?: Array<string>;
+    /**
+     * Passages per page, default 50; 1–200. All remaining matches can be paged through.
+     */
+    limit?: number;
+    /**
+     * Default all. all/any split on Unicode whitespace and match within one text part, not across a whole Session.
+     */
+    match?: 'all' | 'any' | 'phrase';
+    /**
+     * Default newest. Within each text part, passages are in character-offset order.
+     */
+    order?: 'newest' | 'oldest';
+    /**
+     * Plain text, not an FTS expression. Required on the first page. Words are ANDed by default; phrase treats the entire query literally.
+     */
+    query?: string;
+    /**
+     * Optional user, assistant or tool role filter.
+     */
+    roles?: Array<string>;
+    /**
+     * Omit to search all Sessions owned by the current Agent, including archived Sessions and inherited Fork history.
+     */
+    session_ids?: Array<string>;
+    source?: string;
+};
+
+export type AstralInternalRecallSession = {
+    archived: boolean;
+    channel_platform?: string;
+    conversation_id?: string;
+    created_at: string;
+    head_id?: string;
+    id: string;
+    last_activity_at: string;
+    parent_session_id?: string;
+    source: string;
+    title: string;
+};
+
+export type AstralInternalRecallSessionPage = {
+    items: Array<AstralInternalRecallSession>;
+    next_cursor?: string;
 };
 
 export type AstralInternalSearchAdapter = {
@@ -3705,6 +3851,33 @@ export type AgentConversationsResponses = {
 
 export type AgentConversationsResponse = AgentConversationsResponses[keyof AgentConversationsResponses];
 
+export type AgentMessageToolData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/message-tool';
+};
+
+export type AgentMessageToolErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessageToolError = AgentMessageToolErrors[keyof AgentMessageToolErrors];
+
+export type AgentMessageToolResponses = {
+    /**
+     * OK
+     */
+    200: AstralCoreToolDefinition;
+};
+
+export type AgentMessageToolResponse = AgentMessageToolResponses[keyof AgentMessageToolResponses];
+
 export type AgentMessagesData = {
     body?: never;
     path: {
@@ -3895,14 +4068,115 @@ export type AgentSendReceiptResponses = {
 
 export type AgentSendReceiptResponse = AgentSendReceiptResponses[keyof AgentSendReceiptResponses];
 
+export type AgentSessionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Resume a fixed catalog snapshot; cursors expire after 24 hours. Pass cursor and optional limit, or repeat the same filters.
+         */
+        cursor?: string;
+        /**
+         * Sessions per page, default 50; 1–200.
+         */
+        limit?: number;
+        /**
+         * Filter Session source, such as web or im.
+         */
+        source?: string;
+        /**
+         * Filter by the originating IM conversation.
+         */
+        conversation_id?: string;
+        /**
+         * Omit to include both archived and active Sessions.
+         */
+        archived?: boolean;
+        /**
+         * Case-insensitive literal substring of the Session title.
+         */
+        title?: string;
+    };
+    url: '/v1/sessions';
+};
+
+export type AgentSessionsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentSessionsError = AgentSessionsErrors[keyof AgentSessionsErrors];
+
+export type AgentSessionsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalRecallSessionPage;
+};
+
+export type AgentSessionsResponse = AgentSessionsResponses[keyof AgentSessionsResponses];
+
+export type AgentSearchSessionsData = {
+    body: AstralInternalRecallSearchRequest;
+    path?: never;
+    query?: never;
+    url: '/v1/sessions/search';
+};
+
+export type AgentSearchSessionsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentSearchSessionsError = AgentSearchSessionsErrors[keyof AgentSearchSessionsErrors];
+
+export type AgentSearchSessionsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalRecallSearchPage;
+};
+
+export type AgentSearchSessionsResponse = AgentSearchSessionsResponses[keyof AgentSearchSessionsResponses];
+
 export type AgentHistoryData = {
     body?: never;
     path: {
         id: string;
     };
     query?: {
+        /**
+         * Stable source ref returned by search/history. Expands its precise text location on the captured branch.
+         */
+        around?: string;
+        /**
+         * older_cursor or newer_cursor returned by history. Mutually exclusive with around.
+         */
         cursor?: string;
+        /**
+         * Text parts per history page, default 20; 1–200. Omit with around.
+         */
         limit?: number;
+        /**
+         * Text parts before around, default 2; 0–100.
+         */
+        before?: number;
+        /**
+         * Text parts after around, default 2; 0–100.
+         */
+        after?: number;
+        /**
+         * Exact zero-based Unicode character offset within around's text part. Omit to center on the reference. Use offset=end, before=0, after=0 to continue a long part.
+         */
+        offset?: number;
+        /**
+         * Characters per text part, default 4000; 1–16384. start/end/total_chars describe each returned slice; this is not a total response budget.
+         */
+        length?: number;
     };
     url: '/v1/sessions/{id}/history';
 };
@@ -3920,7 +4194,7 @@ export type AgentHistoryResponses = {
     /**
      * OK
      */
-    200: AstralInternalGatewayHistoryPage;
+    200: AstralInternalRecallHistoryPage;
 };
 
 export type AgentHistoryResponse = AgentHistoryResponses[keyof AgentHistoryResponses];

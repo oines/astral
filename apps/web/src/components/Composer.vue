@@ -10,7 +10,6 @@ import type { SessionView } from '../lib/types'
 import { errorText, fileURL, object, request } from '../lib/api'
 import { prepareInputAttempt, sameInputContent } from '../lib/input-attempt'
 import { useAppStore } from '../stores/app'
-import OutboxReceipts from './OutboxReceipts.vue'
 const props = defineProps<{ view: SessionView; live: boolean }>()
 const emit = defineEmits<{ compact: []; started: [id: string] }>()
 const app = useAppStore()
@@ -250,10 +249,6 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
 </script>
 <template>
   <div class="composer-area">
-    <OutboxReceipts
-      v-if="view.id"
-      :session-i-d="view.id"
-    />
     <div
       v-if="view.approvals?.length"
       class="takeover stack"

@@ -40,7 +40,7 @@ func (s *Service) UpdatePending(ctx context.Context, id, inputID string, edit Pe
 	defer r.mu.Unlock()
 	var message *core.Message
 	if edit.Text != nil {
-		receipt, err := r.core.LookupInput(ctx, inputID)
+		receipt, err := r.core.Load().LookupInput(ctx, inputID)
 		if err != nil {
 			return err
 		}
@@ -61,7 +61,7 @@ func (s *Service) UpdatePending(ctx context.Context, id, inputID string, edit Pe
 		updated.Content = append(updated.Content[:1], receipt.Message.Content[1:]...)
 		message = &updated
 	}
-	if err = r.core.UpdateQueuedInput(ctx, inputID, core.InputKind(edit.Mode), message); err != nil {
+	if err = r.core.Load().UpdateQueuedInput(ctx, inputID, core.InputKind(edit.Mode), message); err != nil {
 		return err
 	}
 	if edit.Mode == "steer" {
@@ -81,7 +81,7 @@ func (s *Service) RemovePending(ctx context.Context, id, inputID string) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err = r.core.ClearQueuedInput(ctx, inputID); err != nil {
+	if err = r.core.Load().ClearQueuedInput(ctx, inputID); err != nil {
 		return err
 	}
 	s.notify(id)
@@ -95,7 +95,7 @@ func (s *Service) MovePending(ctx context.Context, id, inputID, beforeID string)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err = r.core.MoveQueuedInput(ctx, inputID, beforeID); err != nil {
+	if err = r.core.Load().MoveQueuedInput(ctx, inputID, beforeID); err != nil {
 		return err
 	}
 	s.notify(id)
@@ -119,7 +119,7 @@ func (r *runtime) receiptView(receipt core.InputReceipt) InputReceipt {
 	return InputReceipt{InputID: receipt.ID, SessionID: r.id, Digest: receipt.Digest, AcceptedAt: receipt.AcceptedAt, EntryID: receipt.EntryID, State: string(receipt.State)}
 }
 func (r *runtime) existingReceipt(ctx context.Context, id, hash string) (InputReceipt, bool, error) {
-	receipt, err := r.core.LookupInput(ctx, id)
+	receipt, err := r.core.Load().LookupInput(ctx, id)
 	if err == nil {
 		if receipt.Digest != hash {
 			return InputReceipt{}, false, domain.Conflict("input ID was already used for different content")
@@ -219,7 +219,7 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 	input := core.Input{ID: inputID, Digest: hash, Contexts: []core.Message{observation}}
 	if trigger != nil {
 		input.Message = *trigger
-		prior, err := r.core.LookupInput(ctx, metadata.EventID)
+		prior, err := r.core.Load().LookupInput(ctx, metadata.EventID)
 		if err == nil {
 			passiveHash := digest(struct {
 				Observation core.Message
@@ -252,11 +252,11 @@ func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputK
 	var err error
 	switch kind {
 	case core.InputContext:
-		receipt, err = r.core.InjectContext(ctx, input)
+		receipt, err = r.core.Load().InjectContext(ctx, input)
 	case core.InputSteer:
-		receipt, err = r.core.Steer(ctx, input)
+		receipt, err = r.core.Load().Steer(ctx, input)
 	default:
-		receipt, err = r.core.FollowUp(ctx, input)
+		receipt, err = r.core.Load().FollowUp(ctx, input)
 	}
 	if err != nil {
 		return r.receiptView(receipt), err
@@ -280,7 +280,7 @@ func (s *Service) Receipt(ctx context.Context, sessionID, inputID string) (Input
 	if err != nil {
 		return InputReceipt{}, err
 	}
-	receipt, err := r.core.LookupInput(ctx, inputID)
+	receipt, err := r.core.Load().LookupInput(ctx, inputID)
 	if errors.Is(err, core.ErrNotFound) {
 		return InputReceipt{}, domain.Missing("inputs", inputID)
 	}

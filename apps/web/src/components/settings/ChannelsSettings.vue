@@ -384,7 +384,10 @@ async function removeConnection() {
         class="settings-form"
         @submit.prevent="saveConnectionSettings"
       >
-        <SettingsSection :title="t('connectionSettings')">
+        <SettingsSection
+          :title="t('connectionSettings')"
+          :description="adapterInfo(account.adapter)?.hint ? t(adapterInfo(account.adapter)!.hint) : undefined"
+        >
           <IMConnectionFields
             v-model:token="draft.token"
             :adapter="account.adapter"

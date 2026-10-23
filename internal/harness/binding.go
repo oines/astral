@@ -26,7 +26,7 @@ func (s *Service) WithStoppedSessions(ctx context.Context, ids []string, change 
 	}
 	for {
 		for _, r := range runtimes {
-			r.core.Cancel()
+			r.core.Load().Cancel()
 		}
 		locked := 0
 		idle := true
@@ -36,7 +36,7 @@ func (s *Service) WithStoppedSessions(ctx context.Context, ids []string, change 
 				break
 			}
 			locked++
-			snapshot := r.core.Snapshot()
+			snapshot := r.core.Load().Snapshot()
 			if snapshot.Running || snapshot.Maintenance {
 				idle = false
 				break
@@ -77,12 +77,12 @@ func (s *Service) WithSession(ctx context.Context, id string, apply func(*core.S
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if snapshot := r.core.Snapshot(); !snapshot.Running && !snapshot.Maintenance {
+	if snapshot := r.core.Load().Snapshot(); !snapshot.Running && !snapshot.Maintenance {
 		if err = r.syncSelection(ctx); err != nil {
 			return err
 		}
 	}
-	if err = apply(r.core); err != nil {
+	if err = apply(r.core.Load()); err != nil {
 		return err
 	}
 	s.notify(id)

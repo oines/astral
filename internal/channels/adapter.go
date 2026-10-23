@@ -28,6 +28,8 @@ type Capabilities struct {
 	UploadLimit            int64    `json:"upload_limit"`
 	TextLimit              int      `json:"text_limit"`
 	CaptionLimit           int      `json:"caption_limit"`
+	MessageFormats         []string `json:"message_formats"`
+	MessageParameters      []string `json:"message_parameters"`
 }
 type Identity struct {
 	ID          string   `json:"id"`
@@ -57,6 +59,7 @@ type Download struct {
 	Name string
 }
 type Send struct {
+	domain.MessageOptions
 	Target    domain.Conversation
 	Text      string
 	ReplyTo   string
@@ -64,6 +67,7 @@ type Send struct {
 	FileName  string
 	MediaType string
 	Size      int64
+	OpenFile  func(context.Context) (io.ReadCloser, error)
 }
 type Receipt struct{ MessageIDs []string }
 type SendError struct {

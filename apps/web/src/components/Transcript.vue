@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { useClipboard, useResizeObserver } from '@vueuse/core'
+import { computed, ref } from 'vue'
+import { useClipboard } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Button, Popover } from '@astral/ui'
 import { ArrowDown, Check, Copy, Ellipsis, File, GitBranch } from '@astral/icons'
@@ -10,13 +10,14 @@ import { messageText, transcriptGroups, type SessionState, type TranscriptGroup 
 import { useSurfaceStore } from '../stores/surface'
 import Markdown from './Markdown.vue'
 import ActivityLine from './ActivityLine.vue'
-const props = defineProps<{ state: SessionState; sessionID: string; loadingHistory: boolean }>()
-const emit = defineEmits<{ older: []; fork: [entryID: string] }>()
+import { useTranscriptScroll } from '../composables/useTranscriptScroll'
+const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean> }>()
+const emit = defineEmits<{ fork: [entryID: string] }>()
 const { t, locale } = useI18n()
 const surface = useSurfaceStore()
 const scroller = ref<HTMLElement>()
 const content = ref<HTMLElement>()
-const stick = ref(true)
+const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor), loadOlder: () => props.loadOlder() })
 const groups = computed(() => transcriptGroups(props.state))
 const { copy, copied } = useClipboard({ legacy: true })
 const copiedGroup = ref('')
@@ -45,40 +46,26 @@ function sender(entry: Entry) {
   return meta.source === 'im' ? String(object(meta.sender).name ?? '') : ''
 }
 function images(entry: Entry) { return (entry.message?.content ?? []).filter(p => p.type === 'image') }
-function onScroll() {
-  const el = scroller.value
-  if (el) stick.value = el.scrollHeight - el.scrollTop - el.clientHeight < 120
-}
-async function bottom() { await nextTick(); if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight }
-watch(() => [groups.value.length, Object.values(props.state.previews).map(p => Object.values(p.parts).map(part => part.text).join('')).join('')], () => { if (stick.value) void bottom() }, { flush: 'post' })
-watch(() => props.sessionID, () => { stick.value = true; void bottom() }, { immediate: true, flush: 'post' })
-useResizeObserver(content, () => { if (stick.value) void bottom() })
-function older() { stick.value = false; emit('older') }
 </script>
 <template>
-  <div
-    ref="scroller"
-    class="transcript-scroll"
-    @scroll="onScroll"
-  >
+  <div class="transcript-viewport">
     <div
-      ref="content"
-      class="transcript"
+      ref="scroller"
+      class="transcript-scroll"
+      role="region"
+      :aria-label="t('conversationMessages')"
+      tabindex="0"
+      @scroll.passive="scroll.onScroll"
+      @wheel.passive="scroll.onWheel"
+      @touchstart.passive="scroll.onTouchStart"
+      @touchmove.passive="scroll.onTouchMove"
+      @pointerdown="scroll.onPointerdown"
+      @keydown="scroll.onKeydown"
     >
       <div
-        v-if="state.historyCursor"
-        class="history-loader"
+        ref="content"
+        class="transcript"
       >
-        <Button
-          variant="ghost"
-          size="small"
-          :busy="loadingHistory"
-          @click="older"
-        >
-          {{ t('older') }}
-        </Button>
-      </div>
-      <TransitionGroup name="message">
         <section
           v-for="(group, groupIndex) in groups"
           :key="group.key"
@@ -89,6 +76,7 @@ function older() { stick.value = false; emit('older') }
             <div
               v-for="block in group.blocks"
               :key="block.key"
+              :data-scroll-anchor="block.key"
               class="transcript-block"
             >
               <ActivityLine
@@ -98,7 +86,7 @@ function older() { stick.value = false; emit('older') }
                 :status="block.active && group.status !== 'working' && group.status !== 'preparing' ? statusText(group) : undefined"
                 :session-i-d="sessionID"
                 :state="state"
-                @expand="stick = false"
+                @expand="scroll.pause"
               />
               <Markdown
                 v-else
@@ -120,6 +108,7 @@ function older() { stick.value = false; emit('older') }
           <article
             v-for="entry in group.entries.filter(entry => group.role === 'user' || images(entry).length || files(entry).length)"
             :key="entry.id"
+            :data-scroll-anchor="entry.id"
             :class="['message', group.role === 'user' ? 'message-user' : 'message-attachments']"
           >
             <div
@@ -212,15 +201,15 @@ function older() { stick.value = false; emit('older') }
             {{ copyError }}
           </p>
         </section>
-      </TransitionGroup>
+      </div>
     </div>
     <Transition name="float">
       <Button
-        v-if="!stick"
+        v-if="scroll.showJump.value"
         class="scroll-bottom"
         size="icon"
         :aria-label="t('bottom')"
-        @click="stick = true; bottom()"
+        @click="scroll.bottom"
       >
         <ArrowDown />
       </Button>

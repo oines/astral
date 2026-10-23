@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	core "github.com/oines/astral-core"
@@ -17,6 +18,7 @@ import (
 	"github.com/oines/astral/internal/filestream"
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/recall"
 	"github.com/oines/astral/internal/search"
 )
 
@@ -27,6 +29,7 @@ type Service struct {
 	Hub       *computers.Hub
 	Files     *filestream.Service
 	Search    *search.Service
+	Recall    *recall.Service
 	RuntimeID string
 	IM        Messenger
 	ctx       context.Context
@@ -45,12 +48,13 @@ type runtime struct {
 	ready         chan struct{}
 	openErr       error
 	mu            sync.Mutex
-	core          *core.Session
+	core          atomic.Pointer[core.Session]
 	tools         *standardtools.Set
 	environmentMu sync.Mutex
 	processMu     sync.Mutex
 	processes     map[string]standardtools.Process
 	usageHead     string
+	messageTool   core.ToolDefinition
 	contextUsage  *ContextUsage
 }
 
@@ -58,6 +62,7 @@ func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bri
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{Store: store, CoreStore: coreStore, Models: models, Hub: hub,
 		Files: &filestream.Service{Store: store, Hub: hub}, Search: &search.Service{Store: store},
+		Recall:    recall.New(store, coreStore),
 		RuntimeID: domain.ID("server"), ctx: ctx, cancel: cancel, runtimes: map[string]*runtime{}, changes: make(chan string, 256)}
 }
 func (s *Service) Changes() <-chan string { return s.changes }
@@ -107,6 +112,10 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		return err
 	}
 	r.agentID = record.AgentID
+	r.messageTool, err = r.messageToolFor(ctx, record)
+	if err != nil {
+		return err
+	}
 	var agent domain.Agent
 	if err = s.Store.Get(ctx, "agents", r.agentID, &agent); err != nil {
 		return err
@@ -122,8 +131,8 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		if err != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if r.core != nil {
-				_ = r.core.Close(cleanup)
+			if r.core.Load() != nil {
+				_ = r.core.Load().Close(cleanup)
 			}
 			_ = r.tools.Close(cleanup)
 		}
@@ -132,37 +141,43 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	config := core.Config{
-		Model: model, Store: s.CoreStore, ResolveModel: r.resolveModel, EstimateTokens: modelbridge.EstimateTokens,
-		SystemPrompt: systemPrompt, Options: record.Options, Tools: r.hostTools(),
-		CollectContext:  r.collectContext,
-		Budget:          core.BudgetPolicy{SafetyMargin: 1024, AutoCompactAt: 4096},
-		Compaction:      core.CompactionPolicy{KeepRecentTokens: 12000, OutputTokens: 4096},
-		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
-	}
-	r.core, err = core.OpenSession(ctx, config, r.id)
+	config := r.coreConfig(model, record.Options)
+	session, err := core.OpenSession(ctx, config, r.id)
 	if errors.Is(err, core.ErrNotFound) {
 		if record.ParentSessionID != "" {
 			parent, openErr := s.open(ctx, record.ParentSessionID)
 			if openErr != nil {
 				return openErr
 			}
-			child, forkErr := parent.core.Fork(ctx, record.ForkEntryID, core.ForkOptions{ID: r.id})
+			child, forkErr := parent.core.Load().Fork(ctx, record.ForkEntryID, core.ForkOptions{ID: r.id, Mode: core.ForkDetached})
 			if forkErr != nil {
 				return forkErr
 			}
 			if closeErr := child.Close(ctx); closeErr != nil {
 				return closeErr
 			}
-			r.core, err = core.OpenSession(ctx, config, r.id)
+			session, err = core.OpenSession(ctx, config, r.id)
 		} else {
-			r.core, err = core.NewSession(ctx, config, core.SessionOptions{ID: r.id})
+			session, err = core.NewSession(ctx, config, core.SessionOptions{ID: r.id})
 		}
 	}
+	r.core.Store(session)
 	if err == nil {
 		err = r.syncSelection(ctx)
 	}
 	return err
+}
+
+func (r *runtime) coreConfig(model core.Model, options core.GenerationOptions) core.Config {
+	s := r.service
+	return core.Config{
+		Model: model, Store: s.CoreStore, ResolveModel: r.resolveModel, EstimateTokens: modelbridge.EstimateTokens,
+		SystemPrompt: systemPrompt, Options: options, Tools: r.hostTools(),
+		CollectContext:  r.collectContext,
+		Budget:          core.BudgetPolicy{SafetyMargin: 1024, AutoCompactAt: 4096},
+		Compaction:      core.CompactionPolicy{KeepRecentTokens: 12000, OutputTokens: 4096},
+		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
+	}
 }
 
 func (r *runtime) resolveModel(ctx context.Context, ref string) (core.Model, error) {
@@ -189,7 +204,7 @@ func (s *Service) Core(ctx context.Context, id string) (*core.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return r.core, nil
+	return r.core.Load(), nil
 }
 func (s *Service) CreateSession(ctx context.Context, agentID, title string) (domain.Session, error) {
 	var agent domain.Agent
@@ -233,8 +248,8 @@ func (s *Service) Close(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		if r.core != nil {
-			errs = append(errs, r.core.Close(ctx))
+		if r.core.Load() != nil {
+			errs = append(errs, r.core.Load().Close(ctx))
 		}
 		if r.tools != nil {
 			errs = append(errs, r.tools.Close(ctx))
@@ -247,6 +262,7 @@ func (s *Service) Close(ctx context.Context) error {
 	case <-ctx.Done():
 		errs = append(errs, ctx.Err())
 	}
+	errs = append(errs, s.Recall.Close())
 	return errors.Join(errs...)
 }
 

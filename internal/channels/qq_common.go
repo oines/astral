@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -75,10 +74,7 @@ func qqHTTPClient(client *http.Client) *http.Client {
 	return &owned
 }
 
-func qqDownloadURL(ctx context.Context, client *http.Client, raw string, attachment domain.Attachment, limit int64) (Download, error) {
-	if attachment.Size > limit {
-		return Download{}, domain.Invalid("attachment exceeds the download limit")
-	}
+func qqDownloadURL(ctx context.Context, client *http.Client, raw string, attachment domain.Attachment) (Download, error) {
 	if strings.HasPrefix(raw, "//") {
 		raw = "https:" + raw
 	}
@@ -100,11 +96,7 @@ func qqDownloadURL(ctx context.Context, client *http.Client, raw string, attachm
 		response.Body.Close()
 		return Download{}, domain.Offline(fmt.Sprintf("attachment download returned HTTP %d", response.StatusCode))
 	}
-	if response.ContentLength > limit {
-		response.Body.Close()
-		return Download{}, domain.Invalid("attachment exceeds the download limit")
-	}
-	return Download{Body: &limitedBody{ReadCloser: response.Body, left: limit}, Size: response.ContentLength, Name: attachment.Name}, nil
+	return Download{Body: response.Body, Size: response.ContentLength, Name: attachment.Name}, nil
 }
 
 // OneBot uses both strings and JSON integers for identifiers. Do not round a
@@ -133,18 +125,4 @@ func (v *qqValue) UnmarshalJSON(raw []byte) error {
 	}
 	*v = qqValue(number.String())
 	return nil
-}
-
-func qqReadUpload(send Send, limit int64) ([]byte, error) {
-	if send.Size > limit {
-		return nil, &SendError{Message: "file exceeds the adapter upload limit"}
-	}
-	data, err := io.ReadAll(io.LimitReader(send.File, limit+1))
-	if err != nil {
-		return nil, &SendError{Message: "source file could not be read", Retryable: true}
-	}
-	if int64(len(data)) > limit {
-		return nil, &SendError{Message: "file exceeds the adapter upload limit"}
-	}
-	return data, nil
 }

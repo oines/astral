@@ -941,6 +941,18 @@
           "message_edits": {
             "type": "boolean"
           },
+          "message_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "message_parameters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "name": {
             "type": "string"
           },
@@ -971,7 +983,9 @@
           "download_limit",
           "upload_limit",
           "text_limit",
-          "caption_limit"
+          "caption_limit",
+          "message_formats",
+          "message_parameters"
         ],
         "type": "object"
       },
@@ -1639,6 +1653,42 @@
         ],
         "type": "object"
       },
+      "astral_internal_domain_MarkdownTemplate": {
+        "properties": {
+          "custom_template_id": {
+            "type": "string"
+          },
+          "params": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_MarkdownTemplateParam"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "custom_template_id",
+          "params"
+        ],
+        "type": "object"
+      },
+      "astral_internal_domain_MarkdownTemplateParam": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "values"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_ModelProfile": {
         "properties": {
           "catalog_at": {
@@ -1760,6 +1810,9 @@
           "external_event_id": {
             "type": "string"
           },
+          "format": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -1823,6 +1876,9 @@
           "agent_id": {
             "type": "string"
           },
+          "as_document": {
+            "type": "boolean"
+          },
           "assistant_entry_id": {
             "type": "string"
           },
@@ -1842,6 +1898,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "disable_notification": {
+            "type": "boolean"
+          },
           "error": {
             "type": "string"
           },
@@ -1849,6 +1908,9 @@
             "type": "string"
           },
           "file_ref_id": {
+            "type": "string"
+          },
+          "format": {
             "type": "string"
           },
           "fragment": {
@@ -1862,6 +1924,9 @@
           },
           "intent_key": {
             "type": "string"
+          },
+          "markdown_template": {
+            "$ref": "#/components/schemas/astral_internal_domain_MarkdownTemplate"
           },
           "platform_message_ids": {
             "items": {
@@ -1891,6 +1956,9 @@
             "type": "string"
           },
           "text": {
+            "type": "string"
+          },
+          "title": {
             "type": "string"
           },
           "topic_id": {
@@ -2205,6 +2273,9 @@
           "files": {
             "type": "string"
           },
+          "history": {
+            "type": "string"
+          },
           "idempotency": {
             "type": "string"
           },
@@ -2216,6 +2287,7 @@
           "identity",
           "idempotency",
           "files",
+          "history",
           "endpoints"
         ],
         "type": "object"
@@ -2361,11 +2433,23 @@
       },
       "astral_internal_gateway_SendFile": {
         "properties": {
+          "as_document": {
+            "type": "boolean"
+          },
           "conversation_id": {
             "type": "string"
           },
+          "disable_notification": {
+            "type": "boolean"
+          },
           "file_uri": {
             "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "markdown_template": {
+            "$ref": "#/components/schemas/astral_internal_domain_MarkdownTemplate"
           },
           "path": {
             "type": "string"
@@ -2375,19 +2459,37 @@
           },
           "text": {
             "type": "string"
+          },
+          "title": {
+            "type": "string"
           }
         },
         "type": "object"
       },
       "astral_internal_gateway_SendText": {
         "properties": {
+          "as_document": {
+            "type": "boolean"
+          },
           "conversation_id": {
             "type": "string"
+          },
+          "disable_notification": {
+            "type": "boolean"
+          },
+          "format": {
+            "type": "string"
+          },
+          "markdown_template": {
+            "$ref": "#/components/schemas/astral_internal_domain_MarkdownTemplate"
           },
           "reply_to": {
             "type": "string"
           },
           "text": {
+            "type": "string"
+          },
+          "title": {
             "type": "string"
           }
         },
@@ -3722,6 +3824,324 @@
         "required": [
           "sequence",
           "observation"
+        ],
+        "type": "object"
+      },
+      "astral_internal_recall_Excerpt": {
+        "properties": {
+          "end": {
+            "type": "integer"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "part": {
+            "type": "integer"
+          },
+          "read_url": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "source_session_id": {
+            "type": "string"
+          },
+          "start": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "total_chars": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entry_id",
+          "source_session_id",
+          "part",
+          "kind",
+          "role",
+          "time",
+          "text",
+          "start",
+          "end",
+          "total_chars",
+          "ref",
+          "read_url"
+        ],
+        "type": "object"
+      },
+      "astral_internal_recall_HistoryPage": {
+        "properties": {
+          "head_id": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_recall_Excerpt"
+            },
+            "type": "array"
+          },
+          "newer_cursor": {
+            "type": "string"
+          },
+          "older_cursor": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "head_id",
+          "items"
+        ],
+        "type": "object"
+      },
+      "astral_internal_recall_Hit": {
+        "properties": {
+          "end": {
+            "type": "integer"
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "match_count": {
+            "type": "integer"
+          },
+          "part": {
+            "type": "integer"
+          },
+          "read_url": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "session_title": {
+            "type": "string"
+          },
+          "source_session_id": {
+            "type": "string"
+          },
+          "start": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "total_chars": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "session_title",
+          "entry_id",
+          "source_session_id",
+          "part",
+          "kind",
+          "role",
+          "time",
+          "text",
+          "start",
+          "end",
+          "total_chars",
+          "ref",
+          "read_url",
+          "match_count"
+        ],
+        "type": "object"
+      },
+      "astral_internal_recall_SearchPage": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_recall_Hit"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hits"
+        ],
+        "type": "object"
+      },
+      "astral_internal_recall_SearchRequest": {
+        "properties": {
+          "after": {
+            "description": "Inclusive original entry time, RFC3339.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "before": {
+            "description": "Exclusive original entry time, RFC3339.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "context_chars": {
+            "description": "Target passage width in Unicode code points, including the match. Default 600; 32–4096. No per-Session quota or overall model-context budget is applied.",
+            "type": "integer"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "cursor": {
+            "description": "Resume a fixed search snapshot with cursor and optional limit only. Cursors expire after 24 hours; source references do not.",
+            "type": "string"
+          },
+          "kinds": {
+            "description": "message, observation, tool_call, tool_result, attachment, summary. Default excludes summary; original pre-compaction history remains searchable.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "description": "Passages per page, default 50; 1–200. All remaining matches can be paged through.",
+            "type": "integer"
+          },
+          "match": {
+            "description": "Default all. all/any split on Unicode whitespace and match within one text part, not across a whole Session.",
+            "enum": [
+              "all",
+              "any",
+              "phrase"
+            ],
+            "type": "string"
+          },
+          "order": {
+            "description": "Default newest. Within each text part, passages are in character-offset order.",
+            "enum": [
+              "newest",
+              "oldest"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Plain text, not an FTS expression. Required on the first page. Words are ANDed by default; phrase treats the entire query literally.",
+            "type": "string"
+          },
+          "roles": {
+            "description": "Optional user, assistant or tool role filter.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "session_ids": {
+            "description": "Omit to search all Sessions owned by the current Agent, including archived Sessions and inherited Fork history.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "astral_internal_recall_Session": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "channel_platform": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "head_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_activity_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "parent_session_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source",
+          "archived",
+          "created_at",
+          "last_activity_at"
+        ],
+        "type": "object"
+      },
+      "astral_internal_recall_SessionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_recall_Session"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },
@@ -8596,6 +9016,46 @@
         ]
       }
     },
+    "/v1/conversations/{id}/message-tool": {
+      "get": {
+        "operationId": "agentMessageTool",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_core_ToolDefinition"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
     "/v1/conversations/{id}/messages": {
       "get": {
         "operationId": "agentMessages",
@@ -8931,8 +9391,137 @@
         ]
       }
     },
+    "/v1/sessions": {
+      "get": {
+        "description": "List this Agent's Sessions across Computers, newest activity first. Returns lightweight metadata, includes archived Sessions by default, and never opens execution runtimes. Follow next_cursor to enumerate the fixed snapshot.",
+        "operationId": "agentSessions",
+        "parameters": [
+          {
+            "description": "Resume a fixed catalog snapshot; cursors expire after 24 hours. Pass cursor and optional limit, or repeat the same filters.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sessions per page, default 50; 1–200.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter Session source, such as web or im.",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by the originating IM conversation.",
+            "in": "query",
+            "name": "conversation_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Omit to include both archived and active Sessions.",
+            "in": "query",
+            "name": "archived",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Case-insensitive literal substring of the Session title.",
+            "in": "query",
+            "name": "title",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_recall_SessionPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/sessions/search": {
+      "post": {
+        "description": "Search committed text across this Agent's Sessions. Returns flat passages around real keyword matches; multiple passages from one Session are allowed. Filters precede pagination. Defaults: all whitespace-separated terms, case-insensitive, newest first, 600 characters per passage, 50 passages per page. Short Chinese words, code identifiers and punctuation match literally. No hidden per-Session quota, semantic summarization or global output budget. Independent Fork copies remain distinct. Shared-rollout ancestors are deduplicated, each Session exposes only its own history path, and pre-compaction originals remain searchable. The first request catches the index up to captured heads or fails; an empty page is not an unindexed-history result. Resume with cursor and optional limit. Use each hit's read_url to expand it.",
+        "operationId": "agentSearchSessions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_recall_SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_recall_SearchPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
     "/v1/sessions/{id}/history": {
       "get": {
+        "description": "Read normalized history text with roles, tool names, provenance and stable character offsets. With no location, returns recent text parts. With around, returns the hit and its requested neighbors. Items are chronological; follow older_cursor or newer_cursor to navigate. Page cursors keep the original head while the Session grows. References remain usable after restart/index rebuild. This Agent API returns text parts; the Owner history API retains raw Core entries. It reads persistent data without loading a model or running a Session.",
         "operationId": "agentHistory",
         "parameters": [
           {
@@ -8944,6 +9533,16 @@
             }
           },
           {
+            "description": "Stable source ref returned by search/history. Expands its precise text location on the captured branch.",
+            "in": "query",
+            "name": "around",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "older_cursor or newer_cursor returned by history. Mutually exclusive with around.",
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -8952,8 +9551,45 @@
             }
           },
           {
+            "description": "Text parts per history page, default 20; 1–200. Omit with around.",
             "in": "query",
             "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Text parts before around, default 2; 0–100.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Text parts after around, default 2; 0–100.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Exact zero-based Unicode character offset within around's text part. Omit to center on the reference. Use offset=end, before=0, after=0 to continue a long part.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Characters per text part, default 4000; 1–16384. start/end/total_chars describe each returned slice; this is not a total response budget.",
+            "in": "query",
+            "name": "length",
             "required": false,
             "schema": {
               "type": "integer"
@@ -8965,7 +9601,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_HistoryPage"
+                  "$ref": "#/components/schemas/astral_internal_recall_HistoryPage"
                 }
               }
             },

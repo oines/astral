@@ -90,7 +90,6 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .sidebar-backdrop { display: none; }
 .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; background: var(--bg); border-radius: 12px; box-shadow: 0 0 0 1px #20201f04; overflow: hidden; container-type: inline-size; container-name: chat; }
 .chat-layout.sidebar-hidden { padding-left: 8px; }
-.chat-layout.sidebar-hidden .transcript { padding-top: 56px; }
 .welcome { width: min(808px, 100%); margin: auto; display: flex; flex-direction: column; align-items: center; gap: 24px; text-align: center; padding-bottom: 7vh; }
 .welcome .welcome-logo { width: 88px; height: 88px; }
 .welcome h1 { font-size: 24px; font-weight: 500; letter-spacing: -.6px; }
@@ -103,7 +102,8 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .session-menu { min-width: 210px; max-width: 280px; }
 .session-menu .popover-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .chat-error { margin: 14px auto 0; width: min(752px, calc(100% - 80px)); }
-.transcript-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior: contain; scrollbar-width: thin; }
+.transcript-viewport { min-height: 0; flex: 1; position: relative; display: flex; flex-direction: column; }
+.transcript-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; scrollbar-width: thin; }
 /* A turn owns its process, response and actions; only the turn sets outer spacing. */
 .transcript { width: min(808px, 100%); padding: 40px 24px 28px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
 .transcript-turn { min-width: 0; }
@@ -111,7 +111,6 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .transcript-block + .transcript-block { margin-top: 14px; }
 .run-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; line-height: 20px; margin-top: 10px; }
 .run-status:first-child { margin-top: 0; }
-.history-loader { text-align: center; }
 .message { position: relative; margin: 0; line-height: 1.65; font-size: 15px; }
 .message + .message { margin-top: 14px; }
 .message-user { margin-left: auto; max-width: 85%; width: fit-content; }
@@ -165,6 +164,9 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .reasoning .markdown.markstream-vue { padding: 2px 0 5px; color: var(--muted); line-height: 1.6; }
 /* Markstream wraps blocks in node-slot. Keep spacing at that boundary. */
 .markdown.markstream-vue {
+  /* History anchoring needs actual heights, including offscreen messages. */
+  content-visibility: visible;
+  contain-intrinsic-size: none;
   font: inherit; color: var(--ink); line-height: 1.65; overflow-wrap: anywhere;
   --ms-font-sans: inherit; --ms-text-body: 1em; --ms-leading-body: 1.65;
   --ms-text-h1: 1.5em; --ms-text-h2: 1.2em; --ms-text-h3: 1.08em; --ms-text-h4: 1em; --ms-text-h5: 1em; --ms-text-h6: 1em;
@@ -195,7 +197,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .markdown .table-node { box-shadow: none; }
 .stream-preview { font-size: 15px; }
 .stream-preview + .stream-preview { margin-top: 14px; }
-.scroll-bottom { position: sticky; bottom: 12px; margin-left: calc(50% - 17px); border-radius: 50%; background: var(--raised); box-shadow: var(--shadow); }
+.scroll-bottom { position: absolute; bottom: 12px; left: calc(50% - 17px); border-radius: 50%; background: var(--raised); box-shadow: var(--shadow); }
 .composer-area { width: min(808px, 100%); padding: 8px 24px 14px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; max-height: 80dvh; overflow-y: auto; }
 .composer { position: relative; z-index: 1; text-align: left; background: var(--raised); border: 1px solid var(--field-line); border-radius: 16px; box-shadow: var(--composer-shadow); transition: border-color .18s ease, box-shadow .18s ease; }
 .composer:hover { border-color: color-mix(in srgb, var(--ink) 18%, transparent); }
@@ -302,7 +304,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .settings-nav nav :is(a, .settings-nav-action).selected:is(:hover, :focus-visible) { background: var(--selected); }
 .settings-nav nav svg { width: 17px; height: 17px; color: var(--muted); }
 .settings-nav-group { margin: 18px 12px 8px; font-size: 12px; color: var(--muted); }
-.settings-main { flex: 1; min-width: 0; overflow-y: auto; background: var(--canvas); border-radius: 14px; }
+.settings-main { flex: 1; min-width: 0; overflow-y: auto; background: var(--canvas); border-radius: 14px; container-type: inline-size; container-name: settings; }
 .settings-content { max-width: var(--settings-content-width); margin: 0 auto; padding: 40px var(--settings-page-padding) 64px; display: flex; flex-direction: column; gap: 24px; }
 .settings-title { min-height: 36px; margin-bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .settings-saved { color: var(--muted); font-size: 12px; }
@@ -352,11 +354,6 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .computer-check > span:not(.badge) { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .computer-check strong { font-size: 13px; font-weight: 500; }
 .computer-check small { font-size: 12px; color: var(--muted); }
-.outbox-list { gap: 10px; }
-.outbox-receipt { background: var(--surface); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-.outbox-receipt strong { font-size: 12px; font-weight: 550; }
-.outbox-receipt.attention { color: var(--danger); }
-.outbox-text { white-space: pre-wrap; font-size: 13px; max-height: 130px; overflow: auto; color: var(--ink); }
 @media (max-width: 1100px) { .computer-picker > span { max-width: 105px; } .model-picker > span { max-width: 115px; } }
 @media (max-width: 1200px) { .context-surface { position: fixed; z-index: 20; right: 8px; top: 8px; bottom: 8px; max-width: calc(100vw - 32px); box-shadow: var(--shadow); } :root[data-desktop='mac'] .context-surface { top: 48px; }  }
 @media (max-width: 760px) {
@@ -433,7 +430,6 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .settings-detail-identity { flex: 1; min-width: 0; }
 .settings-detail-identity p { color: var(--muted); font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
 .settings-section-heading > div { min-width: 0; }
-.settings-section-heading p { font-size: 12px; line-height: 1.6; margin-top: 6px; }
 .settings-choice { display: flex; gap: 12px; align-items: flex-start; padding: var(--settings-row-padding) 0; cursor: pointer; }
 .settings-choice input { margin: 3px 0 0; accent-color: var(--ink); flex: 0 0 auto; }
 .settings-choice span { display: flex; flex-direction: column; gap: 5px; }
@@ -612,8 +608,8 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .context-panel-leave-active { pointer-events: none; }
 .fade-enter-active, .fade-leave-active { transition: opacity var(--motion-normal) ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
-.float-enter-active, .float-leave-active, .message-enter-active { transition: opacity var(--motion-normal) ease, transform var(--motion-normal) var(--ease-out); }
-.float-enter-from, .float-leave-to, .message-enter-from { opacity: 0; transform: translateY(5px); }
+.float-enter-active, .float-leave-active { transition: opacity var(--motion-normal) ease, transform var(--motion-normal) var(--ease-out); }
+.float-enter-from, .float-leave-to { opacity: 0; transform: translateY(5px); }
 .float-leave-active { pointer-events: none; }
 .composer-picker > svg:last-child { transition: transform var(--motion-normal) var(--ease-out); }
 .composer-picker[data-state='open'] > svg:last-child { transform: rotate(180deg); }
@@ -690,3 +686,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .provider-model-row > .settings-feedback-error { grid-column: 1 / -1; }
 .settings-detail-heading:has(> .settings-feedback-error) { flex-wrap: wrap; }
 .settings-detail-heading > .settings-feedback-error { width: 100%; }
+@container settings (max-width: 600px) {
+  .account-chat-row { grid-template-columns: minmax(0, 1fr); }
+  .account-chat-row > .settings-feedback { grid-column: 1; }
+}

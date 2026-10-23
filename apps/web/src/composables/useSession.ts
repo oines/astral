@@ -59,16 +59,17 @@ export function useSession(sessionID: Ref<string>) {
   }
   const loadingHistory = ref(false)
   async function older() {
-    if (!state.value.historyCursor || loadingHistory.value) return
+    if (!state.value.historyCursor || loadingHistory.value) return false
     loadingHistory.value = true
     const current = generation
     try {
       const page = await request(sessionHistory({ path: { id: sessionID.value }, query: { cursor: state.value.historyCursor, limit: 50 } }))
-      if (current !== generation) return
+      if (current !== generation) return false
       for (const entry of page.entries ?? []) addEntry(state.value, entry, true)
       state.value.historyCursor = page.next_cursor
-    } catch (e) { error.value = errorText(e) }
-    finally { loadingHistory.value = false }
+      return true
+    } catch (e) { if (current === generation) error.value = errorText(e); return false }
+    finally { if (current === generation) loadingHistory.value = false }
   }
   async function moreTrace() {
     if (!state.value.traceCursor) return
@@ -81,6 +82,7 @@ export function useSession(sessionID: Ref<string>) {
   watch(sessionID, (_, previous) => {
     if (previous) delete app.sessionViews[previous]
     generation++
+    loadingHistory.value = false
     state.value = emptyState()
     error.value = ''
     connection.value = 'connecting'
