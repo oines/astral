@@ -99,6 +99,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build:distribution
+        id: distribution
       - run: pnpm test:desktop-service
       - name: Native downloaded installer
         run: go test -tags=integration -run '^TestDistributionInstallerRegistersActualDaemon$' -count=1 -timeout=3m ./internal/platform
@@ -111,13 +112,18 @@ jobs:
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
       - run: pnpm test:daemon-service
       - run: pnpm --filter @astral/desktop ${{ matrix.package }}
+        id: package
+        # Packaging is independent of the separately enrolled Daemon service.
+        # Keep that failure visible while collecting native App results too.
+        if: ${{ !cancelled() && steps.distribution.outcome == 'success' }}
       - name: Packaged App startup and shutdown
-        if: runner.os != 'Linux'
+        if: ${{ !cancelled() && steps.package.outcome == 'success' && runner.os != 'Linux' }}
         run: pnpm test:packaged-desktop
       - name: Packaged Linux App startup and shutdown
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && steps.package.outcome == 'success' && runner.os == 'Linux' }}
         run: xvfb-run -a pnpm test:packaged-desktop
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         with:
           name: astral-desktop-${{ matrix.os }}
           path: |

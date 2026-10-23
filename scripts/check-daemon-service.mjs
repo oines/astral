@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -59,6 +59,37 @@ async function waitStatus(credentials, expectedOnline, previousBoot) {
   throw new Error(`Native Daemon did not reach ${expectedOnline ? 'a new online connection' : 'offline'}: ${JSON.stringify(last)}`)
 }
 
+async function reportFailureState() {
+  // Collect evidence before uninstall removes the task and the temporary root.
+  // Credentials, enrollment payloads and Owner handoff files contain secrets.
+  try { console.error(`Managed Daemon status: ${await run(binary, 'computer', 'service', 'status', '--root', daemonRoot)}`) }
+  catch (error) { console.error('Cannot read managed Daemon status:', error.message) }
+
+  const files = ['daemon.log', 'service-launch.log', path.join('service', 'task.xml')]
+  try {
+    for (const name of await readdir(path.join(daemonRoot, 'service'))) {
+      if (/^Astral Daemon \([a-f0-9]+\)\.ps1$/.test(name)) files.push(path.join('service', name))
+    }
+  } catch { /* Installation may have failed before creating its definition. */ }
+  for (const file of files) {
+    try {
+      const raw = await readFile(path.join(daemonRoot, file))
+      const encoding = raw[0] === 0xff && raw[1] === 0xfe ? 'utf16le' : 'utf8'
+      console.error(`--- ${file} ---\n${raw.toString(encoding).slice(-16_384)}`)
+    } catch (error) { console.error(`Cannot read ${file}: ${error.message}`) }
+  }
+  if (system === 'windows') {
+    const quote = value => `'${value.replaceAll("'", "''")}'`
+    const script = `$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); [xml]$definition=Get-Content -LiteralPath ${quote(path.join(daemonRoot, 'service', 'task.xml'))}; $task=Get-ScheduledTask -TaskPath '\\Astral\\' -TaskName $definition.Task.RegistrationInfo.Description; $info=$task | Get-ScheduledTaskInfo; [pscustomobject]@{Name=$task.TaskName;State=$task.State.ToString();UserId=$task.Principal.UserId;LogonType=$task.Principal.LogonType.ToString();RunLevel=$task.Principal.RunLevel.ToString();LastRunTime=$info.LastRunTime.ToString('o');LastTaskResult=('0x{0:X8}' -f $info.LastTaskResult);MissedRuns=$info.NumberOfMissedRuns;CallerSession=(Get-Process -Id $PID).SessionId} | ConvertTo-Json -Compress`
+    try { console.error(`Windows task diagnostics: ${await run('powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script)}`) }
+    catch (error) { console.error('Cannot inspect native Windows task:', error.message) }
+    if (process.env.USERNAME) {
+      try { console.error(`Current user logon sessions: ${await run('quser.exe', process.env.USERNAME)}`) }
+      catch (error) { console.error('Current user logon session query:', error.message) }
+    }
+  }
+}
+
 try {
   const owner = await server.start(binary, path.join(temporary, 'server'), binaries)
   const enrollment = await api(`${server.url}/api/v1/computers/enrollments`, owner, { container: false })
@@ -105,6 +136,7 @@ try {
   console.log(`Native ${system} Daemon enrollment, user service supervision, restart, stop/start, identity-preserving update, and uninstall passed (${initialService.display_name}).`)
 } catch (error) {
   failures.push(error)
+  await reportFailureState()
 } finally {
   if (created && !uninstalled) {
     try { await run(binary, 'computer', 'service', 'uninstall', '--root', daemonRoot) }
