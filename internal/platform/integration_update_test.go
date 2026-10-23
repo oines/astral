@@ -3,10 +3,13 @@
 package platform
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -53,10 +56,37 @@ PY`
 	if output, err := dockerOutput(ctx, "exec", operation.ContainerID, "/bin/bash", "-lc", tooling); err != nil {
 		t.Fatalf("Agent environment: %v\n%s", err, output)
 	}
-	before, err := dockerOutput(ctx, "inspect", "--format", "{{.Id}} {{.Image}} {{json .Mounts}}", operation.ContainerID)
-	if err != nil {
-		t.Fatal(err)
+	snapshot := func() string {
+		t.Helper()
+		raw, inspectErr := dockerOutput(ctx, "inspect", "--format", "{{json .}}", operation.ContainerID)
+		if inspectErr != nil {
+			t.Fatal(inspectErr)
+		}
+		var identity struct {
+			ID     string
+			Image  string
+			Mounts []map[string]any
+		}
+		if inspectErr = json.Unmarshal(raw, &identity); inspectErr != nil {
+			t.Fatal(inspectErr)
+		}
+		if identity.ID == "" || identity.Image == "" || len(identity.Mounts) < 2 {
+			t.Fatalf("incomplete container identity: %s", raw)
+		}
+		// Docker can reorder Mounts after restart. Compare every mount field
+		// canonically while preserving exact container and image identities.
+		slices.SortFunc(identity.Mounts, func(a, b map[string]any) int {
+			left, _ := json.Marshal(a)
+			right, _ := json.Marshal(b)
+			return bytes.Compare(left, right)
+		})
+		canonical, marshalErr := json.Marshal(identity)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		return string(canonical)
 	}
+	before := snapshot()
 	if _, err = dockerOutput(ctx, "exec", operation.ContainerID, "/bin/sh", "-c", `set -eu; printf '#!/bin/sh\necho agent-installed\n' > /usr/local/bin/agent-custom-tool; chmod 755 /usr/local/bin/agent-custom-tool; printf 'persistent data' > /var/lib/astral/update-marker`); err != nil {
 		t.Fatal(err)
 	}
@@ -70,11 +100,8 @@ PY`
 	if err = UpdateContainerDaemon(ctx, operation.ID, binary, "integration-updated", func(message string) { t.Log(message) }); err != nil {
 		t.Fatal(err)
 	}
-	after, err := dockerOutput(ctx, "inspect", "--format", "{{.Id}} {{.Image}} {{json .Mounts}}", operation.ContainerID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(before) != string(after) {
+	after := snapshot()
+	if before != after {
 		t.Fatalf("update replaced container/image/mounts:\nbefore %s\nafter %s", before, after)
 	}
 	output, err := dockerOutput(ctx, "exec", operation.ContainerID, "/bin/sh", "-c", `agent-custom-tool; cat /var/lib/astral/update-marker`)
@@ -103,9 +130,9 @@ PY`
 	if err != nil || strings.TrimSpace(string(version)) != "integration-updated" {
 		t.Fatalf("failed to restore working release: %s %v", version, err)
 	}
-	after, err = dockerOutput(ctx, "inspect", "--format", "{{.Id}} {{.Image}} {{json .Mounts}}", operation.ContainerID)
-	if err != nil || string(before) != string(after) {
-		t.Fatalf("rollback replaced original container or mounts: %s %v", after, err)
+	after = snapshot()
+	if before != after {
+		t.Fatalf("rollback replaced original container or mounts: %s", after)
 	}
 	output, err = dockerOutput(ctx, "exec", operation.ContainerID, "/bin/sh", "-c", `agent-custom-tool; cat /var/lib/astral/update-marker`)
 	if err != nil || string(output) != "agent-installed\npersistent data" {
