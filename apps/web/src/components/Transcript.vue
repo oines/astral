@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useClipboard } from '@vueuse/core'
+import { useClipboard, useNow } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Button, Popover } from '@astral/ui'
 import { ArrowDown, Check, Copy, Ellipsis, File, GitBranch } from '@astral/icons'
@@ -11,6 +11,7 @@ import { useSurfaceStore } from '../stores/surface'
 import Markdown from './Markdown.vue'
 import ActivityLine from './ActivityLine.vue'
 import { useTranscriptScroll } from '../composables/useTranscriptScroll'
+import { createMessageTimeFormatter } from '../lib/message-time'
 const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean> }>()
 const emit = defineEmits<{ fork: [entryID: string] }>()
 const { t, locale } = useI18n()
@@ -19,6 +20,9 @@ const scroller = ref<HTMLElement>()
 const content = ref<HTMLElement>()
 const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor), loadOlder: () => props.loadOlder() })
 const groups = computed(() => transcriptGroups(props.state))
+const now = useNow({ interval: 60_000 })
+const formatTimestamp = computed(() => createMessageTimeFormatter(locale.value))
+const timestamps = computed(() => Object.fromEntries(groups.value.filter(group => group.role === 'assistant' && !group.active).map(group => [group.key, formatTimestamp.value(group.entries.findLast(entry => messageText(entry))?.time, now.value)])))
 const { copy, copied } = useClipboard({ legacy: true })
 const copiedGroup = ref('')
 const copyError = ref('')
@@ -194,6 +198,13 @@ function images(entry: Entry) { return (entry.message?.content ?? []).filter(p =
                 </button>
               </template>
             </Popover>
+            <time
+              v-if="group.role === 'assistant' && timestamps[group.key]"
+              class="message-time"
+              :datetime="timestamps[group.key]?.dateTime"
+              :title="timestamps[group.key]?.full"
+              :aria-label="timestamps[group.key]?.full"
+            >{{ timestamps[group.key]?.label }}</time>
           </div>
           <p
             v-if="copyError && copiedGroup === group.key"
