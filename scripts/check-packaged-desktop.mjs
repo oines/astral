@@ -76,11 +76,12 @@ try {
   }, 'The packaged App did not start its Server and connect the local Daemon.', 45_000)
   await waitFor(async () => { if (exit) throw new Error(`Packaged App exited before renderer startup.\n${output}`); return rendererStarted() }, 'The actual packaged Electron App did not start a renderer.', 30_000)
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
-  app.kill('SIGTERM')
+  console.log(`Requesting ${process.platform === 'win32' ? 'crash cleanup' : 'normal App quit'} with SIGTERM (App PID ${app.pid}, Server PID ${running.pid}).`)
+  assert.ok(app.kill('SIGTERM'), 'The packaged App could not receive the shutdown request.')
   // The existing Unix SIGTERM handler calls app.quit(). Windows termination is
   // abrupt: this branch deliberately verifies parent-death cleanup, not Quit.
   let timer
-  try { await Promise.race([ended, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Packaged App did not exit.')), 30_000) })]) }
+  try { await Promise.race([ended, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Packaged App did not exit; Go Server PID ${running.pid} is ${alive(running.pid) ? 'still running' : 'already stopped'}.`)), 30_000) })]) }
   finally { clearTimeout(timer) }
   if (process.platform !== 'win32') assert.equal(exit.code, 0, `Packaged App did not quit normally: ${JSON.stringify(exit)}`)
   await waitFor(() => !alive(running.pid), 'The Go Server survived the packaged Electron App.', 20_000)

@@ -66,6 +66,7 @@ jobs:
       - run: go test -tags=integration -count=1 -timeout=20m ./internal/platform
   native:
     name: Native ${{ matrix.os }}
+    needs: check
     strategy:
       fail-fast: false
       matrix:
@@ -98,8 +99,14 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm build:distribution
+      - uses: actions/download-artifact@v4
         id: distribution
+        with:
+          name: astral-server-binaries
+          path: dist/bin/
+      - name: Restore executable permissions after artifact download
+        if: runner.os != 'Windows'
+        run: chmod +x dist/bin/astral-*
       - run: pnpm test:desktop-service
       - name: Native downloaded installer
         run: go test -tags=integration -run '^TestDistributionInstallerRegistersActualDaemon$' -count=1 -timeout=3m ./internal/platform

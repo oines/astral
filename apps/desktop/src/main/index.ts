@@ -20,6 +20,10 @@ const directory = fileURLToPath(new URL('.', import.meta.url))
 const resourcePath = (name: string) => app.isPackaged ? join(process.resourcesPath, name) : join(directory, '../../resources', name)
 const applicationIcon = () => resourcePath(nativeTheme.shouldUseDarkColors ? 'icon-dark.png' : 'icon.png')
 
+function traceLifecycle(phase: string) {
+  if (process.env.CI) console.log(`[Astral lifecycle ${new Date().toISOString()}] ${phase}`)
+}
+
 function updateApplicationIcon() {
   app.dock?.setIcon(applicationIcon())
   if (process.platform !== 'darwin' && window && !window.isDestroyed()) window.setIcon(applicationIcon())
@@ -71,12 +75,14 @@ function createWindow() {
   })
   window.webContents.on('will-attach-webview', event => event.preventDefault())
   window.on('close', event => {
+    traceLifecycle(`window close: quitting=${quitting}, keepRunning=${keepRunning}`)
     if (quitting) return
     if (keepRunning) {
       event.preventDefault()
       window?.hide()
     } else app.quit()
   })
+  window.once('closed', () => traceLifecycle('window closed'))
   // Windows does not emit app.before-quit for logoff or system shutdown.
   // Request cleanup promptly without blocking the user's session ending.
   if (process.platform === 'win32') window.on('query-session-end', () => { void service.stop() })
@@ -138,22 +144,34 @@ async function start() {
 }
 app.on('second-instance', () => { if (serverURL) show() })
 app.on('activate', () => { if (serverURL && !quitting) show() })
-app.on('window-all-closed', () => { if (!keepRunning) app.quit() })
-process.on('SIGTERM', () => app.quit())
-process.on('SIGINT', () => app.quit())
+app.on('window-all-closed', () => { traceLifecycle(`window-all-closed: quitting=${quitting}, keepRunning=${keepRunning}`); if (!keepRunning) app.quit() })
+for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => {
+  traceLifecycle(`${signal} received; requesting Quit`)
+  app.quit()
+  traceLifecycle(`${signal} Quit request returned`)
+})
 app.on('before-quit', event => {
+  traceLifecycle(`before-quit: quitting=${quitting}, shutdownComplete=${shutdownComplete}`)
   if (shutdownComplete) return
   event.preventDefault()
   if (quitting) return
   quitting = true
   tray?.destroy()
+  traceLifecycle('Server stop requested')
   void service.stop().finally(() => {
+    traceLifecycle(`Server stop settled: exitCode=${service.child?.exitCode}, signalCode=${service.child?.signalCode}`)
     shutdownComplete = true
     // Leave Electron's native before-quit dispatch before requesting Quit again.
     // A Promise callback can reenter it and have its quitting state overwritten.
-    setTimeout(() => app.quit(), 0)
+    setTimeout(() => {
+      traceLifecycle('requesting Quit after Server stop')
+      app.quit()
+      traceLifecycle('second Quit request returned')
+    }, 0)
   })
 })
+app.on('will-quit', () => traceLifecycle('will-quit'))
+app.on('quit', (_event, exitCode) => traceLifecycle(`quit: exitCode=${exitCode}`))
 if (single) void app.whenReady().then(start).catch(async error => {
   dialog.showErrorBox('Astral could not start', `${error instanceof Error ? error.message : String(error)}\n\nIf another Astral server already uses this data directory, stop it before opening the desktop application.`)
   await service.stop()
