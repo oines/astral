@@ -19,3 +19,10 @@ data/
 *.db-wal
 coverage.out
 .DS_Store
+
+# Local design explorations and historical acceptance evidence.
+/artifacts/
+/design-qa.md
+/docs/im-platforms-qa.md
+/docs/model-reasoning-plan.md
+/docs/verification/

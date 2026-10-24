@@ -2,7 +2,7 @@
 
 本文说明当前实现的 Telegram Bot、QQ 官方 Bot、QQ NapCat、微信 ClawBot / iLink 和飞书 Bot 如何接入 Astral。消息存储、Session 绑定、持续上下文、Probe、显式发送和回执规则见 [IM 契约](im.md)；平台权限和服务端限制仍由各平台决定。
 
-本轮实际测试、构建与浏览器证据见 [验证记录](im-platforms-qa.md)。
+自动检查与实际账号验收的边界见 [验证指南](verification.md)。
 
 ## 先连接账号，再选择聊天范围
 
