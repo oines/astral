@@ -7,7 +7,7 @@ import OnboardingPage from './pages/OnboardingPage.vue'
 import ChatPageSkeleton from './components/ChatPageSkeleton.vue'
 import { useI18n } from 'vue-i18n'
 import { login } from '@astral/sdk'
-import { Button } from '@astral/ui'
+import { Button, useDelayedPending } from '@astral/ui'
 import { ArrowRight, AstralLogo } from '@astral/icons'
 import { useAppStore } from './stores/app'
 import { request, errorText } from './lib/api'
@@ -18,6 +18,7 @@ const router = useRouter()
 const unsubscribeSettings = window.astralDesktop?.onSettings?.(() => { void router.push('/settings/general') })
 onBeforeUnmount(() => unsubscribeSettings?.())
 const inSettings = computed(() => route.path.startsWith('/settings'))
+const showInitialLoading = useDelayedPending(() => app.authorized && !app.data && !app.query.error)
 watch(() => route.path, path => {
   if (!path.startsWith('/settings')) app.lastChatPath = path
 }, { immediate: true })
@@ -80,12 +81,12 @@ async function signIn() {
     </KeepAlive>
   </template>
   <ChatPageSkeleton
-    v-else-if="!inSettings && !app.query.error"
+    v-else-if="showInitialLoading && !inSettings && !app.query.error"
     :sidebar="app.sidebar"
     :welcome="!route.params.id"
   />
   <div
-    v-else
+    v-else-if="app.query.error || showInitialLoading"
     class="login-screen"
   >
     <div class="stack">

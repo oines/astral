@@ -360,11 +360,9 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
         >
           <SettingsSection>
             <div class="about-identity">
-              <AstralLogo decorative /><div>
-                <h2>Astral</h2><p class="muted">
-                  {{ t('versionLabel') }} {{ app.data?.version }}
-                </p>
-              </div>
+              <AstralLogo lockup /><p class="muted">
+                {{ t('versionLabel') }} {{ app.data?.version }}
+              </p>
             </div>
           </SettingsSection>
           <SettingsSection :title="t('diagnostics')">

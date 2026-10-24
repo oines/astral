@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { compactSession, forkSession } from '@astral/sdk'
-import { Button, Modal } from '@astral/ui'
+import { Button, Modal, useDelayedPending } from '@astral/ui'
 import { ArrowRight, PanelLeftClose, PanelLeftOpen, AstralLogo } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { useSurfaceStore } from '../stores/surface'
@@ -24,6 +24,7 @@ const id = ref(typeof route.params.id === 'string' ? route.params.id : '')
 watch(() => route.path, path => { if (!path.startsWith('/settings')) id.value = typeof route.params.id === 'string' ? route.params.id : '' })
 const live = useSession(id)
 const view = computed(() => live.state.value.view)
+const showChatLoading = useDelayedPending(() => id.value && !view.value && !live.error.value ? id.value : '')
 const error = ref('')
 const busy = ref(false)
 const activeAgent = computed(() => app.agents.find(agent => agent.id === app.activeAgentID))
@@ -193,7 +194,7 @@ watch(id, () => { surface.close(); error.value = '' })
         </Button>
       </div>
       <ChatLoading
-        v-else
+        v-else-if="showChatLoading"
         :reconnecting="live.connection.value === 'reconnecting'"
       />
     </main>

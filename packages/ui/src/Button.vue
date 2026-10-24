@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { cva } from 'class-variance-authority'
-withDefaults(defineProps<{
+import { useDelayedPending } from './useDelayedPending'
+const props = withDefaults(defineProps<{
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
   size?: 'normal' | 'small' | 'icon'
   busy?: boolean
   disabled?: boolean
   type?: 'button' | 'submit' | 'reset'
 }>(), { variant: 'secondary', size: 'normal', busy: false, disabled: false, type: 'button' })
+const waiting = useDelayedPending(() => props.busy)
 const styles = cva('button', {
   variants: {
     variant: { primary: 'button-primary', secondary: 'button-secondary', ghost: 'button-ghost', danger: 'button-danger' },
@@ -22,7 +24,7 @@ const styles = cva('button', {
     :type="type"
   >
     <span
-      v-if="busy"
+      v-if="waiting"
       class="spinner"
       aria-hidden="true"
     />

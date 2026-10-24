@@ -305,7 +305,6 @@ async function remove() {
           <SettingsFeedback
             :scope="computers.map(c => `${resource}/computer:${c.id}`)"
             :saving="t('grantingAccess')"
-            :saved="t('accessUpdated')"
           />
         </SettingsSection>
         <SettingsSection>

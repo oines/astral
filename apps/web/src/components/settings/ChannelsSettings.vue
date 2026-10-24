@@ -7,7 +7,7 @@ import { useQuery } from '@pinia/colada'
 import { listBindingsQuery, listConnectionsQuery, listConnectionsQueryKey, listConversationsQuery, listConversationsQueryKey } from '@astral/sdk/colada'
 import { startWeixinLogin, pollWeixinLogin, deleteConnection, listConnections, listConversations, saveConnection, unbindConversation, setConversationProactive, type AstralInternalHttpapiConnectionInput, type AstralInternalHttpapiConnectionView, type AstralInternalDomainConversation, type AstralInternalDomainConnection } from '@astral/sdk'
 import { Button, ConfirmPopover, Modal, Select, Switch, SettingsRow, SettingsSection } from '@astral/ui'
-import { ArrowLeft, ChevronRight, Plus, Search } from '@astral/icons'
+import { ArrowLeft, ChevronRight, MessageCircle, Plus, Search, Trash2, User } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import { errorText, newMeta, object, request } from '../../lib/api'
 import { useAction } from '../../composables/useAction'
@@ -473,11 +473,14 @@ async function removeConnection() {
             :to="`/sessions/${chatBinding(conversation.id)?.session_id}`"
             class="channel-chat-name"
           >
-            <strong>{{ conversation.title }}</strong><span>{{ chatKind(conversation) }}<ChevronRight /></span>
+            <span class="resource-symbol"><User v-if="conversation.kind === 'private'" /><MessageCircle v-else /></span>
+            <span class="channel-chat-copy"><strong>{{ conversation.title }}</strong><small>{{ chatKind(conversation) }}</small></span>
+            <ChevronRight aria-hidden="true" />
           </RouterLink>
           <div class="account-chat-controls">
             <Select
               v-if="conversation.kind !== 'private'"
+              class="account-chat-reply"
               :model-value="saves.value(`conversation:${conversation.id}/reply`, conversation.proactive_enabled ? 'proactive' : 'mentions')"
               :label="t('chatReplyMode', { name: conversation.title })"
               :options="[{ value: 'mentions', label: t('replyWhenMentioned'), description: t('replyWhenMentionedHint') }, { value: 'proactive', label: t('joinDiscussion'), description: t('joinDiscussionHint') }]"
@@ -485,12 +488,13 @@ async function removeConnection() {
             />
             <span
               v-else
-              class="chat-direct-reply"
+              class="account-chat-reply chat-direct-reply"
             >{{ t('directReply') }}</span>
             <div class="account-chat-actions">
               <Button
                 variant="ghost"
                 size="small"
+                :aria-label="`${t('changeSession')}：${conversation.title}`"
                 @click="rebindID = conversation.id; adding = true"
               >
                 {{ t('changeSession') }}
@@ -509,11 +513,13 @@ async function removeConnection() {
                 <template #trigger>
                   <Button
                     variant="ghost"
-                    size="small"
-                    class="danger-text"
+                    size="icon"
+                    class="account-chat-remove"
+                    :title="t('removeChat')"
+                    :aria-label="`${t('removeChat')}：${conversation.title}`"
                     :disabled="action.busy.value"
                   >
-                    {{ t('removeChat') }}
+                    <Trash2 aria-hidden="true" />
                   </Button>
                 </template>
               </ConfirmPopover>
