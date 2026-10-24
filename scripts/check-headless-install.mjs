@@ -130,7 +130,10 @@ async function install(expectedSuccess = true) {
   try {
     result = await execute('bash', [installer, '--root', installRoot], { cwd: repository, env: environment, encoding: 'utf8', timeout: 130_000, maxBuffer: 2 << 20 })
   } catch (error) {
-    if (expectedSuccess) throw new Error('Headless installer unexpectedly failed; inspect the service state reported below.', { cause: error })
+    if (expectedSuccess) {
+      const diagnostic = (error.stderr || '').split('\n').filter(line => /^(Astral Server:|ExecMainCode=|ExecMainStatus=|Result=)/.test(line)).join('\n').slice(-4000)
+      throw new Error(`Headless installer unexpectedly failed. ${diagnostic || 'No safe installer state diagnostic was available.'}`, { cause: error })
+    }
     assert.equal(typeof error.code, 'number', 'Installer did not report an ordinary failure')
     // Return only an error classification; no captured output reaches CI logs.
     return { failed: true, checksumFailure: /checksum mismatch/.test(error.stderr || ''), startupFailure: /did not become ready|exited during startup/.test(error.stderr || '') }
@@ -171,7 +174,7 @@ function sameIdentity(before, after) {
 async function reportServiceState() {
   // Do not dump journals or bootstrap bodies, which may contain private data.
   try {
-    const state = await command('systemctl', ['--user', 'show', service, '--property=LoadState,ActiveState,SubState,MainPID,Result'])
+    const state = await command('systemctl', ['--user', 'show', service, '--property=ExecMainCode,ExecMainStatus,Result'])
     console.error(`Headless service state:\n${state.stdout.trim()}`)
   } catch { console.error('Headless service state could not be read.') }
 }
@@ -225,10 +228,12 @@ async function main() {
     await prepareFixture()
     await install()
     const first = await snapshot()
+    console.log('Headless fresh installation and authenticated Local Computer readiness passed.')
     await install()
     const second = await snapshot()
     assert.notEqual(second.pid, first.pid, 'Repeat installation did not restart the actual service')
     sameIdentity(first, second)
+    console.log('Headless same-format reinstallation preserved Owner, encryption key and Local Computer identity.')
 
     const sumFile = path.join(payload, 'SHA256SUMS')
     const goodSums = await readFile(sumFile, 'utf8')
@@ -238,6 +243,7 @@ async function main() {
     const afterReject = await snapshot()
     assert.equal(afterReject.pid, second.pid, 'Checksum rejection stopped or restarted the old Server')
     sameIdentity(second, afterReject)
+    console.log('Headless bad-checksum rejection kept the original Server process and identity.')
 
     // A deliberately broken new payload delegates only version queries to the
     // actual native program. Its serve path exits, exercising installer recovery.

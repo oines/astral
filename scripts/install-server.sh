@@ -295,12 +295,15 @@ unit_temp=$(mktemp "$unit_dir/.astral-server.service.XXXXXX")
 python3 - "$unit_temp" "$root" "$listen" "$public_url" "$tls_cert" "$tls_key" <<'PY'
 import sys
 target,root,listen,public,cert,key=sys.argv[1:]
-def quote(value): return '"'+value.replace('\\','\\\\').replace('"','\\"').replace('%','%%').replace('$','$$')+'"'
+# The ':' executable prefix disables environment substitution. In particular,
+# executable paths do not undergo the same '$$' expansion as ordinary arguments.
+# Keep dollars literal in both places; percent specifiers still need escaping.
+def quote(value): return '"'+value.replace('\\','\\\\').replace('"','\\"').replace('%','%%')+'"'
 args=[root+'/current/bin/astral','serve','--listen',listen,'--data',root+'/data/server','--computers-dir',root+'/data/computers','--distribution-dir',root+'/current/distribution','--ready-file',root+'/run/ready.json']
 if public: args+=['--public-url',public]
 if cert: args+=['--tls-cert',cert,'--tls-key',key]
 with open(target,'w',encoding='utf-8') as f:
-    f.write('# Astral Server installer root: '+root+'\n[Unit]\nDescription=Astral Server\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=/\nExecStart='+ ' '.join(map(quote,args))+'\nRestart=on-failure\nRestartSec=3\nTimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n')
+    f.write('# Astral Server installer root: '+root+'\n[Unit]\nDescription=Astral Server\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=/\nExecStart=:'+ ' '.join(map(quote,args))+'\nRestart=on-failure\nRestartSec=3\nTimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n')
 PY
 mutating=1
 if [[ $had_unit == 1 ]]; then systemctl --user stop "$service"; fi
@@ -336,7 +339,12 @@ PY
   server_url=
   sleep 1
 done
-[[ -n $server_url ]] || die "Server did not become ready; inspect journalctl --user -u $service"
+if [[ -z $server_url ]]; then
+  # Capture only manager state before rollback removes the attempted unit.
+  # Never print the journal, Owner token, ready-file contents or environment.
+  systemctl --user show "$service" --property=ExecMainCode,ExecMainStatus,Result >&2 || true
+  die "Server did not become ready; inspect journalctl --user -u $service"
+fi
 systemctl --user is-active --quiet "$service" || die 'Server exited during startup'
 complete=1
 printf '\nAstral Server %s is running: %s\n' "$version" "$server_url"
