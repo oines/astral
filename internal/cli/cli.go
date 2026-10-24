@@ -24,6 +24,7 @@ import (
 var Version = "dev"
 
 func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
+	platform.DaemonVersion = Version
 	err := run(ctx, args, out, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -97,6 +98,9 @@ func usage(out io.Writer) {
 
   astral serve [--listen 127.0.0.1:4545] [--public-url https://…]
   astral computer connect --server URL --enrollment ID --token TOKEN [--container]
+  astral computer service status|logs|start|stop|restart|uninstall --root DIRECTORY
+  astral computer update --server URL --root DIRECTORY
+  astral computer update --server URL --container CONTAINER_NAME
   astral connect --server URL --token-file FILE
   astral resources agents|models|providers|computers|connections|sessions
   astral sessions new --agent ID [--title TITLE]
@@ -125,31 +129,21 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 	f.BoolVar(&config.NoLocal, "no-local", false, "do not start the local Daemon automatically")
 	ready := f.String("ready-file", "", "write private startup information for the desktop shell")
 	parentPID := f.Int("parent-pid", 0, "stop this managed Server if its desktop parent exits")
+	managedStdin := f.Bool("managed-stdin", false, "stop this managed Server when its desktop input pipe closes")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	if *parentPID != 0 {
-		if *parentPID != os.Getppid() {
-			return fmt.Errorf("desktop parent process does not match")
+	if *parentPID != 0 || *managedStdin {
+		var input io.Reader
+		if *managedStdin {
+			input = os.Stdin
 		}
-		managed, cancel := context.WithCancel(ctx)
+		managed, cancel, err := platform.ManagedContext(ctx, *parentPID, input)
+		if err != nil {
+			return err
+		}
 		defer cancel()
 		ctx = managed
-		go func() {
-			ticker := time.NewTicker(time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-managed.Done():
-					return
-				case <-ticker.C:
-					if os.Getppid() != *parentPID {
-						cancel()
-						return
-					}
-				}
-			}
-		}()
 	}
 	if config.WebDirectory == "" {
 		if stat, err := os.Stat("apps/web/dist/index.html"); err == nil && stat.Mode().IsRegular() {
@@ -190,7 +184,7 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 }
 func computer(ctx context.Context, args []string, out, stderr io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: astral computer connect|daemon")
+		return fmt.Errorf("usage: astral computer connect|daemon|service|update")
 	}
 	switch args[0] {
 	case "connect":
@@ -219,13 +213,27 @@ func computer(ctx context.Context, args []string, out, stderr io.Writer) error {
 		f := flags("computer daemon", stderr)
 		root := f.String("root", "", "Daemon data directory")
 		credentials := f.String("credentials", "", "private credentials file")
+		logPath := f.String("log", "", "append Daemon diagnostics to this file")
+		parentPID := f.Int("parent-pid", 0, "stop this managed Daemon when its service launcher exits")
 		if err := f.Parse(args[1:]); err != nil {
 			return err
 		}
 		if *root == "" || *credentials == "" {
 			return fmt.Errorf("--root and --credentials are required")
 		}
-		return platform.RunDaemon(ctx, *root, *credentials, func(message string) { fmt.Fprintln(stderr, message) })
+		if *parentPID != 0 {
+			managed, cancel, err := platform.ManagedContext(ctx, *parentPID, nil)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			ctx = managed
+		}
+		return platform.RunDaemonLogged(ctx, *root, *credentials, *logPath, func(message string) { fmt.Fprintln(stderr, message) })
+	case "service":
+		return computerService(ctx, args[1:], out, stderr)
+	case "update":
+		return computerUpdate(ctx, args[1:], out, stderr)
 	default:
 		return fmt.Errorf("unknown Computer command")
 	}

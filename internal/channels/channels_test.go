@@ -21,6 +21,7 @@ import (
 	"github.com/oines/astral/internal/filestream"
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/testkit"
+	testshell "github.com/oines/astral/internal/testkit/shell"
 )
 
 type botFixture struct {
@@ -239,7 +240,7 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 			if strings.Count(body, "photo request") != 1 || !strings.Contains(body, "background context") {
 				t.Error("observation/trigger was duplicated or prior passive context was lost")
 			}
-			reply := testkit.Tool("exec_command", map[string]any{"cmd": "printf tool-result", "login": false})
+			reply := testkit.Tool("exec_command", map[string]any{"cmd": testshell.Print("tool-result"), "login": false})
 			msg := reply["choices"].([]any)[0].(map[string]any)["message"].(map[string]any)
 			msg["content"], msg["reasoning_content"] = "Web-only commentary.", "private reasoning"
 			return reply

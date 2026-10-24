@@ -58,12 +58,36 @@ func (h *Hub) Enroll(ctx context.Context, serverURL string, container, local boo
 	}
 	cmd := "curl --fail --silent --show-error " + shellQuote(strings.TrimRight(serverURL, "/")+"/install.sh") +
 		" | sh -s -- --server " + shellQuote(serverURL) + " --enrollment " + shellQuote(e.ID) + " --token " + shellQuote(token)
+	ps := "& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing " + powerShellQuote(strings.TrimRight(serverURL, "/")+"/install.ps1") + ").Content)) -Server " + powerShellQuote(serverURL) + " -Enrollment " + powerShellQuote(e.ID) + " -Token " + powerShellQuote(token)
 	if container {
 		cmd += " --container"
+		ps += " -Container"
 	}
-	return EnrollmentResult{Enrollment: e, Token: token, Command: cmd}, nil
+	return EnrollmentResult{Enrollment: e, Token: token, Command: cmd, PowerShellCommand: ps}, nil
 }
-func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
+func shellQuote(value string) string      { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
+func powerShellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
+
+// PrepareContainer claims the normal short-lived enrollment before expensive
+// image setup. Retries cannot extend it beyond the fixed creation-time limit.
+func (h *Hub) PrepareContainer(ctx context.Context, id, token string) error {
+	return h.Store.Update(ctx, func(tx *persistence.Tx) error {
+		var enrollment domain.Enrollment
+		if err := tx.Get(ctx, "enrollments", id, &enrollment); err != nil {
+			return domain.Forbidden("invalid container enrollment")
+		}
+		hash := tokenHash(token)
+		if token == "" || !enrollment.Container || enrollment.State != "waiting" || time.Now().After(enrollment.ExpiresAt) || subtle.ConstantTimeCompare([]byte(enrollment.TokenHash), []byte(hash)) != 1 {
+			return domain.Forbidden("container enrollment expired or invalid")
+		}
+		deadline := enrollment.CreatedAt.Add(90 * time.Minute)
+		if !enrollment.ExpiresAt.Before(deadline) {
+			return nil
+		}
+		enrollment.ExpiresAt = deadline
+		return tx.Save(ctx, "enrollments", &enrollment.Meta, &enrollment)
+	})
+}
 
 func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest) (Credentials, error) {
 	var credentials Credentials
@@ -122,10 +146,10 @@ func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest
 
 func validateHello(hello Hello) error {
 	if hello.BootID == "" || len(hello.BootID) > 100 || hello.Hostname == "" || len(hello.Hostname) > 250 ||
-		(hello.OS != "darwin" && hello.OS != "linux") || !strings.HasPrefix(hello.Home, "/") || !strings.HasPrefix(hello.Shell, "/") {
+		(hello.OS != "darwin" && hello.OS != "linux" && hello.OS != "windows") || !absoluteTargetPath(hello.OS, hello.Home) || !absoluteTargetPath(hello.OS, hello.Shell) {
 		return domain.Invalid("daemon reported an unsupported or incomplete environment")
 	}
-	if hello.Root != "" && (!strings.HasPrefix(hello.Root, "/") || len(hello.Root) > 1024) {
+	if hello.Root != "" && (!absoluteTargetPath(hello.OS, hello.Root) || len(hello.Root) > 1024) {
 		return domain.Invalid("daemon reported an invalid data directory")
 	}
 	if c := hello.Container; c != nil {
@@ -141,6 +165,9 @@ func validateHello(hello Hello) error {
 // name and Computer kind remain owned by the Server, not by reported metadata.
 func applyEnvironment(c *domain.Computer, hello Hello) bool {
 	previous := *c
+	if hello.Version != "" {
+		c.DaemonVersion = hello.Version
+	}
 	c.Hostname, c.OS, c.Arch, c.Shell, c.Home = hello.Hostname, hello.OS, hello.Arch, hello.Shell, hello.Home
 	if hello.Root != "" {
 		c.Root = hello.Root
@@ -150,7 +177,7 @@ func applyEnvironment(c *domain.Computer, hello Hello) bool {
 		c.Container = &value
 	}
 	sameContainer := c.Container == previous.Container || c.Container != nil && previous.Container != nil && *c.Container == *previous.Container
-	return c.Hostname != previous.Hostname || c.OS != previous.OS || c.Arch != previous.Arch || c.Shell != previous.Shell || c.Home != previous.Home || c.Root != previous.Root || !sameContainer
+	return c.Hostname != previous.Hostname || c.OS != previous.OS || c.Arch != previous.Arch || c.Shell != previous.Shell || c.Home != previous.Home || c.Root != previous.Root || c.DaemonVersion != previous.DaemonVersion || !sameContainer
 }
 
 func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
@@ -281,7 +308,7 @@ func (h *Hub) Bind(ctx context.Context, agentID, sessionID, computerID, cwd stri
 		return b, err
 	}
 	// The Daemon supplies its absolute paths and this binding's local API URL.
-	if !strings.HasPrefix(prepared.CWD, "/") || !strings.HasPrefix(prepared.AgentHome, "/") {
+	if !absoluteTargetPath(active.hello.OS, prepared.CWD) || !absoluteTargetPath(active.hello.OS, prepared.AgentHome) {
 		return b, domain.Invalid("daemon returned invalid directories")
 	}
 	b.CWD, b.AgentHome, b.APIURL = prepared.CWD, prepared.AgentHome, prepared.APIURL

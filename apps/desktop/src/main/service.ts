@@ -16,11 +16,13 @@ export class LocalService {
     await mkdir(root, { recursive: true, mode: 0o700 })
     this.temporary = await mkdtemp(join(root, '.desktop-'))
     const readyFile = join(this.temporary, 'ready.json')
-    const args = ['serve', '--listen', process.env.ASTRAL_SERVER_LISTEN || '127.0.0.1:4545', '--data', join(root, 'server'), '--computers-dir', join(root, 'computers'), '--distribution-dir', distribution, '--ready-file', readyFile, '--parent-pid', String(process.pid)]
+    const args = ['serve', '--listen', process.env.ASTRAL_SERVER_LISTEN || '127.0.0.1:4545', '--data', join(root, 'server'), '--computers-dir', join(root, 'computers'), '--distribution-dir', distribution, '--ready-file', readyFile, '--parent-pid', String(process.pid), '--managed-stdin']
     if (process.env.ASTRAL_PUBLIC_URL) args.push('--public-url', process.env.ASTRAL_PUBLIC_URL)
     if (process.env.ASTRAL_TLS_CERT) args.push('--tls-cert', process.env.ASTRAL_TLS_CERT)
     if (process.env.ASTRAL_TLS_KEY) args.push('--tls-key', process.env.ASTRAL_TLS_KEY)
-    this.child = spawn(binary, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] })
+    this.child = spawn(binary, args, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    // A startup failure can close the pipe before stop() requests shutdown.
+    this.child.stdin?.on('error', () => {})
     const capture = (chunk: Buffer) => { this.output = (this.output + chunk.toString()).slice(-6000) }
     this.child.stdout?.on('data', capture)
     this.child.stderr?.on('data', capture)
@@ -55,7 +57,9 @@ export class LocalService {
     const child = this.child
     if (child?.pid && child.exitCode === null && child.signalCode === null) {
       const exited = new Promise<void>(resolve => child.once('exit', () => resolve()))
-      child.kill('SIGTERM')
+      // Closing this private pipe is the Server's graceful shutdown request.
+      // POSIX signals become forceful termination on Windows.
+      child.stdin?.end()
       const controller = new AbortController()
       await Promise.race([exited, delay(20_000, undefined, { signal: controller.signal }).catch(() => {})])
       controller.abort()

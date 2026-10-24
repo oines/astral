@@ -299,7 +299,7 @@ Linux Server 的 Local Computer 是 Linux 服务所在机器。访问网页的�
 | 使用本机容器 | 点击快捷入口 | 在当前部署的本机容器运行时中创建容器、启动 Daemon，自动注册为独立 Computer |
 | 连接其他机器 | 复制命令，在目标机器执行；可勾选“使用容器” | 目标机器上的 Daemon 连接 Server 后自动注册 |
 
-两个本机快捷入口在 macOS Desktop 与 Linux Headless 的共享 Web UI 中都可用，不要求用户复制命令或切到终端。“本机”始终指 Server 部署所在机器：Desktop 为其本地 Mac，Headless 为运行 Server 的服务器；浏览器所在设备不改变这一目标。
+两个本机快捷入口在 macOS、Windows、Linux Desktop 与 Headless 的共享 Web UI 中都可用，不要求用户复制命令或切到终端。“本机”始终指 Server 部署所在机器：Desktop 为其本地电脑，Headless 为运行 Server 的服务器；浏览器所在设备不改变这一目标。
 
 平台显示实际目标的名称和操作系统，帮助用户在远程访问 Headless 时识别执行位置。“使用本机”优先复用已有 Local Computer，重复点击不新增同一执行端的重复记录；“使用本机容器”每次明确新增一台独立容器 Computer，同一次创建请求的重试不能重复创建。
 
@@ -319,6 +319,16 @@ Linux Server 的 Local Computer 是 Linux 服务所在机器。访问网页的�
 例如，用户已经接入一台远程 Mac mini，且该机器安装了 OrbStack。再次 Add Computer、选择“连接其他机器”、勾选“使用容器”、复制命令并在这台 Mac mini 执行后，列表中新增一台 Container Computer。如果这台 Mac mini 本身就是 Server 部署机器，也可以直接点击“使用本机容器”。原 Mac mini Computer 保留；两者拥有独立身份、执行目标和 Agent 关联。它们不自动共享 AgentHome 或工作文件，显式挂载的目录按实际配置解释。
 
 接入命令携带或取得目标 Server 信息及本次注册所需的凭据，自动完成平台连接；凭据交付、有效期和重复执行语义在实现时细化。正常运行的连接仍需内部身份验证，不能把“执行命令后自动添加”实现成任何匿名 Daemon 都能注册。
+
+### 跨平台、后台运行与更新
+
+macOS、Windows、Linux 共用统一可执行程序，包含 Server、嵌入 Web UI、CLI 和 Daemon。Windows 的桌面、Server 与裸机 Daemon 原生运行，不要求 WSL。Windows 接入提供 PowerShell 命令，macOS/Linux 提供 shell 命令；选择依据目标电脑的平台。
+
+裸机接入自动注册当前用户的 Astral Daemon：macOS LaunchAgent 在系统设置“登录项与扩展”可见，Windows 在任务计划程序中注册当前用户登录任务（InteractiveToken、LeastPrivilege、可见），Linux 使用 systemd 用户服务。不得提权或默认注册系统级服务，不自动启用 Linux linger。多连接按电脑数据目录区分服务实例，提供状态、日志、启动、停止、重启、卸载命令。服务运行状态与 Server 在线状态分别确认。Desktop 内本机 Daemon 由 Server 生命周期管理，容器内 Daemon 由 Docker 管理。
+
+更新采用复制命令后在目标电脑或容器宿主机执行的方式。新程序下载并校验后，裸机切换当前用户服务使用的版本并重启；容器只替换原容器内的数据目录之外的 Daemon 可执行文件，重启同一容器。保留电脑身份、凭据、Agent 文件、容器 ID、可写层与卷，更新失败尝试恢复旧程序。重启会中断运行任务，界面和命令必须说明这一后果。更新不自动重建容器或迁移 Agent 环境，不增加远程自动升级控制协议。
+
+新建容器使用 Ubuntu 24.04 和完整开发、数据、文档、媒体、OCR、中文字体、浏览器测试环境。镜像工具层与最终 Daemon 程序层分离，程序不放在 AgentHome 数据中。Windows Docker Desktop 使用 Linux 容器即可，不要求用户进入 WSL 或额外开启 host networking；同机 Docker 连接使用持久身份的专用 TLS 通道，不向容器开放 Owner API。
 
 ### Container 与 Remote
 

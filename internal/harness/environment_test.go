@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
+	testshell "github.com/oines/astral/internal/testkit/shell"
 )
 
 func environmentEntries(t *testing.T, f *fixture, id string) []core.Entry {
@@ -44,6 +46,31 @@ func writeEnvironmentFile(t *testing.T, path, text string) {
 	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Shells can expand a Windows 8.3 temp path to its long spelling. Verify the
+// directory in the actual tool output instead of comparing serialized slashes
+// or relying on the spelling retained in an assistant's command arguments.
+func toolOutputHasDirectory(request map[string]any, directory string) bool {
+	want, err := os.Stat(directory)
+	if err != nil {
+		return false
+	}
+	messages, _ := request["messages"].([]any)
+	for _, value := range messages {
+		message, _ := value.(map[string]any)
+		if message["role"] != "tool" {
+			continue
+		}
+		content, _ := message["content"].(string)
+		for _, line := range strings.Split(content, "\n") {
+			got, err := os.Stat(strings.TrimSpace(line))
+			if err == nil && os.SameFile(want, got) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func wireEnvironments(request map[string]any) []string {
@@ -160,8 +187,29 @@ func TestEnvironmentModelViewPreservesAPITargetsWithoutInternalFields(t *testing
 	}
 	entries = environmentEntries(t, f, f.session.ID)
 	partial := entries[len(entries)-1].Message.Content[0].Text
-	if !strings.Contains(partial, `"status":"partial"`) || !strings.Contains(partial, invalidSkill) || !strings.Contains(partial, "YAML frontmatter") || !strings.Contains(partial, skillPath) {
-		t.Fatal("partial discovery lost its error, affected path or valid skills")
+	var partialView struct {
+		Discovery struct {
+			Status string
+			Skills []struct{ Path string }
+			Issues []struct{ Path, Message string }
+		}
+	}
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(partial, environmentSnapshotHeading+"\n")), &partialView); err != nil {
+		t.Fatal(err)
+	}
+	foundIssue, foundSkill := false, false
+	for _, issue := range partialView.Discovery.Issues {
+		if issue.Path == invalidSkill && strings.Contains(issue.Message, "YAML frontmatter") {
+			foundIssue = true
+		}
+	}
+	for _, skill := range partialView.Discovery.Skills {
+		if skill.Path == skillPath {
+			foundSkill = true
+		}
+	}
+	if partialView.Discovery.Status != "partial" || !foundIssue || !foundSkill {
+		t.Fatalf("partial discovery lost its error, affected path or valid skills: %+v", partialView.Discovery)
 	}
 }
 
@@ -232,7 +280,11 @@ func TestEnvironmentInitializationDedupAndReadsAcrossRestart(t *testing.T) {
 	}
 	entries = environmentEntries(t, f, f.session.ID)
 	changed := entries[len(entries)-1].Message.Content[0].Text
-	if !strings.Contains(changed, "Skill content changed; read this SKILL.md again before using it: "+globalSkill) || strings.Contains(changed, `"sha256"`) {
+	var changedView struct{ Updates []string }
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(changed, environmentSnapshotHeading+"\n")), &changedView); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(changedView.Updates, "Skill content changed; read this SKILL.md again before using it: "+globalSkill) || strings.Contains(changed, `"sha256"`) {
 		t.Fatal("body-only Skill change did not produce a useful notice without exposing a hash")
 	}
 	f.restart(t)
@@ -257,8 +309,8 @@ func TestEnvironmentRefreshFollowsCompleteToolBatchInSameRun(t *testing.T) {
 		if n == 1 {
 			firstMessages = messages
 			return map[string]any{"id": "batch", "choices": []any{map[string]any{"index": 0, "finish_reason": "tool_calls", "message": map[string]any{"role": "assistant", "tool_calls": []any{
-				map[string]any{"id": "write", "type": "function", "function": map[string]any{"name": "exec_command", "arguments": string(encode(map[string]any{"cmd": "printf 'changed by tool' > AGENTS.md", "login": false}))}},
-				map[string]any{"id": "read", "type": "function", "function": map[string]any{"name": "exec_command", "arguments": string(encode(map[string]any{"cmd": "pwd", "login": false}))}},
+				map[string]any{"id": "write", "type": "function", "function": map[string]any{"name": "exec_command", "arguments": string(encode(map[string]any{"cmd": testshell.WriteFile("AGENTS.md", "changed by tool"), "login": false}))}},
+				map[string]any{"id": "read", "type": "function", "function": map[string]any{"name": "exec_command", "arguments": string(encode(map[string]any{"cmd": testshell.CWD(), "login": false}))}},
 			}}}}}
 		}
 		if n != 2 {
@@ -306,9 +358,9 @@ func TestEnvironmentCWDChangesReturnToPriorStateAndCommandWorkdirIsTemporary(t *
 			if !strings.Contains(last, "workspace A") || strings.Contains(last, "workspace B") {
 				t.Error("A -> B -> A incorrectly deduplicated the returning snapshot")
 			}
-			return toolReply("temporary", "exec_command", map[string]any{"cmd": "pwd", "workdir": temporary, "login": false})
+			return toolReply("temporary", "exec_command", map[string]any{"cmd": testshell.CWD(), "workdir": temporary, "login": false})
 		case 4:
-			if !strings.Contains(last, "workspace A") || !strings.Contains(string(encode(request)), temporary) {
+			if !strings.Contains(last, "workspace A") || !toolOutputHasDirectory(request, temporary) {
 				t.Error("temporary workdir changed the Session CWD or failed to reach the tool")
 			}
 			return textReply("done")

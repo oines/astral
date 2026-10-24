@@ -4,7 +4,7 @@ import { useQuery } from '@pinia/colada'
 import { useIntervalFn } from '@vueuse/core'
 import { listComputersQuery } from '@astral/sdk/colada'
 import { createLocalContainer, enrollComputer, getComputerOperation, getEnrollment, useLocalComputer, type AstralInternalDomainProvisioning, type AstralInternalDomainEnrollment, type AstralInternalComputersEnrollmentResult } from '@astral/sdk'
-import { Button, Modal } from '@astral/ui'
+import { Button, Modal, SettingsRow, SettingsSection } from '@astral/ui'
 import { ArrowLeft, Check, ChevronRight, Copy, Monitor, Server, Terminal } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Computer } from '../../lib/types'
@@ -21,6 +21,7 @@ const action = useAction()
 const list = useQuery(listComputersQuery())
 const mode = ref<'choose' | 'local' | 'container' | 'remote'>('choose')
 const container = ref(false)
+const commandPlatform = ref<'shell' | 'powershell'>('shell')
 const operation = ref<AstralInternalDomainProvisioning>()
 const enrollment = ref<AstralInternalDomainEnrollment>()
 const enrollmentResult = ref<AstralInternalComputersEnrollmentResult>()
@@ -28,6 +29,7 @@ const computerID = ref('')
 const connected = computed(() => list.data.value?.find(c => c.id === computerID.value && c.online))
 const intent = ref('')
 const copied = ref(false)
+const displayedCommand = computed(() => commandPlatform.value === 'powershell' ? enrollmentResult.value?.powershell_command || '' : enrollmentResult.value?.command || '')
 const activeOperationKey = 'astral:pending-container'
 let restoring = false
 let interacted = false
@@ -53,6 +55,7 @@ function add() {
   enrollmentResult.value = undefined
   computerID.value = ''
   copied.value = false
+  commandPlatform.value = app.data?.host.os === 'windows' ? 'powershell' : 'shell'
   intent.value = crypto.randomUUID()
   action.error.value = ''
 }
@@ -119,8 +122,9 @@ useIntervalFn(async () => {
 }, 3000)
 async function copyCommand() {
   if (!enrollmentResult.value) return
-  await action.run(async () => { await navigator.clipboard.writeText(enrollmentResult.value!.command); copied.value = true })
+  await action.run(async () => { await navigator.clipboard.writeText(displayedCommand.value); copied.value = true })
 }
+watch(commandPlatform, () => { copied.value = false })
 watch(adding, open => {
   if (restoring) { restoring = false; return }
   const provisioning = operation.value && !['connected', 'failed'].includes(operation.value.state)
@@ -180,6 +184,21 @@ function finish() {
         v-if="mode === 'remote'"
         class="stack"
       >
+        <SettingsSection>
+          <SettingsRow :label="t(container ? 'computerCommand.hostPlatform' : 'computerCommand.targetPlatform')">
+            <select
+              v-model="commandPlatform"
+              :aria-label="t(container ? 'computerCommand.hostPlatform' : 'computerCommand.targetPlatform')"
+            >
+              <option value="shell">
+                {{ t('computerCommand.shell') }}
+              </option>
+              <option value="powershell">
+                {{ t('computerCommand.powershell') }}
+              </option>
+            </select>
+          </SettingsRow>
+        </SettingsSection>
         <template v-if="!enrollmentResult">
           <p class="muted">
             {{ t('commandHint') }}
@@ -195,8 +214,9 @@ function finish() {
           </Button>
         </template>
         <template v-else>
-          <pre class="connection-command">{{ enrollmentResult.command }}</pre><Button
+          <pre class="connection-command">{{ displayedCommand }}</pre><Button
             :busy="action.busy.value"
+            :disabled="!displayedCommand"
             @click="copyCommand"
           >
             <Check v-if="copied" /><Copy v-else />{{ t('copy') }}

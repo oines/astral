@@ -4,14 +4,17 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -20,43 +23,104 @@ import (
 )
 
 type DockerInfo struct {
-	Name    string
-	Arch    string
-	Context string
+	Name     string
+	Arch     string
+	Context  string
+	Endpoint string
+	Desktop  bool
+}
+
+type dockerTargetKey struct{}
+
+func dockerContext(ctx context.Context, info DockerInfo) context.Context {
+	return context.WithValue(ctx, dockerTargetKey{}, info)
+}
+func dockerCommand(ctx context.Context, args ...string) *exec.Cmd {
+	info, fixed := ctx.Value(dockerTargetKey{}).(DockerInfo)
+	if fixed {
+		args = append([]string{"--host", info.Endpoint}, args...)
+	}
+	command := exec.CommandContext(ctx, "docker", args...)
+	if fixed {
+		for _, value := range os.Environ() {
+			key, _, _ := strings.Cut(value, "=")
+			switch strings.ToUpper(key) {
+			case "DOCKER_CONTEXT", "DOCKER_HOST", "DOCKER_TLS", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "BUILDX_BUILDER", "BUILDKIT_HOST":
+				continue
+			}
+			command.Env = append(command.Env, value)
+		}
+	}
+	return command
 }
 
 func dockerOutput(ctx context.Context, args ...string) ([]byte, error) {
-	command := exec.CommandContext(ctx, "docker", args...)
+	command := dockerCommand(ctx, args...)
 	raw, err := command.CombinedOutput()
 	if err != nil {
 		text := strings.TrimSpace(string(raw))
 		if len(text) > 1500 {
 			text = text[len(text)-1500:]
 		}
-		return nil, fmt.Errorf("docker: %s", text)
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		if text == "" {
+			return nil, fmt.Errorf("docker %s: %w", args[0], err)
+		}
+		return nil, fmt.Errorf("docker %s: %w: %s", args[0], err, text)
 	}
 	return raw, nil
 }
 func ProbeDocker(ctx context.Context) (DockerInfo, error) {
+	if fixed, ok := ctx.Value(dockerTargetKey{}).(DockerInfo); ok {
+		if !localDockerEndpoint(fixed.Endpoint) {
+			return DockerInfo{}, domain.Invalid("Docker endpoint must be local")
+		}
+		return fixed, nil
+	}
 	if _, err := exec.LookPath("docker"); err != nil {
-		return DockerInfo{}, domain.Offline("Install and start OrbStack or Docker before creating a Computer container.")
+		message := "Install and start Docker Engine before creating a Computer container."
+		switch runtime.GOOS {
+		case "windows":
+			message = "Install and start Docker Desktop in Linux-container mode before creating a Computer container."
+		case "darwin":
+			message = "Install and start OrbStack or Docker Desktop before creating a Computer container."
+		}
+		return DockerInfo{}, domain.Offline(message)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	// Context inspection and info both start the Docker CLI. Allow cold starts
+	// and a busy local runtime without treating it as an unavailable engine.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	raw, err := dockerOutput(ctx, "context", "inspect", "--format", "{{json .}}")
-	if err != nil {
-		return DockerInfo{}, domain.Offline("Start the local container runtime. " + err.Error())
-	}
+	var raw []byte
+	var err error
 	var dockerContext struct {
 		Name      string
 		Endpoints map[string]struct{ Host string }
 	}
-	if json.Unmarshal(raw, &dockerContext) != nil {
-		return DockerInfo{}, domain.Invalid("Docker returned an invalid context")
+	endpoint := os.Getenv("DOCKER_HOST")
+	selected := os.Getenv("DOCKER_CONTEXT")
+	if selected != "" || endpoint == "" {
+		args := []string{"context", "inspect"}
+		if selected != "" {
+			args = append(args, selected)
+		}
+		args = append(args, "--format", "{{json .}}")
+		raw, err = dockerOutput(ctx, args...)
+		if err != nil {
+			return DockerInfo{}, domain.Offline("Start the local container runtime. " + err.Error())
+		}
+		if json.Unmarshal(raw, &dockerContext) != nil {
+			return DockerInfo{}, domain.Invalid("Docker returned an invalid context")
+		}
+		endpoint = dockerContext.Endpoints["docker"].Host
 	}
-	if !strings.HasPrefix(dockerContext.Endpoints["docker"].Host, "unix://") {
+	if !localDockerEndpoint(endpoint) {
 		return DockerInfo{}, domain.Invalid("select a local Docker context for this shortcut; remote Docker endpoints are not the Server's host")
 	}
+	info := DockerInfo{Context: dockerContext.Name, Endpoint: endpoint}
+	ctx = dockerContextForProbe(ctx, info)
 	raw, err = dockerOutput(ctx, "info", "--format", "{{json .}}")
 	if err != nil {
 		return DockerInfo{}, domain.Offline("Start the local container runtime. " + err.Error())
@@ -80,13 +144,76 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 	if arch != "arm64" && arch != "amd64" {
 		return DockerInfo{}, domain.Invalid("container architecture must be arm64 or amd64")
 	}
-	return DockerInfo{Name: wire.OperatingSystem, Context: dockerContext.Name, Arch: arch}, nil
+	info.Name, info.Arch = wire.OperatingSystem, arch
+	info.Desktop = strings.Contains(strings.ToLower(wire.OperatingSystem), "docker desktop")
+	return info, nil
+}
+
+// Keep context selection out of subsequent operations: both environment
+// overrides and the user's default context may change during a long build.
+func dockerContextForProbe(ctx context.Context, info DockerInfo) context.Context {
+	return context.WithValue(ctx, dockerTargetKey{}, info)
+}
+func localDockerEndpoint(endpoint string) bool {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return false
+	}
+	if parsed.Scheme == "unix" {
+		return parsed.Host == "" && strings.HasPrefix(parsed.Path, "/")
+	}
+	if parsed.Scheme == "npipe" {
+		normal := strings.ReplaceAll(strings.ToLower(endpoint), "\\", "/")
+		prefix := "npipe:////./pipe/"
+		return strings.HasPrefix(normal, prefix) && len(normal) > len(prefix) && !strings.ContainsAny(normal[len(prefix):], "/\x00\r\n")
+	}
+	return false
 }
 
 type DockerOptions struct {
 	Identity       string
 	Binary         string
 	EnrollmentFile string
+	Runtime        *DockerInfo
+}
+
+// ContainerInstallation records the local provisioning target for explicit
+// future updates. It contains no enrollment token or Computer credentials.
+type ContainerInstallation struct {
+	ID       string `json:"id"`
+	Identity string `json:"identity"`
+	Endpoint string `json:"endpoint"`
+	Context  string `json:"context,omitempty"`
+	Name     string `json:"name"`
+	Image    string `json:"image"`
+}
+
+func dockerBindMount(source, target string) string {
+	var buffer strings.Builder
+	w := csv.NewWriter(&buffer)
+	_ = w.Write([]string{"type=bind", "src=" + source, "dst=" + target, "readonly"})
+	w.Flush()
+	return strings.TrimSuffix(buffer.String(), "\n")
+}
+
+func findExistingContainer(ctx context.Context, identity string) (string, error) {
+	name := "astral-" + identity
+	raw, err := dockerOutput(ctx, "container", "ls", "-a", "--filter", "name=^/"+name+"$", "--format", "{{.ID}}")
+	if err != nil {
+		return "", err
+	}
+	id := strings.TrimSpace(string(raw))
+	if id == "" {
+		return "", nil
+	}
+	label, err := dockerOutput(ctx, "inspect", "--format", `{{index .Config.Labels "astral.operation"}}`, id)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(string(label)) != identity {
+		return "", domain.Conflict("the container name belongs to another operation")
+	}
+	return id, nil
 }
 
 // Older local containers have no reported metadata, but their creation records
@@ -156,7 +283,7 @@ func (w *lineOutput) Write(raw []byte) (int, error) {
 	return len(raw), nil
 }
 func runDocker(ctx context.Context, emit func(string), args ...string) error {
-	command := exec.CommandContext(ctx, "docker", args...)
+	command := dockerCommand(ctx, args...)
 	output := &lineOutput{emit: emit}
 	command.Stdout = output
 	command.Stderr = output
@@ -169,10 +296,20 @@ func runDocker(ctx context.Context, emit func(string), args ...string) error {
 // LaunchContainer is shared by the local shortcut and the command installer.
 // Its stable name and labels make an interrupted create safe to reconcile.
 func LaunchContainer(ctx context.Context, options DockerOptions, report func(phase, line string)) (string, error) {
-	probe, err := ProbeDocker(ctx)
-	if err != nil {
-		return "", err
+	var probe DockerInfo
+	var err error
+	if options.Runtime != nil {
+		probe = *options.Runtime
+		if !localDockerEndpoint(probe.Endpoint) {
+			return "", domain.Invalid("Docker endpoint must be local")
+		}
+	} else {
+		probe, err = ProbeDocker(ctx)
+		if err != nil {
+			return "", err
+		}
 	}
+	ctx = dockerContext(ctx, probe)
 	name := "astral-" + options.Identity
 	reportLine := func(phase string) func(string) {
 		return func(line string) {
@@ -181,19 +318,11 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 			}
 		}
 	}
-	raw, err := dockerOutput(ctx, "container", "ls", "-a", "--filter", "name=^/"+name+"$", "--format", "{{.ID}}")
+	id, err := findExistingContainer(ctx, options.Identity)
 	if err != nil {
 		return "", err
 	}
-	id := strings.TrimSpace(string(raw))
 	if id != "" {
-		label, inspectErr := dockerOutput(ctx, "inspect", "--format", `{{index .Config.Labels "astral.operation"}}`, id)
-		if inspectErr != nil {
-			return "", inspectErr
-		}
-		if strings.TrimSpace(string(label)) != options.Identity {
-			return "", domain.Conflict("the container name belongs to another operation")
-		}
 		if err = runDocker(ctx, reportLine("starting"), "start", id); err != nil {
 			return id, err
 		}
@@ -208,6 +337,7 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 	if _, err = io.Copy(hash, binary); err != nil {
 		return "", err
 	}
+	_, _ = hash.Write([]byte(computerDockerfile))
 	image := "astral-computer:" + hex.EncodeToString(hash.Sum(nil)[:8])
 	contextDir, err := os.MkdirTemp("", "astral-image-")
 	if err != nil {
@@ -226,13 +356,7 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 	if err != nil {
 		return "", err
 	}
-	dockerfile := `FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends bash ca-certificates curl git python3 ripgrep procps && rm -rf /var/lib/apt/lists/*
-COPY --chmod=755 astral /usr/local/bin/astral
-ENV HOME=/root SHELL=/bin/bash
-WORKDIR /var/lib/astral
-ENTRYPOINT ["/usr/local/bin/astral"]
-`
+	dockerfile := computerDockerfile
 	if err = os.WriteFile(filepath.Join(contextDir, "Dockerfile"), []byte(dockerfile), 0644); err != nil {
 		return "", err
 	}
@@ -250,8 +374,8 @@ ENTRYPOINT ["/usr/local/bin/astral"]
 	if strings.TrimSpace(string(label)) != options.Identity {
 		return "", domain.Conflict("the data volume belongs to another operation")
 	}
-	// Host networking supports a loopback Server on Linux and OrbStack. Docker
-	// Desktop must have its documented host-networking option enabled.
+	// Native Linux and OrbStack retain host networking. Docker Desktop uses its
+	// ordinary bridge and the separately authenticated local TLS entry point.
 	host, err := os.Hostname()
 	if err != nil {
 		return "", err
@@ -260,16 +384,24 @@ ENTRYPOINT ["/usr/local/bin/astral"]
 	if err != nil {
 		return "", err
 	}
-	raw, err = dockerOutput(ctx, "create", "--name", name, "--init", "--restart", "unless-stopped", "--network", "host",
-		"--label", "astral.operation="+options.Identity,
-		"--env", "ASTRAL_CONTAINER_INFO="+string(metadata),
-		"--mount", "type=volume,src="+volume+",dst=/var/lib/astral",
-		"--mount", "type=bind,src="+options.EnrollmentFile+",dst=/run/astral-enrollment.json,readonly",
-		image, "computer", "connect", "--enrollment-file", "/run/astral-enrollment.json", "--root", "/var/lib/astral", "--foreground")
+	network := "host"
+	if probe.Desktop && (runtime.GOOS == "windows" || runtime.GOOS == "darwin") {
+		network = "bridge"
+	}
+	args := []string{"create", "--name", name, "--init", "--restart", "unless-stopped", "--network", network,
+		"--label", "astral.operation=" + options.Identity,
+		"--env", "ASTRAL_CONTAINER_INFO=" + string(metadata),
+		"--mount", "type=volume,src=" + volume + ",dst=/var/lib/astral",
+		"--mount", dockerBindMount(options.EnrollmentFile, "/run/astral-enrollment.json"),
+		image, "computer", "connect", "--enrollment-file", "/run/astral-enrollment.json", "--root", "/var/lib/astral", "--foreground"}
+	raw, err := dockerOutput(ctx, args...)
 	if err != nil {
 		return "", err
 	}
 	id = strings.TrimSpace(string(raw))
+	if err = WriteJSON(filepath.Join(filepath.Dir(options.EnrollmentFile), "container.json"), ContainerInstallation{ID: id, Identity: options.Identity, Endpoint: probe.Endpoint, Context: probe.Context, Name: name, Image: image}); err != nil {
+		return id, err
+	}
 	if report != nil {
 		report("starting", "Container created: "+id)
 	}
@@ -314,7 +446,10 @@ func (s *Server) CreateContainer(ctx context.Context, intent string) (domain.Pro
 	return operation, nil
 }
 func (s *Server) provision(operation domain.Provisioning) {
-	ctx, cancel := context.WithTimeout(s.ctx, 20*time.Minute)
+	// The complete workspace image can take time on a first install or a slow
+	// network. Leave ten minutes inside the fixed 90-minute enrollment window
+	// for the actual Daemon registration and online confirmation.
+	ctx, cancel := context.WithTimeout(s.ctx, 80*time.Minute)
 	defer cancel()
 	save := func() {
 		persist, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -339,6 +474,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 		fail(err)
 		return
 	}
+	ctx = dockerContext(ctx, probe)
 	binary, err := s.binary("linux", probe.Arch)
 	if err != nil {
 		fail(err)
@@ -347,6 +483,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 	root := filepath.Join(s.Config.ComputerDirectory, "provisioning", operation.ID)
 	enrollmentPath := filepath.Join(root, "enrollment.json")
 	var enrollment ConnectOptions
+	alreadyRegistered := false
 	if operation.EnrollmentID != "" {
 		if err = ReadJSON(enrollmentPath, &enrollment); err != nil {
 			fail(err)
@@ -359,6 +496,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 			fail(err)
 			return
 		}
+		alreadyRegistered = record.State == "registered"
 		record.ExpiresAt = time.Now().UTC().Add(15 * time.Minute)
 		if err = s.Store.Save(ctx, "enrollments", &record.Meta, &record); err != nil {
 			fail(err)
@@ -366,8 +504,16 @@ func (s *Server) provision(operation domain.Provisioning) {
 		}
 	} else {
 		localURL := s.URL
+		serverCA := ""
 		if s.Config.TLSCertificate != "" {
 			localURL = s.Config.PublicURL
+		}
+		if probe.Desktop && (runtime.GOOS == "windows" || runtime.GOOS == "darwin") {
+			localURL, serverCA, err = s.ensureContainerBridge(ctx)
+			if err != nil {
+				fail(err)
+				return
+			}
 		}
 		result, enrollErr := s.Hub.Enroll(ctx, localURL, true, false)
 		if enrollErr != nil {
@@ -375,14 +521,20 @@ func (s *Server) provision(operation domain.Provisioning) {
 			return
 		}
 		operation.EnrollmentID = result.Enrollment.ID
-		enrollment = ConnectOptions{ServerURL: localURL, EnrollmentID: result.Enrollment.ID, Token: result.Token}
+		enrollment = ConnectOptions{ServerURL: localURL, ServerCA: serverCA, EnrollmentID: result.Enrollment.ID, Token: result.Token}
 		if err = WriteJSON(enrollmentPath, enrollment); err != nil {
 			fail(err)
 			return
 		}
 		save()
 	}
-	id, err := LaunchContainer(ctx, DockerOptions{Identity: operation.ID, Binary: binary, EnrollmentFile: enrollmentPath}, report)
+	if !alreadyRegistered {
+		if err = s.Hub.PrepareContainer(ctx, enrollment.EnrollmentID, enrollment.Token); err != nil {
+			fail(err)
+			return
+		}
+	}
+	id, err := LaunchContainer(ctx, DockerOptions{Identity: operation.ID, Binary: binary, EnrollmentFile: enrollmentPath, Runtime: &probe}, report)
 	operation.ContainerID = id
 	if err != nil {
 		fail(err)
@@ -412,7 +564,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 			for scanner.Scan() {
 				report("waiting_for_daemon", scanner.Text())
 			}
-			fail(domain.Offline("Container started but its Daemon did not connect. Check its log and Server URL. For Docker Desktop, enable host networking."))
+			fail(domain.Offline("Container started but its Daemon did not connect. Check its log, Server URL, and local container networking or firewall."))
 			return
 		case <-tick.C:
 		}

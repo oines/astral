@@ -19,6 +19,7 @@ extraResources:
     filter:
       - trayTemplate*.png
       - icon*.png
+      - icon.ico
 mac:
   icon: resources/icon.icns
   category: public.app-category.productivity
@@ -30,4 +31,23 @@ mac:
     NSHumanReadableCopyright: Astral contributors
 dmg:
   title: Astral
-artifactName: Astral-${version}-${arch}.${ext}
+win:
+  icon: resources/icon.ico
+  executableName: Astral
+  requestedExecutionLevel: asInvoker
+  target:
+    - nsis
+    - zip
+nsis:
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+  deleteAppDataOnUninstall: false
+linux:
+  icon: resources/icon.png
+  executableName: astral
+  category: Utility
+  target:
+    - AppImage
+    - deb
+artifactName: Astral-${version}-${os}-${arch}.${ext}

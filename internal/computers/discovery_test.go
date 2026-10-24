@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/oines/astral/internal/domain"
+	testfs "github.com/oines/astral/internal/testkit/fs"
 )
 
 func discoveryFile(t *testing.T, path, content string) {
@@ -80,17 +81,11 @@ func TestDiscoveryFollowsSkillLinksAndReportsIncompleteCatalogs(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(root), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(packages, root); err != nil {
-		t.Fatal(err)
-	}
+	testfs.SymlinkDir(t, packages, root)
 	external := t.TempDir()
 	discoveryFile(t, filepath.Join(external, "SKILL.md"), "---\nname: linked\ndescription: External linked package\n---\nbody")
-	if err := os.Symlink(external, filepath.Join(packages, "linked")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(packages, filepath.Join(packages, "cycle")); err != nil {
-		t.Fatal(err)
-	}
+	testfs.SymlinkDir(t, external, filepath.Join(packages, "linked"))
+	testfs.SymlinkDir(t, packages, filepath.Join(packages, "cycle"))
 	discoveryFile(t, filepath.Join(packages, "invalid", "SKILL.md"), "---\nname: broken\n---\nbody")
 	discoveryFile(t, filepath.Join(packages, "large", "SKILL.md"), strings.Repeat("x", maxDiscoveryFileBytes+1))
 	if err := os.Mkdir(filepath.Join(cwd, "AGENTS.md"), 0700); err != nil {

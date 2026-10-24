@@ -14,6 +14,7 @@ pnpm typecheck
 pnpm test
 pnpm build:distribution
 pnpm test:desktop-service
+pnpm test:daemon-service
 ```
 
 The distribution build embeds the Web application, license and third-party notices in the Go executable. `check-desktop-service.mjs` checks Owner handoff, graceful shutdown, parent-death cleanup, data-lock release and preservation of Local Computer identity.
@@ -21,12 +22,14 @@ The distribution build embeds the Web application, license and third-party notic
 Container integration requires the built distributions and a running local Docker-compatible Linux runtime:
 
 ```sh
-GOWORK=off go test -tags=integration -count=1 -timeout=8m ./internal/platform
+GOWORK=off go test -tags=integration -count=1 -timeout=20m ./internal/platform
 ```
 
 These tests create isolated Computers and containers, exercise actual enrollment and command/file operations, and clean up the resources they create. Use a disposable development environment.
 
-The current [CI workflow](../.github/workflows/ci.yml) is the executable source of truth for automated checks. Results are available in [GitHub Actions](https://github.com/oines/astral/actions). Cross-platform work is tracked in [PR #1](https://github.com/oines/astral/pull/1); its platform matrix is not a claim that every installation format or architecture has already passed interactive acceptance.
+The current [CI workflow](../.github/workflows/ci.yml) is the executable source of truth for automated checks. Results are available in [GitHub Actions](https://github.com/oines/astral/actions). Its matrix runs native Windows, macOS and Linux tests, downloaded installers, current-user Daemon lifecycle and packaged Desktop startup/shutdown, plus the full Ubuntu container and in-place update checks. Its platform matrix is not a claim that every installation format or architecture has already passed interactive acceptance.
+
+`pnpm test:daemon-service` installs and removes an isolated current-user service. Run it in a disposable user session with the platform service manager available. `pnpm test:packaged-desktop` checks a previously packaged App; Linux CI installs the native DEB and runs it in an X display so its sandbox hooks are exercised.
 
 ## Manual acceptance
 

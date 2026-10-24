@@ -17,6 +17,7 @@ import { useAppStore } from '../../stores/app'
 import ResourceDelete from './ResourceDelete.vue'
 import AddComputerDialog from './AddComputerDialog.vue'
 import CopyValue from '../CopyValue.vue'
+import ComputerMaintenance from './ComputerMaintenance.vue'
 const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
@@ -169,6 +170,9 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
         </SettingsRow>
       </SettingsSection>
       <SettingsSection :title="t('computerInfo.environment')">
+        <SettingsRow :label="t('computerInfo.daemonVersion')">
+          <span>{{ selected.daemon_version || t('computerInfo.unknownVersion') }}</span>
+        </SettingsRow>
         <SettingsRow
           v-for="fact in computerEnvironment(selected)"
           :key="fact.key"
@@ -189,6 +193,10 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
           />
         </SettingsRow>
       </SettingsSection>
+      <ComputerMaintenance
+        v-if="!selected.revoked"
+        :computer="selected"
+      />
       <SettingsSection :title="t('computerAccess')">
         <template #actions>
           <Button

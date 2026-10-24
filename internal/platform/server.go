@@ -54,28 +54,29 @@ type Running struct {
 	StartedAt time.Time `json:"started_at"`
 }
 type Server struct {
-	Config       Config
-	Store        *persistence.Store
-	CoreStore    *sqlite.Store
-	Hub          *computers.Hub
-	Harness      *harness.Service
-	Channels     *channels.Service
-	Owner        *httpapi.API
-	Listener     net.Listener
-	HTTP         *http.Server
-	URL          string
-	token        string
-	lock         *os.File
-	ctx          context.Context
-	cancel       context.CancelFunc
-	mu           sync.Mutex
-	local        *computers.Daemon
-	localLock    *os.File
-	workers      sync.WaitGroup
-	provisioning map[string]bool
-	closed       bool
-	closeDone    chan struct{}
-	startupError string
+	Config          Config
+	Store           *persistence.Store
+	CoreStore       *sqlite.Store
+	Hub             *computers.Hub
+	Harness         *harness.Service
+	Channels        *channels.Service
+	Owner           *httpapi.API
+	Listener        net.Listener
+	HTTP            *http.Server
+	URL             string
+	token           string
+	lock            *os.File
+	ctx             context.Context
+	cancel          context.CancelFunc
+	mu              sync.Mutex
+	local           *computers.Daemon
+	localLock       *os.File
+	workers         sync.WaitGroup
+	provisioning    map[string]bool
+	closed          bool
+	closeDone       chan struct{}
+	startupError    string
+	containerBridge *containerBridge
 }
 
 func New(config Config) (server *Server, err error) {
@@ -134,7 +135,7 @@ func New(config Config) (server *Server, err error) {
 	if len(s.token) < 32 {
 		return nil, fmt.Errorf("owner token file is invalid")
 	}
-	if err = os.Chmod(tokenPath, 0600); err != nil {
+	if err = ProtectPrivate(tokenPath); err != nil {
 		return nil, err
 	}
 	s.Store, err = persistence.Open(config.DataDirectory)
@@ -202,13 +203,19 @@ func New(config Config) (server *Server, err error) {
 	mux.HandleFunc("POST /internal/enrollments/{id}", s.register)
 	mux.HandleFunc("GET /internal/computers/{id}/connect", s.Hub.Connect)
 	mux.HandleFunc("GET /internal/computers/{id}/status", s.computerStatus)
+	mux.HandleFunc("POST /internal/enrollments/{id}/container-access", s.containerAccess)
+	mux.HandleFunc("POST /internal/enrollments/{id}/prepare", s.prepareContainer)
 	mux.HandleFunc("GET /install.sh", s.installer)
+	mux.HandleFunc("GET /install.ps1", s.powerShellInstaller)
 	mux.HandleFunc("GET /downloads/{name}", s.downloadBinary)
 	mux.Handle("/", s.web())
 	s.HTTP = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
 	return s, nil
 }
 func (s *Server) Start() error {
+	if err := s.restoreContainerBridge(s.ctx); err != nil {
+		return err
+	}
 	if err := s.Channels.Start(s.ctx); err != nil {
 		return err
 	}
@@ -255,6 +262,7 @@ func (s *Server) Close(ctx context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
 	}
+	s.closeContainerBridge(ctx)
 	var all []error
 	if s.Channels != nil {
 		all = append(all, s.Channels.Close(ctx))
@@ -312,6 +320,15 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	credentials.ServerURL = s.Config.PublicURL
 	httpcontract.JSON(w, 200, credentials)
 }
+
+func (s *Server) prepareContainer(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if err := s.Hub.PrepareContainer(r.Context(), r.PathValue("id"), token); err != nil {
+		httpcontract.Failure(w, r, err)
+		return
+	}
+	httpcontract.JSON(w, 200, map[string]bool{"prepared": true})
+}
 func (s *Server) computerStatus(w http.ResponseWriter, r *http.Request) {
 	var c domain.Computer
 	err := s.Store.Get(r.Context(), "computers", r.PathValue("id"), &c)
@@ -363,6 +380,7 @@ func (s *Server) UseLocal(ctx context.Context) (domain.ComputerStatus, error) {
 		s.mu.Unlock()
 		return domain.ComputerStatus{}, err
 	}
+	d.Hello.Version = s.Config.Version
 	if credentials.ComputerID != "" {
 		var record domain.Computer
 		if err = s.Store.Get(ctx, "computers", credentials.ComputerID, &record); err != nil || record.Revoked {

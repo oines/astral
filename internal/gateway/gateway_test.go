@@ -19,6 +19,7 @@ import (
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/testkit"
+	testshell "github.com/oines/astral/internal/testkit/shell"
 )
 
 func TestConcurrentLocalGatewaysKeepAgentSessionAndSourceIdentity(t *testing.T) {
@@ -66,7 +67,7 @@ func TestConcurrentLocalGatewaysKeepAgentSessionAndSourceIdentity(t *testing.T) 
 		go func() {
 			defer workers.Done()
 			for range 4 {
-				body, err := invoke(b, fmt.Sprintf("curl --fail --silent %q", b.APIURL+"/v1/context"))
+				body, err := invoke(b, testshell.HTTP("GET", b.APIURL+"/v1/context", ""))
 				if err != nil {
 					t.Error(err)
 					return
@@ -82,7 +83,7 @@ func TestConcurrentLocalGatewaysKeepAgentSessionAndSourceIdentity(t *testing.T) 
 	if err = p.Harness.SelectComputer(p.Context, p.Session.ID, p.Daemons[1].Credentials.ComputerID, ""); err != nil {
 		t.Fatal(err)
 	}
-	body, err := invoke(first, fmt.Sprintf("curl --fail --silent %q", first.APIURL+"/v1/context"))
+	body, err := invoke(first, testshell.HTTP("GET", first.APIURL+"/v1/context", ""))
 	if err != nil {
 		t.Fatal(err)
 	}

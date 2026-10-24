@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 func DefaultRoot() (string, error) {
@@ -25,7 +24,7 @@ func WriteJSON(path string, value any) error {
 	return WritePrivate(path, append(raw, '\n'))
 }
 func WritePrivate(path string, raw []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := privateDirectory(filepath.Dir(path)); err != nil {
 		return err
 	}
 	file, err := os.CreateTemp(filepath.Dir(path), ".astral-")
@@ -34,7 +33,7 @@ func WritePrivate(path string, raw []byte) error {
 	}
 	name := file.Name()
 	defer os.Remove(name)
-	if err = file.Chmod(0600); err == nil {
+	if err = ProtectPrivate(name); err == nil {
 		_, err = file.Write(raw)
 	}
 	if err == nil {
@@ -54,14 +53,14 @@ func ReadJSON(path string, target any) error {
 	return json.Unmarshal(raw, target)
 }
 func Lock(path string) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := privateDirectory(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
 	}
-	if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err = lockFile(file); err != nil {
 		file.Close()
 		return nil, fmt.Errorf("another Astral process already owns %s", path)
 	}
@@ -73,4 +72,11 @@ func Lock(path string) (*os.File, error) {
 		return nil, err
 	}
 	return file, nil
+}
+
+func privateDirectory(path string) error {
+	if err := os.MkdirAll(path, 0700); err != nil {
+		return err
+	}
+	return ProtectPrivate(path)
 }

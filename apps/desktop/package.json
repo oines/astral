@@ -2,7 +2,11 @@
   "name": "@astral/desktop",
   "productName": "Astral",
   "description": "A self-hosted workspace for agents and Computers.",
-  "author": "Astral contributors",
+  "author": {
+    "name": "Astral contributors",
+    "email": "74654777+oines@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/oines/astral",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,6 +16,9 @@
     "dev": "node ../../scripts/build-icons.mjs && electron-vite dev",
     "build": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --dir",
     "package": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --mac --arm64 --x64",
+    "package:mac-ci": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --mac --x64 --publish never && electron-builder --mac --arm64 --publish never",
+    "package:windows": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --win --arm64 --x64",
+    "package:linux": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --linux --arm64 --x64",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

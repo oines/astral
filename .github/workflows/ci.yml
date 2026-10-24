@@ -4,6 +4,9 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -32,15 +35,49 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build:distribution
-      - run: go test -tags=integration -count=1 -timeout=8m ./internal/platform
       - run: pnpm test:desktop-service
       - run: git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
       - uses: actions/upload-artifact@v4
         with:
           name: astral-server-binaries
           path: dist/bin/
-  desktop:
-    runs-on: macos-14
+  containers:
+    name: Container environment and in-place update
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reserve space for the full Ubuntu environment
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker builder prune --force
+          df -h /
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+          # Do not restore the six-target compile cache into an image-build job.
+          cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: astral-server-binaries
+          path: dist/bin/
+      - run: go test -tags=integration -count=1 -timeout=20m ./internal/platform
+  native:
+    name: Native ${{ matrix.os }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            package: package:windows
+          - os: ubuntu-latest
+            package: package:linux
+          - os: macos-14
+            package: package:mac-ci
+    runs-on: ${{ matrix.os }}
     env:
       GOWORK: "off"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -57,11 +94,64 @@ jobs:
           node-version: "26.7.0"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:distribution
-      - run: pnpm --filter @astral/desktop package
-      - uses: actions/upload-artifact@v4
+      - run: go test -race ./...
+      - run: go test -v github.com/oines/astral-core/standardtools/... -timeout 4m
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - uses: actions/download-artifact@v4
+        id: distribution
         with:
-          name: astral-macos
+          name: astral-server-binaries
+          path: dist/bin/
+      - name: Restore executable permissions after artifact download
+        if: runner.os != 'Windows'
+        run: chmod +x dist/bin/astral-*
+      - run: pnpm test:desktop-service
+      - name: Native downloaded installer
+        run: go test -tags=integration -run '^TestDistributionInstallerRegistersActualDaemon$' -count=1 -timeout=3m ./internal/platform
+      - name: Prepare Linux user session for native service test
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo systemctl start user@$(id -u).service
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+      - run: pnpm test:daemon-service
+      - run: pnpm --filter @astral/desktop ${{ matrix.package }}
+        id: package
+        # Packaging is independent of the separately enrolled Daemon service.
+        # Keep that failure visible while collecting native App results too.
+        if: ${{ !cancelled() && steps.distribution.outcome == 'success' }}
+      - name: Packaged App startup and shutdown
+        if: ${{ !cancelled() && steps.package.outcome == 'success' && runner.os != 'Linux' }}
+        run: pnpm test:packaged-desktop
+      - name: Install native Linux DEB
+        id: deb_install
+        if: ${{ !cancelled() && steps.package.outcome == 'success' && runner.os == 'Linux' }}
+        run: |
+          desktop_deb_arch=$(dpkg --print-architecture)
+          for desktop_deb in apps/desktop/release/*.deb; do
+            if [ "$(dpkg-deb --field "$desktop_deb" Architecture)" = "$desktop_deb_arch" ]; then
+              sudo apt-get update
+              sudo apt-get install --yes "./$desktop_deb"
+              exit 0
+            fi
+          done
+          echo "::error::No DEB package matches native architecture $desktop_deb_arch."
+          exit 1
+      - name: Installed Linux DEB App startup and shutdown
+        if: ${{ !cancelled() && steps.deb_install.outcome == 'success' && runner.os == 'Linux' }}
+        env:
+          ASTRAL_PACKAGED_APP_EXECUTABLE: /opt/Astral/astral
+        run: xvfb-run -a pnpm test:packaged-desktop
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        with:
+          name: astral-desktop-${{ matrix.os }}
           path: |
-            apps/desktop/release/*.dmg
+            apps/desktop/release/*.exe
             apps/desktop/release/*.zip
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb

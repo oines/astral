@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -26,13 +25,17 @@ import (
 
 func distributionServer(t *testing.T) (*Server, context.Context) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	t.Cleanup(cancel)
 	binaries, err := filepath.Abs("../../dist/bin")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = os.Stat(filepath.Join(binaries, "astral-"+runtime.GOOS+"-"+runtime.GOARCH)); err != nil {
+	binaryName := "astral-" + runtime.GOOS + "-" + runtime.GOARCH
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	if _, err = os.Stat(filepath.Join(binaries, binaryName)); err != nil {
 		t.Fatal("run pnpm build:distribution before integration tests")
 	}
 	root := t.TempDir()
@@ -53,7 +56,11 @@ func installerCommand(t *testing.T, ctx context.Context, s *Server, root string,
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := http.Get(s.URL + "/install.sh")
+	installerName := "install.sh"
+	if runtime.GOOS == "windows" {
+		installerName = "install.ps1"
+	}
+	response, err := http.Get(s.URL + "/" + installerName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,22 +69,15 @@ func installerCommand(t *testing.T, ctx context.Context, s *Server, root string,
 	if err != nil || response.StatusCode != http.StatusOK {
 		t.Fatal("could not download the installer")
 	}
-	script := filepath.Join(root, "install.sh")
+	script := filepath.Join(root, installerName)
 	if err = os.WriteFile(script, raw, 0700); err != nil {
 		t.Fatal(err)
 	}
-	args := []string{script, "--server", s.URL, "--enrollment", enrollment.Enrollment.ID, "--token", enrollment.Token, "--root", filepath.Join(root, "daemon")}
-	if container {
-		args = append(args, "--container")
-	} else {
-		args = append(args, "--foreground")
-	}
-	command := exec.CommandContext(ctx, "/bin/sh", args...)
+	command := nativeInstallerCommand(ctx, script, s.URL, enrollment.Enrollment.ID, enrollment.Token, filepath.Join(root, "daemon"), container)
 	command.Env = append(os.Environ(), "XDG_DATA_HOME="+filepath.Join(root, "installed"))
-	// Cancel the installer and its foreground daemon together.
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGTERM) }
-	command.WaitDelay = 5 * time.Second
+	if runtime.GOOS == "windows" {
+		command.Env = append(command.Env, "LOCALAPPDATA="+filepath.Join(root, "installed"))
+	}
 	return command, enrollment.Enrollment.ID
 }
 

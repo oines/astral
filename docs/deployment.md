@@ -2,7 +2,7 @@
 
 ## Data directories
 
-The default root is the operating system's user configuration directory plus `astral`: `~/Library/Application Support/astral` on macOS and `$XDG_CONFIG_HOME/astral` (normally `~/.config/astral`) on Linux.
+The default root is the operating system's user configuration directory plus `astral`: `~/Library/Application Support/astral` on macOS, `%APPDATA%\astral` on Windows, and `$XDG_CONFIG_HOME/astral` (normally `~/.config/astral`) on Linux.
 
 | Location | Contents |
 | --- | --- |
@@ -19,7 +19,7 @@ Back up the server data directory, including its encryption key, while the serve
 
 ## Linux with HTTPS
 
-Copy the appropriate binary and, for enrollment downloads and container creation, all four distribution binaries to the host. The Web app is embedded; Node and pnpm are not needed at runtime.
+Copy the appropriate binary and, for enrollment downloads and container creation, all six distribution binaries to the host. The Web app is embedded; Node and pnpm are not needed at runtime.
 
 ```sh
 /opt/astral/bin/astral serve \
@@ -71,9 +71,32 @@ The service account needs access to the local Docker runtime only if you use the
 
 Generate an enrollment command in Settings and run it on the intended machine. The installer selects its OS/architecture, verifies the downloaded binary against the server's SHA-256 manifest, then registers the Daemon. Enrollment credentials expire after 15 minutes; the Daemon stores its own credential privately after registration. Repeating a successful command reuses the existing identity.
 
-The installer executable is placed under `$XDG_DATA_HOME/astral/bin` or `~/.local/share/astral/bin`. Daemon state is under the default root's `computers/<server-hash>/<enrollment-id>` unless `--root` is supplied. The normal command starts a background Daemon and reports success only after its authenticated connection is online. `--foreground` is suitable for a process supervisor. For restart after OS reboot, supervise `astral computer daemon --root DIRECTORY --credentials DIRECTORY/credentials.json` using the target machine's service manager.
+The installer stores versioned executables under `$XDG_DATA_HOME/astral/bin/<sha256>/astral` (or `~/.local/share/astral/bin/…`) on macOS/Linux, and `%LOCALAPPDATA%\Astral\bin\<sha256>\astral.exe` on Windows. Daemon state stays under the default root's `computers/<server-hash>/<enrollment-id>` unless `--root` is supplied. Program files and Agent homes are separate.
 
-Container mode uses a Debian image with Bash, CA certificates, curl, Git, Python and ripgrep. It creates an independently identified container and a persistent volume. The generated enrollment file is mounted read-only. Linux Docker and OrbStack work with the current host-networking setup. Docker Desktop requires its [host-networking feature](https://docs.docker.com/engine/network/drivers/host/#docker-desktop) to be enabled. A remote Docker context is rejected by the local shortcut.
+Native enrollment automatically installs **Astral Daemon (<instance-id>)** for the current OS user. macOS uses a LaunchAgent, visible in System Settings → General → Login Items & Extensions; Windows uses a visible logon task under Task Scheduler → Astral, with `InteractiveToken` and `LeastPrivilege`; Linux uses a systemd user unit visible through `systemctl --user`. Installation does not elevate or enable Linux lingering. The user must have an available login/user service session. A desktop-managed local Daemon remains owned by its Server, and a container Daemon remains owned by Docker.
+
+Use the exact executable printed by installation and the Computer data root for local maintenance:
+
+```sh
+astral computer service status --root DIRECTORY
+astral computer service logs --root DIRECTORY
+astral computer service stop --root DIRECTORY
+astral computer service start --root DIRECTORY
+astral computer service restart --root DIRECTORY
+astral computer service uninstall --root DIRECTORY
+```
+
+Service status reports the local process manager; the Computers page separately reports authenticated Server connectivity. A running service alone does not mean that its Computer is online. `--foreground` skips service registration for an existing supervisor or a disposable test.
+
+Container mode creates a Ubuntu 24.04 environment with Bash, Git/LFS, search/network/build tools, Python with uv and common data/document libraries, Node LTS/pnpm, Go, Rust/Cargo, Java 21/Maven, LibreOffice/Pandoc/Poppler, FFmpeg/ImageMagick/Tesseract, Chinese and emoji fonts, and Playwright Chromium. Language and Python package versions are pinned in `internal/platform/computer-image/Dockerfile`; Ubuntu security packages are resolved at image build. The image is intentionally substantial and the first build/download takes longer. Agent-installed software lives in the container writable layer as well as its data volume.
+
+Local Docker endpoints include Unix sockets and the Windows Docker Engine named pipe. Docker Desktop must run Linux containers. The shortcut does not require enabling Docker Desktop host networking: same-host containers use a dedicated HTTPS bridge via `host.docker.internal` with its pinned certificate. Its persistent port and certificate let enrolled containers reconnect after desktop/server restarts. This listener exposes enrollment and authenticated Daemon transport only. It does not expose the Owner API or Web UI. Remote Docker contexts are rejected by the local shortcut.
+
+### Updating an enrolled Computer
+
+After updating the Desktop/Server distribution, open Computer details and copy the update command for the target computer's shell. Run it locally on the enrolled machine, or on the Docker host for a container. The command fetches and checks the new executable; temporary enrollment tokens are not reused. Native updates switch the user service to the new versioned executable and verify a new Daemon boot/version is online. Failure attempts to restore the previous service executable.
+
+Container updates transfer and verify the Linux executable inside the existing container, replace only `/usr/local/bin/astral`, and restart the same container. The container identity, writable layer, data volume and credentials remain. Failure attempts to restore the previous binary. Updating does not rebuild the container to pick up a new Ubuntu/tool image. New environments use the new recipe; replacing an existing environment is a separate user decision. Restarting interrupts active tasks, so run the command when those tasks can be stopped.
 
 The creator passes container name, creator hostname, image, data volume and mount path through `ASTRAL_CONTAINER_INFO`. The Daemon reports those values and its actual data root; the Server retains them for offline inspection. No Docker socket or host management service is added. Older local containers can recover their recorded name and volume from provisioning records; other unavailable fields remain unknown until reported by an updated Daemon.
 
@@ -107,8 +130,8 @@ Configure accounts in Settings → Bots → choose a Bot → Connect a platform 
 
 ## Desktop troubleshooting
 
-The default app uses the same macOS data root as the CLI. Do not run two servers against that directory simultaneously; the process lock reports the conflict. For an isolated desktop test, set `ASTRAL_DESKTOP_DATA_DIR` and optionally `ASTRAL_SERVER_LISTEN`. `ASTRAL_PUBLIC_URL`, `ASTRAL_TLS_CERT` and `ASTRAL_TLS_KEY` expose the corresponding managed-server configuration.
+Desktop stores its current data under the OS user configuration directory in `astral/schema-3/`. The CLI accepts explicit `--data` and `--computers-dir` paths when opening that same data through headless mode. Do not run two servers against one data directory simultaneously; the process lock reports the conflict. For an isolated desktop test, set `ASTRAL_DESKTOP_DATA_DIR` and optionally `ASTRAL_SERVER_LISTEN`. `ASTRAL_PUBLIC_URL`, `ASTRAL_TLS_CERT` and `ASTRAL_TLS_KEY` expose the corresponding managed-server configuration.
 
-The desktop main process owns the Go child. A normal quit waits for service shutdown; a crashed parent is detected by the server. A detached remote Daemon and a container Computer have their own lifecycles.
+The desktop main process owns the Go child. A normal quit waits for service shutdown; a crashed parent is detected by the server. An enrolled user-service Daemon and a container Computer have their own lifecycles.
 
 Development packages are unsigned and unnotarized. A distributable signed release requires an Apple signing identity and notarization configuration; see [Electron's release requirements](https://www.electronjs.org/docs/latest/tutorial/code-signing). The build does not include credentials or silently attempt those steps.

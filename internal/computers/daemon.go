@@ -32,6 +32,7 @@ type Daemon struct {
 	Credentials Credentials
 	Root        string
 	Hello       Hello
+	httpClient  *http.Client
 	mu          sync.Mutex
 	peer        *transport.Peer
 	gateways    map[string]*localGateway
@@ -70,9 +71,10 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
+	shell := local.DefaultShell()
+	client, err := NewHTTPClient(credentials.ServerCA)
+	if err != nil {
+		return nil, err
 	}
 	var container *domain.ContainerInfo
 	if raw := os.Getenv("ASTRAL_CONTAINER_INFO"); raw != "" {
@@ -81,7 +83,7 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 		}
 	}
 	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability}},
-		gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, executions: map[string]string{}}, nil
+		httpClient: client, gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, executions: map[string]string{}}, nil
 }
 
 // Run reconnects the same boot identity. No process is transparently recreated.
@@ -108,7 +110,7 @@ func (d *Daemon) Connect(ctx context.Context) error {
 	u = strings.Replace(u, "http://", "ws://", 1)
 	hello, _ := json.Marshal(d.Hello)
 	headers := http.Header{"Authorization": {"Bearer " + d.Credentials.Token}, "X-Astral-Hello": {base64.RawURLEncoding.EncodeToString(hello)}}
-	conn, response, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPHeader: headers})
+	conn, response, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPHeader: headers, HTTPClient: d.httpClient})
 	if err != nil {
 		if response != nil {
 			return fmt.Errorf("daemon connection rejected (HTTP %d)", response.StatusCode)

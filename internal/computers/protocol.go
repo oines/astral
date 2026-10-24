@@ -12,6 +12,7 @@ import (
 )
 
 type Hello struct {
+	Version      string                `json:"version,omitempty"`
 	BootID       string                `json:"boot_id"`
 	Hostname     string                `json:"hostname"`
 	OS           string                `json:"os"`
@@ -28,13 +29,15 @@ type EnrollmentRequest struct {
 }
 type Credentials struct {
 	ServerURL  string `json:"server_url"`
+	ServerCA   string `json:"server_ca,omitempty"`
 	ComputerID string `json:"computer_id"`
 	Token      string `json:"token"`
 }
 type EnrollmentResult struct {
-	Enrollment domain.Enrollment `json:"enrollment"`
-	Token      string            `json:"token"`
-	Command    string            `json:"command"`
+	Enrollment        domain.Enrollment `json:"enrollment"`
+	Token             string            `json:"token"`
+	Command           string            `json:"command"`
+	PowerShellCommand string            `json:"powershell_command"`
 }
 type Call struct {
 	Binding   domain.ExecutionBinding      `json:"binding"`
