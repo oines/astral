@@ -358,7 +358,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .settings-nav nav :is(a, .settings-nav-action).selected { background: var(--selected); }
 .settings-nav nav :is(a, .settings-nav-action):hover { background: var(--hover); text-decoration: none; }
 .settings-nav nav :is(a, .settings-nav-action).selected:is(:hover, :focus-visible) { background: var(--selected); }
-.settings-nav nav svg { width: 17px; height: 17px; color: var(--muted); }
+.settings-nav nav svg, .settings-nav nav .platform-icon { width: 17px; height: 17px; color: var(--muted); }
 .settings-nav-group { margin: 18px 12px 8px; font-size: 12px; color: var(--muted); }
 .settings-main { flex: 1; min-width: 0; overflow-y: auto; background: var(--canvas); border-radius: 14px; container-type: inline-size; container-name: settings; }
 .settings-content { max-width: var(--settings-content-width); margin: 0 auto; padding: 40px var(--settings-page-padding) 64px; display: flex; flex-direction: column; gap: 24px; }
@@ -441,7 +441,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
   .settings-back { margin: 0 0 8px; padding: 5px 8px; }
   .settings-nav nav { flex-direction: row; overflow-x: auto; gap: 3px; padding-bottom: 3px; }
   .settings-nav nav :is(a, .settings-nav-action) { white-space: nowrap; padding: 7px 10px; gap: 6px; font-size: 13px; min-height: 34px; }
-  .settings-nav nav svg { width: 15px; height: 15px; }
+  .settings-nav nav svg, .settings-nav nav .platform-icon { width: 15px; height: 15px; }
   .settings-main { border-radius: 14px 14px 0 0; }
   .settings-content { width: 100%; padding: 24px var(--settings-page-padding) 48px; gap: var(--settings-group-gap); }
   .settings-title h1 { font-size: 18px; }

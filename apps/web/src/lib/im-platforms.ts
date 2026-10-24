@@ -1,7 +1,7 @@
 // Presentation metadata for the concrete adapters implemented by the server.
 // Credentials remain in the existing Connection secret, never in config.
 export const imAdapters = [
-  { id: 'telegram.bot', platform: 'telegram', name: 'Telegram Bot', hint: 'telegramPlatformHint', secret: 'botToken', fields: [{ key: 'base_url', label: 'botServerAddress', placeholder: 'https://api.telegram.org' }] },
+  { id: 'telegram.bot', platform: 'telegram', name: 'Telegram Bot', hint: '', secret: 'botToken', fields: [{ key: 'base_url', label: 'botServerAddress', placeholder: 'https://api.telegram.org' }] },
   { id: 'qq.bot', platform: 'qq', name: 'QQ 官方 Bot', hint: 'qqOfficialHint', secret: 'appSecret', fields: [{ key: 'app_id', label: 'appID', placeholder: 'App ID', required: true }, { key: 'base_url', label: 'botServerAddress', placeholder: 'https://api.sgroup.qq.com' }, { key: 'token_url', label: 'tokenEndpoint', placeholder: 'https://bots.qq.com/app/getAppAccessToken' }] },
   { id: 'qq.napcat', platform: 'qq', name: 'QQ NapCat', hint: 'napcatHint', secret: 'accessToken', fields: [{ key: 'base_url', label: 'napcatHTTP', placeholder: 'http://127.0.0.1:3000', required: true }, { key: 'websocket_url', label: 'napcatWebSocket', placeholder: 'ws://127.0.0.1:3001', required: true }] },
   { id: 'weixin.ilink', platform: 'weixin', name: 'ClawBot / iLink', hint: 'weixinPlatformHint', secret: '', fields: [] },

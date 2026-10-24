@@ -1,6 +1,6 @@
 export const settingsUxEn = {
   settingsSaving: 'Saving…', settingsNotApplied: 'This change was not applied.', settingsUnconfirmed: 'The result is not confirmed yet.', settingsCheckStatus: 'Check status', settingsValueRequired: 'Enter a value.',
-  botBasics: 'Basic settings', botComputerPermissions: 'Computer access', botPlatforms: 'Chat platforms', connectPlatform: 'Connect a platform', choosePlatform: 'Choose a platform', telegramPlatformHint: 'Connect a Telegram bot to private and group chats.',
+  botBasics: 'Basic settings', botComputerPermissions: 'Computer access', botPlatforms: 'Chat platforms', connectPlatform: 'Connect a platform', choosePlatform: 'Choose a platform',
   botIdentity: 'Identity', botModelSettings: 'Models', botSearchSettings: 'Web search', botAvatarHint: 'An emoji or a short label.',
   computerPermissionsHint: 'These Computers can run commands and work with files for this Bot.', manageComputerConnections: 'Connect or disconnect Computers', manageComputerConnectionsHint: 'Add a machine or manage its connection in global settings.', grantComputer: 'Allow access to {name}', grantingAccess: 'Updating access…', accessUpdated: 'Access updated',
   botMissing: 'This Bot is no longer available.', accountMissing: 'This account is no longer available.', allPlatformAccounts: 'All {platform} accounts', platformAccount: '{platform} account', connectPlatformAccount: 'Connect account', accountInfo: 'Account', accountEnabled: 'Enabled',
@@ -12,7 +12,7 @@ export const settingsUxEn = {
 }
 export const settingsUxZh: typeof settingsUxEn = {
   settingsSaving: '保存中…', settingsNotApplied: '本次修改未生效。', settingsUnconfirmed: '结果尚未确认。', settingsCheckStatus: '检查状态', settingsValueRequired: '请输入内容。',
-  botBasics: '基本设置', botComputerPermissions: '电脑权限', botPlatforms: '聊天平台', connectPlatform: '连接平台', choosePlatform: '选择平台', telegramPlatformHint: '通过 Telegram 机器人连接私聊和群聊。',
+  botBasics: '基本设置', botComputerPermissions: '电脑权限', botPlatforms: '聊天平台', connectPlatform: '连接平台', choosePlatform: '选择平台',
   botIdentity: '身份信息', botModelSettings: '模型', botSearchSettings: '网页搜索', botAvatarHint: '使用表情或简短文字。',
   computerPermissionsHint: 'Bot 可以在这些电脑上执行命令和读写文件。', manageComputerConnections: '连接或断开电脑', manageComputerConnectionsHint: '在全局设置中添加电脑或管理连接。', grantComputer: '允许使用「{name}」', grantingAccess: '更新权限中…', accessUpdated: '权限已更新',
   botMissing: '这个 Bot 已不存在。', accountMissing: '这个账号已不存在。', allPlatformAccounts: '所有 {platform} 账号', platformAccount: '{platform} 账号', connectPlatformAccount: '连接账号', accountInfo: '账号信息', accountEnabled: '启用账号',

@@ -11,7 +11,7 @@ const info = computed(() => adapterInfo(props.adapter))
 <template>
   <template v-if="info">
     <p
-      v-if="creating"
+      v-if="creating && info.hint"
       class="muted small"
     >
       {{ t(info.hint) }}
