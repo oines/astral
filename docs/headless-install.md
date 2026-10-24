@@ -18,10 +18,10 @@ To inspect the script and select a specific release, download it first:
 
 ```sh
 curl -fL --proto '=https' --proto-redir '=https' \
-  https://github.com/oines/astral/releases/download/v2026.10.1/install-server.sh \
+  https://github.com/oines/astral/releases/download/v0.1.0/install-server.sh \
   -o install-server.sh
 less install-server.sh
-bash install-server.sh --tag v2026.10.1
+bash install-server.sh --tag v0.1.0
 ```
 
 The version above illustrates the tag format; it is not a claim that this release exists. The repository is fixed to `oines/astral`; the script does not accept arbitrary binary URLs. `latest` resolves GitHub's latest published stable release once, then downloads from that explicit tag.
@@ -85,7 +85,7 @@ Back up the data and encryption key consistently before updating; see [the backu
 bash install-server.sh --help
 bash install-server.sh --version
 bash install-server.sh --dry-run
-bash install-server.sh --tag v2026.10.1 --download-only /absolute/new-directory
+bash install-server.sh --tag v0.1.0 --download-only /absolute/new-directory
 ```
 
 `--dry-run` performs argument/configuration checks and prints the plan without network requests, file changes or service operations. `--download-only` needs Linux but no user manager; it downloads and validates the full distribution into a new directory, executes no downloaded program and changes no service or application data. The destination's parent directory must exist. Neither option pretends to prove native service startup.

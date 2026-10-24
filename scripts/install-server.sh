@@ -35,7 +35,7 @@ usage() {
 Astral Server installer (Linux amd64/arm64, current user only)
 
 Usage: bash install-server.sh [OPTIONS]
-  --tag TAG             Published vYYYY.M.N release tag, or latest (default)
+  --tag TAG             Published vMAJOR.MINOR.PATCH tag, or latest (default)
   --root DIRECTORY      Dedicated installation/data root (absolute path)
   --listen HOST:PORT    Server listen address (first install: 127.0.0.1:4545)
   --public-url URL      HTTPS public URL, normally provided by a reverse proxy
@@ -48,6 +48,8 @@ Usage: bash install-server.sh [OPTIONS]
 
 Updates preserve omitted listen/public-url/TLS settings. Installation requires
 an existing systemd user manager and never uses sudo or enables user lingering.
+Tags contain three integers from 0 to 9007199254740991, without leading zeroes,
+prerelease identifiers or build metadata.
 Unsigned candidates and releases not marked public_release_ready are rejected.
 HELP
 }
@@ -67,8 +69,17 @@ while [[ $# -gt 0 ]]; do
     *) die "unknown option: $1 (see --help)" ;;
   esac
 done
-release_tag_pattern='^v[1-9][0-9]{3}\.(1[0-2]|[1-9])\.[1-9][0-9]*$'
-[[ $tag == latest || $tag =~ $release_tag_pattern ]] || die 'release tag must be vYYYY.M.N, month 1-12 and N starting at 1, without leading zeroes'
+release_tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+valid_release_tag() {
+  local part LC_ALL=C
+  [[ $1 =~ $release_tag_pattern ]] || return 1
+  for part in "${BASH_REMATCH[@]:1}"; do
+    # Compare lengths and decimal strings so oversized input cannot overflow
+    # Bash arithmetic. Match JavaScript's Number.MAX_SAFE_INTEGER exactly.
+    [[ ${#part} -lt 16 || ( ${#part} -eq 16 && ( $part < 9007199254740991 || $part == 9007199254740991 ) ) ]] || return 1
+  done
+}
+[[ $tag == latest ]] || valid_release_tag "$tag" || die 'release tag must be vMAJOR.MINOR.PATCH without leading zeroes or prerelease/build suffixes; each component must be 0-9007199254740991'
 for command in python3 uname; do command -v "$command" >/dev/null 2>&1 || die "required command is missing: $command"; done
 root=$(python3 -c 'import os,sys; p=sys.argv[1]; assert os.path.isabs(p), "--root must be absolute"; print(os.path.realpath(p))' "$root")
 [[ $root != / && $root != "$HOME" ]] || die '--root must be a dedicated Astral directory'
@@ -184,8 +195,8 @@ tag=$(python3 - "$stage/release.json" "$requested_tag" <<'PY'
 import json,re,sys
 with open(sys.argv[1],encoding='utf-8') as f: release=json.load(f)
 tag=release.get('tag_name','')
-match=re.fullmatch(r'v([1-9][0-9]{3})\.(1[0-2]|[1-9])\.([1-9][0-9]*)',tag)
-if release.get('draft') is not False or not match or int(match[3])>9007199254740991: raise SystemExit('Release is unpublished or its tag is not vYYYY.M.N')
+match=re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)',tag) if isinstance(tag,str) else None
+if release.get('draft') is not False or not match or any(len(part)>16 or int(part)>9007199254740991 for part in match.groups()): raise SystemExit('Release is unpublished or its tag is not vMAJOR.MINOR.PATCH without leading zeroes or prerelease/build suffixes, with each component 0-9007199254740991')
 if sys.argv[2]!='latest' and tag!=sys.argv[2]: raise SystemExit('Release tag mismatch')
 if sys.argv[2]=='latest' and release.get('prerelease') is not False: raise SystemExit('latest must resolve to a stable published release')
 print(tag)
@@ -212,8 +223,8 @@ required=names+['checksums.txt','LICENSE.txt','THIRD_PARTY_NOTICES.txt']
 if m.get('schema_version')!=1 or m.get('public_release_ready') is not True or m.get('purpose')=='unsigned-candidate':
     raise SystemExit('This release is a candidate or is not marked public_release_ready; refusing installation')
 if m.get('tag')!=sys.argv[2] or not isinstance(m.get('version'),str) or 'v'+m['version']!=m['tag']: raise SystemExit('Manifest version/tag mismatch')
-match=re.fullmatch(r'([1-9][0-9]{3})\.(1[0-2]|[1-9])\.([1-9][0-9]*)',m['version'])
-if not match or int(match[3])>9007199254740991: raise SystemExit('Manifest version must be YYYY.M.N without leading zeroes, month 1-12 and N starting at 1')
+match=re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)',m['version'])
+if not match or any(len(part)>16 or int(part)>9007199254740991 for part in match.groups()): raise SystemExit('Manifest version must be MAJOR.MINOR.PATCH without leading zeroes or prerelease/build suffixes, with each component 0-9007199254740991')
 if not re.fullmatch(r'[0-9a-f]{40}',m.get('source_sha','')): raise SystemExit('Invalid manifest source revision')
 host,core=m.get('host_schema'),m.get('core_format')
 if type(host) is not int or type(core) is not int or host<1 or core<1 or m.get('data_formats')!={'host':host,'core':core}: raise SystemExit('Invalid or inconsistent data-format metadata')

@@ -131,7 +131,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
 async function main() {
   const [command, ...args] = process.argv.slice(2)
   const option = name => { const index = args.indexOf(name); return index < 0 ? undefined : args[index + 1] }
-  if (command !== 'candidate' || !option('--input') || !option('--output')) throw new Error('Usage: release-assets.mjs candidate --input DIR --output EMPTY_DIR --sha COMMIT --repository OWNER/REPO --tag vYYYY.M.N --run-url URL --ci-run-url URL [--mac-signed]')
+  if (command !== 'candidate' || !option('--input') || !option('--output')) throw new Error('Usage: release-assets.mjs candidate --input DIR --output EMPTY_DIR --sha COMMIT --repository OWNER/REPO --tag vMAJOR.MINOR.PATCH --run-url URL --ci-run-url URL [--mac-signed]')
   const manifest = await collectCandidate({ input: option('--input'), output: option('--output'), sourceSHA: option('--sha'), repository: option('--repository'), tag: option('--tag'), runURL: option('--run-url'), ciRunURL: option('--ci-run-url'), macSigned: args.includes('--mac-signed') })
   console.log(`Collected ${manifest.assets.length} assets for ${manifest.tag}; public_release_ready=false.`)
 }
