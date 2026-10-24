@@ -61,7 +61,7 @@ func TestMessageToolBindingChangePreservesHistoryAndReplacesSchema(t *testing.T)
 		}
 		t.Fatal("bound Session has no send_message")
 	}
-	assertSchema("astral-2/telegram.bot", "markdown_template")
+	assertSchema("astral-3/telegram.bot", "markdown_template")
 	if err := s.Unbind(p.Context, bound.ID, bound.Revision); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestMessageToolBindingChangePreservesHistoryAndReplacesSchema(t *testing.T)
 	if _, err = s.Bind(p.Context, chat.ID, p.Session.ID); err != nil {
 		t.Fatal(err)
 	}
-	assertSchema("astral-2/qq.napcat", `"format"`)
+	assertSchema("astral-3/qq.napcat", `"format"`)
 	if _, err = p.Harness.Submit(p.Context, p.Session.ID, harness.InputRequest{ID: "after-binding", Text: "continue"}); err != nil {
 		t.Fatal(err)
 	}
@@ -265,38 +265,65 @@ func TestFailedGroupDoesNotBlockIndependentMessages(t *testing.T) {
 	}
 }
 
-type rejectedSend struct{ Adapter }
+type rejectedSend struct {
+	Adapter
+	unknown bool
+}
 
 func (a rejectedSend) Send(context.Context, Send) (Receipt, error) {
-	return Receipt{}, &SendError{Message: "platform rejected this file", Retryable: true}
+	return Receipt{}, &SendError{Message: "platform send failed", Unknown: a.unknown}
 }
 
 func TestSendMessageFailureReturnsToModel(t *testing.T) {
-	bot := newBot(t)
-	p := testkit.New(t, 0, func(_ context.Context, n int, request map[string]any) any {
-		if n == 1 {
-			return testkit.Tool("send_message", map[string]any{"text": "send"})
-		}
-		if !strings.Contains(string(encoded(request["messages"])), "platform rejected this file") {
-			t.Error("platform failure did not reach the model's tool result")
-		}
-		return testkit.Text("I can handle the failure.")
-	})
-	s := New(p.Store, p.Harness)
-	c := bot.connection(t, s, p.Agent.ID)
-	b := createBinding(t, p, s, c, "-100", "")
-	s.Registry[c.Adapter] = func(c domain.Connection, token string, client *http.Client) (Adapter, error) {
-		a, err := NewTelegram(c, token, client)
-		return rejectedSend{a}, err
-	}
-	startChannels(t, s, p.Context)
-	trigger := update(1, "@astral_bot send")
-	trigger.Message.Entities = []telegramEntity{{Type: "mention", Length: 11}}
-	bot.updates <- []telegramUpdate{trigger}
-	testkit.Await(t, p.Context, func() bool { return p.Requests.Load() >= 2 })
-	view := p.Idle(t, b.SessionID)
-	if view.LastRun.Status != "completed" {
-		t.Fatal("failure did not let the model continue")
+	for _, unknown := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unknown=%t", unknown), func(t *testing.T) {
+			bot := newBot(t)
+			p := testkit.New(t, 0, func(_ context.Context, n int, request map[string]any) any {
+				if n == 1 {
+					return testkit.Tool("send_message", map[string]any{"text": "send"})
+				}
+				if !strings.Contains(string(encoded(request["messages"])), "platform send failed") {
+					t.Error("platform failure did not reach the model's tool result")
+				}
+				found := false
+				for _, item := range request["messages"].([]any) {
+					message := item.(map[string]any)
+					if message["role"] != "tool" {
+						continue
+					}
+					var result struct {
+						Sent *bool `json:"sent"`
+					}
+					if err := json.Unmarshal([]byte(message["content"].(string)), &result); err != nil {
+						t.Fatal(err)
+					}
+					if unknown && result.Sent != nil || !unknown && (result.Sent == nil || *result.Sent) {
+						t.Errorf("incorrect send result: %s", message["content"])
+					}
+					found = true
+				}
+				if !found {
+					t.Error("send result missing from model request")
+				}
+				return testkit.Text("I can handle the failure.")
+			})
+			s := New(p.Store, p.Harness)
+			c := bot.connection(t, s, p.Agent.ID)
+			b := createBinding(t, p, s, c, "-100", "")
+			s.Registry[c.Adapter] = func(c domain.Connection, token string, client *http.Client) (Adapter, error) {
+				a, err := NewTelegram(c, token, client)
+				return rejectedSend{Adapter: a, unknown: unknown}, err
+			}
+			startChannels(t, s, p.Context)
+			trigger := update(1, "@astral_bot send")
+			trigger.Message.Entities = []telegramEntity{{Type: "mention", Length: 11}}
+			bot.updates <- []telegramUpdate{trigger}
+			testkit.Await(t, p.Context, func() bool { return p.Requests.Load() >= 2 })
+			view := p.Idle(t, b.SessionID)
+			if view.LastRun.Status != "completed" {
+				t.Fatal("failure did not let the model continue")
+			}
+		})
 	}
 }
 

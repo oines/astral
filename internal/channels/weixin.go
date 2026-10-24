@@ -67,7 +67,7 @@ func NewWeixin(connection domain.Connection, secret string, client *http.Client)
 		}
 	}
 	var credential WeixinCredential
-	if json.Unmarshal([]byte(secret), &credential) != nil || credential.BotToken == "" || credential.BotID == "" || credential.UserID == "" || strings.ContainsAny(credential.BotToken, "\r\n") {
+	if json.Unmarshal([]byte(secret), &credential) != nil || credential.BotToken == "" || credential.BotID == "" || strings.ContainsAny(credential.BotToken, "\r\n") {
 		return nil, domain.Invalid("Weixin requires a QR-issued login grant; sign in with Weixin")
 	}
 	if credential.BaseURL == "" {
@@ -103,6 +103,8 @@ func (e *weixinAPIError) Error() string {
 	return fmt.Sprintf("Weixin rejected the request (code %d)", e.Code)
 }
 
+func (e *weixinAPIError) Unwrap() error { return domain.Offline(e.Error()) }
+
 func weixinRequest(ctx context.Context, client *http.Client, base, token, method, endpoint string, body, result any) error {
 	var reader io.Reader
 	if body != nil {
@@ -131,11 +133,20 @@ func weixinRequest(ctx context.Context, client *http.Client, base, token, method
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return context.DeadlineExceeded
+		}
 		return domain.Offline("Weixin request could not be completed")
 	}
 	defer response.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return context.DeadlineExceeded
+		}
 		return domain.Offline("Weixin response was interrupted")
 	}
 	if len(raw) > 8<<20 {
@@ -171,17 +182,13 @@ func (w *weixinAdapter) call(ctx context.Context, endpoint string, body map[stri
 }
 
 func (w *weixinAdapter) Validate(ctx context.Context) (Identity, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	var response struct {
-		Ret *int `json:"ret"`
-	}
-	if err := w.call(ctx, "getconfig", map[string]any{"ilink_user_id": w.credential.UserID}, &response); err != nil {
+	if err := ctx.Err(); err != nil {
 		return Identity{}, err
 	}
-	if response.Ret == nil || *response.Ret != 0 {
-		return Identity{}, domain.Invalid("Weixin did not confirm the login grant")
-	}
+	// The server obtains this identity from a confirmed Tencent QR grant;
+	// public SaveConnection cannot create or replace Weixin credentials.
+	// getconfig supplies per-peer typing configuration, not account identity,
+	// and must not gate accepting an already confirmed authorization.
 	return Identity{ID: w.credential.BotID, Name: w.credential.BotID, Diagnostics: []string{
 		"iLink supports private chats received by this account. Contact enumeration, group chats, outbound quote references, edits and delivery confirmations are not exposed by this adapter.",
 		"The account identity comes from QR authorization; iLink has no separate bot identity endpoint. Files are streamed; file captions are separate messages and platform file limits are reported by iLink.",
@@ -400,13 +407,12 @@ func (w *weixinAdapter) Send(ctx context.Context, send Send) (Receipt, error) {
 		if err != nil {
 			// CDN preparation does not send a chat message, so this failure is
 			// known even when an upload response was lost. Never retry internally.
-			return Receipt{}, &SendError{Message: err.Error(), Retryable: true}
+			return Receipt{}, &SendError{Message: err.Error()}
 		}
 	}
 	clientID := domain.ID("astral_weixin")
 	var response struct {
-		Ret *int     `json:"ret"`
-		ID  weixinID `json:"message_id"`
+		ID weixinID `json:"message_id"`
 	}
 	err = w.call(ctx, "sendmessage", map[string]any{"msg": map[string]any{
 		"from_user_id": "", "to_user_id": send.Target.ExternalID, "client_id": clientID,
@@ -415,12 +421,9 @@ func (w *weixinAdapter) Send(ctx context.Context, send Send) (Receipt, error) {
 	if err != nil {
 		var rejected *weixinAPIError
 		if errors.As(err, &rejected) {
-			return Receipt{}, &SendError{Message: rejected.Error(), Retryable: rejected.Code != -14}
+			return Receipt{}, &SendError{Message: rejected.Error()}
 		}
-		return Receipt{}, &SendError{Message: "Weixin send outcome is unknown; inspect the chat before any retry", Unknown: true}
-	}
-	if response.Ret == nil {
-		return Receipt{}, &SendError{Message: "Weixin returned no explicit acceptance status; inspect the chat before any retry", Unknown: true}
+		return Receipt{}, &SendError{Message: "Weixin message request did not complete", Unknown: true}
 	}
 	id := string(response.ID)
 	if id == "" {

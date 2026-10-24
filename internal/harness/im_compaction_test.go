@@ -33,11 +33,15 @@ func TestCompactionPromptFollowsCurrentIMBinding(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		page, err := session.History().Scan(f.ctx, core.Query{Kind: core.EntryModelRequest, Reverse: true, Limit: 1, MaxBytes: 8 << 20})
-		if err != nil || len(page.Entries) != 1 || page.Entries[0].ModelRequest.Purpose != "compaction" {
+		page, err := session.Attempts().Scan(f.ctx, core.AttemptQuery{Purpose: "compaction", Reverse: true, Limit: 1, MaxBytes: 8 << 20})
+		if err != nil || len(page.Attempts) != 1 {
 			t.Fatalf("missing actual compaction request: %v", err)
 		}
-		return page.Entries[0].ModelRequest.Request.SystemPrompt
+		request, err := session.Attempts().Request(f.ctx, page.Attempts[0].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return request.SystemPrompt
 	}
 	setBindings := func(bindings map[string]string) {
 		t.Helper()

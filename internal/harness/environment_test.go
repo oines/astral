@@ -91,6 +91,106 @@ func wireEnvironments(request map[string]any) []string {
 	return snapshots
 }
 
+func TestEnvironmentModelViewPreservesAPITargetsWithoutInternalFields(t *testing.T) {
+	f := newFixture(t, 2, func(context.Context, int, map[string]any) any { return textReply("done") })
+	initial := environmentEntries(t, f, f.session.ID)[0].Message.Content[0].Text
+	if !strings.Contains(initial, `"status":"missing"`) || !strings.Contains(initial, `"skill_roots"`) {
+		t.Fatal("missing discovery paths became indistinguishable from a successful scan")
+	}
+	skillPath := filepath.Join(f.daemons[0].Hello.Home, ".agents", "skills", "example", "SKILL.md")
+	writeEnvironmentFile(t, skillPath, "---\nname: example\ndescription: An example skill\n---\nSkill body")
+	writeEnvironmentFile(t, filepath.Join(f.session.CWD, "AGENTS.md"), "Workspace instructions")
+	if err := os.MkdirAll(filepath.Join(f.session.CWD, ".agents", "skills"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Populate routing/configuration fields to verify they are treated differently
+	// from the private identity of the selected search provider.
+	var record domain.Session
+	if err := f.store.Get(f.ctx, "sessions", f.session.ID, &record); err != nil {
+		t.Fatal(err)
+	}
+	record.ConversationID = "context-conversation"
+	if err := f.store.Save(f.ctx, "sessions", &record.Meta, &record); err != nil {
+		t.Fatal(err)
+	}
+	f.agent.SearchProviderID = "private-search-provider"
+	if err := f.store.Save(f.ctx, "agents", &f.agent.Meta, &f.agent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: "projection", Text: "inspect the environment"}); err != nil {
+		t.Fatal(err)
+	}
+	f.idle(t, f.session.ID)
+	f.mu.Lock()
+	wire := append([]byte(nil), f.requests[0]...)
+	f.mu.Unlock()
+	var request map[string]any
+	if err := json.Unmarshal(wire, &request); err != nil {
+		t.Fatal(err)
+	}
+	snapshots := wireEnvironments(request)
+	body := snapshots[len(snapshots)-1]
+	for _, hidden := range []string{`"sha256"`, `"boot_id"`, `"search_provider_id"`, "private-search-provider", `"fingerprint"`, `"compaction_id"`} {
+		if strings.Contains(body, hidden) {
+			t.Errorf("model environment exposes %s", hidden)
+		}
+	}
+	var visible map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(body, "Current Astral environment snapshot:\n")), &visible); err != nil {
+		t.Fatal(err)
+	}
+	agent, session := visible["agent"].(map[string]any), visible["session"].(map[string]any)
+	computer := visible["current_computer"].(map[string]any)
+	if agent["id"] != f.agent.ID || session["id"] != f.session.ID || session["source"] != record.Source || session["conversation_id"] != record.ConversationID || computer["id"] != record.ComputerID || computer["cwd"] != record.CWD {
+		t.Fatalf("model lost its API targets or working directory: %s", body)
+	}
+	for _, field := range []string{"name", "os", "arch", "shell", "agent_home", "online", "revoked"} {
+		if _, exists := computer[field]; !exists {
+			t.Errorf("current Computer lost %s", field)
+		}
+	}
+	allowed := visible["allowed_computers"].([]any)
+	if len(allowed) != 2 {
+		t.Fatal("allowed Computer targets were removed")
+	}
+	for _, raw := range allowed {
+		value := raw.(map[string]any)
+		if value["id"] == "" || value["kind"] != nil || value["arch"] != nil {
+			t.Fatalf("invalid selectable Computer summary: %+v", value)
+		}
+	}
+	discovery := visible["discovery"].(map[string]any)
+	if discovery["computer_id"] != nil || discovery["cwd"] != nil || discovery["skill_roots"] != nil || discovery["status"] != "ok" {
+		t.Fatalf("discovery retained repeated identity or successful root diagnostics: %+v", discovery)
+	}
+	skill := discovery["skills"].([]any)[0].(map[string]any)
+	if skill["path"] != skillPath || skill["name"] != "example" || skill["description"] != "An example skill" || skill["scope"] != "global" || discovery["agents_md"].(map[string]any)["content"] != "Workspace instructions" {
+		t.Fatal("projection lost usable skills or workspace guidance")
+	}
+	api := visible["local_api"].(map[string]any)
+	if api["base_url"] == "" || api["capabilities_url"] != api["base_url"].(string)+"/v1/capabilities" || visible["web_search"].(map[string]any)["configured"] != true || visible["current_model"].(map[string]any)["id"] != "fixture" {
+		t.Fatal("projection lost API discovery, search status or model information")
+	}
+	entries := environmentEntries(t, f, f.session.ID)
+	var metadata environmentMetadata
+	if err := json.Unmarshal(entries[len(entries)-1].Message.Metadata, &metadata); err != nil || metadata.SkillHashes[skillPath] == "" || metadata.BootID == "" {
+		t.Fatalf("internal change detection lost its hashes or boot identity: %+v, %v", metadata, err)
+	}
+	if strings.Contains(string(wire), metadata.BootID) || strings.Contains(string(wire), metadata.SkillHashes[skillPath]) {
+		t.Fatal("private environment metadata leaked into the actual provider request")
+	}
+	invalidSkill := filepath.Join(f.session.CWD, ".agents", "skills", "invalid", "SKILL.md")
+	writeEnvironmentFile(t, invalidSkill, "Invalid frontmatter")
+	if err := f.service.InitializeSession(f.ctx, f.session.ID); err != nil {
+		t.Fatal(err)
+	}
+	entries = environmentEntries(t, f, f.session.ID)
+	partial := entries[len(entries)-1].Message.Content[0].Text
+	if !strings.Contains(partial, `"status":"partial"`) || !strings.Contains(partial, invalidSkill) || !strings.Contains(partial, "YAML frontmatter") || !strings.Contains(partial, skillPath) {
+		t.Fatal("partial discovery lost its error, affected path or valid skills")
+	}
+}
+
 func TestEnvironmentInitializationDedupAndReadsAcrossRestart(t *testing.T) {
 	f := newFixture(t, 1, func(context.Context, int, map[string]any) any { return textReply("done") })
 	initial := environmentEntries(t, f, f.session.ID)
@@ -101,8 +201,8 @@ func TestEnvironmentInitializationDedupAndReadsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(initial[0].Message.Content[0].Text, `"base_url":"`+binding.APIURL+`"`) || !strings.Contains(initial[0].Message.Content[0].Text, binding.APIURL+"/v1/capabilities") || !strings.Contains(initial[0].Message.Content[0].Text, binding.APIURL+"/v1/openapi.json") {
-		t.Fatal("environment did not expose bound API discovery URLs")
+	if !strings.Contains(initial[0].Message.Content[0].Text, `"base_url":"`+binding.APIURL+`"`) || !strings.Contains(initial[0].Message.Content[0].Text, binding.APIURL+"/v1/capabilities") || strings.Contains(initial[0].Message.Content[0].Text, "openapi_url") {
+		t.Fatal("environment did not expose the single bound API discovery entry")
 	}
 	if f.session.CWD == "" {
 		t.Fatal("resolved default CWD was not persisted")
@@ -155,6 +255,15 @@ func TestEnvironmentInitializationDedupAndReadsAcrossRestart(t *testing.T) {
 	f.idle(t, f.session.ID)
 	if len(environmentEntries(t, f, f.session.ID)) != 3 || f.count() != 2 {
 		t.Fatal("skill body changes were missed or passive context activated an extra Run")
+	}
+	entries = environmentEntries(t, f, f.session.ID)
+	changed := entries[len(entries)-1].Message.Content[0].Text
+	if !strings.Contains(changed, "Skill content changed; read this SKILL.md again before using it: "+globalSkill) || strings.Contains(changed, `"sha256"`) {
+		t.Fatal("body-only Skill change did not produce a useful notice without exposing a hash")
+	}
+	f.restart(t)
+	if err := f.service.InitializeSession(f.ctx, f.session.ID); err != nil || len(environmentEntries(t, f, f.session.ID)) != 3 {
+		t.Fatalf("hidden hashes did not preserve durable deduplication after a Skill change: %v", err)
 	}
 	state, _ := f.service.View(f.ctx, f.session.ID)
 	child, err := f.service.Fork(f.ctx, f.session.ID, state.HeadID, "fork", domain.ID("session"))

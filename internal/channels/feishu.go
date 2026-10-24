@@ -85,7 +85,8 @@ func feishuID(value string) bool {
 		return false
 	}
 	for _, r := range value {
-		if (r < '0' || r > '9') && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && r != '_' && r != '-' {
+		allowed := r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r == '_' || r == '-'
+		if !allowed {
 			return false
 		}
 	}
@@ -679,14 +680,14 @@ func (f *feishu) Send(ctx context.Context, send Send) (Receipt, error) {
 	}
 	token, err := f.accessToken(ctx)
 	if err != nil {
-		return Receipt{}, &SendError{Message: "Feishu authentication failed before any chat message was sent", Retryable: true}
+		return Receipt{}, &SendError{Message: "Feishu authentication failed before any chat message was sent"}
 	}
 	// Reply endpoints address a message globally rather than accepting chat_id.
 	// Verify that reference before an operation can escape the selected chat.
 	if send.ReplyTo != "" {
 		parent, err := f.getMessage(ctx, send.ReplyTo)
 		if err != nil {
-			return Receipt{}, &SendError{Message: "Feishu reply target could not be verified", Retryable: true}
+			return Receipt{}, &SendError{Message: "Feishu reply target could not be verified"}
 		}
 		if parent.ChatID != send.Target.ExternalID {
 			return Receipt{}, &SendError{Message: "Feishu reply message belongs to another chat"}
@@ -708,7 +709,7 @@ func (f *feishu) Send(ctx context.Context, send Send) (Receipt, error) {
 		}
 		key, err := f.upload(ctx, send)
 		if err != nil {
-			return Receipt{}, &SendError{Message: "Feishu file upload failed before any chat message was sent", Retryable: true}
+			return Receipt{}, &SendError{Message: "Feishu file upload failed before any chat message was sent"}
 		}
 		kind, content = "file", map[string]string{"file_key": key}
 	}
@@ -728,9 +729,9 @@ func (f *feishu) Send(ctx context.Context, send Send) (Receipt, error) {
 	if err != nil {
 		var known *feishuAPIError
 		if errors.As(err, &known) {
-			return Receipt{}, &SendError{Message: known.Error(), Retryable: known.Code == 99991400 || known.Code == 99991401 || known.Code == 230020}
+			return Receipt{}, &SendError{Message: known.Error()}
 		}
-		return Receipt{}, &SendError{Message: "Feishu send outcome is unknown; inspect the conversation before any retry", Unknown: true}
+		return Receipt{}, &SendError{Message: "Feishu message request did not complete", Unknown: true}
 	}
 	if json.Unmarshal(raw, &result) != nil || result.Data.ID == "" {
 		return Receipt{}, &SendError{Message: "Feishu accepted the request without a usable message receipt", Unknown: true}

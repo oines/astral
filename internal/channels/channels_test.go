@@ -328,13 +328,17 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 	}
 	p.Idle(t, binding.SessionID)
 	coreSession, _ := p.Harness.Core(p.Context, binding.SessionID)
-	page, err := coreSession.History().Scan(p.Context, sessions.Query{Kind: sessions.EntryModelRequest, MaxBytes: 64 << 20})
+	page, err := coreSession.Attempts().Scan(p.Context, sessions.AttemptQuery{MaxBytes: 64 << 20})
 	if err != nil {
 		t.Fatal(err)
 	}
 	frozen := 0
-	for _, entry := range page.Entries {
-		for _, m := range entry.ModelRequest.Request.Messages {
+	for _, attempt := range page.Attempts {
+		request, err := coreSession.Attempts().Request(p.Context, attempt.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range request.Messages {
 			for _, part := range m.Content {
 				if part.Type == "image" && len(part.Data) > 0 {
 					frozen++
@@ -371,9 +375,6 @@ func TestOutboundUnknownIdempotencyRebindingAndRestart(t *testing.T) {
 	}
 	if len(out) != 1 || out[0].Status != "unknown" || bot.sends.Load() != 1 {
 		t.Fatalf("ambiguous send replayed or lost: %+v", out)
-	}
-	if err = s.Retry(p.Context, out[0].ID); err == nil {
-		t.Fatal("unknown send allowed blind retry")
 	}
 	changed := request
 	changed.Text = "different"

@@ -13,6 +13,9 @@ import (
 )
 
 func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
+	if strings.TrimSpace(agent.Persona) == "" {
+		agent.Persona = ""
+	}
 	if agent.AllowedComputers == nil {
 		agent.AllowedComputers = []string{}
 	}
@@ -91,8 +94,9 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 			definitions = append(definitions, tool.Definition())
 		}
 	}
-	if configuration.SystemPrompt != systemPrompt || !jsonEqual(configuration.Tools, definitions) {
-		configuration.SystemPrompt = systemPrompt
+	hostPrompt := systemPromptFor(record)
+	if configuration.SystemPrompt != hostPrompt || !jsonEqual(configuration.Tools, definitions) {
+		configuration.SystemPrompt = hostPrompt
 		configuration.Tools = definitions
 		if err = r.core.Load().Configure(ctx, configuration); err != nil {
 			return err
@@ -144,6 +148,9 @@ func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoni
 		return err
 	}
 	err = r.core.Load().SelectModel(ctx, ref, options)
+	if err == nil {
+		err = r.refreshModelContext(ctx)
+	}
 	s.notify(id)
 	return err
 }
@@ -186,6 +193,9 @@ func (r *runtime) selectComputer(ctx context.Context, id, cwd string) (domain.Ex
 func (r *runtime) continueLocked(ctx context.Context) error {
 	if snapshot := r.core.Load().Snapshot(); snapshot.Running || snapshot.Maintenance {
 		return core.ErrBusy
+	}
+	if err := r.finishInterruptedTools(ctx); err != nil {
+		return err
 	}
 	if err := r.syncSelection(ctx); err != nil {
 		return err
@@ -247,20 +257,6 @@ func (s *Service) ClearPending(ctx context.Context, id, kind string) error {
 	default:
 		return domain.Invalid("unknown pending-input kind")
 	}
-	s.notify(id)
-	return err
-}
-func (s *Service) Resolve(ctx context.Context, id, executionID string, execution core.ToolExecution) error {
-	r, err := s.open(ctx, id)
-	if err != nil {
-		return err
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.core.Load().Snapshot().Running || r.core.Load().Snapshot().Maintenance {
-		return core.ErrBusy
-	}
-	err = r.core.Load().ResolveTool(ctx, executionID, execution)
 	s.notify(id)
 	return err
 }
@@ -339,6 +335,9 @@ func (s *Service) SaveSessionPresentation(ctx context.Context, id string, title 
 	var record domain.Session
 	if err = s.Store.Get(ctx, "sessions", id, &record); err != nil {
 		return err
+	}
+	if record.Deletion != nil {
+		return domain.Missing("Session", id)
 	}
 	if title != nil {
 		if record.BindingID != "" {

@@ -2,7 +2,7 @@
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { sessionEntry } from '@astral/sdk'
-import { ChevronRight, CircleAlert } from '@astral/icons'
+import { ChevronRight } from '@astral/icons'
 import { Collapse } from '@astral/ui'
 import type { Entry } from '../lib/types'
 import type { LiveTool } from '../lib/session-state'
@@ -63,16 +63,12 @@ watch(() => props.entry.id, () => { loaded.value = undefined; error.value = '' }
         class="disclosure-chevron"
         :class="{ expanded: open }"
       />
-      <CircleAlert
-        v-if="tool?.needs_resolution || (result?.is_error && result?.outcome !== 'succeeded')"
-        class="tool-warning"
-      />
     </button>
     <Collapse :open="open">
       <div class="tool-call-detail">
         <p
           v-if="error"
-          class="text-danger small"
+          class="muted small"
         >
           {{ error }}
         </p>
@@ -86,12 +82,6 @@ watch(() => props.entry.id, () => { loaded.value = undefined; error.value = '' }
           v-if="presentation.command"
           class="tool-command"
         >$ {{ presentation.command }}</pre>
-        <p
-          v-if="result?.is_error && result?.outcome === 'succeeded'"
-          class="muted small"
-        >
-          {{ t('resultDeliveryFailed') }}
-        </p>
         <div
           v-if="output"
           class="tool-output"
@@ -106,11 +96,11 @@ watch(() => props.entry.id, () => { loaded.value = undefined; error.value = '' }
             v-else
             class="tool-plain-output"
           >{{ output.trimEnd() }}</pre>
-          <span
-            v-if="details.exit_code !== undefined && details.exit_code !== 0"
-            class="tool-exit"
-          >exit {{ details.exit_code }}</span>
         </div>
+        <span
+          v-if="details.exit_code !== undefined && details.exit_code !== 0"
+          class="tool-exit"
+        >exit {{ details.exit_code }}</span>
         <CodeViewer
           v-if="patch"
           :content="patch"

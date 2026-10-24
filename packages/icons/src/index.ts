@@ -10,5 +10,6 @@ export {
 } from 'lucide-vue-next'
 
 export { default as ProviderIcon } from './ProviderIcon.vue'
+export { default as PlatformIcon } from './PlatformIcon.vue'
 export { default as AstralLogo } from './AstralLogo.vue'
 export { Brain, Wrench, Zap, RefreshCw } from 'lucide-vue-next'

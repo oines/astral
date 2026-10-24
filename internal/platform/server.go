@@ -181,6 +181,9 @@ func New(config Config) (server *Server, err error) {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.Hub = computers.NewHub(s.Store)
 	s.Harness = harness.New(s.Store, s.CoreStore, &modelbridge.Bridge{Store: s.Store, ModelCatalog: modelbridge.NewModelCatalog(filepath.Join(s.Store.Directory, "cache", "models.dev.json"), nil)}, s.Hub)
+	if err = s.Harness.ResumeSessionDeletions(s.ctx); err != nil {
+		return nil, err
+	}
 	if err = s.Harness.InitializeOnboarding(s.ctx); err != nil {
 		return nil, err
 	}

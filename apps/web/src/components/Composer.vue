@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { createSession, continueSession, decideApproval, inputReceipt, movePending, removePending, updatePending, resolveTool, selectComputer, selectModel, stopSession, submitInput, uploadAttachment } from '@astral/sdk'
+import { createSession, continueSession, decideApproval, inputReceipt, movePending, removePending, updatePending, selectComputer, selectModel, stopSession, submitInput, uploadAttachment } from '@astral/sdk'
 import { ArrowUp, ArrowDown, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, Bot, ListEnd, CornerDownRight, Trash2, Ellipsis, Pencil } from '@astral/icons'
-import { Button, Modal, Popover } from '@astral/ui'
+import { Button, Popover } from '@astral/ui'
 import type { SessionView } from '../lib/types'
 import { errorText, fileURL, request } from '../lib/api'
 import { prepareInputAttempt, sameInputContent } from '../lib/input-attempt'
@@ -48,8 +48,6 @@ const agent = computed(() => app.agents.find(a => a.id === view.value.agent_id))
 const computers = computed(() => app.computers.filter(c => agent.value?.allowed_computers.includes(c.id) && !c.revoked))
 const contextUsage = computed(() => view.value.context_usage)
 const ratio = computed(() => contextUsage.value?.context_window ? Math.min(100, Math.round(contextUsage.value.input_tokens / contextUsage.value.context_window * 100)) : undefined)
-const resolution = ref('')
-const note = ref('')
 const computer = computed(() => computers.value.find(c => c.id === view.value.computer_id))
 const modelBusy = ref(false)
 async function action(fn: () => Promise<unknown>) {
@@ -214,13 +212,6 @@ async function changeModel(selection: Selection) {
   try { await action(async () => { await request(selectModel({ path: { id: view.value.id }, body: selection })); if (draft.session) Object.assign(draft.session, selection) }) }
   finally { modelBusy.value = false }
 }
-async function resolve(outcome: 'succeeded' | 'failed') {
-  await action(async () => {
-    await request(resolveTool({ path: { id: view.value.id, execution: resolution.value }, body: { execution: { result: { outcome, is_error: outcome === 'failed', content: [{ type: 'text', text: note.value }] } } } }))
-    resolution.value = ''
-    note.value = ''
-  })
-}
 watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value = '' })
 </script>
 <template>
@@ -252,35 +243,13 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
         </div>
       </div>
     </div>
-    <div
-      v-if="view.unresolved?.length"
-      class="takeover stack"
+    <p
+      v-if="view.error"
+      class="muted small"
+      role="status"
     >
-      <h3 class="row">
-        <CircleAlert />{{ t('unknown') }}
-      </h3><p class="muted">
-        {{ t('unknownHint') }}
-      </p>
-      <div
-        v-for="tool in view.unresolved"
-        :key="tool.invocation.execution_id"
-        class="row between"
-      >
-        <code>{{ tool.invocation.call.name }}</code>
-        <Button
-          size="small"
-          @click="resolution = tool.invocation.execution_id"
-        >
-          {{ t('inspect') }}
-        </Button>
-      </div>
-    </div>
-    <div
-      v-if="view.error || (view.status === 'needs_attention' && view.last_run?.error)"
-      class="error-box"
-    >
-      {{ view.error || view.last_run?.error }}
-    </div>
+      {{ view.error }}
+    </p>
     <div
       v-if="error"
       class="error-box"
@@ -624,32 +593,5 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
     >
       <span class="spinner" />{{ t('reconnecting') }}
     </div>
-    <Modal
-      :open="Boolean(resolution)"
-      :title="t('unknown')"
-      :description="t('unknownHint')"
-      @update:open="value => { if (!value) resolution = '' }"
-    >
-      <details class="form-disclosure">
-        <summary>{{ t('details') }}</summary><pre>{{ JSON.stringify(view.unresolved?.find(item => item.invocation.execution_id === resolution), null, 2) }}</pre>
-      </details>
-      <label class="label">{{ t('result') }}<textarea
-        v-model="note"
-        required
-      /></label>
-      <div class="row">
-        <Button
-          :disabled="!note.trim()"
-          @click="resolve('succeeded')"
-        >
-          {{ t('confirmedSuccess') }}
-        </Button><Button
-          :disabled="!note.trim()"
-          @click="resolve('failed')"
-        >
-          {{ t('confirmedFailure') }}
-        </Button>
-      </div>
-    </Modal>
   </div>
 </template>

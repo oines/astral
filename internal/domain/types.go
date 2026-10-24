@@ -31,6 +31,7 @@ type Agent struct {
 	Meta
 	Name              string                 `json:"name"`
 	Avatar            string                 `json:"avatar,omitempty"`
+	Persona           string                 `json:"persona,omitempty"`
 	DefaultModelID    string                 `json:"default_model_id,omitempty"`
 	DefaultReasoning  *core.ReasoningOptions `json:"default_reasoning,omitempty"`
 	ProbeModelID      string                 `json:"probe_model_id,omitempty"`
@@ -59,6 +60,13 @@ type Session struct {
 	ForkEntryID     string                 `json:"fork_entry_id,omitempty"`
 	Pinned          bool                   `json:"pinned"`
 	Archived        bool                   `json:"archived"`
+	Deletion        *SessionDeletion       `json:"deletion,omitempty"`
+}
+
+// SessionDeletion is a durable maintenance intent, retained until every store
+// has removed the Session's data. It is not a recoverable archive state.
+type SessionDeletion struct {
+	RolloutID string `json:"rollout_id"`
 }
 
 const (
@@ -351,8 +359,6 @@ type Outbox struct {
 	ExternalID          string   `json:"external_id"`
 	TopicID             string   `json:"topic_id,omitempty"`
 	Fragment            int      `json:"fragment"`
-	Retryable           bool     `json:"retryable"`
-	ResolutionNote      string   `json:"resolution_note,omitempty"`
 }
 
 type Preferences struct {

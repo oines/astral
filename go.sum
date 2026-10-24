@@ -36,6 +36,12 @@ github.com/oines/astral-core v0.0.0-20261023145120-451f775ae554 h1:lNjq6nogw6WHm
 github.com/oines/astral-core v0.0.0-20261023145120-451f775ae554/go.mod h1:OuTyxMcKBfeE6Zpw65kcKS1QjlstAmJRTWkrTb3qseI=
 github.com/oines/astral-core v0.0.0-20261023151532-af493a6f19c1 h1:LSlFX58PMQuw0lv/bQA8G+JW7zBczuHQFv/r2lG4WyI=
 github.com/oines/astral-core v0.0.0-20261023151532-af493a6f19c1/go.mod h1:u4rAUzsMQwcEmo/5XBcy5WPsHpfhC+tzZKJntNwSKcc=
+github.com/oines/astral-core v0.0.0-20261024014645-d9370691ce8e h1:Q3thS7ZXRjsKK2vNGB6DqwwGNUC4yxE3FUoSCO5OfV8=
+github.com/oines/astral-core v0.0.0-20261024014645-d9370691ce8e/go.mod h1:U3ERvZRC6nstFf1DKCw0D45MchoXmcykwNzQlBOkxKo=
+github.com/oines/astral-core v0.0.0-20261024022248-f8a9c514ab56 h1:uBRD5liwyP7KHRlVKm4r0+GflK5zWrUpA1XgArGP3Vw=
+github.com/oines/astral-core v0.0.0-20261024022248-f8a9c514ab56/go.mod h1:U3ERvZRC6nstFf1DKCw0D45MchoXmcykwNzQlBOkxKo=
+github.com/oines/astral-core v0.0.0-20261024065527-0b593337eada h1:PjFmPPbTUEpsmRu7WBocVKlSMg1FWqOjA99xIS907f0=
+github.com/oines/astral-core v0.0.0-20261024065527-0b593337eada/go.mod h1:u4rAUzsMQwcEmo/5XBcy5WPsHpfhC+tzZKJntNwSKcc=
 github.com/oines/astral-models v0.9.1-0.20261022163736-af24a13e7f0d h1:9o7itzX3V2CFP7f+VFqao1J8cn6FbHTcDlJBQznYnHA=
 github.com/oines/astral-models v0.9.1-0.20261022163736-af24a13e7f0d/go.mod h1:TXAZwFta7Nf0AjokE2zH6e9CZsb/Rx7P4V3mZPy2zik=
 github.com/oines/astral-models v0.9.1-0.20261023034443-77c4168ed477 h1:cOqK0jKLY5QOBta58ee5EFbZoJts6KLCla8KdSuCUBg=

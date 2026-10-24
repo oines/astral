@@ -271,13 +271,17 @@ func TestSessionImagesRemainSelfContainedAcrossDeletionReopenAndFork(t *testing.
 		t.Fatalf("expected three actual generations, got %d", f.count())
 	}
 	coreSession, _ := f.service.Core(f.ctx, child.ID)
-	page, err := coreSession.History().Scan(f.ctx, sessions.Query{Kind: sessions.EntryModelRequest, MaxBytes: 128 << 20})
+	page, err := coreSession.Attempts().Scan(f.ctx, sessions.AttemptQuery{MaxBytes: 128 << 20})
 	if err != nil {
 		t.Fatal(err)
 	}
 	frozen := 0
-	for _, entry := range page.Entries {
-		for _, message := range entry.ModelRequest.Request.Messages {
+	for _, attempt := range page.Attempts {
+		request, err := coreSession.Attempts().Request(f.ctx, attempt.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, message := range request.Messages {
 			for _, part := range message.Content {
 				if part.Type == "image" && string(part.Data) == string(encode(base64.StdEncoding.EncodeToString(png))) {
 					frozen++

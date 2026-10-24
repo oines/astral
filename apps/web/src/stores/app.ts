@@ -1,8 +1,8 @@
 import { computed, ref, watch } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useQuery, useQueryCache } from '@pinia/colada'
-import { bootstrapQuery, bootstrapQueryKey, listComputersQuery, listSessionsQuery } from '@astral/sdk/colada'
-import { getPreferences, savePreferences } from '@astral/sdk'
+import { bootstrapQuery, bootstrapQueryKey, listComputersQuery, listSessionsQuery, listSessionsQueryKey } from '@astral/sdk/colada'
+import { getPreferences, savePreferences, updateSession } from '@astral/sdk'
 import { useIntervalFn, usePreferredDark } from '@vueuse/core'
 import { i18n } from '../i18n'
 import { request } from '../lib/api'
@@ -74,8 +74,21 @@ export const useAppStore = defineStore('app', () => {
     }
     await refresh().catch(() => undefined)
   }
+  async function presentation(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean }) {
+    await request(updateSession({ path: { id }, body: patch }))
+    if (sessionViews.value[id]) Object.assign(sessionViews.value[id], patch)
+    cache.setQueryData(listSessionsQueryKey(), (sessionQuery.data.value ?? data.value?.sessions ?? []).map(session => session.id === id ? { ...session, ...patch } : session))
+    await refresh().catch(() => undefined)
+  }
+  function forgetSession(id: string) {
+    delete sessionViews.value[id]
+    delete drafts.value[id]
+    if (lastChatPath.value === `/sessions/${id}`) lastChatPath.value = '/'
+    cache.setQueryData(listSessionsQueryKey(), (sessionQuery.data.value ?? []).filter(session => session.id !== id))
+    if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, sessions: data.value.sessions.filter(session => session.id !== id) })
+  }
   const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).map(s => [s.id, sessionViews.value[s.id] ?? s])))
-  return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences }
+  return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, presentation, forgetSession }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAppStore, import.meta.hot))

@@ -28,7 +28,7 @@ describe('reconciling live previews with durable history', () => {
     restored.view = { ...view, run_id: undefined, status: 'needs_attention', error: 'delivery failed' }
     const groups = transcriptGroups(fromSnapshot(restored))
     expect(groups).toHaveLength(2)
-    expect(groups[1]).toMatchObject({ role: 'assistant', status: 'needs_attention' })
+    expect(groups[1]).toMatchObject({ role: 'assistant' })
     expect(groups[1]?.blocks).toEqual([{ kind: 'text', key: 'answer:0', text: 'Work completed' }])
   })
 
@@ -69,7 +69,7 @@ describe('reconciling live previews with durable history', () => {
   })
 
   it('applies a reconnect snapshot before queued events and never resurrects a completed attempt or run', () => {
-    const response = entry('response', 10, { kind: 'model_response', model_response: { attempt_id: 'attempt', purpose: 'run', error: 'disconnected', reply: { message: { role: 'assistant' } } } })
+    const response = entry('response', 10, { generation: { attempt_id: 'attempt', configuration_id: 'configuration', context_digest: 'digest', model: { id: 'model', context_window: 10000, max_output_tokens: 1000 } }, message: { role: 'assistant', content: [{ type: 'text', text: 'accepted' }] } })
     const runEnd = entry('end', 11, { kind: 'run', run: { id: 'run', status: 'failed' } })
     const state = fromSnapshot(snapshot([], [runEnd, response]))
     applyEvent(state, event(21, { model: { type: 'text_delta', content_index: 0, text: 'stale snapshot race' } }))
@@ -92,6 +92,19 @@ describe('reconciling live previews with durable history', () => {
 })
 
 describe('transcript facts', () => {
+  it('shows the current result after an interrupted tool call is completed', () => {
+    const invocation = { session_id: 'session', execution_id: 'send', run_id: 'run', turn_id: 'turn', assistant_id: 'assistant', call: { id: 'call', name: 'send_message', arguments: { text: 'hello' } } }
+    const state = fromSnapshot(snapshot([], [
+      entry('result', 1, { kind: 'tool_result', tool: { invocation, needs_resolution: true, result: { outcome: 'unknown', is_error: true } } }),
+      entry('run-end', 2, { kind: 'run', run: { id: 'run', status: 'failed' } }),
+      entry('completed', 3, { kind: 'tool_resolution', tool: { invocation, result: { outcome: 'failed', is_error: true, content: [{ type: 'text', text: 'Request interrupted' }] } } }),
+    ]))
+    state.view = { ...view, run_id: 'next-run', last_run: { id: 'next-run', status: 'started' } }
+    const group = transcriptGroups(state)[0]
+    expect(group?.status).toBeUndefined()
+    expect(group?.blocks[0]).toMatchObject({ kind: 'process', items: [{ kind: 'tool', entry: { id: 'completed' } }] })
+  })
+
   it('groups a response with its process while preserving input order and silent turns', () => {
     const state = emptyState()
     addEntry(state, entry('question', 1, { message: { role: 'user', content: [{ type: 'text', text: 'Inspect the file' }] } }))
@@ -225,9 +238,10 @@ describe('ordered transcript process', () => {
     ])
   })
 
-  it('does not expose failed model responses or encrypted reasoning, and preserves streaming content order', () => {
+  it('discards failed attempts and hides opaque reasoning while preserving streaming content order', () => {
     const state = fromSnapshot(snapshot())
-    addEntry(state, entry('failed', 1, { kind: 'model_response', model_response: { attempt_id: 'failed-attempt', purpose: 'run', error: 'retry', reply: { message: { role: 'assistant', content: [{ type: 'reasoning', text: 'FAILED REASONING' }] } } } }))
+    applyEvent(state, event(1, { attempt_id: 'failed-attempt', model: { type: 'reasoning_delta', content_index: 0, text: 'FAILED REASONING' } }))
+    applyEvent(state, event(2, { type: 'attempt_failed', attempt_id: 'failed-attempt' }))
     addEntry(state, entry('opaque', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'reasoning' }] } }))
     applyEvent(state, event(3, { model: { type: 'reasoning_delta', content_index: 0, text: 'First' } }))
     applyEvent(state, event(4, { model: { type: 'text_delta', content_index: 1, text: 'Visible text' } }))

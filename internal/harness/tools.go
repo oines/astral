@@ -81,7 +81,7 @@ func notExecuted(code string, err error) error {
 
 func (t hostTool) Definition() core.ToolDefinition {
 	def := t.Tool.Definition()
-	def.Version = "astral-1/" + def.Version
+	def.Version = "astral-2/" + def.Version
 	return def
 }
 func (t hostTool) Bind(ctx context.Context, inv core.Invocation) (json.RawMessage, error) {
@@ -134,7 +134,24 @@ func (t hostTool) translate(ctx context.Context, inv core.Invocation) (core.Invo
 	return inv, handle, nil
 }
 
-func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(core.ToolProgress)) (core.ToolExecution, error) {
+func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(core.ToolProgress)) (execution core.ToolExecution, callErr error) {
+	defer func() {
+		if execution.Result != nil && execution.Result.Outcome == core.OutcomeUnknown {
+			execution.Result.Content = append(core.Text("The tool response was interrupted; its effects are unconfirmed."), execution.Result.Content...)
+			execution.Result.Outcome, execution.Result.IsError = core.OutcomeFailed, true
+		}
+		var classified *core.ToolError
+		if errors.As(callErr, &classified) {
+			if classified.Outcome == core.OutcomeUnknown {
+				result := *classified
+				result.Outcome = core.OutcomeFailed
+				result.Message = "The tool response was interrupted; its effects are unconfirmed. " + classified.Error()
+				callErr = &result
+			}
+		} else if errors.Is(callErr, context.Canceled) || errors.Is(callErr, context.DeadlineExceeded) {
+			callErr = &core.ToolError{Outcome: core.OutcomeFailed, Message: "The tool response was interrupted; its effects are unconfirmed. " + callErr.Error(), Cause: callErr}
+		}
+	}()
 	r := t.runtime
 	original := inv
 	var handle processHandle
@@ -156,7 +173,7 @@ func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(co
 	if err = r.service.Hub.Validate(ctx, binding); err != nil {
 		return core.ToolExecution{}, notExecuted("computer_unavailable", err)
 	}
-	execution, callErr := t.Tool.Execute(ctx, inv, emit)
+	execution, callErr = t.Tool.Execute(ctx, inv, emit)
 	if execution.Result == nil {
 		return execution, callErr
 	}
@@ -216,6 +233,28 @@ func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(co
 		result.Content = append(core.Text(description), result.Content...)
 	}
 	return execution, callErr
+}
+
+func (r *runtime) finishInterruptedTools(ctx context.Context) error {
+	session := r.core.Load()
+	if snapshot := session.Snapshot(); snapshot.Running || snapshot.Maintenance {
+		return nil
+	}
+	for _, record := range session.UnresolvedTools() {
+		result := core.ToolResult{Content: core.Text("The tool request was interrupted; its effects are unconfirmed."), Outcome: core.OutcomeFailed, IsError: true}
+		if record.Result != nil {
+			result = *record.Result
+			result.Content = append(core.Text("The tool response was interrupted; its effects are unconfirmed."), result.Content...)
+			result.Outcome, result.IsError = core.OutcomeFailed, true
+		}
+		if record.Invocation.Call.Name == "send_message" {
+			result.Content = core.Text(`{"sent":null,"error":"message send attempt was interrupted"}`)
+		}
+		if err := session.ResolveTool(ctx, record.Invocation.ExecutionID, core.ToolExecution{Result: &result}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *runtime) registerHandle(ctx context.Context, internalID int, b domain.ExecutionBinding) (processHandle, error) {

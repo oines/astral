@@ -71,9 +71,8 @@ type Send struct {
 }
 type Receipt struct{ MessageIDs []string }
 type SendError struct {
-	Message   string
-	Unknown   bool
-	Retryable bool
+	Message string
+	Unknown bool
 }
 
 func (e *SendError) Error() string { return e.Message }

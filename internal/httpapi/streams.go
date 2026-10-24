@@ -81,26 +81,7 @@ func (a *API) snapshot(r *http.Request) (Snapshot, error) {
 		return snapshot, err
 	}
 	snapshot.Trace, err = gateway.History(r.Context(), h, r.PathValue("id"), "", 100, true, false)
-	for i := range snapshot.Trace.Entries {
-		thinEntry(&snapshot.Trace.Entries[i])
-	}
 	return snapshot, err
-}
-func thinEntry(entry *core.Entry) {
-	// Actual request/response snapshots are available on demand, but are not
-	// retransmitted in full on every UI reconnect or live commit.
-	if entry.ModelRequest != nil {
-		copy := *entry.ModelRequest
-		copy.Request.Messages = nil
-		copy.Request.SystemPrompt = ""
-		copy.Request.Tools = nil
-		entry.ModelRequest = &copy
-	}
-	if entry.ModelResponse != nil {
-		copy := *entry.ModelResponse
-		copy.Reply.Message.Content = nil
-		entry.ModelResponse = &copy
-	}
 }
 func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	h := a.Config.Harness
@@ -164,7 +145,6 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 			if event.EntryID != "" {
 				if entry, readErr := session.History().Get(r.Context(), event.EntryID); readErr == nil {
 					gateway.RemoveImageData(reflect.ValueOf(&entry))
-					thinEntry(&entry)
 					envelope.Entry = &entry
 					if entry.Kind == core.EntryMessage && entry.Message != nil && entry.Message.Role == core.RoleAssistant && entry.Usage.Available {
 						if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
@@ -211,24 +191,60 @@ func (a *API) exportRollout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": session.ID() + ".jsonl"}))
 	w.Header().Set("Cache-Control", "no-store")
 	encoder := json.NewEncoder(w)
-	if err = encoder.Encode(map[string]any{"format": "astral-rollout-export", "version": 1, "session": session.State()}); err != nil {
+	state := session.State()
+	if err = encoder.Encode(map[string]any{"format": "astral-rollout-export", "version": 2, "session": state}); err != nil {
 		return
 	}
+	// Capture finite attempt membership first. Each observed result already has
+	// a durable history node, so scanning history afterwards includes every
+	// referenced body even if the Session continues during the export.
 	cursor := ""
+	attemptsDone := false
 	for {
-		page, scanErr := session.History().Scan(r.Context(), core.Query{Cursor: cursor, Limit: 20, MaxBytes: 128 << 20})
+		page, scanErr := session.Attempts().Scan(r.Context(), core.AttemptQuery{Cursor: cursor, Limit: 20, MaxBytes: 128 << 20})
 		if scanErr != nil {
 			panic(http.ErrAbortHandler)
 		}
-		for _, entry := range page.Entries {
-			if encoder.Encode(entry) != nil {
+		for _, attempt := range page.Attempts {
+			if attempt.Version > state.Version {
+				attemptsDone = true
+				break
+			}
+			if encoder.Encode(map[string]any{"type": "attempt", "attempt": attempt}) != nil {
 				return
 			}
 		}
-		if page.NextCursor == "" {
+		if attemptsDone || page.Next == "" {
+			break
+		}
+		cursor = page.Next
+	}
+	latest, err := a.Config.Harness.CoreStore.Scan(r.Context(), session.RolloutID(), core.Query{Reverse: true, Limit: 1, MaxBytes: 128 << 20})
+	if err != nil {
+		panic(http.ErrAbortHandler)
+	}
+	if len(latest.Records) == 0 {
+		return
+	}
+	lastSequence := latest.Records[0].Entry.Sequence
+	cursor = ""
+	for {
+		page, scanErr := a.Config.Harness.CoreStore.Scan(r.Context(), session.RolloutID(), core.Query{Cursor: cursor, Limit: 20, MaxBytes: 128 << 20})
+		if scanErr != nil {
+			panic(http.ErrAbortHandler)
+		}
+		for _, record := range page.Records {
+			if record.Entry.Sequence > lastSequence {
+				return
+			}
+			if encoder.Encode(map[string]any{"type": "entry", "record": record}) != nil {
+				return
+			}
+		}
+		if page.Next == "" {
 			return
 		}
-		cursor = page.NextCursor
+		cursor = page.Next
 	}
 }
 func (a *API) upload(w http.ResponseWriter, r *http.Request) {

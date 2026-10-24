@@ -333,6 +333,9 @@ func (h *Hub) authorize(ctx context.Context, b domain.ExecutionBinding) error {
 	if err := h.Store.Get(ctx, "sessions", b.SessionID, &session); err != nil {
 		return err
 	}
+	if session.Deletion != nil {
+		return domain.Missing("Session", b.SessionID)
+	}
 	if session.AgentID != b.AgentID {
 		return domain.Forbidden("session does not belong to this agent")
 	}

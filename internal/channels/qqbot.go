@@ -516,17 +516,17 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 		return Receipt{}, &SendError{Message: "QQ Bot text is empty or exceeds 5000 characters"}
 	}
 	if _, err := q.accessToken(ctx); err != nil {
-		return Receipt{}, &SendError{Message: err.Error(), Retryable: true}
+		return Receipt{}, &SendError{Message: err.Error()}
 	}
 	reply, err := q.replyMessage(ctx, send)
 	if err != nil {
-		return Receipt{}, &SendError{Message: "QQ reply context could not be read", Retryable: true}
+		return Receipt{}, &SendError{Message: "QQ reply context could not be read"}
 	}
 	// QQ deduplicates by msg_id + msg_seq. A fresh 16-bit sequence prevents
 	// split text or separate attachment sends from colliding with each other.
 	var random [2]byte
 	if _, err := rand.Read(random[:]); err != nil {
-		return Receipt{}, &SendError{Message: "QQ message sequence could not be generated", Retryable: true}
+		return Receipt{}, &SendError{Message: "QQ message sequence could not be generated"}
 	}
 	body := map[string]any{"content": send.Text, "msg_type": 0, "msg_seq": int(binary.BigEndian.Uint16(random[:]))%65535 + 1}
 	if send.TextFormat() == "markdown" || send.TextFormat() == "markdown_template" {
@@ -559,10 +559,10 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 		uploadBody := streamFileJSON(map[string]any{"file_type": fileType, "file_data": placeholder, "file_name": send.FileName, "srv_send_msg": false}, placeholder, send.File, send.Size)
 		defer uploadBody.Close()
 		if err := q.call(ctx, http.MethodPost, route+"/files", uploadBody, &upload); err != nil {
-			return Receipt{}, &SendError{Message: err.Error(), Retryable: true}
+			return Receipt{}, &SendError{Message: err.Error()}
 		}
 		if upload.Info == "" {
-			return Receipt{}, &SendError{Message: "QQ media upload did not return file_info", Retryable: true}
+			return Receipt{}, &SendError{Message: "QQ media upload did not return file_info"}
 		}
 		body["msg_type"], body["media"] = 7, map[string]string{"file_info": upload.Info}
 	}
@@ -571,13 +571,13 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 	}
 	token, err := q.accessToken(ctx)
 	if err != nil {
-		return Receipt{}, &SendError{Message: err.Error(), Retryable: true}
+		return Receipt{}, &SendError{Message: err.Error()}
 	}
 	err = q.request(ctx, http.MethodPost, q.config.BaseURL+route+"/messages", token, body, &result)
 	if err != nil {
 		var api *qqAPIError
 		if errors.As(err, &api) {
-			return Receipt{}, &SendError{Message: err.Error(), Unknown: api.Status >= 500, Retryable: api.Status == 429}
+			return Receipt{}, &SendError{Message: err.Error(), Unknown: api.Status >= 500}
 		}
 		return Receipt{}, &SendError{Message: err.Error(), Unknown: true}
 	}

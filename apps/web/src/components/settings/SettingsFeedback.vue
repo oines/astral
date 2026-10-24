@@ -2,8 +2,9 @@
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { useSettingsSave } from '../../composables/useSettingsSave'
+import { useDelayedPending } from '@astral/ui'
 
-const props = defineProps<{ scope: string | string[]; saving?: string; saved?: string; retry?: () => unknown }>()
+const props = defineProps<{ scope: string | string[]; saving?: string; retry?: () => unknown }>()
 const { t } = useI18n()
 const saves = useSettingsSave()
 const active = computed(() => {
@@ -11,9 +12,12 @@ const active = computed(() => {
   const order = ['uncertain', 'error', 'saving', 'saved', 'idle']
   return keys.map(key => ({ key, ...saves.state(key) })).sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status))[0] || { key: '', status: 'idle', error: undefined }
 })
+const waiting = useDelayedPending(() => active.value.status === 'saving' ? active.value.key : '')
+const failed = computed(() => active.value.status === 'error' || active.value.status === 'uncertain')
 </script>
 <template>
   <div
+    v-if="waiting || failed"
     class="settings-feedback"
     :data-state="active.status"
     :class="{ 'settings-feedback-error': active.status === 'error' || active.status === 'uncertain' }"
@@ -21,13 +25,12 @@ const active = computed(() => {
     aria-live="polite"
     aria-atomic="true"
   >
-    <template v-if="active.status === 'saving'">
+    <template v-if="waiting && !failed">
       <span
         class="spinner"
         aria-hidden="true"
-      /><span>{{ saving || t('settingsSaving') }}</span>
+      /><span class="sr-only">{{ saving || t('settingsSaving') }}</span>
     </template>
-    <span v-else-if="active.status === 'saved'">{{ saved || t('saved') }}</span>
     <template v-else-if="active.status === 'error' || active.status === 'uncertain'">
       <span>{{ active.status === 'uncertain' ? t('settingsUnconfirmed') : t('settingsNotApplied') }}<span v-if="active.error"> {{ active.error }}</span></span>
       <button

@@ -108,9 +108,6 @@ type Fork struct {
 type Approval struct {
 	Decision core.ApprovalDecision `json:"decision"`
 }
-type Resolution struct {
-	Execution core.ToolExecution `json:"execution"`
-}
 type EnrollmentInput struct {
 	Container bool   `json:"container"`
 	ServerURL string `json:"server_url,omitempty"`
@@ -133,11 +130,6 @@ type BindingInput struct {
 type ProactiveInput struct {
 	Revision int64 `json:"revision"`
 	Enabled  bool  `json:"enabled"`
-}
-type ResolveSend struct {
-	Status     string   `json:"status" enum:"accepted,failed"`
-	Note       string   `json:"note"`
-	MessageIDs []string `json:"message_ids,omitempty"`
 }
 type SearchQuery = search.Request
 type Usage struct {
@@ -169,6 +161,7 @@ func New(config Config) *API {
 	a := &API{Config: config, Contract: httpcontract.New(), mux: http.NewServeMux()}
 	a.resources()
 	a.sessionRoutes()
+	a.attemptRoutes()
 	a.systemRoutes()
 	a.streamRoutes()
 	a.handler = a.authenticate(a.mux)
@@ -235,6 +228,13 @@ func (a *API) systemRoutes() {
 		if v.Sessions, err = readAll[domain.Session](r.Context(), h.Store, "sessions"); err != nil {
 			return v, err
 		}
+		visibleSessions := v.Sessions[:0]
+		for _, session := range v.Sessions {
+			if session.Deletion == nil {
+				visibleSessions = append(visibleSessions, session)
+			}
+		}
+		v.Sessions = visibleSessions
 		if v.Computers, err = a.computers(r.Context()); err != nil {
 			return v, err
 		}
@@ -554,12 +554,6 @@ func (a *API) resources() {
 		}
 		return result, nil
 	}, httpcontract.Parameter{Name: "session_id"})
-	route[httpcontract.Empty, httpcontract.OK](a, "POST", "/outbox/{id}/retry", "retrySend", "Channels", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
-		return httpcontract.OK{OK: true}, c.Retry(r.Context(), r.PathValue("id"))
-	})
-	route[ResolveSend, httpcontract.OK](a, "POST", "/outbox/{id}/resolve", "resolveSend", "Channels", func(r *http.Request, input ResolveSend) (httpcontract.OK, error) {
-		return httpcontract.OK{OK: true}, c.Resolve(r.Context(), r.PathValue("id"), input.Status, input.Note, input.MessageIDs)
-	})
 	for _, resource := range []struct{ path, kind, operation string }{{"providers", "providers", "deleteProvider"}, {"models", "models", "deleteModel"}, {"search-providers", "search", "deleteSearchProvider"}} {
 		route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/"+resource.path+"/{id}", resource.operation, "Resources", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 			err := h.Store.Update(r.Context(), func(tx *persistence.Tx) error {
@@ -578,6 +572,9 @@ func (a *API) sessionRoutes() {
 		}
 		views := make([]harness.View, 0, len(records))
 		for _, record := range records {
+			if record.Deletion != nil {
+				continue
+			}
 			view, viewErr := h.View(r.Context(), record.ID)
 			if viewErr != nil {
 				// One unavailable historical configuration must not prevent
@@ -598,6 +595,9 @@ func (a *API) sessionRoutes() {
 	route[SessionPresentation, httpcontract.OK](a, "PATCH", "/sessions/{id}", "updateSession", "Sessions", func(r *http.Request, input SessionPresentation) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.SaveSessionPresentation(r.Context(), r.PathValue("id"), input.Title, input.Pinned, input.Archived)
 	})
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/sessions/{id}", "deleteSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.DeleteSession(r.Context(), r.PathValue("id"), revision(r))
+	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
 	route[harness.InputRequest, harness.InputReceipt](a, "POST", "/sessions/{id}/inputs", "submitInput", "Sessions", func(r *http.Request, input harness.InputRequest) (harness.InputReceipt, error) {
 		return h.Submit(r.Context(), r.PathValue("id"), input)
 	})
@@ -634,9 +634,6 @@ func (a *API) sessionRoutes() {
 	route[Fork, domain.Session](a, "POST", "/sessions/{id}/fork", "forkSession", "Sessions", func(r *http.Request, input Fork) (domain.Session, error) {
 		return h.Fork(r.Context(), r.PathValue("id"), input.EntryID, input.Title, input.ID)
 	})
-	route[Resolution, httpcontract.OK](a, "POST", "/sessions/{id}/tools/{execution}/resolve", "resolveTool", "Sessions", func(r *http.Request, input Resolution) (httpcontract.OK, error) {
-		return httpcontract.OK{OK: true}, h.Resolve(r.Context(), r.PathValue("id"), r.PathValue("execution"), input.Execution)
-	})
 	route[Approval, httpcontract.OK](a, "POST", "/sessions/{id}/approvals/{approval}", "decideApproval", "Sessions", func(r *http.Request, input Approval) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.DecideApproval(r.Context(), r.PathValue("id"), r.PathValue("approval"), input.Decision)
 	})
@@ -652,19 +649,23 @@ func (a *API) sessionRoutes() {
 		// During a Run, report the actual frozen request. A model selection for
 		// the next Attempt must not change the context ring of the current one.
 		if status.RunID != "" {
-			page, readErr := session.History().Scan(r.Context(), core.Query{SessionID: status.ID, Kind: core.EntryModelRequest, Reverse: true, Limit: 1, MaxBytes: 128 << 20})
+			page, readErr := session.Attempts().Scan(r.Context(), core.AttemptQuery{Reverse: true, Limit: 1, MaxBytes: 128 << 20})
 			if readErr != nil {
 				return ContextStats{}, readErr
 			}
-			if len(page.Entries) > 0 && page.Entries[0].RunID == status.RunID && page.Entries[0].ModelRequest != nil {
-				request := page.Entries[0].ModelRequest.Request
+			if len(page.Attempts) > 0 && page.Attempts[0].RunID == status.RunID {
+				attempt := page.Attempts[0]
+				request, rebuildErr := session.Attempts().Request(r.Context(), attempt.ID)
+				if rebuildErr != nil {
+					return ContextStats{}, rebuildErr
+				}
 				model, resolveErr := h.Models.Resolve(r.Context(), request.ModelID, nil)
 				if resolveErr != nil {
 					return ContextStats{}, resolveErr
 				}
 				estimated, estimateErr := modelbridge.EstimateTokens(r.Context(), model, request)
-				spec := model.Spec()
-				return ContextStats{EstimatedInput: estimated, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: request.MaxOutputTokens, HeadID: status.HeadID}, estimateErr
+				spec := attempt.Input.Model
+				return ContextStats{EstimatedInput: estimated, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: request.MaxOutputTokens, HeadID: attempt.Input.HeadID}, estimateErr
 			}
 		}
 		view, err := h.InspectContext(r.Context(), r.PathValue("id"))

@@ -8,7 +8,7 @@ import { ArrowLeft, ChevronRight, Monitor, Plus, Settings2 } from '@astral/icons
 import { Modal } from '@astral/ui'
 import type { Agent } from '../../lib/types'
 import ChannelIcon from '../ChannelIcon.vue'
-import { imAdapters, platformLabel } from '../../lib/im-platforms'
+import { platformLabel } from '../../lib/im-platforms'
 
 const props = defineProps<{ bot: Agent }>()
 const { t, locale } = useI18n()
@@ -72,21 +72,35 @@ function connect(platform: string) {
     </nav>
     <Modal
       v-model:open="connecting"
+      class="platform-picker"
       :title="t('choosePlatform')"
     >
-      <button
-        v-for="platform in ['telegram', 'qq', 'weixin', 'feishu']"
-        :key="platform"
-        type="button"
-        class="computer-option"
-        @click="connect(platform)"
-      >
-        <ChannelIcon
-          :platform="platform"
-          aria-hidden="true"
-        />
-        <span><strong>{{ platformLabel(platform, locale) }}</strong><small>{{ t(platform === 'qq' ? 'qqPlatformHint' : imAdapters.find(a => a.platform === platform)!.hint) }}</small></span><ChevronRight />
-      </button>
+      <div class="platform-picker-list">
+        <button
+          v-for="platform in ['telegram', 'qq', 'weixin', 'feishu']"
+          :key="platform"
+          type="button"
+          class="platform-picker-option"
+          @click="connect(platform)"
+        >
+          <ChannelIcon
+            :platform="platform"
+            aria-hidden="true"
+          />
+          <span>{{ platformLabel(platform, locale) }}</span><ChevronRight aria-hidden="true" />
+        </button>
+      </div>
     </Modal>
   </aside>
 </template>
+<style scoped>
+:global(.platform-picker.modal-content) { width: min(360px, calc(100vw - 32px)); padding: 16px; gap: 12px; }
+:global(.platform-picker .modal-title) { font-size: 16px; font-weight: 550; }
+.platform-picker-list { display: flex; flex-direction: column; gap: 2px; }
+.platform-picker-option { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
+.platform-picker-option:hover, .platform-picker-option:focus-visible { background: var(--hover); }
+.platform-picker-option:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: -1px; }
+.platform-picker-option :deep(.platform-icon) { width: 24px; height: 24px; }
+.platform-picker-option > span { flex: 1; }
+.platform-picker-option > svg { width: 15px; height: 15px; color: var(--muted); }
+</style>

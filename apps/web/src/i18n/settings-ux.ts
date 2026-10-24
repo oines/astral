@@ -1,7 +1,8 @@
 export const settingsUxEn = {
   settingsSaving: 'Saving…', settingsNotApplied: 'This change was not applied.', settingsUnconfirmed: 'The result is not confirmed yet.', settingsCheckStatus: 'Check status', settingsValueRequired: 'Enter a value.',
-  botBasics: 'Basic settings', botComputerPermissions: 'Computer access', botPlatforms: 'Chat platforms', connectPlatform: 'Connect a platform', choosePlatform: 'Choose a platform', telegramPlatformHint: 'Connect a Telegram bot to private and group chats.',
+  botBasics: 'Basic settings', botComputerPermissions: 'Computer access', botPlatforms: 'Chat platforms', connectPlatform: 'Connect a platform', choosePlatform: 'Choose a platform',
   botIdentity: 'Identity', botModelSettings: 'Models', botSearchSettings: 'Web search', botAvatarHint: 'An emoji or a short label.',
+  botPersona: 'Persona (optional)', botPersonaHint: 'Define an identity, personality or way of speaking. Leave empty for no custom persona.', botPersonaScope: 'Applies to the next model request in every conversation of this Bot.', applyBotPersona: 'Apply persona',
   computerPermissionsHint: 'These Computers can run commands and work with files for this Bot.', manageComputerConnections: 'Connect or disconnect Computers', manageComputerConnectionsHint: 'Add a machine or manage its connection in global settings.', grantComputer: 'Allow access to {name}', grantingAccess: 'Updating access…', accessUpdated: 'Access updated',
   botMissing: 'This Bot is no longer available.', accountMissing: 'This account is no longer available.', allPlatformAccounts: 'All {platform} accounts', platformAccount: '{platform} account', connectPlatformAccount: 'Connect account', accountInfo: 'Account', accountEnabled: 'Enabled',
   chatAccess: 'Chat access', accessAllChats: 'All chats the account can access', accessSpecifiedChats: 'Only specified chats', accessAllChatsHint: 'Private messages and group mentions create a conversation automatically. The list below shows chats with an active conversation.', accessSpecifiedChatsHint: 'Only chats added below can be accessed by this Bot.', expandChatAccess: 'Allow all accessible chats?', expandChatAccessHint: 'This Bot will be able to access every private and group chat available to this account. Existing conversations and reply settings are kept.', allowAllChatsAction: 'Allow all accessible chats',
@@ -12,8 +13,9 @@ export const settingsUxEn = {
 }
 export const settingsUxZh: typeof settingsUxEn = {
   settingsSaving: '保存中…', settingsNotApplied: '本次修改未生效。', settingsUnconfirmed: '结果尚未确认。', settingsCheckStatus: '检查状态', settingsValueRequired: '请输入内容。',
-  botBasics: '基本设置', botComputerPermissions: '电脑权限', botPlatforms: '聊天平台', connectPlatform: '连接平台', choosePlatform: '选择平台', telegramPlatformHint: '通过 Telegram 机器人连接私聊和群聊。',
+  botBasics: '基本设置', botComputerPermissions: '电脑权限', botPlatforms: '聊天平台', connectPlatform: '连接平台', choosePlatform: '选择平台',
   botIdentity: '身份信息', botModelSettings: '模型', botSearchSettings: '网页搜索', botAvatarHint: '使用表情或简短文字。',
+  botPersona: '人格（可选）', botPersonaHint: '设定人物身份、性格或说话方式。留空则不添加自定义人格。', botPersonaScope: '应用后，此 Bot 的所有会话从下一个模型请求起生效。', applyBotPersona: '应用人格',
   computerPermissionsHint: 'Bot 可以在这些电脑上执行命令和读写文件。', manageComputerConnections: '连接或断开电脑', manageComputerConnectionsHint: '在全局设置中添加电脑或管理连接。', grantComputer: '允许使用「{name}」', grantingAccess: '更新权限中…', accessUpdated: '权限已更新',
   botMissing: '这个 Bot 已不存在。', accountMissing: '这个账号已不存在。', allPlatformAccounts: '所有 {platform} 账号', platformAccount: '{platform} 账号', connectPlatformAccount: '连接账号', accountInfo: '账号信息', accountEnabled: '启用账号',
   chatAccess: '聊天接入', accessAllChats: '机器人能访问的全部聊天', accessSpecifiedChats: '仅指定的聊天', accessAllChatsHint: '收到私聊消息或群聊中的提及时，会自动建立会话。下方仅列出已建立会话的聊天。', accessSpecifiedChatsHint: 'Bot 只能访问下方添加的聊天。', expandChatAccess: '允许访问全部聊天？', expandChatAccessHint: '这个 Bot 将能访问此账号可接触的全部私聊和群聊。已有会话和回复设置会保留。', allowAllChatsAction: '允许访问全部聊天',

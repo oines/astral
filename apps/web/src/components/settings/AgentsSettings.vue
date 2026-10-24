@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, ref } from 'vue'
+import { computed, onActivated, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuery } from '@pinia/colada'
 import { listSearchProvidersQuery } from '@astral/sdk/colada'
@@ -30,6 +30,15 @@ const saves = useSettingsSave()
 const searches = useQuery(listSearchProvidersQuery())
 const selected = computed(() => app.agents.find(a => a.id === route.query.agent))
 const resource = computed(() => `agent:${selected.value?.id || ''}`)
+const personaKey = computed(() => `${resource.value}/persona`)
+const persona = computed({
+  get: () => saves.drafts[personaKey.value] ?? selected.value?.persona ?? '',
+  set: value => { saves.drafts[personaKey.value] = value },
+})
+const personaChanged = computed(() => persona.value !== (selected.value?.persona || ''))
+watch(() => [selected.value?.id, selected.value?.persona], () => {
+  if (saves.drafts[personaKey.value] === (selected.value?.persona || '')) delete saves.drafts[personaKey.value]
+})
 const platform = computed(() => typeof route.query.platform === 'string' ? route.query.platform : route.query.tab === 'channels' ? 'telegram' : '')
 const computersPage = computed(() => route.query.tab === 'computers' && !platform.value)
 const creating = ref<Agent>()
@@ -78,6 +87,12 @@ function updateModel(kind: 'default' | 'probe', selection: Selection) {
   return update(selected.value.id, `${kind}-model`, kind === 'default'
     ? { default_model_id: selection.profile_id, default_reasoning: selection.reasoning }
     : { probe_model_id: selection.profile_id, probe_reasoning: selection.reasoning }, selection)
+}
+function applyPersona() {
+  if (!selected.value) return
+  const value = persona.value.trim() ? persona.value : ''
+  persona.value = value
+  return update(selected.value.id, 'persona', { persona: value })
 }
 async function create() {
   await action.run(async () => {
@@ -187,6 +202,31 @@ async function remove() {
             </div>
           </SettingsRow>
           <SettingsFeedback :scope="[`${resource}/name`, `${resource}/avatar`]" />
+        </SettingsSection>
+        <SettingsSection
+          :title="t('botPersona')"
+          :description="t('botPersonaHint')"
+        >
+          <div class="settings-long-text">
+            <textarea
+              v-model="persona"
+              :aria-label="t('botPersona')"
+              rows="7"
+            />
+          </div>
+          <div class="settings-submit-row">
+            <p>{{ t('botPersonaScope') }}</p>
+            <Button
+              :disabled="!personaChanged || saves.state(personaKey).status === 'saving' || saves.state(personaKey).status === 'uncertain'"
+              @click="applyPersona"
+            >
+              {{ t('applyBotPersona') }}
+            </Button>
+          </div>
+          <SettingsFeedback
+            :scope="personaKey"
+            :retry="applyPersona"
+          />
         </SettingsSection>
         <SettingsSection :title="t('botModelSettings')">
           <SettingsRow
@@ -305,7 +345,6 @@ async function remove() {
           <SettingsFeedback
             :scope="computers.map(c => `${resource}/computer:${c.id}`)"
             :saving="t('grantingAccess')"
-            :saved="t('accessUpdated')"
           />
         </SettingsSection>
         <SettingsSection>

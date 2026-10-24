@@ -324,22 +324,55 @@ func (b *Bridge) construct(ctx context.Context, p domain.ModelProfile, provider 
 	}
 }
 
-func (b *Bridge) Resolve(ctx context.Context, ref string, validate RequestValidator) (core.Model, error) {
+func (b *Bridge) snapshot(ctx context.Context, ref string) (domain.ModelProfile, domain.Provider, error) {
+	var p domain.ModelProfile
+	var provider domain.Provider
 	parts := strings.Split(ref, "~")
 	if len(parts) != 3 {
-		return nil, domain.Invalid("invalid versioned model reference")
+		return p, provider, domain.Invalid("invalid versioned model reference")
 	}
 	pv, e1 := strconv.ParseInt(parts[1], 10, 64)
 	cv, e2 := strconv.ParseInt(parts[2], 10, 64)
 	if e1 != nil || e2 != nil || pv < 1 || cv < 1 {
-		return nil, domain.Invalid("invalid model revision")
+		return p, provider, domain.Invalid("invalid model revision")
 	}
-	var p domain.ModelProfile
 	if err := b.Store.Version(ctx, "models", parts[0], pv, &p); err != nil {
-		return nil, err
+		return p, provider, err
 	}
-	var provider domain.Provider
 	if err := b.Store.Version(ctx, "providers", p.ProviderID, cv, &provider); err != nil {
+		return p, provider, err
+	}
+	return p, provider, nil
+}
+
+// ModelDescription is the effective, versioned model state shown to the model.
+// Capability uncertainty is preserved instead of inferred from a model name.
+type ModelDescription struct {
+	Name          string `json:"name"`
+	ID            string `json:"id"`
+	ContextWindow int    `json:"context_window"`
+	Vision        string `json:"vision"`
+}
+
+func (b *Bridge) DescribeModel(ctx context.Context, ref string) (ModelDescription, error) {
+	p, _, err := b.snapshot(ctx, ref)
+	if err != nil {
+		return ModelDescription{}, err
+	}
+	values, _, err := p.Effective()
+	if err != nil {
+		return ModelDescription{}, err
+	}
+	vision := values.Images
+	if vision == "" {
+		vision = "unknown"
+	}
+	return ModelDescription{Name: p.Name, ID: p.ModelID, ContextWindow: values.ContextWindow, Vision: vision}, nil
+}
+
+func (b *Bridge) Resolve(ctx context.Context, ref string, validate RequestValidator) (core.Model, error) {
+	p, provider, err := b.snapshot(ctx, ref)
+	if err != nil {
 		return nil, err
 	}
 	model, err := b.construct(ctx, p, provider)

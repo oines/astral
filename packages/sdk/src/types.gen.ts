@@ -21,6 +21,20 @@ export type AstralCoreApprovalRequest = {
     prompt: string;
 };
 
+export type AstralCoreAttemptOutcome = {
+    entry_id?: string;
+    error?: string;
+    finished_at: string;
+    reply?: AstralCoreReply;
+    status: string;
+    usage?: AstralCoreUsage;
+};
+
+export type AstralCoreAttemptPage = {
+    attempts: Array<AstralCoreModelAttempt>;
+    next?: string;
+};
+
 export type AstralCoreAttemptStatus = {
     attempt: number;
     attempt_id: string;
@@ -34,6 +48,7 @@ export type AstralCoreAttemptStatus = {
 };
 
 export type AstralCoreCompactionRecord = {
+    attempt_id?: string;
     input_tokens: number;
     instructions?: string;
     model_id: string;
@@ -85,8 +100,6 @@ export type AstralCoreEntry = {
     input_id?: string;
     kind: string;
     message?: AstralCoreMessage;
-    model_request?: AstralCoreModelRequestRecord;
-    model_response?: AstralCoreModelResponseRecord;
     parent_id?: string;
     run?: AstralCoreRunRecord;
     run_id?: string;
@@ -139,7 +152,7 @@ export type AstralCoreGenerationRecord = {
     attempt_id: string;
     configuration_id: string;
     context_digest: string;
-    request_id: string;
+    model: AstralCoreModelSpec;
 };
 
 export type AstralCoreInputClear = {
@@ -168,6 +181,20 @@ export type AstralCoreMessage = {
     tool_call_id?: string;
 };
 
+export type AstralCoreModelAttempt = {
+    id: string;
+    input: AstralCoreRequestInput;
+    number?: number;
+    outcome?: AstralCoreAttemptOutcome;
+    purpose: string;
+    retry_of?: string;
+    run_id?: string;
+    session_id: string;
+    started_at: string;
+    turn_id?: string;
+    version: number;
+};
+
 export type AstralCoreModelEvent = {
     content_index?: number;
     data?: unknown;
@@ -177,17 +204,12 @@ export type AstralCoreModelEvent = {
     type: string;
 };
 
-export type AstralCoreModelRequestRecord = {
-    attempt_id: string;
-    purpose: string;
-    request: AstralCoreRequest;
-};
-
-export type AstralCoreModelResponseRecord = {
-    attempt_id: string;
-    error?: string;
-    purpose: string;
-    reply: AstralCoreReply;
+export type AstralCoreModelSpec = {
+    context_window: number;
+    id: string;
+    max_input_tokens?: number;
+    max_output_tokens: number;
+    revision?: string;
 };
 
 export type AstralCorePendingApproval = {
@@ -243,6 +265,22 @@ export type AstralCoreRequest = {
     tools?: Array<AstralCoreToolDefinition>;
 };
 
+export type AstralCoreRequestChange = {
+    op: string;
+    path: Array<string>;
+    value?: unknown;
+};
+
+export type AstralCoreRequestInput = {
+    changes?: Array<AstralCoreRequestChange>;
+    configuration_id: string;
+    digest: string;
+    head_id: string;
+    model: AstralCoreModelSpec;
+    rollout_id: string;
+    selection?: Array<number>;
+};
+
 export type AstralCoreResponseFormat = {
     name?: string;
     schema?: unknown;
@@ -288,11 +326,6 @@ export type AstralCoreToolDefinition = {
     parameters: unknown;
     sequential?: boolean;
     version?: string;
-};
-
-export type AstralCoreToolExecution = {
-    end_run?: AstralCoreRunEnd;
-    result?: AstralCoreToolResult;
 };
 
 export type AstralCoreToolProgress = {
@@ -426,6 +459,7 @@ export type AstralInternalDomainAgent = {
     default_reasoning?: AstralCoreReasoningOptions;
     id: string;
     name: string;
+    persona?: string;
     probe_model_id?: string;
     probe_reasoning?: AstralCoreReasoningOptions;
     revision: number;
@@ -655,8 +689,6 @@ export type AstralInternalDomainOutbox = {
     platform_message_ids?: Array<string>;
     reply_to?: string;
     request_digest: string;
-    resolution_note?: string;
-    retryable: boolean;
     revision: number;
     session_id: string;
     status: string;
@@ -736,6 +768,7 @@ export type AstralInternalDomainSession = {
     conversation_id?: string;
     created_at: string;
     cwd?: string;
+    deletion?: AstralInternalDomainSessionDeletion;
     fork_entry_id?: string;
     id: string;
     model_ref?: string;
@@ -751,14 +784,43 @@ export type AstralInternalDomainSession = {
     updated_at: string;
 };
 
+export type AstralInternalDomainSessionDeletion = {
+    rollout_id: string;
+};
+
 export type AstralInternalGatewayCapabilities = {
-    endpoints: {
+    authentication: string;
+    capabilities: Array<AstralInternalGatewayCapability>;
+    openapi_url: string;
+    scope: string;
+    usage: string;
+};
+
+export type AstralInternalGatewayCapability = {
+    description: string;
+    id: string;
+    read_url: string;
+};
+
+export type AstralInternalGatewayCapabilityDocument = {
+    description: string;
+    examples: Array<AstralInternalGatewayCapabilityExample>;
+    id: string;
+    notes: Array<string>;
+    openapi: {
+        [key: string]: unknown;
+    };
+    read_url: string;
+};
+
+export type AstralInternalGatewayCapabilityExample = {
+    body?: unknown;
+    description: string;
+    headers?: {
         [key: string]: string;
     };
-    files: string;
-    history: string;
-    idempotency: string;
-    identity: string;
+    method: string;
+    path: string;
 };
 
 export type AstralInternalGatewayContext = {
@@ -890,6 +952,7 @@ export type AstralInternalHarnessView = {
     conversation_id?: string;
     created_at: string;
     cwd?: string;
+    deletion?: AstralInternalDomainSessionDeletion;
     error?: string;
     event_sequence: number;
     fork_entry_id?: string;
@@ -1070,16 +1133,6 @@ export type AstralInternalHttpapiProviderInput = {
     replay_revision?: number;
     revision: number;
     updated_at: string;
-};
-
-export type AstralInternalHttpapiResolution = {
-    execution: AstralCoreToolExecution;
-};
-
-export type AstralInternalHttpapiResolveSend = {
-    message_ids?: Array<string>;
-    note: string;
-    status: 'accepted' | 'failed';
 };
 
 export type AstralInternalHttpapiSearchInput = {
@@ -2343,60 +2396,6 @@ export type ListOutboxResponses = {
 
 export type ListOutboxResponse = ListOutboxResponses[keyof ListOutboxResponses];
 
-export type ResolveSendData = {
-    body: AstralInternalHttpapiResolveSend;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/outbox/{id}/resolve';
-};
-
-export type ResolveSendErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type ResolveSendError = ResolveSendErrors[keyof ResolveSendErrors];
-
-export type ResolveSendResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalHttpcontractOk;
-};
-
-export type ResolveSendResponse = ResolveSendResponses[keyof ResolveSendResponses];
-
-export type RetrySendData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/outbox/{id}/retry';
-};
-
-export type RetrySendErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type RetrySendError = RetrySendErrors[keyof RetrySendErrors];
-
-export type RetrySendResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalHttpcontractOk;
-};
-
-export type RetrySendResponse = RetrySendResponses[keyof RetrySendResponses];
-
 export type GetPreferencesData = {
     body?: never;
     path?: never;
@@ -2951,6 +2950,35 @@ export type CreateSessionResponses = {
 
 export type CreateSessionResponse = CreateSessionResponses[keyof CreateSessionResponses];
 
+export type DeleteSessionData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/api/v1/sessions/{id}';
+};
+
+export type DeleteSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type DeleteSessionError = DeleteSessionErrors[keyof DeleteSessionErrors];
+
+export type DeleteSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type DeleteSessionResponse = DeleteSessionResponses[keyof DeleteSessionResponses];
+
 export type GetSessionData = {
     body?: never;
     path: {
@@ -3062,6 +3090,93 @@ export type UploadAttachmentResponses = {
 };
 
 export type UploadAttachmentResponse = UploadAttachmentResponses[keyof UploadAttachmentResponses];
+
+export type SessionAttemptsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        cursor?: string;
+        purpose?: string;
+        limit?: number;
+    };
+    url: '/api/v1/sessions/{id}/attempts';
+};
+
+export type SessionAttemptsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SessionAttemptsError = SessionAttemptsErrors[keyof SessionAttemptsErrors];
+
+export type SessionAttemptsResponses = {
+    /**
+     * OK
+     */
+    200: AstralCoreAttemptPage;
+};
+
+export type SessionAttemptsResponse = SessionAttemptsResponses[keyof SessionAttemptsResponses];
+
+export type SessionAttemptData = {
+    body?: never;
+    path: {
+        id: string;
+        attempt: string;
+    };
+    query?: never;
+    url: '/api/v1/sessions/{id}/attempts/{attempt}';
+};
+
+export type SessionAttemptErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SessionAttemptError = SessionAttemptErrors[keyof SessionAttemptErrors];
+
+export type SessionAttemptResponses = {
+    /**
+     * OK
+     */
+    200: AstralCoreModelAttempt;
+};
+
+export type SessionAttemptResponse = SessionAttemptResponses[keyof SessionAttemptResponses];
+
+export type SessionAttemptRequestData = {
+    body?: never;
+    path: {
+        id: string;
+        attempt: string;
+    };
+    query?: never;
+    url: '/api/v1/sessions/{id}/attempts/{attempt}/request';
+};
+
+export type SessionAttemptRequestErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SessionAttemptRequestError = SessionAttemptRequestErrors[keyof SessionAttemptRequestErrors];
+
+export type SessionAttemptRequestResponses = {
+    /**
+     * OK
+     */
+    200: AstralCoreRequest;
+};
+
+export type SessionAttemptRequestResponse = SessionAttemptRequestResponses[keyof SessionAttemptRequestResponses];
 
 export type CompactSessionData = {
     body: AstralInternalHttpapiCompact;
@@ -3596,34 +3711,6 @@ export type StopSessionResponses = {
 
 export type StopSessionResponse = StopSessionResponses[keyof StopSessionResponses];
 
-export type ResolveToolData = {
-    body: AstralInternalHttpapiResolution;
-    path: {
-        id: string;
-        execution: string;
-    };
-    query?: never;
-    url: '/api/v1/sessions/{id}/tools/{execution}/resolve';
-};
-
-export type ResolveToolErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type ResolveToolError = ResolveToolErrors[keyof ResolveToolErrors];
-
-export type ResolveToolResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalHttpcontractOk;
-};
-
-export type ResolveToolResponse = ResolveToolResponses[keyof ResolveToolResponses];
-
 export type StorageInfoData = {
     body?: never;
     path?: never;
@@ -3938,6 +4025,33 @@ export type AgentCapabilitiesResponses = {
 
 export type AgentCapabilitiesResponse = AgentCapabilitiesResponses[keyof AgentCapabilitiesResponses];
 
+export type AgentCapabilityData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/capabilities/{id}';
+};
+
+export type AgentCapabilityErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentCapabilityError = AgentCapabilityErrors[keyof AgentCapabilityErrors];
+
+export type AgentCapabilityResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayCapabilityDocument;
+};
+
+export type AgentCapabilityResponse = AgentCapabilityResponses[keyof AgentCapabilityResponses];
+
 export type AgentComputersData = {
     body?: never;
     path?: never;
@@ -4155,6 +4269,12 @@ export type AgentFileReferenceResponse = AgentFileReferenceResponses[keyof Agent
 
 export type AgentSendFileData = {
     body: AstralInternalGatewaySendFile;
+    headers: {
+        /**
+         * Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.
+         */
+        'Idempotency-Key': string;
+    };
     path?: never;
     query?: never;
     url: '/v1/im/files';
@@ -4180,6 +4300,12 @@ export type AgentSendFileResponse = AgentSendFileResponses[keyof AgentSendFileRe
 
 export type AgentSendTextData = {
     body: AstralInternalGatewaySendText;
+    headers: {
+        /**
+         * Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.
+         */
+        'Idempotency-Key': string;
+    };
     path?: never;
     query?: never;
     url: '/v1/im/messages';

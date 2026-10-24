@@ -49,6 +49,8 @@ describe('recovering a session connection', () => {
     const live = connect()
     const first = snapshot('one', 'server')
     first.view.context_usage = { entry_id: 'reported', model_ref: 'model', input_tokens: 27707, context_window: 1000000 }
+    const answer = { id: 'answer', session_id: 'one', kind: 'message', version: 7, sequence: 1, time: '2026-10-24T00:00:00Z', message: { role: 'assistant', content: [{ type: 'text', text: 'Keep this response visible while reconnecting.' }] } }
+    first.history.entries = [answer]
     const stream = Stream.instances[0]!
     stream.send('snapshot', first)
     stream.send('event', { epoch: 'server', core: { sequence: 1, session_id: 'one', type: 'attempt_start' } })
@@ -59,11 +61,15 @@ describe('recovering a session connection', () => {
     stream.send('event', { epoch: 'server', core: { sequence: 2, session_id: 'one', type: 'entry_committed' }, view: newer })
     expect(live.state.value.view?.context_usage?.input_tokens).toBe(29000)
     stream.fail()
+    expect(live.state.value.view).toBeDefined()
+    expect(live.state.value.entries.answer).toEqual(answer)
     await vi.advanceTimersByTimeAsync(1000)
     const restored = snapshot('one', 'restarted')
     restored.view = newer
+    restored.history = first.history
     Stream.instances[1]!.send('snapshot', restored)
     expect(live.state.value.view?.context_usage).toEqual(newer.context_usage)
+    expect(live.state.value.entries.answer).toEqual(answer)
     expect(fetch).not.toHaveBeenCalled()
   })
   it('restores retry state from a new snapshot without submitting or continuing a model request', async () => {

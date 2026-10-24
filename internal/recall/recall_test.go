@@ -429,14 +429,36 @@ func TestToolEvidenceAndContextAreIndexedOnce(t *testing.T) {
 	result := &core.ToolResult{Content: core.Text("needle error output"), Outcome: core.OutcomeSucceeded}
 	f.append(t, "one", core.Entry{ID: "assistant", Kind: core.EntryMessage, Message: &assistant},
 		core.Entry{Kind: core.EntryToolResult, Tool: &core.ToolRecord{Invocation: invocation, Result: result}},
-		core.Entry{Kind: core.EntryModelRequest, ModelRequest: &core.ModelRequestRecord{AttemptID: "request", Purpose: "generation", Request: core.Request{ModelID: "model", Messages: []core.Message{user, env, assistant}}}},
 	)
+	state, err := f.core.LoadState(f.ctx, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := core.ReadContext(f.ctx, f.core, state.RolloutID, state.Branch.HeadID, core.DefaultContextBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := core.FreezeRequest(state.RolloutID, base, base.Request, core.ModelSpec{ID: base.Request.ModelID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt := core.ModelAttempt{ID: "request", SessionID: "one", Version: state.Version + 1, Purpose: "generation", Number: 1, StartedAt: f.clock, Input: input}
+	if _, err := f.core.Commit(f.ctx, "one", core.Commit{ID: "attempt-start", ExpectedVersion: state.Version, Attempts: []core.AttemptMutation{{ID: attempt.ID, Create: &attempt}}}); err != nil {
+		t.Fatal(err)
+	}
+	failed := core.Reply{Message: core.Message{Role: core.RoleAssistant, Content: core.Text("needle-audit-only")}}
+	if _, err := f.core.Commit(f.ctx, "one", core.Commit{ID: "attempt-failed", ExpectedVersion: state.Version + 1, Attempts: []core.AttemptMutation{{ID: attempt.ID, Finish: &core.AttemptOutcome{Status: "failed", FinishedAt: f.clock, Error: "request failed", Reply: &failed}}}}); err != nil {
+		t.Fatal(err)
+	}
 	page := search(t, f, SearchRequest{Query: "needle"})
 	if len(page.Hits) != 3 {
 		t.Fatalf("duplicate request/lifecycle/environment content: %+v", page)
 	}
 	if hits := search(t, f, SearchRequest{Query: "environment-only"}).Hits; len(hits) != 0 {
 		t.Fatal("environment indexed")
+	}
+	if hits := search(t, f, SearchRequest{Query: "needle-audit-only"}).Hits; len(hits) != 0 {
+		t.Fatal("attempt output indexed")
 	}
 	if hits := search(t, f, SearchRequest{Query: "needle", Roles: []string{"tool"}}).Hits; len(hits) != 1 || hits[0].ToolName != "exec_command" {
 		t.Fatalf("tool filter: %+v", hits)

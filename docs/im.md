@@ -34,14 +34,18 @@ Bound Sessions remain normal Web Sessions with full tool use and history. Their 
 
 Telegram Markdown/HTML use Rich Messages rather than MarkdownV2. Feishu Markdown uses a `post` containing an `md` block. QQ Markdown and templates depend on the account's platform permissions; rejection is reported rather than silently falling back to text. Weixin Markdown simplifies unsupported CJK italics and level 5/6 headings and preserves inline image references as readable text; actual images use attachments. Formatted bodies and files have separate ordered receipts. Format, platform parameters and prepared fragments are frozen in Outbox before dispatch. Retrying an intent does not reformat its source.
 
-The tool waits for platform acceptance or failure. A failed, blocked or uncertain send returns an error in the same tool result, with persisted receipts; the Agent decides the next action. Failure stops later fragments of the same send group, but does not freeze unrelated later messages in the chat. Astral does not automatically resend uncertain effects. There is no detached receipt/retry card or human reconciliation dialog in the Composer.
+The tool returns the outcome of one send attempt: `sent` is `true` for acceptance, `false` for a known failure, or `null` when the platform result is unconfirmed; `message_ids` and `error` are included when available. Every result completes the tool call so the model can continue. Platform-specific parameters and acceptance rules belong to each adapter. Failure stops later fragments of the same send group. Outbox retains internal send records and prevents duplicate dispatch.
 
 ## Computer API
 
-Read `local_api.base_url` from the current environment snapshot and append the paths below. The listener supplies Agent, Session and source Computer identity. Account credentials are never returned. Old processes retain their original Computer binding.
+Start at `local_api.capabilities_url` from the current environment. The index links to purpose-specific documentation at `/v1/capabilities/{id}` for history, chats, files and environment. Each document contains behavior rules, examples and a self-contained OpenAPI subset generated from the actual routes. The index also links the complete OpenAPI. Resolve relative links against `local_api.base_url`; no token is needed. The listener supplies Agent, Session and source Computer identity. Account credentials are never returned. Old processes retain their original Computer binding.
+
+The Host prompt only points to this discovery entry for API details. Endpoint paths, pagination, HTTP idempotency and file handling instructions live in the capability documents. Only currently IM-bound Sessions receive `send_message` and its matching output instructions; ordinary unbound Sessions use Web assistant text. This follows the current binding, regardless of where the Session was created or opened. The Host prompt does not mention Probe or assume proactive mode is enabled. Use the bound `send_message` tool for text and attachments supported by its schema; its execution identity is supplied by the Host, with no `Idempotency-Key` argument.
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /v1/capabilities` | Unified capability index, scope and documentation links |
+| `GET /v1/capabilities/{id}` | Instructions, examples and actual request/response schemas for one capability |
 | `GET /v1/accounts` | Owned account identities and chat scope |
 | `POST /v1/accounts/{id}/conversations/resolve` | Resolve `{external_id,topic_id?}` without creating a Session |
 | `GET /v1/conversations` | Known authorized chats |
@@ -61,7 +65,7 @@ Read `local_api.base_url` from the current environment snapshot and append the p
 
 All platform chat and message IDs are strings. QQ uses `private:<user ID>` and `group:<group ID>` to preserve its distinct address spaces. Topic IDs are only accepted by adapters that support them.
 
-Text and file sends require a stable `Idempotency-Key`. Reusing it with different content fails; replaying the same intent reads its existing outcome rather than sending it again. Successful calls return accepted receipts; send failures return an HTTP error containing the receipt ID and actual send error. Receipt lookup remains available after cancellation or disconnection. Accepted means platform acceptance, not final delivery. Weixin may acknowledge only the sent `client_id`; a `client:` receipt identifies that accepted request, not a server-side message identity usable for quoting or editing. Files with text on Weixin or Feishu use separate ordered receipts for the text and file. An uncertain outcome stays `unknown`, with no automatic retry.
+HTTP text and file sends require a stable `Idempotency-Key`. Reusing it with different content fails; replaying the same intent reads its existing outcome rather than sending it again. Successful calls return accepted receipts; send failures return an HTTP error containing the receipt ID and actual send error. Receipt lookup remains available after cancellation or disconnection. Accepted means platform acceptance, not final delivery. Weixin may acknowledge only the sent `client_id`; a `client:` receipt identifies that accepted request, not a server-side message identity usable for quoting or editing. Files with text on Weixin or Feishu use separate ordered receipts for the text and file. An uncertain outcome stays `unknown`, with no automatic retry.
 
 All adapters stream original file uploads and downloads without an Astral file-size ceiling. QQ and NapCat stream Base64 JSON; Weixin streams digest calculation and encryption from the immutable source Computer snapshot, reopening that snapshot for the encrypted upload. Server memory does not grow with the file, and files are not staged on Server disk. Platform errors, including an upstream size rejection, return to the caller. Telegram sends JPEG/PNG/WebP attachments with `sendPhoto` by default; `as_document:true` preserves an image as a document. Other files use `sendDocument`.
 
@@ -83,7 +87,7 @@ A request supplies `conversation_id`, optional `source_conversation_id` for copy
 
 The target, copy/forward source and nested chat references each require access through the same account. Topic-only grants also require an archived message identity before a chat-wide edit, delete or copy can act on it. Chat-wide management requires access to the parent chat. Command scopes are restricted to `chat` or `chat_member` for the selected chat. Alternate inline-message and business identities are not Bot chat grants; direct-message Topics are not resolved by this version's forum Topic adapter.
 
-Named operations return Telegram's result directly and archive accepted messages or deletion facts. They are not automatically retried. Use the queued text/file endpoints when persisted send-receipt reconciliation is needed.
+Named operations return Telegram's result directly and archive accepted messages or deletion facts. Each invocation makes one attempt.
 
 ## Additional platform operations
 
@@ -91,6 +95,8 @@ The account operation catalog uses the same Computer HTTP API and Agent view. No
 
 Requests supply `conversation_id` and an allowlisted `parameters` object. Every target belongs to the selected account and must pass its `all | specified` scope. Globally addressed messages must already be archived in that chat, and adapters also verify remote chat membership where needed. Parameters cannot supply a URL or override the destination. A successful delete appends the deletion fact to IMStore. Reading platform history does not backfill Core or activate a Session.
 
-These direct operations are single attempts without queued send reconciliation; inspect uncertain effects before retrying. Use the shared queued endpoints for text and files. NapCat generic execution exceptions remain `unknown`, because its timeout response may follow submission to QQ.
+These direct operations make one attempt. Use the text/file endpoints for sends with persisted request identities. NapCat generic execution exceptions remain `unknown` in the internal send record, because its timeout response may follow submission to QQ.
 
 QQ official and Feishu only contribute ordinary group context when platform permissions deliver those events. NapCat forward WebSocket has no offline replay. Weixin persists per-chat context tokens and media download secrets in encrypted Server records; receiving does not create Computer files. Its QR authorization is Owner-only, supports Tencent region redirects and phone verification, and never returns credentials to the browser.
+
+A confirmed Weixin QR grant is the account identity proof. Persist it without an additional `getconfig` call; that API provides per-peer typing configuration and is not a login validation endpoint. Platform business errors preserve their safe numeric code in Owner API responses without forwarding raw remote error text.

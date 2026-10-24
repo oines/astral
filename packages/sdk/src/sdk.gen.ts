@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentDownloadAttachmentData, AgentDownloadAttachmentErrors, AgentDownloadAttachmentResponses, AgentFileReferenceData, AgentFileReferenceErrors, AgentFileReferenceResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentMessageData, AgentMessageErrors, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendFileData, AgentSendFileErrors, AgentSendFileResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramOperationData, AgentTelegramOperationErrors, AgentTelegramOperationResponses, AgentTelegramOperationsData, AgentTelegramOperationsErrors, AgentTelegramOperationsResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetSessionData, GetSessionErrors, GetSessionResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, ImportModelsData, ImportModelsErrors, ImportModelsResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, RefreshModelData, RefreshModelErrors, RefreshModelResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResolveSendData, ResolveSendErrors, ResolveSendResponses, ResolveToolData, ResolveToolErrors, ResolveToolResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RetrySendData, RetrySendErrors, RetrySendResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses } from './types.gen';
+import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentCapabilityData, AgentCapabilityErrors, AgentCapabilityResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentDownloadAttachmentData, AgentDownloadAttachmentErrors, AgentDownloadAttachmentResponses, AgentFileReferenceData, AgentFileReferenceErrors, AgentFileReferenceResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentMessageData, AgentMessageErrors, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendFileData, AgentSendFileErrors, AgentSendFileResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramOperationData, AgentTelegramOperationErrors, AgentTelegramOperationResponses, AgentTelegramOperationsData, AgentTelegramOperationsErrors, AgentTelegramOperationsResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetSessionData, GetSessionErrors, GetSessionResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, ImportModelsData, ImportModelsErrors, ImportModelsResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, RefreshModelData, RefreshModelErrors, RefreshModelResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionAttemptData, SessionAttemptErrors, SessionAttemptRequestData, SessionAttemptRequestErrors, SessionAttemptRequestResponses, SessionAttemptResponses, SessionAttemptsData, SessionAttemptsErrors, SessionAttemptsResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -552,38 +552,6 @@ export const listOutbox = <ThrowOnError extends boolean = false>(options?: Optio
     ...options
 });
 
-export const resolveSend = <ThrowOnError extends boolean = false>(options: Options<ResolveSendData, ThrowOnError>): RequestResult<ResolveSendResponses, ResolveSendErrors, ThrowOnError> => (options.client ?? client).post<ResolveSendResponses, ResolveSendErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
-            in: 'cookie',
-            name: 'astral_owner',
-            type: 'apiKey'
-        }],
-    url: '/api/v1/outbox/{id}/resolve',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-export const retrySend = <ThrowOnError extends boolean = false>(options: Options<RetrySendData, ThrowOnError>): RequestResult<RetrySendResponses, RetrySendErrors, ThrowOnError> => (options.client ?? client).post<RetrySendResponses, RetrySendErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
-            in: 'cookie',
-            name: 'astral_owner',
-            type: 'apiKey'
-        }],
-    url: '/api/v1/outbox/{id}/retry',
-    ...options
-});
-
 export const getPreferences = <ThrowOnError extends boolean = false>(options?: Options<GetPreferencesData, ThrowOnError>): RequestResult<GetPreferencesResponses, GetPreferencesErrors, ThrowOnError> => (options?.client ?? client).get<GetPreferencesResponses, GetPreferencesErrors, ThrowOnError>({
     security: [{
             key: 'owner',
@@ -902,6 +870,20 @@ export const createSession = <ThrowOnError extends boolean = false>(options: Opt
     }
 });
 
+export const deleteSession = <ThrowOnError extends boolean = false>(options: Options<DeleteSessionData, ThrowOnError>): RequestResult<DeleteSessionResponses, DeleteSessionErrors, ThrowOnError> => (options.client ?? client).delete<DeleteSessionResponses, DeleteSessionErrors, ThrowOnError>({
+    security: [{
+            key: 'owner',
+            scheme: 'bearer',
+            type: 'http'
+        }, {
+            in: 'cookie',
+            name: 'astral_owner',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/sessions/{id}',
+    ...options
+});
+
 export const getSession = <ThrowOnError extends boolean = false>(options: Options<GetSessionData, ThrowOnError>): RequestResult<GetSessionResponses, GetSessionErrors, ThrowOnError> => (options.client ?? client).get<GetSessionResponses, GetSessionErrors, ThrowOnError>({
     security: [{
             key: 'owner',
@@ -969,6 +951,48 @@ export const uploadAttachment = <ThrowOnError extends boolean = false>(options: 
         'Content-Type': 'application/octet-stream',
         ...options.headers
     }
+});
+
+export const sessionAttempts = <ThrowOnError extends boolean = false>(options: Options<SessionAttemptsData, ThrowOnError>): RequestResult<SessionAttemptsResponses, SessionAttemptsErrors, ThrowOnError> => (options.client ?? client).get<SessionAttemptsResponses, SessionAttemptsErrors, ThrowOnError>({
+    security: [{
+            key: 'owner',
+            scheme: 'bearer',
+            type: 'http'
+        }, {
+            in: 'cookie',
+            name: 'astral_owner',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/sessions/{id}/attempts',
+    ...options
+});
+
+export const sessionAttempt = <ThrowOnError extends boolean = false>(options: Options<SessionAttemptData, ThrowOnError>): RequestResult<SessionAttemptResponses, SessionAttemptErrors, ThrowOnError> => (options.client ?? client).get<SessionAttemptResponses, SessionAttemptErrors, ThrowOnError>({
+    security: [{
+            key: 'owner',
+            scheme: 'bearer',
+            type: 'http'
+        }, {
+            in: 'cookie',
+            name: 'astral_owner',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/sessions/{id}/attempts/{attempt}',
+    ...options
+});
+
+export const sessionAttemptRequest = <ThrowOnError extends boolean = false>(options: Options<SessionAttemptRequestData, ThrowOnError>): RequestResult<SessionAttemptRequestResponses, SessionAttemptRequestErrors, ThrowOnError> => (options.client ?? client).get<SessionAttemptRequestResponses, SessionAttemptRequestErrors, ThrowOnError>({
+    security: [{
+            key: 'owner',
+            scheme: 'bearer',
+            type: 'http'
+        }, {
+            in: 'cookie',
+            name: 'astral_owner',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/sessions/{id}/attempts/{attempt}/request',
+    ...options
 });
 
 export const compactSession = <ThrowOnError extends boolean = false>(options: Options<CompactSessionData, ThrowOnError>): RequestResult<CompactSessionResponses, CompactSessionErrors, ThrowOnError> => (options.client ?? client).post<CompactSessionResponses, CompactSessionErrors, ThrowOnError>({
@@ -1269,24 +1293,6 @@ export const stopSession = <ThrowOnError extends boolean = false>(options: Optio
     ...options
 });
 
-export const resolveTool = <ThrowOnError extends boolean = false>(options: Options<ResolveToolData, ThrowOnError>): RequestResult<ResolveToolResponses, ResolveToolErrors, ThrowOnError> => (options.client ?? client).post<ResolveToolResponses, ResolveToolErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
-            in: 'cookie',
-            name: 'astral_owner',
-            type: 'apiKey'
-        }],
-    url: '/api/v1/sessions/{id}/tools/{execution}/resolve',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
 export const storageInfo = <ThrowOnError extends boolean = false>(options?: Options<StorageInfoData, ThrowOnError>): RequestResult<StorageInfoResponses, StorageInfoErrors, ThrowOnError> => (options?.client ?? client).get<StorageInfoResponses, StorageInfoErrors, ThrowOnError>({
     security: [{
             key: 'owner',
@@ -1330,8 +1336,14 @@ export const login = <ThrowOnError extends boolean = false>(options: Options<Log
     }
 });
 
+/**
+ * List this Bot's accounts, with access scopes and without credentials.
+ */
 export const agentAccounts = <ThrowOnError extends boolean = false>(options?: Options<AgentAccountsData, ThrowOnError>): RequestResult<AgentAccountsResponses, AgentAccountsErrors, ThrowOnError> => (options?.client ?? client).get<AgentAccountsResponses, AgentAccountsErrors, ThrowOnError>({ url: '/v1/accounts', ...options });
 
+/**
+ * Resolve an authorized platform chat ID and optional Topic without creating a Session.
+ */
 export const agentResolveConversation = <ThrowOnError extends boolean = false>(options: Options<AgentResolveConversationData, ThrowOnError>): RequestResult<AgentResolveConversationResponses, AgentResolveConversationErrors, ThrowOnError> => (options.client ?? client).post<AgentResolveConversationResponses, AgentResolveConversationErrors, ThrowOnError>({
     url: '/v1/accounts/{id}/conversations/resolve',
     ...options,
@@ -1341,8 +1353,14 @@ export const agentResolveConversation = <ThrowOnError extends boolean = false>(o
     }
 });
 
+/**
+ * Discover supported operations, request parameters and documentation for this account.
+ */
 export const agentAccountOperations = <ThrowOnError extends boolean = false>(options: Options<AgentAccountOperationsData, ThrowOnError>): RequestResult<AgentAccountOperationsResponses, AgentAccountOperationsErrors, ThrowOnError> => (options.client ?? client).get<AgentAccountOperationsResponses, AgentAccountOperationsErrors, ThrowOnError>({ url: '/v1/accounts/{id}/operations', ...options });
 
+/**
+ * Invoke a discovered platform operation within this account's authorized chat scope. Makes one attempt.
+ */
 export const agentAccountOperation = <ThrowOnError extends boolean = false>(options: Options<AgentAccountOperationData, ThrowOnError>): RequestResult<AgentAccountOperationResponses, AgentAccountOperationErrors, ThrowOnError> => (options.client ?? client).post<AgentAccountOperationResponses, AgentAccountOperationErrors, ThrowOnError>({
     url: '/v1/accounts/{id}/operations/{operation}',
     ...options,
@@ -1352,8 +1370,14 @@ export const agentAccountOperation = <ThrowOnError extends boolean = false>(opti
     }
 });
 
+/**
+ * Discover named Telegram chat operations; other platforms use the account operations catalog.
+ */
 export const agentTelegramOperations = <ThrowOnError extends boolean = false>(options: Options<AgentTelegramOperationsData, ThrowOnError>): RequestResult<AgentTelegramOperationsResponses, AgentTelegramOperationsErrors, ThrowOnError> => (options.client ?? client).get<AgentTelegramOperationsResponses, AgentTelegramOperationsErrors, ThrowOnError>({ url: '/v1/accounts/{id}/telegram/operations', ...options });
 
+/**
+ * Invoke a named Telegram operation. Destination and credential identity are supplied by the Host.
+ */
 export const agentTelegramOperation = <ThrowOnError extends boolean = false>(options: Options<AgentTelegramOperationData, ThrowOnError>): RequestResult<AgentTelegramOperationResponses, AgentTelegramOperationErrors, ThrowOnError> => (options.client ?? client).post<AgentTelegramOperationResponses, AgentTelegramOperationErrors, ThrowOnError>({
     url: '/v1/accounts/{id}/telegram/{operation}',
     ...options,
@@ -1363,6 +1387,9 @@ export const agentTelegramOperation = <ThrowOnError extends boolean = false>(opt
     }
 });
 
+/**
+ * Write an original attachment to an explicit path on the calling Computer and return a file reference.
+ */
 export const agentDownloadAttachment = <ThrowOnError extends boolean = false>(options: Options<AgentDownloadAttachmentData, ThrowOnError>): RequestResult<AgentDownloadAttachmentResponses, AgentDownloadAttachmentErrors, ThrowOnError> => (options.client ?? client).post<AgentDownloadAttachmentResponses, AgentDownloadAttachmentErrors, ThrowOnError>({
     url: '/v1/attachments/download',
     ...options,
@@ -1374,20 +1401,46 @@ export const agentDownloadAttachment = <ThrowOnError extends boolean = false>(op
 
 export const agentCapabilities = <ThrowOnError extends boolean = false>(options?: Options<AgentCapabilitiesData, ThrowOnError>): RequestResult<AgentCapabilitiesResponses, AgentCapabilitiesErrors, ThrowOnError> => (options?.client ?? client).get<AgentCapabilitiesResponses, AgentCapabilitiesErrors, ThrowOnError>({ url: '/v1/capabilities', ...options });
 
+export const agentCapability = <ThrowOnError extends boolean = false>(options: Options<AgentCapabilityData, ThrowOnError>): RequestResult<AgentCapabilityResponses, AgentCapabilityErrors, ThrowOnError> => (options.client ?? client).get<AgentCapabilityResponses, AgentCapabilityErrors, ThrowOnError>({ url: '/v1/capabilities/{id}', ...options });
+
+/**
+ * List this Bot's allowed Computers and current connection status.
+ */
 export const agentComputers = <ThrowOnError extends boolean = false>(options?: Options<AgentComputersData, ThrowOnError>): RequestResult<AgentComputersResponses, AgentComputersErrors, ThrowOnError> => (options?.client ?? client).get<AgentComputersResponses, AgentComputersErrors, ThrowOnError>({ url: '/v1/computers', ...options });
 
+/**
+ * Inspect this listener's bound Bot, Session, source Computer, working directory and AgentHome.
+ */
 export const agentContext = <ThrowOnError extends boolean = false>(options?: Options<AgentContextData, ThrowOnError>): RequestResult<AgentContextResponses, AgentContextErrors, ThrowOnError> => (options?.client ?? client).get<AgentContextResponses, AgentContextErrors, ThrowOnError>({ url: '/v1/context', ...options });
 
+/**
+ * List known authorized chats.
+ */
 export const agentConversations = <ThrowOnError extends boolean = false>(options?: Options<AgentConversationsData, ThrowOnError>): RequestResult<AgentConversationsResponses, AgentConversationsErrors, ThrowOnError> => (options?.client ?? client).get<AgentConversationsResponses, AgentConversationsErrors, ThrowOnError>({ url: '/v1/conversations', ...options });
 
+/**
+ * Get this chat's send_message description and platform-specific argument schema.
+ */
 export const agentMessageTool = <ThrowOnError extends boolean = false>(options: Options<AgentMessageToolData, ThrowOnError>): RequestResult<AgentMessageToolResponses, AgentMessageToolErrors, ThrowOnError> => (options.client ?? client).get<AgentMessageToolResponses, AgentMessageToolErrors, ThrowOnError>({ url: '/v1/conversations/{id}/message-tool', ...options });
 
+/**
+ * Read archived messages. Filter q before pagination; continue with after=next_sequence.
+ */
 export const agentMessages = <ThrowOnError extends boolean = false>(options: Options<AgentMessagesData, ThrowOnError>): RequestResult<AgentMessagesResponses, AgentMessagesErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagesResponses, AgentMessagesErrors, ThrowOnError>({ url: '/v1/conversations/{id}/messages', ...options });
 
+/**
+ * Read the latest archived version of a platform message.
+ */
 export const agentMessage = <ThrowOnError extends boolean = false>(options: Options<AgentMessageData, ThrowOnError>): RequestResult<AgentMessageResponses, AgentMessageErrors, ThrowOnError> => (options.client ?? client).get<AgentMessageResponses, AgentMessageErrors, ThrowOnError>({ url: '/v1/conversations/{id}/messages/{message_id}', ...options });
 
+/**
+ * Stream original attachment bytes; this does not save them on a Computer.
+ */
 export const agentAttachmentContent = <ThrowOnError extends boolean = false>(options: Options<AgentAttachmentContentData, ThrowOnError>): RequestResult<AgentAttachmentContentResponses, AgentAttachmentContentErrors, ThrowOnError> => (options.client ?? client).get<AgentAttachmentContentResponses, AgentAttachmentContentErrors, ThrowOnError>({ url: '/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content', ...options });
 
+/**
+ * Reference an existing Computer file for Web delivery; snapshot=true fixes its version.
+ */
 export const agentFileReference = <ThrowOnError extends boolean = false>(options: Options<AgentFileReferenceData, ThrowOnError>): RequestResult<AgentFileReferenceResponses, AgentFileReferenceErrors, ThrowOnError> => (options.client ?? client).post<AgentFileReferenceResponses, AgentFileReferenceErrors, ThrowOnError>({
     url: '/v1/files/reference',
     ...options,
@@ -1397,6 +1450,9 @@ export const agentFileReference = <ThrowOnError extends boolean = false>(options
     }
 });
 
+/**
+ * Send a Computer path or astral-file reference with a stable Idempotency-Key; wait for platform acceptance or a send error.
+ */
 export const agentSendFile = <ThrowOnError extends boolean = false>(options: Options<AgentSendFileData, ThrowOnError>): RequestResult<AgentSendFileResponses, AgentSendFileErrors, ThrowOnError> => (options.client ?? client).post<AgentSendFileResponses, AgentSendFileErrors, ThrowOnError>({
     url: '/v1/im/files',
     ...options,
@@ -1406,6 +1462,9 @@ export const agentSendFile = <ThrowOnError extends boolean = false>(options: Opt
     }
 });
 
+/**
+ * Send text with a stable Idempotency-Key and wait for platform acceptance or an error containing its receipt ID.
+ */
 export const agentSendText = <ThrowOnError extends boolean = false>(options: Options<AgentSendTextData, ThrowOnError>): RequestResult<AgentSendTextResponses, AgentSendTextErrors, ThrowOnError> => (options.client ?? client).post<AgentSendTextResponses, AgentSendTextErrors, ThrowOnError>({
     url: '/v1/im/messages',
     ...options,
@@ -1415,6 +1474,9 @@ export const agentSendText = <ThrowOnError extends boolean = false>(options: Opt
     }
 });
 
+/**
+ * Read this Bot's persisted send outcome. Unknown outcomes are not automatically retried.
+ */
 export const agentSendReceipt = <ThrowOnError extends boolean = false>(options: Options<AgentSendReceiptData, ThrowOnError>): RequestResult<AgentSendReceiptResponses, AgentSendReceiptErrors, ThrowOnError> => (options.client ?? client).get<AgentSendReceiptResponses, AgentSendReceiptErrors, ThrowOnError>({ url: '/v1/im/receipts/{id}', ...options });
 
 /**

@@ -35,6 +35,7 @@ type Service struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	mu        sync.Mutex
+	deleteMu  sync.Mutex
 	runtimes  map[string]*runtime
 	closed    bool
 	changes   chan string
@@ -75,6 +76,13 @@ func (s *Service) notify(id string) {
 }
 
 func (s *Service) open(ctx context.Context, id string) (*runtime, error) {
+	var record domain.Session
+	if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
+		return nil, err
+	}
+	if record.Deletion != nil {
+		return nil, domain.Missing("Session", id)
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -112,6 +120,9 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	if err = s.Store.Get(ctx, "sessions", r.id, &record); err != nil {
 		return err
 	}
+	if record.Deletion != nil {
+		return domain.Missing("Session", r.id)
+	}
 	r.agentID = record.AgentID
 	r.compactionPrompt = compactionPromptFor(record)
 	r.messageTool, err = r.messageToolFor(ctx, record)
@@ -143,7 +154,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	config := r.coreConfig(model, record.Options)
+	config := r.coreConfig(model, record)
 	session, err := core.OpenSession(ctx, config, r.id)
 	if errors.Is(err, core.ErrNotFound) {
 		if record.ParentSessionID != "" {
@@ -165,16 +176,19 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	}
 	r.core.Store(session)
 	if err == nil {
+		err = r.finishInterruptedTools(ctx)
+	}
+	if err == nil {
 		err = r.syncSelection(ctx)
 	}
 	return err
 }
 
-func (r *runtime) coreConfig(model core.Model, options core.GenerationOptions) core.Config {
+func (r *runtime) coreConfig(model core.Model, record domain.Session) core.Config {
 	s := r.service
 	return core.Config{
 		Model: model, Store: s.CoreStore, ResolveModel: r.resolveModel, EstimateTokens: modelbridge.EstimateTokens,
-		SystemPrompt: systemPrompt, Options: options, Tools: r.hostTools(),
+		SystemPrompt: systemPromptFor(record), Options: record.Options, Tools: r.hostTools(),
 		Compaction:      core.CompactionPolicy{SystemPrompt: r.compactionPrompt},
 		CollectContext:  r.collectContext,
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
@@ -183,7 +197,11 @@ func (r *runtime) coreConfig(model core.Model, options core.GenerationOptions) c
 
 func (r *runtime) resolveModel(ctx context.Context, ref string) (core.Model, error) {
 	ctx = modelbridge.WithSessionID(ctx, r.id)
-	return r.service.Models.Resolve(ctx, ref, func(ctx context.Context) error { return r.validateModelSelection(ctx, ref) })
+	model, err := r.service.Models.Resolve(ctx, ref, func(ctx context.Context) error { return r.validateModelSelection(ctx, ref) })
+	if err != nil {
+		return nil, err
+	}
+	return sessionModel{Model: model, runtime: r}, nil
 }
 func (r *runtime) currentBinding(ctx context.Context) (domain.ExecutionBinding, error) {
 	var record domain.Session

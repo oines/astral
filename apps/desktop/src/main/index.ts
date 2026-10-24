@@ -55,7 +55,7 @@ function createWindow() {
     title: 'Astral', width: 1240, height: 860, minWidth: 700, minHeight: 540,
     icon: applicationIcon(),
     show: false, backgroundColor: '#f4f4f1',
-    ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 17, y: 16 } } : {}),
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 17, y: 14 } } : {}),
     webPreferences: {
       preload: join(directory, '../preload/index.cjs'),
       nodeIntegration: false, contextIsolation: true, sandbox: true,

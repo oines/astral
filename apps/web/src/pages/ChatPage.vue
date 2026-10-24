@@ -2,9 +2,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { compactSession, forkSession, updateSession } from '@astral/sdk'
-import { Button, Modal, Popover } from '@astral/ui'
-import { ArrowRight, Ellipsis, PanelLeftClose, PanelLeftOpen, AstralLogo, GitBranch, Pencil, Pin, Download, FolderOpen } from '@astral/icons'
+import { compactSession, forkSession } from '@astral/sdk'
+import { Button, Modal, useDelayedPending } from '@astral/ui'
+import { ArrowRight, PanelLeftClose, PanelLeftOpen, AstralLogo } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { useSurfaceStore } from '../stores/surface'
 import { useSession } from '../composables/useSession'
@@ -13,6 +13,7 @@ import { errorText, newMeta, request } from '../lib/api'
 import Sidebar from '../components/Sidebar.vue'
 import Composer from '../components/Composer.vue'
 import Transcript from '../components/Transcript.vue'
+import ChatLoading from '../components/ChatLoading.vue'
 import ContextSurface from '../components/ContextSurface.vue'
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +24,7 @@ const id = ref(typeof route.params.id === 'string' ? route.params.id : '')
 watch(() => route.path, path => { if (!path.startsWith('/settings')) id.value = typeof route.params.id === 'string' ? route.params.id : '' })
 const live = useSession(id)
 const view = computed(() => live.state.value.view)
+const showChatLoading = useDelayedPending(() => id.value && !view.value && !live.error.value ? id.value : '')
 const error = ref('')
 const busy = ref(false)
 const activeAgent = computed(() => app.agents.find(agent => agent.id === app.activeAgentID))
@@ -30,9 +32,6 @@ const readyToStart = computed(() => activeAgent.value && app.availableModels.som
 watch(() => view.value?.id === id.value ? view.value?.agent_id : app.sessions.find(session => session.id === id.value)?.agent_id, agentID => {
   if (agentID) app.activeAgentID = agentID
 }, { immediate: true })
-const menu = ref(false)
-const rename = ref(false)
-const title = ref('')
 const compact = ref(false)
 const instructions = ref('')
 const sidebarToggle = ref<InstanceType<typeof Button>>()
@@ -51,14 +50,6 @@ const initialView = computed<SessionView>(() => {
 async function started(sessionID: string) {
   await router.push(`/sessions/${sessionID}`)
   try { await app.refresh() } catch (e) { error.value = errorText(e) }
-}
-async function presentation(patch: { title?: string; pinned?: boolean; archived?: boolean }) {
-  try {
-    await request(updateSession({ path: { id: id.value }, body: patch }))
-    await app.refresh()
-    rename.value = false
-    menu.value = false
-  } catch (e) { error.value = errorText(e) }
 }
 async function fork(entryID: string) {
   error.value = ''
@@ -85,7 +76,7 @@ function shortcut(e: KeyboardEvent) {
 }
 window.addEventListener('keydown', shortcut)
 onBeforeUnmount(() => { window.removeEventListener('keydown', shortcut); surface.close() })
-watch(id, () => { surface.close(); error.value = ''; menu.value = false })
+watch(id, () => { surface.close(); error.value = '' })
 </script>
 <template>
   <div
@@ -169,60 +160,6 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
         </div>
       </template>
       <template v-else-if="view">
-        <div class="session-utilities">
-          <Popover
-            v-model:open="menu"
-            align="end"
-            :label="t('sessionOptions')"
-          >
-            <template #trigger>
-              <Button
-                variant="ghost"
-                size="icon"
-                :aria-label="t('sessionOptions')"
-              >
-                <Ellipsis />
-              </Button>
-            </template>
-            <div class="session-menu">
-              <div class="popover-label">
-                {{ view.title }}<p class="session-agent">
-                  {{ app.agents.find(a => a.id === view?.agent_id)?.name || t('missing') }}<span v-if="view.channel_platform === 'telegram'"> · Telegram</span>
-                </p>
-              </div>
-              <button
-                v-if="!view.binding_id"
-                class="menu-item"
-                @click="title = view.title; rename = true; menu = false"
-              >
-                <Pencil />{{ t('rename') }}
-              </button>
-              <button
-                class="menu-item"
-                @click="presentation({ pinned: !view.pinned })"
-              >
-                <Pin />{{ t(view.pinned ? 'unpin' : 'pin') }}
-              </button>
-              <a
-                class="menu-item"
-                :href="`/api/v1/sessions/${id}/rollout`"
-              ><Download />{{ t('export') }}</a>
-              <RouterLink
-                v-if="view.parent_session_id"
-                class="menu-item"
-                :to="`/sessions/${view.parent_session_id}`"
-              >
-                <GitBranch />{{ t('source') }}
-              </RouterLink>
-              <button
-                class="menu-item"
-                @click="presentation({ archived: !view.archived })"
-              >
-                <FolderOpen />{{ t(view.archived ? 'unarchive' : 'archive') }}
-              </button>
-            </div>
-          </Popover>
-        </div>
         <div
           v-if="error || live.error.value"
           class="chat-error error-box"
@@ -243,33 +180,25 @@ watch(id, () => { surface.close(); error.value = ''; menu.value = false })
         />
       </template>
       <div
-        v-else
-        class="empty"
+        v-else-if="live.error.value"
+        class="chat-load-error"
+        role="alert"
       >
-        <AstralLogo decorative /><p>{{ t(live.connection.value) }}</p><p
-          v-if="live.error.value"
+        <p
           class="error-box"
         >
           {{ live.error.value }}
         </p>
+        <Button @click="live.reconnect">
+          {{ t('retry') }}
+        </Button>
       </div>
+      <ChatLoading
+        v-else-if="showChatLoading"
+        :reconnecting="live.connection.value === 'reconnecting'"
+      />
     </main>
     <ContextSurface />
-    <Modal
-      v-model:open="rename"
-      :title="t('rename')"
-    >
-      <label class="label">{{ t('name') }}<input
-        v-model="title"
-        @keydown.enter="presentation({ title })"
-      ></label><Button
-        variant="primary"
-        :disabled="!title.trim()"
-        @click="presentation({ title })"
-      >
-        {{ t('save') }}
-      </Button>
-    </Modal>
     <Modal
       v-model:open="compact"
       :title="t('compact')"

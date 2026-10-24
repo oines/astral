@@ -369,13 +369,13 @@ async function copyCode() { if (authorization.value?.user_code) await action.run
             :aria-label="t('editModelNamed', { name: row.name })"
             @click="openModel(row.profile, row.suggestion)"
           >
-            <strong>{{ row.name }}</strong><small>{{ row.id }}</small>
+            <strong>{{ row.name }}</strong><small v-if="row.id !== row.name">{{ row.id }}</small>
           </button>
           <div
             v-else
             class="model-row-identity"
           >
-            <strong>{{ row.name }}</strong><small>{{ row.id }}</small>
+            <strong>{{ row.name }}</strong><small v-if="row.id !== row.name">{{ row.id }}</small>
           </div>
           <div class="model-row-capabilities">
             <span

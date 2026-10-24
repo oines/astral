@@ -5,9 +5,9 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useQuery } from '@pinia/colada'
 import { storageInfoQuery } from '@astral/sdk/colada'
-import { getPreferences, logout, updateSession } from '@astral/sdk'
-import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, Bot, HardDrive, Shield, Terminal, Download, AstralLogo, Copy, Search } from '@astral/icons'
-import { Button, Select, Switch, SettingsSection, SettingsRow } from '@astral/ui'
+import { deleteSession, getPreferences, logout } from '@astral/sdk'
+import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, Bot, HardDrive, Shield, Terminal, AstralLogo, Copy, Search } from '@astral/icons'
+import { Button, ConfirmPopover, Select, Switch, SettingsSection, SettingsRow } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { useAction } from '../composables/useAction'
 import { useSettingsSave } from '../composables/useSettingsSave'
@@ -55,9 +55,17 @@ const links = [
 watch(section, () => { action.success.value = ''; action.error.value = '' })
 const title = computed(() => links.find(l => l[0] === section.value)?.[1] || 'general')
 const desktop = Boolean(window.astralDesktop)
-const archives = ref(false)
 const sessionSearch = ref('')
-const sessions = computed(() => app.sessions.filter(s => s.archived === archives.value && s.title.toLocaleLowerCase().includes(sessionSearch.value.toLocaleLowerCase())))
+const deletingSession = ref('')
+const sessions = computed(() => app.sessions.filter(s => s.archived && s.title.toLocaleLowerCase().includes(sessionSearch.value.toLocaleLowerCase())))
+async function removeSession(session: (typeof app.sessions)[number]) {
+  await action.run(async () => {
+    await request(deleteSession({ path: { id: session.id }, query: { revision: session.revision } }))
+    app.forgetSession(session.id)
+    deletingSession.value = ''
+    await Promise.allSettled([app.refresh(), storage.refetch()])
+  })
+}
 async function copyText(value: string) { await action.run(() => navigator.clipboard.writeText(value), t('copied')) }
 async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
   const field = Object.keys(patch)[0] || 'preferences'
@@ -221,18 +229,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           v-else-if="section === 'storage'"
           class="settings-sections"
         >
-          <SettingsSection
-            :title="t('manageConversations')"
-            :description="t('archiveHint')"
-          >
-            <template #actions>
-              <Select
-                :label="t('manageConversations')"
-                :model-value="archives ? 'archived' : 'active'"
-                :options="[{ value: 'active', label: t('activeConversations') }, { value: 'archived', label: t('archivedConversations') }]"
-                @update:model-value="archives = $event === 'archived'"
-              />
-            </template>
+          <SettingsSection :title="t('archivedConversations')">
             <div class="settings-list-search search-input">
               <Search /><input
                 v-model="sessionSearch"
@@ -249,27 +246,44 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
                 <strong>{{ s.title }}</strong><small>{{ app.agents.find(a => a.id === s.agent_id)?.name }}</small>
               </RouterLink>
               <div class="row">
-                <a
-                  class="button button-ghost button-icon"
-                  :href="`/api/v1/sessions/${s.id}/rollout`"
-                  :aria-label="t('exportHistory')"
-                  :title="t('exportHistory')"
-                ><Download /></a>
                 <Button
                   variant="ghost"
                   size="small"
                   :disabled="action.busy.value"
-                  @click="action.run(async () => { await request(updateSession({ path: { id: s.id }, body: { archived: !s.archived } })); await app.refresh() })"
+                  @click="action.run(() => app.presentation(s.id, { archived: false }))"
                 >
-                  {{ t(s.archived ? 'unarchive' : 'archive') }}
+                  {{ t('restoreConversation') }}
                 </Button>
+                <ConfirmPopover
+                  :open="deletingSession === s.id"
+                  :title="t('deleteConversationTitle', { name: s.title })"
+                  :description="t(s.binding_id ? 'deleteBoundConversationHint' : 'deleteConversationHint')"
+                  :confirm-label="t('permanentlyDelete')"
+                  :cancel-label="t('cancel')"
+                  :busy="action.busy.value"
+                  :disabled="!!s.binding_id"
+                  :error="action.error.value"
+                  @update:open="open => { deletingSession = open ? s.id : ''; action.error.value = '' }"
+                  @confirm="removeSession(s)"
+                >
+                  <template #trigger>
+                    <Button
+                      variant="ghost"
+                      size="small"
+                      class="danger-text"
+                      :disabled="action.busy.value"
+                    >
+                      {{ t('permanentlyDelete') }}
+                    </Button>
+                  </template>
+                </ConfirmPopover>
               </div>
             </div>
             <p
               v-if="!sessions.length"
               class="empty"
             >
-              {{ t(sessionSearch ? 'noResults' : archives ? 'noArchived' : 'noSessions') }}
+              {{ t(sessionSearch ? 'noResults' : 'noArchived') }}
             </p>
           </SettingsSection>
           <SettingsSection
@@ -346,11 +360,9 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
         >
           <SettingsSection>
             <div class="about-identity">
-              <AstralLogo decorative /><div>
-                <h2>Astral</h2><p class="muted">
-                  {{ t('versionLabel') }} {{ app.data?.version }}
-                </p>
-              </div>
+              <AstralLogo lockup /><p class="muted">
+                {{ t('versionLabel') }} {{ app.data?.version }}
+              </p>
             </div>
           </SettingsSection>
           <SettingsSection :title="t('diagnostics')">

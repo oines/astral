@@ -117,7 +117,7 @@ func (r *runtime) maybeGenerateSessionTitle(userQuery string) {
 			}
 			// Manual renames (even to the same text) win. Unrelated changes such
 			// as pinning or model selection are preserved by updating a fresh row.
-			if current.TitleSource != domain.TitlePrompt || current.Title != claimed.Title {
+			if current.Deletion != nil || current.TitleSource != domain.TitlePrompt || current.Title != claimed.Title {
 				return nil
 			}
 			current.Title, current.TitleSource = title, domain.TitleGenerated

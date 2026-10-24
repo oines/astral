@@ -140,8 +140,19 @@ func TestRecallThroughComputerGatewayWithoutUsableModel(t *testing.T) {
 	}
 	var capabilities Capabilities
 	call("GET", "/v1/capabilities", nil, &capabilities, 200)
-	if capabilities.Endpoints["sessions"] == "" || capabilities.Endpoints["search_sessions"] == "" || !strings.Contains(capabilities.History, "read_url") {
+	var historyURL string
+	for _, capability := range capabilities.Capabilities {
+		if capability.ID == "history" {
+			historyURL = capability.ReadURL
+		}
+	}
+	if historyURL == "" {
 		t.Fatal("recall is not discoverable")
+	}
+	var historyDocs CapabilityDocument
+	call("GET", historyURL, nil, &historyDocs, 200)
+	if !strings.Contains(strings.Join(historyDocs.Notes, " "), "read_url") || historyDocs.OpenAPI["paths"].(map[string]any)["/v1/sessions/search"] == nil {
+		t.Fatal("history discovery does not include instructions and actual schemas")
 	}
 	var contract map[string]any
 	call("GET", "/v1/openapi.json", nil, &contract, 200)

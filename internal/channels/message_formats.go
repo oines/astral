@@ -63,7 +63,7 @@ func messageTool(c Capabilities) core.ToolDefinition {
 		}
 	}
 	def := harness.DefaultMessageTool()
-	def.Version = "astral-2/" + c.Adapter
+	def.Version = "astral-3/" + c.Adapter
 	def.Parameters = encoded(map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "required": []string{"text"}})
 	def.Description += " Destination: " + c.Name + ". "
 	switch c.Adapter {
