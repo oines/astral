@@ -17,6 +17,7 @@
     "build": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --dir",
     "package": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --mac --arm64 --x64",
     "package:mac-ci": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --mac --x64 --publish never && electron-builder --mac --arm64 --publish never",
+    "package:mac-signed-dir": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --config electron-builder.release.cjs --mac --dir --publish never",
     "package:windows": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --win --arm64 --x64",
     "package:linux": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --linux --arm64 --x64",
     "typecheck": "tsc --noEmit -p tsconfig.json"

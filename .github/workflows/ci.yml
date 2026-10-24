@@ -30,6 +30,7 @@ jobs:
         run: |
           node scripts/release-version.mjs check
           node scripts/release-check.mjs
+          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs
       - name: Check headless installer without installing
         run: |
           bash -n scripts/install-server.sh

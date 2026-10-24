@@ -1,23 +1,23 @@
-name: Unsigned release candidate draft
+name: Signed Mac release candidate draft
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing vYYYY.M.N tag from main; never creates a tag
-        required: true
+        description: Existing version tag; leave empty to test Mac signing on main without creating a release
+        required: false
         type: string
   push:
     tags:
       - 'v[0-9]*'
 
-# This workflow deliberately cannot publish a public release. No Apple/Windows
-# signing credentials are read, and its manifest rejects use by the VPS installer.
+# Mac signing is restricted to the protected mac-signing environment and trusted
+# main history. Migration/updater gates still prevent public release publication.
 permissions:
   contents: read
 
 concurrency:
-  group: unsigned-candidate-${{ inputs.tag || github.ref_name }}
+  group: release-candidate-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -46,19 +46,25 @@ jobs:
         id: version
         shell: bash
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag || (github.event_name == 'push' && github.ref_name) || '' }}
         run: |
           set -euo pipefail
-          if [[ ! "$RELEASE_TAG" =~ ^v[1-9][0-9]{3}\.(1[0-2]|[1-9])\.[1-9][0-9]*$ ]]; then
+          if [[ -n "$RELEASE_TAG" && ! "$RELEASE_TAG" =~ ^v[1-9][0-9]{3}\.(1[0-2]|[1-9])\.[1-9][0-9]*$ ]]; then
             echo '::error::Release tag must be vYYYY.M.N without leading zeroes.'
             exit 1
           fi
-          git show-ref --verify "refs/tags/$RELEASE_TAG"
           release_sha=$(git rev-parse HEAD)
-          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$release_sha"
+          if [ -n "$RELEASE_TAG" ]; then
+            git show-ref --verify "refs/tags/$RELEASE_TAG"
+            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$release_sha"
+          fi
           git merge-base --is-ancestor "$release_sha" origin/main
           # No script from the selected tag runs before the trusted-history check.
-          release_version=$(node scripts/release-version.mjs check --tag "$RELEASE_TAG")
+          if [ -n "$RELEASE_TAG" ]; then
+            release_version=$(node scripts/release-version.mjs check --tag "$RELEASE_TAG")
+          else
+            release_version=$(node scripts/release-version.mjs check)
+          fi
           echo "version=$release_version" >> "$GITHUB_OUTPUT"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
@@ -112,20 +118,99 @@ jobs:
         run: git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: candidate-distribution
+          name: unsigned-distribution
           path: dist/bin/
           if-no-files-found: error
           retention-days: 7
 
-  desktop:
+  mac:
+    name: Sign and notarize Mac distribution
     needs: [validate, distribution]
+    runs-on: macos-14
+    timeout-minutes: 210
+    environment: mac-signing
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      RELEASE_SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '10.31.0'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: unsigned-distribution
+          path: dist/bin/
+      - run: chmod +x dist/bin/astral-*
+      - name: Build Desktop sources before loading credentials
+        run: |
+          node scripts/build-icons.mjs
+          pnpm --filter @astral/desktop exec electron-vite build
+      - name: Import personal Developer ID and validate notarization credentials
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: node scripts/mac-credentials.mjs setup
+      - name: Sign standalone Mac programs and refresh all six checksums
+        run: node scripts/mac-signing.mjs sign-binaries dist/bin
+      - name: Notarize standalone Mac programs
+        run: node scripts/mac-notarize.mjs binaries dist/bin
+      - name: Package and sign Intel App
+        run: pnpm --filter @astral/desktop exec electron-builder --config electron-builder.release.cjs --mac --dir --x64 --publish never
+      - name: Notarize and verify final Intel DMG and ZIP
+        run: node scripts/mac-notarize.mjs app "$GITHUB_WORKSPACE/apps/desktop/release/mac/Astral.app" x64
+      - name: Package and sign Apple Silicon App
+        run: pnpm --filter @astral/desktop exec electron-builder --config electron-builder.release.cjs --mac --dir --arm64 --publish never
+      - name: Notarize and verify final Apple Silicon DMG and ZIP
+        run: node scripts/mac-notarize.mjs app "$GITHUB_WORKSPACE/apps/desktop/release/mac-arm64/Astral.app" arm64
+      - name: Require complete Apple and native acceptance evidence
+        run: node scripts/mac-notarize.mjs finalize
+      - name: Always remove signing and notarization credentials
+        if: always()
+        timeout-minutes: 5
+        run: node scripts/mac-credentials.mjs cleanup
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-distribution
+          path: dist/bin/
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-desktop-mac
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/mac-signing-report.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve public Apple submission diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mac-notarization-diagnostics
+          path: apps/desktop/release/notarization/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  desktop:
+    if: needs.validate.outputs.tag != ''
+    needs: [validate, mac]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            package: package:mac-ci
-            name: mac
           - os: windows-2022
             package: package:windows
             name: win
@@ -172,7 +257,8 @@ jobs:
           retention-days: 7
 
   draft:
-    needs: [validate, distribution, desktop]
+    if: needs.validate.outputs.tag != ''
+    needs: [validate, mac, desktop]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -195,17 +281,17 @@ jobs:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           CI_URL: ${{ needs.validate.outputs.ci_url }}
         run: >-
-          node scripts/release-assets.mjs candidate
+          node scripts/release-assets.mjs candidate --mac-signed
           --input candidate-inputs --output candidate-release
           --sha "$SOURCE_SHA" --tag "$RELEASE_TAG"
           --repository "$GITHUB_REPOSITORY"
           --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           --ci-run-url "$CI_URL"
-      - name: Create or resume unsigned candidate Draft Release only
+      - name: Create or resume Mac-signed candidate Draft Release only
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release-draft.mjs candidate-release
       - name: Record candidate limitation
         run: |
-          echo '### Review-only unsigned candidate' >> "$GITHUB_STEP_SUMMARY"
-          echo 'A Draft Release was assembled. Signing, notarization, migrations, and the Desktop updater are not implemented by this workflow. It must not be made public or used by the landing page/VPS installer.' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Review-only Mac-signed candidate' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Mac programs and Desktop DMG/ZIP passed Developer ID signing, Apple notarization and package validation. Windows/Linux packages are unsigned. Versioned migrations and the Desktop updater remain incomplete; this release must remain a draft and cannot feed the landing page/VPS installer.' >> "$GITHUB_STEP_SUMMARY"
