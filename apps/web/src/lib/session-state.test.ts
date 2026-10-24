@@ -99,7 +99,7 @@ describe('transcript facts', () => {
       entry('run-end', 2, { kind: 'run', run: { id: 'run', status: 'failed' } }),
       entry('completed', 3, { kind: 'tool_resolution', tool: { invocation, result: { outcome: 'failed', is_error: true, content: [{ type: 'text', text: 'Request interrupted' }] } } }),
     ]))
-    state.view = { ...view, run_id: undefined, status: 'idle', last_run: { id: 'run', status: 'failed' } }
+    state.view = { ...view, run_id: 'next-run', last_run: { id: 'next-run', status: 'started' } }
     const group = transcriptGroups(state)[0]
     expect(group?.status).toBeUndefined()
     expect(group?.blocks[0]).toMatchObject({ kind: 'process', items: [{ kind: 'tool', entry: { id: 'completed' } }] })

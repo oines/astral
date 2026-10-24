@@ -167,9 +167,13 @@ export function transcriptGroups(state: SessionState): TranscriptGroup[] {
   const tools = new Map<string, Entry>()
   for (const entry of entries) if (entry.tool) tools.set(entry.tool.invocation.execution_id, entry)
   const calls = new Map<string, Entry>()
+  const resolvedRuns = new Set<string>()
+  const unresolvedRuns = new Set<string>()
   for (const entry of tools.values()) {
     const invocation = entry.tool!.invocation
     calls.set(`${invocation.assistant_id}:${invocation.call.id}`, entry)
+    if (entry.kind === 'tool_resolution') resolvedRuns.add(invocation.run_id)
+    if (entry.tool!.needs_resolution) unresolvedRuns.add(invocation.run_id)
   }
   const groups: TranscriptGroup[] = []
   const shownTools = new Set<string>()
@@ -218,7 +222,7 @@ export function transcriptGroups(state: SessionState): TranscriptGroup[] {
     } else if (entry.tool) {
       tool(tools.get(entry.tool.invocation.execution_id)!)
     } else if (entry.run && entry.run.status !== 'started') {
-      const settled = state.view?.last_run?.id === entry.run.id && state.view.status === 'idle'
+      const settled = resolvedRuns.has(entry.run.id) && !unresolvedRuns.has(entry.run.id)
       const status = entry.run.status === 'failed' && !settled ? 'needs_attention' : entry.run.status === 'cancelled' ? 'stopped' : undefined
       if (status) {
         // A failed retry without output is reported by the current session
