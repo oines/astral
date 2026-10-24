@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { desktopNames, digest, validateMacSigningReport } from './release-assets.mjs'
 import { darwinNames, signingEnvironment, verifyApp, verifyBinaries } from './mac-signing.mjs'
@@ -46,6 +47,7 @@ async function submit(file, configuration) {
   try { response = JSON.parse(result.stdout) } catch { throw new Error('Apple notarization did not return a valid JSON result; no artifacts are approved.') }
   await mkdir(reportDirectory, { recursive: true })
   if (uuid.test(response.id || '')) {
+    console.log(`Apple notarization ${response.id}: ${typeof response.status === 'string' ? response.status : 'unknown status'}`)
     await writeFile(path.join(reportDirectory, `${response.id}.json`), `${JSON.stringify(response, null, 2)}\n`)
     if (response.status !== 'Accepted') {
       const logFile = path.join(reportDirectory, `${response.id}-log.json`)
@@ -55,24 +57,24 @@ async function submit(file, configuration) {
   return acceptedSubmission(response)
 }
 
-async function staple(target) {
+export async function staple(target, { run = command, pause = delay } = {}) {
   // An Accepted submission's ticket may take a moment to reach the CDN.
   for (let attempt = 0; ; attempt++) {
-    try { await command('xcrun', ['stapler', 'staple', target]); break }
+    try { await run('xcrun', ['stapler', 'staple', target]); break }
     catch (error) {
-      if (attempt >= 2) throw error
-      await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 5000))
+      if (attempt >= 4) throw error
+      await pause((attempt + 1) * 20_000)
     }
   }
-  await command('xcrun', ['stapler', 'validate', target])
+  await run('xcrun', ['stapler', 'validate', target])
 }
 
-async function verifyNotarizedApp(app, arch) {
-  await verifyApp(app)
-  const architecture = await command('/usr/bin/lipo', ['-archs', path.join(app, 'Contents/MacOS/Astral')])
+export async function verifyNotarizedApp(app, arch, { stapled = true, run = command, inspect = verifyApp } = {}) {
+  await inspect(app)
+  const architecture = await run('/usr/bin/lipo', ['-archs', path.join(app, 'Contents/MacOS/Astral')])
   if (architecture.stdout.trim() !== (arch === 'x64' ? 'x86_64' : 'arm64')) throw new Error(`Unexpected packaged App architecture: ${arch}`)
-  await command('xcrun', ['stapler', 'validate', app])
-  await command('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=2', app])
+  if (stapled) await run('xcrun', ['stapler', 'validate', app])
+  await run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=2', app])
 }
 
 async function asset(file) {
@@ -112,17 +114,13 @@ async function notarizeApp(app, arch) {
   await verifyApp(app)
   const temporary = await mkdtemp(path.join(process.env.RUNNER_TEMP || tmpdir(), 'astral-notary-app-'))
   try {
-    const submissionArchive = path.join(temporary, 'submission.zip')
-    await command('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', app, submissionArchive])
-    const appSubmission = { kind: 'app', arch, ...await submit(submissionArchive, configuration) }
-    await staple(app)
-    await verifyNotarizedApp(app, arch)
-
-    // Package the stapled App, never a pre-stapling ZIP. --prepackaged does not
-    // re-run App signing, preserving its seal and the downloaded CLI hashes.
+    // Apple issues tickets for both the outer container and its enclosed App.
+    // Submit the signed DMG once, then staple that ticket to the DMG and the
+    // original App before producing the final ZIP, as Magpie does.
+    // https://developer.apple.com/documentation/security/customizing-the-notarization-workflow
     const zip = path.join(releaseDirectory, `Astral-${version}-mac-${arch}.zip`)
     const dmg = path.join(releaseDirectory, `Astral-${version}-mac-${arch}.dmg`)
-    await command('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', app, zip])
+    // --prepackaged preserves the signed App and its embedded CLI hashes.
     await command('pnpm', ['--filter', '@astral/desktop', 'exec', 'electron-builder', '--config', 'electron-builder.release.cjs', '--prepackaged', app, '--mac', 'dmg', `--${arch}`, '--publish', 'never'], { timeout: 600_000 })
     await command('/usr/bin/codesign', ['--force', '--sign', configuration.identity, '--keychain', configuration.keychain, '--timestamp', dmg])
     await command('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', dmg])
@@ -131,7 +129,10 @@ async function notarizeApp(app, arch) {
     if (!dmgFields.includes(`Authority=${configuration.identity}`) || !dmgFields.includes(`TeamIdentifier=${configuration.team}`) || !dmgFields.some(line => /^Timestamp=.+/.test(line))) throw new Error('The DMG does not carry the intended timestamped Developer ID signature.')
     const dmgSubmission = { kind: 'dmg', arch, ...await submit(dmg, configuration) }
     await staple(dmg)
+    await staple(app)
+    await verifyNotarizedApp(app, arch)
     await command('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=2', dmg])
+    await command('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', app, zip])
 
     // Re-open the bytes users download. This also catches packaging an old App
     // despite successful validation of the unpacked build directory.
@@ -148,11 +149,14 @@ async function notarizeApp(app, arch) {
     const mount = path.join(temporary, 'mounted-dmg')
     await mkdir(mount)
     await command('/usr/bin/hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, dmg])
-    try { await verifyNotarizedApp(path.join(mount, 'Astral.app'), arch) }
+    // The mounted copy predates App stapling. Its outer DMG has already passed
+    // stapler validation; require the enclosed App's signature and Gatekeeper
+    // acceptance without claiming that this copy carries its own ticket.
+    try { await verifyNotarizedApp(path.join(mount, 'Astral.app'), arch, { stapled: false }) }
     finally { await command('/usr/bin/hdiutil', ['detach', mount]) }
     await writeReport(arch, {
       version, source_sha: configuration.sourceSHA, arch, native_tested: nativeTested,
-      notarizations: [appSubmission, dmgSubmission], assets: [await asset(zip), await asset(dmg)],
+      notarizations: [dmgSubmission], assets: [await asset(zip), await asset(dmg)],
     })
   } finally { await rm(temporary, { recursive: true, force: true }) }
 }

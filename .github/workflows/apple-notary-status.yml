@@ -1,0 +1,50 @@
+name: Apple notarization status
+
+on:
+  workflow_dispatch:
+    inputs:
+      submission_id:
+        description: Existing Apple submission UUID; leave empty to list Astral submissions
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-14
+    timeout-minutes: 10
+    environment: mac-signing
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      NOTARY_SUBMISSION_ID: ${{ inputs.submission_id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+      - name: Import personal identity and validate Apple credentials
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: node scripts/mac-credentials.mjs setup
+      - name: Read existing Apple submission status without uploading software
+        run: node scripts/mac-notary-status.mjs
+      - name: Always remove signing and notarization credentials
+        if: always()
+        timeout-minutes: 5
+        run: node scripts/mac-credentials.mjs cleanup
+      - name: Preserve the public status report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apple-notary-status
+          path: ${{ runner.temp }}/astral-notary-status.json
+          if-no-files-found: ignore
+          retention-days: 7
