@@ -31,6 +31,8 @@ The current [CI workflow](../.github/workflows/ci.yml) is the executable source 
 
 `pnpm test:daemon-service` installs and removes an isolated current-user service. Run it in a disposable user session with the platform service manager available. `pnpm test:packaged-desktop` checks a previously packaged App; Linux CI installs the native DEB and runs it in an X display so its sandbox hooks are exercised.
 
+The native Linux job also runs `node scripts/check-headless-install.mjs`. It uses the actual built Server and a synthetic local release transport to check current-user service installation, authenticated HTTP readiness, identity-preserving reinstall, checksum rejection before stopping the old service and failed-start recovery. This check requires a disposable Linux user session and refuses an existing `astral-server.service`. It does not validate publisher signing or authorize a candidate release for publication.
+
 ## Manual acceptance
 
 Use a separate data directory and synthetic credentials, accounts, conversations and files. Do not record active enrollment tokens, QR authorization codes, provider keys or private conversations in screenshots or logs.

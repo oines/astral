@@ -479,6 +479,10 @@ func (s *Server) HostInfo(ctx context.Context) domain.HostInfo {
 	s.mu.Lock()
 	info.LocalError = s.startupError
 	s.mu.Unlock()
+	// Bootstrap reports optional container availability. Do not give this
+	// background hint the longer budget used for an explicit container action.
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 	probe, err := ProbeDocker(ctx)
 	if err != nil {
 		info.ContainerError = err.Error()

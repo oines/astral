@@ -1,0 +1,211 @@
+name: Unsigned release candidate draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vYYYY.M.N tag from main; never creates a tag
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v[0-9]*'
+
+# This workflow deliberately cannot publish a public release. No Apple/Windows
+# signing credentials are read, and its manifest rejects use by the VPS installer.
+permissions:
+  contents: read
+
+concurrency:
+  group: unsigned-candidate-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+      ci_url: ${{ steps.ci.outputs.url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+      - name: Validate existing tag, calendar version and trusted main history
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[1-9][0-9]{3}\.(1[0-2]|[1-9])\.[1-9][0-9]*$ ]]; then
+            echo '::error::Release tag must be vYYYY.M.N without leading zeroes.'
+            exit 1
+          fi
+          git show-ref --verify "refs/tags/$RELEASE_TAG"
+          release_sha=$(git rev-parse HEAD)
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$release_sha"
+          git merge-base --is-ancestor "$release_sha" origin/main
+          # No script from the selected tag runs before the trusted-history check.
+          release_version=$(node scripts/release-version.mjs check --tag "$RELEASE_TAG")
+          echo "version=$release_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+      - name: Require successful ordinary CI for this exact source commit
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.version.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ci_url=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --commit "$SOURCE_SHA" --event push --status success --limit 1 --json url --jq '.[0].url // empty')
+          if [ -z "$ci_url" ]; then
+            echo '::error::No successful main/push CI exists for this source commit. Finish native acceptance before building a candidate.'
+            exit 1
+          fi
+          echo "url=$ci_url" >> "$GITHUB_OUTPUT"
+
+  distribution:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.3'
+          cache: true
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '10.31.0'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build six unsigned unified binaries
+        run: pnpm build:distribution
+      - name: Read current data formats from the built native executable
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+        run: node scripts/release-version.mjs formats --binary dist/bin/astral-linux-amd64 --sha "$SOURCE_SHA" > dist/bin/release-formats.json
+      - name: Include the versioned user-mode Linux Server installer
+        run: cp scripts/install-server.sh dist/bin/install-server.sh
+      - name: Require generated contracts to match committed sources
+        run: git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-distribution
+          path: dist/bin/
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop:
+    needs: [validate, distribution]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            package: package:mac-ci
+            name: mac
+          - os: windows-2022
+            package: package:windows
+            name: win
+          - os: ubuntu-24.04
+            package: package:linux
+            name: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      GOWORK: 'off'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '10.31.0'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: candidate-distribution
+          path: dist/bin/
+      - name: Restore executable permissions after artifact download
+        if: runner.os != 'Windows'
+        run: chmod +x dist/bin/astral-*
+      - name: Package unsigned Desktop candidates without publishing
+        run: pnpm --filter @astral/desktop ${{ matrix.package }} --publish never
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-desktop-${{ matrix.name }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+  draft:
+    needs: [validate, distribution, desktop]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: candidate-*
+          path: candidate-inputs/
+      - name: Assemble complete candidate and final-byte checksums
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+        run: >-
+          node scripts/release-assets.mjs candidate
+          --input candidate-inputs --output candidate-release
+          --sha "$SOURCE_SHA" --tag "$RELEASE_TAG"
+          --repository "$GITHUB_REPOSITORY"
+          --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          --ci-run-url "$CI_URL"
+      - name: Create or resume unsigned candidate Draft Release only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-draft.mjs candidate-release
+      - name: Record candidate limitation
+        run: |
+          echo '### Review-only unsigned candidate' >> "$GITHUB_STEP_SUMMARY"
+          echo 'A Draft Release was assembled. Signing, notarization, migrations, and the Desktop updater are not implemented by this workflow. It must not be made public or used by the landing page/VPS installer.' >> "$GITHUB_STEP_SUMMARY"

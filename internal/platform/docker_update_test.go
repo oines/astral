@@ -61,6 +61,11 @@ func TestFakeDockerProcess(t *testing.T) {
 	output := ""
 	code := 0
 	switch args[0] {
+	case "info":
+		if state.Mode == "slow-probe" {
+			time.Sleep(30 * time.Second)
+		}
+		output = `{"Name":"test","OSType":"linux","Architecture":"amd64","OperatingSystem":"Test Docker"}`
 	case "inspect":
 		output = fmt.Sprintf(`{"ID":"original-container","Config":{"Labels":{"astral.operation":%q}},"State":{"Running":true}}`, state.Identity)
 	case "exec":
