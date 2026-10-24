@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/httpcontract"
 	"github.com/oines/astral/internal/persistence"
 )
 
@@ -34,25 +35,11 @@ func weixinTestAdapter(t *testing.T, endpoint string, store *persistence.Store) 
 }
 
 func TestWeixinLoginValidation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/ilink/bot/getconfig" || r.Header.Get("Authorization") != "Bearer secret-login-token" || r.Header.Get("AuthorizationType") != "ilink_bot_token" {
-			t.Errorf("unexpected request %s / auth metadata", r.URL.Path)
-		}
-		var body struct {
-			User string            `json:"ilink_user_id"`
-			Info map[string]string `json:"base_info"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.User != "scanner-id" || body.Info["bot_agent"] != "Astral/1.0" || body.Info["channel_version"] != weixinProtocolVersion {
-			t.Errorf("unexpected validation body: %#v, %v", body, err)
-		}
-		uin, err := base64.StdEncoding.DecodeString(r.Header.Get("X-WECHAT-UIN"))
-		if err != nil || len(uin) == 0 || r.Header.Get("iLink-App-Id") != "bot" || r.Header.Get("iLink-App-ClientVersion") != "132106" {
-			t.Error("missing iLink common metadata")
-		}
-		_, _ = io.WriteString(rw, `{"ret":0,"typing_ticket":"private-ticket"}`)
-	}))
-	defer server.Close()
-	w := weixinTestAdapter(t, server.URL, nil)
+	w := weixinTestAdapter(t, weixinDefaultURL, nil)
+	w.client = &http.Client{Transport: weixinRoundTripper(func(*http.Request) (*http.Response, error) {
+		t.Error("a QR-issued identity must not depend on another API request")
+		return nil, fmt.Errorf("unexpected API request")
+	})}
 	identity, err := w.Validate(t.Context())
 	if err != nil || identity.ID != "bot-id" || len(identity.Diagnostics) == 0 {
 		t.Fatalf("identity = %#v, %v", identity, err)
@@ -69,6 +56,31 @@ func TestWeixinLoginValidation(t *testing.T) {
 	invalid := domain.Connection{Config: json.RawMessage(`{"bot_id":"spoofed"}`)}
 	if _, err := NewWeixin(invalid, string(encoded(w.credential)), nil); err == nil {
 		t.Fatal("editable config must not contain account identity")
+	}
+}
+
+func TestWeixinAPIErrorsHaveSafeOwnerDiagnostics(t *testing.T) {
+	for _, code := range []int{-1, -14} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+				_, _ = fmt.Fprintf(rw, `{"ret":%d,"errmsg":"secret-login-token private-context-token"}`, code)
+			}))
+			defer server.Close()
+			err := weixinRequest(t.Context(), server.Client(), server.URL, "", http.MethodGet, "/status", nil, nil)
+			var remote *weixinAPIError
+			if !errors.As(err, &remote) || remote.Code != code {
+				t.Fatalf("lost the platform error code: %v", err)
+			}
+			response := httptest.NewRecorder()
+			httpcontract.Failure(response, httptest.NewRequest(http.MethodPost, "/api/v1/weixin/logins/test/poll", nil), err)
+			var problem httpcontract.Error
+			if json.Unmarshal(response.Body.Bytes(), &problem) != nil || response.Code != http.StatusServiceUnavailable || problem.Message != remote.Error() || problem.Code == "operation_failed" {
+				t.Fatalf("platform failure became an opaque server error: %d %s", response.Code, response.Body.String())
+			}
+			if strings.Contains(response.Body.String(), "secret-login-token") || strings.Contains(response.Body.String(), "private-context-token") {
+				t.Fatal("owner diagnostics exposed remote credential text")
+			}
+		})
 	}
 }
 

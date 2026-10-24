@@ -618,7 +618,10 @@ async function removeConnection() {
           @field="(key, value) => { creating!.values[key] = value }"
         />
         <template v-else>
-          <p class="muted small">
+          <p
+            v-if="!login"
+            class="muted small"
+          >
             {{ t('weixinPlatformHint') }}
           </p>
           <template v-if="login">

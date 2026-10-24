@@ -103,6 +103,8 @@ func (e *weixinAPIError) Error() string {
 	return fmt.Sprintf("Weixin rejected the request (code %d)", e.Code)
 }
 
+func (e *weixinAPIError) Unwrap() error { return domain.Offline(e.Error()) }
+
 func weixinRequest(ctx context.Context, client *http.Client, base, token, method, endpoint string, body, result any) error {
 	var reader io.Reader
 	if body != nil {
@@ -171,17 +173,13 @@ func (w *weixinAdapter) call(ctx context.Context, endpoint string, body map[stri
 }
 
 func (w *weixinAdapter) Validate(ctx context.Context) (Identity, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	var response struct {
-		Ret *int `json:"ret"`
-	}
-	if err := w.call(ctx, "getconfig", map[string]any{"ilink_user_id": w.credential.UserID}, &response); err != nil {
+	if err := ctx.Err(); err != nil {
 		return Identity{}, err
 	}
-	if response.Ret == nil || *response.Ret != 0 {
-		return Identity{}, domain.Invalid("Weixin did not confirm the login grant")
-	}
+	// The server obtains this identity from a confirmed Tencent QR grant;
+	// public SaveConnection cannot create or replace Weixin credentials.
+	// getconfig supplies per-peer typing configuration, not account identity,
+	// and must not gate accepting an already confirmed authorization.
 	return Identity{ID: w.credential.BotID, Name: w.credential.BotID, Diagnostics: []string{
 		"iLink supports private chats received by this account. Contact enumeration, group chats, outbound quote references, edits and delivery confirmations are not exposed by this adapter.",
 		"The account identity comes from QR authorization; iLink has no separate bot identity endpoint. Files are streamed; file captions are separate messages and platform file limits are reported by iLink.",

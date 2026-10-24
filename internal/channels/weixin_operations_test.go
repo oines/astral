@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -21,6 +22,11 @@ func TestWeixinTypingUsesPrivateContextAndKeepsTicketOutOfResult(t *testing.T) {
 				_ = json.NewDecoder(r.Body).Decode(&body)
 				if body["ilink_user_id"] != "peer" || r.Header.Get("Authorization") != "Bearer secret-login-token" {
 					t.Error("typing request used the wrong user/account")
+				}
+				uin, err := base64.StdEncoding.DecodeString(r.Header.Get("X-WECHAT-UIN"))
+				info, _ := body["base_info"].(map[string]any)
+				if err != nil || len(uin) == 0 || r.Header.Get("AuthorizationType") != "ilink_bot_token" || r.Header.Get("iLink-App-Id") != "bot" || r.Header.Get("iLink-App-ClientVersion") != "132106" || info["bot_agent"] != "Astral/1.0" || info["channel_version"] != weixinProtocolVersion {
+					t.Error("missing iLink common metadata")
 				}
 				switch r.URL.Path {
 				case "/ilink/bot/getconfig":

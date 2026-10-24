@@ -94,3 +94,5 @@ Requests supply `conversation_id` and an allowlisted `parameters` object. Every 
 These direct operations are single attempts without queued send reconciliation; inspect uncertain effects before retrying. Use the shared queued endpoints for text and files. NapCat generic execution exceptions remain `unknown`, because its timeout response may follow submission to QQ.
 
 QQ official and Feishu only contribute ordinary group context when platform permissions deliver those events. NapCat forward WebSocket has no offline replay. Weixin persists per-chat context tokens and media download secrets in encrypted Server records; receiving does not create Computer files. Its QR authorization is Owner-only, supports Tencent region redirects and phone verification, and never returns credentials to the browser.
+
+A confirmed Weixin QR grant is the account identity proof. Persist it without an additional `getconfig` call; that API provides per-peer typing configuration and is not a login validation endpoint. Platform business errors preserve their safe numeric code in Owner API responses without forwarding raw remote error text.

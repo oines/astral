@@ -24,6 +24,7 @@ type weixinLoginFixture struct {
 	client       *http.Client
 	botID        atomic.Value
 	statusPolls  atomic.Int64
+	configCalls  atomic.Int64
 	validateFail atomic.Bool
 	updates      chan []weixinMessage
 	mu           sync.Mutex
@@ -44,6 +45,7 @@ func newWeixinLoginFixture(t *testing.T) *weixinLoginFixture {
 			f.statusPolls.Add(1)
 			_ = json.NewEncoder(rw).Encode(map[string]any{"status": "confirmed", "bot_token": "qr-fixture-secret-token", "ilink_bot_id": f.botID.Load(), "ilink_user_id": "scanning-user", "baseurl": weixinDefaultURL})
 		case "/ilink/bot/getconfig":
+			f.configCalls.Add(1)
 			if r.Header.Get("Authorization") != "Bearer qr-fixture-secret-token" {
 				t.Error("QR grant not used for validation")
 			}
@@ -187,23 +189,42 @@ func TestWeixinOwnerLoginKeepsGrantPrivateAndReconnectPreservesEdits(t *testing.
 	}
 }
 
-func TestWeixinOwnerLoginRetainsConfirmedGrantAfterTemporaryValidationFailure(t *testing.T) {
+func TestWeixinOwnerLoginDoesNotRequireTypingConfiguration(t *testing.T) {
+	f := newWeixinLoginFixture(t)
+	f.validateFail.Store(true)
+	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
+	s := New(p.Store, p.Harness)
+	s.Client = f.client
+	confirmed := f.login(t, s, p.Agent.ID, "")
+	if confirmed.Connection.AccountID != "qr-authorized-bot" || f.configCalls.Load() != 0 {
+		t.Fatal("confirmed QR authorization depended on the optional typing configuration API")
+	}
+	var stored domain.Connection
+	if err := p.Store.Get(p.Context, "connections", confirmed.Connection.ID, &stored); err != nil || stored.CredentialID == "" || !stored.Enabled {
+		t.Fatalf("confirmed authorization was not persisted: %#v %v", stored, err)
+	}
+}
+
+func TestWeixinOwnerLoginRetainsConfirmedGrantAfterAccountConflict(t *testing.T) {
 	f := newWeixinLoginFixture(t)
 	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	s := New(p.Store, p.Harness)
 	s.Client = f.client
+	prior := *f.login(t, s, p.Agent.ID, "").Connection
 	started, err := s.StartWeixinLogin(p.Context, p.Agent.ID, WeixinLoginInput{Name: "recoverable login"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.validateFail.Store(true)
 	if _, err = s.PollWeixinLogin(p.Context, started.ID, WeixinLoginPoll{}); err == nil {
-		t.Fatal("unverified grant was stored during API failure")
+		t.Fatal("the same platform account was enabled twice")
 	}
-	f.validateFail.Store(false)
+	prior.Enabled = false
+	if err := s.SaveConnection(p.Context, &prior, nil); err != nil {
+		t.Fatal(err)
+	}
 	f.botID.Store("must-not-use-another-grant")
 	confirmed, err := s.PollWeixinLogin(p.Context, started.ID, WeixinLoginPoll{})
-	if err != nil || confirmed.Connection == nil || confirmed.Connection.AccountID != "qr-authorized-bot" || f.statusPolls.Load() != 1 {
+	if err != nil || confirmed.Connection == nil || confirmed.Connection.AccountID != "qr-authorized-bot" || f.statusPolls.Load() != 2 {
 		t.Fatalf("confirmed grant was discarded or fetched twice: %#v %v", confirmed, err)
 	}
 }
