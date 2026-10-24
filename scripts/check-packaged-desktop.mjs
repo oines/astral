@@ -60,14 +60,18 @@ async function rendererStarted() {
   return processes.some(process => ids.has(process.pid) && /--type=renderer(?:\s|$)/.test(process.args))
 }
 
-async function windowsSnapshot(script, timeout = 10_000) {
+async function windowsSnapshot(script, timeout = 30_000) {
   const { stdout } = await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'Stop'\n${script}`], { windowsHide: true, timeout })
   return JSON.parse(stdout)
 }
 
 async function windowsRendererStarted() {
+  // Chromium children use the packaged executable's name. Asking WMI for every
+  // process and command line can exceed the startup budget on a cold CI runner.
+  const executableName = path.basename(executable).replaceAll('\\', '\\\\').replaceAll("'", "\\'")
+  const filter = `ProcessId = ${app.pid} OR Name = '${executableName}'`.replaceAll("'", "''")
   const snapshot = await windowsSnapshot(`
-$smokeProcesses = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, CreationDate, CommandLine)
+$smokeProcesses = @(Get-CimInstance Win32_Process -Filter '${filter}' -Property ProcessId, ParentProcessId, CreationDate, CommandLine)
 $smokeById = @{}
 foreach ($smokeProcess in $smokeProcesses) { $smokeById[[uint32]$smokeProcess.ProcessId] = $smokeProcess }
 $smokeApp = $smokeById[[uint32]${app.pid}]
@@ -91,6 +95,8 @@ $smokeTree = @($smokeProcesses | Where-Object { $smokeIds.Contains([uint32]$_.Pr
   })
 } | ConvertTo-Json -Depth 3 -Compress
 `)
+  if (failure) throw failure
+  if (exit) throw new Error(`Packaged App exited during renderer discovery.\n${output}`)
   if (windowsAppBirth && windowsAppBirth !== snapshot.birth) throw new Error('The packaged App PID was reused before descendant discovery.')
   windowsAppBirth = snapshot.birth
   for (const { pid, birth } of snapshot.descendants) windowsDescendants.set(pid, birth)
