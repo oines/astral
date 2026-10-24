@@ -4,7 +4,7 @@ Astral is a self-hosted workspace for persistent agents. The macOS, Windows and 
 
 Astral is pre-release software. Desktop packages and Server/Computer binaries target macOS, Windows and Linux on ARM64 and AMD64. Native acceptance is tracked in [GitHub Actions](https://github.com/oines/astral/actions) and the [verification guide](docs/verification.md); producing a package does not establish that every platform feature has passed interactive acceptance. No signed public installers or automatic Desktop updates have been released yet.
 
-Release preparation follows one rolling `YYYY.M.N` version line. The [release guide](docs/releasing.md) describes candidate builds and the remaining public-release gates. The [Linux VPS installer](docs/headless-install.md) is prepared for the first verified public release; no ready release is currently available to install. Desktop downloads and the one-command Server installation will use the same release assets.
+Release preparation follows one rolling version line, starting at `0.1.0` and increasing the patch number for each release. The [release guide](docs/releasing.md) describes candidate builds and the remaining public-release gates. The [Linux VPS installer](docs/headless-install.md) is prepared for the first verified public release; no ready release is currently available to install. Desktop downloads and the one-command Server installation will use the same release assets.
 
 The implementation follows [SPEC.md](SPEC.md). The server owns configuration, credentials, sessions, IM accounts and delivery receipts. [Astral Core](https://github.com/oines/astral-core) owns the persistent agent loop. [astral-models](https://github.com/oines/astral-models) translates Core requests into provider protocols.
 

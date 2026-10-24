@@ -12,8 +12,8 @@ export async function isDirectInvocation(url) {
 }
 
 export function validateVersion(version) {
-  const match = /^([1-9]\d{3})\.(1[0-2]|[1-9])\.([1-9]\d*)$/.exec(version || '')
-  if (!match || !Number.isSafeInteger(Number(match[3]))) throw new Error('Release version must be YYYY.M.N, without leading zeroes; month is 1–12 and N starts at 1.')
+  const match = typeof version === 'string' && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(version)
+  if (!match || match.slice(1).some(part => !Number.isSafeInteger(Number(part)))) throw new Error('Release version must be MAJOR.MINOR.PATCH, with nonnegative safe integers and no leading zeroes, prerelease or build suffix.')
   return version
 }
 
@@ -25,7 +25,7 @@ export function validateTag(tag, version) {
 export async function readReleaseVersion(root = repositoryRoot) {
   const entries = await Promise.all(manifests.map(async name => JSON.parse(await readFile(path.join(root, name), 'utf8'))))
   const version = validateVersion(entries[0].version)
-  if (entries.some(entry => entry.version !== version)) throw new Error('Root and Desktop package versions differ. Use release-version.mjs set YYYY.M.N.')
+  if (entries.some(entry => entry.version !== version)) throw new Error('Root and Desktop package versions differ. Use release-version.mjs set MAJOR.MINOR.PATCH.')
   return version
 }
 
@@ -80,13 +80,13 @@ async function main() {
   if (command === 'validate' && args.length === 1) console.log(validateVersion(args[0]))
   else if (command === 'set' && args.length === 1) console.log(`Root and Desktop versions are now ${await setReleaseVersion(args[0])}. Review and commit both manifests.`)
   else if (command === 'check') {
-    if (args.length && (args.length !== 2 || args[0] !== '--tag')) throw new Error('Usage: release-version.mjs check [--tag vYYYY.M.N]')
+    if (args.length && (args.length !== 2 || args[0] !== '--tag')) throw new Error('Usage: release-version.mjs check [--tag vMAJOR.MINOR.PATCH]')
     const version = await readReleaseVersion()
     const tag = option(args, '--tag')
     if (tag !== undefined) validateTag(tag, version)
     console.log(version)
   } else if (command === 'formats') console.log(JSON.stringify(await readDataFormats(option(args, '--binary'), option(args, '--sha')), null, 2))
-  else throw new Error('Usage: release-version.mjs validate YYYY.M.N | set YYYY.M.N | check [--tag vYYYY.M.N] | formats --binary NATIVE_EXECUTABLE --sha COMMIT')
+  else throw new Error('Usage: release-version.mjs validate MAJOR.MINOR.PATCH | set MAJOR.MINOR.PATCH | check [--tag vMAJOR.MINOR.PATCH] | formats --binary NATIVE_EXECUTABLE --sha COMMIT')
 }
 
 if (await isDirectInvocation(import.meta.url)) {

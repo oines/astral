@@ -42,15 +42,15 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '26.7.0'
-      - name: Validate existing tag, calendar version and trusted main history
+      - name: Validate existing tag, release version and trusted main history
         id: version
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.tag || (github.event_name == 'push' && github.ref_name) || '' }}
         run: |
           set -euo pipefail
-          if [[ -n "$RELEASE_TAG" && ! "$RELEASE_TAG" =~ ^v[1-9][0-9]{3}\.(1[0-2]|[1-9])\.[1-9][0-9]*$ ]]; then
-            echo '::error::Release tag must be vYYYY.M.N without leading zeroes.'
+          if [[ -n "$RELEASE_TAG" && ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo '::error::Release tag must be vMAJOR.MINOR.PATCH without leading zeroes or suffixes.'
             exit 1
           fi
           release_sha=$(git rev-parse HEAD)

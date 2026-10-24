@@ -1,14 +1,14 @@
 # Release preparation
 
-Astral uses one rolling release line with calendar versions: `YYYY.M.N`, for example `2026.10.1`. The month and within-month release number have no leading zeroes; `N` starts at 1. The Git tag is `vYYYY.M.N`. There are no beta/stable channels. Application versions and data format versions are independent.
+Astral uses one rolling release line with three-part versions: `MAJOR.MINOR.PATCH`, starting at `0.1.0`. During the current development series, releases increase the patch number: `0.1.0`, `0.1.1`, `0.1.2`, including multiple releases on the same day. The counter does not reset with a date. Each component is a nonnegative integer without leading zeroes; prerelease and build suffixes are not used. The Git tag is `vMAJOR.MINOR.PATCH`. There are no beta/stable channels. Application versions and data format versions are independent.
 
 ## What is implemented
 
 `scripts/release-version.mjs` provides one command for both manifests:
 
 ```sh
-node scripts/release-version.mjs set 2026.10.1
-node scripts/release-version.mjs check --tag v2026.10.1
+node scripts/release-version.mjs set 0.1.0
+node scripts/release-version.mjs check --tag v0.1.0
 ```
 
 `set` changes only the root and Desktop `package.json` versions. It does not commit, create a tag, install packages, or build. Review and commit both files together. The lockfile does not store the workspace package versions. The normal Go build injects the root package version; Electron reads the Desktop package version.
@@ -19,7 +19,7 @@ The workflow builds the six unified Server/Web UI/CLI/Daemon programs once on Li
 
 The final job verifies the complete inventory, computes checksums for the exact candidate bytes, and creates a **Draft Release only**. It never publishes, changes repository visibility, or creates/moves tags. It refuses an existing published release or an unrelated draft. Retrying the same draft reuses an existing asset only when GitHub reports the matching SHA256 digest; a different or unavailable digest requires explicit cleanup of that asset. Partial failure leaves a draft.
 
-Keep existing version tags fixed. If source or release-gate changes require a different prepared commit, increase `N` and create a new tag after its checks pass; do not move a candidate's tag to hide that change.
+Keep existing version tags fixed. If source or release-gate changes require a different prepared commit, increase the patch number and create a new tag after its checks pass; do not move a candidate's tag to hide that change. As in Magpie, the maintainer chooses the version and pushes its tag after the version change is reviewed and merged; pushing a normal source commit does not select a release version or create a tag.
 
 Only the Mac job receives signing secrets, through the `mac-signing` Environment restricted to `main` and version tags. Credentials use a temporary keychain with unconditional cleanup; missing credentials fail the job. Only the final draft job receives `contents: write`; build jobs have read access. It uses the job-scoped `GITHUB_TOKEN`, not a personal access token. Actions are pinned to commits. No signing credentials or tokens belong in an installer, Desktop build, repository source, or pull-request job.
 

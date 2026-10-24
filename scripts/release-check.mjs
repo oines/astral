@@ -14,27 +14,27 @@ export async function checkReleaseTools() {
   try {
     for (const name of ['scripts', 'apps/desktop', 'input']) await mkdir(path.join(temporary, name), { recursive: true })
     for (const name of ['release-version.mjs', 'release-assets.mjs', 'release-draft.mjs']) await copyFile(path.join(repositoryRoot, 'scripts', name), path.join(temporary, 'scripts', name))
-    for (const name of ['package.json', 'apps/desktop/package.json']) await writeFile(path.join(temporary, name), JSON.stringify({ name: 'fixture', version: '0.1.0' }))
+    for (const name of ['package.json', 'apps/desktop/package.json']) await writeFile(path.join(temporary, name), JSON.stringify({ name: 'fixture', version: '0.0.0' }))
     const invoke = (script, args = []) => execFileSync(process.execPath, [path.join(temporary, 'scripts', script), ...args], { cwd: temporary, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000, maxBuffer: 64 << 10 })
     const rejects = (script, args, message) => assert.throws(() => invoke(script, args), error => error.status !== 0 && error.stderr.toString().includes(message))
-    for (const value of ['2026.1.1', '2026.10.1', '2026.12.29']) assert.equal(validateTag(`v${value}`, validateVersion(value)), `v${value}`)
-    for (const value of ['0.1.0', '2026.01.1', '2026.13.1', '2026.10.0', '2026.10.1-beta', '2026.10.9007199254740992']) assert.throws(() => validateVersion(value))
-    invoke('release-version.mjs', ['set', '2026.10.1'])
-    assert.equal(invoke('release-version.mjs', ['check', '--tag', 'v2026.10.1']).trim(), '2026.10.1')
-    for (const name of ['package.json', 'apps/desktop/package.json']) assert.equal(JSON.parse(await readFile(path.join(temporary, name), 'utf8')).version, '2026.10.1')
-    rejects('release-version.mjs', ['check', '--tag', 'v2026.10.2'], 'Expected tag')
+    for (const value of ['0.0.0', '0.1.0', '0.1.1', '0.1.100', '1.0.0', '1.14.2', '9007199254740991.0.0']) assert.equal(validateTag(`v${value}`, validateVersion(value)), `v${value}`)
+    for (const value of [undefined, null, 0, '0.01.0', '01.1.0', '0.1.00', '0.1.-1', 'v0.1.0', '0.1.0-beta', '0.1.0+build', '9007199254740992.0.0', '0.9007199254740992.0', '0.1.9007199254740992']) assert.throws(() => validateVersion(value))
+    invoke('release-version.mjs', ['set', '0.1.0'])
+    assert.equal(invoke('release-version.mjs', ['check', '--tag', 'v0.1.0']).trim(), '0.1.0')
+    for (const name of ['package.json', 'apps/desktop/package.json']) assert.equal(JSON.parse(await readFile(path.join(temporary, name), 'utf8')).version, '0.1.0')
+    rejects('release-version.mjs', ['check', '--tag', 'v0.1.1'], 'Expected tag')
     rejects('release-version.mjs', ['check', '--tag'], 'Usage:')
 
     const sourceSHA = '1'.repeat(40)
-    const packageNames = [...distributionNames, ...desktopNames('2026.10.1'), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh']
+    const packageNames = [...distributionNames, ...desktopNames('0.1.0'), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh']
     assert.equal(distributionNames.length, 6)
-    assert.equal(desktopNames('2026.10.1').length, 12)
+    assert.equal(desktopNames('0.1.0').length, 12)
     for (const name of packageNames) await writeFile(path.join(temporary, 'input', name), `Small fixture only: ${name}\n`)
     await writeFile(path.join(temporary, 'input', 'checksums.txt'), 'stale build checksum: must be recalculated\n')
-    const formats = { schema_version: 1, version: '2026.10.1', source_sha: sourceSHA, host_schema: 3, core_format: 10, data_formats: { host: 3, core: 10 }, core_module_version: 'fixture', migration_status: 'not-implemented' }
+    const formats = { schema_version: 1, version: '0.1.0', source_sha: sourceSHA, host_schema: 3, core_format: 10, data_formats: { host: 3, core: 10 }, core_module_version: 'fixture', migration_status: 'not-implemented' }
     const writeFormats = async value => writeFile(path.join(temporary, 'input', 'release-formats.json'), JSON.stringify(value))
     await writeFormats(formats)
-    const baseArgs = ['candidate', '--input', 'input', '--sha', sourceSHA, '--tag', 'v2026.10.1', '--repository', 'oines/astral', '--run-url', 'https://github.com/oines/astral/actions/runs/1', '--ci-run-url', 'https://github.com/oines/astral/actions/runs/2']
+    const baseArgs = ['candidate', '--input', 'input', '--sha', sourceSHA, '--tag', 'v0.1.0', '--repository', 'oines/astral', '--run-url', 'https://github.com/oines/astral/actions/runs/1', '--ci-run-url', 'https://github.com/oines/astral/actions/runs/2']
     invoke('release-assets.mjs', [...baseArgs, '--output', 'complete-output'])
     const manifest = JSON.parse(await readFile(path.join(temporary, 'complete-output', 'release-manifest.json'), 'utf8'))
     assert.equal(manifest.public_release_ready, false)
@@ -59,7 +59,7 @@ export async function checkReleaseTools() {
     }
     rejects('release-assets.mjs', [...baseArgs, '--output', 'complete-output'], 'must be empty')
 
-    const missingName = 'Astral-2026.10.1-win-arm64.exe'
+    const missingName = 'Astral-0.1.0-win-arm64.exe'
     const missingContents = await readFile(path.join(temporary, 'input', missingName))
     await rm(path.join(temporary, 'input', missingName))
     rejects('release-assets.mjs', [...baseArgs, '--output', 'missing-output'], 'Missing required release artifact')
@@ -74,7 +74,7 @@ export async function checkReleaseTools() {
     await rm(path.join(temporary, 'input', 'latest-mac.yml'))
     await writeFormats({ ...formats, source_sha: '2'.repeat(40) })
     rejects('release-assets.mjs', [...baseArgs, '--output', 'wrong-sha-output'], 'metadata does not match')
-    await writeFormats({ ...formats, version: '2026.10.2' })
+    await writeFormats({ ...formats, version: '0.1.1' })
     rejects('release-assets.mjs', [...baseArgs, '--output', 'wrong-version-output'], 'metadata does not match')
     await writeFormats({ ...formats, data_formats: { host: 4, core: 10 } })
     rejects('release-assets.mjs', [...baseArgs, '--output', 'wrong-formats-output'], 'metadata does not match')
@@ -83,7 +83,7 @@ export async function checkReleaseTools() {
     rejects('release-assets.mjs', [...baseArgs, '--mac-signed', '--output', 'missing-signing-report'], 'Missing required release artifact: mac-signing-report.json')
     const macNames = packageNames.filter(name => name.startsWith('astral-darwin-') || name.includes('-mac-'))
     const signedReport = {
-      schema_version: 1, version: '2026.10.1', source_sha: sourceSHA, team_id: '6N6W6Z6739',
+      schema_version: 1, version: '0.1.0', source_sha: sourceSHA, team_id: '6N6W6Z6739',
       certificate_expires_at: new Date(Date.now() + 366 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'accepted', native_tested_arch: 'arm64',
       checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: true, gatekeeper: true, packaged_app_startup_shutdown: true },
@@ -121,7 +121,7 @@ export async function checkReleaseTools() {
     assert(signedNotes.includes('not implemented; public-release gate remains pending'))
     for (const [name, change, message] of [
       ['wrong-report-sha', report => { report.source_sha = '2'.repeat(40) }, 'metadata does not match'],
-      ['wrong-report-version', report => { report.version = '2026.10.2' }, 'metadata does not match'],
+      ['wrong-report-version', report => { report.version = '0.1.1' }, 'metadata does not match'],
       ['wrong-report-team', report => { report.team_id = 'K38CJP7Z2L' }, 'metadata does not match'],
       ['wrong-report-status', report => { report.status = 'pending' }, 'metadata does not match'],
       ['wrong-report-date', report => { report.certificate_expires_at = '2099-02-30T00:00:00Z' }, 'metadata does not match'],
@@ -157,11 +157,11 @@ export async function checkReleaseTools() {
     assert.throws(() => draftPreflight('signed-output'), error => error.stderr.toString().includes('public releases and incomplete signing claims are forbidden'))
     await writeFile(path.join(temporary, 'signed-output', 'release-manifest.json'), JSON.stringify({ ...signedManifest, purpose: 'public-release' }))
     assert.throws(() => draftPreflight('signed-output'), error => error.stderr.toString().includes('public releases and incomplete signing claims are forbidden'))
-    await writeFile(path.join(temporary, 'apps/desktop/package.json'), JSON.stringify({ version: '2026.10.2' }))
+    await writeFile(path.join(temporary, 'apps/desktop/package.json'), JSON.stringify({ version: '0.1.1' }))
     rejects('release-version.mjs', ['check'], 'versions differ')
     const afterManifests = await Promise.all(['package.json', 'apps/desktop/package.json'].map(name => readFile(path.join(repositoryRoot, name), 'utf8')))
     assert.deepEqual(afterManifests, realManifests, 'Real workspace manifests must not change')
-    console.log('Release tools: calendar versions, unsigned and Mac signed draft inventories, final-byte signing reports, hashes and rejection fixtures passed. Native installation/updating was not exercised.')
+    console.log('Release tools: rolling versions, unsigned and Mac signed draft inventories, final-byte signing reports, hashes and rejection fixtures passed. Native installation/updating was not exercised.')
   } finally {
     await rm(temporary, { recursive: true, force: true })
   }
