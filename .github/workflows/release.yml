@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing vYYYY.M.N tag from main; never creates a tag
-        required: true
+        description: Existing version tag; leave empty to test Mac signing on main without creating a release
+        required: false
         type: string
   push:
     tags:
@@ -46,19 +46,25 @@ jobs:
         id: version
         shell: bash
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag || (github.event_name == 'push' && github.ref_name) || '' }}
         run: |
           set -euo pipefail
-          if [[ ! "$RELEASE_TAG" =~ ^v[1-9][0-9]{3}\.(1[0-2]|[1-9])\.[1-9][0-9]*$ ]]; then
+          if [[ -n "$RELEASE_TAG" && ! "$RELEASE_TAG" =~ ^v[1-9][0-9]{3}\.(1[0-2]|[1-9])\.[1-9][0-9]*$ ]]; then
             echo '::error::Release tag must be vYYYY.M.N without leading zeroes.'
             exit 1
           fi
-          git show-ref --verify "refs/tags/$RELEASE_TAG"
           release_sha=$(git rev-parse HEAD)
-          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$release_sha"
+          if [ -n "$RELEASE_TAG" ]; then
+            git show-ref --verify "refs/tags/$RELEASE_TAG"
+            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$release_sha"
+          fi
           git merge-base --is-ancestor "$release_sha" origin/main
           # No script from the selected tag runs before the trusted-history check.
-          release_version=$(node scripts/release-version.mjs check --tag "$RELEASE_TAG")
+          if [ -n "$RELEASE_TAG" ]; then
+            release_version=$(node scripts/release-version.mjs check --tag "$RELEASE_TAG")
+          else
+            release_version=$(node scripts/release-version.mjs check)
+          fi
           echo "version=$release_version" >> "$GITHUB_OUTPUT"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
@@ -199,6 +205,7 @@ jobs:
           retention-days: 7
 
   desktop:
+    if: needs.validate.outputs.tag != ''
     needs: [validate, mac]
     strategy:
       fail-fast: false
@@ -250,6 +257,7 @@ jobs:
           retention-days: 7
 
   draft:
+    if: needs.validate.outputs.tag != ''
     needs: [validate, mac, desktop]
     runs-on: ubuntu-24.04
     timeout-minutes: 20

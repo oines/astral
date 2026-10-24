@@ -2,7 +2,7 @@
 
 The release workflow signs with the personal Developer ID Application team `6N6W6Z6739`. It never uses Apple Development or another team's identity. Ordinary pull-request builds remain unsigned and do not receive Apple credentials.
 
-Pushing an existing version tag starts `.github/workflows/release.yml`. The selected commit must belong to `main`, both package versions must match the tag, and ordinary `main` CI must have succeeded for that exact commit. A manual run from `main` can select an existing tag. The workflow cannot create or move tags.
+Pushing an existing version tag starts `.github/workflows/release.yml`. The selected commit must belong to `main`, both package versions must match the tag, and ordinary `main` CI must have succeeded for that exact commit. A manual run from `main` can select an existing tag. Leave the tag empty for an initial Mac-only signing/notarization acceptance run on `main`; it uploads CI artifacts without creating a tag or Release. The workflow cannot create or move tags.
 
 This currently produces a **Mac-signed candidate Draft Release**. It does not publish a public release: versioned migrations, Desktop updating and their acceptance gates remain unfinished. Windows and Linux candidate packages are still unsigned.
 
