@@ -117,9 +117,8 @@ jobs:
       - name: Restore executable permissions after artifact download
         if: runner.os != 'Windows'
         run: chmod +x dist/bin/astral-*
-      - run: pnpm test:desktop-service
-      - name: Identify Windows desktop directory locks
-        if: ${{ failure() && runner.os == 'Windows' }}
+      - name: Prepare Windows directory lock diagnostics
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $astralHandleDir = Join-Path $env:RUNNER_TEMP 'astral-handle-diagnostics'
@@ -131,10 +130,8 @@ jobs:
           if ($astralSignature.Status -ne 'Valid' -or $astralSignature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
             throw 'The Microsoft Handle diagnostic utility has an invalid signature.'
           }
-          & $astralHandle -accepteula -nobanner 'astral 中文 desktop service' | Tee-Object -FilePath "$env:RUNNER_TEMP/astral-handles.txt"
-          # A search with no matching handles exits nonzero; the original test
-          # failure remains authoritative either way.
-          $global:LASTEXITCODE = 0
+          "ASTRAL_WINDOWS_HANDLE=$astralHandle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - run: pnpm test:desktop-service
       - name: Upload Windows lock diagnostics
         if: ${{ failure() && runner.os == 'Windows' }}
         uses: actions/upload-artifact@v4
