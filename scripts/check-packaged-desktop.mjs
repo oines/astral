@@ -33,7 +33,8 @@ let output = ''
 let failure
 let exit
 let running
-const windowsDescendants = new Set()
+const windowsDescendants = new Map()
+let windowsAppBirth
 app.stdout.on('data', chunk => { output = (output + chunk).slice(-6000) })
 app.stderr.on('data', chunk => { output = (output + chunk).slice(-6000) })
 app.on('error', error => { failure = error })
@@ -51,13 +52,7 @@ async function waitFor(check, message, timeout = 30_000) {
   throw new Error(message)
 }
 async function rendererStarted() {
-  if (process.platform === 'win32') {
-    const script = `$smokeProcesses=@(Get-CimInstance Win32_Process); $smokeIds=[Collections.Generic.HashSet[uint32]]::new(); [void]$smokeIds.Add(${app.pid}); for($smokePass=0;$smokePass -lt 8;$smokePass++){foreach($smokeProcess in $smokeProcesses){if($smokeIds.Contains([uint32]$smokeProcess.ParentProcessId)){[void]$smokeIds.Add([uint32]$smokeProcess.ProcessId)}}}; $smokeTree=@($smokeProcesses | Where-Object {$smokeIds.Contains([uint32]$_.ProcessId) -and $_.ProcessId -ne ${app.pid}}); [pscustomobject]@{renderer=[bool]@($smokeTree | Where-Object {$_.CommandLine -match '--type=renderer(\\s|$)'}).Count; descendants=@($smokeTree | ForEach-Object {[int]$_.ProcessId})} | ConvertTo-Json -Compress`
-    const result = await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 10_000 })
-    const snapshot = JSON.parse(result.stdout)
-    for (const pid of snapshot.descendants) windowsDescendants.add(pid)
-    return snapshot.renderer
-  }
+  if (process.platform === 'win32') return windowsRendererStarted()
   const result = await execute('ps', ['-axo', 'pid=,ppid=,args='], { timeout: 5000, maxBuffer: 8 << 20 })
   const processes = result.stdout.split('\n').flatMap(line => { const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line); return match ? [{ pid: Number(match[1]), parent: Number(match[2]), args: match[3] }] : [] })
   const ids = new Set([app.pid])
@@ -65,16 +60,67 @@ async function rendererStarted() {
   return processes.some(process => ids.has(process.pid) && /--type=renderer(?:\s|$)/.test(process.args))
 }
 
+async function windowsSnapshot(script, timeout = 10_000) {
+  const { stdout } = await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'Stop'\n${script}`], { windowsHide: true, timeout })
+  return JSON.parse(stdout)
+}
+
+async function windowsRendererStarted() {
+  const snapshot = await windowsSnapshot(`
+$smokeProcesses = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, CreationDate, CommandLine)
+$smokeById = @{}
+foreach ($smokeProcess in $smokeProcesses) { $smokeById[[uint32]$smokeProcess.ProcessId] = $smokeProcess }
+$smokeApp = $smokeById[[uint32]${app.pid}]
+if ($null -eq $smokeApp -or $null -eq $smokeApp.CreationDate) { throw 'The packaged App has no readable process identity.' }
+$smokeIds = [Collections.Generic.HashSet[uint32]]::new()
+[void]$smokeIds.Add(${app.pid})
+for ($smokePass = 0; $smokePass -lt 8; $smokePass++) {
+  foreach ($smokeProcess in $smokeProcesses) {
+    $smokeParent = $smokeById[[uint32]$smokeProcess.ParentProcessId]
+    if ($null -eq $smokeParent -or -not $smokeIds.Contains([uint32]$smokeParent.ProcessId)) { continue }
+    if ($null -eq $smokeProcess.CreationDate) { throw 'A packaged App descendant has no readable creation date.' }
+    if ($smokeProcess.CreationDate -ge $smokeParent.CreationDate) { [void]$smokeIds.Add([uint32]$smokeProcess.ProcessId) }
+  }
+}
+$smokeTree = @($smokeProcesses | Where-Object { $smokeIds.Contains([uint32]$_.ProcessId) -and $_.ProcessId -ne ${app.pid} })
+[pscustomobject]@{
+  birth = $smokeApp.CreationDate.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
+  renderer = [bool]@($smokeTree | Where-Object { $_.CommandLine -match '--type=renderer(\\s|$)' }).Count
+  descendants = @($smokeTree | ForEach-Object {
+    [pscustomobject]@{ pid = [int]$_.ProcessId; birth = $_.CreationDate.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) }
+  })
+} | ConvertTo-Json -Depth 3 -Compress
+`)
+  if (windowsAppBirth && windowsAppBirth !== snapshot.birth) throw new Error('The packaged App PID was reused before descendant discovery.')
+  windowsAppBirth = snapshot.birth
+  for (const { pid, birth } of snapshot.descendants) windowsDescendants.set(pid, birth)
+  return snapshot.renderer
+}
+
+async function pruneWindowsDescendants(timeout) {
+  const filter = [...windowsDescendants.keys()].map(pid => `ProcessId = ${pid}`).join(' OR ')
+  const snapshot = await windowsSnapshot(`
+$smokeProcesses = @(Get-CimInstance Win32_Process -Filter '${filter}' -Property ProcessId, CreationDate)
+$smokeLive = @($smokeProcesses | ForEach-Object {
+  if ($null -eq $_.CreationDate) { throw 'A recorded process has no readable creation date.' }
+  [pscustomobject]@{ pid = [int]$_.ProcessId; birth = $_.CreationDate.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture) }
+})
+ConvertTo-Json -InputObject $smokeLive -Compress
+`, timeout)
+  const live = new Map(snapshot.map(({ pid, birth }) => [pid, birth]))
+  // Missing or replaced identities have exited. A reused PID is another process.
+  for (const [pid, birth] of windowsDescendants) if (live.get(pid) !== birth) windowsDescendants.delete(pid)
+}
+
 async function waitForWindowsDescendants() {
   if (process.platform !== 'win32') return
   const deadline = Date.now() + 20_000
-  do {
-    // Forget an observed exit permanently: Windows may reuse that PID later.
-    for (const pid of windowsDescendants) if (!alive(pid)) windowsDescendants.delete(pid)
+  while (windowsDescendants.size > 0 && Date.now() < deadline) {
+    await pruneWindowsDescendants(Math.max(1, Math.min(10_000, deadline - Date.now())))
     if (windowsDescendants.size === 0) return
     await delay(250)
-  } while (Date.now() < deadline)
-  throw new Error(`The packaged App left descendant processes running: ${[...windowsDescendants].join(', ')}. Inspect ${temporary}.`)
+  }
+  if (windowsDescendants.size > 0) throw new Error(`The packaged App left descendant processes running: ${[...windowsDescendants.keys()].join(', ')}. Inspect ${temporary}.`)
 }
 
 try {
@@ -100,6 +146,7 @@ try {
   await waitFor(async () => { if (exit) throw new Error(`Packaged App exited before renderer startup.\n${output}`); return rendererStarted() }, 'The actual packaged Electron App did not start a renderer.', 30_000)
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
   console.log(`Requesting ${process.platform === 'win32' ? 'crash cleanup' : 'normal App quit'} with SIGTERM (App PID ${app.pid}, Server PID ${running.pid}).`)
+  if (process.platform === 'win32') await rendererStarted()
   assert.ok(app.kill('SIGTERM'), 'The packaged App could not receive the shutdown request.')
   // The existing Unix SIGTERM handler calls app.quit(). Windows termination is
   // abrupt: this branch deliberately verifies parent-death cleanup, not Quit.
