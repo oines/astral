@@ -46,8 +46,7 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) error {
 		usage(out)
 		return nil
 	case "version", "--version":
-		fmt.Fprintln(out, Version)
-		return nil
+		return version(args[1:], out)
 	case "serve":
 		return serve(ctx, args[1:], out, stderr)
 	case "computer":
@@ -106,6 +105,7 @@ func usage(out io.Writer) {
   astral request METHOD /api/v1/PATH [--body-file FILE]
   astral doctor
   astral auth token [--data DIRECTORY]
+  astral version [--json | --data-formats]
 
 Remote access requires HTTPS. Owner credentials are read from a private file.
 Computer registration tokens are temporary; normal Daemon credentials are saved locally.
