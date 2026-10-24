@@ -212,14 +212,34 @@ func TestSessionImagesRemainSelfContainedAcrossDeletionReopenAndFork(t *testing.
 		if !strings.Contains(body, "data:image/png;base64,") || !strings.Contains(body, "astral-file://") {
 			t.Error("native pixels and file URI must coexist")
 		}
-		if !strings.Contains(body, "Current Astral environment snapshot:") {
-			t.Error("actual request needs a persisted environment snapshot")
-		}
+		snapshots := 0
 		for _, value := range request["messages"].([]any) {
 			message := value.(map[string]any)
-			if message["role"] == "system" && strings.Contains(string(encode(message)), "Current Astral environment snapshot:") {
-				t.Error("environment snapshot was moved into the system prompt")
+			content, _ := message["content"].(string)
+			if parts, ok := message["content"].([]any); ok {
+				for _, part := range parts {
+					text, _ := part.(map[string]any)["text"].(string)
+					content += text
+				}
 			}
+			// The fixed system instructions name this heading. The actual
+			// environment is the JSON following its heading on a new line.
+			heading := environmentSnapshotHeading + "\n"
+			start := strings.Index(content, heading)
+			if start < 0 {
+				continue
+			}
+			if message["role"] != "user" {
+				t.Errorf("environment snapshot was moved into a %v message", message["role"])
+			}
+			var snapshot map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(content[start+len(heading):]), &snapshot); err != nil || snapshot["session"] == nil {
+				t.Errorf("environment snapshot is not a valid Session environment: %v", err)
+			}
+			snapshots++
+		}
+		if snapshots == 0 {
+			t.Error("actual request needs a persisted environment snapshot")
 		}
 		return textReply("I can see the image")
 	})
