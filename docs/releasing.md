@@ -1,31 +1,57 @@
-# Release preparation
+# Releases
 
-Astral uses one rolling release line with three-part versions: `MAJOR.MINOR.PATCH`, starting at `0.1.0`. During the current development series, releases increase the patch number: `0.1.0`, `0.1.1`, `0.1.2`, including multiple releases on the same day. The counter does not reset with a date. Each component is a nonnegative integer without leading zeroes; prerelease and build suffixes are not used. The Git tag is `vMAJOR.MINOR.PATCH`. There are no beta/stable channels. Application versions and data format versions are independent.
+Astral uses one rolling release line with three-part versions: `MAJOR.MINOR.PATCH`, starting at `0.1.0`. During the current development series, each release increases the patch number: `0.1.0`, `0.1.1`, `0.1.2`, including multiple releases on the same day. The counter does not reset with a date. Each component is a nonnegative safe integer without leading zeroes; prerelease and build suffixes are not used. Git tags use `vMAJOR.MINOR.PATCH`. Application versions and data format versions are independent.
 
-## What is implemented
+## Preparing a version
 
-`scripts/release-version.mjs` provides one command for both manifests:
+As in Magpie, the maintainer chooses a version and pushes its tag after review and CI. Ordinary source pushes do not choose a version, create a tag or publish a Release.
+
+1. Work on a branch and open a pull request. Keep existing authorship and signatures.
+2. For a release, update both manifests together:
+
+   ```sh
+   node scripts/release-version.mjs set 0.1.0
+   node scripts/release-version.mjs check --tag v0.1.0
+   ```
+
+   `set` edits only the root and Desktop `package.json` versions. It does not commit, tag, install dependencies or build. The lockfile does not store these workspace versions. Go builds embed the root version; Electron reads the Desktop version.
+3. Merge the reviewed change and wait for all ordinary `main` CI jobs to pass on that exact merge commit. This includes native Windows/macOS/Linux checks, user-mode services, headless installation/recovery and persistent container updates.
+4. From that checked `main` commit, create and push a signed tag:
+
+   ```sh
+   git tag -s v0.1.0 -m 'Astral 0.1.0'
+   git push origin v0.1.0
+   ```
+
+   These are maintainer actions, not commands run by the workflow. The example does not claim the tag already exists.
+
+Keep published tags fixed. If a code change is needed, choose the next patch version; do not move a tag to conceal a different source revision. A tag pushed before ordinary CI finishes will fail validation; rerun its release workflow after the exact-source CI succeeds.
+
+## Release workflow
+
+`.github/workflows/release.yml` follows the same broad flow as Magpie: tag, build, sign, notarize, verify, publish. It also supports a manual run from `main` with an existing tag. The source must be in trusted `main` history, both manifests must match the tag, and ordinary `main`/push CI must have succeeded for that exact commit.
+
+A manual run with an empty tag exercises only Mac signing and notarization. It creates CI artifacts without creating a tag or GitHub Release:
 
 ```sh
-node scripts/release-version.mjs set 0.1.0
-node scripts/release-version.mjs check --tag v0.1.0
+gh workflow run release.yml --ref main
 ```
 
-`set` changes only the root and Desktop `package.json` versions. It does not commit, create a tag, install packages, or build. Review and commit both files together. The lockfile does not store the workspace package versions. The normal Go build injects the root package version; Electron reads the Desktop package version.
+For a tagged release:
 
-`.github/workflows/release.yml` is named **Signed Mac release candidate draft**. It is a preparation pipeline, not a public-release workflow. It accepts a pushed version tag, or a manual run from `main` with an existing tag. It verifies the tag, manifest agreement, that the source commit belongs to `main`, and that the ordinary `ci.yml` push workflow succeeded for that exact commit. A failed or absent native CI run blocks packaging. Pushing a tag before CI finishes requires rerunning the candidate workflow after CI succeeds. For the first credential/signing acceptance, manually run it from `main` with an empty tag: only the Mac signing path and its artifacts run; no version tag or Draft Release is created.
+1. Build all six unified Server/Web UI/CLI/Daemon programs once on Linux. Read the actual Host/Core data formats from the built native executable.
+2. Sign and notarize both Darwin programs on a disposable Mac runner, then regenerate checksums. Sign each Electron App, notarize its final DMG, staple the DMG and original App, and create the ZIP from the stapled App. Reopen final DMG/ZIP files and verify signatures, architecture, tickets and Gatekeeper. Run the runner-native ZIP App through startup and shutdown acceptance. See [Apple signing](apple-signing.md).
+3. Package Windows and Linux using that same distribution, including the signed Darwin download programs. Extract the final native Windows ZIP and verify startup, renderer, local Daemon and process cleanup. Install the final native Linux DEB and verify startup and normal quit. Run the final headless programs through real current-user service installation and failure recovery using the CI release transport.
+4. Require every expected asset, its exact final hash, accepted Apple submissions and the supported data baseline. Assemble the public manifest and release notes.
+5. Create or reuse a matching draft, upload every asset, and verify GitHub's returned name, size, SHA256 digest and upload state. Only then publish it. A failure before publication leaves a draft. An existing published Release is never overwritten; an exact matching retry is read-only.
 
-The workflow builds the six unified Server/Web UI/CLI/Daemon programs once on Linux. A dedicated Mac job signs and notarizes the two Darwin programs, refreshes all six checksums, and produces signed, notarized, stapled Intel/Apple Silicon DMG and ZIP files. Windows and Linux then reuse that signed distribution for their own unsigned x64/ARM64 NSIS/ZIP and AppImage/DEB packages. Source and package identity are pinned to the validated commit. The final Mac archives are reopened for verification, and the runner-native ZIP App must pass startup and shutdown acceptance. The other Mac architecture is not claimed to have run natively. See [Apple signing setup and execution](apple-signing.md).
+Different tags can build concurrently. The final publication job is serialized; numeric version comparison prevents an older version finishing late from replacing a newer version as Latest. A partial draft can reuse only byte-identical attachments. If a rebuilt attachment differs, remove the affected unpublished draft or asset deliberately before retrying; the workflow will not silently replace it.
 
-The final job verifies the complete inventory, computes checksums for the exact candidate bytes, and creates a **Draft Release only**. It never publishes, changes repository visibility, or creates/moves tags. It refuses an existing published release or an unrelated draft. Retrying the same draft reuses an existing asset only when GitHub reports the matching SHA256 digest; a different or unavailable digest requires explicit cleanup of that asset. Partial failure leaves a draft.
+Only the Mac job receives signing secrets, through the protected `mac-signing` Environment restricted to `main` and version tags. It uses a temporary keychain with unconditional cleanup; missing credentials fail the job. Only the final publication job has `contents: write`. It uses the job-scoped `GITHUB_TOKEN`, not a personal access token. Actions in the release workflow are pinned to commits. Pull-request CI receives no signing credentials.
 
-Keep existing version tags fixed. If source or release-gate changes require a different prepared commit, increase the patch number and create a new tag after its checks pass; do not move a candidate's tag to hide that change. As in Magpie, the maintainer chooses the version and pushes its tag after the version change is reviewed and merged; pushing a normal source commit does not select a release version or create a tag.
+## Public assets and capabilities
 
-Only the Mac job receives signing secrets, through the `mac-signing` Environment restricted to `main` and version tags. Credentials use a temporary keychain with unconditional cleanup; missing credentials fail the job. Only the final draft job receives `contents: write`; build jobs have read access. It uses the job-scoped `GITHUB_TOKEN`, not a personal access token. Actions are pinned to commits. No signing credentials or tokens belong in an installer, Desktop build, repository source, or pull-request job.
-
-## Download asset contract
-
-Each complete candidate draft contains these exact unified executable names:
+A complete public Release contains these six unified executable names:
 
 ```text
 astral-darwin-amd64
@@ -36,38 +62,41 @@ astral-windows-amd64.exe
 astral-windows-arm64.exe
 ```
 
-All six are needed by a Headless Server or Desktop distribution that offers enrollment of other platforms. Installing only the server machine's executable would omit other computers' download programs.
+All six are needed by a Server or Desktop that offers enrollment of other platforms. Other assets are:
 
-Other assets are:
+- Desktop DMG/ZIP, NSIS/ZIP and AppImage/DEB files named `Astral-${version}-${os}-${arch}.${ext}`, with `os` equal to `mac`, `win` or `linux`, and `arch` equal to `x64` or `arm64`.
+- `checksums.txt`, covering exactly the six unified executables.
+- `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt` and the versioned Linux `install-server.sh`.
+- `release-manifest.json`, identifying the source, CI/build runs, runtime data formats, asset sizes/hashes and implemented update capabilities.
+- `mac-signing-report.json`, containing three distinct accepted Apple submissions, signature/package checks, certificate expiration and exact Mac artifact hashes.
+- `RELEASE_NOTES.md` and `SHA256SUMS`; the latter covers every other attachment, including the manifest and notes.
 
-- `checksums.txt`: SHA256 lines for exactly the six unified executables, compatible with Astral's distribution downloads.
-- `LICENSE.txt` and `THIRD_PARTY_NOTICES.txt`.
-- `install-server.sh`: the versioned user-mode Linux VPS installer. Its eventual public URL is `https://github.com/oines/astral/releases/latest/download/install-server.sh`; this URL must fail until a verified public release exists.
-- Desktop files named `Astral-${version}-${os}-${arch}.${ext}`, where `os` is `mac`, `win`, or `linux`, and `arch` is `x64` or `arm64`.
-- `release-manifest.json`: version, tag, source SHA, CI/build URLs, current Host/Core formats, executable inventory, file sizes, hashes, and preparation limitations.
-- `SHA256SUMS`: final-byte SHA256 lines for every other attachment, including the manifest and notes.
-- `RELEASE_NOTES.md`: the draft's review limitations.
-- `mac-signing-report.json`: accepted Apple submissions, signature/package acceptance, certificate expiration and exact final Mac hashes, required for Mac-signed candidates.
+Public manifests use `schema_version: 1`, `purpose: "release"` and `public_release_ready: true`. This means the installation assets passed release gates. It does not claim every future update feature is implemented. macOS is signed and notarized. Initial Windows and Linux packages are unsigned; Windows may show an unverified-publisher/SmartScreen prompt. The Apple certificate cannot sign Windows programs.
 
-The workflow produces `schema_version: 1`, `purpose: "mac-signed-candidate"`, `public_release_ready: false`, `signing.macos: "signed-and-notarized"`, and `desktop_updater: "not-implemented"`. The collector's default unsigned-fixture mode remains available without `--mac-signed`; it cannot claim Apple signing or include a signing report. The `assets` inventory includes the generated `checksums.txt` and signing report hashes and sizes as well as every package/installer/notice. It excludes the manifest itself to avoid a circular hash; `SHA256SUMS` covers the manifest separately. The `data_formats: { host, core }` values come from the just-built native program's `astral version --json`, not a copied documentation value. `host_schema` and `core_format` repeat those values for the shell installer contract. Missing or conflicting runtime version/format metadata fails the candidate build. The manifest also records the exact Core module revision and that versioned migrations have not yet been implemented.
+Only the runner's native architecture is exercised. Producing and inspecting the other architecture's packages does not prove native execution there. Checksums detect changed bytes but do not independently establish publisher identity.
 
-The landing page and VPS installer must reject this candidate manifest. A GitHub `latest` 404 before the first published release is an installation failure, not success or a signal to download an unverified development build. The complete public asset contract will become usable only after the public-release gates below exist and a verified release is published.
+The collector retains an explicit `candidate` command for review-only fixtures or drafts. Its unsigned default cannot become public. A public collection requires the signed Mac evidence. Candidates keep `public_release_ready: false`; the default draft uploader cannot publish them. The landing page must link only verified public releases; the VPS installer rejects manifests that are not ready. Until the first successful tagged workflow publishes its real assets, public download URLs may return 404.
 
-Checksums detect different bytes; they do not independently prove publisher identity. A signed program and a checksum manifest downloaded from the same origin provide different assurances. Sign final executables before hashing. Astral's HTTP `/downloads/checksums.txt` recalculates the actual distribution binaries; a stale build-directory checksum file must not be copied into a public release.
+## Initial data baseline and updates
 
-## Required before a public release
+The first public data baseline is **Host schema 3 / Core format 10**. The collector and publisher both enforce it. An unexpected format change blocks publication until versioned migration support and its acceptance tests are implemented. Existing data already using these formats can be retained. Earlier private development formats are outside this baseline and require a fresh installation; never relabel a database's format without converting its data.
 
-Do not manually publish a candidate draft. This implementation intentionally has no promotion operation and cannot mark `public_release_ready` true. Public release remains blocked until a separate fail-closed signing and acceptance path is implemented.
+Current releases support fresh installation and manual updates that retain the same data formats. Desktop users can install the next package over the existing App while retaining its data directory. The [Linux VPS installer](headless-install.md) checks both programs' format metadata before stopping the old current-user service and activating a replacement. A format mismatch is rejected. [Computer Daemon update commands](../README.md#computers-files-and-conversations) retain the existing native service or container; they do not rebuild the Agent environment.
 
-1. Finish integration of the cross-platform branch with current `main`, including the current Core format/dependency. Complete the Windows current-user Daemon stop/restart/update/uninstall lifecycle, macOS packaged-App Quit, and installed Linux Desktop acceptance on the final source revision. A previous commit's checks and a later fix without an executed test are different evidence.
-2. Define the supported data baseline and implement versioned migrations using Goose in a separately packaged migration tool. Simple database changes can use SQL; JSON and historical record transformations need self-contained Go migrations. Normal Server code continues to accept only the current data format. For supported older formats, apply each required data transformation in order even when users skip application releases. Keep published migration steps immutable, reject out-of-order execution, and verify the retained chain in CI. Back up Host/Core data and keys together before modifying persistent data; Goose's per-database transactions do not replace coordinated recovery. Commit a new format only after its step succeeds and reject newer formats from older applications. Package replacement alone is not safe database rollback. Goose integration is planned, not implemented by this candidate workflow.
-3. Run and pass the release-only Mac signing/notarization path on the final source with real credentials. The independent `electron-builder.release.cjs` requires Developer ID Application, Hardened Runtime, minimal Electron entitlements and timestamping. `mac-signing.mjs` verifies all enclosed Darwin executable slices and embedded hashes; `mac-notarize.mjs` requires Apple acceptance, stapling, Gatekeeper and final-package checks. These checks are implemented, but a passing fixture is not a real Apple submission or native acceptance run.
-4. Complete the one-time [Apple credential setup](apple-signing.md) in the trusted `mac-signing` Environment. An active personal Apple Developer membership and a local identity do not by themselves configure CI. Windows Authenticode signing needs separate Windows credentials; the Apple certificate cannot sign a Windows executable. If an initial Windows release remains unsigned, document the publisher/SmartScreen limitation explicitly; do not represent it as verified publisher signing.
-5. Add the Desktop updater and a real update metadata pipeline. There is currently no `electron-updater`, native update IPC, or production feed. Keep macOS ZIP in addition to DMG; use NSIS for Windows and define the Linux AppImage/DEB behavior separately. Await the existing asynchronous Server shutdown before installing; do not silently stop active work. Verify an actual N→N+1 install with retained data and migration failure recovery. Old development builds without an updater require one manual installation.
-6. Preserve and combine per-architecture `latest-mac.yml`/Windows metadata rather than overwriting files from separate builder invocations. The current `package:mac-ci` uses separate serial x64 and ARM64 commands. Upload required update `.yml` and `.blockmap` files only after verifying their versions, architecture coverage, URLs and hashes against final signed artifacts. The present candidate collector deliberately rejects update metadata instead of claiming it is usable.
-7. A public-release gate must check required signing, notarization, data compatibility, metadata and final native evidence before producing a manifest with `public_release_ready: true`. Only after complete upload and verification should it publish one Release for the validated tag. Never let a missing certificate turn into an unsigned public artifact. Keep ordinary pull-request CI independent of signing secrets.
-8. The source repository is public. Its initial source/history credential and attachment review, asset-license cleanup and publicly retrievable dependency checks are complete; retain secret scanning and push protection for subsequent changes. Configure the landing page with published Desktop download links and the documented user-mode Linux VPS installer only after their real assets exist. A draft can coexist with a public source repository while release preparation continues.
+These capabilities remain unfinished and are recorded as such in the manifest:
 
-Optional later work includes Windows commercial signing if not required for the first explicitly unsigned Windows distribution, Linux package repositories, differential download optimization, staged rollout, generated changelogs, SBOM/provenance attestations, and additional native architecture coverage. Do not add separate release channels to achieve those tasks.
+- **Goose versioned migrations.** Implement them before changing published persistent formats. Keep every released migration immutable and apply each intervening data step when users skip application versions. Use SQL for suitable schema changes and self-contained Go migrations for JSON/history transformations. Normal runtime code accepts only the current format. Use the unified Go program for migration commands; a separate daemon or migration executable is not required. Back up Host/Core databases, keys and relevant files together, exclude a running Server, and test failure recovery. A per-database Goose transaction is not coordinated recovery across databases and files.
+- **Desktop one-click updates and production update metadata.** Implement the updater, safe asynchronous shutdown and verified feed before advertising one-click installation. Preserve per-architecture metadata, hashes and blockmaps when needed, then test a real N→N+1 install with retained data and failed-update recovery. Development builds without an updater require one manual installation.
+- **Remote Daemon update RPC.** Add the update action through the existing connection protocol, retain the copy-command fallback, and remind the user to update the Server if the Daemon is newer. Container updates must replace the mounted Daemon without recreating the container or losing installed tools and workspaces.
 
-References: [electron-builder v26 macOS configuration](https://www.electron.build/v26/docs/mac/), [v26 notarization](https://www.electron.build/v26/docs/notarization/), [v26 auto update](https://www.electron.build/v26/docs/features/auto-update/), and [GitHub workflow-token permissions](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token).
+The application patch number does not imply a data migration. A release that changes no persisted format needs no empty migration script. Automated migrations must ship before the first incompatible public format change, rather than being replaced by runtime compatibility branches.
+
+## First-release acceptance and download entry points
+
+The source repository is public. History/credential review, attachment and asset-license cleanup, and public dependency checks are complete; retain secret scanning and push protection for later work.
+
+Before advertising downloads, require a successful real tagged workflow and inspect its complete assets and manifest. The final `published-install` job downloads the installer and distribution from the actual published tag, verifies the installer checksum, installs a current-user Server service, and checks its health, authenticated API and online local Computer before removing the test service. This runs under a disposable Linux CI user. It is a post-publication check: a failure does not retract an already published Release. The earlier native CI headless checks use actual programs with a local synthetic release transport and verify installation/recovery before publication. Link the landing page to the actual published Desktop assets and the documented user-mode Linux VPS command only after these checks pass.
+
+Optional later work includes Windows commercial signing, Linux package repositories, differential downloads, staged rollout, generated changelogs, SBOM/provenance attestations and more native architecture coverage. These do not require additional release channels.
+
+References: [Magpie release workflow](https://github.com/yetone/magpie/blob/main/.github/workflows/release.yml), [Magpie distribution workflow](https://github.com/yetone/magpie-releases/blob/main/.github/workflows/release.yml), [electron-builder v26 macOS](https://www.electron.build/v26/docs/mac/), [v26 auto update](https://www.electron.build/v26/docs/features/auto-update/) and [GitHub workflow-token permissions](https://docs.github.com/en/actions/tutorials/authenticate-with-github-token).

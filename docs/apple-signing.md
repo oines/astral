@@ -4,7 +4,7 @@ The release workflow signs with the personal Developer ID Application team `6N6W
 
 Pushing an existing version tag starts `.github/workflows/release.yml`. The selected commit must belong to `main`, both package versions must match the tag, and ordinary `main` CI must have succeeded for that exact commit. A manual run from `main` can select an existing tag. Leave the tag empty for an initial Mac-only signing/notarization acceptance run on `main`; it uploads CI artifacts without creating a tag or Release. The workflow cannot create or move tags.
 
-This currently produces a **Mac-signed candidate Draft Release**. It does not publish a public release: versioned migrations, Desktop updating and their acceptance gates remain unfinished. Windows and Linux candidate packages are still unsigned.
+Tagged runs publish a Release only after Mac signing/notarization, final native package checks and complete asset verification. An empty-tag manual run remains a Mac-only trial with no Release. Windows and Linux packages are unsigned. The initial supported data baseline is Host 3 / Core 10; same-format manual updates are supported, while Desktop one-click updates and cross-format migrations remain unfinished.
 
 ## One-time credential setup
 
@@ -49,11 +49,13 @@ The signing and packaging order is:
 6. Extract the final ZIP and mount the final DMG read-only; recheck signatures, architecture and Gatekeeper for the enclosed Apps. The ZIP App must carry its own stapled ticket; the DMG carries the outer container's ticket. Run the native architecture's ZIP-extracted App through the existing startup/renderer/local-Daemon/shutdown smoke. The other architecture is packaged and signature-checked, not claimed to have run natively.
 7. Produce `mac-signing-report.json` with the source, certificate expiration, three accepted Apple submission IDs (standalone programs and two DMGs), checks and exact hashes of the two Darwin programs and four Mac packages. Only then upload artifacts and assemble the draft's final checksums.
 
-All Desktop platforms receive the same signed Darwin download programs. The collector rejects stale hashes, another team, missing proof or incomplete inventories. Missing migration/updater acceptance keeps `public_release_ready: false` even when Mac signing passes. The draft uploader has no publish operation.
+All Desktop platforms receive the same signed Darwin download programs. The collector rejects stale hashes, another team, missing proof or incomplete inventories. Public collection and publication are explicit operations and require the initial data baseline; review-only candidates still use `public_release_ready: false`. A public release's manifest records migration and updater support as not implemented instead of implying that publication provides those features.
 
 ## Checking a delayed submission
 
 Use the **Apple notarization status** workflow on `main` to read existing Apple records without building or uploading another program. Leave `submission_id` empty to list Astral submissions, or supply an existing UUID to query it. It uses the same protected Environment and temporary-keychain cleanup as release signing, and records only public submission metadata. A CI wait timeout is not an Apple rejection; use the recorded Apple status before deciding whether to retry a build.
+
+The release script uses native `notarytool submit --no-wait` to obtain and record a submission UUID before calling `notarytool wait` with a 30-minute timeout. If waiting fails, it queries that same UUID once. Only an `Accepted` result for the matching UUID permits packaging to continue. A still-pending or unavailable result fails the job while retaining the sanitized UUID/status diagnostic; it does not automatically submit another archive. An ended job does not retain a signed archive for resuming a build later.
 
 ## Certificate replacement
 

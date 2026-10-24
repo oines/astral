@@ -2,7 +2,7 @@
 
 The headless Server includes Astral's Web UI and the local Computer. It runs `astral serve` on the VPS. This is separate from the expiring **Connect another computer** command, which enrolls a Computer's Daemon into an existing Server.
 
-This installer is release preparation. It requires a published GitHub Release marked `public_release_ready: true`; unsigned candidates, draft-only artifacts and an empty release list are rejected. Until such a release exists, there is no supported one-command download to install. Do not advertise a candidate workflow as an available release.
+The installer requires a published GitHub Release marked `public_release_ready: true`; unsigned candidates, draft-only artifacts and an empty release list are rejected. Until such a release exists, there is no supported one-command download to install. The initial public data baseline is Host schema 3 / Core format 10. Publication does not imply cross-format migration or one-click Desktop update support.
 
 ## Installation
 

@@ -35,6 +35,7 @@ export async function checkReleaseTools() {
     const writeFormats = async value => writeFile(path.join(temporary, 'input', 'release-formats.json'), JSON.stringify(value))
     await writeFormats(formats)
     const baseArgs = ['candidate', '--input', 'input', '--sha', sourceSHA, '--tag', 'v0.1.0', '--repository', 'oines/astral', '--run-url', 'https://github.com/oines/astral/actions/runs/1', '--ci-run-url', 'https://github.com/oines/astral/actions/runs/2']
+    const publicArgs = ['public', ...baseArgs.slice(1)]
     invoke('release-assets.mjs', [...baseArgs, '--output', 'complete-output'])
     const manifest = JSON.parse(await readFile(path.join(temporary, 'complete-output', 'release-manifest.json'), 'utf8'))
     assert.equal(manifest.public_release_ready, false)
@@ -63,14 +64,17 @@ export async function checkReleaseTools() {
     const missingContents = await readFile(path.join(temporary, 'input', missingName))
     await rm(path.join(temporary, 'input', missingName))
     rejects('release-assets.mjs', [...baseArgs, '--output', 'missing-output'], 'Missing required release artifact')
+    rejects('release-assets.mjs', [...publicArgs, '--output', 'public-missing-output'], 'Missing required release artifact')
     await writeFile(path.join(temporary, 'input', missingName), missingContents)
     await mkdir(path.join(temporary, 'input', 'duplicate'))
     const duplicate = path.join(temporary, 'input', 'duplicate', distributionNames[0])
     await writeFile(duplicate, 'different bytes under the same release name')
     rejects('release-assets.mjs', [...baseArgs, '--output', 'duplicate-output'], 'Different artifact inputs share the name')
+    rejects('release-assets.mjs', [...publicArgs, '--output', 'public-duplicate-output'], 'Different artifact inputs share the name')
     await rm(duplicate)
     await writeFile(path.join(temporary, 'input', 'latest-mac.yml'), 'not a wired production update feed')
     rejects('release-assets.mjs', [...baseArgs, '--output', 'metadata-output'], 'Unexpected candidate input')
+    rejects('release-assets.mjs', [...publicArgs, '--output', 'public-metadata-output'], 'Unexpected release input')
     await rm(path.join(temporary, 'input', 'latest-mac.yml'))
     await writeFormats({ ...formats, source_sha: '2'.repeat(40) })
     rejects('release-assets.mjs', [...baseArgs, '--output', 'wrong-sha-output'], 'metadata does not match')
@@ -81,6 +85,8 @@ export async function checkReleaseTools() {
     await writeFormats(formats)
 
     rejects('release-assets.mjs', [...baseArgs, '--mac-signed', '--output', 'missing-signing-report'], 'Missing required release artifact: mac-signing-report.json')
+    // Public mode has no unsigned fallback, even without an explicit --mac-signed flag.
+    rejects('release-assets.mjs', [...publicArgs, '--output', 'public-missing-signing-report'], 'Missing required release artifact: mac-signing-report.json')
     const macNames = packageNames.filter(name => name.startsWith('astral-darwin-') || name.includes('-mac-'))
     const signedReport = {
       schema_version: 1, version: '0.1.0', source_sha: sourceSHA, team_id: '6N6W6Z6739',
@@ -119,6 +125,56 @@ export async function checkReleaseTools() {
     assert(!signedNotes.includes('<!-- astral-unsigned-candidate:'))
     assert(signedNotes.includes('verified signed and notarized'))
     assert(signedNotes.includes('not implemented; public-release gate remains pending'))
+
+    assert(invoke('release-assets.mjs', [...publicArgs, '--output', 'public-output']).includes('public_release_ready=true'))
+    const publicManifest = JSON.parse(await readFile(path.join(temporary, 'public-output', 'release-manifest.json'), 'utf8'))
+    assert.equal(publicManifest.purpose, 'release')
+    assert.equal(publicManifest.public_release_ready, true)
+    assert.equal(publicManifest.source_sha, sourceSHA)
+    assert.equal(publicManifest.version, '0.1.0')
+    assert.equal(publicManifest.tag, 'v0.1.0')
+    assert.equal(publicManifest.repository, 'oines/astral')
+    assert.equal(publicManifest.candidate_run_url, 'https://github.com/oines/astral/actions/runs/1')
+    assert.equal(publicManifest.ci_run_url, 'https://github.com/oines/astral/actions/runs/2')
+    assert.equal(publicManifest.host_schema, 3)
+    assert.equal(publicManifest.core_format, 10)
+    assert.deepEqual(publicManifest.data_formats, { host: 3, core: 10 })
+    assert.equal(publicManifest.core_module_version, 'fixture')
+    assert.equal(publicManifest.migration_status, 'not-implemented')
+    assert.equal(publicManifest.desktop_updater, 'not-implemented')
+    assert.deepEqual(publicManifest.signing, signedManifest.signing)
+    assert.deepEqual(publicManifest.distribution_names, distributionNames)
+    assert.deepEqual(publicManifest.assets, signedManifest.assets)
+    for (const asset of publicManifest.assets) {
+      assert.equal(await digest(path.join(temporary, 'public-output', asset.name)), asset.sha256)
+      assert.equal((await readFile(path.join(temporary, 'public-output', asset.name))).length, asset.size)
+    }
+    const publicSums = (await readFile(path.join(temporary, 'public-output', 'SHA256SUMS'), 'utf8')).trim().split('\n')
+    assert.equal(publicSums.length, packageNames.length + 4)
+    assert.deepEqual(publicSums.map(line => line.split('  ')[1]).sort(), [...packageNames, macSigningReportName, 'checksums.txt', 'release-manifest.json', 'RELEASE_NOTES.md'].sort())
+    for (const line of publicSums) {
+      const [expected, name] = line.split('  ')
+      assert.equal(await digest(path.join(temporary, 'public-output', name)), expected)
+    }
+    const publicNotes = await readFile(path.join(temporary, 'public-output', 'RELEASE_NOTES.md'), 'utf8')
+    for (const text of ['macOS:', 'Windows:', 'Linux Desktop:', 'Linux VPS:', 'signed and notarized', 'Windows packages are not code-signed', 'Linux packages are not code-signed', 'Manual updates are supported only while the data formats remain the same', 'one-click updates are not implemented', 'Versioned data migrations and their rollback/backup acceptance are not implemented', 'Existing data in those formats can be retained', 'Earlier private data formats are outside this supported baseline', 'Goose migrations', `<!-- astral-release:${sourceSHA} -->`]) assert(publicNotes.includes(text), `Missing public release note: ${text}`)
+    for (const text of ['review-only', 'Draft Release', 'not approved for public distribution', 'public-release gate remains pending', 'Do not publish']) assert(!publicNotes.includes(text), `Draft-only language in public release notes: ${text}`)
+    rejects('release-assets.mjs', [...publicArgs, '--output', 'public-output'], 'must be empty')
+
+    for (const [name, value, message] of [
+      ['wrong-source', { ...formats, source_sha: '2'.repeat(40) }, 'metadata does not match'],
+      ['wrong-version', { ...formats, version: '0.1.1' }, 'metadata does not match'],
+      ['inconsistent-format', { ...formats, data_formats: { host: 4, core: 10 } }, 'metadata does not match'],
+      ['invented-migrations', { ...formats, migration_status: 'implemented' }, 'metadata does not match'],
+      ['changed-host', { ...formats, host_schema: 4, data_formats: { host: 4, core: 10 } }, 'initial host schema 3 / core format 10 baseline'],
+      ['changed-core', { ...formats, core_format: 11, data_formats: { host: 3, core: 11 } }, 'initial host schema 3 / core format 10 baseline'],
+    ]) {
+      await writeFormats(value)
+      rejects('release-assets.mjs', [...publicArgs, '--output', `public-${name}`], message)
+      // Drafts can inspect consistent future formats without claiming public readiness.
+      if (name.startsWith('changed-')) invoke('release-assets.mjs', [...baseArgs, '--mac-signed', '--output', `draft-${name}`])
+    }
+    await writeFormats(formats)
     for (const [name, change, message] of [
       ['wrong-report-sha', report => { report.source_sha = '2'.repeat(40) }, 'metadata does not match'],
       ['wrong-report-version', report => { report.version = '0.1.1' }, 'metadata does not match'],
@@ -145,6 +201,7 @@ export async function checkReleaseTools() {
       change(report)
       await writeSigningReport(report)
       rejects('release-assets.mjs', [...baseArgs, '--mac-signed', '--output', name], message)
+      rejects('release-assets.mjs', [...publicArgs, '--output', `public-${name}`], message)
     }
     await writeSigningReport(signedReport)
     // An invalid API origin proves draft validation completed without making any network request.
@@ -153,6 +210,7 @@ export async function checkReleaseTools() {
       env: { ...process.env, GH_TOKEN: 'fixture-no-network', GITHUB_REPOSITORY: 'oines/astral', GITHUB_API_URL: 'https://fixtures.invalid' },
     })
     for (const directory of ['complete-output', 'signed-output']) assert.throws(() => draftPreflight(directory), error => error.stderr.toString().includes('configured only for github.com'))
+    assert.throws(() => draftPreflight('public-output'), error => error.stderr.toString().includes('public releases and incomplete signing claims are forbidden'))
     await writeFile(path.join(temporary, 'signed-output', 'release-manifest.json'), JSON.stringify({ ...signedManifest, public_release_ready: true }))
     assert.throws(() => draftPreflight('signed-output'), error => error.stderr.toString().includes('public releases and incomplete signing claims are forbidden'))
     await writeFile(path.join(temporary, 'signed-output', 'release-manifest.json'), JSON.stringify({ ...signedManifest, purpose: 'public-release' }))
@@ -161,7 +219,7 @@ export async function checkReleaseTools() {
     rejects('release-version.mjs', ['check'], 'versions differ')
     const afterManifests = await Promise.all(['package.json', 'apps/desktop/package.json'].map(name => readFile(path.join(repositoryRoot, name), 'utf8')))
     assert.deepEqual(afterManifests, realManifests, 'Real workspace manifests must not change')
-    console.log('Release tools: rolling versions, unsigned and Mac signed draft inventories, final-byte signing reports, hashes and rejection fixtures passed. Native installation/updating was not exercised.')
+    console.log('Release tools: rolling versions, unsigned and Mac signed draft/public inventories, initial public format baseline, final-byte signing reports, hashes and rejection fixtures passed. Fixtures do not establish actual CI, Apple acceptance or native installation/updating.')
   } finally {
     await rm(temporary, { recursive: true, force: true })
   }

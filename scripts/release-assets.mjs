@@ -59,7 +59,8 @@ async function walk(directory) {
   return files
 }
 
-export async function collectCandidate({ input, output, sourceSHA, repository, runURL, ciRunURL, tag, macSigned = false }) {
+export async function collectCandidate({ input, output, sourceSHA, repository, runURL, ciRunURL, tag, macSigned = false, publicRelease = false }) {
+  if (publicRelease) macSigned = true
   const version = await readReleaseVersion()
   validateTag(tag, version)
   if (!/^[a-f0-9]{40}$/.test(sourceSHA || '')) throw new Error('A full source commit SHA is required.')
@@ -75,7 +76,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   const inputs = new Map()
   for (const file of await walk(input)) {
     const name = path.basename(file)
-    if (!allowed.has(name)) throw new Error(`Unexpected candidate input ${name}; this review-only candidate pipeline accepts only the expected artifacts.`)
+    if (!allowed.has(name)) throw new Error(`Unexpected ${publicRelease ? 'release' : 'candidate'} input ${name}; only the expected artifacts are accepted.`)
     // Recalculate the build's pre-sign checksum manifest after all artifact processing.
     if (name === 'checksums.txt') continue
     if (inputs.has(name) && await digest(inputs.get(name)) !== await digest(file)) throw new Error(`Different artifact inputs share the name ${name}.`)
@@ -90,6 +91,9 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
       !Number.isSafeInteger(formats.host_schema) || formats.host_schema < 1 || !Number.isSafeInteger(formats.core_format) || formats.core_format < 1 ||
       formats.data_formats?.host !== formats.host_schema || formats.data_formats?.core !== formats.core_format ||
       formats.migration_status !== 'not-implemented' || typeof formats.core_module_version !== 'string') throw new Error('Release format metadata does not match the candidate source/version contract.')
+  // The first public line starts from this verified format baseline. Keep later
+  // format changes blocked until their versioned migrations are implemented.
+  if (publicRelease && (formats.host_schema !== 3 || formats.core_format !== 10)) throw new Error('Public releases require the initial host schema 3 / core format 10 baseline until versioned migrations are implemented.')
   if (macSigned) await validateMacSigningReport(JSON.parse(await readFile(inputs.get(macSigningReportName), 'utf8')), { version, sourceSHA, files: inputs })
   for (const name of required) await copyFile(inputs.get(name), path.join(output, name))
   const records = []
@@ -98,8 +102,8 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   records.push({ name: 'checksums.txt', size: (await stat(path.join(output, 'checksums.txt'))).size, sha256: await digest(path.join(output, 'checksums.txt')) })
   const manifest = {
     schema_version: 1,
-    purpose: macSigned ? 'mac-signed-candidate' : 'unsigned-candidate',
-    public_release_ready: false,
+    purpose: publicRelease ? 'release' : macSigned ? 'mac-signed-candidate' : 'unsigned-candidate',
+    public_release_ready: publicRelease,
     version,
     tag,
     source_sha: sourceSHA,
@@ -119,7 +123,26 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   await writeFile(path.join(output, 'release-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
   const label = macSigned ? 'Mac signed candidate' : 'unsigned candidate'
   const macStatus = macSigned ? 'verified signed and notarized; final-byte evidence is in mac-signing-report.json' : 'not performed'
-  const body = `# Astral ${version} — ${label}\n\nThis is a review-only Draft Release. It is not approved for public distribution.\n\n- Source: ${sourceSHA}\n- Required CI: ${ciRunURL}\n- Candidate packaging: ${runURL}\n- macOS signing and notarization: ${macStatus}. Windows and Linux signing: not performed.\n- Desktop one-click updating and production update metadata: not implemented; public-release gate remains pending.\n- Versioned data migrations and their rollback/backup acceptance: not implemented; public-release gate remains pending.\n- Only the runner's native architecture is exercised by ordinary CI; producing an architecture's installer does not establish native execution.\n\nThe six unified Server/Web UI/CLI/Daemon binaries and three-platform Desktop packages are collected here for review. Final checksums describe these exact candidate bytes. They do not establish publisher authenticity.\n\nDo not publish this draft or point the landing page, VPS installer, or updater at it. A public release requires the separate release gates described in docs/releasing.md.\n\n<!-- astral-${manifest.purpose}:${sourceSHA} -->\n`
+  const body = publicRelease ? `# Astral ${version}
+
+- macOS: use the DMG matching your Mac's architecture, then drag Astral to Applications. The Mac packages and Darwin binaries are signed and notarized; final-byte evidence is in mac-signing-report.json.
+- Windows: use the EXE installer matching your computer's architecture for a current-user installation. Windows packages are not code-signed.
+- Linux Desktop: use the DEB package or AppImage matching your computer's architecture. Linux packages are not code-signed.
+- Linux VPS: use the attached install-server.sh for a current-user headless Server and systemd user service; run it with --help for installation options.
+
+Manual updates are supported only while the data formats remain the same. Quit Desktop before installing the matching new package. For an installer-managed headless Server, rerun install-server.sh with the same installation root and configuration; it rejects data-format changes before replacing the old service. Desktop and remote Daemon one-click updates are not implemented, and there is no production automatic-update feed.
+
+This public release line starts with Host schema 3 and Core format 10. Existing data in those formats can be retained. Versioned data migrations and their rollback/backup acceptance are not implemented. Earlier private data formats are outside this supported baseline; use a separate empty data root for those formats. A future data-format change requires Goose migrations before publication.
+
+- Source: ${sourceSHA}
+- Required CI: ${ciRunURL}
+- Release packaging: ${runURL}
+- Only the runner's native architecture is exercised by ordinary CI; producing an architecture's installer does not establish native execution.
+
+The six unified Server/Web UI/CLI/Daemon binaries and three-platform Desktop packages are included. checksums.txt covers the six binaries; SHA256SUMS covers all attached files except itself. Checksums describe exact release bytes and do not independently establish publisher authenticity.
+
+<!-- astral-release:${sourceSHA} -->
+` : `# Astral ${version} — ${label}\n\nThis is a review-only Draft Release. It is not approved for public distribution.\n\n- Source: ${sourceSHA}\n- Required CI: ${ciRunURL}\n- Candidate packaging: ${runURL}\n- macOS signing and notarization: ${macStatus}. Windows and Linux signing: not performed.\n- Desktop one-click updating and production update metadata: not implemented; public-release gate remains pending.\n- Versioned data migrations and their rollback/backup acceptance: not implemented; public-release gate remains pending.\n- Only the runner's native architecture is exercised by ordinary CI; producing an architecture's installer does not establish native execution.\n\nThe six unified Server/Web UI/CLI/Daemon binaries and three-platform Desktop packages are collected here for review. Final checksums describe these exact candidate bytes. They do not establish publisher authenticity.\n\nDo not publish this draft or point the landing page, VPS installer, or updater at it. A public release requires the separate release gates described in docs/releasing.md.\n\n<!-- astral-${manifest.purpose}:${sourceSHA} -->\n`
   await writeFile(path.join(output, 'RELEASE_NOTES.md'), body)
   const finalFiles = (await readdir(output)).sort()
   const sums = []
@@ -131,9 +154,9 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
 async function main() {
   const [command, ...args] = process.argv.slice(2)
   const option = name => { const index = args.indexOf(name); return index < 0 ? undefined : args[index + 1] }
-  if (command !== 'candidate' || !option('--input') || !option('--output')) throw new Error('Usage: release-assets.mjs candidate --input DIR --output EMPTY_DIR --sha COMMIT --repository OWNER/REPO --tag vMAJOR.MINOR.PATCH --run-url URL --ci-run-url URL [--mac-signed]')
-  const manifest = await collectCandidate({ input: option('--input'), output: option('--output'), sourceSHA: option('--sha'), repository: option('--repository'), tag: option('--tag'), runURL: option('--run-url'), ciRunURL: option('--ci-run-url'), macSigned: args.includes('--mac-signed') })
-  console.log(`Collected ${manifest.assets.length} assets for ${manifest.tag}; public_release_ready=false.`)
+  if (!['candidate', 'public'].includes(command) || !option('--input') || !option('--output')) throw new Error('Usage: release-assets.mjs <candidate|public> --input DIR --output EMPTY_DIR --sha COMMIT --repository OWNER/REPO --tag vMAJOR.MINOR.PATCH --run-url URL --ci-run-url URL [--mac-signed (candidate only; public always requires Mac signing)]')
+  const manifest = await collectCandidate({ input: option('--input'), output: option('--output'), sourceSHA: option('--sha'), repository: option('--repository'), tag: option('--tag'), runURL: option('--run-url'), ciRunURL: option('--ci-run-url'), macSigned: args.includes('--mac-signed'), publicRelease: command === 'public' })
+  console.log(`Collected ${manifest.assets.length} assets for ${manifest.tag}; public_release_ready=${manifest.public_release_ready}.`)
 }
 
 if (await isDirectInvocation(import.meta.url)) {
