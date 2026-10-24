@@ -51,6 +51,10 @@ The signing and packaging order is:
 
 All Desktop platforms receive the same signed Darwin download programs. The collector rejects stale hashes, another team, missing proof or incomplete inventories. Missing migration/updater acceptance keeps `public_release_ready: false` even when Mac signing passes. The draft uploader has no publish operation.
 
+## Checking a delayed submission
+
+Use the **Apple notarization status** workflow on `main` to read existing Apple records without building or uploading another program. Leave `submission_id` empty to list Astral submissions, or supply an existing UUID to query it. It uses the same protected Environment and temporary-keychain cleanup as release signing, and records only public submission metadata. A CI wait timeout is not an Apple rejection; use the recorded Apple status before deciding whether to retry a build.
+
 ## Certificate replacement
 
 Before the current certificate expires, obtain another Developer ID Application certificate in the same team and rerun the P12 setup. Keep developer membership active to request replacements. Previously signed and notarized Apps with secure timestamps continue working after normal certificate expiration; future builds use the replacement certificate. See [Apple's expiration guidance](https://developer.apple.com/help/account/certificates/create-developer-id-certificates).
