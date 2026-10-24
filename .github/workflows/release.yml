@@ -1,4 +1,4 @@
-name: Signed Mac release candidate draft
+name: Release
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
       - 'v[0-9]*'
 
 # Mac signing is restricted to the protected mac-signing environment and trusted
-# main history. Migration/updater gates still prevent public release publication.
+# main history. Tagged runs publish only after final package and asset checks.
 permissions:
   contents: read
 
@@ -242,8 +242,52 @@ jobs:
       - name: Restore executable permissions after artifact download
         if: runner.os != 'Windows'
         run: chmod +x dist/bin/astral-*
-      - name: Package unsigned Desktop candidates without publishing
+      - name: Package Windows and Linux Desktop files without publishing
         run: pnpm --filter @astral/desktop ${{ matrix.package }} --publish never
+      - name: Verify the final Windows ZIP starts and cleans up its processes
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          $astralArch = node -p 'process.arch'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $astralArchive = Join-Path $env:GITHUB_WORKSPACE "apps/desktop/release/Astral-${env:RELEASE_VERSION}-win-$astralArch.zip"
+          $astralExtracted = Join-Path $env:RUNNER_TEMP 'astral-release-zip'
+          Expand-Archive -LiteralPath $astralArchive -DestinationPath $astralExtracted
+          $env:ASTRAL_PACKAGED_APP_EXECUTABLE = Join-Path $astralExtracted 'Astral.exe'
+          pnpm test:packaged-desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install the final native Linux DEB
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          astral_deb_arch=$(dpkg --print-architecture)
+          for astral_deb in apps/desktop/release/*.deb; do
+            if [ "$(dpkg-deb --field "$astral_deb" Architecture)" = "$astral_deb_arch" ]; then
+              sudo apt-get update
+              sudo apt-get install --yes "./$astral_deb"
+              exit 0
+            fi
+          done
+          echo "::error::No DEB package matches native architecture $astral_deb_arch."
+          exit 1
+      - name: Verify the installed Linux DEB starts and quits
+        if: runner.os == 'Linux'
+        env:
+          ASTRAL_PACKAGED_APP_EXECUTABLE: /opt/Astral/astral
+        run: xvfb-run -a pnpm test:packaged-desktop
+      - name: Prepare the Linux user manager for final headless acceptance
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo systemctl start user@$(id -u).service
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+      - name: Verify final headless programs with real user-service install and recovery
+        if: runner.os == 'Linux'
+        run: node scripts/check-headless-install.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: candidate-desktop-${{ matrix.name }}
@@ -256,13 +300,19 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  draft:
+  publish:
     if: needs.validate.outputs.tag != ''
     needs: [validate, mac, desktop]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
+    # Different tags can build concurrently, but Latest is selected while this
+    # final publication job is serialized and after comparing numeric versions.
+    concurrency:
+      group: astral-release-publication
+      cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -275,23 +325,106 @@ jobs:
         with:
           pattern: candidate-*
           path: candidate-inputs/
-      - name: Assemble complete candidate and final-byte checksums
+      - name: Assemble the complete public release and final-byte checksums
         env:
           SOURCE_SHA: ${{ needs.validate.outputs.sha }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           CI_URL: ${{ needs.validate.outputs.ci_url }}
         run: >-
-          node scripts/release-assets.mjs candidate --mac-signed
+          node scripts/release-assets.mjs public --mac-signed
           --input candidate-inputs --output candidate-release
           --sha "$SOURCE_SHA" --tag "$RELEASE_TAG"
           --repository "$GITHUB_REPOSITORY"
           --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           --ci-run-url "$CI_URL"
-      - name: Create or resume Mac-signed candidate Draft Release only
+      - name: Upload and verify every asset before publishing
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/release-draft.mjs candidate-release
-      - name: Record candidate limitation
+        run: node scripts/release-draft.mjs --public candidate-release
+      - name: Record release capabilities
         run: |
-          echo '### Review-only Mac-signed candidate' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Mac programs and Desktop DMG/ZIP passed Developer ID signing, Apple notarization and package validation. Windows/Linux packages are unsigned. Versioned migrations and the Desktop updater remain incomplete; this release must remain a draft and cannot feed the landing page/VPS installer.' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Published Astral release' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Mac programs and Desktop DMG/ZIP passed Developer ID signing, Apple notarization and package validation. The final native Windows ZIP passed startup and crash cleanup; the installed native Linux DEB passed startup and normal quit. Windows/Linux packages are unsigned. The initial supported data baseline is Host 3 / Core 10. Manual same-format updates are supported; one-click Desktop updates and cross-format migrations are not implemented.' >> "$GITHUB_STEP_SUMMARY"
+
+  published-install:
+    name: Verify public VPS installation
+    if: needs.validate.outputs.tag != ''
+    needs: [validate, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Prepare a disposable user manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo systemctl start user@$(id -u).service
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+          echo "XDG_CONFIG_HOME=$HOME/.config" >> "$GITHUB_ENV"
+          test ! -e "$HOME/.config/systemd/user/astral-server.service"
+      - name: Download the published installer and verify its checksum
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          astral_asset_url="https://github.com/oines/astral/releases/download/$RELEASE_TAG"
+          curl -fsSL --proto '=https' --proto-redir '=https' "$astral_asset_url/SHA256SUMS" -o SHA256SUMS
+          curl -fsSL --proto '=https' --proto-redir '=https' "$astral_asset_url/install-server.sh" -o install-server.sh
+          python3 - <<'PY'
+          import hashlib, pathlib, re
+          lines = pathlib.Path('SHA256SUMS').read_text().splitlines()
+          matches = [line for line in lines if re.fullmatch(r'[a-f0-9]{64}  install-server\.sh', line)]
+          if len(matches) != 1 or hashlib.sha256(pathlib.Path('install-server.sh').read_bytes()).hexdigest() != matches[0].split()[0]:
+              raise SystemExit('Published installer checksum does not match SHA256SUMS')
+          PY
+      - name: Install the actual published distribution as a user service
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          bash "$RUNNER_TEMP/install-server.sh" --tag "$RELEASE_TAG" --root "$RUNNER_TEMP/astral-public-install"
+          systemctl --user is-active --quiet astral-server.service
+          python3 - <<'PY'
+          import json, os, pathlib, time, urllib.error, urllib.request
+          data = pathlib.Path(os.environ['RUNNER_TEMP']) / 'astral-public-install/data/server'
+          with urllib.request.urlopen('http://127.0.0.1:4545/health', timeout=10) as response:
+              health = json.load(response)
+          if health.get('status') != 'ok' or health.get('version') != os.environ['RELEASE_VERSION']:
+              raise SystemExit('Published Server health/version check failed')
+          token = (data / 'owner.token').read_text().strip()
+          request = urllib.request.Request('http://127.0.0.1:4545/api/v1/bootstrap', headers={'Authorization': 'Bearer ' + token})
+          deadline = time.monotonic() + 45
+          while True:
+              try:
+                  with urllib.request.urlopen(request, timeout=3) as response:
+                      bootstrap = json.load(response)
+                  if any(computer.get('local') and computer.get('online') for computer in bootstrap.get('computers', [])):
+                      break
+              except (urllib.error.URLError, TimeoutError):
+                  pass
+              if time.monotonic() >= deadline:
+                  raise SystemExit('Published Server did not connect its local Computer')
+              time.sleep(1)
+          print('Public download, user-service startup, authenticated Web API and local Computer checks passed.')
+          PY
+      - name: Remove only this test's user service
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          astral_unit="$HOME/.config/systemd/user/astral-server.service"
+          if [ -e "$astral_unit" ]; then
+            astral_install_root=$(realpath -m "$RUNNER_TEMP/astral-public-install")
+            if ! grep -Fxq "# Astral Server installer root: $astral_install_root" "$astral_unit"; then
+              echo '::error::The service belongs to another installation; cleanup stopped.'
+              exit 1
+            fi
+            systemctl --user stop astral-server.service
+            systemctl --user disable astral-server.service
+            rm "$astral_unit"
+            systemctl --user daemon-reload
+          fi

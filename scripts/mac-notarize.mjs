@@ -12,6 +12,7 @@ const execute = promisify(execFile)
 const releaseDirectory = path.join(repositoryRoot, 'apps/desktop/release')
 const reportDirectory = path.join(releaseDirectory, 'notarization')
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
+const submissionStatuses = new Set(['Accepted', 'In Progress', 'Invalid', 'Rejected'])
 
 async function command(program, args, options = {}) {
   if (process.platform !== 'darwin' || process.env.CI !== 'true') throw new Error('Notarization acceptance runs only on a disposable macOS CI runner.')
@@ -30,31 +31,64 @@ function context() {
 }
 
 export function acceptedSubmission(value) {
-  if (!uuid.test(value?.id || '') || value.status !== 'Accepted') throw new Error(`Apple notarization was not Accepted (${value?.status || 'missing status'}).`)
+  if (!uuid.test(value?.id || '') || value.status !== 'Accepted') throw new Error(`Apple notarization was not Accepted (${submissionStatuses.has(value?.status) ? value.status : 'missing or unknown status'}).`)
   return { id: value.id, status: 'Accepted' }
 }
 
-async function submit(file, configuration) {
-  const auth = ['--keychain-profile', configuration.profile, '--keychain', configuration.keychain]
-  let result
-  try {
-    result = await command('xcrun', ['notarytool', 'submit', file, ...auth, '--wait', '--timeout', '30m', '--output-format', 'json'], { timeout: 1_860_000 })
-  } catch (error) {
-    // notarytool can return structured results even when waiting fails.
-    result = { stdout: error.stdout || '{}' }
-  }
-  let response
-  try { response = JSON.parse(result.stdout) } catch { throw new Error('Apple notarization did not return a valid JSON result; no artifacts are approved.') }
+function submissionResponse(result, expectedID, requireStatus = false) {
+  const response = JSON.parse(result?.stdout)
+  if (typeof response?.id !== 'string' || !uuid.test(response.id)) throw new Error('Invalid Apple submission ID.')
+  if (expectedID && response.id.toLowerCase() !== expectedID) throw new Error('Unexpected Apple submission ID.')
+  if (requireStatus && !submissionStatuses.has(response.status)) throw new Error('Unknown Apple submission status.')
+  return response
+}
+
+async function writeSubmissionDiagnostic(value) {
   await mkdir(reportDirectory, { recursive: true })
-  if (uuid.test(response.id || '')) {
-    console.log(`Apple notarization ${response.id}: ${typeof response.status === 'string' ? response.status : 'unknown status'}`)
-    await writeFile(path.join(reportDirectory, `${response.id}.json`), `${JSON.stringify(response, null, 2)}\n`)
-    if (response.status !== 'Accepted') {
-      const logFile = path.join(reportDirectory, `${response.id}-log.json`)
-      await command('xcrun', ['notarytool', 'log', response.id, ...auth, logFile]).catch(() => undefined)
-    }
+  await writeFile(path.join(reportDirectory, `${value.id}.json`), `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
+}
+
+export async function submit(file, configuration, { run = command, record = writeSubmissionDiagnostic, log = console.log } = {}) {
+  const auth = ['--keychain-profile', configuration.profile, '--keychain', configuration.keychain]
+  let uploaded
+  try {
+    uploaded = await run('xcrun', ['notarytool', 'submit', file, ...auth, '--no-wait', '--output-format', 'json'], { timeout: 600_000 })
+  } catch (error) {
+    // Preserve a valid ID if notarytool returned one before its process failed.
+    uploaded = { stdout: error?.stdout }
   }
-  return acceptedSubmission(response)
+  let uploadResponse
+  try { uploadResponse = submissionResponse(uploaded) }
+  catch { throw new Error('Apple notarization upload did not return a valid submission ID; no artifacts are approved.') }
+  const id = uploadResponse.id.toLowerCase()
+  const diagnostic = { id, name: path.basename(file) }
+  const save = async response => {
+    if (submissionStatuses.has(response.status)) diagnostic.status = response.status
+    if (typeof response.createdDate === 'string' && response.createdDate.length < 128 && Number.isFinite(Date.parse(response.createdDate))) {
+      diagnostic.createdDate = new Date(response.createdDate).toISOString()
+    }
+    // Never persist raw notarytool output, paths, authentication or child errors.
+    try { await record({ ...diagnostic }) }
+    catch { throw new Error('Could not save the Apple submission diagnostic; no artifacts are approved.') }
+    log(`Apple notarization ${id}: ${diagnostic.status || 'submitted'}`)
+  }
+  await save(uploadResponse)
+
+  let response
+  try {
+    const result = await run('xcrun', ['notarytool', 'wait', id, ...auth, '--timeout', '30m', '--output-format', 'json'], { timeout: 1_860_000 })
+    response = submissionResponse(result, id, true)
+  } catch { /* Query this exact submission once after an interrupted or unusable wait. */ }
+  if (!response || response.status === 'In Progress') {
+    try {
+      const result = await run('xcrun', ['notarytool', 'info', id, ...auth, '--output-format', 'json'])
+      response = submissionResponse(result, id, true)
+    } catch { /* The saved upload ID remains available for a later read-only query. */ }
+  }
+  if (!response) throw new Error(`Apple notarization ${id} status could not be confirmed after waiting; the submission ID was saved and no artifacts are approved.`)
+  await save(response)
+  if (response.status === 'In Progress') throw new Error(`Apple notarization ${id} is still In Progress after the wait timed out or was interrupted; this is not an Apple rejection. No artifacts are approved.`)
+  return acceptedSubmission({ id, status: response.status })
 }
 
 export async function staple(target, { run = command, pause = delay } = {}) {
@@ -179,7 +213,7 @@ async function finalize() {
   ])
   await validateMacSigningReport(report, { version, sourceSHA: configuration.sourceSHA, files })
   await writeFile(path.join(releaseDirectory, 'mac-signing-report.json'), `${JSON.stringify(report, null, 2)}\n`)
-  console.log('Mac signatures, Apple notarization, stapling, final DMG/ZIP checks and native App startup/shutdown passed. Public-release migration/updater gates remain incomplete.')
+  console.log('Mac signatures, Apple notarization, stapling, final DMG/ZIP checks and native App startup/shutdown passed.')
 }
 
 async function main() {
