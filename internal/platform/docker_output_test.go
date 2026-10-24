@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDockerOutputPreservesProcessFailureAndDiagnostic(t *testing.T) {
@@ -32,5 +33,22 @@ func TestDockerOutputPreservesMissingExecutable(t *testing.T) {
 	_, err := dockerOutput(context.Background(), "info")
 	if !errors.Is(err, exec.ErrNotFound) {
 		t.Fatalf("missing Docker executable lost its cause: %v", err)
+	}
+}
+
+func TestHostInfoBoundsSlowDockerWithoutExhaustingBootstrap(t *testing.T) {
+	_, _, _, _ = containerUpdateFixture(t, "slow-probe")
+	t.Setenv("DOCKER_HOST", "unix:///astral-test.sock")
+	t.Setenv("DOCKER_CONTEXT", "")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	started := time.Now()
+	server := &Server{}
+	info := server.HostInfo(ctx)
+	if info.ContainerAvailable || !strings.Contains(info.ContainerError, context.DeadlineExceeded.Error()) {
+		t.Fatalf("slow Docker did not produce an unavailable hint: %+v", info)
+	}
+	if ctx.Err() != nil || time.Since(started) > 8*time.Second {
+		t.Fatalf("optional Docker availability exhausted the bootstrap request: %v", ctx.Err())
 	}
 }
