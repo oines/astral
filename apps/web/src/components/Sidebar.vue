@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Plus, Search, Settings2, CircleAlert, FolderOpen, Pin } from '@astral/icons'
+import { Plus, Search, Settings2, FolderOpen, Pin } from '@astral/icons'
 import { Button, Modal, Select } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { errorText } from '../lib/api'
@@ -23,10 +23,11 @@ const title = ref('')
 const renameError = ref('')
 const pendingID = ref('')
 const actionError = ref('')
+function isActive(session: Session) { return ['running', 'stopping', 'compacting'].includes(app.statuses[session.id]?.status ?? '') }
 const groups = computed(() => [
-  { title: 'now', items: filtered.value.filter(s => app.statuses[s.id] && app.statuses[s.id]?.status !== 'idle') },
-  { title: 'pinned', items: filtered.value.filter(s => s.pinned && (!app.statuses[s.id] || app.statuses[s.id]?.status === 'idle')) },
-  { title: 'recent', items: filtered.value.filter(s => !s.pinned && (!app.statuses[s.id] || app.statuses[s.id]?.status === 'idle')) },
+  { title: 'now', items: filtered.value.filter(isActive) },
+  { title: 'pinned', items: filtered.value.filter(s => s.pinned && !isActive(s)) },
+  { title: 'recent', items: filtered.value.filter(s => !s.pinned && !isActive(s)) },
 ])
 function agentName(id: string) { return app.agents.find(a => a.id === id)?.name || t('missing') }
 function navigate() { if (window.innerWidth < 760) app.sidebar = false }
@@ -132,10 +133,6 @@ async function presentation(session: Session, patch: { title?: string; pinned?: 
               v-if="app.statuses[s.id]?.status === 'running'"
               class="running-dot"
               :aria-label="t('running')"
-            /><CircleAlert
-              v-else-if="app.statuses[s.id]?.status === 'needs_attention'"
-              class="text-danger"
-              :aria-label="t('needs_attention')"
             /><FolderOpen v-else-if="s.archived" /><Pin v-else-if="s.pinned" />
           </RouterLink>
           <SessionMenu

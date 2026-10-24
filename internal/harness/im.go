@@ -147,19 +147,3 @@ func messageSendResult(receipts []domain.Outbox, err error) core.ToolExecution {
 	}
 	return core.ToolExecution{Result: &core.ToolResult{Content: core.Text(string(encode(result))), Outcome: outcome, IsError: err != nil}}
 }
-
-func (r *runtime) finishMessageCalls(ctx context.Context) error {
-	session := r.core.Load()
-	if snapshot := session.Snapshot(); snapshot.Running || snapshot.Maintenance {
-		return nil
-	}
-	for _, record := range session.UnresolvedTools() {
-		if record.Invocation.Call.Name == "send_message" {
-			result := core.ToolExecution{Result: &core.ToolResult{Content: core.Text(`{"sent":null,"error":"message send attempt was interrupted"}`), Outcome: core.OutcomeFailed, IsError: true}}
-			if err := session.ResolveTool(ctx, record.Invocation.ExecutionID, result); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}

@@ -970,17 +970,6 @@
         ],
         "type": "object"
       },
-      "astral_core_ToolExecution": {
-        "properties": {
-          "end_run": {
-            "$ref": "#/components/schemas/astral_core_RunEnd"
-          },
-          "result": {
-            "$ref": "#/components/schemas/astral_core_ToolResult"
-          }
-        },
-        "type": "object"
-      },
       "astral_core_ToolProgress": {
         "properties": {
           "details": {},
@@ -3563,17 +3552,6 @@
           "protocol",
           "dialect",
           "base_url"
-        ],
-        "type": "object"
-      },
-      "astral_internal_httpapi_Resolution": {
-        "properties": {
-          "execution": {
-            "$ref": "#/components/schemas/astral_core_ToolExecution"
-          }
-        },
-        "required": [
-          "execution"
         ],
         "type": "object"
       },
@@ -8863,72 +8841,6 @@
             }
           }
         ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "owner": []
-          },
-          {
-            "ownerCookie": []
-          }
-        ],
-        "tags": [
-          "Sessions"
-        ]
-      }
-    },
-    "/api/v1/sessions/{id}/tools/{execution}/resolve": {
-      "post": {
-        "operationId": "resolveTool",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "execution",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_httpapi_Resolution"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {

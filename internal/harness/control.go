@@ -187,7 +187,7 @@ func (r *runtime) continueLocked(ctx context.Context) error {
 	if snapshot := r.core.Load().Snapshot(); snapshot.Running || snapshot.Maintenance {
 		return core.ErrBusy
 	}
-	if err := r.finishMessageCalls(ctx); err != nil {
+	if err := r.finishInterruptedTools(ctx); err != nil {
 		return err
 	}
 	if err := r.syncSelection(ctx); err != nil {
@@ -250,20 +250,6 @@ func (s *Service) ClearPending(ctx context.Context, id, kind string) error {
 	default:
 		return domain.Invalid("unknown pending-input kind")
 	}
-	s.notify(id)
-	return err
-}
-func (s *Service) Resolve(ctx context.Context, id, executionID string, execution core.ToolExecution) error {
-	r, err := s.open(ctx, id)
-	if err != nil {
-		return err
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.core.Load().Snapshot().Running || r.core.Load().Snapshot().Maintenance {
-		return core.ErrBusy
-	}
-	err = r.core.Load().ResolveTool(ctx, executionID, execution)
 	s.notify(id)
 	return err
 }

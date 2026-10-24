@@ -51,7 +51,7 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := r.finishMessageCalls(ctx); err != nil {
+	if err := r.finishInterruptedTools(ctx); err != nil {
 		return View{}, err
 	}
 	snapshot := r.core.Load().Snapshot()

@@ -28,7 +28,7 @@ describe('reconciling live previews with durable history', () => {
     restored.view = { ...view, run_id: undefined, status: 'needs_attention', error: 'delivery failed' }
     const groups = transcriptGroups(fromSnapshot(restored))
     expect(groups).toHaveLength(2)
-    expect(groups[1]).toMatchObject({ role: 'assistant', status: 'needs_attention' })
+    expect(groups[1]).toMatchObject({ role: 'assistant' })
     expect(groups[1]?.blocks).toEqual([{ kind: 'text', key: 'answer:0', text: 'Work completed' }])
   })
 

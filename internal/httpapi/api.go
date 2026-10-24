@@ -108,9 +108,6 @@ type Fork struct {
 type Approval struct {
 	Decision core.ApprovalDecision `json:"decision"`
 }
-type Resolution struct {
-	Execution core.ToolExecution `json:"execution"`
-}
 type EnrollmentInput struct {
 	Container bool   `json:"container"`
 	ServerURL string `json:"server_url,omitempty"`
@@ -635,9 +632,6 @@ func (a *API) sessionRoutes() {
 	})
 	route[Fork, domain.Session](a, "POST", "/sessions/{id}/fork", "forkSession", "Sessions", func(r *http.Request, input Fork) (domain.Session, error) {
 		return h.Fork(r.Context(), r.PathValue("id"), input.EntryID, input.Title, input.ID)
-	})
-	route[Resolution, httpcontract.OK](a, "POST", "/sessions/{id}/tools/{execution}/resolve", "resolveTool", "Sessions", func(r *http.Request, input Resolution) (httpcontract.OK, error) {
-		return httpcontract.OK{OK: true}, h.Resolve(r.Context(), r.PathValue("id"), r.PathValue("execution"), input.Execution)
 	})
 	route[Approval, httpcontract.OK](a, "POST", "/sessions/{id}/approvals/{approval}", "decideApproval", "Sessions", func(r *http.Request, input Approval) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.DecideApproval(r.Context(), r.PathValue("id"), r.PathValue("approval"), input.Decision)

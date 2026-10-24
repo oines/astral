@@ -194,11 +194,10 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .activity-details { margin-top: 4px; padding: 0 0 2px 12px; display: flex; flex-direction: column; gap: 4px; }
 .tool-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-call-detail { min-width: 0; margin: 4px 0 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
-.tool-warning { width: 13px; height: 13px; color: var(--danger); }
 .tool-command { margin: 0; font-size: 12px; line-height: 1.65; color: var(--muted); }
 .tool-output { min-width: 0; }
 .tool-plain-output { margin: 0; max-height: 300px; overflow: auto; line-height: 1.65; }
-.tool-exit { display: block; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 11px; color: var(--danger); padding: 4px 0; }
+.tool-exit { display: block; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 11px; color: var(--muted); padding: 4px 0; }
 .tool-sources { display: flex; flex-direction: column; gap: 12px; }
 .tool-sources a { color: var(--ink); }
 .tool-sources p { color: var(--muted); font-size: 12px; line-height: 1.6; }

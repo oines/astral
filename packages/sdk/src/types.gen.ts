@@ -328,11 +328,6 @@ export type AstralCoreToolDefinition = {
     version?: string;
 };
 
-export type AstralCoreToolExecution = {
-    end_run?: AstralCoreRunEnd;
-    result?: AstralCoreToolResult;
-};
-
 export type AstralCoreToolProgress = {
     details?: unknown;
     text?: string;
@@ -1104,10 +1099,6 @@ export type AstralInternalHttpapiProviderInput = {
     replay_revision?: number;
     revision: number;
     updated_at: string;
-};
-
-export type AstralInternalHttpapiResolution = {
-    execution: AstralCoreToolExecution;
 };
 
 export type AstralInternalHttpapiSearchInput = {
@@ -3658,34 +3649,6 @@ export type StopSessionResponses = {
 };
 
 export type StopSessionResponse = StopSessionResponses[keyof StopSessionResponses];
-
-export type ResolveToolData = {
-    body: AstralInternalHttpapiResolution;
-    path: {
-        id: string;
-        execution: string;
-    };
-    query?: never;
-    url: '/api/v1/sessions/{id}/tools/{execution}/resolve';
-};
-
-export type ResolveToolErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type ResolveToolError = ResolveToolErrors[keyof ResolveToolErrors];
-
-export type ResolveToolResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalHttpcontractOk;
-};
-
-export type ResolveToolResponse = ResolveToolResponses[keyof ResolveToolResponses];
 
 export type StorageInfoData = {
     body?: never;

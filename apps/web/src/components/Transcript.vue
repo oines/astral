@@ -105,7 +105,6 @@ function images(entry: Entry) { return (entry.message?.content ?? []).filter(p =
             <p
               v-if="group.status && !group.active"
               class="run-status"
-              :class="{ 'text-danger': group.status === 'needs_attention' }"
               role="status"
             >
               {{ statusText(group) }}

@@ -100,7 +100,7 @@ watch(() => [route.fullPath, props.agentID, props.platform], () => {
 
 function connectionState(value: AstralInternalHttpapiConnectionView) {
   if (!value.enabled) return 'disabled'
-  if (value.status.error) return 'needs_attention'
+  if (value.status.error) return 'offline'
   return ['polling', 'connected'].includes(value.status.state) ? 'connectionReady' : 'connecting'
 }
 function accountIdentity(value: Connection) { return value.username ? (value.platform === 'telegram' ? '@' : '') + value.username : adapterLabel(value.adapter, locale.value) }
@@ -313,7 +313,6 @@ async function removeConnection() {
         >
           <span class="resource-symbol"><ChannelIcon :platform="item.platform" /></span><span><strong>{{ item.name }}</strong><small>{{ accountIdentity(item) }}</small></span><span
             class="settings-inline-status"
-            :class="{ 'danger-text': connectionState(item) === 'needs_attention' }"
           >{{ t(connectionState(item)) }}</span><ChevronRight />
         </RouterLink>
       </div>
@@ -342,7 +341,6 @@ async function removeConnection() {
           <h1>{{ account.name }}</h1><p>{{ accountIdentity(account) }}</p>
         </div><span
           class="settings-inline-status"
-          :class="{ 'danger-text': connectionState(account) === 'needs_attention' }"
         >{{ t(connectionState(account)) }}</span>
       </div>
       <SettingsSection :title="t('accountInfo')">
