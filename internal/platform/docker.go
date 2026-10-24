@@ -62,7 +62,13 @@ func dockerOutput(ctx context.Context, args ...string) ([]byte, error) {
 		if len(text) > 1500 {
 			text = text[len(text)-1500:]
 		}
-		return nil, fmt.Errorf("docker: %s", text)
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		if text == "" {
+			return nil, fmt.Errorf("docker %s: %w", args[0], err)
+		}
+		return nil, fmt.Errorf("docker %s: %w: %s", args[0], err, text)
 	}
 	return raw, nil
 }
@@ -83,7 +89,9 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 		}
 		return DockerInfo{}, domain.Offline(message)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	// Context inspection and info both start the Docker CLI. Allow cold starts
+	// and a busy local runtime without treating it as an unavailable engine.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	var raw []byte
 	var err error
