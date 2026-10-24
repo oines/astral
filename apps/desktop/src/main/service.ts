@@ -10,6 +10,7 @@ export class LocalService {
   private output = ''
   private stopping = false
   private temporary = ''
+  private closed?: Promise<void>
   onUnexpectedExit?: (detail: string) => void
 
   async start(binary: string, root: string, distribution: string): Promise<string> {
@@ -21,6 +22,7 @@ export class LocalService {
     if (process.env.ASTRAL_TLS_CERT) args.push('--tls-cert', process.env.ASTRAL_TLS_CERT)
     if (process.env.ASTRAL_TLS_KEY) args.push('--tls-key', process.env.ASTRAL_TLS_KEY)
     this.child = spawn(binary, args, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    this.closed = new Promise(resolve => this.child!.once('close', () => resolve()))
     // A startup failure can close the pipe before stop() requests shutdown.
     this.child.stdin?.on('error', () => {})
     const capture = (chunk: Buffer) => { this.output = (this.output + chunk.toString()).slice(-6000) }
@@ -66,6 +68,16 @@ export class LocalService {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill('SIGKILL')
         await exited
+      }
+    }
+    if (this.closed) {
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([this.closed, new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error('Local service pipes did not close after Server exit.')), 5000)
+        })])
+      } finally {
+        clearTimeout(timeout)
       }
     }
     if (this.temporary) await rm(this.temporary, { recursive: true, force: true })

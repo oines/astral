@@ -132,6 +132,16 @@ jobs:
           }
           "ASTRAL_WINDOWS_HANDLE=$astralHandle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - run: pnpm test:desktop-service
+        if: runner.os != 'Windows'
+      - name: Repeat Windows desktop lifecycle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($astralIteration in 1..5) {
+            Write-Output "Windows desktop lifecycle $astralIteration/5"
+            pnpm test:desktop-service
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Upload Windows lock diagnostics
         if: ${{ failure() && runner.os == 'Windows' }}
         uses: actions/upload-artifact@v4

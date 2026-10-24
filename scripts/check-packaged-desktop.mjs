@@ -33,6 +33,7 @@ let output = ''
 let failure
 let exit
 let running
+const windowsDescendants = new Set()
 app.stdout.on('data', chunk => { output = (output + chunk).slice(-6000) })
 app.stderr.on('data', chunk => { output = (output + chunk).slice(-6000) })
 app.on('error', error => { failure = error })
@@ -51,15 +52,29 @@ async function waitFor(check, message, timeout = 30_000) {
 }
 async function rendererStarted() {
   if (process.platform === 'win32') {
-    const script = `$smokeProcesses=@(Get-CimInstance Win32_Process); $smokeIds=[Collections.Generic.HashSet[uint32]]::new(); [void]$smokeIds.Add(${app.pid}); for($smokePass=0;$smokePass -lt 8;$smokePass++){foreach($smokeProcess in $smokeProcesses){if($smokeIds.Contains([uint32]$smokeProcess.ParentProcessId)){[void]$smokeIds.Add([uint32]$smokeProcess.ProcessId)}}}; [bool]@($smokeProcesses | Where-Object {$smokeIds.Contains([uint32]$_.ProcessId) -and $_.CommandLine -match '--type=renderer(\\s|$)'}).Count`
+    const script = `$smokeProcesses=@(Get-CimInstance Win32_Process); $smokeIds=[Collections.Generic.HashSet[uint32]]::new(); [void]$smokeIds.Add(${app.pid}); for($smokePass=0;$smokePass -lt 8;$smokePass++){foreach($smokeProcess in $smokeProcesses){if($smokeIds.Contains([uint32]$smokeProcess.ParentProcessId)){[void]$smokeIds.Add([uint32]$smokeProcess.ProcessId)}}}; $smokeTree=@($smokeProcesses | Where-Object {$smokeIds.Contains([uint32]$_.ProcessId) -and $_.ProcessId -ne ${app.pid}}); [pscustomobject]@{renderer=[bool]@($smokeTree | Where-Object {$_.CommandLine -match '--type=renderer(\\s|$)'}).Count; descendants=@($smokeTree | ForEach-Object {[int]$_.ProcessId})} | ConvertTo-Json -Compress`
     const result = await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 10_000 })
-    return result.stdout.trim().toLowerCase() === 'true'
+    const snapshot = JSON.parse(result.stdout)
+    for (const pid of snapshot.descendants) windowsDescendants.add(pid)
+    return snapshot.renderer
   }
   const result = await execute('ps', ['-axo', 'pid=,ppid=,args='], { timeout: 5000, maxBuffer: 8 << 20 })
   const processes = result.stdout.split('\n').flatMap(line => { const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line); return match ? [{ pid: Number(match[1]), parent: Number(match[2]), args: match[3] }] : [] })
   const ids = new Set([app.pid])
   for (let pass = 0; pass < 8; pass++) for (const process of processes) if (ids.has(process.parent)) ids.add(process.pid)
   return processes.some(process => ids.has(process.pid) && /--type=renderer(?:\s|$)/.test(process.args))
+}
+
+async function waitForWindowsDescendants() {
+  if (process.platform !== 'win32') return
+  const deadline = Date.now() + 20_000
+  do {
+    // Forget an observed exit permanently: Windows may reuse that PID later.
+    for (const pid of windowsDescendants) if (!alive(pid)) windowsDescendants.delete(pid)
+    if (windowsDescendants.size === 0) return
+    await delay(250)
+  } while (Date.now() < deadline)
+  throw new Error(`The packaged App left descendant processes running: ${[...windowsDescendants].join(', ')}. Inspect ${temporary}.`)
 }
 
 try {
@@ -93,13 +108,19 @@ try {
   finally { clearTimeout(timer) }
   if (process.platform !== 'win32') assert.equal(exit.code, 0, `Packaged App did not quit normally: ${JSON.stringify(exit)}`)
   await waitFor(() => !alive(running.pid), 'The Go Server survived the packaged Electron App.', 20_000)
+  await waitForWindowsDescendants()
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
   console.log(`Actual packaged ${process.platform}/${arch} App startup, renderer, online local Daemon, no local user-service registration, and ${process.platform === 'win32' ? 'crash cleanup' : 'normal app.quit shutdown'} passed.`)
 } catch (error) {
   console.error(output)
   throw error
 } finally {
-  if (!exit && app.pid) { app.kill('SIGKILL'); await ended }
+  if (!exit && app.pid) {
+    if (process.platform === 'win32') await rendererStarted().catch(error => console.error(`Could not refresh packaged App descendants before cleanup: ${error.message}`))
+    app.kill('SIGKILL')
+    await ended
+  }
   if (running?.pid) await waitFor(() => !alive(running.pid), `Packaged smoke left a Server running; inspect ${temporary}.`, 20_000)
-  await rm(temporary, { recursive: true, force: true })
+  await waitForWindowsDescendants()
+  await rm(temporary, { recursive: true, force: true, ...(process.platform === 'win32' ? { maxRetries: 5, retryDelay: 200 } : {}) })
 }
