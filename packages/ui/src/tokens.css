@@ -30,11 +30,15 @@
   --radius-dialog: 16px;
   --desktop-titlebar-height: 44px;
   --chat-edge-fade: 32px;
-  --settings-content-width: 864px;
-  --settings-page-padding: 32px;
-  --settings-group-padding: 20px;
+  --settings-content-width: 768px;
+  --settings-page-padding: 24px;
+  --settings-group-padding: 16px;
   --settings-group-gap: 24px;
-  --settings-row-padding: 16px;
+  --settings-row-padding: 12px;
+  --settings-row-min-height: 60px;
+  --settings-list-row-padding: 10px;
+  --settings-list-row-min-height: 56px;
+  --settings-compact-row-min-height: 52px;
   --settings-control-width: 300px;
   --ink: #252524;
   --muted: #757570;
@@ -180,16 +184,16 @@ textarea { resize: vertical; min-height: 100px; }
 .switch-thumb[data-state='checked'] { transform: translateX(14px); }
 input[type='radio'] { accent-color: var(--control-active); width: 14px; height: 14px; flex-shrink: 0; margin: 0; }
 .switch[data-state='checked'] .switch-thumb { background: var(--control-on-active); }
-.settings-section { display: flex; flex-direction: column; gap: 12px; }
+.settings-section { display: flex; flex-direction: column; gap: 10px; }
 .settings-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .settings-section-heading h2 { font-size: 13px; font-weight: 500; color: var(--muted); }
 .settings-section-heading p { font-size: 12px; line-height: 1.6; margin-top: 6px; }
 .settings-group { position: relative; border: 1px solid var(--panel-line); border-radius: var(--radius-panel); padding: 0 var(--settings-group-padding); background: var(--bg); }
-.preference-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 68px; padding: var(--settings-row-padding) 0; }
+.preference-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: var(--settings-row-min-height); padding: var(--settings-row-padding) 0; }
 .preference-row ~ .preference-row { border-top: 1px solid var(--panel-line); }
 .preference-copy { flex: 1; min-width: 0; }
-.preference-copy strong, .preference-row > span > strong { font-size: 14px; font-weight: 500; }
-.preference-copy p, .preference-row small { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 4px; }
+.preference-copy strong, .preference-row > span > strong { font-size: 14px; font-weight: 500; line-height: 20px; }
+.preference-copy p, .preference-row small { font-size: 12px; color: var(--muted); line-height: 16px; margin-top: 2px; }
 .preference-control { display: flex; align-items: center; justify-content: flex-end; flex-shrink: 0; max-width: 52%; gap: 12px; }
 .preference-control:has(input:not([type='checkbox']):not([type='radio']), textarea, .select-trigger, .settings-text) { width: var(--settings-control-width); }
 .preference-control > :is(input, textarea, .select-trigger, .settings-text) { width: 100%; min-width: 0; }
