@@ -24,6 +24,7 @@ export async function buildNotices(root, target) {
       return { Path, Version, Dir }
     })
   const sections = ['Astral third-party notices\n\nPackage source licenses are reproduced below. Some build-time dependencies may also appear in this inventory.\n\n' + await readFile(path.join(root, 'THIRD_PARTY.md'), 'utf8')]
+  sections.push(`Copied frontend brand assets\n\n${await notices(path.join(root, 'packages/icons/src/assets'))}`)
   for (const entry of Object.values(nodePackages).flat().sort((a, b) => a.name.localeCompare(b.name))) {
     const texts = []
     for (const directory of entry.paths) {

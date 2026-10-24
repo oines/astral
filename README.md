@@ -2,6 +2,8 @@
 
 Astral is a self-hosted workspace for persistent agents. The macOS, Windows and Linux desktop apps and headless server use the same Web interface. Agents run commands and read or write files through explicitly assigned Computers: the server's local machine, a container, or another macOS, Windows or Linux machine.
 
+Astral is pre-release software. Desktop packages and Server/Computer binaries target macOS, Windows and Linux on ARM64 and AMD64. Native acceptance is tracked in [GitHub Actions](https://github.com/oines/astral/actions) and the [verification guide](docs/verification.md); producing a package does not establish that every platform feature has passed interactive acceptance. No signed public installers or automatic Desktop updates have been released yet.
+
 The implementation follows [SPEC.md](SPEC.md). The server owns configuration, credentials, sessions, IM accounts and delivery receipts. [Astral Core](https://github.com/oines/astral-core) owns the persistent agent loop. [astral-models](https://github.com/oines/astral-models) translates Core requests into provider protocols.
 
 UI changes must follow the [UI/UX specification](docs/ui-ux-spec.md), including product naming, settings navigation, shared visual language, and automatic saving with feedback. [AGENTS.md](AGENTS.md) links the requirements for future contributors and coding agents. The specification defines the target behavior; historical design reports are not acceptance evidence for the ongoing redesign.
@@ -12,7 +14,7 @@ The pinned development tools are in [mise.toml](mise.toml). Install those versio
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm build:distribution
+GOWORK=off pnpm build:distribution
 ```
 
 The build generates OpenAPI and the TypeScript SDK, builds the shared Web app, and embeds it in six binaries:
@@ -37,7 +39,7 @@ Start the binary for your machine, for example:
 
 Open `http://127.0.0.1:4545`. The server prints the path of its private Owner token file; enter that token at the Web sign-in screen. The token is stored in an HttpOnly cookie after sign-in. The desktop app performs this local handoff in its main process.
 
-Use a new, empty data directory for this version. Host schema 3 and Core format 9 replace the previous formats; older data is rejected, with no migration or compatibility mode. Choose a persistent location instead of `/tmp` for regular use.
+Use a new, empty data directory for this version. Host schema 3 and Core format 10 replace the previous formats; older data is rejected, with no migration or compatibility mode. Choose a persistent location instead of `/tmp` for regular use.
 
 A fresh installation includes a Bot named **Astral**, which you can rename later in Settings. The two-step setup connects a model service and selects a model, then selects or connects a Computer. **Start using Astral** grants access to the selected online Computer and saves both defaults together. The first conversation is ready to use those resources; there is no separate Bot creation step. Existing installations keep their Bots and resource choices, and setup does not reappear after completion or recreate a renamed or deleted Bot.
 
@@ -106,7 +108,7 @@ Normal generation and summaries use the same retry policy: at most three total a
 For separate frontend and backend development:
 
 ```sh
-pnpm dev:server
+GOWORK=off pnpm dev:server
 pnpm dev
 ```
 
@@ -114,9 +116,10 @@ The development Web app proxies the API to port 4545. For desktop development, b
 
 Brand artwork lives in `packages/icons/assets/`: the color mark and light/dark wordmarks are shared by the Web app, while the layered monochrome mark is used for the tray and favicon. Run `pnpm build:icons` to regenerate the desktop SVG/PNG/ICNS and favicon from these SVG sources. The app icon uses a white or graphite rounded tile with macOS sizing and padding; the Dock switches between them with the system appearance. Web and desktop development/build commands also regenerate their icons automatically; macOS tray resources include both 1× and 2× versions.
 
-The versions pinned in `go.mod` support standalone builds with `GOWORK=off`. For coordinated development across Astral, `../agent-core` and `../astral-models`, use a local Go workspace containing the three checkouts. Distribution builds honor the active workspace (or an explicit `GOWORK` path), including its dependency notices.
+The versions pinned in `go.mod` are publicly available and support standalone builds with `GOWORK=off`; sibling repositories are not required. Use that setting for verification and distribution builds so the result uses the committed dependencies. For coordinated development across Astral, Astral Core and astral-models, an ignored local Go workspace can select those checkouts. Build scripts honor an active workspace unless `GOWORK=off` is set, including when collecting dependency notices.
 
 ```sh
+export GOWORK=off
 go test -race ./...
 go vet ./...
 pnpm lint:go
@@ -138,12 +141,14 @@ node scripts/dev-provider.mjs
 
 Add a Chat Completions Provider with endpoint `http://127.0.0.1:4556`, any test-only API key, and model `astral-fixture`. The fixture supports native image inspection and prompts containing `[file]`, `[slow]`, `[retry]`, and `[silent]`. `[file]` intentionally writes `validation.md` in the selected Computer's AgentHome through the real command tool. Use a disposable Agent and data directory.
 
-See [deployment](docs/deployment.md), [the acceptance evidence](docs/verification.md), and [third-party acknowledgements](THIRD_PARTY.md). Fixture checks, live provider checks, and manual desktop checks are identified separately.
+See [deployment](docs/deployment.md), [the verification guide](docs/verification.md), and [third-party acknowledgements](THIRD_PARTY.md). Fixture checks, live provider checks, and manual desktop checks are identified separately.
+
+For contributions, see [CONTRIBUTING.md](CONTRIBUTING.md). Report suspected vulnerabilities privately using the channel in [SECURITY.md](SECURITY.md).
 
 ## License
 
 Copyright (C) 2026 oines and Astral contributors.
 
-Astral is free software licensed under the [GNU Affero General Public License, version 3 only](LICENSE) (`AGPL-3.0-only`), without any warranty. The source repository is [oines/astral](https://github.com/oines/astral); repository access is currently private.
+Astral is free software licensed under the [GNU Affero General Public License, version 3 only](LICENSE) (`AGPL-3.0-only`), without any warranty. Source code and development history are available at [oines/astral](https://github.com/oines/astral).
 
 Third-party components retain their own licenses and notices. See [THIRD_PARTY.md](THIRD_PARTY.md) and the `THIRD_PARTY_NOTICES.txt` included with distributions.

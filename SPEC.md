@@ -1278,23 +1278,19 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 
 ### 参考基线
 
-本规格基于以下已读取的本地资料与源代码。提交号记录 2026-10-20 编写时的参考状态；实现时可以升级依赖，但需要重新验证受影响契约。
+本规格基于产品需求与以下源代码参考。提交号记录编写时的参考状态，实际依赖以 go.mod 和锁文件为准；升级依赖时需要重新验证受影响契约。
 
 | 资料 | 位置与参考状态 | 采用内容 |
 | --- | --- | --- |
 | UI UX 规范 | [docs/ui-ux-spec.md](docs/ui-ux-spec.md)，2026-10-22 | 产品命名、Bot 设置层级、统一设计语言、设置生效与局部提交、反馈及界面验收 |
-| 产品 PRD v1.1 | [Astral_完整产品设计_PRD_v1.1.md](/Users/oines/Downloads/Astral_完整产品设计_PRD_v1.1.md) | 产品范围、对象、UI/Settings、部署与验收基线 |
-| 本地 Core | [agent-core](/Users/oines/project/agent-core)，`f48c8320dcac32eb1ed160598a0802e30e063408` | 真实输入、执行、持久化、工具和控制契约 |
-| Cahciua | [Cahciua](/Users/oines/project/Cahciua)，`1fc8aa2a849606488d315d69186047ae9c4356e7` | 模型可见消息 XML、会话来源说明与附件表达 |
-| Memoh | [memoh](/Users/oines/project/memoh)，`18a101e93ac6c8b0657d23865c196eac1a2ab716` | Vue/Markstream 前端依赖、共享组件、桌面工程、OpenAPI SDK、检查与任务组织 |
+| 本地 Core | [astral-core](https://github.com/oines/astral-core)，`f48c8320dcac32eb1ed160598a0802e30e063408` | 真实输入、执行、持久化、工具和控制契约 |
+| Memoh | [Memoh](https://github.com/felinics/Memoh)，`18a101e93ac6c8b0657d23865c196eac1a2ab716` | Vue/Markstream 前端依赖、共享组件、桌面工程、OpenAPI SDK、检查与任务组织 |
 
 关键源文件：
 
 - Core：[session.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/session.go)、[input.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/input.go)、[prepare.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/prepare.go)、[generation.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/generation.go)、[run.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/run.go)、[tool_execution.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/tool_execution.go)、[context.go](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/context.go)、[contracts.md](https://github.com/oines/astral-core/blob/a0cb8b3525af04d2e1bef32c82a0d1c2c05cdab3/docs/contracts.md)。
-- Cahciua：[rendering/index.ts](/Users/oines/project/Cahciua/src/rendering/index.ts)、[driver/merge.ts](/Users/oines/project/Cahciua/src/driver/merge.ts)、[system.velin.md](/Users/oines/project/Cahciua/prompts/system.velin.md)。
-- Memoh：[Web package.json](/Users/oines/project/memoh/apps/web/package.json)、[Desktop package.json](/Users/oines/project/memoh/apps/desktop/package.json)、[UI package.json](/Users/oines/project/memoh/packages/ui/package.json)、[vite.config.ts](/Users/oines/project/memoh/apps/web/vite.config.ts)、[openapi-ts.config.ts](/Users/oines/project/memoh/openapi-ts.config.ts)、[eslint.config.mjs](/Users/oines/project/memoh/eslint.config.mjs)、[vitest.config.ts](/Users/oines/project/memoh/vitest.config.ts)、[mise.toml](/Users/oines/project/memoh/mise.toml)。
 
-PRD 提到但本轮未取得的技术架构 v0.3、v0.2 和 UIUX v0.4 不作为已核验的独立依据；它们已体现在 PRD 中的产品要求按本规格收敛。
+未公开的早期产品草稿不作为外部构建或使用的前置资料；当前行为以本规格与 UI UX 规范为准。
 
 ### 已替代的旧规则
 

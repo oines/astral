@@ -10,9 +10,11 @@ The shared frontend follows the engineering baseline identified in the Astral sp
 
 Runtime dependencies also include coder/websocket, modernc SQLite, go-yaml v3, the Feishu OpenPlatform Server SDK, node-qrcode, Reka UI, Lucide, Inter, Monaco, xterm.js, Mermaid, KaTeX and their transitive dependencies. Their source packages retain their own licenses. Versions and provenance are recorded by `go.mod`, `go.sum`, `pnpm-lock.yaml` and the package manifests. Electron release bundles carry Electron and Chromium's license files.
 
-Distribution builds collect the installed Node and Go packages' license and notice files into `THIRD_PARTY_NOTICES.txt`, embedded with the Web app and copied beside the binaries. This includes the original `astral-models` license text.
+Distribution builds collect the installed Node and Go packages' license and notice files, together with the copied brand assets' notices and license texts, into `THIRD_PARTY_NOTICES.txt`, embedded with the Web app and copied beside the binaries. This includes the original `astral-models` license text.
 
 Provider brand icons come from [LobeHub Icons](https://github.com/lobehub/lobe-icons), distributed as `@lobehub/icons-static-svg`. Provider and model metadata incorporates a dated snapshot of [models.dev](https://github.com/anomalyco/models.dev); each model also retains its source URL. Command Code model identities and supported endpoints come from its public model catalog. Brand names and logos remain the property of their respective owners.
+
+Additional unmodified SVGs are copied from Floway and Magpie under their MIT licenses, and from Memoh under AGPL-3.0. The LiteLLM monogram is provided by its official brand kit for integration identification and remains subject to the published brand usage rules; it is not relicensed under Astral's source-code license. Exact source revisions, the LiteLLM asset URL and digest, and the corresponding license texts are recorded in [the brand asset notices](packages/icons/src/assets/NOTICE.md). These notices and license texts are also included in distribution notices.
 
 LobeHub Icons — Copyright (c) 2023 LobeHub.
 
