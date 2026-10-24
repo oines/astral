@@ -89,7 +89,7 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 		}
 		return DockerInfo{}, domain.Offline(message)
 	}
-	// Context inspection and info both start the Docker CLI. Allow cold starts
+	// Context inspection and version both start the Docker CLI. Allow cold starts
 	// and a busy local runtime without treating it as an unavailable engine.
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -121,20 +121,22 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 	}
 	info := DockerInfo{Context: dockerContext.Name, Endpoint: endpoint}
 	ctx = dockerContextForProbe(ctx, info)
-	raw, err = dockerOutput(ctx, "info", "--format", "{{json .}}")
+	// Unlike info, version does not enumerate CLI plugins. A canceled info
+	// command can leave a metadata plugin holding this process's cwd on Windows.
+	raw, err = dockerOutput(ctx, "version", "--format", "{{json .Server}}")
 	if err != nil {
 		return DockerInfo{}, domain.Offline("Start the local container runtime. " + err.Error())
 	}
 	var wire struct {
-		Name            string
-		OSType          string
-		Architecture    string
-		OperatingSystem string
+		OS            string `json:"Os"`
+		Arch          string
+		KernelVersion string
+		Platform      struct{ Name string }
 	}
-	if json.Unmarshal(raw, &wire) != nil || wire.OSType != "linux" {
+	if json.Unmarshal(raw, &wire) != nil || wire.OS != "linux" {
 		return DockerInfo{}, domain.Invalid("a Linux container runtime is required")
 	}
-	arch := wire.Architecture
+	arch := wire.Arch
 	switch arch {
 	case "aarch64":
 		arch = "arm64"
@@ -144,8 +146,14 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 	if arch != "arm64" && arch != "amd64" {
 		return DockerInfo{}, domain.Invalid("container architecture must be arm64 or amd64")
 	}
-	info.Name, info.Arch = wire.OperatingSystem, arch
-	info.Desktop = strings.Contains(strings.ToLower(wire.OperatingSystem), "docker desktop")
+	info.Name, info.Arch = strings.TrimSpace(wire.Platform.Name), arch
+	if strings.Contains(strings.ToLower(wire.KernelVersion), "orbstack") {
+		info.Name = "OrbStack"
+	}
+	if info.Name == "" {
+		info.Name = "Docker Engine"
+	}
+	info.Desktop = strings.Contains(strings.ToLower(info.Name), "docker desktop")
 	return info, nil
 }
 

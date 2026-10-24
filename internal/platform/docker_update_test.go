@@ -21,6 +21,7 @@ import (
 
 type fakeContainerState struct {
 	Identity, Version, Boot, Mode string
+	ServerVersion                 string
 	Running                       bool
 	Credentials                   computers.Credentials
 	Commands                      [][]string
@@ -61,11 +62,18 @@ func TestFakeDockerProcess(t *testing.T) {
 	output := ""
 	code := 0
 	switch args[0] {
-	case "info":
+	case "version":
+		if len(args) != 3 || args[1] != "--format" || args[2] != "{{json .Server}}" {
+			code, output = 2, "unexpected Docker version query"
+			break
+		}
 		if state.Mode == "slow-probe" {
 			time.Sleep(30 * time.Second)
 		}
-		output = `{"Name":"test","OSType":"linux","Architecture":"amd64","OperatingSystem":"Test Docker"}`
+		output = state.ServerVersion
+		if output == "" {
+			output = `{"Platform":{"Name":"Test Docker"},"Os":"linux","Arch":"amd64"}`
+		}
 	case "inspect":
 		output = fmt.Sprintf(`{"ID":"original-container","Config":{"Labels":{"astral.operation":%q}},"State":{"Running":true}}`, state.Identity)
 	case "exec":

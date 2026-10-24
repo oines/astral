@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile, fork } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir, userInfo } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -39,6 +39,16 @@ async function removeDirectory(directory, serverPIDs) {
     await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   } catch (error) {
     if (process.platform === 'win32' && error.code === 'EBUSY') {
+      if (process.env.CI && process.env.ASTRAL_WINDOWS_HANDLE) {
+        const rootName = directory.split(/[\\/]/).find(segment => segment.startsWith('astral 中文 desktop service '))
+        // Use the unique ASCII suffix so the utility's path search does not
+        // depend on the active Windows console code page.
+        const query = rootName ? rootName.slice(-6) : directory
+        const result = await execute(process.env.ASTRAL_WINDOWS_HANDLE, ['-accepteula', '-nobanner', query], { windowsHide: true, timeout: 15_000 }).catch(error => ({ stdout: error.stdout || '', stderr: error.stderr || error.message }))
+        const report = `Test process: ${process.pid}\nDirectory: ${directory}\n${result.stdout}${result.stderr || ''}`
+        console.error(report)
+        await writeFile(path.join(process.env.RUNNER_TEMP, 'astral-handles.txt'), report)
+      }
       console.error(`Managed Server processes: ${JSON.stringify([...serverPIDs].map(pid => ({ pid, alive: alive(pid) })))}`)
       const { stdout } = await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | Where-Object { $_.Name -match "^(astral.*|docker.*|com\\.docker.*|conhost|node|cmd|powershell|wsl|wslhost)\\.exe$" } | Select-Object ProcessId, ParentProcessId, Name, CreationDate | ConvertTo-Json -Compress'], { windowsHide: true, timeout: 10_000 }).catch(() => ({ stdout: 'Process diagnostics unavailable.' }))
       console.error(`Processes present after desktop lifecycle cleanup: ${stdout}`)
