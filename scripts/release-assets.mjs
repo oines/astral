@@ -25,11 +25,11 @@ export async function validateMacSigningReport(report, { version, sourceSHA, fil
   if (!report.checks || Object.keys(report.checks).length !== signingChecks.length || signingChecks.some(name => report.checks[name] !== true)) throw new Error('Mac signing report must pass every required signature, notarization and native acceptance check.')
   const notarizations = report.notarizations
   const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
-  if (!Array.isArray(notarizations) || notarizations.length !== 5 ||
+  if (!Array.isArray(notarizations) || notarizations.length !== 3 ||
       notarizations.some(item => !item || !uuid.test(item.id || '') || item.status !== 'Accepted') ||
-      new Set(notarizations.map(item => item.id.toLowerCase())).size !== 5 ||
+      new Set(notarizations.map(item => item.id.toLowerCase())).size !== 3 ||
       notarizations.filter(item => item.kind === 'binaries' && item.arch === undefined).length !== 1 ||
-      ['app', 'dmg'].some(kind => ['arm64', 'x64'].some(arch => notarizations.filter(item => item.kind === kind && item.arch === arch).length !== 1))) throw new Error('Mac signing report must contain exactly five distinct accepted binary, app and DMG notarizations.')
+      ['arm64', 'x64'].some(arch => notarizations.filter(item => item.kind === 'dmg' && item.arch === arch).length !== 1)) throw new Error('Mac signing report must contain exactly three distinct accepted binary and DMG notarizations.')
   const names = [...distributionNames.filter(name => name.startsWith('astral-darwin-')), ...desktopNames(version).filter(name => name.includes('-mac-'))]
   if (!Array.isArray(report.assets) || report.assets.length !== names.length ||
       new Set(report.assets.map(asset => asset?.name)).size !== names.length ||

@@ -88,7 +88,7 @@ export async function checkReleaseTools() {
       status: 'accepted', native_tested_arch: 'arm64',
       checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: true, gatekeeper: true, packaged_app_startup_shutdown: true },
       notarizations: [
-        { kind: 'binaries' }, { kind: 'app', arch: 'arm64' }, { kind: 'app', arch: 'x64' }, { kind: 'dmg', arch: 'arm64' }, { kind: 'dmg', arch: 'x64' },
+        { kind: 'binaries' }, { kind: 'dmg', arch: 'arm64' }, { kind: 'dmg', arch: 'x64' },
       ].map((item, index) => ({ ...item, id: `12345678-1234-4234-8234-${String(index + 1).padStart(12, '0')}`, status: 'Accepted' })),
       assets: await Promise.all(macNames.map(async name => ({ name, size: (await readFile(path.join(temporary, 'input', name))).length, sha256: await digest(path.join(temporary, 'input', name)) }))),
     }
@@ -134,11 +134,12 @@ export async function checkReleaseTools() {
       ['wrong-report-size', report => { report.assets[0].size++ }, 'does not match final artifact bytes'],
       ['missing-report-asset', report => { report.assets.pop() }, 'exactly the two Darwin binaries'],
       ['duplicate-report-asset', report => { report.assets[1] = report.assets[0] }, 'exactly the two Darwin binaries'],
-      ['missing-notarization', report => { report.notarizations.pop() }, 'exactly five distinct accepted'],
-      ['failed-notarization', report => { report.notarizations[0].status = 'Invalid' }, 'exactly five distinct accepted'],
-      ['wrong-notarization-uuid', report => { report.notarizations[0].id = 'not-a-uuid' }, 'exactly five distinct accepted'],
-      ['duplicate-notarization', report => { report.notarizations[1].id = report.notarizations[0].id }, 'exactly five distinct accepted'],
-      ['wrong-notarization-arch', report => { report.notarizations[1].arch = 'x64' }, 'exactly five distinct accepted'],
+      ['missing-notarization', report => { report.notarizations.pop() }, 'exactly three distinct accepted'],
+      ['failed-notarization', report => { report.notarizations[0].status = 'Invalid' }, 'exactly three distinct accepted'],
+      ['wrong-notarization-uuid', report => { report.notarizations[0].id = 'not-a-uuid' }, 'exactly three distinct accepted'],
+      ['duplicate-notarization', report => { report.notarizations[1].id = report.notarizations[0].id }, 'exactly three distinct accepted'],
+      ['wrong-notarization-arch', report => { report.notarizations[1].arch = 'x64' }, 'exactly three distinct accepted'],
+      ['wrong-notarization-kind', report => { report.notarizations[1].kind = 'app' }, 'exactly three distinct accepted'],
     ]) {
       const report = JSON.parse(JSON.stringify(signedReport))
       change(report)
