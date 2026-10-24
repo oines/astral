@@ -15,6 +15,38 @@ const binary = path.join(binaries, `astral-${system}-${process.arch === 'x64' ? 
 process.env.ASTRAL_SERVER_LISTEN = '127.0.0.1:0'
 const execute = promisify(execFile)
 
+function alive(pid) {
+  try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error }
+}
+
+async function waitForExit(pid) {
+  const deadline = Date.now() + 20_000
+  while (alive(pid) && Date.now() < deadline) await delay(100)
+  assert.ok(!alive(pid), `The Server process ${pid} survived the death of its desktop parent`)
+}
+
+async function waitForParent(ended) {
+  let timeout
+  try {
+    await Promise.race([ended, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('The desktop helper did not exit')), 20_000) })])
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function removeDirectory(directory, serverPIDs) {
+  try {
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  } catch (error) {
+    if (process.platform === 'win32' && error.code === 'EBUSY') {
+      console.error(`Managed Server processes: ${JSON.stringify([...serverPIDs].map(pid => ({ pid, alive: alive(pid) })))}`)
+      const { stdout } = await execute('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | Where-Object { $_.Name -match "^(astral.*|docker.*|com\\.docker.*|conhost|node|cmd|powershell|wsl|wslhost)\\.exe$" } | Select-Object ProcessId, ParentProcessId, Name, CreationDate | ConvertTo-Json -Compress'], { windowsHide: true, timeout: 10_000 }).catch(() => ({ stdout: 'Process diagnostics unavailable.' }))
+      console.error(`Processes present after desktop lifecycle cleanup: ${stdout}`)
+    }
+    throw error
+  }
+}
+
 async function assertNoLocalService(directory) {
   const localRoot = path.join(directory, 'computers', 'local')
   await assert.rejects(readFile(path.join(localRoot, 'service', 'spec.json')), { code: 'ENOENT' })
@@ -35,10 +67,14 @@ if (process.argv[2] === '--child') {
   const directory = await mkdtemp(path.join(tmpdir(), 'astral 中文 desktop service '))
   const service = new LocalService()
   let parent
+  let parentEnded
+  let orphanPID
+  const serverPIDs = new Set()
   try {
     const missing = new LocalService()
     await assert.rejects(missing.start(path.join(directory, 'missing-binary'), directory, binaries), /ENOENT/)
     const token = await service.start(binary, directory, binaries)
+    serverPIDs.add(service.child.pid)
     const bootstrap = await fetch(`${service.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${token}` } })
     assert.equal(bootstrap.status, 200)
     const first = await bootstrap.json()
@@ -49,24 +85,25 @@ if (process.argv[2] === '--child') {
     await assertNoLocalService(directory)
 
     parent = fork(fileURLToPath(import.meta.url), ['--child', directory], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] })
+    parentEnded = new Promise(resolve => { parent.once('exit', resolve); parent.once('error', resolve) })
     const ready = await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Managed child did not start')), 30_000)
       parent.once('error', error => { clearTimeout(timeout); reject(error) })
       parent.once('message', value => { clearTimeout(timeout); resolve(value) })
       parent.once('exit', code => { clearTimeout(timeout); reject(new Error(`Managed parent exited early (${code})`)) })
     })
+    orphanPID = ready.pid
+    serverPIDs.add(orphanPID)
     parent.kill('SIGKILL')
-    const deadline = Date.now() + 10_000
-    let stopped = false
-    while (Date.now() < deadline) {
-      try { await fetch(`${ready.url}/health`, { signal: AbortSignal.timeout(1000) }) }
-      catch { stopped = true; break }
-      await delay(100)
-    }
-    assert.ok(stopped, 'The Server survived the death of its desktop parent')
+    await waitForParent(parentEnded)
+    // A failed HTTP probe only proves that the listener stopped responding.
+    // On Windows the process must exit before it releases its cwd handle.
+    await waitForExit(orphanPID)
+    orphanPID = undefined
     const reopened = new LocalService()
     try {
       const reopenedToken = await reopened.start(binary, directory, binaries)
+      serverPIDs.add(reopened.child.pid)
       const response = await fetch(`${reopened.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${reopenedToken}` } })
       const next = await response.json()
       assert.equal(next.computers[0].id, first.computers[0].id)
@@ -74,10 +111,16 @@ if (process.argv[2] === '--child') {
     } finally {
       await reopened.stop()
     }
+    for (const pid of serverPIDs) assert.ok(!alive(pid), `Managed Server ${pid} is still running after the lifecycle test`)
     console.log('Desktop service startup, private Owner handoff, graceful stop, parent crash, identity-preserving restart, and absence of a separate local Daemon service passed.')
   } finally {
     parent?.kill('SIGTERM')
+    if (parentEnded) await waitForParent(parentEnded)
     await service.stop()
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    if (orphanPID && alive(orphanPID)) {
+      process.kill(orphanPID, 'SIGKILL')
+      await waitForExit(orphanPID)
+    }
+    await removeDirectory(directory, serverPIDs)
   }
 }
