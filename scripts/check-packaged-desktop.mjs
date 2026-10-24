@@ -69,7 +69,15 @@ try {
     running = await readFile(runningFile, 'utf8').then(JSON.parse).catch(() => undefined)
     if (!running) return false
     const token = (await readFile(path.join(data, 'server/owner.token'), 'utf8')).trim()
-    const response = await fetch(`${running.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) })
+    let response
+    try {
+      // Bootstrap's optional Docker probe has its own three-second budget.
+      // A cold Windows CLI must not consume the entire client's budget too.
+      response = await fetch(`${running.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) })
+    } catch (error) {
+      if (error.name === 'TimeoutError' || ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE'].includes(error.cause?.code)) return false
+      throw error
+    }
     assert.equal(response.status, 200)
     const bootstrap = await response.json()
     return bootstrap.computers.some(computer => computer.local && computer.online)
