@@ -72,7 +72,10 @@ if (process.argv[2] === '--child') {
   const serverPIDs = new Set()
   try {
     const missing = new LocalService()
-    await assert.rejects(missing.start(path.join(directory, 'missing-binary'), directory, binaries), /ENOENT/)
+    const missingDirectory = path.join(directory, 'failed startup')
+    await assert.rejects(missing.start(path.join(directory, 'missing-binary'), missingDirectory, binaries), /ENOENT/)
+    await removeDirectory(missingDirectory, new Set())
+    console.log('Failed Server startup released its temporary directory.')
     const token = await service.start(binary, directory, binaries)
     serverPIDs.add(service.child.pid)
     const bootstrap = await fetch(`${service.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${token}` } })

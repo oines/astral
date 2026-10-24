@@ -118,6 +118,30 @@ jobs:
         if: runner.os != 'Windows'
         run: chmod +x dist/bin/astral-*
       - run: pnpm test:desktop-service
+      - name: Identify Windows desktop directory locks
+        if: ${{ failure() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $astralHandleDir = Join-Path $env:RUNNER_TEMP 'astral-handle-diagnostics'
+          New-Item -ItemType Directory -Force $astralHandleDir | Out-Null
+          Invoke-WebRequest 'https://download.sysinternals.com/files/Handle.zip' -OutFile "$astralHandleDir/Handle.zip"
+          Expand-Archive "$astralHandleDir/Handle.zip" -DestinationPath $astralHandleDir
+          $astralHandle = Join-Path $astralHandleDir 'handle64.exe'
+          $astralSignature = Get-AuthenticodeSignature $astralHandle
+          if ($astralSignature.Status -ne 'Valid' -or $astralSignature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+            throw 'The Microsoft Handle diagnostic utility has an invalid signature.'
+          }
+          & $astralHandle -accepteula -nobanner 'astral 中文 desktop service' | Tee-Object -FilePath "$env:RUNNER_TEMP/astral-handles.txt"
+          # A search with no matching handles exits nonzero; the original test
+          # failure remains authoritative either way.
+          $global:LASTEXITCODE = 0
+      - name: Upload Windows lock diagnostics
+        if: ${{ failure() && runner.os == 'Windows' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: astral-windows-locks
+          path: ${{ runner.temp }}/astral-handles.txt
+          retention-days: 3
       - name: Native downloaded installer
         run: go test -tags=integration -run '^TestDistributionInstallerRegistersActualDaemon$' -count=1 -timeout=3m ./internal/platform
       - name: Prepare Linux user session for native service test
