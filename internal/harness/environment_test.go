@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -186,8 +187,29 @@ func TestEnvironmentModelViewPreservesAPITargetsWithoutInternalFields(t *testing
 	}
 	entries = environmentEntries(t, f, f.session.ID)
 	partial := entries[len(entries)-1].Message.Content[0].Text
-	if !strings.Contains(partial, `"status":"partial"`) || !strings.Contains(partial, invalidSkill) || !strings.Contains(partial, "YAML frontmatter") || !strings.Contains(partial, skillPath) {
-		t.Fatal("partial discovery lost its error, affected path or valid skills")
+	var partialView struct {
+		Discovery struct {
+			Status string
+			Skills []struct{ Path string }
+			Issues []struct{ Path, Message string }
+		}
+	}
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(partial, environmentSnapshotHeading+"\n")), &partialView); err != nil {
+		t.Fatal(err)
+	}
+	foundIssue, foundSkill := false, false
+	for _, issue := range partialView.Discovery.Issues {
+		if issue.Path == invalidSkill && strings.Contains(issue.Message, "YAML frontmatter") {
+			foundIssue = true
+		}
+	}
+	for _, skill := range partialView.Discovery.Skills {
+		if skill.Path == skillPath {
+			foundSkill = true
+		}
+	}
+	if partialView.Discovery.Status != "partial" || !foundIssue || !foundSkill {
+		t.Fatalf("partial discovery lost its error, affected path or valid skills: %+v", partialView.Discovery)
 	}
 }
 
@@ -258,7 +280,11 @@ func TestEnvironmentInitializationDedupAndReadsAcrossRestart(t *testing.T) {
 	}
 	entries = environmentEntries(t, f, f.session.ID)
 	changed := entries[len(entries)-1].Message.Content[0].Text
-	if !strings.Contains(changed, "Skill content changed; read this SKILL.md again before using it: "+globalSkill) || strings.Contains(changed, `"sha256"`) {
+	var changedView struct{ Updates []string }
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(changed, environmentSnapshotHeading+"\n")), &changedView); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(changedView.Updates, "Skill content changed; read this SKILL.md again before using it: "+globalSkill) || strings.Contains(changed, `"sha256"`) {
 		t.Fatal("body-only Skill change did not produce a useful notice without exposing a hash")
 	}
 	f.restart(t)
