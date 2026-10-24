@@ -67,7 +67,7 @@ func NewWeixin(connection domain.Connection, secret string, client *http.Client)
 		}
 	}
 	var credential WeixinCredential
-	if json.Unmarshal([]byte(secret), &credential) != nil || credential.BotToken == "" || credential.BotID == "" || credential.UserID == "" || strings.ContainsAny(credential.BotToken, "\r\n") {
+	if json.Unmarshal([]byte(secret), &credential) != nil || credential.BotToken == "" || credential.BotID == "" || strings.ContainsAny(credential.BotToken, "\r\n") {
 		return nil, domain.Invalid("Weixin requires a QR-issued login grant; sign in with Weixin")
 	}
 	if credential.BaseURL == "" {
@@ -133,11 +133,20 @@ func weixinRequest(ctx context.Context, client *http.Client, base, token, method
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return context.DeadlineExceeded
+		}
 		return domain.Offline("Weixin request could not be completed")
 	}
 	defer response.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return context.DeadlineExceeded
+		}
 		return domain.Offline("Weixin response was interrupted")
 	}
 	if len(raw) > 8<<20 {

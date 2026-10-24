@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,7 +21,7 @@ const weixinDefaultCDN = "https://novac2c.cdn.weixin.qq.com/c2c"
 type WeixinCredential struct {
 	BotToken string `json:"bot_token"`
 	BotID    string `json:"bot_id"`
-	UserID   string `json:"user_id"`
+	UserID   string `json:"user_id,omitempty"`
 	BaseURL  string `json:"base_url"`
 }
 
@@ -72,6 +73,9 @@ func WeixinStartQR(ctx context.Context, client *http.Client) (WeixinQR, error) {
 // next poll. need_verifycode asks for the digits displayed on the user's phone;
 // the protocol does not supply those digits or a separate verification URL.
 func WeixinPollQR(ctx context.Context, qr WeixinQR, verifyCode string, client *http.Client) (WeixinQRStatus, error) {
+	if err := ctx.Err(); err != nil {
+		return WeixinQRStatus{}, err
+	}
 	if !weixinTrustedAPIURL(qr.BaseURL) || qr.Qrcode == "" {
 		return WeixinQRStatus{}, domain.Invalid("invalid Weixin QR login state")
 	}
@@ -82,7 +86,7 @@ func WeixinPollQR(ctx context.Context, qr WeixinQR, verifyCode string, client *h
 		}
 		query.Set("verify_code", verifyCode)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	pollCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
 	var response struct {
 		Status       string `json:"status"`
@@ -92,13 +96,18 @@ func WeixinPollQR(ctx context.Context, qr WeixinQR, verifyCode string, client *h
 		BaseURL      string `json:"baseurl"`
 		RedirectHost string `json:"redirect_host"`
 	}
-	err := weixinRequest(ctx, weixinHTTPClient(client), qr.BaseURL, "", http.MethodGet, "/ilink/bot/get_qrcode_status?"+query.Encode(), nil, &response)
+	err := weixinRequest(pollCtx, weixinHTTPClient(client), qr.BaseURL, "", http.MethodGet, "/ilink/bot/get_qrcode_status?"+query.Encode(), nil, &response)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return WeixinQRStatus{Status: "wait"}, nil
+		}
 		return WeixinQRStatus{}, err
 	}
 	status := WeixinQRStatus{Status: response.Status}
 	switch response.Status {
 	case "wait", "scaned", "expired", "need_verifycode", "verify_code_blocked", "binded_redirect":
+	case "scanned":
+		status.Status = "scaned"
 	case "scaned_but_redirect":
 		if !weixinTrustedAPIURL("https://" + response.RedirectHost) {
 			return WeixinQRStatus{}, domain.Invalid("Weixin returned an untrusted QR redirect host")
@@ -109,7 +118,7 @@ func WeixinPollQR(ctx context.Context, qr WeixinQR, verifyCode string, client *h
 		if base == "" {
 			base = qr.BaseURL
 		}
-		if !weixinTrustedAPIURL(base) || response.BotToken == "" || response.BotID == "" || response.UserID == "" || strings.ContainsAny(response.BotToken, "\r\n") {
+		if !weixinTrustedAPIURL(base) || response.BotToken == "" || response.BotID == "" || strings.ContainsAny(response.BotToken, "\r\n") {
 			return WeixinQRStatus{}, domain.Invalid("Weixin returned an incomplete login grant")
 		}
 		status.Credential = &WeixinCredential{BotToken: response.BotToken, BotID: response.BotID, UserID: response.UserID, BaseURL: strings.TrimRight(base, "/")}

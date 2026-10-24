@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/httpcontract"
@@ -48,7 +49,7 @@ func TestWeixinLoginValidation(t *testing.T) {
 	if caps.Platform != "weixin" || caps.Adapter != "weixin.ilink" || !caps.FileSending || caps.EnumerateConversations || caps.ReplyReferences || caps.MessageEdits || caps.DeletionEvents || caps.DeliveryReceipts || caps.CaptionLimit != 0 || strings.Join(caps.ConversationKinds, ",") != "private" {
 		t.Fatalf("incorrect capabilities: %#v", caps)
 	}
-	for _, secret := range []string{"raw-token", `{}`, `{"bot_token":"x","bot_id":"unverified"}`, `{"bot_token":"x\r\ny","bot_id":"id","user_id":"u"}`} {
+	for _, secret := range []string{"raw-token", `{}`, `{"bot_token":"x","user_id":"scanner"}`, `{"bot_token":"x\r\ny","bot_id":"id","user_id":"u"}`} {
 		if _, err := NewWeixin(domain.Connection{}, secret, nil); err == nil {
 			t.Errorf("accepted invalid grant %q", secret)
 		}
@@ -79,6 +80,44 @@ func TestWeixinAPIErrorsHaveSafeOwnerDiagnostics(t *testing.T) {
 			}
 			if strings.Contains(response.Body.String(), "secret-login-token") || strings.Contains(response.Body.String(), "private-context-token") {
 				t.Fatal("owner diagnostics exposed remote credential text")
+			}
+		})
+	}
+}
+
+func TestWeixinQRPollCompatibility(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		body        string
+		err         error
+		bodyTimeout bool
+		want        string
+	}{
+		{name: "transport timeout", err: context.DeadlineExceeded, want: "wait"},
+		{name: "body timeout", bodyTimeout: true, want: "wait"},
+		{name: "legacy scanned", body: `{"status":"scaned"}`, want: "scaned"},
+		{name: "scanned", body: `{"status":"scanned"}`, want: "scaned"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := &http.Client{Transport: weixinRoundTripper(func(*http.Request) (*http.Response, error) {
+				if test.err != nil {
+					return nil, test.err
+				}
+				var reader io.Reader = strings.NewReader(test.body)
+				if test.bodyTimeout {
+					reader = iotest.ErrReader(context.DeadlineExceeded)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(reader)}, nil
+			})}
+			qr := WeixinQR{Qrcode: "fixture-qr", BaseURL: weixinDefaultURL}
+			result, err := WeixinPollQR(t.Context(), qr, "", client)
+			if err != nil || result.Status != test.want {
+				t.Fatalf("poll = %#v, %v; want %s", result, err, test.want)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if _, err := WeixinPollQR(ctx, qr, "", client); !errors.Is(err, context.Canceled) {
+				t.Fatalf("caller cancellation became a waiting authorization: %v", err)
 			}
 		})
 	}

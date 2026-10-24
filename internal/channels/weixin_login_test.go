@@ -26,6 +26,7 @@ type weixinLoginFixture struct {
 	statusPolls  atomic.Int64
 	configCalls  atomic.Int64
 	validateFail atomic.Bool
+	omitScanner  atomic.Bool
 	updates      chan []weixinMessage
 	mu           sync.Mutex
 	sent         []weixinMessage
@@ -43,7 +44,11 @@ func newWeixinLoginFixture(t *testing.T) *weixinLoginFixture {
 			_, _ = io.WriteString(rw, `{"qrcode":"fixture-qr","qrcode_img_content":"https://weixin.qq.com/login?fixture=1"}`)
 		case "/ilink/bot/get_qrcode_status":
 			f.statusPolls.Add(1)
-			_ = json.NewEncoder(rw).Encode(map[string]any{"status": "confirmed", "bot_token": "qr-fixture-secret-token", "ilink_bot_id": f.botID.Load(), "ilink_user_id": "scanning-user", "baseurl": weixinDefaultURL})
+			grant := map[string]any{"status": "confirmed", "bot_token": "qr-fixture-secret-token", "ilink_bot_id": f.botID.Load(), "baseurl": weixinDefaultURL}
+			if !f.omitScanner.Load() {
+				grant["ilink_user_id"] = "scanning-user"
+			}
+			_ = json.NewEncoder(rw).Encode(grant)
 		case "/ilink/bot/getconfig":
 			f.configCalls.Add(1)
 			if r.Header.Get("Authorization") != "Bearer qr-fixture-secret-token" {
@@ -192,6 +197,7 @@ func TestWeixinOwnerLoginKeepsGrantPrivateAndReconnectPreservesEdits(t *testing.
 func TestWeixinOwnerLoginDoesNotRequireTypingConfiguration(t *testing.T) {
 	f := newWeixinLoginFixture(t)
 	f.validateFail.Store(true)
+	f.omitScanner.Store(true)
 	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	s := New(p.Store, p.Harness)
 	s.Client = f.client
