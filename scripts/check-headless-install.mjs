@@ -39,7 +39,7 @@ async function command(executable, args, options = {}) {
     return await execute(executable, args, { cwd: repository, encoding: 'utf8', timeout: 20_000, maxBuffer: 2 << 20, ...options })
   } catch (error) {
     // Never serialize an exec error: it may retain complete stdout/stderr.
-    throw new Error(`${path.basename(executable)} failed (${error.code ?? 'unknown'}).`)
+    throw new Error(`${path.basename(executable)} failed (${error.code ?? 'unknown'}).`, { cause: error })
   }
 }
 async function exists(file) {
@@ -52,7 +52,7 @@ async function loadState() {
   } catch (error) {
     // systemd versions differ in whether querying a missing unit is exit 0 or 4.
     if (error.stdout?.trim() === 'not-found') return 'not-found'
-    throw new Error('Cannot establish whether astral-server.service is already loaded; refusing to modify it.')
+    throw new Error('Cannot establish whether astral-server.service is already loaded; refusing to modify it.', { cause: error })
   }
 }
 async function hash(file) {
@@ -130,7 +130,7 @@ async function install(expectedSuccess = true) {
   try {
     result = await execute('bash', [installer, '--root', installRoot], { cwd: repository, env: environment, encoding: 'utf8', timeout: 130_000, maxBuffer: 2 << 20 })
   } catch (error) {
-    if (expectedSuccess) throw new Error('Headless installer unexpectedly failed; inspect the service state reported below.')
+    if (expectedSuccess) throw new Error('Headless installer unexpectedly failed; inspect the service state reported below.', { cause: error })
     assert.equal(typeof error.code, 'number', 'Installer did not report an ordinary failure')
     // Return only an error classification; no captured output reaches CI logs.
     return { failed: true, checksumFailure: /checksum mismatch/.test(error.stderr || ''), startupFailure: /did not become ready|exited during startup/.test(error.stderr || '') }
