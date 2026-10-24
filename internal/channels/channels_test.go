@@ -375,9 +375,6 @@ func TestOutboundUnknownIdempotencyRebindingAndRestart(t *testing.T) {
 	if len(out) != 1 || out[0].Status != "unknown" || bot.sends.Load() != 1 {
 		t.Fatalf("ambiguous send replayed or lost: %+v", out)
 	}
-	if err = s.Retry(p.Context, out[0].ID); err == nil {
-		t.Fatal("unknown send allowed blind retry")
-	}
 	changed := request
 	changed.Text = "different"
 	if _, err = s.Enqueue(p.Context, p.Agent.ID, binding.SessionID, changed); err == nil {

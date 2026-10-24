@@ -176,6 +176,9 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	}
 	r.core.Store(session)
 	if err == nil {
+		err = r.finishMessageCalls(ctx)
+	}
+	if err == nil {
 		err = r.syncSelection(ctx)
 	}
 	return err

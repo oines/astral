@@ -2144,12 +2144,6 @@
           "request_digest": {
             "type": "string"
           },
-          "resolution_note": {
-            "type": "string"
-          },
-          "retryable": {
-            "type": "boolean"
-          },
           "revision": {
             "type": "integer"
           },
@@ -2188,8 +2182,7 @@
           "connection_id",
           "connection_account_id",
           "external_id",
-          "fragment",
-          "retryable"
+          "fragment"
         ],
         "type": "object"
       },
@@ -3581,31 +3574,6 @@
         },
         "required": [
           "execution"
-        ],
-        "type": "object"
-      },
-      "astral_internal_httpapi_ResolveSend": {
-        "properties": {
-          "message_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "note": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "accepted",
-              "failed"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "note"
         ],
         "type": "object"
       },
@@ -6282,112 +6250,6 @@
                     "$ref": "#/components/schemas/astral_internal_domain_Outbox"
                   },
                   "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "owner": []
-          },
-          {
-            "ownerCookie": []
-          }
-        ],
-        "tags": [
-          "Channels"
-        ]
-      }
-    },
-    "/api/v1/outbox/{id}/resolve": {
-      "post": {
-        "operationId": "resolveSend",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_httpapi_ResolveSend"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "owner": []
-          },
-          {
-            "ownerCookie": []
-          }
-        ],
-        "tags": [
-          "Channels"
-        ]
-      }
-    },
-    "/api/v1/outbox/{id}/retry": {
-      "post": {
-        "operationId": "retrySend",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
                 }
               }
             },

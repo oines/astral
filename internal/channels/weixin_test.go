@@ -258,15 +258,14 @@ func TestWeixinSendAcceptanceAndUnknownOutcomes(t *testing.T) {
 		status         int
 		unknown        bool
 		accepted       bool
-		retryable      bool
 	}{
 		{name: "client receipt", response: `{"ret":0}`, status: 200, accepted: true},
 		{name: "server receipt", response: `{"ret":0,"message_id":"123"}`, status: 200, accepted: true},
-		{name: "missing acceptance", response: `{}`, status: 200, unknown: true},
+		{name: "empty success", response: `{}`, status: 200, accepted: true},
 		{name: "invalid response", response: `{"ret":`, status: 200, unknown: true},
 		{name: "transport response", response: `secret-login-token`, status: 502, unknown: true},
 		{name: "expired", response: `{"ret":-14,"errmsg":"secret-login-token"}`, status: 200},
-		{name: "known rejection", response: `{"ret":-1,"errmsg":"secret-login-token"}`, status: 200, retryable: true},
+		{name: "known rejection", response: `{"ret":-1,"errmsg":"secret-login-token"}`, status: 200},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var attempts atomic.Int64
@@ -291,7 +290,7 @@ func TestWeixinSendAcceptanceAndUnknownOutcomes(t *testing.T) {
 				}
 			} else {
 				var sendErr *SendError
-				if !errors.As(err, &sendErr) || sendErr.Unknown != test.unknown || sendErr.Retryable != test.retryable {
+				if !errors.As(err, &sendErr) || sendErr.Unknown != test.unknown {
 					t.Fatalf("wrong send outcome: %#v / %v", sendErr, err)
 				}
 				if strings.Contains(err.Error(), "secret-login-token") {
@@ -521,7 +520,7 @@ func TestWeixinEncryptionAndValidationBoundaries(t *testing.T) {
 	} {
 		_, err := w.Send(context.Background(), send)
 		var sendErr *SendError
-		if !errors.As(err, &sendErr) || sendErr.Unknown || sendErr.Retryable {
+		if !errors.As(err, &sendErr) || sendErr.Unknown {
 			t.Fatalf("invalid send reached network: %#v %v", sendErr, err)
 		}
 	}

@@ -187,6 +187,9 @@ func (r *runtime) continueLocked(ctx context.Context) error {
 	if snapshot := r.core.Load().Snapshot(); snapshot.Running || snapshot.Maintenance {
 		return core.ErrBusy
 	}
+	if err := r.finishMessageCalls(ctx); err != nil {
+		return err
+	}
 	if err := r.syncSelection(ctx); err != nil {
 		return err
 	}

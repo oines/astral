@@ -357,8 +357,6 @@ type Outbox struct {
 	ExternalID          string   `json:"external_id"`
 	TopicID             string   `json:"topic_id,omitempty"`
 	Fragment            int      `json:"fragment"`
-	Retryable           bool     `json:"retryable"`
-	ResolutionNote      string   `json:"resolution_note,omitempty"`
 }
 
 type Preferences struct {

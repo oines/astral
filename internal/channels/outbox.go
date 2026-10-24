@@ -396,7 +396,7 @@ func (s *Service) dispatch(ctx context.Context, id string) error {
 			}
 		}
 		if err != nil {
-			return s.finish(ctx, &record, Receipt{}, &SendError{Message: err.Error(), Retryable: true})
+			return s.finish(ctx, &record, Receipt{}, &SendError{Message: err.Error()})
 		}
 	}
 	receipt, sendErr := adapter.Send(ctx, send)
@@ -405,13 +405,13 @@ func (s *Service) dispatch(ctx context.Context, id string) error {
 func (s *Service) finish(ctx context.Context, record *domain.Outbox, receipt Receipt, sendErr error) error {
 	persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	record.Status, record.Error, record.Retryable = "accepted", "", false
+	record.Status, record.Error = "accepted", ""
 	record.PlatformMessageIDs = receipt.MessageIDs
 	if sendErr != nil {
 		record.Status, record.Error = "unknown", sendErr.Error()
 		var known *SendError
 		if errors.As(sendErr, &known) && !known.Unknown {
-			record.Status, record.Retryable = "failed", known.Retryable
+			record.Status = "failed"
 		}
 	} else if len(receipt.MessageIDs) == 0 {
 		record.Status, record.Error = "unknown", "platform response did not identify an accepted message"
@@ -457,46 +457,4 @@ func normalizeSelf(event domain.Observation) domain.Observation {
 		event.Trigger = ""
 	}
 	return event
-}
-func (s *Service) Retry(ctx context.Context, id string) error {
-	s.gate.Lock()
-	defer s.gate.Unlock()
-	var record domain.Outbox
-	if err := s.Store.Get(ctx, "outbox", id, &record); err != nil {
-		return err
-	}
-	if record.Status != "failed" || !record.Retryable {
-		return domain.Conflict("only a confirmed, retryable failure can be retried")
-	}
-	if _, err := s.authorizeOutbound(ctx, record); err != nil {
-		return err
-	}
-	record.Status, record.Error, record.Retryable = "pending", "", false
-	return s.Store.Save(ctx, "outbox", &record.Meta, &record)
-}
-func (s *Service) Resolve(ctx context.Context, id, status, note string, messageIDs []string) error {
-	if status != "accepted" && status != "failed" {
-		return domain.Invalid("resolution must be accepted or failed")
-	}
-	if strings.TrimSpace(note) == "" {
-		return domain.Invalid("record the evidence used to resolve this send")
-	}
-	if status == "accepted" && len(messageIDs) == 0 {
-		return domain.Invalid("accepted resolution requires platform message IDs")
-	}
-	s.gate.Lock()
-	defer s.gate.Unlock()
-	var record domain.Outbox
-	if err := s.Store.Get(ctx, "outbox", id, &record); err != nil {
-		return err
-	}
-	if record.Status != "unknown" && record.Status != "blocked" {
-		return domain.Conflict("only unknown or blocked sends need manual resolution")
-	}
-	record.Status, record.ResolutionNote, record.PlatformMessageIDs, record.Error = status, note, messageIDs, ""
-	record.Retryable = status == "failed"
-	if status == "accepted" {
-		return s.finish(ctx, &record, Receipt{MessageIDs: messageIDs}, nil)
-	}
-	return s.Store.Save(ctx, "outbox", &record.Meta, &record)
 }

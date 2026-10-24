@@ -34,7 +34,7 @@ Bound Sessions remain normal Web Sessions with full tool use and history. Their 
 
 Telegram Markdown/HTML use Rich Messages rather than MarkdownV2. Feishu Markdown uses a `post` containing an `md` block. QQ Markdown and templates depend on the account's platform permissions; rejection is reported rather than silently falling back to text. Weixin Markdown simplifies unsupported CJK italics and level 5/6 headings and preserves inline image references as readable text; actual images use attachments. Formatted bodies and files have separate ordered receipts. Format, platform parameters and prepared fragments are frozen in Outbox before dispatch. Retrying an intent does not reformat its source.
 
-The tool waits for platform acceptance or failure. A failed, blocked or uncertain send returns an error in the same tool result, with persisted receipts; the Agent decides the next action. Failure stops later fragments of the same send group, but does not freeze unrelated later messages in the chat. Astral does not automatically resend uncertain effects. There is no detached receipt/retry card or human reconciliation dialog in the Composer.
+The tool returns the outcome of one send attempt: `sent` is `true` for acceptance, `false` for a known failure, or `null` when the platform result is unconfirmed; `message_ids` and `error` are included when available. Every result completes the tool call so the model can continue. Platform-specific parameters and acceptance rules belong to each adapter. Failure stops later fragments of the same send group. Outbox retains internal send records and prevents duplicate dispatch.
 
 ## Computer API
 
@@ -83,7 +83,7 @@ A request supplies `conversation_id`, optional `source_conversation_id` for copy
 
 The target, copy/forward source and nested chat references each require access through the same account. Topic-only grants also require an archived message identity before a chat-wide edit, delete or copy can act on it. Chat-wide management requires access to the parent chat. Command scopes are restricted to `chat` or `chat_member` for the selected chat. Alternate inline-message and business identities are not Bot chat grants; direct-message Topics are not resolved by this version's forum Topic adapter.
 
-Named operations return Telegram's result directly and archive accepted messages or deletion facts. They are not automatically retried. Use the queued text/file endpoints when persisted send-receipt reconciliation is needed.
+Named operations return Telegram's result directly and archive accepted messages or deletion facts. Each invocation makes one attempt.
 
 ## Additional platform operations
 
@@ -91,7 +91,7 @@ The account operation catalog uses the same Computer HTTP API and Agent view. No
 
 Requests supply `conversation_id` and an allowlisted `parameters` object. Every target belongs to the selected account and must pass its `all | specified` scope. Globally addressed messages must already be archived in that chat, and adapters also verify remote chat membership where needed. Parameters cannot supply a URL or override the destination. A successful delete appends the deletion fact to IMStore. Reading platform history does not backfill Core or activate a Session.
 
-These direct operations are single attempts without queued send reconciliation; inspect uncertain effects before retrying. Use the shared queued endpoints for text and files. NapCat generic execution exceptions remain `unknown`, because its timeout response may follow submission to QQ.
+These direct operations make one attempt. Use the text/file endpoints for sends with persisted request identities. NapCat generic execution exceptions remain `unknown` in the internal send record, because its timeout response may follow submission to QQ.
 
 QQ official and Feishu only contribute ordinary group context when platform permissions deliver those events. NapCat forward WebSocket has no offline replay. Weixin persists per-chat context tokens and media download secrets in encrypted Server records; receiving does not create Computer files. Its QR authorization is Owner-only, supports Tencent region redirects and phone verification, and never returns credentials to the browser.
 

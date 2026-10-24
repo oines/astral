@@ -105,8 +105,6 @@ The bot must be available to Astral long polling. An existing webhook is reporte
 
 Configure accounts in Settings → Bots → choose a Bot → Connect a platform → Telegram. Existing accounts are listed under that Bot's Telegram navigation item. Verify a Chat ID from the account's chat picker. Topics use the same Chat ID with a separate Topic ID. A Conversation has one enabled binding. Choose a new Session or an existing unbound Session belonging to the account's Bot. Reassignment stops both Sessions before changing the binding, preserving their histories and the original destination of pending outbound intents. See [IM accounts and Computer API](im.md) for scope, proactive mode and explicit sending.
 
-For sends with an uncertain result, inspect the receipt and the destination before deciding on any manual resend. Re-enabling a Connection does not turn an unknown receipt into a confirmed success.
-
 ## Desktop troubleshooting
 
 The default app uses the same macOS data root as the CLI. Do not run two servers against that directory simultaneously; the process lock reports the conflict. For an isolated desktop test, set `ASTRAL_DESKTOP_DATA_DIR` and optionally `ASTRAL_SERVER_LISTEN`. `ASTRAL_PUBLIC_URL`, `ASTRAL_TLS_CERT` and `ASTRAL_TLS_KEY` expose the corresponding managed-server configuration.

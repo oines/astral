@@ -134,11 +134,6 @@ type ProactiveInput struct {
 	Revision int64 `json:"revision"`
 	Enabled  bool  `json:"enabled"`
 }
-type ResolveSend struct {
-	Status     string   `json:"status" enum:"accepted,failed"`
-	Note       string   `json:"note"`
-	MessageIDs []string `json:"message_ids,omitempty"`
-}
 type SearchQuery = search.Request
 type Usage struct {
 	Agents   []domain.Agent        `json:"agents"`
@@ -561,12 +556,6 @@ func (a *API) resources() {
 		}
 		return result, nil
 	}, httpcontract.Parameter{Name: "session_id"})
-	route[httpcontract.Empty, httpcontract.OK](a, "POST", "/outbox/{id}/retry", "retrySend", "Channels", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
-		return httpcontract.OK{OK: true}, c.Retry(r.Context(), r.PathValue("id"))
-	})
-	route[ResolveSend, httpcontract.OK](a, "POST", "/outbox/{id}/resolve", "resolveSend", "Channels", func(r *http.Request, input ResolveSend) (httpcontract.OK, error) {
-		return httpcontract.OK{OK: true}, c.Resolve(r.Context(), r.PathValue("id"), input.Status, input.Note, input.MessageIDs)
-	})
 	for _, resource := range []struct{ path, kind, operation string }{{"providers", "providers", "deleteProvider"}, {"models", "models", "deleteModel"}, {"search-providers", "search", "deleteSearchProvider"}} {
 		route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/"+resource.path+"/{id}", resource.operation, "Resources", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 			err := h.Store.Update(r.Context(), func(tx *persistence.Tx) error {

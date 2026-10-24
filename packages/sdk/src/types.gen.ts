@@ -685,8 +685,6 @@ export type AstralInternalDomainOutbox = {
     platform_message_ids?: Array<string>;
     reply_to?: string;
     request_digest: string;
-    resolution_note?: string;
-    retryable: boolean;
     revision: number;
     session_id: string;
     status: string;
@@ -1110,12 +1108,6 @@ export type AstralInternalHttpapiProviderInput = {
 
 export type AstralInternalHttpapiResolution = {
     execution: AstralCoreToolExecution;
-};
-
-export type AstralInternalHttpapiResolveSend = {
-    message_ids?: Array<string>;
-    note: string;
-    status: 'accepted' | 'failed';
 };
 
 export type AstralInternalHttpapiSearchInput = {
@@ -2351,60 +2343,6 @@ export type ListOutboxResponses = {
 };
 
 export type ListOutboxResponse = ListOutboxResponses[keyof ListOutboxResponses];
-
-export type ResolveSendData = {
-    body: AstralInternalHttpapiResolveSend;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/outbox/{id}/resolve';
-};
-
-export type ResolveSendErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type ResolveSendError = ResolveSendErrors[keyof ResolveSendErrors];
-
-export type ResolveSendResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalHttpcontractOk;
-};
-
-export type ResolveSendResponse = ResolveSendResponses[keyof ResolveSendResponses];
-
-export type RetrySendData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/outbox/{id}/retry';
-};
-
-export type RetrySendErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type RetrySendError = RetrySendErrors[keyof RetrySendErrors];
-
-export type RetrySendResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalHttpcontractOk;
-};
-
-export type RetrySendResponse = RetrySendResponses[keyof RetrySendResponses];
 
 export type GetPreferencesData = {
     body?: never;

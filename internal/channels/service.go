@@ -289,7 +289,7 @@ func (s *Service) Start(ctx context.Context) error {
 		if record.Status != "dispatching" {
 			continue
 		}
-		record.Status, record.Error, record.Retryable = "unknown", "Server stopped before a platform receipt was committed", false
+		record.Status, record.Error = "unknown", "Server stopped before a platform receipt was committed"
 		if err = s.Store.Save(ctx, "outbox", &record.Meta, &record); err != nil {
 			return err
 		}

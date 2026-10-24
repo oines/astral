@@ -92,6 +92,19 @@ describe('reconciling live previews with durable history', () => {
 })
 
 describe('transcript facts', () => {
+  it('shows the current result after an interrupted tool call is completed', () => {
+    const invocation = { session_id: 'session', execution_id: 'send', run_id: 'run', turn_id: 'turn', assistant_id: 'assistant', call: { id: 'call', name: 'send_message', arguments: { text: 'hello' } } }
+    const state = fromSnapshot(snapshot([], [
+      entry('result', 1, { kind: 'tool_result', tool: { invocation, needs_resolution: true, result: { outcome: 'unknown', is_error: true } } }),
+      entry('run-end', 2, { kind: 'run', run: { id: 'run', status: 'failed' } }),
+      entry('completed', 3, { kind: 'tool_resolution', tool: { invocation, result: { outcome: 'failed', is_error: true, content: [{ type: 'text', text: 'Request interrupted' }] } } }),
+    ]))
+    state.view = { ...view, run_id: undefined, status: 'idle', last_run: { id: 'run', status: 'failed' } }
+    const group = transcriptGroups(state)[0]
+    expect(group?.status).toBeUndefined()
+    expect(group?.blocks[0]).toMatchObject({ kind: 'process', items: [{ kind: 'tool', entry: { id: 'completed' } }] })
+  })
+
   it('groups a response with its process while preserving input order and silent turns', () => {
     const state = emptyState()
     addEntry(state, entry('question', 1, { message: { role: 'user', content: [{ type: 'text', text: 'Inspect the file' }] } }))

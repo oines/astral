@@ -493,7 +493,7 @@ func (t *telegram) Send(ctx context.Context, send Send) (Receipt, error) {
 	if send.Target.TopicID != "" {
 		number, err := strconv.ParseInt(send.Target.TopicID, 10, 64)
 		if err != nil {
-			return Receipt{}, &SendError{Message: "invalid Telegram topic", Retryable: false}
+			return Receipt{}, &SendError{Message: "invalid Telegram topic"}
 		}
 		body["message_thread_id"] = number
 	}
@@ -575,9 +575,9 @@ func (t *telegram) Send(ctx context.Context, send Send) (Receipt, error) {
 	if err != nil {
 		var known *telegramAPIError
 		if errors.As(err, &known) {
-			return Receipt{}, &SendError{Message: known.Error(), Retryable: true}
+			return Receipt{}, &SendError{Message: known.Error()}
 		}
-		return Receipt{}, &SendError{Message: "Telegram send outcome is unknown; inspect the conversation before any retry", Unknown: true}
+		return Receipt{}, &SendError{Message: "Telegram message request did not complete", Unknown: true}
 	}
 	if message.ID == 0 {
 		return Receipt{}, &SendError{Message: "Telegram accepted the request without a usable message receipt", Unknown: true}

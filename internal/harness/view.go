@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	sessions "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
@@ -50,6 +51,9 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.finishMessageCalls(ctx); err != nil {
+		return View{}, err
+	}
 	snapshot := r.core.Load().Snapshot()
 	view := View{Status: "idle", CanContinue: snapshot.CanContinue, Pending: []PendingInput{}, Approvals: snapshot.Approvals, Unresolved: snapshot.Unresolved}
 	view.EventSequence = snapshot.EventSequence
@@ -79,7 +83,11 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	if snapshot.Stopping {
 		view.Status = "stopping"
 	}
-	if len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started"))) {
+	resolved := len(view.Unresolved) == 0 && state.LastRun != nil && strings.HasPrefix(state.LastRun.Error, sessions.ErrOutcomeUnknown.Error())
+	if resolved {
+		view.Error = ""
+	}
+	if len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && !resolved && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started"))) {
 		view.Status = "needs_attention"
 	}
 	pending, err := r.core.Load().PeekQueuedInputs(ctx)

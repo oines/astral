@@ -39,8 +39,8 @@ func (t sendMessageTool) Definition() core.ToolDefinition {
 // DefaultMessageTool is registered while a Session has no IM binding; it is
 // omitted from model requests until a destination has been selected.
 func DefaultMessageTool() core.ToolDefinition {
-	return core.ToolDefinition{Name: "send_message", Version: "astral-1", Sequential: true,
-		Description: "Send to this Session's bound chat. The Host selects the account, chat and Topic. Text may be empty when sending attachments. Attachments are Computer paths or astral-file:// references. Waits for platform acceptance or a reported failure and returns durable receipts. Acceptance is not final delivery. Inspect unknown effects before retrying. Assistant text alone is never sent to IM.",
+	return core.ToolDefinition{Name: "send_message", Version: "astral-3", Sequential: true,
+		Description: "Send to this Session's bound chat using the Host-selected account, chat and Topic. Text may be empty when sending attachments. Attachments are Computer paths or astral-file:// references. Returns sent (true, false, or null when unconfirmed), optional message_ids and an error on failure. Assistant text alone stays in Web.",
 		Parameters:  json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"},"reply_to":{"type":"string"},"attachments":{"type":"array","items":{"type":"string","minLength":1}}},"required":["text"],"additionalProperties":false}`)}
 }
 
@@ -119,17 +119,47 @@ func (t sendMessageTool) Execute(ctx context.Context, inv core.Invocation, _ fun
 		return core.ToolExecution{}, notExecuted("im_unavailable", domain.Offline("IM service is unavailable"))
 	}
 	receipts, err := r.service.IM.SendMessage(ctx, r.agentID, r.id, inv.ExecutionID, target, args)
-	if err != nil {
-		if len(receipts) > 0 {
-			outcome := core.OutcomeFailed
-			for _, receipt := range receipts {
-				if receipt.Status == "unknown" || receipt.Status == "dispatching" || receipt.Status == "pending" {
-					outcome = core.OutcomeUnknown
-				}
-			}
-			return core.ToolExecution{Result: &core.ToolResult{Content: core.Text(string(encode(receipts)) + "\nMessage send did not complete: " + err.Error()), IsError: true, Outcome: outcome}}, nil
+	return messageSendResult(receipts, err), nil
+}
+
+func messageSendResult(receipts []domain.Outbox, err error) core.ToolExecution {
+	sent := err == nil
+	result := struct {
+		Sent       *bool    `json:"sent"`
+		Error      string   `json:"error,omitempty"`
+		MessageIDs []string `json:"message_ids,omitempty"`
+	}{Sent: &sent}
+	for _, receipt := range receipts {
+		result.MessageIDs = append(result.MessageIDs, receipt.PlatformMessageIDs...)
+		if err != nil && (receipt.Status == "unknown" || receipt.Status == "dispatching" || receipt.Status == "pending") {
+			result.Sent = nil
 		}
-		return core.ToolExecution{}, notExecuted("im_send_failed", err)
 	}
-	return resultJSON(receipts), nil
+	outcome := core.OutcomeSucceeded
+	if err != nil {
+		outcome, result.Error = core.OutcomeFailed, err.Error()
+		for _, receipt := range receipts {
+			if receipt.Error != "" {
+				result.Error = receipt.Error
+				break
+			}
+		}
+	}
+	return core.ToolExecution{Result: &core.ToolResult{Content: core.Text(string(encode(result))), Outcome: outcome, IsError: err != nil}}
+}
+
+func (r *runtime) finishMessageCalls(ctx context.Context) error {
+	session := r.core.Load()
+	if snapshot := session.Snapshot(); snapshot.Running || snapshot.Maintenance {
+		return nil
+	}
+	for _, record := range session.UnresolvedTools() {
+		if record.Invocation.Call.Name == "send_message" {
+			result := core.ToolExecution{Result: &core.ToolResult{Content: core.Text(`{"sent":null,"error":"message send attempt was interrupted"}`), Outcome: core.OutcomeFailed, IsError: true}}
+			if err := session.ResolveTool(ctx, record.Invocation.ExecutionID, result); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

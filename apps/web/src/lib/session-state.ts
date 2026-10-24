@@ -218,7 +218,8 @@ export function transcriptGroups(state: SessionState): TranscriptGroup[] {
     } else if (entry.tool) {
       tool(tools.get(entry.tool.invocation.execution_id)!)
     } else if (entry.run && entry.run.status !== 'started') {
-      const status = entry.run.status === 'failed' ? 'needs_attention' : entry.run.status === 'cancelled' ? 'stopped' : undefined
+      const settled = state.view?.last_run?.id === entry.run.id && state.view.status === 'idle'
+      const status = entry.run.status === 'failed' && !settled ? 'needs_attention' : entry.run.status === 'cancelled' ? 'stopped' : undefined
       if (status) {
         // A failed retry without output is reported by the current session
         // error. It did not produce another assistant turn in the transcript.

@@ -58,7 +58,7 @@ func (w *weixinAdapter) operation(ctx context.Context, name string, chat domain.
 	if err != nil {
 		var rejected *weixinAPIError
 		if errors.As(err, &rejected) {
-			return nil, &SendError{Message: rejected.Error(), Retryable: rejected.Code != -14}
+			return nil, &SendError{Message: rejected.Error()}
 		}
 		return nil, &SendError{Message: "Weixin typing request outcome is unknown", Unknown: true}
 	}

@@ -484,7 +484,7 @@ Skills 由选中 Computer 的 Daemon 发现：全局根为其操作系统用户 
 | `write_stdin` | 输入、轮询、发送中断等进程交互 | 进程原来所属的 Computer |
 | `switch_computer` | 修改当前 Session 后续执行的 Computer/CWD | Host 控制工具 |
 | `web_search` | 调用 Agent 当前选中的一个搜索 Provider | Server |
-| `send_message` | 向当前绑定聊天发送文本或附件，返回持久回执 | 仅绑定 Session 提供的 Host 工具 |
+| `send_message` | 向当前绑定聊天发送文本或附件，返回本次发送结果 | 仅绑定 Session 提供的 Host 工具 |
 
 讨论中的 Bash 能力由 `exec_command` 提供，不需要另注册一套重复的命令工具。基础文件和命令行为优先复用 Core 的 standardtools，Host 提供连接 Daemon 的 Backend。Core 当前标准工具没有现成的远程 Daemon 传输或产品级 Computer 注册能力，这些由 Astral 实现。
 
@@ -586,7 +586,7 @@ QQ 官方与飞书的普通群消息推送取决于平台授予的权限；未�
 
 微信 iLink 的扫码凭据、每个聊天的 context_token、媒体密钥和 CDN 下载能力按账号持久保存在 Server 的加密凭据存储中，不进入 Core、公开账号 config 或模型可见消息。发送适配器重建后继续使用该聊天的有效上下文。扫码二维码和登录状态仅向 Owner 提供；API 访问与扫码均不创建 Session。
 
-出站平台接受与最终送达分开。iLink 成功响应不包含服务端消息 ID 时，回执记录 `client:<实际 client_id>` 表示已接受的请求身份，不能冒充可引用的服务端消息 ID。结构化平台错误也可能表示提交后超时，例如 NapCat 的通用执行异常；此时保留 unknown 并在工具/API 结果中报告，不自动重试，也不要求人类通过弹窗核对。
+出站平台接受与最终送达分开。iLink 成功响应允许省略 `ret` 和服务端消息 ID；省略消息 ID 时记录 `client:<实际 client_id>`，表示已接受的请求身份。结构化平台错误也可能表示提交后超时，例如 NapCat 的通用执行异常；此时内部记录 unknown，本次工具/API 调用返回错误。
 
 ### 模型可见格式
 
@@ -706,7 +706,7 @@ Session 的 Idle 表示当前没有活跃 Run，不代表没有历史、静默�
 
 绑定聊天的 Session 保持完整 Web 功能。assistant 正文正常持久保存和展示，但不会自动发送至 IM。模型可调用 `send_message`，Host 自动选择账号、聊天和 Topic；附件是当前 Computer 路径或 FileRef，纯附件允许空文本。工具的说明与参数按当前平台能力提供：Telegram 支持普通文本、Markdown、HTML、静默发送和图片作为文档；飞书提供 Markdown post 及标题；QQ 官方提供原生 Markdown 和模板；微信提供部分 Markdown；NapCat 仅将正文原样发送为普通文本，保留普通图片、文件和引用。未指定格式默认普通文本。跨聊天动作通过 Computer API 明确选择目标，也可查询目标聊天的 message-tool schema。
 
-工具等到平台接受或报错后返回持久出站回执，以执行 ID 幂等并固定目的地、呈现格式、分片和文件来源。失败或结果不确定通过同次 ToolResult 返回 Agent，不能以 pending 冒充发送成功。Composer 不额外显示发送失败卡片、重试按钮或人工核对弹窗。
+工具等到平台接受或报错后返回 `sent`、可选的 `message_ids` 和失败时的 `error`。`sent` 为 `true` 表示平台接受，为 `false` 表示明确未成功，为 `null` 表示结果无法确认；本次工具调用随即结束，模型继续运行。参数与接受规则由各平台适配器定义。Server 以执行 ID 幂等并固定目的地、呈现格式、分片和文件来源，保留内部出站记录。
 
 正常结束而没有显式发送即表示沉默。不补占位文本、不强制发送、不创建空 Assistant 气泡；历史、排队工作与已完成副作用均保留。
 
@@ -849,7 +849,7 @@ for context in contexts:
 
 send_message 和显式文本/文件 API 共享出站回执处理。每次发送保留意图标识、目标、内容引用、平台消息 ID 和真实终态。调用重试需要识别同一发送意图，不能用新的请求标识重复发出同一动作。
 
-HTTP 接收成功、平台接收上传、最终送达是不同事实。send_message 与 Computer 文本/文件发送接口等待平台结果，明确拒绝在当前工具/API 结果中报错；断线或超时不能直接解释为没有发送，不确定结果保留 unknown 交给 Agent 决定后续行动。Host 不自动重发，也不弹出人工核对界面。失败只停止同次发送组的后续分片，不阻塞同一聊天中后来的独立发送。
+HTTP 接收成功、平台接收上传、最终送达是不同事实。send_message 与 Computer 文本/文件发送接口等待平台结果，在当前调用中返回成功或错误。内部出站记录区分已接受、拒绝与传输中断，用于保留事实和防止重复发送。失败只停止同次发送组的后续分片，后来的独立发送照常执行。
 
 `switch_computer` 仍是 Harness 控制工具。其执行边界由 Harness 管理，不通过一次普通 HTTP 请求假装完成 Core 的状态转换。
 

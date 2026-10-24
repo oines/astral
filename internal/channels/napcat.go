@@ -60,7 +60,7 @@ func (e *napcatAPIError) sendError() *SendError {
 			unknown = false
 		}
 	}
-	return &SendError{Message: e.Error(), Unknown: unknown, Retryable: !unknown && (e.Status == 429 || e.Code == 429)}
+	return &SendError{Message: e.Error(), Unknown: unknown}
 }
 
 func NewNapCat(connection domain.Connection, token string, client *http.Client) (Adapter, error) {
@@ -468,7 +468,7 @@ func (n *napcat) Send(ctx context.Context, send Send) (Receipt, error) {
 		}
 		var message json.RawMessage
 		if err := n.call(ctx, "get_msg", map[string]any{"message_id": send.ReplyTo}, &message); err != nil {
-			return Receipt{}, &SendError{Message: "NapCat reply reference could not be verified: " + err.Error(), Retryable: true}
+			return Receipt{}, &SendError{Message: "NapCat reply reference could not be verified: " + err.Error()}
 		}
 		if err := napcatMessageScope(ctx, n, send.Target, message, send.ReplyTo); err != nil {
 			return Receipt{}, &SendError{Message: err.Error()}

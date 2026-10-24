@@ -407,13 +407,12 @@ func (w *weixinAdapter) Send(ctx context.Context, send Send) (Receipt, error) {
 		if err != nil {
 			// CDN preparation does not send a chat message, so this failure is
 			// known even when an upload response was lost. Never retry internally.
-			return Receipt{}, &SendError{Message: err.Error(), Retryable: true}
+			return Receipt{}, &SendError{Message: err.Error()}
 		}
 	}
 	clientID := domain.ID("astral_weixin")
 	var response struct {
-		Ret *int     `json:"ret"`
-		ID  weixinID `json:"message_id"`
+		ID weixinID `json:"message_id"`
 	}
 	err = w.call(ctx, "sendmessage", map[string]any{"msg": map[string]any{
 		"from_user_id": "", "to_user_id": send.Target.ExternalID, "client_id": clientID,
@@ -422,12 +421,9 @@ func (w *weixinAdapter) Send(ctx context.Context, send Send) (Receipt, error) {
 	if err != nil {
 		var rejected *weixinAPIError
 		if errors.As(err, &rejected) {
-			return Receipt{}, &SendError{Message: rejected.Error(), Retryable: rejected.Code != -14}
+			return Receipt{}, &SendError{Message: rejected.Error()}
 		}
-		return Receipt{}, &SendError{Message: "Weixin send outcome is unknown; inspect the chat before any retry", Unknown: true}
-	}
-	if response.Ret == nil {
-		return Receipt{}, &SendError{Message: "Weixin returned no explicit acceptance status; inspect the chat before any retry", Unknown: true}
+		return Receipt{}, &SendError{Message: "Weixin message request did not complete", Unknown: true}
 	}
 	id := string(response.ID)
 	if id == "" {
