@@ -1369,6 +1369,9 @@
           "name": {
             "type": "string"
           },
+          "persona": {
+            "type": "string"
+          },
           "probe_model_id": {
             "type": "string"
           },
@@ -2486,31 +2489,114 @@
       },
       "astral_internal_gateway_Capabilities": {
         "properties": {
-          "endpoints": {
+          "authentication": {
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_gateway_Capability"
+            },
+            "type": "array"
+          },
+          "openapi_url": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "usage": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "usage",
+          "authentication",
+          "scope",
+          "openapi_url",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "astral_internal_gateway_Capability": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "read_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "read_url"
+        ],
+        "type": "object"
+      },
+      "astral_internal_gateway_CapabilityDocument": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_gateway_CapabilityExample"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "openapi": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "read_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "read_url",
+          "notes",
+          "examples",
+          "openapi"
+        ],
+        "type": "object"
+      },
+      "astral_internal_gateway_CapabilityExample": {
+        "properties": {
+          "body": {},
+          "description": {
+            "type": "string"
+          },
+          "headers": {
             "additionalProperties": {
               "type": "string"
             },
             "type": "object"
           },
-          "files": {
+          "method": {
             "type": "string"
           },
-          "history": {
-            "type": "string"
-          },
-          "idempotency": {
-            "type": "string"
-          },
-          "identity": {
+          "path": {
             "type": "string"
           }
         },
         "required": [
-          "identity",
-          "idempotency",
-          "files",
-          "history",
-          "endpoints"
+          "description",
+          "method",
+          "path"
         ],
         "type": "object"
       },
@@ -9042,6 +9128,7 @@
     },
     "/v1/accounts": {
       "get": {
+        "description": "List this Bot's accounts, with access scopes and without credentials.",
         "operationId": "agentAccounts",
         "responses": {
           "200": {
@@ -9075,6 +9162,7 @@
     },
     "/v1/accounts/{id}/conversations/resolve": {
       "post": {
+        "description": "Resolve an authorized platform chat ID and optional Topic without creating a Session.",
         "operationId": "agentResolveConversation",
         "parameters": [
           {
@@ -9125,6 +9213,7 @@
     },
     "/v1/accounts/{id}/operations": {
       "get": {
+        "description": "Discover supported operations, request parameters and documentation for this account.",
         "operationId": "agentAccountOperations",
         "parameters": [
           {
@@ -9168,6 +9257,7 @@
     },
     "/v1/accounts/{id}/operations/{operation}": {
       "post": {
+        "description": "Invoke a discovered platform operation within this account's authorized chat scope. Makes one attempt.",
         "operationId": "agentAccountOperation",
         "parameters": [
           {
@@ -9226,6 +9316,7 @@
     },
     "/v1/accounts/{id}/telegram/operations": {
       "get": {
+        "description": "Discover named Telegram chat operations; other platforms use the account operations catalog.",
         "operationId": "agentTelegramOperations",
         "parameters": [
           {
@@ -9269,6 +9360,7 @@
     },
     "/v1/accounts/{id}/telegram/{operation}": {
       "post": {
+        "description": "Invoke a named Telegram operation. Destination and credential identity are supplied by the Host.",
         "operationId": "agentTelegramOperation",
         "parameters": [
           {
@@ -9327,6 +9419,7 @@
     },
     "/v1/attachments/download": {
       "post": {
+        "description": "Write an original attachment to an explicit path on the calling Computer and return a file reference.",
         "operationId": "agentDownloadAttachment",
         "requestBody": {
           "content": {
@@ -9395,8 +9488,49 @@
         ]
       }
     },
+    "/v1/capabilities/{id}": {
+      "get": {
+        "operationId": "agentCapability",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_gateway_CapabilityDocument"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
     "/v1/computers": {
       "get": {
+        "description": "List this Bot's allowed Computers and current connection status.",
         "operationId": "agentComputers",
         "responses": {
           "200": {
@@ -9430,6 +9564,7 @@
     },
     "/v1/context": {
       "get": {
+        "description": "Inspect this listener's bound Bot, Session, source Computer, working directory and AgentHome.",
         "operationId": "agentContext",
         "responses": {
           "200": {
@@ -9460,6 +9595,7 @@
     },
     "/v1/conversations": {
       "get": {
+        "description": "List known authorized chats.",
         "operationId": "agentConversations",
         "responses": {
           "200": {
@@ -9493,6 +9629,7 @@
     },
     "/v1/conversations/{id}/message-tool": {
       "get": {
+        "description": "Get this chat's send_message description and platform-specific argument schema.",
         "operationId": "agentMessageTool",
         "parameters": [
           {
@@ -9533,6 +9670,7 @@
     },
     "/v1/conversations/{id}/messages": {
       "get": {
+        "description": "Read archived messages. Filter q before pagination; continue with after=next_sequence.",
         "operationId": "agentMessages",
         "parameters": [
           {
@@ -9597,6 +9735,7 @@
     },
     "/v1/conversations/{id}/messages/{message_id}": {
       "get": {
+        "description": "Read the latest archived version of a platform message.",
         "operationId": "agentMessage",
         "parameters": [
           {
@@ -9645,6 +9784,7 @@
     },
     "/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content": {
       "get": {
+        "description": "Stream original attachment bytes; this does not save them on a Computer.",
         "operationId": "agentAttachmentContent",
         "parameters": [
           {
@@ -9702,6 +9842,7 @@
     },
     "/v1/files/reference": {
       "post": {
+        "description": "Reference an existing Computer file for Web delivery; snapshot=true fixes its version.",
         "operationId": "agentFileReference",
         "requestBody": {
           "content": {
@@ -9742,7 +9883,19 @@
     },
     "/v1/im/files": {
       "post": {
+        "description": "Send a Computer path or astral-file reference with a stable Idempotency-Key; wait for platform acceptance or a send error.",
         "operationId": "agentSendFile",
+        "parameters": [
+          {
+            "description": "Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -9785,7 +9938,19 @@
     },
     "/v1/im/messages": {
       "post": {
+        "description": "Send text with a stable Idempotency-Key and wait for platform acceptance or an error containing its receipt ID.",
         "operationId": "agentSendText",
+        "parameters": [
+          {
+            "description": "Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -9828,6 +9993,7 @@
     },
     "/v1/im/receipts/{id}": {
       "get": {
+        "description": "Read this Bot's persisted send outcome. Unknown outcomes are not automatically retried.",
         "operationId": "agentSendReceipt",
         "parameters": [
           {

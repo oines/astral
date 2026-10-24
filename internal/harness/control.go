@@ -13,6 +13,9 @@ import (
 )
 
 func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
+	if strings.TrimSpace(agent.Persona) == "" {
+		agent.Persona = ""
+	}
 	if agent.AllowedComputers == nil {
 		agent.AllowedComputers = []string{}
 	}
@@ -91,8 +94,9 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 			definitions = append(definitions, tool.Definition())
 		}
 	}
-	if configuration.SystemPrompt != systemPrompt || !jsonEqual(configuration.Tools, definitions) {
-		configuration.SystemPrompt = systemPrompt
+	hostPrompt := systemPromptFor(record)
+	if configuration.SystemPrompt != hostPrompt || !jsonEqual(configuration.Tools, definitions) {
+		configuration.SystemPrompt = hostPrompt
 		configuration.Tools = definitions
 		if err = r.core.Load().Configure(ctx, configuration); err != nil {
 			return err
@@ -144,6 +148,9 @@ func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoni
 		return err
 	}
 	err = r.core.Load().SelectModel(ctx, ref, options)
+	if err == nil {
+		err = r.refreshModelContext(ctx)
+	}
 	s.notify(id)
 	return err
 }

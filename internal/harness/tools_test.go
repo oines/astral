@@ -42,7 +42,7 @@ func TestInterruptedToolResultReachesModel(t *testing.T) {
 				t.Fatal(err)
 			}
 			calls := 0
-			config := r.coreConfig(model, f.session.Options)
+			config := r.coreConfig(model, f.session)
 			var tool core.Tool = core.ToolFunc{Spec: core.ToolDefinition{Name: test.name, Version: "fixture", Parameters: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)}, Run: func(context.Context, core.Invocation, func(core.ToolProgress)) (core.ToolExecution, error) {
 				calls++
 				if test.err {

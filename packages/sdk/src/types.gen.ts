@@ -458,6 +458,7 @@ export type AstralInternalDomainAgent = {
     default_reasoning?: AstralCoreReasoningOptions;
     id: string;
     name: string;
+    persona?: string;
     probe_model_id?: string;
     probe_reasoning?: AstralCoreReasoningOptions;
     revision: number;
@@ -780,13 +781,38 @@ export type AstralInternalDomainSessionDeletion = {
 };
 
 export type AstralInternalGatewayCapabilities = {
-    endpoints: {
+    authentication: string;
+    capabilities: Array<AstralInternalGatewayCapability>;
+    openapi_url: string;
+    scope: string;
+    usage: string;
+};
+
+export type AstralInternalGatewayCapability = {
+    description: string;
+    id: string;
+    read_url: string;
+};
+
+export type AstralInternalGatewayCapabilityDocument = {
+    description: string;
+    examples: Array<AstralInternalGatewayCapabilityExample>;
+    id: string;
+    notes: Array<string>;
+    openapi: {
+        [key: string]: unknown;
+    };
+    read_url: string;
+};
+
+export type AstralInternalGatewayCapabilityExample = {
+    body?: unknown;
+    description: string;
+    headers?: {
         [key: string]: string;
     };
-    files: string;
-    history: string;
-    idempotency: string;
-    identity: string;
+    method: string;
+    path: string;
 };
 
 export type AstralInternalGatewayContext = {
@@ -3964,6 +3990,33 @@ export type AgentCapabilitiesResponses = {
 
 export type AgentCapabilitiesResponse = AgentCapabilitiesResponses[keyof AgentCapabilitiesResponses];
 
+export type AgentCapabilityData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/capabilities/{id}';
+};
+
+export type AgentCapabilityErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentCapabilityError = AgentCapabilityErrors[keyof AgentCapabilityErrors];
+
+export type AgentCapabilityResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayCapabilityDocument;
+};
+
+export type AgentCapabilityResponse = AgentCapabilityResponses[keyof AgentCapabilityResponses];
+
 export type AgentComputersData = {
     body?: never;
     path?: never;
@@ -4181,6 +4234,12 @@ export type AgentFileReferenceResponse = AgentFileReferenceResponses[keyof Agent
 
 export type AgentSendFileData = {
     body: AstralInternalGatewaySendFile;
+    headers: {
+        /**
+         * Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.
+         */
+        'Idempotency-Key': string;
+    };
     path?: never;
     query?: never;
     url: '/v1/im/files';
@@ -4206,6 +4265,12 @@ export type AgentSendFileResponse = AgentSendFileResponses[keyof AgentSendFileRe
 
 export type AgentSendTextData = {
     body: AstralInternalGatewaySendText;
+    headers: {
+        /**
+         * Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.
+         */
+        'Idempotency-Key': string;
+    };
     path?: never;
     query?: never;
     url: '/v1/im/messages';

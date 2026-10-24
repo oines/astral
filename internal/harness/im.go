@@ -69,7 +69,7 @@ func (r *runtime) syncBindingConfig(ctx context.Context, record domain.Session) 
 	}
 	previousTool, previousPrompt := r.messageTool, r.compactionPrompt
 	r.messageTool, r.compactionPrompt = definition, prompt
-	next, err := core.OpenSession(ctx, r.coreConfig(model, record.Options), r.id)
+	next, err := core.OpenSession(ctx, r.coreConfig(model, record), r.id)
 	if err != nil {
 		r.messageTool, r.compactionPrompt = previousTool, previousPrompt
 		return err

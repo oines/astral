@@ -1,8 +1,8 @@
 # Astral 系统规格
 
-版本：1.9
+版本：1.10
 
-日期：2026-10-23，Asia/Singapore
+日期：2026-10-24，Asia/Singapore
 
 状态：V1 实现规范，尚非功能交付声明
 
@@ -74,7 +74,7 @@ IM 复用同一套 IMStore、Conversation、Session 绑定、持续上下文、P
 - 团队 SaaS、多用户 RBAC、计费门户。
 - 自动长期记忆、Embedding 平台、MCP 市场或技能商店。
 - Android 专用 Computer、独立 TUI、大型运维 Dashboard。
-- Agent Settings 中的独立 System Prompt 编辑器、逐工具开关和复杂权限规则编辑器。
+- Host 固定运行提示词编辑器、逐工具开关和复杂权限规则编辑器。Bot 可配置独立的可选人格文本。
 
 ## 2 核心决策
 
@@ -439,15 +439,28 @@ UI tokens、共享组件和状态文案集中维护。依赖补丁按 pnpm patch
 
 模型在某个 Agent 的某个 Session 中工作。一次模型请求应包含：
 
-- Agent 的稳定身份与平台行为说明。
+- Host 必要运行约定，以及用户为当前 Bot 配置的可选人格文本。
 - Session 的来源与绑定 Conversation 信息。
 - 当前 Computer、操作系统、Shell、CWD、AgentHome，以及可选择的 Computer 信息。
+- 当前实际模型的名称、模型 ID、上下文窗口 token 上限，以及视觉输入能力（支持／不支持／未知）。
 - 当前 Computer 的全局与工作区 Skills 目录，以及当前 CWD 的 `AGENTS.md` 内容和发现状态。
-- localhost API 的入口和能力说明。
+- localhost API 的统一发现入口；具体能力说明按需从入口获取。
 - 当前 Session 的有效历史、摘要、已应用观察、驱动输入及工具结果。
 - 本次允许调用的工具定义和各工具自己的用法。
 
-环境快照由 Host 的同步 `CollectContext` 接口返回为 `RoleUser`、`ContextKind=astral.environment` 的普通 Context。接口接收只读边界信息，Host 负责发现、内容和去重，Core 负责预算与提交；动态内容不放入 System Prompt 或 Developer Role，不改写旧消息。System Prompt 仅包含稳定的解释和使用规则。最近一条完整快照定义当前环境，旧快照仅记录历史环境。
+Host 内置 System Prompt 由共同运行约定与当前绑定状态对应的输出规则组成。共同部分包括环境状态的解释、执行来源与工作目录、技能与工作区指导，以及平台能力发现入口；直接使用实际快照标题 `Current Astral environment snapshot:` 指代环境，不另造名称。未绑定 IM 的 Session 说明通过 Web assistant 文本回复，不包含 `send_message` 或 IM 触发规则；绑定 IM 的 Session 才包含绑定聊天的发送、观察和触发语义。选择依据为当前 Binding，与 `send_message` 的暴露保持一致，不依赖 Session 最初的 Web／IM 来源或用户当前使用的入口。绑定、解绑、换绑和重开同步相应提示词，Fork 按子 Session 的实际绑定选择。
+
+Host 不声明“你是 Agent／Bot／AI”等身份，不规定人格、说话方式或默认人设。内置提示词不提 Probe 或假定主动模式开启，也不向主模型解释唤醒机制；调度细节由 Host 管理。接口路径、参数、幂等规则、分页与文件操作细节由工具描述和 API 文档提供。
+
+Bot 的 `persona` 是一个可选文本字段。普通模型请求的 `system_prompt` 由与本次工具定义同时选定的 Host 文本与当前 Bot 人格直接拼接；空白人格完全省略，不补默认内容。每次新请求在预算计算与冻结前读取当前人格，保存成功后该 Bot 的所有 Session（包括运行中的 Web 与 IM Session）从各自下一个请求立刻生效。不复制人格为 Session 配置，不注入人格变更消息，不重建上下文，不重开或中断 Session。已冻结的请求、网络重试及恢复继续使用原提示词，Attempt 可重建当时实际发送的内容。人格不替换摘要或 Probe 的专用提示词。
+
+环境快照由 Host 的同步 `CollectContext` 接口返回为 `RoleUser`、`ContextKind=astral.environment` 的普通 Context。接口接收只读边界信息，Host 负责发现、内容和去重，Core 负责预算与提交；动态环境不放入 System Prompt 或 Developer Role，不改写旧消息。当前状态由最近完整快照及其后的局部状态通知共同确定；通知只覆盖明确涉及的字段，旧状态仅作为历史。
+
+模型正文使用独立展示投影，不直接序列化内部扫描结果。保留当前 Agent、Session、绑定 Conversation、当前及可选 Computer 的 ID，以及 API base URL 和发现入口，便于定位对象与调用接口。当前电脑保留操作系统、架构、Shell、CWD、AgentHome 和可用状态；可选电脑列表省略重复的类型及架构细节。Skill／`AGENTS.md` 的 SHA256、Daemon boot ID、重复的 discovery Computer/CWD 和搜索服务内部 ID 不进入正文；搜索仅说明是否已配置。成功扫描的根目录和重复成功状态省略，缺失、失败、不完整及其必要路径仍明确说明。完整原始数据继续用于 Host 的绑定校验与去重，API／RPC 数据结构保持不变。Skill 正文变化通过具体路径及重新读取提示表达，电脑重启通过状态说明表达，不要求模型比较哈希或启动标识。
+
+初始完整快照含 `current_model`：`name`、`id`、`context_window` 和 `vision`。信息来自请求实际采用的版本化 Model Profile 及生效 override，不能按名字猜测能力；缺失视觉声明使用 `unknown`，窗口大小不是剩余 token 数。模型状态独立于电脑环境指纹。单独切换模型或修改其有效窗口／视觉能力时，只追加 `ContextKind=astral.model` 的简短 Host 通知，说明前后模型及当前能力，不重复电脑、技能、工作区指导和 API 地址。
+
+空闲选模用 `InjectContext` 持久化通知，不唤醒主模型；运行中的选模在新模型首次请求的 `CollectContext` 安全边界加入同类通知，避免独立排队与请求准备竞争造成重复或过期通知。相同状态不追加，失败的选择不宣布成功。重开根据已有完整快照及通知去重；compact 后重建完整环境时包含当前实际模型，不依赖摘要保留变更通知。
 
 创建 Session 时采集初始快照。平时在激活、完整 Assistant/工具结果批次结束后的安全边界，以及显式 Computer/CWD 切换时扫描；同一 Run 内的工具批次结束不是新一次用户激活。外部文件变化在下一次运行边界发现，不安装文件监视器，也不在每次 Provider 重试前扫描。内容不变不追加，追加本身不启动或延长 Run。
 
@@ -465,9 +478,9 @@ UI tokens、共享组件和状态文案集中维护。依赖补丁按 pnpm patch
 
 采集、预算或提交失败时，旧有效上下文保持完整，所选输入保持待投递；未提交摘要可在重试时重算。模型及 Computer I/O 不持有会话锁或数据库事务；提交前重新核对分支和所选输入，后来接收的输入留待后续边界，被清除的输入不得投递。手动 Compaction 复用准备流程，不消费驱动输入，也不自动生成回答。
 
-Host 对确定性内容计算指纹，与候选上下文中最近的快照比较，包含 Compaction ID，不包含采集时间等易变字段。A→B→A 必须保留两次变化；重开、网络重试和重复扫描不重复追加。Fork 继承既有 Computer/CWD，随后追加子 Session 自身的当前快照。历史、View 和上下文检查接口不采集环境、不修改会话配置；UI 所需模型预算预览仅在内存中计算。
+Host 对确定性电脑环境计算指纹，与候选上下文中最近的快照比较，包含 Compaction ID，不包含模型状态、采集时间等易变字段。A→B→A 必须保留两次变化；重开、网络重试和重复扫描不重复追加。Fork 继承既有 Computer/CWD，随后追加子 Session 自身的当前快照。历史、View 和上下文检查接口不采集环境、不修改会话配置；上下文检查在内存中拼接当前人格，UI 所需模型预算预览也仅在内存中计算。
 
-Skills 由选中 Computer 的 Daemon 发现：全局根为其操作系统用户 Home 下的 `~/.agents/skills`，工作区根为 `<cwd>/.agents/skills`。支持嵌套分类目录和符号链接并防止循环，找到 `SKILL.md` 的目录视为技能包，不继续扫描包内示例。目录包含 YAML 中的 name、description、scope、绝对路径和文件内容哈希；正文按需读取。同名技能保留全部条目，以 scope 和路径区分。Workspace 指导仅来自准确的 `<cwd>/AGENTS.md`，不向父目录查找。
+Skills 由选中 Computer 的 Daemon 发现：全局根为其操作系统用户 Home 下的 `~/.agents/skills`，工作区根为 `<cwd>/.agents/skills`。支持嵌套分类目录和符号链接并防止循环，找到 `SKILL.md` 的目录视为技能包，不继续扫描包内示例。模型可见目录包含 YAML 中的 name、description、scope 和绝对路径；文件内容哈希仅供 Host 内部变化检测，正文按需读取。同名技能保留全部条目，以 scope 和路径区分。Workspace 指导仅来自准确的 `<cwd>/AGENTS.md`，不向父目录查找。读取成功时，全文通过快照的 `discovery.agents_md.content` 提供给模型；共同提示词明确要求在当前目录工作时遵守这些工作区约定。切换 CWD 后以新目录的 `AGENTS.md` 为准，旧目录约定只作为历史。
 
 文件和根目录缺失是正常空状态；不可读、格式错误、扫描限额、Computer 离线、权限收回及旧 Daemon 不支持发现均显式记录，不以 Server 文件系统代替，也不沿用旧 CWD 的发现结果。单文件最多 1 MiB，一次扫描读取最多 16 MiB、目录条目预算 8192、递归深度 32；超限结果标记 partial。发现不可用仍允许纯文本对话，重新连接后的下次运行边界更新快照。
 
@@ -734,7 +747,11 @@ ModelAttempt 独立归属于 Session，不作为对话树节点保存。输入�
 
 ### localhost 入口
 
-Daemon 在 Computer 内提供 localhost HTTP 入口，将请求关联到平台内置 Gateway。入口绑定至少包含 Agent、Session 和 Computer；不同 Agent 在同一 Computer 上使用不同的 loopback 端口与各自视图。实际地址由 Harness 写入最新环境上下文的 `local_api`（`base_url`、`capabilities_url`、`openapi_url`）；system prompt 提供稳定的使用说明，命令无需 Token。
+Daemon 在 Computer 内提供 localhost HTTP 入口，将请求关联到平台内置 Gateway。入口绑定至少包含 Agent、Session 和 Computer；不同 Agent 在同一 Computer 上使用不同的 loopback 端口与各自视图。实际地址由 Harness 写入最新环境上下文的 `local_api`（`base_url`、`capabilities_url`）。固定提示词只概括额外能力并指向 `capabilities_url`；模型从所选 Computer 读取入口后自行发现详细用法，命令无需 Token。
+
+`GET /v1/capabilities` 是统一发现入口，返回调用与身份范围说明、按用途组织的能力及其 `read_url`，并链接完整 OpenAPI。`GET /v1/capabilities/{id}` 按需提供历史、聊天、文件或环境能力的用途、作用范围、行为与错误规则、请求示例及该能力的 OpenAPI 子集。子集直接取实际注册的路由、请求／响应 schema 及其传递引用，不能另维护一份参数定义。平台能力按账号继续发现，不将某个平台的能力泛化到所有账号。
+
+发送规则明确区分直接工具和 HTTP：绑定聊天优先使用当前 `send_message` schema 支持的文字与附件；其执行标识由 Host 提供。`Idempotency-Key` 仅是 HTTP 发送接口的必需请求头，在发现文档及 OpenAPI 中声明。文件文档同时说明 Web 文件引用、IM 原件下载及图片预览省略的区别。
 
 ```text
 Agent 的 Bash / 脚本
@@ -776,6 +793,7 @@ Agent 的 Bash / 脚本
 | 附件下载 | `POST /v1/attachments/download` | 将平台附件下载到调用方明确指定的 Computer 路径 |
 | 文件引用 | `POST /v1/files/reference` | 将当前 Computer 路径转为来源固定的 FileRef/可引用链接 |
 | API 说明 | `GET /v1/capabilities` | 当前视图支持的能力与文档入口 |
+| 能力文档 | `GET /v1/capabilities/{id}` | 按需读取用途、规则、示例和实际接口 schema |
 
 查询只返回当前 Agent 的可见对象；发送等操作在同一个视图内解释目标。省略目的地时，仅在当前 Session 有明确 IM 绑定且该接口支持默认目标的情况下使用绑定 Conversation；Web Session 没有隐式的外部发送目标。
 
@@ -1035,6 +1053,7 @@ Settings 使用独立视图、紧凑左侧导航和稳定的单列内容，不�
 | 字段 | 约束 |
 | --- | --- |
 | Name / Avatar | Bot 自身身份信息，直接编辑并自动保存，不通过资料弹窗 |
+| Persona | 基本设置直接提供可选多行文本；局部“应用人格”只保存该字段；所有 Session 的下一个模型请求使用最新值，清空后省略人格段落 |
 | Default Model | 从全局 Model Profiles 单选，选择后自动保存 |
 | Web Search | 从全局配置实例单选并自动保存，可未配置 |
 | Allowed Computers | Bot 电脑权限页中的机器列表，独立授权或撤销并展示真实状态，按实际后果决定是否确认，不等待页面保存 |

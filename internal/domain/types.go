@@ -31,6 +31,7 @@ type Agent struct {
 	Meta
 	Name              string                 `json:"name"`
 	Avatar            string                 `json:"avatar,omitempty"`
+	Persona           string                 `json:"persona,omitempty"`
 	DefaultModelID    string                 `json:"default_model_id,omitempty"`
 	DefaultReasoning  *core.ReasoningOptions `json:"default_reasoning,omitempty"`
 	ProbeModelID      string                 `json:"probe_model_id,omitempty"`

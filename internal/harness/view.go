@@ -32,8 +32,8 @@ type View struct {
 	ContextUsage  *ContextUsage              `json:"context_usage,omitempty"`
 }
 
-// InspectContext describes persisted context without refreshing environment or
-// configuration. The next activation reconciles any changed host settings.
+// InspectContext describes persisted context without appending environment or
+// configuration entries. Request preparation includes the current Bot persona.
 func (s *Service) InspectContext(ctx context.Context, id string) (sessions.Context, error) {
 	r, err := s.open(ctx, id)
 	if err != nil {

@@ -38,10 +38,14 @@ The tool returns the outcome of one send attempt: `sent` is `true` for acceptanc
 
 ## Computer API
 
-Read `local_api.base_url` from the current environment snapshot and append the paths below. The listener supplies Agent, Session and source Computer identity. Account credentials are never returned. Old processes retain their original Computer binding.
+Start at `local_api.capabilities_url` from the current environment. The index links to purpose-specific documentation at `/v1/capabilities/{id}` for history, chats, files and environment. Each document contains behavior rules, examples and a self-contained OpenAPI subset generated from the actual routes. The index also links the complete OpenAPI. Resolve relative links against `local_api.base_url`; no token is needed. The listener supplies Agent, Session and source Computer identity. Account credentials are never returned. Old processes retain their original Computer binding.
+
+The Host prompt only points to this discovery entry for API details. Endpoint paths, pagination, HTTP idempotency and file handling instructions live in the capability documents. Only currently IM-bound Sessions receive `send_message` and its matching output instructions; ordinary unbound Sessions use Web assistant text. This follows the current binding, regardless of where the Session was created or opened. The Host prompt does not mention Probe or assume proactive mode is enabled. Use the bound `send_message` tool for text and attachments supported by its schema; its execution identity is supplied by the Host, with no `Idempotency-Key` argument.
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /v1/capabilities` | Unified capability index, scope and documentation links |
+| `GET /v1/capabilities/{id}` | Instructions, examples and actual request/response schemas for one capability |
 | `GET /v1/accounts` | Owned account identities and chat scope |
 | `POST /v1/accounts/{id}/conversations/resolve` | Resolve `{external_id,topic_id?}` without creating a Session |
 | `GET /v1/conversations` | Known authorized chats |
@@ -61,7 +65,7 @@ Read `local_api.base_url` from the current environment snapshot and append the p
 
 All platform chat and message IDs are strings. QQ uses `private:<user ID>` and `group:<group ID>` to preserve its distinct address spaces. Topic IDs are only accepted by adapters that support them.
 
-Text and file sends require a stable `Idempotency-Key`. Reusing it with different content fails; replaying the same intent reads its existing outcome rather than sending it again. Successful calls return accepted receipts; send failures return an HTTP error containing the receipt ID and actual send error. Receipt lookup remains available after cancellation or disconnection. Accepted means platform acceptance, not final delivery. Weixin may acknowledge only the sent `client_id`; a `client:` receipt identifies that accepted request, not a server-side message identity usable for quoting or editing. Files with text on Weixin or Feishu use separate ordered receipts for the text and file. An uncertain outcome stays `unknown`, with no automatic retry.
+HTTP text and file sends require a stable `Idempotency-Key`. Reusing it with different content fails; replaying the same intent reads its existing outcome rather than sending it again. Successful calls return accepted receipts; send failures return an HTTP error containing the receipt ID and actual send error. Receipt lookup remains available after cancellation or disconnection. Accepted means platform acceptance, not final delivery. Weixin may acknowledge only the sent `client_id`; a `client:` receipt identifies that accepted request, not a server-side message identity usable for quoting or editing. Files with text on Weixin or Feishu use separate ordered receipts for the text and file. An uncertain outcome stays `unknown`, with no automatic retry.
 
 All adapters stream original file uploads and downloads without an Astral file-size ceiling. QQ and NapCat stream Base64 JSON; Weixin streams digest calculation and encryption from the immutable source Computer snapshot, reopening that snapshot for the encrypted upload. Server memory does not grow with the file, and files are not staged on Server disk. Platform errors, including an upstream size rejection, return to the caller. Telegram sends JPEG/PNG/WebP attachments with `sendPhoto` by default; `as_document:true` preserves an image as a document. Other files use `sendDocument`.
 
