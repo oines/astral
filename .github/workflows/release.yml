@@ -360,6 +360,7 @@ jobs:
           sudo systemctl start user@$(id -u).service
           echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+          echo "XDG_CONFIG_HOME=$HOME/.config" >> "$GITHUB_ENV"
           test ! -e "$HOME/.config/systemd/user/astral-server.service"
       - name: Download the published installer and verify its checksum
         shell: bash
@@ -417,7 +418,8 @@ jobs:
           set -euo pipefail
           astral_unit="$HOME/.config/systemd/user/astral-server.service"
           if [ -e "$astral_unit" ]; then
-            if ! grep -Fxq "# Astral Server installer root: $RUNNER_TEMP/astral-public-install" "$astral_unit"; then
+            astral_install_root=$(realpath -m "$RUNNER_TEMP/astral-public-install")
+            if ! grep -Fxq "# Astral Server installer root: $astral_install_root" "$astral_unit"; then
               echo '::error::The service belongs to another installation; cleanup stopped.'
               exit 1
             fi
