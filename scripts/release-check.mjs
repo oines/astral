@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { desktopNames, digest, distributionNames } from './release-assets.mjs'
+import { desktopNames, digest, distributionNames, macSigningReportName } from './release-assets.mjs'
 import { isDirectInvocation, repositoryRoot, validateTag, validateVersion } from './release-version.mjs'
 
 // Kilobyte fixtures only: no dependencies, network, build, real Astral execution,
@@ -78,11 +78,89 @@ export async function checkReleaseTools() {
     rejects('release-assets.mjs', [...baseArgs, '--output', 'wrong-version-output'], 'metadata does not match')
     await writeFormats({ ...formats, data_formats: { host: 4, core: 10 } })
     rejects('release-assets.mjs', [...baseArgs, '--output', 'wrong-formats-output'], 'metadata does not match')
+    await writeFormats(formats)
+
+    rejects('release-assets.mjs', [...baseArgs, '--mac-signed', '--output', 'missing-signing-report'], 'Missing required release artifact: mac-signing-report.json')
+    const macNames = packageNames.filter(name => name.startsWith('astral-darwin-') || name.includes('-mac-'))
+    const signedReport = {
+      schema_version: 1, version: '2026.10.1', source_sha: sourceSHA, team_id: '6N6W6Z6739',
+      certificate_expires_at: new Date(Date.now() + 366 * 24 * 60 * 60 * 1000).toISOString(),
+      status: 'accepted', native_tested_arch: 'arm64',
+      checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: true, gatekeeper: true, packaged_app_startup_shutdown: true },
+      notarizations: [
+        { kind: 'binaries' }, { kind: 'app', arch: 'arm64' }, { kind: 'app', arch: 'x64' }, { kind: 'dmg', arch: 'arm64' }, { kind: 'dmg', arch: 'x64' },
+      ].map((item, index) => ({ ...item, id: `12345678-1234-4234-8234-${String(index + 1).padStart(12, '0')}`, status: 'Accepted' })),
+      assets: await Promise.all(macNames.map(async name => ({ name, size: (await readFile(path.join(temporary, 'input', name))).length, sha256: await digest(path.join(temporary, 'input', name)) }))),
+    }
+    const writeSigningReport = report => writeFile(path.join(temporary, 'input', macSigningReportName), JSON.stringify(report))
+    await writeSigningReport(signedReport)
+    rejects('release-assets.mjs', [...baseArgs, '--output', 'implicit-signing-output'], 'Unexpected candidate input mac-signing-report.json')
+    invoke('release-assets.mjs', [...baseArgs, '--mac-signed', '--output', 'signed-output'])
+    const signedManifest = JSON.parse(await readFile(path.join(temporary, 'signed-output', 'release-manifest.json'), 'utf8'))
+    assert.equal(signedManifest.public_release_ready, false)
+    assert.equal(signedManifest.purpose, 'mac-signed-candidate')
+    assert.deepEqual(signedManifest.signing, { macos: 'signed-and-notarized', windows: 'not-signed', linux: 'not-signed' })
+    assert.equal(signedManifest.migration_status, 'not-implemented')
+    assert.equal(signedManifest.desktop_updater, 'not-implemented')
+    assert.deepEqual(signedManifest.assets.map(asset => asset.name).sort(), [...packageNames, 'checksums.txt', macSigningReportName].sort())
+    for (const asset of signedManifest.assets) {
+      assert.equal(await digest(path.join(temporary, 'signed-output', asset.name)), asset.sha256)
+      assert.equal((await readFile(path.join(temporary, 'signed-output', asset.name))).length, asset.size)
+    }
+    const signedSums = (await readFile(path.join(temporary, 'signed-output', 'SHA256SUMS'), 'utf8')).trim().split('\n')
+    assert.equal(signedSums.length, packageNames.length + 4)
+    assert(signedSums.some(line => line.endsWith(`  ${macSigningReportName}`)))
+    for (const line of signedSums) {
+      const [expected, name] = line.split('  ')
+      assert.equal(await digest(path.join(temporary, 'signed-output', name)), expected)
+    }
+    const signedNotes = await readFile(path.join(temporary, 'signed-output', 'RELEASE_NOTES.md'), 'utf8')
+    assert(signedNotes.includes(`<!-- astral-mac-signed-candidate:${sourceSHA} -->`))
+    assert(!signedNotes.includes('<!-- astral-unsigned-candidate:'))
+    assert(signedNotes.includes('verified signed and notarized'))
+    assert(signedNotes.includes('not implemented; public-release gate remains pending'))
+    for (const [name, change, message] of [
+      ['wrong-report-sha', report => { report.source_sha = '2'.repeat(40) }, 'metadata does not match'],
+      ['wrong-report-version', report => { report.version = '2026.10.2' }, 'metadata does not match'],
+      ['wrong-report-team', report => { report.team_id = 'K38CJP7Z2L' }, 'metadata does not match'],
+      ['wrong-report-status', report => { report.status = 'pending' }, 'metadata does not match'],
+      ['wrong-report-date', report => { report.certificate_expires_at = '2099-02-30T00:00:00Z' }, 'metadata does not match'],
+      ['expired-report', report => { report.certificate_expires_at = '2000-01-01T00:00:00Z' }, 'metadata does not match'],
+      ['wrong-native-arch', report => { report.native_tested_arch = 'universal' }, 'metadata does not match'],
+      ['failed-check', report => { report.checks.stapling = false }, 'must pass every required'],
+      ['fake-check', report => { report.checks.signatures = 'true' }, 'must pass every required'],
+      ['missing-check', report => { delete report.checks.packaged_app_startup_shutdown }, 'must pass every required'],
+      ['wrong-report-hash', report => { report.assets[0].sha256 = '0'.repeat(64) }, 'does not match final artifact bytes'],
+      ['wrong-report-size', report => { report.assets[0].size++ }, 'does not match final artifact bytes'],
+      ['missing-report-asset', report => { report.assets.pop() }, 'exactly the two Darwin binaries'],
+      ['duplicate-report-asset', report => { report.assets[1] = report.assets[0] }, 'exactly the two Darwin binaries'],
+      ['missing-notarization', report => { report.notarizations.pop() }, 'exactly five distinct accepted'],
+      ['failed-notarization', report => { report.notarizations[0].status = 'Invalid' }, 'exactly five distinct accepted'],
+      ['wrong-notarization-uuid', report => { report.notarizations[0].id = 'not-a-uuid' }, 'exactly five distinct accepted'],
+      ['duplicate-notarization', report => { report.notarizations[1].id = report.notarizations[0].id }, 'exactly five distinct accepted'],
+      ['wrong-notarization-arch', report => { report.notarizations[1].arch = 'x64' }, 'exactly five distinct accepted'],
+    ]) {
+      const report = JSON.parse(JSON.stringify(signedReport))
+      change(report)
+      await writeSigningReport(report)
+      rejects('release-assets.mjs', [...baseArgs, '--mac-signed', '--output', name], message)
+    }
+    await writeSigningReport(signedReport)
+    // An invalid API origin proves draft validation completed without making any network request.
+    const draftPreflight = directory => execFileSync(process.execPath, [path.join(temporary, 'scripts', 'release-draft.mjs'), directory], {
+      cwd: temporary, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000,
+      env: { ...process.env, GH_TOKEN: 'fixture-no-network', GITHUB_REPOSITORY: 'oines/astral', GITHUB_API_URL: 'https://fixtures.invalid' },
+    })
+    for (const directory of ['complete-output', 'signed-output']) assert.throws(() => draftPreflight(directory), error => error.stderr.toString().includes('configured only for github.com'))
+    await writeFile(path.join(temporary, 'signed-output', 'release-manifest.json'), JSON.stringify({ ...signedManifest, public_release_ready: true }))
+    assert.throws(() => draftPreflight('signed-output'), error => error.stderr.toString().includes('public releases and incomplete signing claims are forbidden'))
+    await writeFile(path.join(temporary, 'signed-output', 'release-manifest.json'), JSON.stringify({ ...signedManifest, purpose: 'public-release' }))
+    assert.throws(() => draftPreflight('signed-output'), error => error.stderr.toString().includes('public releases and incomplete signing claims are forbidden'))
     await writeFile(path.join(temporary, 'apps/desktop/package.json'), JSON.stringify({ version: '2026.10.2' }))
     rejects('release-version.mjs', ['check'], 'versions differ')
     const afterManifests = await Promise.all(['package.json', 'apps/desktop/package.json'].map(name => readFile(path.join(repositoryRoot, name), 'utf8')))
     assert.deepEqual(afterManifests, realManifests, 'Real workspace manifests must not change')
-    console.log('Release tools: calendar versions, 6+12 package inventory, exact hashes and rejection fixtures passed. Native installation/updating was not exercised.')
+    console.log('Release tools: calendar versions, unsigned and Mac signed draft inventories, final-byte signing reports, hashes and rejection fixtures passed. Native installation/updating was not exercised.')
   } finally {
     await rm(temporary, { recursive: true, force: true })
   }

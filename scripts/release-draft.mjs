@@ -1,10 +1,10 @@
 import { createReadStream } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { digest, desktopNames, distributionNames } from './release-assets.mjs'
+import { digest, desktopNames, distributionNames, macSigningReportName, validateMacSigningReport } from './release-assets.mjs'
 import { isDirectInvocation, readReleaseVersion, validateTag } from './release-version.mjs'
 
-// This helper can only create or resume an unsigned Draft Release. It has no publish path.
+// This helper can only create or resume review-only Draft Releases. It has no publish path.
 async function createDraft(directory) {
   const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
   if (!token) throw new Error('A job-scoped GITHUB_TOKEN with contents:write is required.')
@@ -13,8 +13,11 @@ async function createDraft(directory) {
   const manifest = JSON.parse(await readFile(path.join(directory, 'release-manifest.json'), 'utf8'))
   const version = await readReleaseVersion()
   validateTag(manifest.tag, version)
-  if (manifest.schema_version !== 1 || manifest.version !== version || manifest.repository !== repository || manifest.purpose !== 'unsigned-candidate' || manifest.public_release_ready !== false || !/^[a-f0-9]{40}$/.test(manifest.source_sha)) throw new Error('Only matching unsigned candidate manifests can create a draft.')
-  const requiredNames = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'checksums.txt', 'release-manifest.json', 'RELEASE_NOTES.md']
+  const macSigned = manifest.purpose === 'mac-signed-candidate'
+  if (manifest.schema_version !== 1 || manifest.version !== version || manifest.repository !== repository || !['unsigned-candidate', 'mac-signed-candidate'].includes(manifest.purpose) || manifest.public_release_ready !== false || !/^[a-f0-9]{40}$/.test(manifest.source_sha) ||
+      manifest.signing?.macos !== (macSigned ? 'signed-and-notarized' : 'not-signed-or-notarized') || manifest.signing?.windows !== 'not-signed' || manifest.signing?.linux !== 'not-signed' ||
+      manifest.migration_status !== 'not-implemented' || manifest.desktop_updater !== 'not-implemented') throw new Error('Only matching review-only candidate manifests can create a draft; public releases and incomplete signing claims are forbidden.')
+  const requiredNames = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'checksums.txt', 'release-manifest.json', 'RELEASE_NOTES.md', ...(macSigned ? [macSigningReportName] : [])]
   const sumLines = (await readFile(path.join(directory, 'SHA256SUMS'), 'utf8')).trim().split('\n')
   const sums = new Map()
   for (const line of sumLines) {
@@ -28,6 +31,7 @@ async function createDraft(directory) {
   for (const [name, expected] of sums) {
     if (await digest(path.join(directory, name)) !== expected) throw new Error(`Checksum mismatch before uploading ${name}.`)
   }
+  if (macSigned) await validateMacSigningReport(JSON.parse(await readFile(path.join(directory, macSigningReportName), 'utf8')), { version, sourceSHA: manifest.source_sha, files: new Map(requiredNames.map(name => [name, path.join(directory, name)])) })
   const expectedAssets = new Map()
   for (const name of files) expectedAssets.set(name, { size: (await stat(path.join(directory, name))).size, digest: `sha256:${sums.get(name) || await digest(path.join(directory, name))}` })
   const apiBase = process.env.GITHUB_API_URL || 'https://api.github.com'
@@ -56,7 +60,7 @@ async function createDraft(directory) {
   let tagObject = (await api(`/git/ref/tags/${encodeURIComponent(manifest.tag)}`)).object
   for (let depth = 0; tagObject.type === 'tag' && depth < 8; depth++) tagObject = (await api(`/git/tags/${tagObject.sha}`)).object
   if (tagObject.type !== 'commit' || tagObject.sha !== manifest.source_sha) throw new Error('The existing release tag no longer identifies the validated source commit.')
-  const marker = `<!-- astral-unsigned-candidate:${manifest.source_sha} -->`
+  const marker = `<!-- astral-${manifest.purpose}:${manifest.source_sha} -->`
   const notes = await readFile(path.join(directory, 'RELEASE_NOTES.md'), 'utf8')
   if (!notes.includes(marker)) throw new Error('Candidate release notes do not match the source.')
   let release = await api(`/releases/tags/${encodeURIComponent(manifest.tag)}`, { allowMissing: true })
@@ -64,7 +68,7 @@ async function createDraft(directory) {
     if (!release.draft || !release.body?.includes(marker) || release.target_commitish !== manifest.source_sha) throw new Error('Refusing to replace a published release or an unrelated draft.')
   } else release = await api('/releases', {
     method: 'POST',
-    body: JSON.stringify({ tag_name: manifest.tag, target_commitish: manifest.source_sha, name: `Astral ${version} — unsigned candidate`, body: notes, draft: true, prerelease: false, make_latest: 'false' }),
+    body: JSON.stringify({ tag_name: manifest.tag, target_commitish: manifest.source_sha, name: `Astral ${version} — ${macSigned ? 'Mac signed candidate' : 'unsigned candidate'}`, body: notes, draft: true, prerelease: false, make_latest: 'false' }),
   })
   let existingAssets = await listAssets(release.id)
   for (const name of files) {
@@ -87,7 +91,7 @@ async function createDraft(directory) {
   if (!release.draft || !release.body?.includes(marker)) throw new Error('Release changed state while uploading. No publish operation was requested by this helper.')
   const finalAssets = await listAssets(release.id)
   if (finalAssets.length !== files.length || files.some(name => !finalAssets.some(asset => asset.name === name))) throw new Error('Final draft inventory is incomplete; no publish operation was requested.')
-  console.log(`Unsigned candidate remains a Draft Release: ${release.html_url}`)
+  console.log(`Review-only ${macSigned ? 'Mac signed' : 'unsigned'} candidate remains a Draft Release: ${release.html_url}`)
 }
 
 if (await isDirectInvocation(import.meta.url)) {
