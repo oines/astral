@@ -39,6 +39,11 @@ func (r *runtime) reportedContextUsage(ctx context.Context, head string) (*Conte
 					continue
 				}
 				report = &ContextUsage{EntryID: entry.ID, InputTokens: entry.Usage.InputTokens}
+				if entry.Generation != nil && entry.Generation.Model.ContextWindow > 0 {
+					report.ModelRef = entry.Generation.Model.ID
+					report.ContextWindow = entry.Generation.Model.ContextWindow
+					goto done
+				}
 				var metadata struct {
 					ModelID string `json:"model_id"`
 				}

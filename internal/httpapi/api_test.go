@@ -112,8 +112,21 @@ func TestOwnerAuthAndIndependentHistoricalImageAndOriginalDownload(t *testing.T)
 	response = request(t, p.Context, server, "GET", "/api/v1/sessions/"+p.Session.ID+"/rollout", nil, true)
 	raw, err = io.ReadAll(response.Body)
 	response.Body.Close()
-	if err != nil || !strings.Contains(string(raw), base64.StdEncoding.EncodeToString(image)) || !strings.Contains(string(raw), `"model_request"`) {
-		t.Fatal("rollout export lost actual multimodal request")
+	if err != nil || !strings.Contains(string(raw), base64.StdEncoding.EncodeToString(image)) || !strings.Contains(string(raw), `"type":"attempt"`) || strings.Contains(string(raw), `"model_request"`) {
+		t.Fatal("rollout export lost the canonical image or separate attempt references")
+	}
+	response = request(t, p.Context, server, "GET", "/api/v1/sessions/"+p.Session.ID+"/attempts", nil, true)
+	var attempts sessions.AttemptPage
+	err = json.NewDecoder(response.Body).Decode(&attempts)
+	response.Body.Close()
+	if err != nil || len(attempts.Attempts) != 1 || attempts.Attempts[0].Outcome == nil || attempts.Attempts[0].Outcome.Reply != nil {
+		t.Fatalf("separate attempt records missing: %v", err)
+	}
+	response = request(t, p.Context, server, "GET", "/api/v1/sessions/"+p.Session.ID+"/attempts/"+attempts.Attempts[0].ID+"/request", nil, true)
+	raw, err = io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || response.StatusCode != 200 || !strings.Contains(string(raw), base64.StdEncoding.EncodeToString(image)) {
+		t.Fatal("referenced request reconstruction lost offline image")
 	}
 	response = request(t, p.Context, server, "GET", "/api/v1/sessions/"+p.Session.ID+"/history", nil, true)
 	raw, err = io.ReadAll(response.Body)

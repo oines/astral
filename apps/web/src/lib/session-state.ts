@@ -23,7 +23,7 @@ export function emptyState(): SessionState {
 export function addEntry(state: SessionState, entry: Entry, history = false) {
   state.trace[entry.id] = entry
   if (history || ['message', 'context', 'compaction'].includes(entry.kind)) state.entries[entry.id] = entry
-  const attempt = entry.model_response?.attempt_id
+  const attempt = entry.generation?.attempt_id
   if (attempt) { state.completedAttempts.add(attempt); delete state.previews[attempt] }
   if (entry.run && entry.run.status !== 'started') {
     state.completedRuns.add(entry.run.id)
@@ -161,8 +161,8 @@ export function executionStatus(view: SessionView, fallback = 'working'): Pick<T
   return { status: fallback }
 }
 export function transcriptGroups(state: SessionState): TranscriptGroup[] {
-  // Durable message content is the ordering authority. Model responses may be
-  // failed attempts, while tool lifecycle entries repeat the same invocation.
+  // Durable messages own accepted content. Attempts are separate execution
+  // records; tool lifecycle entries may repeat the same invocation.
   const entries = sortedEntries({ ...state.trace, ...state.entries })
   const tools = new Map<string, Entry>()
   for (const entry of entries) if (entry.tool) tools.set(entry.tool.invocation.execution_id, entry)

@@ -55,7 +55,7 @@ func chatOperations(adapter Adapter) []ChatOperation {
 		}
 	case *feishu:
 		for _, op := range FeishuOperationsCatalog() {
-			result = append(result, ChatOperation{Name: op.Name, Parameters: op.Parameters, MessageScoped: op.MessageScoped, Documentation: op.Documentation})
+			result = append(result, ChatOperation(op))
 		}
 	case *napcat:
 		for _, op := range []ChatOperation{
@@ -79,7 +79,7 @@ func (s *Service) AccountOperation(ctx context.Context, b domain.ExecutionBindin
 	}
 	if _, ok := a.(*telegram); ok {
 		result, err := s.TelegramOperation(ctx, b, accountID, name, request)
-		return ChatOperationResult{Result: result.Result}, err
+		return ChatOperationResult(result), err
 	}
 	if request.SourceConversationID != "" || len(request.Files) != 0 {
 		return ChatOperationResult{}, domain.Invalid("this operation does not accept source chats or file uploads")

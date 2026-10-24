@@ -257,11 +257,11 @@ func passages(text string, terms []string, caseSensitive bool, width int) []pass
 	previousEnd := 0
 	for i := 0; i < len(found); {
 		focus := found[i]
-		start, end := centered(len(body), focus, width)
+		start, _ := centered(len(body), focus, width)
 		// Adjacent hits share a passage, but dense matches never grow a
 		// passage to the size of an entire log. Every occurrence is pageable.
 		start = max(start, min(previousEnd, focus.start))
-		end = min(len(body), start+width)
+		end := min(len(body), start+width)
 		for j := start; j < focus.start && j < start+width/4; j++ {
 			if body[j] == '\n' {
 				start = j + 1

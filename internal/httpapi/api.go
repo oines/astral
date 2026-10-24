@@ -169,6 +169,7 @@ func New(config Config) *API {
 	a := &API{Config: config, Contract: httpcontract.New(), mux: http.NewServeMux()}
 	a.resources()
 	a.sessionRoutes()
+	a.attemptRoutes()
 	a.systemRoutes()
 	a.streamRoutes()
 	a.handler = a.authenticate(a.mux)
@@ -651,19 +652,23 @@ func (a *API) sessionRoutes() {
 		// During a Run, report the actual frozen request. A model selection for
 		// the next Attempt must not change the context ring of the current one.
 		if status.RunID != "" {
-			page, readErr := session.History().Scan(r.Context(), core.Query{SessionID: status.ID, Kind: core.EntryModelRequest, Reverse: true, Limit: 1, MaxBytes: 128 << 20})
+			page, readErr := session.Attempts().Scan(r.Context(), core.AttemptQuery{Reverse: true, Limit: 1, MaxBytes: 128 << 20})
 			if readErr != nil {
 				return ContextStats{}, readErr
 			}
-			if len(page.Entries) > 0 && page.Entries[0].RunID == status.RunID && page.Entries[0].ModelRequest != nil {
-				request := page.Entries[0].ModelRequest.Request
+			if len(page.Attempts) > 0 && page.Attempts[0].RunID == status.RunID {
+				attempt := page.Attempts[0]
+				request, rebuildErr := session.Attempts().Request(r.Context(), attempt.ID)
+				if rebuildErr != nil {
+					return ContextStats{}, rebuildErr
+				}
 				model, resolveErr := h.Models.Resolve(r.Context(), request.ModelID, nil)
 				if resolveErr != nil {
 					return ContextStats{}, resolveErr
 				}
 				estimated, estimateErr := modelbridge.EstimateTokens(r.Context(), model, request)
-				spec := model.Spec()
-				return ContextStats{EstimatedInput: estimated, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: request.MaxOutputTokens, HeadID: status.HeadID}, estimateErr
+				spec := attempt.Input.Model
+				return ContextStats{EstimatedInput: estimated, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: request.MaxOutputTokens, HeadID: attempt.Input.HeadID}, estimateErr
 			}
 		}
 		view, err := h.InspectContext(r.Context(), r.PathValue("id"))

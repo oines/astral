@@ -69,7 +69,7 @@ describe('reconciling live previews with durable history', () => {
   })
 
   it('applies a reconnect snapshot before queued events and never resurrects a completed attempt or run', () => {
-    const response = entry('response', 10, { kind: 'model_response', model_response: { attempt_id: 'attempt', purpose: 'run', error: 'disconnected', reply: { message: { role: 'assistant' } } } })
+    const response = entry('response', 10, { generation: { attempt_id: 'attempt', configuration_id: 'configuration', context_digest: 'digest', model: { id: 'model', context_window: 10000, max_output_tokens: 1000 } }, message: { role: 'assistant', content: [{ type: 'text', text: 'accepted' }] } })
     const runEnd = entry('end', 11, { kind: 'run', run: { id: 'run', status: 'failed' } })
     const state = fromSnapshot(snapshot([], [runEnd, response]))
     applyEvent(state, event(21, { model: { type: 'text_delta', content_index: 0, text: 'stale snapshot race' } }))
@@ -225,9 +225,10 @@ describe('ordered transcript process', () => {
     ])
   })
 
-  it('does not expose failed model responses or encrypted reasoning, and preserves streaming content order', () => {
+  it('discards failed attempts and hides opaque reasoning while preserving streaming content order', () => {
     const state = fromSnapshot(snapshot())
-    addEntry(state, entry('failed', 1, { kind: 'model_response', model_response: { attempt_id: 'failed-attempt', purpose: 'run', error: 'retry', reply: { message: { role: 'assistant', content: [{ type: 'reasoning', text: 'FAILED REASONING' }] } } } }))
+    applyEvent(state, event(1, { attempt_id: 'failed-attempt', model: { type: 'reasoning_delta', content_index: 0, text: 'FAILED REASONING' } }))
+    applyEvent(state, event(2, { type: 'attempt_failed', attempt_id: 'failed-attempt' }))
     addEntry(state, entry('opaque', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'reasoning' }] } }))
     applyEvent(state, event(3, { model: { type: 'reasoning_delta', content_index: 0, text: 'First' } }))
     applyEvent(state, event(4, { model: { type: 'text_delta', content_index: 1, text: 'Visible text' } }))

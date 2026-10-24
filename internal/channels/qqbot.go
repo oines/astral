@@ -326,7 +326,8 @@ func (q *qqbot) Poll(ctx context.Context, cursor string) (Batch, error) {
 			return Batch{NextCursor: string(encoded(q.state))}, nil
 		case 0:
 			batch := Batch{}
-			if frame.Type == "READY" {
+			switch frame.Type {
+			case "READY":
 				var ready struct {
 					SessionID string `json:"session_id"`
 				}
@@ -335,7 +336,7 @@ func (q *qqbot) Poll(ctx context.Context, cursor string) (Batch, error) {
 					return Batch{}, domain.Invalid("QQ gateway returned an invalid session")
 				}
 				q.state.SessionID = ready.SessionID
-			} else if frame.Type == "C2C_MESSAGE_CREATE" || frame.Type == "GROUP_AT_MESSAGE_CREATE" || frame.Type == "GROUP_MESSAGE_CREATE" {
+			case "C2C_MESSAGE_CREATE", "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE":
 				event, err := q.normalize(frame.Type, frame.Data)
 				if err != nil {
 					q.dropSocket()
