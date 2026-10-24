@@ -26,6 +26,14 @@ jobs:
           node-version: "26.7.0"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Check release versions and asset contracts
+        run: |
+          node scripts/release-version.mjs check
+          node scripts/release-check.mjs
+      - name: Check headless installer without installing
+        run: |
+          bash -n scripts/install-server.sh
+          bash scripts/install-server.sh --dry-run
       - run: test -z "$(git ls-files '*.go' | xargs gofmt -l)"
       - run: go test -race ./...
       - uses: golangci/golangci-lint-action@v8
@@ -41,6 +49,7 @@ jobs:
         with:
           name: astral-server-binaries
           path: dist/bin/
+          retention-days: 3
   containers:
     name: Container environment and in-place update
     needs: check
@@ -118,6 +127,9 @@ jobs:
           echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
       - run: pnpm test:daemon-service
+      - name: Native headless Server install and recovery
+        if: runner.os == 'Linux'
+        run: node scripts/check-headless-install.mjs
       - run: pnpm --filter @astral/desktop ${{ matrix.package }}
         id: package
         # Packaging is independent of the separately enrolled Daemon service.
@@ -149,6 +161,7 @@ jobs:
         if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         with:
           name: astral-desktop-${{ matrix.os }}
+          retention-days: 3
           path: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.zip
