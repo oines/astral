@@ -85,7 +85,7 @@ func (s *Service) catalog(ctx context.Context, agentID string, ids []string) ([]
 		if err = json.Unmarshal(raw.Data, &session); err != nil {
 			return nil, err
 		}
-		if session.AgentID == agentID {
+		if session.AgentID == agentID && session.Deletion == nil {
 			sessions = append(sessions, session)
 		}
 	}

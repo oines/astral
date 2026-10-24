@@ -6,7 +6,7 @@ import { useIntervalFn } from '@vueuse/core'
 import { useQuery } from '@pinia/colada'
 import { listBindingsQuery, listConnectionsQuery, listConnectionsQueryKey, listConversationsQuery, listConversationsQueryKey } from '@astral/sdk/colada'
 import { startWeixinLogin, pollWeixinLogin, deleteConnection, listConnections, listConversations, saveConnection, unbindConversation, setConversationProactive, type AstralInternalHttpapiConnectionInput, type AstralInternalHttpapiConnectionView, type AstralInternalDomainConversation, type AstralInternalDomainConnection } from '@astral/sdk'
-import { Button, Modal, Select, Switch, SettingsRow, SettingsSection } from '@astral/ui'
+import { Button, ConfirmPopover, Modal, Select, Switch, SettingsRow, SettingsSection } from '@astral/ui'
 import { ArrowLeft, ChevronRight, Plus, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import { errorText, newMeta, object, request } from '../../lib/api'
@@ -78,6 +78,8 @@ const adding = ref(false)
 const rebindID = ref('')
 const removing = ref<Conversation>()
 const expanding = ref<Connection>()
+const expandingAnchor = ref<HTMLElement>()
+const accessSelection = computed(() => expanding.value?.id === accountID.value ? 'all' : saves.value(`${resource.value}/access`, account.value?.access_mode))
 watch(account, value => {
   if (!value) return
   const values = connectionValues(value)
@@ -86,7 +88,7 @@ watch(account, value => {
   if (!existing) drafts[value.id] = { values, token: '', baseline }
   else if (JSON.stringify(existing.values) === existing.baseline) { existing.values = values; existing.baseline = baseline }
 }, { immediate: true })
-watch(accountID, () => { search.value = ''; action.error.value = ''; adding.value = false; removing.value = undefined; deleting.value = false })
+watch(accountID, () => { search.value = ''; action.error.value = ''; adding.value = false; removing.value = undefined; deleting.value = false; expanding.value = undefined; expandingAnchor.value = undefined })
 watch(() => [route.fullPath, props.agentID, props.platform], () => {
   if (route.path === '/settings/agents' && route.query.agent === props.agentID && route.query.connect === '1' && route.query.platform === props.platform && imAdapters.some(a => a.platform === props.platform)) {
     createAccount()
@@ -222,9 +224,9 @@ async function pollQR(submitCode = false) {
   finally { qrPolling.value = false }
 }
 
-function accessMode(mode: string) {
+function accessMode(mode: string, anchor: HTMLElement) {
   if (!account.value || mode === account.value.access_mode) return
-  if (mode === 'all') expanding.value = account.value
+  if (mode === 'all') { expandingAnchor.value = anchor; expanding.value = account.value }
   else void patchAccount(account.value.id, 'access', { access_mode: 'specified' }, 'specified')
 }
 async function expandAccess() {
@@ -437,8 +439,8 @@ async function removeConnection() {
         ><input
           type="radio"
           name="account-access"
-          :checked="saves.value(`${resource}/access`, account.access_mode) === mode"
-          @change="accessMode(mode)"
+          :checked="accessSelection === mode"
+          @change="accessMode(mode, $event.currentTarget as HTMLElement)"
         ><span><strong>{{ t(mode === 'all' ? 'accessAllChats' : 'accessSpecifiedChats') }}</strong><small>{{ t(mode === 'all' ? 'accessAllChatsHint' : 'accessSpecifiedChatsHint') }}</small></span></label>
         <SettingsFeedback :scope="`${resource}/access`" />
       </SettingsSection>
@@ -492,15 +494,29 @@ async function removeConnection() {
                 @click="rebindID = conversation.id; adding = true"
               >
                 {{ t('changeSession') }}
-              </Button><Button
+              </Button><ConfirmPopover
                 v-if="account.access_mode === 'specified'"
-                variant="ghost"
-                size="small"
-                class="danger-text"
-                @click="action.error.value = ''; removing = conversation"
+                :open="removing?.id === conversation.id"
+                :title="t('removeChatTitle', { name: conversation.title })"
+                :description="t('removeSpecifiedChatHint')"
+                :confirm-label="t('removeChat')"
+                :cancel-label="t('cancel')"
+                :busy="action.busy.value"
+                :error="action.error.value"
+                @update:open="open => { removing = open ? conversation : undefined; action.error.value = '' }"
+                @confirm="removeChat"
               >
-                {{ t('removeChat') }}
-              </Button>
+                <template #trigger>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    class="danger-text"
+                    :disabled="action.busy.value"
+                  >
+                    {{ t('removeChat') }}
+                  </Button>
+                </template>
+              </ConfirmPopover>
             </div>
           </div>
         </div>
@@ -526,13 +542,27 @@ async function removeConnection() {
           :label="t('deleteConnection')"
           :description="t('accountDeleteHint')"
         >
-          <Button
-            variant="danger"
-            size="small"
-            @click="action.error.value = ''; deleting = true"
+          <ConfirmPopover
+            v-model:open="deleting"
+            :title="t('deleteConnection')"
+            :description="t('deleteConnectionHint')"
+            :confirm-label="t('delete')"
+            :cancel-label="t('cancel')"
+            :busy="action.busy.value"
+            :error="action.error.value"
+            @update:open="action.error.value = ''"
+            @confirm="removeConnection"
           >
-            {{ t('delete') }}
-          </Button>
+            <template #trigger>
+              <Button
+                variant="danger"
+                size="small"
+                :disabled="action.busy.value"
+              >
+                {{ t('delete') }}
+              </Button>
+            </template>
+          </ConfirmPopover>
         </SettingsRow>
       </SettingsSection>
       <ConversationPicker
@@ -640,89 +670,22 @@ async function removeConnection() {
         </div>
       </form>
     </Modal>
-    <Modal
+    <ConfirmPopover
       :open="!!expanding"
       :title="t('expandChatAccess')"
+      :description="t('expandChatAccessHint')"
+      :confirm-label="t('allowAllChatsAction')"
+      :cancel-label="t('cancel')"
+      :anchor="expandingAnchor"
+      :busy="!!expanding && saves.state(`connection:${expanding.id}/access`).status === 'saving'"
+      variant="primary"
       @update:open="value => { if (!value) expanding = undefined }"
+      @confirm="expandAccess"
     >
-      <p class="muted">
-        {{ t('expandChatAccessHint') }}
-      </p>
       <SettingsFeedback
         v-if="expanding"
         :scope="`connection:${expanding.id}/access`"
       />
-      <div class="form-footer">
-        <Button
-          variant="ghost"
-          @click="expanding = undefined"
-        >
-          {{ t('cancel') }}
-        </Button><Button
-          variant="primary"
-          :busy="!!expanding && saves.state(`connection:${expanding.id}/access`).status === 'saving'"
-          @click="expandAccess"
-        >
-          {{ t('allowAllChatsAction') }}
-        </Button>
-      </div>
-    </Modal>
-    <Modal
-      :open="!!removing"
-      :title="t('removeChatTitle', { name: removing?.title })"
-      @update:open="value => { if (!value) removing = undefined }"
-    >
-      <p class="muted">
-        {{ t('removeSpecifiedChatHint') }}
-      </p><p
-        v-if="action.error.value"
-        class="error-box"
-        role="alert"
-      >
-        {{ action.error.value }}
-      </p>
-      <div class="form-footer">
-        <Button
-          variant="ghost"
-          @click="removing = undefined"
-        >
-          {{ t('cancel') }}
-        </Button><Button
-          variant="danger"
-          :busy="action.busy.value"
-          @click="removeChat"
-        >
-          {{ t('removeChat') }}
-        </Button>
-      </div>
-    </Modal>
-    <Modal
-      v-model:open="deleting"
-      :title="t('deleteConnection')"
-    >
-      <p class="muted">
-        {{ t('deleteConnectionHint') }}
-      </p><p
-        v-if="action.error.value"
-        class="error-box"
-        role="alert"
-      >
-        {{ action.error.value }}
-      </p>
-      <div class="form-footer">
-        <Button
-          variant="ghost"
-          @click="deleting = false"
-        >
-          {{ t('cancel') }}
-        </Button><Button
-          variant="danger"
-          :busy="action.busy.value"
-          @click="removeConnection"
-        >
-          {{ t('delete') }}
-        </Button>
-      </div>
-    </Modal>
+    </ConfirmPopover>
   </div>
 </template>

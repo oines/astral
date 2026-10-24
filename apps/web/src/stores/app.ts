@@ -80,8 +80,15 @@ export const useAppStore = defineStore('app', () => {
     cache.setQueryData(listSessionsQueryKey(), (sessionQuery.data.value ?? data.value?.sessions ?? []).map(session => session.id === id ? { ...session, ...patch } : session))
     await refresh().catch(() => undefined)
   }
+  function forgetSession(id: string) {
+    delete sessionViews.value[id]
+    delete drafts.value[id]
+    if (lastChatPath.value === `/sessions/${id}`) lastChatPath.value = '/'
+    cache.setQueryData(listSessionsQueryKey(), (sessionQuery.data.value ?? []).filter(session => session.id !== id))
+    if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, sessions: data.value.sessions.filter(session => session.id !== id) })
+  }
   const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).map(s => [s.id, sessionViews.value[s.id] ?? s])))
-  return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, presentation }
+  return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, presentation, forgetSession }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAppStore, import.meta.hot))

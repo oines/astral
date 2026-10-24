@@ -63,6 +63,9 @@ func (s *Service) bind(ctx context.Context, conversationID, sessionID string, fi
 		if record.BindingID != "" {
 			return domain.ConversationBinding{}, domain.Conflict("Session is already bound to another chat")
 		}
+		if record.Deletion != nil {
+			return domain.ConversationBinding{}, domain.Conflict("Session is being permanently deleted")
+		}
 		stop = append(stop, sessionID)
 	} else {
 		ref, options, selectionErr := s.Harness.Models.Selection(ctx, agent.DefaultModelID)
@@ -111,6 +114,9 @@ func (s *Service) bind(ctx context.Context, conversationID, sessionID string, fi
 			if sessionID != "" {
 				if err := tx.Get(ctx, "sessions", sessionID, &record); err != nil {
 					return err
+				}
+				if record.Deletion != nil {
+					return domain.Conflict("Session is being permanently deleted")
 				}
 			}
 			record.ConversationID, record.BindingID, record.ChannelPlatform = conversationID, binding.ID, connection.Platform

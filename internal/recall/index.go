@@ -246,6 +246,9 @@ func (s *Service) authorize(ctx context.Context, agentID, id string) (domain.Ses
 	if err := s.store.Get(ctx, "sessions", id, &session); err != nil {
 		return session, err
 	}
+	if session.Deletion != nil {
+		return domain.Session{}, domain.Missing("Session", id)
+	}
 	if agentID == "" || session.AgentID != agentID {
 		return domain.Session{}, domain.Forbidden("Session is outside the current Agent view")
 	}

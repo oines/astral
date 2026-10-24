@@ -766,6 +766,7 @@ export type AstralInternalDomainSession = {
     conversation_id?: string;
     created_at: string;
     cwd?: string;
+    deletion?: AstralInternalDomainSessionDeletion;
     fork_entry_id?: string;
     id: string;
     model_ref?: string;
@@ -779,6 +780,10 @@ export type AstralInternalDomainSession = {
     title: string;
     title_source?: string;
     updated_at: string;
+};
+
+export type AstralInternalDomainSessionDeletion = {
+    rollout_id: string;
 };
 
 export type AstralInternalGatewayCapabilities = {
@@ -920,6 +925,7 @@ export type AstralInternalHarnessView = {
     conversation_id?: string;
     created_at: string;
     cwd?: string;
+    deletion?: AstralInternalDomainSessionDeletion;
     error?: string;
     event_sequence: number;
     fork_entry_id?: string;
@@ -2953,6 +2959,35 @@ export type CreateSessionResponses = {
 };
 
 export type CreateSessionResponse = CreateSessionResponses[keyof CreateSessionResponses];
+
+export type DeleteSessionData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/api/v1/sessions/{id}';
+};
+
+export type DeleteSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type DeleteSessionError = DeleteSessionErrors[keyof DeleteSessionErrors];
+
+export type DeleteSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type DeleteSessionResponse = DeleteSessionResponses[keyof DeleteSessionResponses];
 
 export type GetSessionData = {
     body?: never;

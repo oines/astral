@@ -236,6 +236,13 @@ func (a *API) systemRoutes() {
 		if v.Sessions, err = readAll[domain.Session](r.Context(), h.Store, "sessions"); err != nil {
 			return v, err
 		}
+		visibleSessions := v.Sessions[:0]
+		for _, session := range v.Sessions {
+			if session.Deletion == nil {
+				visibleSessions = append(visibleSessions, session)
+			}
+		}
+		v.Sessions = visibleSessions
 		if v.Computers, err = a.computers(r.Context()); err != nil {
 			return v, err
 		}
@@ -578,6 +585,9 @@ func (a *API) sessionRoutes() {
 		}
 		views := make([]harness.View, 0, len(records))
 		for _, record := range records {
+			if record.Deletion != nil {
+				continue
+			}
 			view, viewErr := h.View(r.Context(), record.ID)
 			if viewErr != nil {
 				// One unavailable historical configuration must not prevent
@@ -598,6 +608,9 @@ func (a *API) sessionRoutes() {
 	route[SessionPresentation, httpcontract.OK](a, "PATCH", "/sessions/{id}", "updateSession", "Sessions", func(r *http.Request, input SessionPresentation) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.SaveSessionPresentation(r.Context(), r.PathValue("id"), input.Title, input.Pinned, input.Archived)
 	})
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/sessions/{id}", "deleteSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.DeleteSession(r.Context(), r.PathValue("id"), revision(r))
+	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
 	route[harness.InputRequest, harness.InputReceipt](a, "POST", "/sessions/{id}/inputs", "submitInput", "Sessions", func(r *http.Request, input harness.InputRequest) (harness.InputReceipt, error) {
 		return h.Submit(r.Context(), r.PathValue("id"), input)
 	})

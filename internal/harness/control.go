@@ -340,6 +340,9 @@ func (s *Service) SaveSessionPresentation(ctx context.Context, id string, title 
 	if err = s.Store.Get(ctx, "sessions", id, &record); err != nil {
 		return err
 	}
+	if record.Deletion != nil {
+		return domain.Missing("Session", id)
+	}
 	if title != nil {
 		if record.BindingID != "" {
 			return domain.Conflict("a bound Session uses the chat's title")

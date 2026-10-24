@@ -279,6 +279,15 @@ func (tx *Tx) Delete(ctx context.Context, kind, id string, revision int64) error
 	}
 	return nil
 }
+
+// Purge removes the current document and all historical revisions together.
+func (tx *Tx) Purge(ctx context.Context, kind, id string, revision int64) error {
+	if err := tx.Delete(ctx, kind, id, revision); err != nil {
+		return err
+	}
+	_, err := tx.tx.ExecContext(ctx, "DELETE FROM versions WHERE kind=? AND id=?", kind, id)
+	return err
+}
 func (s *Store) Secret(ctx context.Context, id string) (string, error) {
 	if id == "" {
 		return "", nil

@@ -59,6 +59,13 @@ type Session struct {
 	ForkEntryID     string                 `json:"fork_entry_id,omitempty"`
 	Pinned          bool                   `json:"pinned"`
 	Archived        bool                   `json:"archived"`
+	Deletion        *SessionDeletion       `json:"deletion,omitempty"`
+}
+
+// SessionDeletion is a durable maintenance intent, retained until every store
+// has removed the Session's data. It is not a recoverable archive state.
+type SessionDeletion struct {
+	RolloutID string `json:"rollout_id"`
 }
 
 const (

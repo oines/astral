@@ -35,6 +35,7 @@ type Service struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	mu        sync.Mutex
+	deleteMu  sync.Mutex
 	runtimes  map[string]*runtime
 	closed    bool
 	changes   chan string
@@ -75,6 +76,13 @@ func (s *Service) notify(id string) {
 }
 
 func (s *Service) open(ctx context.Context, id string) (*runtime, error) {
+	var record domain.Session
+	if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
+		return nil, err
+	}
+	if record.Deletion != nil {
+		return nil, domain.Missing("Session", id)
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -111,6 +119,9 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	var record domain.Session
 	if err = s.Store.Get(ctx, "sessions", r.id, &record); err != nil {
 		return err
+	}
+	if record.Deletion != nil {
+		return domain.Missing("Session", r.id)
 	}
 	r.agentID = record.AgentID
 	r.compactionPrompt = compactionPromptFor(record)
