@@ -78,6 +78,6 @@ if (process.argv[2] === '--child') {
   } finally {
     parent?.kill('SIGTERM')
     await service.stop()
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
 }
