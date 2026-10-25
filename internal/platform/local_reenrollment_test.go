@@ -79,8 +79,11 @@ func TestDeletedLocalComputerReenrollmentRequiresExplicitOwnerAction(t *testing.
 			if raw, err := os.ReadFile(marker); err != nil || string(raw) != "keep workspace" {
 				t.Fatal("re-enrollment changed local workspace:", err)
 			}
-			if err = s.Store.Get(ctx, "agents", bot.ID, &bot); err != nil || bot.DefaultComputerID != "" || len(bot.AllowedComputers) != 0 {
-				t.Fatal("new identity inherited old Bot permissions:", err)
+			// A cleared optional field is omitted from persisted JSON. Decode
+			// into a fresh value so the original default cannot survive in memory.
+			var retainedBot domain.Agent
+			if err = s.Store.Get(ctx, "agents", bot.ID, &retainedBot); err != nil || retainedBot.DefaultComputerID != "" || len(retainedBot.AllowedComputers) != 0 {
+				t.Fatalf("new identity inherited old Bot permissions: %+v %v", retainedBot, err)
 			}
 			again, err := s.UseLocal(ctx)
 			if err != nil || again.ID != replacement.ID {

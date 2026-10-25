@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,7 +96,7 @@ func TestWeixinMaintenanceRequiresExplicitAnonymousCachePurge(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if _, err = store.Secret(ctx, credential); !domain.IsMissing(err) {
+	if _, err = store.Secret(ctx, credential); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("explicit purge left anonymous credential: %v", err)
 	}
 	if records, err := store.List(ctx, "weixin_wire"); err != nil || len(records) != 0 {
