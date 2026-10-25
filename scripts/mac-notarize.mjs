@@ -51,28 +51,40 @@ async function writeSubmissionDiagnostic(value) {
 export async function submit(file, configuration, { run = command, record = writeSubmissionDiagnostic, log = console.log } = {}) {
   const auth = ['--keychain-profile', configuration.profile, '--keychain', configuration.keychain]
   let uploaded
+  let submitSucceeded = false
+  let submitExitCode = null
   try {
     uploaded = await run('xcrun', ['notarytool', 'submit', file, ...auth, '--no-wait', '--output-format', 'json'], { timeout: 600_000 })
+    submitSucceeded = true
+    submitExitCode = 0
   } catch (error) {
-    // Preserve a valid ID if notarytool returned one before its process failed.
+    // Apple can allocate an ID before the upload finishes. Keep it only for
+    // diagnosis; a failed submit command must never proceed to wait or info.
     uploaded = { stdout: error?.stdout }
+    if (Number.isSafeInteger(error?.code)) submitExitCode = error.code
   }
   let uploadResponse
   try { uploadResponse = submissionResponse(uploaded) }
   catch { throw new Error('Apple notarization upload did not return a valid submission ID; no artifacts are approved.') }
   const id = uploadResponse.id.toLowerCase()
-  const diagnostic = { id, name: path.basename(file) }
+  const diagnostic = { id, name: path.basename(file), upload_status: submitSucceeded ? 'completed' : 'unconfirmed', submit_exit_code: submitExitCode }
   const save = async response => {
-    if (submissionStatuses.has(response.status)) diagnostic.status = response.status
-    if (typeof response.createdDate === 'string' && response.createdDate.length < 128 && Number.isFinite(Date.parse(response.createdDate))) {
-      diagnostic.createdDate = new Date(response.createdDate).toISOString()
+    if (submitSucceeded) {
+      if (submissionStatuses.has(response.status)) diagnostic.status = response.status
+      if (typeof response.createdDate === 'string' && response.createdDate.length < 128 && Number.isFinite(Date.parse(response.createdDate))) {
+        diagnostic.createdDate = new Date(response.createdDate).toISOString()
+      }
     }
     // Never persist raw notarytool output, paths, authentication or child errors.
     try { await record({ ...diagnostic }) }
     catch { throw new Error('Could not save the Apple submission diagnostic; no artifacts are approved.') }
-    log(`Apple notarization ${id}: ${diagnostic.status || 'submitted'}`)
   }
   await save(uploadResponse)
+  if (!submitSucceeded) {
+    log(`Apple notarization ${id}: upload unconfirmed; submit command failed`)
+    throw new Error('Apple notarization upload was not confirmed: the submit command failed; no waiting or approval was performed.')
+  }
+  log(`Apple notarization ${id}: upload CLI completed (exit 0)`)
 
   let response
   try {
@@ -87,6 +99,7 @@ export async function submit(file, configuration, { run = command, record = writ
   }
   if (!response) throw new Error(`Apple notarization ${id} status could not be confirmed after waiting; the submission ID was saved and no artifacts are approved.`)
   await save(response)
+  log(`Apple notarization ${id}: ${response.status}`)
   if (response.status === 'In Progress') throw new Error(`Apple notarization ${id} is still In Progress after the wait timed out or was interrupted; this is not an Apple rejection. No artifacts are approved.`)
   return acceptedSubmission({ id, status: response.status })
 }
