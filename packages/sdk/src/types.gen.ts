@@ -355,7 +355,9 @@ export type AstralCoreUsage = {
     available?: boolean;
     cache_write_tokens?: number;
     cached_input_tokens?: number;
+    input_missing?: boolean;
     input_tokens?: number;
+    output_missing?: boolean;
     output_tokens?: number;
     reasoning_tokens?: number;
 };
