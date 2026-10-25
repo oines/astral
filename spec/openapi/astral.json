@@ -1367,6 +1367,9 @@
           "default_reasoning": {
             "$ref": "#/components/schemas/astral_core_ReasoningOptions"
           },
+          "deletion": {
+            "type": "boolean"
+          },
           "id": {
             "type": "string"
           },
@@ -5465,6 +5468,60 @@
       }
     },
     "/api/v1/computers/{id}": {
+      "delete": {
+        "operationId": "deleteComputer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "Computers"
+        ]
+      },
       "patch": {
         "operationId": "updateComputer",
         "parameters": [

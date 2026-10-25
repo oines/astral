@@ -166,6 +166,12 @@ func (s *Service) Read(ctx context.Context, agentID, sessionID string, request R
 		return page, nil
 	}
 	s.mu.Lock()
+	// Authorization before loading Core is insufficient when this request was
+	// queued behind a permanent deletion while waiting for the index mutex.
+	if _, err = s.authorize(ctx, agentID, sessionID); err != nil {
+		s.mu.Unlock()
+		return page, err
+	}
 	db, err := s.database(ctx)
 	if err == nil {
 		err = s.indexHead(ctx, db, state.RolloutID, state.Branch.HeadID)

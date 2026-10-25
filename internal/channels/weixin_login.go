@@ -42,6 +42,9 @@ func (s *Service) StartWeixinLogin(ctx context.Context, agentID string, input We
 	if err := s.Store.Get(ctx, "agents", agentID, &agent); err != nil {
 		return WeixinLoginView{}, err
 	}
+	if agent.Deletion {
+		return WeixinLoginView{}, domain.Missing("Bot", agentID)
+	}
 	if input.ConnectionID != "" {
 		var c domain.Connection
 		if err := s.Store.Get(ctx, "connections", input.ConnectionID, &c); err != nil {
@@ -58,6 +61,10 @@ func (s *Service) StartWeixinLogin(ctx context.Context, agentID string, input We
 	id := domain.ID("weixin_login")
 	pending := &weixinLogin{qr: qr, agentID: agentID, input: input, expires: time.Now().Add(10 * time.Minute)}
 	s.mu.Lock()
+	if s.deletingAgents[agentID] {
+		s.mu.Unlock()
+		return WeixinLoginView{}, domain.Missing("Bot", agentID)
+	}
 	if s.weixinLogins == nil {
 		s.weixinLogins = map[string]*weixinLogin{}
 	}
@@ -80,6 +87,9 @@ func (s *Service) PollWeixinLogin(ctx context.Context, id string, input WeixinLo
 	pending.mu.Lock()
 	defer pending.mu.Unlock()
 	view := WeixinLoginView{ID: id, QrcodeURL: pending.qr.QrcodeURL, Status: "expired"}
+	if err := s.activeAgent(ctx, pending.agentID); err != nil {
+		return view, err
+	}
 	if time.Now().After(pending.expires) {
 		return view, nil
 	}

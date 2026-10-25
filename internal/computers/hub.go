@@ -404,6 +404,24 @@ func (h *Hub) Revoke(ctx context.Context, id string) error {
 	}
 	return nil
 }
+
+// Forget releases Server-side connection and execution grant state after a
+// registration has been deleted. It does not manage the remote Daemon process.
+func (h *Hub) Forget(id string) {
+	h.mu.Lock()
+	active := h.live[id]
+	delete(h.live, id)
+	for key, grant := range h.grants {
+		if grant.ComputerID == id {
+			delete(h.grants, key)
+		}
+	}
+	h.mu.Unlock()
+	if active != nil {
+		_ = active.peer.Close()
+	}
+}
+
 func (h *Hub) Close() error {
 	h.mu.Lock()
 	peers := make([]*transport.Peer, 0, len(h.live))

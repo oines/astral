@@ -64,10 +64,19 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 				} else {
 					view, viewErr := s.Harness.InspectContext(ctx, b.SessionID)
 					if viewErr == nil {
-						probing = true
+						s.mu.Lock()
+						if s.deletingAgents[b.AgentID] {
+							s.mu.Unlock()
+							return
+						}
+						group := s.agentWorkersLocked(b.AgentID)
+						group.workers.Add(1)
 						s.workers.Add(1)
+						s.mu.Unlock()
+						probing = true
 						go func() {
 							defer s.workers.Done()
+							defer group.workers.Done()
 							request, cancel := context.WithTimeout(ctx, time.Minute)
 							defer cancel()
 							participate, requestErr := s.shouldParticipate(request, b, view)

@@ -4,7 +4,7 @@ import { resourceUsage, type AstralInternalHttpapiUsage } from '@astral/sdk'
 import { Button, Modal } from '@astral/ui'
 import { useI18n } from 'vue-i18n'
 import { request, errorText } from '../../lib/api'
-const props = defineProps<{ open: boolean; kind: string; id: string; name: string; busy?: boolean; actionLabel?: string; errorMessage?: string }>()
+const props = defineProps<{ open: boolean; kind: string; id: string; name: string; busy?: boolean; actionLabel?: string; description?: string; errorMessage?: string }>()
 defineEmits<{ 'update:open': [value: boolean]; confirm: [] }>()
 const { t } = useI18n()
 const usage = ref<AstralInternalHttpapiUsage>()
@@ -29,7 +29,7 @@ watch(() => [props.open, props.id], async () => {
     @update:open="$emit('update:open', $event)"
   >
     <p class="muted">
-      {{ t(kind === 'computers' ? 'revokeComputerHint' : 'resourceDeleteHint') }}
+      {{ description || t(kind === 'computers' ? 'revokeComputerHint' : 'resourceDeleteHint') }}
     </p>
     <p
       v-if="error || errorMessage"

@@ -2,7 +2,6 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
 	"strings"
 
@@ -13,6 +12,11 @@ import (
 )
 
 func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
+	if agent.Deletion {
+		return domain.Invalid("Bot deletion is managed by the delete operation")
+	}
+	s.agentMu.RLock()
+	defer s.agentMu.RUnlock()
 	if strings.TrimSpace(agent.Persona) == "" {
 		agent.Persona = ""
 	}
@@ -69,12 +73,34 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 	if agent.ID == "" {
 		agent.ID = domain.ID("agent")
 	}
-	return s.Store.Save(ctx, "agents", &agent.Meta, agent)
+	return s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		if agent.Revision != 0 {
+			if err := availableAgent(ctx, tx, agent.ID); err != nil {
+				return err
+			}
+		}
+		for _, id := range agent.AllowedComputers {
+			var computer domain.Computer
+			if err := tx.Get(ctx, "computers", id, &computer); err != nil {
+				return err
+			}
+			if computer.Revoked {
+				return domain.Invalid("a revoked Computer cannot be assigned")
+			}
+		}
+		return tx.Save(ctx, "agents", &agent.Meta, agent)
+	})
 }
 
 func (r *runtime) syncSelection(ctx context.Context) error {
 	var record domain.Session
 	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
+		return err
+	}
+	if record.Deletion != nil {
+		return domain.Missing("Session", r.id)
+	}
+	if err := r.service.agentAvailable(ctx, record.AgentID); err != nil {
 		return err
 	}
 	ref, options, err := r.service.Models.Selection(ctx, record.ProfileID)
@@ -271,6 +297,15 @@ func (s *Service) DecideApproval(ctx context.Context, id, approvalID string, dec
 }
 
 func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (domain.Session, error) {
+	var source domain.Session
+	if err := s.Store.Get(ctx, "sessions", id, &source); err != nil {
+		return domain.Session{}, err
+	}
+	release, err := s.LockAgent(ctx, source.AgentID)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	defer release()
 	parent, err := s.open(ctx, id)
 	if err != nil {
 		return domain.Session{}, err
@@ -316,7 +351,12 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 	if err = child.Close(ctx); err != nil {
 		return record, err
 	}
-	if err = s.Store.Save(ctx, "sessions", &record.Meta, &record); err != nil {
+	if err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		if err := availableAgent(ctx, tx, record.AgentID); err != nil {
+			return err
+		}
+		return tx.Save(ctx, "sessions", &record.Meta, &record)
+	}); err != nil {
 		return record, err
 	}
 	err = s.InitializeSession(ctx, record.ID)
@@ -358,41 +398,4 @@ func (s *Service) SaveSessionPresentation(ctx context.Context, id string, title 
 	err = s.Store.Save(ctx, "sessions", &record.Meta, &record)
 	s.notify(id)
 	return err
-}
-
-func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) error {
-	connections, err := s.Store.List(ctx, "connections")
-	if err != nil {
-		return err
-	}
-	for _, item := range connections {
-		var c domain.Connection
-		if json.Unmarshal(item.Data, &c) == nil && c.AgentID == id {
-			return domain.Conflict("this Agent still owns IM accounts")
-		}
-	}
-	items, err := s.Store.List(ctx, "sessions")
-	if err != nil {
-		return err
-	}
-	for _, item := range items {
-		var value domain.Session
-		if json.Unmarshal(item.Data, &value) == nil && value.AgentID == id {
-			return domain.Conflict("this Agent still owns retained Sessions; their history requires its configuration")
-		}
-	}
-	return s.Store.Update(ctx, func(tx *persistence.Tx) error {
-		if err := tx.Delete(ctx, "agents", id, revision); err != nil {
-			return err
-		}
-		var setup Onboarding
-		if err := tx.Get(ctx, "onboarding", "owner", &setup); err != nil && !domain.IsMissing(err) {
-			return err
-		}
-		if setup.AgentID == id && !setup.Completed {
-			setup.Completed = true
-			return tx.Save(ctx, "onboarding", &setup.Meta, &setup)
-		}
-		return nil
-	})
 }

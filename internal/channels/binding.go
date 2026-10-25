@@ -37,6 +37,11 @@ func (s *Service) bind(ctx context.Context, conversationID, sessionID string, fi
 	if err := s.Store.Get(ctx, "connections", conversation.ConnectionID, &connection); err != nil {
 		return domain.ConversationBinding{}, err
 	}
+	release, err := s.Harness.LockAgent(ctx, connection.AgentID)
+	if err != nil {
+		return domain.ConversationBinding{}, err
+	}
+	defer release()
 	old, err := s.activeBinding(ctx, conversationID)
 	if err != nil {
 		return old, err
@@ -97,6 +102,9 @@ func (s *Service) bind(ctx context.Context, conversationID, sessionID string, fi
 			binding.StartSequence = *firstSequence - 1
 		}
 		return s.Store.Update(ctx, func(tx *persistence.Tx) error {
+			if err := tx.RequireActiveAgent(ctx, agent.ID); err != nil {
+				return err
+			}
 			if old.ID != "" {
 				old.Enabled = false
 				if err := tx.Save(ctx, "bindings", &old.Meta, &old); err != nil {

@@ -64,12 +64,12 @@ type scope struct {
 func (s *Service) snapshot(ctx context.Context, agentID, kind string, request any, filter scope) (*sql.DB, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.activeAgent(ctx, agentID); err != nil {
+		return nil, "", err
+	}
 	db, err := s.database(ctx)
 	if err != nil {
 		return nil, "", err
-	}
-	if agentID == "" {
-		return nil, "", domain.Forbidden("an Agent view is required")
 	}
 	records, err := s.catalog(ctx, agentID, filter.ids)
 	if err != nil {
@@ -142,6 +142,10 @@ func (s *Service) resume(ctx context.Context, agentID, kind, token string, reque
 		return nil, position, domain.Invalid("cursor does not belong to this query type")
 	}
 	s.mu.Lock()
+	if err := s.activeAgent(ctx, agentID); err != nil {
+		s.mu.Unlock()
+		return nil, position, err
+	}
 	db, err := s.database(ctx)
 	s.mu.Unlock()
 	if err != nil {

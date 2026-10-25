@@ -457,6 +457,7 @@ export type AstralInternalDomainAgent = {
     default_computer_id?: string;
     default_model_id?: string;
     default_reasoning?: AstralCoreReasoningOptions;
+    deletion?: boolean;
     id: string;
     name: string;
     persona?: string;
@@ -1886,6 +1887,35 @@ export type GetComputerOperationResponses = {
 };
 
 export type GetComputerOperationResponse = GetComputerOperationResponses[keyof GetComputerOperationResponses];
+
+export type DeleteComputerData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/api/v1/computers/{id}';
+};
+
+export type DeleteComputerErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type DeleteComputerError = DeleteComputerErrors[keyof DeleteComputerErrors];
+
+export type DeleteComputerResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type DeleteComputerResponse = DeleteComputerResponses[keyof DeleteComputerResponses];
 
 export type UpdateComputerData = {
     body: AstralInternalHttpapiComputerUpdate;

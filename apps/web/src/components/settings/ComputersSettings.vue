@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useQuery } from '@pinia/colada'
+import { useQuery, useQueryCache } from '@pinia/colada'
 import { listComputersQuery, listComputersQueryKey } from '@astral/sdk/colada'
-import { revokeComputer, listComputers, updateComputer } from '@astral/sdk'
+import { deleteComputer, revokeComputer, listComputers, updateComputer } from '@astral/sdk'
 import { Button, Modal, SettingsSection, SettingsRow } from '@astral/ui'
 import { ArrowLeft, ChevronRight, Monitor, Plus, Server, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
@@ -23,13 +23,16 @@ const app = useAppStore()
 const action = useAction()
 const saves = useSettingsSave()
 const list = useQuery(listComputersQuery())
+const cache = useQueryCache()
 const search = ref('')
 const visibleComputers = computed(() => (list.data.value || []).filter(c => `${c.name} ${c.hostname || ''} ${c.container?.name || ''} ${c.container?.host || ''}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => Number(a.revoked) - Number(b.revoked) || Number(b.online) - Number(a.online)))
 const selectedID = ref('')
 const selected = computed(() => list.data.value?.find(c => c.id === selectedID.value))
 const adding = ref(false)
 const assign = ref(false)
-const deleting = ref(false)
+const revoking = ref(false)
+const removing = ref(false)
+const removalTarget = ref<Computer>()
 function edit(computer: Computer) { selectedID.value = computer.id; action.success.value = ''; action.error.value = '' }
 function add() { adding.value = true }
 async function rename(id: string, name: string) {
@@ -49,7 +52,19 @@ async function rename(id: string, name: string) {
   })
 }
 async function revoke() {
-  await action.run(async () => { if (selected.value) await request(revokeComputer({ path: { id: selected.value.id } })); deleting.value = false; await app.refresh() })
+  await action.run(async () => { if (selected.value) await request(revokeComputer({ path: { id: selected.value.id } })); revoking.value = false; await app.refresh() })
+}
+function confirmRemoval() { if (selected.value?.revoked) { action.error.value = ''; removalTarget.value = { ...selected.value }; removing.value = true } }
+async function remove() {
+  const computer = removalTarget.value
+  if (!computer || action.busy.value) return
+  await action.run(async () => {
+    await request(deleteComputer({ path: { id: computer.id }, query: { revision: computer.revision } }))
+    cache.setQueryData(listComputersQueryKey(), (list.data.value || []).filter(value => value.id !== computer.id))
+    removing.value = false
+    selectedID.value = ''
+    await app.refresh().catch(() => undefined)
+  })
 }
 function openAssignment() { assign.value = true }
 const assigned = computed(() => app.agents.filter(a => a.allowed_computers.includes(selectedID.value)))
@@ -57,7 +72,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
 <template>
   <div class="stack">
     <p
-      v-if="action.error.value && !adding && !assign"
+      v-if="action.error.value && !adding && !assign && !revoking && !removing"
       class="error-box"
     >
       {{ action.error.value }}
@@ -229,22 +244,49 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
           <Button
             variant="danger"
             size="small"
-            @click="action.error.value = ''; deleting = true"
+            @click="action.error.value = ''; revoking = true"
           >
             {{ t('revokeConnection') }}
           </Button>
         </SettingsRow>
       </SettingsSection>
+      <SettingsSection v-else>
+        <SettingsRow
+          :label="t('deleteComputer')"
+          :description="t('deleteComputerHint')"
+        >
+          <Button
+            variant="danger"
+            size="small"
+            @click="confirmRemoval"
+          >
+            {{ t('deleteComputer') }}
+          </Button>
+        </SettingsRow>
+      </SettingsSection>
       <ResourceDelete
         :id="selected.id"
-        :open="deleting"
+        :open="revoking"
         kind="computers"
         :name="selected.name"
         :action-label="t('revokeConnection')"
         :busy="action.busy.value"
         :error-message="action.error.value"
-        @update:open="deleting = $event"
+        @update:open="revoking = $event"
         @confirm="revoke"
+      />
+      <ResourceDelete
+        v-if="removalTarget"
+        :id="removalTarget.id"
+        :open="removing"
+        kind="computers"
+        :name="removalTarget.name"
+        :action-label="t('deleteComputer')"
+        :description="t('deleteComputerHint')"
+        :busy="action.busy.value"
+        :error-message="action.error.value"
+        @update:open="value => { if (!action.busy.value) removing = value }"
+        @confirm="remove"
       />
     </template>
     <AddComputerDialog

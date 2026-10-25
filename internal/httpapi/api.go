@@ -316,6 +316,9 @@ func (a *API) systemRoutes() {
 	route[httpcontract.Empty, httpcontract.OK](a, "POST", "/computers/{id}/revoke", "revokeComputer", "Computers", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.Hub.Revoke(r.Context(), r.PathValue("id"))
 	})
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/computers/{id}", "deleteComputer", "Computers", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.DeleteComputer(r.Context(), r.PathValue("id"), revision(r))
+	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
 	route[EnrollmentInput, computers.EnrollmentResult](a, "POST", "/computers/enrollments", "enrollComputer", "Computers", func(r *http.Request, input EnrollmentInput) (computers.EnrollmentResult, error) {
 		server := input.ServerURL
 		if server == "" {

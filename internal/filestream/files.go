@@ -65,7 +65,12 @@ func (s *Service) Upload(ctx context.Context, b domain.ExecutionBinding, name st
 func (s *Service) save(ctx context.Context, b domain.ExecutionBinding, info computers.FileInfo) (domain.FileRef, error) {
 	ref := domain.FileRef{Meta: domain.Meta{ID: domain.ID("file")}, AgentID: b.AgentID, ComputerID: b.ComputerID, Path: info.Path,
 		DisplayName: info.Name, MediaType: info.MediaType, Size: info.Size, Version: info.Version}
-	err := s.Store.Save(ctx, "files", &ref.Meta, &ref)
+	err := s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		if err := tx.RequireActiveAgent(ctx, b.AgentID); err != nil {
+			return err
+		}
+		return tx.Save(ctx, "files", &ref.Meta, &ref)
+	})
 	return ref, err
 }
 func (s *Service) Get(ctx context.Context, agentID, raw string) (domain.FileRef, error) {
