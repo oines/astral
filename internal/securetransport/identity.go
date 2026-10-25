@@ -130,14 +130,14 @@ func ClientConfigForProtocol(pin, protocol string) (*tls.Config, error) {
 			certificate := state.PeerCertificates[0]
 			hash := sha256.Sum256(certificate.RawSubjectPublicKeyInfo)
 			if subtle.ConstantTimeCompare(hash[:], expected) != 1 {
-				return errors.New("Server identity does not match the paired public key")
+				return errors.New("server identity does not match the paired public key")
 			}
 			if err := certificate.CheckSignature(certificate.SignatureAlgorithm, certificate.RawTBSCertificate, certificate.Signature); err != nil {
 				return errors.New("invalid Server identity certificate signature")
 			}
 			now := time.Now()
 			if now.Before(certificate.NotBefore) || now.After(certificate.NotAfter) {
-				return errors.New("Server identity certificate is outside its validity period")
+				return errors.New("server identity certificate is outside its validity period")
 			}
 			return nil
 		}}, nil

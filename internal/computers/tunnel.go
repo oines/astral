@@ -163,7 +163,7 @@ func RemoteStatus(ctx context.Context, credentials Credentials) (domain.Computer
 	}
 	defer conn.Close()
 	if response.Status == nil {
-		return domain.ComputerStatus{}, errors.New("Server returned no computer status")
+		return domain.ComputerStatus{}, errors.New("no computer status returned by Server")
 	}
 	return *response.Status, nil
 }
