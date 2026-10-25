@@ -68,7 +68,8 @@ func TestProvisioningDockerProcess(t *testing.T) {
 		output = state.Identity
 	case "build":
 	case "volume":
-		if args[1] == "create" {
+		switch args[1] {
+		case "create":
 			for i, arg := range args {
 				if arg == "--label" && i+1 < len(args) {
 					state.Identity = strings.TrimPrefix(args[i+1], "astral.operation=")
@@ -76,9 +77,9 @@ func TestProvisioningDockerProcess(t *testing.T) {
 			}
 			state.Volume = args[len(args)-1]
 			output = state.Volume
-		} else if args[1] == "inspect" {
+		case "inspect":
 			output = state.Identity
-		} else {
+		default:
 			os.Exit(2)
 		}
 	case "create":

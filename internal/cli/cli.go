@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/platform"
 	"github.com/oines/astral/internal/serviceurl"
@@ -454,7 +455,7 @@ func ownerRequest(ctx context.Context, args []string, out, stderr io.Writer) err
 		if configErr != nil {
 			return configErr
 		}
-		return fmt.Errorf("Server and Web session file are required; sign in with astral connect")
+		return fmt.Errorf("an Astral Server and Web session file are required; sign in with astral connect")
 	}
 	if err := serviceurl.Validate(config.Server); err != nil {
 		return err
@@ -564,7 +565,7 @@ func session(ctx context.Context, args []string, out, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		request.AddCookie(&http.Cookie{Name: "astral_session", Value: strings.TrimSpace(string(token))})
+		request.AddCookie(&http.Cookie{Name: auth.SessionCookieName(request.URL.Scheme == "https"), Value: strings.TrimSpace(string(token))})
 		response, err := sessionClient().Do(request)
 		if err != nil {
 			return err

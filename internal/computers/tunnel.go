@@ -138,7 +138,7 @@ func RegisterRemote(ctx context.Context, serverURL, pin, id, token string, hello
 	}
 	defer conn.Close()
 	if response.Credentials == nil || response.Credentials.ComputerID == "" || response.Credentials.Token == "" {
-		return Credentials{}, errors.New("Server returned incomplete computer credentials")
+		return Credentials{}, errors.New("incomplete computer credentials returned by Server")
 	}
 	credentials := *response.Credentials
 	credentials.ServerURL, credentials.ServerPin = serverURL, pin

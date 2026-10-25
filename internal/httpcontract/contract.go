@@ -36,9 +36,10 @@ func New() *Contract { return &Contract{Paths: map[string]any{}, Schemas: map[st
 func (c *Contract) Document() map[string]any {
 	return map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": "Astral API", "version": "0.1.0", "description": "Owner, bound Agent Gateway and authenticated Daemon interfaces. Streams use separate clients."},
 		"paths": c.Paths, "components": map[string]any{"schemas": c.Schemas, "securitySchemes": map[string]any{
-			"desktop":    map[string]any{"type": "apiKey", "in": "header", "name": "Authorization", "description": "Desktop TOKEN; private runtime identity accepted only from loopback."},
-			"webSession": map[string]any{"type": "apiKey", "in": "cookie", "name": "astral_session"},
-			"daemon":     map[string]any{"type": "http", "scheme": "bearer"},
+			"desktop":         map[string]any{"type": "apiKey", "in": "header", "name": "Authorization", "description": "Desktop TOKEN; private runtime identity accepted only from loopback."},
+			"webSessionHTTP":  map[string]any{"type": "apiKey", "in": "cookie", "name": "astral_session", "description": "Browser session for HTTP requests only."},
+			"webSessionHTTPS": map[string]any{"type": "apiKey", "in": "cookie", "name": "__Host-astral_session", "description": "Secure host-only browser session for HTTPS requests only."},
+			"daemon":          map[string]any{"type": "http", "scheme": "bearer"},
 		}}}
 }
 func (c *Contract) Merge(other *Contract) {
@@ -96,7 +97,7 @@ func (c *Contract) Describe(o Operation) {
 		operation["description"] = o.Description
 	}
 	if o.Auth {
-		operation["security"] = []any{map[string]any{"desktop": []string{}}, map[string]any{"webSession": []string{}}}
+		operation["security"] = []any{map[string]any{"desktop": []string{}}, map[string]any{"webSessionHTTP": []string{}}, map[string]any{"webSessionHTTPS": []string{}}}
 	}
 	parameters := []any{}
 	for _, match := range pathParameter.FindAllStringSubmatch(o.Path, -1) {

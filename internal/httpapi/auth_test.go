@@ -15,6 +15,7 @@ import (
 
 	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/pquerna/otp/totp"
 )
 
 func authServer(t *testing.T) (*auth.Service, *httptest.Server) {
@@ -236,5 +237,151 @@ func TestPasswordReauthenticationSetsRotatedCookieOnSameSession(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != 200 || after.CurrentSessionID != before.CurrentSessionID {
 		t.Fatalf("rotated cookie did not retain same session: %+v", after)
+	}
+}
+
+func TestHTTPSAndHTTPLoginsUseIndependentCookiesAndLogoutOnlyCurrentProtocol(t *testing.T) {
+	service, plain := authServer(t)
+	api := New(Config{Auth: service})
+	mux := http.NewServeMux()
+	mux.Handle("/auth/", api.AuthHandler())
+	mux.Handle("/api/v1/", api)
+	secure := httptest.NewTLSServer(mux)
+	t.Cleanup(secure.Close)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := *secure.Client()
+	client.Jar = jar
+	login := func(server *httptest.Server, expectedName string) {
+		t.Helper()
+		response := authRequest(t, &client, server, "POST", "/auth/login", `{"username":"owner","password":"correct-horse-battery"}`)
+		defer response.Body.Close()
+		cookies := response.Cookies()
+		if response.StatusCode != 200 || len(cookies) != 1 || cookies[0].Name != expectedName || cookies[0].Path != "/" || cookies[0].Domain != "" {
+			t.Fatalf("login did not isolate protocol cookie: %d %+v", response.StatusCode, cookies)
+		}
+		if expectedName == auth.SecureCookieName && !cookies[0].Secure {
+			t.Fatal("__Host cookie missing Secure")
+		}
+	}
+	view := func(server *httptest.Server) auth.View {
+		t.Helper()
+		response := authRequest(t, &client, server, "GET", "/api/v1/auth", "")
+		defer response.Body.Close()
+		var value auth.View
+		if response.StatusCode != 200 {
+			t.Fatalf("protocol login is not usable: %d", response.StatusCode)
+		}
+		if err := json.NewDecoder(response.Body).Decode(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	logout := func(server *httptest.Server, expectedName string, secureFlag bool) {
+		t.Helper()
+		response := authRequest(t, &client, server, "DELETE", "/auth/session", "")
+		response.Body.Close()
+		cookies := response.Cookies()
+		if response.StatusCode != 200 || len(cookies) != 1 || cookies[0].Name != expectedName || cookies[0].Secure != secureFlag || cookies[0].Path != "/" || cookies[0].Domain != "" || cookies[0].MaxAge >= 0 {
+			t.Fatalf("logout cleared wrong protocol cookie: %d %+v", response.StatusCode, cookies)
+		}
+	}
+	login(secure, auth.SecureCookieName)
+	secureSession := view(secure).CurrentSessionID
+	login(plain, auth.CookieName)
+	plainSession := view(plain).CurrentSessionID
+	if plainSession == secureSession {
+		t.Fatal("protocol logins unexpectedly shared one session")
+	}
+	if view(secure).CurrentSessionID != secureSession {
+		t.Fatal("HTTP login replaced HTTPS cookie on same host")
+	}
+	logout(plain, auth.CookieName, false)
+	response := authRequest(t, &client, plain, "GET", "/api/v1/auth", "")
+	response.Body.Close()
+	if response.StatusCode != 401 {
+		t.Fatal("HTTP logout did not remove its session")
+	}
+	if view(secure).CurrentSessionID != secureSession {
+		t.Fatal("HTTP logout cleared HTTPS session")
+	}
+	login(plain, auth.CookieName)
+	plainSession = view(plain).CurrentSessionID
+	logout(secure, auth.SecureCookieName, true)
+	response = authRequest(t, &client, secure, "GET", "/api/v1/auth", "")
+	response.Body.Close()
+	if response.StatusCode != 401 {
+		t.Fatal("HTTPS logout fell back to the HTTP cookie")
+	}
+	if view(plain).CurrentSessionID != plainSession {
+		t.Fatal("HTTPS logout cleared HTTP session")
+	}
+}
+func TestHTTPSRecoveryReauthRequiresSecureCookieAndSetsRotatedHostCookie(t *testing.T) {
+	service, _ := authServer(t)
+	setup, err := service.BeginTOTP(context.Background(), auth.Identity{Desktop: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := totp.GenerateCode(setup.Secret, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes, err := service.ConfirmTOTP(context.Background(), auth.Identity{Desktop: true}, auth.TOTPConfirm{SetupID: setup.SetupID, Code: code})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := New(Config{Auth: service})
+	mux := http.NewServeMux()
+	mux.Handle("/auth/", api.AuthHandler())
+	mux.Handle("/api/v1/", api)
+	server := httptest.NewTLSServer(mux)
+	t.Cleanup(server.Close)
+	client := browser(t, server)
+	response := authRequest(t, client, server, "POST", "/auth/login", `{"username":"owner","password":"correct-horse-battery"}`)
+	var login auth.LoginResult
+	_ = json.NewDecoder(response.Body).Decode(&login)
+	response.Body.Close()
+	if login.Authenticated || login.ChallengeID == "" {
+		t.Fatal("expected second-factor login")
+	}
+	raw, _ := json.Marshal(auth.CodeInput{ChallengeID: login.ChallengeID, Code: codes.Codes[0]})
+	response = authRequest(t, client, server, "POST", "/auth/login/recovery", string(raw))
+	response.Body.Close()
+	cookies := response.Cookies()
+	if response.StatusCode != 200 || len(cookies) != 1 || cookies[0].Name != auth.SecureCookieName || !cookies[0].Secure {
+		t.Fatalf("HTTPS factor login emitted wrong cookie: %d %+v", response.StatusCode, cookies)
+	}
+	oldToken := cookies[0].Value
+	response = authRequest(t, client, server, "POST", "/api/v1/auth/reauth", `{"password":"correct-horse-battery"}`)
+	var pending auth.LoginResult
+	_ = json.NewDecoder(response.Body).Decode(&pending)
+	response.Body.Close()
+	if response.StatusCode != 200 || pending.Authenticated || pending.ChallengeID == "" || len(response.Cookies()) != 0 {
+		t.Fatalf("incomplete HTTPS reauth changed cookie: %d %+v", response.StatusCode, pending)
+	}
+	raw, _ = json.Marshal(auth.CodeInput{ChallengeID: pending.ChallengeID, Code: codes.Codes[1]})
+	request, _ := http.NewRequest("POST", server.URL+"/auth/login/recovery", strings.NewReader(string(raw)))
+	request.AddCookie(&http.Cookie{Name: auth.CookieName, Value: oldToken})
+	response, err = server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != 401 {
+		t.Fatal("HTTPS reauth challenge accepted HTTP/old HTTPS cookie name")
+	}
+	response = authRequest(t, client, server, "POST", "/auth/login/recovery", string(raw))
+	response.Body.Close()
+	cookies = response.Cookies()
+	if response.StatusCode != 200 || len(cookies) != 1 || cookies[0].Name != auth.SecureCookieName || !cookies[0].Secure || cookies[0].Value == oldToken {
+		t.Fatalf("HTTPS completed reauth did not rotate __Host cookie: %d %+v", response.StatusCode, cookies)
+	}
+	response = authRequest(t, client, server, "GET", "/api/v1/auth", "")
+	response.Body.Close()
+	if response.StatusCode != 200 {
+		t.Fatal("rotated HTTPS cookie was not usable")
 	}
 }

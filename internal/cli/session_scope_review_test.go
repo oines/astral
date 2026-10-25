@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/platform"
 )
 
@@ -45,6 +46,42 @@ func TestServerOverrideDoesNotReuseAnotherServersSession(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("changing Server without explicitly selecting credentials must fail")
+	}
+}
+
+func TestWebJSONKeepsHTTPAndHTTPSCookiesSeparate(t *testing.T) {
+	for _, secure := range []bool{false, true} {
+		t.Run(map[bool]string{false: "HTTP", true: "HTTPS"}[secure], func(t *testing.T) {
+			name := auth.SessionCookieName(secure)
+			otherName := auth.SessionCookieName(!secure)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				cookie, err := r.Cookie(name)
+				if err != nil || cookie.Value != "current-session" {
+					t.Error("CLI omitted the protocol-specific session cookie")
+				}
+				if _, err := r.Cookie(otherName); err == nil {
+					t.Error("CLI sent the other protocol's session cookie")
+				}
+				http.SetCookie(w, &http.Cookie{Name: otherName, Value: "wrong-protocol", Path: "/", Secure: !secure})
+				http.SetCookie(w, &http.Cookie{Name: name, Value: "renewed-session", Path: "/", Secure: secure})
+				_, _ = io.WriteString(w, `{"authenticated":true}`)
+			})
+			var server *httptest.Server
+			if secure {
+				server = httptest.NewTLSServer(handler)
+				previous := http.DefaultTransport
+				http.DefaultTransport = server.Client().Transport
+				defer func() { http.DefaultTransport = previous }()
+			} else {
+				server = httptest.NewServer(handler)
+			}
+			defer server.Close()
+			var result map[string]bool
+			token, err := webJSON(context.Background(), "POST", server.URL+"/api/v1/auth/reauth", "current-session", map[string]string{"password": "fixture-password"}, &result)
+			if err != nil || token != "renewed-session" || !result["authenticated"] {
+				t.Fatalf("protocol-specific session refresh failed: %v", err)
+			}
+		})
 	}
 }
 

@@ -188,7 +188,7 @@ func (s *Service) Authenticate(r *http.Request) (Identity, error) {
 		}
 		return Identity{Desktop: true}, nil
 	}
-	cookie, err := r.Cookie(CookieName)
+	cookie, err := r.Cookie(SessionCookieName(strings.HasPrefix(s.Origin(r), "https://")))
 	if err != nil || cookie.Value == "" {
 		return Identity{}, unauthorized()
 	}
@@ -404,7 +404,7 @@ func (s *Service) verifyChallengeSessionLocked(r *http.Request, c *challenge) er
 	if c.SessionID == "" {
 		return nil
 	}
-	cookie, err := r.Cookie(CookieName)
+	cookie, err := r.Cookie(SessionCookieName(strings.HasPrefix(s.Origin(r), "https://")))
 	session := s.sessions[c.SessionID]
 	if err != nil || session == nil || !session.ExpiresAt.After(s.now()) || subtle.ConstantTimeCompare([]byte(digest(cookie.Value)), []byte(session.TokenHash)) != 1 {
 		return unauthorized()
@@ -579,10 +579,12 @@ func (s *Service) SetCookie(w http.ResponseWriter, r *http.Request, token string
 		return
 	}
 	maxAge := max(1, int(remaining.Seconds()))
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: token, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.Origin(r), "https://"), SameSite: http.SameSiteStrictMode, MaxAge: maxAge, Expires: expires})
+	secure := strings.HasPrefix(s.Origin(r), "https://")
+	http.SetCookie(w, &http.Cookie{Name: SessionCookieName(secure), Value: token, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: maxAge, Expires: expires})
 }
 func (s *Service) ClearCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.Origin(r), "https://"), SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	secure := strings.HasPrefix(s.Origin(r), "https://")
+	http.SetCookie(w, &http.Cookie{Name: SessionCookieName(secure), Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 }
 
 // Account changes and the affected session revocations commit together. Failed

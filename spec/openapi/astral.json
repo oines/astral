@@ -5221,9 +5221,16 @@
         "name": "Authorization",
         "type": "apiKey"
       },
-      "webSession": {
+      "webSessionHTTP": {
+        "description": "Browser session for HTTP requests only.",
         "in": "cookie",
         "name": "astral_session",
+        "type": "apiKey"
+      },
+      "webSessionHTTPS": {
+        "description": "Secure host-only browser session for HTTPS requests only.",
+        "in": "cookie",
+        "name": "__Host-astral_session",
         "type": "apiKey"
       }
     }
@@ -5268,7 +5275,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5314,7 +5324,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5370,7 +5383,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5428,7 +5444,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5466,7 +5485,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5514,7 +5536,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5552,7 +5577,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5600,7 +5628,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5648,7 +5679,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5696,7 +5730,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5744,7 +5781,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5792,7 +5832,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5830,7 +5873,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5868,7 +5914,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5916,7 +5965,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5954,7 +6006,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5992,7 +6047,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6040,7 +6098,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6081,7 +6142,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6127,7 +6191,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6183,7 +6250,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6221,7 +6291,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6262,7 +6335,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6310,7 +6386,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6358,7 +6437,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6406,7 +6488,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6444,7 +6529,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6482,7 +6570,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6530,7 +6621,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6578,7 +6672,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6634,7 +6731,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6690,7 +6790,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6738,7 +6841,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6779,7 +6885,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6825,7 +6934,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6881,7 +6993,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6939,7 +7054,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6980,7 +7098,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7044,7 +7165,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7102,7 +7226,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7140,7 +7267,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7205,7 +7335,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7246,7 +7379,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7292,7 +7428,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7348,7 +7487,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7396,7 +7538,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7444,7 +7589,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7492,7 +7640,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7540,7 +7691,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7591,7 +7745,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7629,7 +7786,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7675,7 +7835,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7723,7 +7886,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7764,7 +7930,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7815,7 +7984,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7856,7 +8028,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7902,7 +8077,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7958,7 +8136,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8006,7 +8187,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8057,7 +8241,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8115,7 +8302,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8171,7 +8361,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8222,7 +8415,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8278,7 +8474,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8319,7 +8518,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8360,7 +8562,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8406,7 +8611,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8462,7 +8670,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8520,7 +8731,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8561,7 +8775,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8607,7 +8824,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8663,7 +8883,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8709,7 +8932,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8765,7 +8991,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8831,7 +9060,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8906,7 +9138,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8978,7 +9213,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9034,7 +9272,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9090,7 +9331,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9148,7 +9392,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9206,7 +9453,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9254,7 +9504,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9302,7 +9555,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9358,7 +9614,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9439,7 +9698,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9503,7 +9765,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9561,7 +9826,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9633,7 +9901,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9691,7 +9962,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9747,7 +10021,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9805,7 +10082,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9863,7 +10143,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9919,7 +10202,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9983,7 +10269,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -10049,7 +10338,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -10114,7 +10406,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -10162,7 +10457,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -10210,7 +10508,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -10248,7 +10549,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -10294,7 +10598,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -10332,7 +10639,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -10390,7 +10700,10 @@
             "desktop": []
           },
           {
-            "webSession": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [

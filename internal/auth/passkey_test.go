@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,13 @@ func webRequest() *http.Request {
 	r := httptest.NewRequest("POST", "https://astral.example/auth/login/passkey/begin", nil)
 	r.RemoteAddr = "127.0.0.1:12345"
 	r.Header.Set("Origin", "https://astral.example")
+	return r
+}
+func (f *fixture) webBrowserRequest(token string) *http.Request {
+	r := webRequest()
+	if token != "" {
+		r.AddCookie(&http.Cookie{Name: SessionCookieName(strings.HasPrefix(f.s.Origin(r), "https://")), Value: token})
+	}
 	return r
 }
 func b64(v []byte) string { return base64.RawURLEncoding.EncodeToString(v) }
@@ -207,7 +215,7 @@ func TestPasskeyOnlyReauthCannotBeCompletedByRecoveryCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := f.s.Authenticate(browserRequest(token))
+	id, _ := f.s.Authenticate(f.webBrowserRequest(token))
 	f.now = f.now.Add(6 * time.Minute)
 	login, err := f.s.StartPasskeyReauthentication(context.Background(), id)
 	if err != nil {
@@ -216,11 +224,10 @@ func TestPasskeyOnlyReauthCannotBeCompletedByRecoveryCode(t *testing.T) {
 	if err = f.s.requireRecentLocked(id); errorCode(err) != "reauth_required" {
 		t.Fatalf("incomplete Passkey reauth elevated session: %v", err)
 	}
-	if _, _, err = f.s.CompleteCode(context.Background(), browserRequest(token), CodeInput{ChallengeID: login.ChallengeID, Code: codes.Codes[0]}, true); err == nil {
+	if _, _, err = f.s.CompleteCode(context.Background(), f.webBrowserRequest(token), CodeInput{ChallengeID: login.ChallengeID, Code: codes.Codes[0]}, true); err == nil {
 		t.Fatal("Passkey-only reauth downgraded to a recovery code")
 	}
-	r := webRequest()
-	r.AddCookie(&http.Cookie{Name: CookieName, Value: token})
+	r := f.webBrowserRequest(token)
 	c, err = f.s.BeginPasskeyLogin(context.Background(), r, login.ChallengeID)
 	if err != nil {
 		t.Fatal(err)
@@ -229,10 +236,10 @@ func TestPasskeyOnlyReauthCannotBeCompletedByRecoveryCode(t *testing.T) {
 	if err != nil || !result.Authenticated || newToken == "" || newToken == token {
 		t.Fatalf("Passkey reauth: %+v %q %v", result, newToken, err)
 	}
-	if _, err = f.s.Authenticate(browserRequest(token)); errorCode(err) != "unauthorized" {
+	if _, err = f.s.Authenticate(f.webBrowserRequest(token)); errorCode(err) != "unauthorized" {
 		t.Fatalf("old Passkey reauth token survived rotation: %v", err)
 	}
-	current, err := f.s.Authenticate(browserRequest(newToken))
+	current, err := f.s.Authenticate(f.webBrowserRequest(newToken))
 	if err != nil || current.SessionID != id.SessionID {
 		t.Fatalf("Passkey reauth changed session: %+v %v", current, err)
 	}
@@ -252,7 +259,7 @@ func TestCancelledPasskeyKeepsPasswordChallengeAvailableForRecovery(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = f.s.CompleteCode(context.Background(), browserRequest(""), CodeInput{ChallengeID: login.ChallengeID, Code: codes.Codes[0]}, true); err != nil {
+	if _, _, err = f.s.CompleteCode(context.Background(), f.webBrowserRequest(""), CodeInput{ChallengeID: login.ChallengeID, Code: codes.Codes[0]}, true); err != nil {
 		t.Fatalf("Passkey cancellation blocked alternative: %v", err)
 	}
 	if _, _, err = f.s.FinishPasskeyLogin(context.Background(), webRequest(), PasskeyFinishInput{ChallengeID: c.ChallengeID, Credential: v.assertion(t, c, "https://astral.example", true)}); err == nil {

@@ -43,7 +43,7 @@ func TestLoginCookieUsesVerifiedRequestScheme(t *testing.T) {
 		if response.Code != test.status {
 			t.Fatalf("%+v: status %d %s", test, response.Code, response.Body.String())
 		}
-		if test.status == 200 && (len(cookies) != 1 || cookies[0].Name != auth.CookieName || cookies[0].Secure != test.secure || !cookies[0].HttpOnly) {
+		if test.status == 200 && (len(cookies) != 1 || cookies[0].Name != auth.SessionCookieName(test.secure) || cookies[0].Secure != test.secure || !cookies[0].HttpOnly) {
 			t.Fatalf("%+v: incorrect cookie %+v", test, cookies)
 		}
 	}

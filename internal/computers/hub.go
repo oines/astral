@@ -69,7 +69,7 @@ func tokenHash(token string) string {
 
 func (h *Hub) Enroll(ctx context.Context, serverURL string, container, local bool) (EnrollmentResult, error) {
 	if h.identity == nil {
-		return EnrollmentResult{}, errors.New("Server computer identity is not configured")
+		return EnrollmentResult{}, errors.New("computer identity for this Server is not configured")
 	}
 	if err := serviceurl.Validate(serverURL); err != nil {
 		return EnrollmentResult{}, err

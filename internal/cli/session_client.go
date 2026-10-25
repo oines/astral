@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/oines/astral/internal/auth"
 )
 
 func sessionClient() *http.Client {
@@ -31,8 +33,9 @@ func webJSON(ctx context.Context, method, endpoint, token string, input, output 
 	if input != nil {
 		r.Header.Set("Content-Type", "application/json")
 	}
+	cookieName := auth.SessionCookieName(r.URL.Scheme == "https")
 	if token != "" {
-		r.AddCookie(&http.Cookie{Name: "astral_session", Value: token})
+		r.AddCookie(&http.Cookie{Name: cookieName, Value: token})
 	}
 	response, err := sessionClient().Do(r)
 	if err != nil {
@@ -49,7 +52,7 @@ func webJSON(ctx context.Context, method, endpoint, token string, input, output 
 		}
 	}
 	for _, cookie := range response.Cookies() {
-		if cookie.Name == "astral_session" && cookie.Value != "" {
+		if cookie.Name == cookieName && cookie.Value != "" {
 			return cookie.Value, nil
 		}
 	}

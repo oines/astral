@@ -13,6 +13,16 @@ import (
 )
 
 const CookieName = "astral_session"
+const SecureCookieName = "__Host-astral_session"
+
+// SessionCookieName separates HTTP and HTTPS browser storage. A Secure Cookie
+// cannot block a later HTTP login on the same host by sharing its cookie name.
+func SessionCookieName(secure bool) string {
+	if secure {
+		return SecureCookieName
+	}
+	return CookieName
+}
 
 type Config struct {
 	DesktopToken    string

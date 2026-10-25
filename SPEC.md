@@ -364,6 +364,8 @@ Web 管理维护一个管理员账户，用户名和密码可修改，不增加�
 
 Passkey 添加和使用都要求实际 HTTPS 页面及浏览器 WebAuthn 支持，localhost 的浏览器开发例外也不放行。Desktop 中的配置操作引导到 HTTPS 网页。使用可发现凭据支持不输入用户名的登录，认证必须包含指纹、面容或设备 PIN 等用户验证；服务端验证挑战有效期/一次性、签名、RP ID、Origin 和 UV。RP ID 绑定对应 HTTPS 主机名，不承诺一个 Passkey 跨所有 IP/域名通用。HTTP 不能静默绕过仅 Passkey 的第二步；可以改用 HTTPS、已保存的恢复码，或通过本机可信入口配置 TOTP/恢复账户。添加、解绑、恢复认证方式及修改安全设置必须具备近期完整验证；Desktop 的专用本机身份作为可信入口。
 
+HTTP 与 HTTPS 使用独立 Cookie 名称，分别为 `astral_session`、`__Host-astral_session`；根据可信实际访问协议只读取对应名称，不回退读取另一种。HTTPS Cookie 固定 Secure、Path `/` 且没有 Domain。两种协议在同一主机名下可分别登录、退出，不因浏览器的 Secure Cookie 覆盖保护形成登录循环。
+
 ### Computer 加密协议
 
 Server/Daemon 通信的唯一网络入口是 `GET /internal/computer-tunnel`。Daemon 主动连接外层 WS 或具有正常 CA/主机名验证的 WSS，内部固定建立 TLS 1.3，再执行注册、容器准备、电脑状态查询或长期连接认证；两层 TLS 是正常支持的部署方式。不在外层 Authorization、Hello 请求头或 query 中传电脑凭据，不提供明文降级或旧协议端点。

@@ -67,6 +67,8 @@ These commands prompt for a hidden password and confirmation. They use the runni
 
 Passwords use salted Argon2id hashes. A successful login creates a random browser-session token; the Server persists its digest and expiry. Cookies are HttpOnly and SameSite Strict, with Secure on HTTPS. Sessions default to 30 days, enforced by the Server. HTTP login is supported without a separate unsafe-login switch.
 
+HTTP and HTTPS use separate cookie names (`astral_session` and `__Host-astral_session`). HTTPS always sets Secure, Path `/` and no Domain. Each protocol reads only its own cookie, so switching between HTTP and HTTPS on the same hostname does not cause a Secure-cookie overwrite failure; each login and logout affects its own session.
+
 Public authentication requests have a 128 KiB body limit and a 10-second body-read deadline. At most eight requests per actual TCP peer and 64 globally may read authentication bodies concurrently; credential attempts have separate rate limits. These bounds apply to authentication requests, not file transfers or long-running Agent work.
 
 Adding and confirming either TOTP or a Passkey automatically enables the second step; there is no independent 2FA switch. Password login then requires one available second factor: TOTP, Passkey on HTTPS, or an unused recovery code. The **Allow Passkey passwordless login** switch defaults off and requires at least one Passkey. When enabled, Passkey login can skip username, password and TOTP; choosing password login still requires the second step. Removing the final Passkey also disables passwordless login; removing the final authentication method disables 2FA and removes its recovery codes.

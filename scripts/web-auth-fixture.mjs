@@ -59,7 +59,8 @@ export async function webFixtureCookie(dataDirectory, serverURL) {
   assert.equal(login.status, 200, 'Temporary Web administrator login failed')
   const result = await login.json()
   assert.equal(result.authenticated, true)
-  const cookie = login.headers.getSetCookie().find(value => value.startsWith('astral_session='))
+  const cookieName = new URL(serverURL).protocol === 'https:' ? '__Host-astral_session' : 'astral_session'
+  const cookie = login.headers.getSetCookie().find(value => value.startsWith(`${cookieName}=`))
   assert.ok(cookie, 'Web login did not issue an independent session')
   return cookie.split(';', 1)[0]
 }
