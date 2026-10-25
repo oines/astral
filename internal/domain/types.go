@@ -39,6 +39,7 @@ type Agent struct {
 	SearchProviderID  string                 `json:"search_provider_id,omitempty"`
 	AllowedComputers  []string               `json:"allowed_computers"`
 	DefaultComputerID string                 `json:"default_computer_id,omitempty"`
+	Deletion          bool                   `json:"deletion,omitempty"`
 }
 
 type Session struct {

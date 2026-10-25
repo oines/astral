@@ -71,6 +71,8 @@ type Server struct {
 	mu              sync.Mutex
 	local           *computers.Daemon
 	localLock       *os.File
+	localCancel     context.CancelFunc
+	localDone       chan struct{}
 	workers         sync.WaitGroup
 	provisioning    map[string]bool
 	closed          bool
@@ -181,13 +183,14 @@ func New(config Config) (server *Server, err error) {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.Hub = computers.NewHub(s.Store)
 	s.Harness = harness.New(s.Store, s.CoreStore, &modelbridge.Bridge{Store: s.Store, ModelCatalog: modelbridge.NewModelCatalog(filepath.Join(s.Store.Directory, "cache", "models.dev.json"), nil)}, s.Hub)
+	// Deletion recovery can remove IM accounts before any channel worker starts.
+	s.Channels = channels.New(s.Store, s.Harness)
 	if err = s.Harness.ResumeSessionDeletions(s.ctx); err != nil {
 		return nil, err
 	}
 	if err = s.Harness.InitializeOnboarding(s.ctx); err != nil {
 		return nil, err
 	}
-	s.Channels = channels.New(s.Store, s.Harness)
 	agentGateway := gateway.New(s.Harness, s.Channels)
 	s.Hub.Gateway = agentGateway.Handle
 	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, OwnerToken: s.token, PublicURL: s.Config.PublicURL, DataDirectory: config.DataDirectory, Version: config.Version,
@@ -234,7 +237,7 @@ func (s *Server) Start() error {
 	if !s.Config.NoLocal {
 		ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
 		defer cancel()
-		if _, err := s.UseLocal(ctx); err != nil {
+		if _, err := s.useLocal(ctx, false); err != nil {
 			s.mu.Lock()
 			s.startupError = err.Error()
 			s.mu.Unlock()
@@ -345,6 +348,18 @@ func (s *Server) computerStatus(w http.ResponseWriter, r *http.Request) {
 	httpcontract.JSON(w, 200, s.Hub.Status(c))
 }
 func (s *Server) UseLocal(ctx context.Context) (domain.ComputerStatus, error) {
+	status, err := s.useLocal(ctx, true)
+	if err == nil {
+		s.mu.Lock()
+		s.startupError = ""
+		s.mu.Unlock()
+	}
+	return status, err
+}
+
+// Re-enrollment is an explicit owner action. Starting the Server may reconnect
+// an existing identity, but must never recreate a deleted registration.
+func (s *Server) useLocal(ctx context.Context, reenroll bool) (domain.ComputerStatus, error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -352,8 +367,37 @@ func (s *Server) UseLocal(ctx context.Context) (domain.ComputerStatus, error) {
 	}
 	if s.local != nil {
 		id := s.local.Credentials.ComputerID
-		s.mu.Unlock()
-		return s.waitComputer(ctx, id)
+		var record domain.Computer
+		err := s.Store.Get(ctx, "computers", id, &record)
+		if err == nil && !record.Revoked {
+			s.mu.Unlock()
+			return s.waitComputer(ctx, id)
+		}
+		if !domain.IsMissing(err) || !reenroll {
+			s.mu.Unlock()
+			if err != nil && !domain.IsMissing(err) {
+				return domain.ComputerStatus{}, err
+			}
+			return domain.ComputerStatus{}, unavailableLocalRegistration(record.Revoked)
+		}
+		// The registration is gone and the owner explicitly requested a new
+		// connection. Keep its data directory while retiring the old boot.
+		s.localCancel()
+		if err := s.local.Close(ctx); err != nil {
+			s.mu.Unlock()
+			return domain.ComputerStatus{}, err
+		}
+		select {
+		case <-s.localDone:
+		case <-ctx.Done():
+			s.mu.Unlock()
+			return domain.ComputerStatus{}, ctx.Err()
+		}
+		if err := s.localLock.Close(); err != nil {
+			s.mu.Unlock()
+			return domain.ComputerStatus{}, err
+		}
+		s.local, s.localLock, s.localCancel, s.localDone = nil, nil, nil, nil
 	}
 	root := filepath.Join(s.Config.ComputerDirectory, "local")
 	lock, err := Lock(filepath.Join(root, "daemon.lock"))
@@ -383,12 +427,19 @@ func (s *Server) UseLocal(ctx context.Context) (domain.ComputerStatus, error) {
 	d.Hello.Version = s.Config.Version
 	if credentials.ComputerID != "" {
 		var record domain.Computer
-		if err = s.Store.Get(ctx, "computers", credentials.ComputerID, &record); err != nil || record.Revoked {
+		err = s.Store.Get(ctx, "computers", credentials.ComputerID, &record)
+		if domain.IsMissing(err) && reenroll {
+			credentials = computers.Credentials{ServerURL: localURL}
+		} else if err != nil || record.Revoked {
 			lock.Close()
 			s.mu.Unlock()
-			return domain.ComputerStatus{}, domain.Conflict("local Computer credentials are unavailable or revoked; inspect local Daemon configuration before reconnecting")
+			if err != nil && !domain.IsMissing(err) {
+				return domain.ComputerStatus{}, err
+			}
+			return domain.ComputerStatus{}, unavailableLocalRegistration(record.Revoked)
 		}
-	} else {
+	}
+	if credentials.ComputerID == "" {
 		enrollment, enrollErr := s.Hub.Enroll(ctx, localURL, false, true)
 		if enrollErr != nil {
 			lock.Close()
@@ -410,11 +461,26 @@ func (s *Server) UseLocal(ctx context.Context) (domain.ComputerStatus, error) {
 	}
 	d.Credentials = credentials
 	s.local, s.localLock = d, lock
+	localCtx, stopLocal := context.WithCancel(s.ctx)
+	done := make(chan struct{})
+	s.localCancel, s.localDone = stopLocal, done
 	s.workers.Add(1)
-	go func() { defer s.workers.Done(); _ = d.Run(s.ctx, nil) }()
+	go func() {
+		defer s.workers.Done()
+		defer close(done)
+		_ = d.Run(localCtx, nil)
+	}()
 	s.mu.Unlock()
 	return s.waitComputer(ctx, credentials.ComputerID)
 }
+
+func unavailableLocalRegistration(revoked bool) error {
+	if revoked {
+		return domain.Conflict("本机连接已撤销，请先删除电脑，再点击使用本机重新接入。")
+	}
+	return domain.Conflict("本机连接已删除，点击使用本机重新接入。")
+}
+
 func (s *Server) waitComputer(ctx context.Context, id string) (domain.ComputerStatus, error) {
 	timer := time.NewTicker(100 * time.Millisecond)
 	defer timer.Stop()

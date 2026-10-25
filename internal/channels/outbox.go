@@ -218,6 +218,9 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 	}
 	out := make([]domain.Outbox, 0, len(fragments))
 	err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		if err := tx.RequireActiveAgent(ctx, agentID); err != nil {
+			return err
+		}
 		firstID := domain.ID("outbox")
 		existing, claimErr := tx.ClaimIntent(ctx, key, firstID)
 		if claimErr != nil {
@@ -304,6 +307,10 @@ func (s *Service) dispatchPending() {
 			continue
 		}
 		s.mu.Lock()
+		if s.deletingAgents[record.AgentID] {
+			s.mu.Unlock()
+			continue
+		}
 		if len(s.sending) >= 4 {
 			s.mu.Unlock()
 			return
@@ -314,11 +321,14 @@ func (s *Service) dispatchPending() {
 		}
 		s.sending[bucket] = true
 		s.workers.Add(1)
+		group := s.agentWorkersLocked(record.AgentID)
+		group.workers.Add(1)
 		s.mu.Unlock()
 		go func() {
 			defer s.workers.Done()
+			defer group.workers.Done()
 			defer func() { s.mu.Lock(); delete(s.sending, bucket); s.mu.Unlock() }()
-			_ = s.dispatch(s.ctx, record.ID)
+			_ = s.dispatch(group.ctx, record.ID)
 		}()
 	}
 }
@@ -417,6 +427,9 @@ func (s *Service) finish(ctx context.Context, record *domain.Outbox, receipt Rec
 		record.Status, record.Error = "unknown", "platform response did not identify an accepted message"
 	}
 	return s.Store.Update(persist, func(tx *persistence.Tx) error {
+		if err := tx.RequireActiveAgent(persist, record.AgentID); err != nil {
+			return err
+		}
 		if err := tx.Save(persist, "outbox", &record.Meta, record); err != nil {
 			return err
 		}

@@ -246,7 +246,24 @@ func (s *Service) indexHead(ctx context.Context, db *sql.DB, rollout, head strin
 	return tx.Commit()
 }
 
+func (s *Service) activeAgent(ctx context.Context, id string) error {
+	if id == "" {
+		return domain.Forbidden("an Agent view is required")
+	}
+	var agent domain.Agent
+	if err := s.store.Get(ctx, "agents", id, &agent); err != nil {
+		return err
+	}
+	if agent.Deletion {
+		return domain.Missing("Bot", id)
+	}
+	return nil
+}
+
 func (s *Service) authorize(ctx context.Context, agentID, id string) (domain.Session, error) {
+	if err := s.activeAgent(ctx, agentID); err != nil {
+		return domain.Session{}, err
+	}
 	var session domain.Session
 	if err := s.store.Get(ctx, "sessions", id, &session); err != nil {
 		return session, err

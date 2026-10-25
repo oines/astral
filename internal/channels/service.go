@@ -16,24 +16,26 @@ import (
 )
 
 type Service struct {
-	Store        *persistence.Store
-	Harness      *harness.Service
-	Registry     Registry
-	Client       *http.Client
-	gate         sync.Mutex
-	bindings     sync.Mutex
-	mu           sync.Mutex
-	ctx          context.Context
-	cancel       context.CancelFunc
-	done         chan struct{}
-	workers      sync.WaitGroup
-	pollers      map[string]poller
-	inboxes      map[string]context.CancelFunc
-	sending      map[string]bool
-	statuses     map[string]Status
-	weixinLogins map[string]*weixinLogin
-	probeQuiet   time.Duration
-	probeMaxWait time.Duration
+	Store          *persistence.Store
+	Harness        *harness.Service
+	Registry       Registry
+	Client         *http.Client
+	gate           sync.Mutex
+	bindings       sync.Mutex
+	mu             sync.Mutex
+	ctx            context.Context
+	cancel         context.CancelFunc
+	done           chan struct{}
+	workers        sync.WaitGroup
+	pollers        map[string]poller
+	inboxes        map[string]context.CancelFunc
+	sending        map[string]bool
+	statuses       map[string]Status
+	weixinLogins   map[string]*weixinLogin
+	probeQuiet     time.Duration
+	probeMaxWait   time.Duration
+	agentWorkers   map[string]*agentWorkers
+	deletingAgents map[string]bool
 }
 type poller struct {
 	revision int64
@@ -54,7 +56,8 @@ type cursor struct {
 
 func New(store *persistence.Store, service *harness.Service) *Service {
 	s := &Service{Store: store, Harness: service, Registry: DefaultRegistry(), Client: http.DefaultClient,
-		pollers: map[string]poller{}, inboxes: map[string]context.CancelFunc{}, sending: map[string]bool{}, statuses: map[string]Status{}, probeQuiet: 10 * time.Second, probeMaxWait: time.Minute}
+		pollers: map[string]poller{}, inboxes: map[string]context.CancelFunc{}, sending: map[string]bool{}, statuses: map[string]Status{}, probeQuiet: 10 * time.Second, probeMaxWait: time.Minute,
+		agentWorkers: map[string]*agentWorkers{}, deletingAgents: map[string]bool{}}
 	service.IM = s
 	return s
 }
@@ -178,6 +181,9 @@ func (s *Service) saveConnection(ctx context.Context, c *domain.Connection, toke
 	s.gate.Lock()
 	defer s.gate.Unlock()
 	return s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		if err := tx.RequireActiveAgent(ctx, c.AgentID); err != nil {
+			return err
+		}
 		records, err := tx.List(ctx, "connections")
 		if err != nil {
 			return err
@@ -238,6 +244,13 @@ func (s *Service) ResolveConversation(ctx context.Context, id, external, topic s
 }
 func (s *Service) saveConversation(ctx context.Context, c *domain.Conversation) error {
 	return s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		var connection domain.Connection
+		if err := tx.Get(ctx, "connections", c.ConnectionID, &connection); err != nil {
+			return err
+		}
+		if err := tx.RequireActiveAgent(ctx, connection.AgentID); err != nil {
+			return err
+		}
 		var prior domain.Conversation
 		err := tx.Get(ctx, "conversations", c.ID, &prior)
 		if err != nil && !domain.IsMissing(err) {
@@ -350,17 +363,19 @@ func (s *Service) reconcile() {
 		}
 	}
 	for _, c := range connections {
-		if !c.Enabled {
+		if !c.Enabled || s.deletingAgents[c.AgentID] {
 			continue
 		}
 		if _, exists := s.pollers[c.ID]; exists {
 			continue
 		}
-		ctx, cancel := context.WithCancel(s.ctx)
+		group := s.agentWorkersLocked(c.AgentID)
+		ctx, cancel := context.WithCancel(group.ctx)
 		done := make(chan struct{})
 		s.pollers[c.ID] = poller{revision: c.Revision, cancel: cancel, done: done}
 		s.workers.Add(1)
-		go func() { defer s.workers.Done(); defer close(done); s.poll(ctx, c) }()
+		group.workers.Add(1)
+		go func() { defer s.workers.Done(); defer group.workers.Done(); defer close(done); s.poll(ctx, c) }()
 	}
 	s.mu.Unlock()
 	bindings, err := list[domain.ConversationBinding](s.ctx, s.Store, "bindings")
@@ -369,16 +384,18 @@ func (s *Service) reconcile() {
 	}
 	s.mu.Lock()
 	for _, binding := range bindings {
-		if !binding.Enabled {
+		if !binding.Enabled || s.deletingAgents[binding.AgentID] {
 			continue
 		}
 		if _, exists := s.inboxes[binding.ID]; exists {
 			continue
 		}
-		ctx, cancel := context.WithCancel(s.ctx)
+		group := s.agentWorkersLocked(binding.AgentID)
+		ctx, cancel := context.WithCancel(group.ctx)
 		s.inboxes[binding.ID] = cancel
 		s.workers.Add(1)
-		go func() { defer s.workers.Done(); s.inbox(ctx, binding) }()
+		group.workers.Add(1)
+		go func() { defer s.workers.Done(); defer group.workers.Done(); s.inbox(ctx, binding) }()
 	}
 	for id, cancel := range s.inboxes {
 		if slices.IndexFunc(bindings, func(b domain.ConversationBinding) bool { return b.ID == id && b.Enabled }) < 0 {
@@ -428,7 +445,7 @@ func (s *Service) poll(ctx context.Context, c domain.Connection) {
 					continue
 				}
 				event.Observation = normalizeSelf(event.Observation)
-				if _, pollErr = s.Store.Archive(ctx, event.Observation); pollErr != nil {
+				if _, pollErr = s.archiveEvent(ctx, event.Observation); pollErr != nil {
 					break
 				}
 				if !event.Observation.Self && event.Observation.Trigger != "" {

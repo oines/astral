@@ -15,7 +15,6 @@ import type { ModelSelection as Selection } from '../../lib/model-reasoning'
 import { useAction } from '../../composables/useAction'
 import { useSettingsSave } from '../../composables/useSettingsSave'
 import { useAppStore } from '../../stores/app'
-import ResourceDelete from './ResourceDelete.vue'
 import ChannelsSettings from './ChannelsSettings.vue'
 import SettingsFeedback from './SettingsFeedback.vue'
 import SettingsText from './SettingsText.vue'
@@ -42,7 +41,7 @@ watch(() => [selected.value?.id, selected.value?.persona], () => {
 const platform = computed(() => typeof route.query.platform === 'string' ? route.query.platform : route.query.tab === 'channels' ? 'telegram' : '')
 const computersPage = computed(() => route.query.tab === 'computers' && !platform.value)
 const creating = ref<Agent>()
-const deleting = ref(false)
+const deleting = ref<Agent>()
 const search = ref('')
 const visibleAgents = computed(() => app.agents.filter(a => a.name.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())))
 const computers = computed(() => app.computers.filter(c => !c.revoked || selected.value?.allowed_computers?.includes(c.id)))
@@ -104,15 +103,18 @@ async function create() {
   })
 }
 async function remove() {
-  const bot = selected.value
-  if (!bot) return
+  const bot = deleting.value
+  if (!bot || action.busy.value) return
   await action.run(async () => {
     await request(deleteAgent({ path: { id: bot.id }, query: { revision: bot.revision } }))
-    deleting.value = false
-    await app.refresh()
+    app.forgetAgent(bot.id)
+    for (const key of Object.keys(saves.drafts)) if (key.startsWith(`agent:${bot.id}/`)) delete saves.drafts[key]
+    deleting.value = undefined
+    await app.refresh().catch(() => undefined)
     await router.push('/settings/agents')
   })
 }
+function preventDeleteDismiss(event: Event) { if (action.busy.value) event.preventDefault() }
 </script>
 <template>
   <div class="settings-sections bot-settings">
@@ -293,7 +295,7 @@ async function remove() {
             <Button
               variant="danger"
               size="small"
-              @click="action.error.value = ''; deleting = true"
+              @click="action.error.value = ''; deleting = { ...selected }"
             >
               {{ t('delete') }}
             </Button>
@@ -361,16 +363,6 @@ async function remove() {
           </SettingsRow>
         </SettingsSection>
       </template>
-      <ResourceDelete
-        :id="selected.id"
-        :open="deleting"
-        kind="agents"
-        :name="selected.name"
-        :busy="action.busy.value"
-        :error-message="action.error.value"
-        @update:open="deleting = $event"
-        @confirm="remove"
-      />
     </template>
     <KeepAlive>
       <ChannelsSettings
@@ -379,6 +371,38 @@ async function remove() {
         :platform="platform"
       />
     </KeepAlive>
+    <Modal
+      :open="!!deleting"
+      :title="t('deleteAgent')"
+      :description="t('deleteAgentConfirm', { name: deleting?.name || '' })"
+      @update:open="value => { if (!value && !action.busy.value) deleting = undefined }"
+      @interact-outside="preventDeleteDismiss"
+      @escape-key-down="preventDeleteDismiss"
+    >
+      <p
+        v-if="action.error.value"
+        class="error-box"
+        role="alert"
+      >
+        {{ action.error.value }}
+      </p>
+      <div class="form-footer">
+        <Button
+          autofocus
+          :disabled="action.busy.value"
+          @click="deleting = undefined"
+        >
+          {{ t('cancel') }}
+        </Button>
+        <Button
+          variant="danger"
+          :busy="action.busy.value"
+          @click="remove"
+        >
+          {{ t('delete') }}
+        </Button>
+      </div>
+    </Modal>
     <Modal
       :open="!!creating"
       :title="t('newAgent')"

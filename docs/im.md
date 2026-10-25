@@ -10,6 +10,16 @@ Ordinary messages continuously enter Core as passive observations, including whe
 
 For currently bound Sessions, the Host overrides the compaction system prompt with the [continuity-preservation prompt](../internal/harness/prompts/im-compaction.md). It preserves task context, shared experiences, interaction patterns, ongoing topics and changes over time in a coherent summary without a mandatory task-checkpoint template. Binding changes and reopening refresh this selection. Unbound Sessions, including unbound forks, use Core's default prompt. Message order, tool-call/result preservation and compaction budgets remain governed by Core.
 
+Deleting a Bot permanently removes its Sessions and owned Astral IMStore data, including received and outgoing events, delivery records, account credentials, chat bindings, cursors and account configuration. The Server persists deletion intent, rejects new work for that Bot and joins its workers before cleanup; retries and startup recovery finish the same deletion. Other Bots retain their data. External platform accounts, chats and messages, and Computer work files are kept.
+
+Older development builds saved some Weixin protocol credentials without account ownership. If anonymous entries remain, deleting a Bot with a retained Weixin account fails before any deletion intent is committed. Normal runtime does not guess which Bot owns those entries. Stop Desktop or Server, back up its data directory, then run the one-time preparation command:
+
+```sh
+astral maintenance weixin-wire-ownership --data /path/to/server
+```
+
+It attributes entries only when retained account, chat or attachment identities prove their owner, and prints counts without credentials. Remaining anonymous entries produce a nonzero exit. The optional `--purge-unowned` flag explicitly clears the remaining anonymous Weixin protocol caches across all accounts and their unreferenced credentials. Other Weixin accounts may need a new incoming message before sending again. Attributed caches, conversation history and external platform messages are preserved. This command requires the Server process lock and refuses to create a new database or run alongside Desktop or Server.
+
 ## Find a Telegram Chat ID
 
 Send `/chat_id` or `/chat_id@bot_username` in a private chat, group, forum Topic or channel the connected bot can receive and reply to. Astral replies in that chat with `Chat ID: …`; a Topic also includes `Topic ID: …` and the reply stays in that Topic. Use the addressed form in groups with privacy mode enabled.

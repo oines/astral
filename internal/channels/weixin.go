@@ -295,6 +295,7 @@ func (w *weixinAdapter) ResolveConversation(ctx context.Context, id, topic strin
 
 type weixinWireRecord struct {
 	domain.Meta
+	ConnectionID string `json:"connection_id,omitempty"`
 	CredentialID string `json:"credential_id"`
 }
 
@@ -310,17 +311,32 @@ func (w *weixinAdapter) putWire(ctx context.Context, kind, id, value string) err
 		w.wire[key] = value
 		return nil
 	}
-	var record weixinWireRecord
-	err := w.store.Get(ctx, "weixin_wire", key, &record)
-	if err == nil {
-		return w.store.RotateSecret(ctx, record.CredentialID, value)
-	}
-	if !domain.IsMissing(err) {
-		return err
-	}
-	record.ID = key
 	return w.store.Update(ctx, func(tx *persistence.Tx) error {
-		var err error
+		var connection domain.Connection
+		if err := tx.Get(ctx, "connections", w.connection.ID, &connection); err != nil {
+			return err
+		}
+		if err := tx.RequireActiveAgent(ctx, connection.AgentID); err != nil {
+			return err
+		}
+		if connection.AgentID != w.connection.AgentID || connection.Adapter != "weixin.ilink" || connection.CredentialID != w.connection.CredentialID || connection.AccountID != w.credential.BotID {
+			return domain.Conflict("the original Weixin account configuration is no longer active")
+		}
+		var record weixinWireRecord
+		err := tx.Get(ctx, "weixin_wire", key, &record)
+		if err == nil {
+			if record.ConnectionID == "" {
+				return domain.Conflict("旧版微信缓存缺少账号归属，请先运行 IM 数据整理。")
+			}
+			if record.ConnectionID != connection.ID {
+				return domain.Forbidden("the private Weixin cache belongs to another account")
+			}
+			return tx.RotateSecret(ctx, record.CredentialID, value)
+		}
+		if !domain.IsMissing(err) {
+			return err
+		}
+		record.ID, record.ConnectionID = key, connection.ID
 		record.CredentialID, err = tx.PutSecret(ctx, value)
 		if err != nil {
 			return err

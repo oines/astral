@@ -1,5 +1,5 @@
 // Package cli delegates owner operations to the same HTTP API used by Web and
-// Desktop. Only service/Daemon process startup happens locally.
+// Desktop. Service/Daemon startup and explicit offline maintenance run locally.
 package cli
 
 import (
@@ -52,6 +52,8 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return serve(ctx, args[1:], out, stderr)
 	case "computer":
 		return computer(ctx, args[1:], out, stderr)
+	case "maintenance":
+		return maintenance(ctx, args[1:], out, stderr)
 	case "connect":
 		return connectOwner(ctx, args[1:], out, stderr)
 	case "doctor":
@@ -109,6 +111,7 @@ func usage(out io.Writer) {
   astral request METHOD /api/v1/PATH [--body-file FILE]
   astral doctor
   astral auth token [--data DIRECTORY]
+  astral maintenance weixin-wire-ownership --data DIRECTORY [--purge-unowned]
   astral version [--json | --data-formats]
 
 Remote access requires HTTPS. Owner credentials are read from a private file.
