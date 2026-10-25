@@ -6,8 +6,49 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 
 const exec = promisify(execFile)
+
+test('Windows PowerShell hashes installer assets without module discovery or Get-FileHash', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'astral-powershell-hash-test-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const content = Buffer.from([0, 255, 10, 13, 128, 1, 254, 42])
+  const file = path.join(root, 'release asset.exe')
+  const empty = path.join(root, 'empty asset.exe')
+  await fs.writeFile(file, content)
+  await fs.writeFile(empty, '')
+  const script = path.join(root, 'hash.ps1')
+  await fs.writeFile(script, `param([string]$Installer, [string]$File, [string]$Empty)
+$ErrorActionPreference = 'Stop'
+# The installer still uses these built-in cmdlets. Resolve each one with module
+# discovery disabled so this regression does not simply move to the next step.
+foreach ($name in @('Add-Type', 'Out-Null', 'Invoke-WebRequest', 'Join-Path', 'Where-Object', 'Test-Path', 'Move-Item', 'Remove-Item')) {
+  if (-not $ExecutionContext.InvokeCommand.GetCommand($name, [Management.Automation.CommandTypes]::Cmdlet)) {
+    throw "The installer requires an unavailable built-in cmdlet: $name"
+  }
+}
+$tokens = $null
+$parseErrors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count) { throw 'The installer has PowerShell syntax errors.' }
+$hashFunction = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-FileSHA256' }, $true)
+if (-not $hashFunction) { throw 'The installer hash function is missing.' }
+. ([scriptblock]::Create($hashFunction.Extent.Text))
+function Get-FileHash { throw 'Get-FileHash is unavailable in this environment.' }
+[Console]::WriteLine((Get-FileSHA256 $File))
+[Console]::WriteLine((Get-FileSHA256 $Empty))
+`)
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PSMODULEPATH'))
+  const { stdout } = await exec('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script,
+    '-Installer', path.resolve('internal/platform/installers/install.ps1'), '-File', file, '-Empty', empty,
+  ], { env: { ...environment, PSModulePath: '' }, timeout: 25000 })
+  assert.deepEqual(stdout.trim().split(/\r?\n/), [
+    createHash('sha256').update(content).digest('hex'),
+    createHash('sha256').update('').digest('hex'),
+  ])
+})
 
 test('Shell enrollment checks the selected HTTP address before installing or downloading', { skip: process.platform === 'win32' }, async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'astral-installer-test-'))

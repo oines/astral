@@ -13,6 +13,15 @@ $ErrorActionPreference = 'Stop'
 # Executables always come from the official HTTPS release. Redirects are
 # followed explicitly so a release download cannot downgrade to plain HTTP.
 Add-Type -AssemblyName System.Net.Http
+function Get-FileSHA256([string]$Path) {
+  # Hashing must also work when PowerShell is launched from another shell with
+  # a PSModulePath that cannot discover Microsoft.PowerShell.Utility.
+  $stream = [IO.File]::OpenRead($Path)
+  $sha256 = [Security.Cryptography.SHA256]::Create()
+  try {
+    return [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+  } finally { $sha256.Dispose(); $stream.Dispose() }
+}
 function Get-OfficialAsset([string]$Name, [string]$Target) {
   $uri = [Uri]("https://github.com/oines/astral/releases/latest/download/" + $Name)
   $handler = [Net.Http.HttpClientHandler]::new()
@@ -71,12 +80,12 @@ try {
   $matches = @($manifest -split "`n" | Where-Object { $_ -match ('^([a-fA-F0-9]{64})\s+' + [Regex]::Escape($name) + '\s*$') })
   if ($matches.Count -ne 1) { throw 'Astral distribution has no unique checksum.' }
   $expected = ($matches[0] -split '\s+')[0].ToLowerInvariant()
-  $actual = (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
+  $actual = Get-FileSHA256 $download
   if ($actual -ne $expected) { throw 'Astral checksum did not match; the installed version is unchanged.' }
   $release = Join-Path $installBase $actual
   [IO.Directory]::CreateDirectory($release) | Out-Null
   $executable = Join-Path $release 'astral.exe'
-  if ((Test-Path -LiteralPath $executable) -and (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant() -ne $actual) { throw 'An installed release is damaged. Remove that version directory and rerun this command.' }
+  if ((Test-Path -LiteralPath $executable) -and (Get-FileSHA256 $executable) -ne $actual) { throw 'An installed release is damaged. Remove that version directory and rerun this command.' }
   if (-not (Test-Path -LiteralPath $executable)) { Move-Item -LiteralPath $download -Destination $executable }
   $arguments = @('computer')
   if ($Update) { $arguments += @('update', '--update') }
