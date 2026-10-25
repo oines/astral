@@ -40,7 +40,11 @@ func dockerCommand(ctx context.Context, args ...string) *exec.Cmd {
 	if fixed {
 		args = append([]string{"--host", info.Endpoint}, args...)
 	}
-	command := exec.CommandContext(ctx, "docker", args...)
+	executable, lookupErr := dockerExecutable()
+	command := exec.CommandContext(ctx, executable, args...)
+	if lookupErr != nil {
+		command.Err = lookupErr
+	}
 	if fixed {
 		for _, value := range os.Environ() {
 			key, _, _ := strings.Cut(value, "=")
@@ -79,7 +83,7 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 		}
 		return fixed, nil
 	}
-	if _, err := exec.LookPath("docker"); err != nil {
+	if _, err := dockerExecutable(); err != nil {
 		message := "Install and start Docker Engine before creating a Computer container."
 		switch runtime.GOOS {
 		case "windows":

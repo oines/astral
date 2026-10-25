@@ -3,7 +3,9 @@ package platform
 import (
 	"context"
 	"net/http"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -112,9 +114,19 @@ func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testin
 }
 
 func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) {
-	// An unavailable executable is a real supported failure mode, not a mocked
-	// successful container. No Computer is registered by the failed operation.
-	t.Setenv("PATH", t.TempDir())
+	// A broken selected CLI is a supported failure mode. Keep this independent
+	// of any real Docker installation that standard-location discovery finds.
+	bin := t.TempDir()
+	name := "docker"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.WriteFile(filepath.Join(bin, name), []byte("unusable Docker executable"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("DOCKER_HOST", "unix:///unavailable-astral-test.sock")
+	t.Setenv("DOCKER_CONTEXT", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	root := t.TempDir()
