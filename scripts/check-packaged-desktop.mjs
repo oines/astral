@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
+import { rendererAuthentication } from './desktop-renderer-auth.mjs'
 import { execFile, spawn } from 'node:child_process'
 import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -38,6 +39,7 @@ let output = ''
 let failure
 let exit
 let running
+let rendererDiagnostic = 'The managed renderer has not been discovered.'
 const windowsDescendants = new Map()
 let windowsAppBirth
 app.stdout.on('data', chunk => { output = (output + chunk).slice(-6000) })
@@ -54,7 +56,7 @@ async function waitFor(check, message, timeout = 30_000) {
     if (await check()) return
     await delay(250)
   }
-  throw new Error(message)
+  throw new Error(typeof message === 'function' ? message() : message)
 }
 async function rendererStarted() {
   if (process.platform === 'win32') return windowsRendererStarted()
@@ -63,64 +65,6 @@ async function rendererStarted() {
   const ids = new Set([app.pid])
   for (let pass = 0; pass < 8; pass++) for (const process of processes) if (ids.has(process.parent)) ids.add(process.pid)
   return processes.some(process => ids.has(process.pid) && /--type=renderer(?:\s|$)/.test(process.args))
-}
-
-async function rendererAuthentication() {
-  const portFile = await readFile(path.join(electronProfile, 'DevToolsActivePort'), 'utf8').catch(error => {
-    if (error.code === 'ENOENT') return ''
-    throw error
-  })
-  if (!portFile) return false
-  const port = Number(portFile.split('\n', 1)[0])
-  assert.ok(Number.isInteger(port) && port > 0 && port <= 65535, 'Electron reported an invalid debugging port')
-  const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000) })
-  assert.equal(response.status, 200, 'Electron did not expose its temporary CDP target list')
-  const targets = await response.json()
-  const target = targets.find(target => {
-    if (target.type !== 'page') return false
-    try { return new URL(target.url).origin === new URL(running.url).origin } catch { return false }
-  })
-  if (!target) return false
-  const endpoint = new URL(target.webSocketDebuggerUrl)
-  assert.equal(endpoint.protocol, 'ws:')
-  assert.equal(endpoint.hostname, '127.0.0.1')
-  assert.equal(Number(endpoint.port), port)
-  const result = await evaluateRenderer(endpoint.href, `(async () => {
-    const response = await fetch('/auth/status', { credentials: 'same-origin', cache: 'no-store' });
-    return { origin: location.origin, status: response.status, auth: await response.json() };
-  })()`)
-  assert.equal(result.origin, new URL(running.url).origin, 'Authentication must be checked in the managed renderer')
-  assert.equal(result.status, 200, 'The actual Desktop renderer could not reach its authentication endpoint')
-  assert.equal(result.auth.authenticated, true, 'The actual Desktop renderer was not authenticated')
-  assert.equal(result.auth.desktop, true, 'The renderer used a browser cookie instead of the process-local Desktop identity')
-  return true
-}
-
-async function evaluateRenderer(endpoint, expression) {
-  const socket = new globalThis.WebSocket(endpoint)
-  let timer
-  try {
-    return await new Promise((resolve, reject) => {
-      timer = setTimeout(() => reject(new Error('The Desktop renderer authentication check timed out.')), 10_000)
-      socket.addEventListener('error', () => reject(new Error('The temporary Electron CDP connection failed.')), { once: true })
-      socket.addEventListener('close', () => reject(new Error('The temporary Electron CDP connection closed before authentication was checked.')), { once: true })
-      socket.addEventListener('open', () => {
-        socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
-      }, { once: true })
-      socket.addEventListener('message', event => {
-        try {
-          const message = JSON.parse(String(event.data))
-          if (message.id !== 1) return
-          if (message.error || message.result?.exceptionDetails) throw new Error('The Desktop renderer could not evaluate its authentication state.')
-          assert.ok(message.result?.result && Object.hasOwn(message.result.result, 'value'), 'The renderer returned no authentication result')
-          resolve(message.result.result.value)
-        } catch (error) { reject(error) }
-      })
-    })
-  } finally {
-    clearTimeout(timer)
-    socket.close()
-  }
 }
 
 async function windowsSnapshot(script, timeout = 30_000) {
@@ -210,14 +154,15 @@ try {
     }
     assert.equal(response.status, 200)
     const bootstrap = await response.json()
+    assert.equal(bootstrap.onboarding.completed, false, 'The packaged App smoke must use a fresh onboarding profile')
     return bootstrap.computers.some(computer => computer.local && computer.online)
   }, 'The packaged App did not start its Server and connect the local Daemon.', 45_000)
   await waitFor(async () => { if (exit) throw new Error(`Packaged App exited before renderer startup.\n${output}`); return rendererStarted() }, 'The actual packaged Electron App did not start a renderer.', 30_000)
   await waitFor(async () => {
     if (failure) throw failure
     if (exit) throw new Error(`Packaged App exited before renderer authentication.\n${output}`)
-    return rendererAuthentication()
-  }, 'The actual Desktop renderer did not authenticate with its native identity.', 30_000)
+    return rendererAuthentication(electronProfile, running.url, { diagnose: message => { rendererDiagnostic = message } })
+  }, () => `The actual Desktop renderer did not authenticate with its native identity.\nLast renderer state: ${rendererDiagnostic}`, 30_000)
   console.log('Actual Desktop renderer /auth/status confirms authenticated=true and desktop=true.')
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
   console.log(`Requesting ${process.platform === 'win32' ? 'crash cleanup' : 'normal App quit'} with SIGTERM (App PID ${app.pid}, Server PID ${running.pid}).`)

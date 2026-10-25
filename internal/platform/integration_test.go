@@ -78,14 +78,47 @@ func enrollmentComputer(t *testing.T, ctx context.Context, s *Server, id string)
 func TestDistributionInstallerRegistersActualDaemon(t *testing.T) {
 	s, ctx := distributionServer(t)
 	runCtx, stop := context.WithCancel(ctx)
-	command, enrollment := installerCommand(t, runCtx, s, t.TempDir(), false)
-	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
+	root := t.TempDir()
+	command, enrollment := installerCommand(t, runCtx, s, root, false)
+	// Keep process output in a file so diagnostics can safely read it while the
+	// foreground installer is still writing, including under the race detector.
+	log, err := os.Create(filepath.Join(root, "installer.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = log.Close() })
+	command.Stdout, command.Stderr = log, log
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { stop(); _ = command.Wait() })
-	remote := enrollmentComputer(t, ctx, s, enrollment)
+	done := make(chan struct{})
+	var processErr error
+	go func() {
+		processErr = command.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() { stop(); <-done })
+	registeredCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	var remote domain.Computer
+	var record domain.Enrollment
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if s.Store.Get(registeredCtx, "enrollments", enrollment, &record) == nil && record.ComputerID != "" &&
+			s.Store.Get(registeredCtx, "computers", record.ComputerID, &remote) == nil && s.Hub.Status(remote).Online {
+			break
+		}
+		select {
+		case <-done:
+			output, _ := os.ReadFile(log.Name())
+			t.Fatalf("native installer exited before its Daemon connected: %v (enrollment state %q)\n%s", processErr, record.State, output)
+		case <-registeredCtx.Done():
+			output, _ := os.ReadFile(log.Name())
+			t.Fatalf("native installer did not connect its Daemon: %v (enrollment state %q)\n%s", registeredCtx.Err(), record.State, output)
+		case <-ticker.C:
+		}
+	}
 	local, err := s.UseLocal(ctx)
 	if err != nil || remote.ID == local.ID || remote.Kind != "remote" {
 		t.Fatal("the installed daemon did not retain its independent identity")
