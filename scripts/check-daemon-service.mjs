@@ -35,8 +35,7 @@ let cleanupFailure
 const failures = []
 process.env.ASTRAL_SERVER_LISTEN = '127.0.0.1:0'
 delete process.env.ASTRAL_PUBLIC_URL
-delete process.env.ASTRAL_TLS_CERT
-delete process.env.ASTRAL_TLS_KEY
+delete process.env.ASTRAL_ALLOW_REMOTE_MANAGEMENT
 
 async function run(executable, ...args) {
   const result = await execute(executable, args, { cwd: repository, windowsHide: true, timeout: 90_000, maxBuffer: 1 << 20 })

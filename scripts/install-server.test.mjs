@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -99,4 +99,50 @@ test('ordinary release versions retain published, stable-latest and public-ready
     assert.notEqual(result.code, 0)
     assert.match(result.stderr, /public_release_ready/)
   }
+})
+
+test('HTTP deployment keeps remote management off and accepts intentional opt-in', supported, async t => {
+  const directory = await fixture(t)
+  const root = path.join(directory, 'server')
+  const args = [installer, '--root', root, '--dry-run']
+  const defaults = await run('bash', args)
+  assert.equal(defaults.code, 0, defaults.stderr)
+  assert.match(defaults.stdout, /Listen: 0\.0\.0\.0:4545\nRemote management: false/)
+  const remote = await run('bash', [...args, '--listen', '0.0.0.0:4545', '--public-url', 'http://100.80.1.2:4545', '--allow-remote-management'])
+  assert.equal(remote.code, 0, remote.stderr)
+  assert.match(remote.stdout, /Remote management: true/)
+  for (const extra of [['--tls-cert', '/tmp/cert'], ['--allow-remote-management=maybe'], ['--public-url', 'http://user:password@host:4545']]) {
+    assert.notEqual((await run('bash', [...args, ...extra])).code, 0)
+  }
+})
+
+test('reinstallation preserves saved network choices, including false, unless explicitly replaced', supported, async t => {
+  const directory = await fixture(t)
+  const root = path.join(directory, 'server')
+  await mkdir(path.join(root, 'data/server'), { recursive: true })
+  const settings = path.join(root, 'data/server/network.json')
+  const original = JSON.stringify({ listen: '127.0.0.1:8888', public_url: 'http://host:8888', allow_remote_management: false })
+  await writeFile(settings, original)
+  const args = [installer, '--root', root, '--dry-run']
+  const saved = await run('bash', args)
+  assert.equal(saved.code, 0, saved.stderr)
+  assert.match(saved.stdout, /Listen: 127\.0\.0\.1:8888\nRemote management: false/)
+  const explicit = await run('bash', [...args, '--listen', '0.0.0.0:9999', '--allow-remote-management=true'])
+  assert.equal(explicit.code, 0, explicit.stderr)
+  assert.match(explicit.stdout, /Listen: 0\.0\.0\.0:9999\nRemote management: true/)
+  assert.equal(await readFile(settings, 'utf8'), original, 'dry-run changed saved preferences')
+})
+
+test('download-only can obtain the new maintenance program before migrating an older installation', supported, async t => {
+  const directory = await fixture(t)
+  const root = path.join(directory, 'legacy-server')
+  await mkdir(root)
+  const old = JSON.stringify({ listen: '127.0.0.1:4545', tls_cert: '/old/cert', tls_key: '/old/key' })
+  await writeFile(path.join(root, 'install-config.json'), old)
+  const args = [installer, '--root', root, '--dry-run']
+  assert.notEqual((await run('bash', args)).code, 0, 'ordinary update skipped required offline migration')
+  const download = await run('bash', [...args, '--download-only', path.join(directory, 'distribution')])
+  assert.equal(download.code, 0, download.stderr)
+  assert.match(download.stdout, /Download and verify only/)
+  assert.equal(await readFile(path.join(root, 'install-config.json'), 'utf8'), old)
 })

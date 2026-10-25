@@ -10,6 +10,7 @@ The default root is the operating system's user configuration directory plus `as
 | `server/core.db` | Durable Core rollouts, actual model requests and frozen multimodal inputs |
 | `server/master.key` | Key for encrypted provider/channel credentials |
 | `server/owner.token` | Owner access credential |
+| `server/network.json` | Saved listener, access address and remote-management preference |
 | `computers/local/` | Local Computer identity, Daemon state and AgentHome directories |
 | `computers/provisioning/` | Local-container enrollment and provisioning files |
 
@@ -17,7 +18,24 @@ Use `--data` and `--computers-dir` to choose separate locations. Original attach
 
 Back up the server data directory, including its encryption key, while the server is stopped or with a consistent SQLite backup procedure. Back up Computer homes and container volumes independently. Restoring configuration without `master.key` cannot decrypt saved credentials. Removing or revoking a resource in Settings preserves existing history and Computer files.
 
-## Linux with HTTPS
+## Listener and remote management
+
+Astral serves HTTP on `0.0.0.0:4545` by default. The Desktop loads its local loopback address. Direct remote connections can enroll Computers, download the installer and binaries, and connect authenticated Daemons. The Web UI, sign-in, OpenAPI and all Owner management APIs are unavailable to direct remote connections until **Settings → Security & Access → Allow remote management** is enabled. Enabling it retains Owner authentication. HTTP is suitable for a network you provide, such as a LAN or Tailscale; use your own HTTPS reverse proxy when needed.
+
+The access check uses the actual TCP peer. Host, Origin and forwarded-address headers cannot make a remote connection local. An explicitly configured local reverse proxy, SSH tunnel or Tailscale Serve appears as a loopback connection and can expose the complete local management entry even while direct remote management is disabled. Configure those forwarding services deliberately.
+
+**Access address** is the full URL placed in enrollment commands and maintenance downloads. It does not change the listener or remote-management switch. The default is chosen from an actual Tailscale Serve HTTPS proxy for this Server, full MagicDNS name, Tailscale IP, LAN IP and finally loopback. The target machine still checks reachability before downloading. The remote enrollment dialog can choose another suggested address or accept a custom HTTP/HTTPS URL. Changing the preference does not rewrite existing Daemon addresses.
+
+Each network field resolves independently in this order:
+
+1. Explicit `--listen`, `--public-url`, `--allow-remote-management[=false]` arguments.
+2. `ASTRAL_SERVER_LISTEN`, `ASTRAL_PUBLIC_URL`, `ASTRAL_ALLOW_REMOTE_MANAGEMENT` environment variables.
+3. Saved App settings in `server/network.json`.
+4. Address discovery, then defaults.
+
+An explicit false value overrides a saved true value. Process overrides leave saved settings intact; the UI shows their source and prevents editing controlled fields. The remote-management switch and access address apply immediately. Listener changes require restarting the Server. To bind all IPv4 interfaces explicitly, use `--listen 0.0.0.0:4545`; use `--listen 127.0.0.1:4545` for a loopback-only deployment. Loopback-only binding prevents Docker Desktop containers from reaching the main port.
+
+## Linux behind an HTTPS proxy
 
 Copy the appropriate binary and, for enrollment downloads and container creation, all six distribution binaries to the host. The Web app is embedded; Node and pnpm are not needed at runtime.
 
@@ -40,7 +58,7 @@ astral.example.com {
 }
 ```
 
-The proxy must pass WebSocket upgrades and stream SSE responses without buffering. Caddy handles both in this configuration; see its [streaming documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#streaming). Keep the HTTP backend on loopback when TLS terminates at the proxy. Public access and cross-host Daemon connections use HTTPS/WSS. The server can alternatively terminate TLS with `--tls-cert` and `--tls-key`.
+The proxy must pass WebSocket upgrades and stream SSE responses without buffering. Caddy handles both in this configuration; see its [streaming documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#streaming). The HTTP backend is on loopback, so this proxy intentionally exposes the local management entry; Owner authentication remains required. The public HTTPS address is used as HTTPS/WSS by clients. Astral does not terminate TLS or manage certificates.
 
 Example systemd unit, after creating an `astral` service account and writable data directories:
 
@@ -90,7 +108,7 @@ Service status reports the local process manager; the Computers page separately 
 
 Container mode creates a Ubuntu 24.04 environment with Bash, Git/LFS, search/network/build tools, Python with uv and common data/document libraries, Node LTS/pnpm, Go, Rust/Cargo, Java 21/Maven, LibreOffice/Pandoc/Poppler, FFmpeg/ImageMagick/Tesseract, Chinese and emoji fonts, and Playwright Chromium. Language and Python package versions are pinned in `internal/platform/computer-image/Dockerfile`; Ubuntu security packages are resolved at image build. The image is intentionally substantial and the first build/download takes longer. Agent-installed software lives in the container writable layer as well as its data volume.
 
-Local Docker endpoints include Unix sockets and the Windows Docker Engine named pipe. Docker Desktop must run Linux containers. The shortcut does not require enabling Docker Desktop host networking: same-host containers use a dedicated HTTPS bridge via `host.docker.internal` with its pinned certificate. Its persistent port and certificate let enrolled containers reconnect after desktop/server restarts. This listener exposes enrollment and authenticated Daemon transport only. It does not expose the Owner API or Web UI. Remote Docker contexts are rejected by the local shortcut.
+Local Docker endpoints include Unix sockets and the Windows Docker Engine named pipe. Docker Desktop must run Linux containers. The shortcut does not require enabling Docker Desktop host networking: same-host containers connect to `http://host.docker.internal:4545` on the main Server listener (using the actual configured port). The default remote-management restriction applies to these connections too. There is no separate bridge listener, certificate or certificate-pinning store. Linux Docker and OrbStack use their host-network path. Remote containers retain the enrollment address selected for their Server; the Docker Desktop rewrite is limited to a confirmed same-host enrollment. Remote Docker contexts are rejected by the local shortcut.
 
 ### Updating an enrolled Computer
 
@@ -103,6 +121,43 @@ The creator passes container name, creator hostname, image, data volume and moun
 Container names are `astral-<operation-identity>` and volumes append `-data`; both carry an `astral.operation` label. Revocation disconnects the Computer and prevents further dispatch. It does not delete the container or its data volume. Stop or remove those explicitly on their host when no longer needed.
 
 For a remote network, the enrollment URL must be reachable from the target machine. Astral does not create a VPN, NAT tunnel or relay.
+
+## Offline network migration
+
+Older development versions used native Server TLS or a dedicated Docker Desktop TLS bridge. The current runtime has no reader or fallback for those settings. Before installing this version over that data, use the explicit conversion in `scripts/migrate-network.mjs` from the new source checkout. This is a development-layout migration; it does not implement general database format migrations or Desktop automatic updates. It requires Node and the local Docker CLI when converting containers.
+
+Quit the Desktop or stop the headless Server, and stop the affected containers. Keep a consistent backup of Server and Computer data. First inspect the plan, using the actual Server/Computer data directories:
+
+```sh
+node scripts/migrate-network.mjs \
+  --server-data '/path/to/astral/schema-3/server' \
+  --computers-dir '/path/to/astral/schema-3/computers' \
+  --listen 0.0.0.0:4545
+```
+
+For an installer-managed headless Server, add `--installer-root /path/to/astral-server`; use its `data/server` and `data/computers` directories. The tool converts the old installer preferences into `server/network.json` and removes the old generated network/TLS arguments from the owned systemd user unit. Reload that user manager with `systemctl --user daemon-reload` after applying and before starting the updated service.
+
+For bridge containers, pass every affected existing container explicitly with repeated `--container ID` and supply `--container-binary /verified/release/astral-linux-arm64` (or `amd64`, matching the existing image). Mixed architectures can use `--container-binary-amd64` and `--container-binary-arm64`. Verify those files against the new distribution's checksums first.
+
+Apply through the new release's native Astral binary, which holds exclusive operating-system locks throughout the conversion. This prevents Server/Daemon startup and concurrent migrations while the script changes configuration. Use identical data directories in both commands:
+
+```sh
+/path/to/new-native-astral maintenance with-data-lock \
+  --data '/path/to/astral/schema-3/server' \
+  --computers-dir '/path/to/astral/schema-3/computers' -- \
+  node scripts/migrate-network.mjs \
+    --server-data '/path/to/astral/schema-3/server' \
+    --computers-dir '/path/to/astral/schema-3/computers' \
+    --listen 0.0.0.0:4545 \
+    --container EXISTING-ID --container-binary /verified/release/astral-linux-arm64 \
+    --apply
+```
+
+Omit the container options when none are affected. Apply and explicit recovery refuse execution without the lock wrapper. The tool converts the host enrollment files and credentials inside the stopped data volume, and replaces the Daemon program in the same container. It preserves Computer credentials and identity, container IDs, mounts, writable-layer contents and Agent files. It never starts, removes, rebuilds or recreates containers.
+
+Native Server TLS requires an explicit mapping, for example `--from-url https://old-host:4545 --server-url http://new-host:4545`, or a new HTTPS reverse-proxy address. Other enrolled computers keep their stored URLs: update their connection configuration explicitly on those computers if the old address is being removed. The tool refuses to discard an unmapped private CA.
+
+Every original changed file and container program is backed up before mutation under `server/network-migrations/`, with a receipt for `001-http-main-listener`. Keep that directory private because it contains credentials. A failure attempts to restore the original configuration and container programs and reports any incomplete recovery. An interrupted transaction prevents another apply; use `--restore-backup /path/to/the.backup` through the same lock wrapper to restore it explicitly. After a successful conversion, install the new Server/Desktop before starting it and restarting the same containers; the old Daemon cannot use the new remote HTTP address.
 
 ## Owner access and CLI
 
@@ -130,7 +185,7 @@ Configure accounts in Settings → Bots → choose a Bot → Connect a platform 
 
 ## Desktop troubleshooting
 
-Desktop stores its current data under the OS user configuration directory in `astral/schema-3/`. The CLI accepts explicit `--data` and `--computers-dir` paths when opening that same data through headless mode. Do not run two servers against one data directory simultaneously; the process lock reports the conflict. For an isolated desktop test, set `ASTRAL_DESKTOP_DATA_DIR` and optionally `ASTRAL_SERVER_LISTEN`. `ASTRAL_PUBLIC_URL`, `ASTRAL_TLS_CERT` and `ASTRAL_TLS_KEY` expose the corresponding managed-server configuration.
+Desktop stores its current data under the OS user configuration directory in `astral/schema-3/`. The CLI accepts explicit `--data` and `--computers-dir` paths when opening that same data through headless mode. Do not run two servers against one data directory simultaneously; the process lock reports the conflict. For an isolated desktop test, set `ASTRAL_DESKTOP_DATA_DIR` and optionally `ASTRAL_SERVER_LISTEN`. `ASTRAL_PUBLIC_URL` and `ASTRAL_ALLOW_REMOTE_MANAGEMENT` configure the managed Server with environment priority. Explicit Desktop network arguments have CLI priority; the Desktop does not turn defaults or environment values into CLI overrides.
 
 The desktop main process owns the Go child. A normal quit waits for service shutdown; a crashed parent is detected by the server. An enrolled user-service Daemon and a container Computer have their own lifecycles.
 

@@ -43,8 +43,9 @@ type Config struct {
 	DistributionDirectory string
 	Executable            string
 	Version               string
-	TLSCertificate        string
-	TLSKey                string
+	AllowRemoteManagement bool
+	NetworkCLI            NetworkValues
+	NetworkEnvironment    NetworkValues
 	NoLocal               bool
 }
 type Running struct {
@@ -54,37 +55,35 @@ type Running struct {
 	StartedAt time.Time `json:"started_at"`
 }
 type Server struct {
-	Config          Config
-	Store           *persistence.Store
-	CoreStore       *sqlite.Store
-	Hub             *computers.Hub
-	Harness         *harness.Service
-	Channels        *channels.Service
-	Owner           *httpapi.API
-	Listener        net.Listener
-	HTTP            *http.Server
-	URL             string
-	token           string
-	lock            *os.File
-	ctx             context.Context
-	cancel          context.CancelFunc
-	mu              sync.Mutex
-	local           *computers.Daemon
-	localLock       *os.File
-	localCancel     context.CancelFunc
-	localDone       chan struct{}
-	workers         sync.WaitGroup
-	provisioning    map[string]bool
-	closed          bool
-	closeDone       chan struct{}
-	startupError    string
-	containerBridge *containerBridge
+	Config           Config
+	Store            *persistence.Store
+	CoreStore        *sqlite.Store
+	Hub              *computers.Hub
+	Harness          *harness.Service
+	Channels         *channels.Service
+	Owner            *httpapi.API
+	Listener         net.Listener
+	HTTP             *http.Server
+	URL              string
+	token            string
+	lock             *os.File
+	ctx              context.Context
+	cancel           context.CancelFunc
+	mu               sync.Mutex
+	local            *computers.Daemon
+	localLock        *os.File
+	localCancel      context.CancelFunc
+	localDone        chan struct{}
+	workers          sync.WaitGroup
+	provisioning     map[string]bool
+	closed           bool
+	closeDone        chan struct{}
+	startupError     string
+	network          *networkState
+	loopbackListener net.Listener
 }
 
 func New(config Config) (server *Server, err error) {
-	if config.Listen == "" {
-		config.Listen = "127.0.0.1:4545"
-	}
 	root, err := DefaultRoot()
 	if err != nil {
 		return nil, err
@@ -121,6 +120,11 @@ func New(config Config) (server *Server, err error) {
 	if err != nil {
 		return nil, err
 	}
+	s.network, err = newNetworkState(config)
+	if err != nil {
+		return nil, err
+	}
+	s.Config.Listen = s.network.activeListen.Value
 	tokenPath := filepath.Join(config.DataDirectory, "owner.token")
 	raw, readErr := os.ReadFile(tokenPath)
 	if errors.Is(readErr, os.ErrNotExist) {
@@ -151,35 +155,34 @@ func New(config Config) (server *Server, err error) {
 	if err != nil {
 		return nil, err
 	}
-	s.Listener, err = net.Listen("tcp", config.Listen)
+	s.Listener, err = net.Listen("tcp", s.Config.Listen)
 	if err != nil {
 		return nil, err
 	}
 	address := s.Listener.Addr().String()
 	host, port, _ := net.SplitHostPort(address)
-	if host == "" || host == "0.0.0.0" || host == "::" {
+	ip := net.ParseIP(host)
+	if ip != nil && ip.IsUnspecified() {
 		host = "127.0.0.1"
+	} else if ip == nil || !ip.IsLoopback() {
+		// Desktop and the managed local Daemon always retain a loopback
+		// management connection, even when the main listener binds one NIC.
+		s.loopbackListener, err = net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
+		if err != nil {
+			s.loopbackListener, err = net.Listen("tcp", "127.0.0.1:0")
+		}
+		if err != nil {
+			return nil, err
+		}
+		host, port, _ = net.SplitHostPort(s.loopbackListener.Addr().String())
 	}
-	scheme := "http"
-	if config.TLSCertificate != "" {
-		scheme = "https"
-	}
-	s.URL = scheme + "://" + net.JoinHostPort(host, port)
-	if s.Config.PublicURL == "" {
-		s.Config.PublicURL = s.URL
-	}
-	if err = modelbridge.ValidateURL(s.Config.PublicURL); err != nil {
-		return nil, err
-	}
-	if (config.TLSCertificate == "") != (config.TLSKey == "") {
-		return nil, fmt.Errorf("TLS certificate and key must be supplied together")
-	}
-	// Binding beyond loopback requires HTTPS, either here or on an explicitly
-	// configured reverse proxy endpoint.
-	listenHost, _, _ := net.SplitHostPort(address)
-	if ip := net.ParseIP(listenHost); ip != nil && !ip.IsLoopback() && !strings.HasPrefix(s.Config.PublicURL, "https://") {
-		return nil, fmt.Errorf("non-loopback Server access requires an HTTPS public URL")
-	}
+	s.URL = "http://" + net.JoinHostPort(host, port)
+	discoveryCtx, stopDiscovery := context.WithTimeout(context.Background(), 2*time.Second)
+	s.network.addresses = s.network.discover(discoveryCtx, address, s.URL)
+	s.network.discoveredAt = time.Now()
+	stopDiscovery()
+	s.Config.PublicURL = s.PublicURL()
+
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.Hub = computers.NewHub(s.Store)
 	s.Harness = harness.New(s.Store, s.CoreStore, &modelbridge.Bridge{Store: s.Store, ModelCatalog: modelbridge.NewModelCatalog(filepath.Join(s.Store.Directory, "cache", "models.dev.json"), nil)}, s.Hub)
@@ -193,44 +196,44 @@ func New(config Config) (server *Server, err error) {
 	}
 	agentGateway := gateway.New(s.Harness, s.Channels)
 	s.Hub.Gateway = agentGateway.Handle
-	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, OwnerToken: s.token, PublicURL: s.Config.PublicURL, DataDirectory: config.DataDirectory, Version: config.Version,
-		HostInfo: s.HostInfo, UseLocal: s.UseLocal, CreateContainer: s.CreateContainer})
+	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, OwnerToken: s.token, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
+		HostInfo: s.HostInfo, UseLocal: s.UseLocal, CreateContainer: s.CreateContainer,
+		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings})
 	mux := http.NewServeMux()
 	mux.Handle("/api/", s.Owner)
 	mux.HandleFunc("POST /auth/session", s.Owner.Login)
 	mux.HandleFunc("DELETE /auth/session", s.Owner.Logout)
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		httpcontract.JSON(w, 200, map[string]string{"status": "ok", "version": config.Version})
-	})
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) { httpcontract.JSON(w, 200, httpapi.Contract().Document()) })
-	mux.HandleFunc("POST /internal/enrollments/{id}", s.register)
-	mux.HandleFunc("GET /internal/computers/{id}/connect", s.Hub.Connect)
-	mux.HandleFunc("GET /internal/computers/{id}/status", s.computerStatus)
-	mux.HandleFunc("POST /internal/enrollments/{id}/container-access", s.containerAccess)
-	mux.HandleFunc("POST /internal/enrollments/{id}/prepare", s.prepareContainer)
-	mux.HandleFunc("GET /install.sh", s.installer)
-	mux.HandleFunc("GET /install.ps1", s.powerShellInstaller)
-	mux.HandleFunc("GET /downloads/{name}", s.downloadBinary)
+	computerMux := http.NewServeMux()
+	for _, routes := range []*http.ServeMux{mux, computerMux} {
+		routes.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+			httpcontract.JSON(w, 200, map[string]string{"status": "ok", "version": s.Config.Version})
+		})
+		routes.HandleFunc("POST /internal/enrollments/{id}", s.register)
+		routes.HandleFunc("GET /internal/computers/{id}/connect", s.Hub.Connect)
+		routes.HandleFunc("GET /internal/computers/{id}/status", s.computerStatus)
+		routes.HandleFunc("POST /internal/enrollments/{id}/prepare", s.prepareContainer)
+		routes.HandleFunc("GET /install.sh", s.installer)
+		routes.HandleFunc("GET /install.ps1", s.powerShellInstaller)
+		routes.HandleFunc("GET /downloads/{name}", s.downloadBinary)
+	}
 	mux.Handle("/", s.web())
-	s.HTTP = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
+	s.HTTP = &http.Server{Handler: s.accessHandler(mux, computerMux), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
 	return s, nil
 }
 func (s *Server) Start() error {
-	if err := s.restoreContainerBridge(s.ctx); err != nil {
-		return err
-	}
 	if err := s.Channels.Start(s.ctx); err != nil {
 		return err
 	}
-	s.workers.Add(1)
-	go func() {
-		defer s.workers.Done()
-		if s.Config.TLSCertificate != "" {
-			_ = s.HTTP.ServeTLS(s.Listener, s.Config.TLSCertificate, s.Config.TLSKey)
-		} else {
-			_ = s.HTTP.Serve(s.Listener)
-		}
-	}()
+	listeners := []net.Listener{s.Listener}
+	if s.loopbackListener != nil {
+		listeners = append(listeners, s.loopbackListener)
+	}
+	for _, listener := range listeners {
+		s.workers.Add(1)
+		go func() { defer s.workers.Done(); _ = s.HTTP.Serve(listener) }()
+	}
+
 	if err := WriteJSON(filepath.Join(s.Config.DataDirectory, "running.json"), Running{PID: os.Getpid(), URL: s.URL, Version: s.Config.Version, StartedAt: time.Now().UTC()}); err != nil {
 		return err
 	}
@@ -265,7 +268,6 @@ func (s *Server) Close(ctx context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	s.closeContainerBridge(ctx)
 	var all []error
 	if s.Channels != nil {
 		all = append(all, s.Channels.Close(ctx))
@@ -284,8 +286,14 @@ func (s *Server) Close(ctx context.Context) error {
 	}
 	if s.HTTP != nil {
 		all = append(all, s.HTTP.Shutdown(ctx))
-	} else if s.Listener != nil {
-		all = append(all, s.Listener.Close())
+	}
+	// Shutdown owns serving listeners, but New may also be closed before Start.
+	for _, listener := range []net.Listener{s.Listener, s.loopbackListener} {
+		if listener != nil {
+			if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+				all = append(all, err)
+			}
+		}
 	}
 	done := make(chan struct{})
 	go func() { s.workers.Wait(); close(done) }()
@@ -320,18 +328,36 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		httpcontract.Failure(w, r, err)
 		return
 	}
-	credentials.ServerURL = s.Config.PublicURL
+	credentials.ServerURL = s.PublicURL()
 	httpcontract.JSON(w, 200, credentials)
 }
 
 func (s *Server) prepareContainer(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Hostname string `json:"hostname"`
+	}
+	if r.ContentLength != 0 {
+		if err := httpcontract.Decode(r, &input); err != nil {
+			httpcontract.Failure(w, r, err)
+			return
+		}
+	}
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if err := s.Hub.PrepareContainer(r.Context(), r.PathValue("id"), token); err != nil {
 		httpcontract.Failure(w, r, err)
 		return
 	}
-	httpcontract.JSON(w, 200, map[string]bool{"prepared": true})
+	response := struct {
+		Prepared          bool   `json:"prepared"`
+		LocalContainerURL string `json:"local_container_url,omitempty"`
+	}{Prepared: true}
+	hostname, _ := os.Hostname()
+	if loopbackRequest(r.RemoteAddr) && input.Hostname != "" && input.Hostname == hostname {
+		response.LocalContainerURL = s.ContainerURL()
+	}
+	httpcontract.JSON(w, 200, response)
 }
+
 func (s *Server) computerStatus(w http.ResponseWriter, r *http.Request) {
 	var c domain.Computer
 	err := s.Store.Get(r.Context(), "computers", r.PathValue("id"), &c)
@@ -414,9 +440,6 @@ func (s *Server) useLocal(ctx context.Context, reenroll bool) (domain.ComputerSt
 	}
 	// Local port changes do not create another Computer identity.
 	localURL := s.URL
-	if s.Config.TLSCertificate != "" {
-		localURL = s.Config.PublicURL
-	}
 	credentials.ServerURL = localURL
 	d, err := computers.NewDaemon(root, credentials)
 	if err != nil {

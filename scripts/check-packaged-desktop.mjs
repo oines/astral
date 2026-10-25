@@ -24,7 +24,7 @@ const temporary = await mkdtemp(path.join(tmpdir(), 'astral 打包 App '))
 const data = path.join(temporary, 'Astral 数据')
 const runningFile = path.join(data, 'server/running.json')
 const environment = { ...process.env, ASTRAL_DESKTOP_DATA_DIR: data, ASTRAL_SERVER_LISTEN: '127.0.0.1:0', XDG_CONFIG_HOME: path.join(temporary, 'xdg-config') }
-for (const key of ['ASTRAL_PUBLIC_URL', 'ASTRAL_TLS_CERT', 'ASTRAL_TLS_KEY', 'ELECTRON_RUN_AS_NODE']) delete environment[key]
+for (const key of ['ASTRAL_PUBLIC_URL', 'ASTRAL_ALLOW_REMOTE_MANAGEMENT', 'ELECTRON_RUN_AS_NODE']) delete environment[key]
 const args = [`--user-data-dir=${path.join(temporary, 'Electron 资料')}`]
 if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox') // Only disposable root CI containers require this.
 await mkdir(data, { recursive: true, mode: 0o700 })

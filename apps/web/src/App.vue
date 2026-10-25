@@ -5,6 +5,7 @@ import ChatPage from './pages/ChatPage.vue'
 import SettingsPage from './pages/SettingsPage.vue'
 import OnboardingPage from './pages/OnboardingPage.vue'
 import ChatPageSkeleton from './components/ChatPageSkeleton.vue'
+import ManualCopyDialog from './components/ManualCopyDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { login } from '@astral/sdk'
 import { Button, useDelayedPending } from '@astral/ui'
@@ -111,4 +112,5 @@ async function signIn() {
       </Button>
     </div>
   </div>
+  <ManualCopyDialog />
 </template>

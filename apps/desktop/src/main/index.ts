@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { LocalService } from './service'
 import { externalURL, trustedSender } from './policy'
 import { setLinuxLoginStart } from './login'
+import { networkArguments } from './network-arguments'
 
 app.setName('Astral')
 if (process.platform === 'win32') app.setAppUserModelId('com.oines.astral')
@@ -101,7 +102,7 @@ async function start() {
   const architecture = process.arch === 'x64' ? 'amd64' : process.arch
   const system = process.platform === 'win32' ? 'windows' : process.platform
   const binary = join(bins, `astral-${system}-${architecture}${system === 'windows' ? '.exe' : ''}`)
-  const token = await service.start(binary, root, bins)
+  const token = await service.start(binary, root, bins, networkArguments(process.argv.slice(1)))
   serverURL = service.url
   // Renderer code never receives the Owner token or a general native file API.
   await session.defaultSession.cookies.set({ url: serverURL, name: 'astral_owner', value: token, path: '/', httpOnly: true, sameSite: 'strict', secure: serverURL.startsWith('https:') })

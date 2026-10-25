@@ -1,4 +1,5 @@
 import type { AstralInternalHarnessInputRequest as InputRequest } from '@astral/sdk'
+import { randomID } from './browser'
 
 type InputContent = Omit<InputRequest, 'id'>
 
@@ -13,5 +14,5 @@ export async function prepareInputAttempt(previous: InputRequest | undefined, co
   // Wait for the old request's outcome before sending edited content with a
   // new identity. A failed lookup must leave the editable draft untouched.
   if (previous) await reconcile(previous.id)
-  return { ...content, id: crypto.randomUUID() }
+  return { ...content, id: randomID() }
 }

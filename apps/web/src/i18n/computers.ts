@@ -7,6 +7,7 @@ export const computersEn = {
     container: 'Container', containerName: 'Container name', host: 'Host machine', image: 'Image', volume: 'Data volume', mountPath: 'Mount path',
   },
   computerCommand: {
+    serverAddress: 'Server address', serverAddressHint: 'Choose an address reachable from the other Computer. The connection command checks it before installation.',
     targetPlatform: 'Target operating system', hostPlatform: 'Container host operating system',
     shell: 'macOS / Linux · Shell', powershell: 'Windows · PowerShell',
   },
@@ -31,6 +32,7 @@ export const computersZh: typeof computersEn = {
     container: '容器', containerName: '容器名', host: '所在电脑', image: '镜像', volume: '数据卷', mountPath: '挂载路径',
   },
   computerCommand: {
+    serverAddress: '服务器地址', serverAddressHint: '选择其他电脑能够访问的地址。接入命令会在安装前检查连接。',
     targetPlatform: '目标电脑系统', hostPlatform: '容器所在电脑的系统',
     shell: 'macOS / Linux · Shell', powershell: 'Windows · PowerShell',
   },

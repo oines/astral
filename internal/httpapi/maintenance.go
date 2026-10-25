@@ -6,7 +6,7 @@ import (
 
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/httpcontract"
-	"github.com/oines/astral/internal/modelbridge"
+	"github.com/oines/astral/internal/serviceurl"
 )
 
 func (a *API) registerComputerMaintenance() {
@@ -15,7 +15,7 @@ func (a *API) registerComputerMaintenance() {
 		if err := a.Config.Harness.Store.Get(r.Context(), "computers", r.PathValue("id"), &computer); err != nil {
 			return domain.ComputerMaintenance{}, err
 		}
-		return maintenanceCommands(a.Config.PublicURL, computer)
+		return maintenanceCommands(a.publicURL(), computer)
 	})
 }
 
@@ -28,7 +28,7 @@ func maintenanceCommands(server string, computer domain.Computer) (domain.Comput
 	if computer.Revoked {
 		return value, domain.Forbidden("This Computer's connection has been revoked.")
 	}
-	if err := modelbridge.ValidateURL(server); err != nil {
+	if err := serviceurl.Validate(server); err != nil {
 		return value, err
 	}
 	quote := func(text string) string { return "'" + strings.ReplaceAll(text, "'", "'\\''") + "'" }

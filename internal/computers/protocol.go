@@ -29,7 +29,6 @@ type EnrollmentRequest struct {
 }
 type Credentials struct {
 	ServerURL  string `json:"server_url"`
-	ServerCA   string `json:"server_ca,omitempty"`
 	ComputerID string `json:"computer_id"`
 	Token      string `json:"token"`
 }
