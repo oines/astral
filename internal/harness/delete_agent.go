@@ -146,10 +146,67 @@ func (s *Service) checkAgentDeletion(ctx context.Context, id string, revision in
 	if agent.Revision != revision {
 		return domain.Conflict("Bot 已发生变化，请刷新后重试。")
 	}
+	if err := s.checkPrivateAgentRollouts(ctx, id); err != nil {
+		return err
+	}
 	if im, ok := s.IM.(interface {
 		CheckAgentDeletion(context.Context, string) error
 	}); ok {
 		return im.CheckAgentDeletion(ctx, id)
+	}
+	return nil
+}
+
+// SessionDeleter cannot erase a Rollout that another Session still references.
+// Reject known shared history before recording an irreversible Bot intent;
+// otherwise every restart would resume a deletion that can never finish.
+func (s *Service) checkPrivateAgentRollouts(ctx context.Context, id string) error {
+	items, err := s.Store.List(ctx, "sessions")
+	if err != nil {
+		return err
+	}
+	sessions := make([]domain.Session, 0, len(items))
+	for _, item := range items {
+		var session domain.Session
+		if err := json.Unmarshal(item.Data, &session); err != nil {
+			return err
+		}
+		sessions = append(sessions, session)
+	}
+	rollouts := map[string]bool{}
+	for _, session := range sessions {
+		if session.AgentID != id {
+			continue
+		}
+		state, err := s.CoreStore.LoadState(ctx, session.ID)
+		if errors.Is(err, core.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if rollouts[state.RolloutID] {
+			return domain.Conflict("此 Bot 的会话与其他会话共享历史，暂时不能永久删除。")
+		}
+		rollouts[state.RolloutID] = true
+	}
+	if len(rollouts) == 0 {
+		return nil
+	}
+	for _, session := range sessions {
+		if session.AgentID == id {
+			continue
+		}
+		state, err := s.CoreStore.LoadState(ctx, session.ID)
+		if errors.Is(err, core.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if rollouts[state.RolloutID] {
+			return domain.Conflict("此 Bot 的会话与其他会话共享历史，暂时不能永久删除。")
+		}
 	}
 	return nil
 }
