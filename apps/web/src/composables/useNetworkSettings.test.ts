@@ -60,6 +60,19 @@ describe('network settings editor', () => {
     expect(save).toHaveBeenCalledOnce()
   })
 
+  it('recognizes a committed address after a lost response when the input has a trailing slash', async () => {
+    const { editor, network, save, refresh } = setup()
+    save.mockImplementationOnce(async () => {
+      network.public_url.saved_value = network.public_url.value = 'http://custom.example:4545'
+      throw new TypeError('connection lost')
+    })
+    editor.address.value = 'http://custom.example:4545/'
+    await editor.saveAddress()
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(editor.address.value).toBe('http://custom.example:4545')
+    expect(useSettingsSave().state('network/public_url').status).toBe('saved')
+  })
+
   it('does not send edits for command-line or environment controlled fields', async () => {
     const { editor, network, save } = setup()
     network.public_url.editable = false

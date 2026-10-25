@@ -14,7 +14,7 @@ export function useNetworkSettings() {
   const allowRemote = computed(() => saves.value('network/allow_remote_management', network.value?.allow_remote_management.value ?? false))
   async function saveAddress() {
     if (!network.value?.public_url.editable) return
-    const value = address.value.trim()
+    const value = address.value.trim().replace(/\/+$/, '')
     if (value === network.value.public_url.saved_value && saves.state(addressKey).status !== 'error') {
       delete saves.drafts[addressKey]
       return
