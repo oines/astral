@@ -4,7 +4,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -17,6 +16,7 @@ import (
 	core "github.com/oines/astral-core"
 	models "github.com/oines/astral-models"
 
+	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
@@ -29,29 +29,33 @@ import (
 )
 
 type Config struct {
-	Harness             *harness.Service
-	Channels            *channels.Service
-	OwnerToken          string
-	PublicURL           string
-	DataDirectory       string
-	Version             string
-	HostInfo            func(context.Context) domain.HostInfo
-	UseLocal            func(context.Context) (domain.ComputerStatus, error)
-	CreateContainer     func(context.Context, string) (domain.Provisioning, error)
-	NetworkSettings     func(context.Context) NetworkSettings
-	SaveNetworkSettings func(context.Context, NetworkPatch) (NetworkSettings, error)
+	Harness                 *harness.Service
+	Channels                *channels.Service
+	Auth                    *auth.Service
+	PublicURL               string
+	DataDirectory           string
+	Version                 string
+	HostInfo                func(context.Context) domain.HostInfo
+	UseLocal                func(context.Context) (domain.ComputerStatus, error)
+	CreateContainer         func(context.Context, string) (domain.Provisioning, error)
+	NetworkSettings         func(context.Context) NetworkSettings
+	SaveNetworkSettings     func(context.Context, NetworkPatch) (NetworkSettings, error)
+	ValidateAccessAddresses func(*http.Request, []string) error
 }
 type API struct {
-	Config   Config
-	Contract *httpcontract.Contract
-	mux      *http.ServeMux
-	handler  http.Handler
+	Config       Config
+	Contract     *httpcontract.Contract
+	mux          *http.ServeMux
+	authMux      *http.ServeMux
+	authRequests publicAuthRequests
+	handler      http.Handler
 }
 type Preferences struct {
 	domain.Meta
 	domain.Preferences
 }
 type Bootstrap struct {
+	Auth        auth.View               `json:"auth"`
 	Version     string                  `json:"version"`
 	PublicURL   string                  `json:"public_url"`
 	Network     NetworkSettings         `json:"network"`
@@ -168,6 +172,7 @@ func New(config Config) *API {
 	a.systemRoutes()
 	a.networkRoutes()
 	a.streamRoutes()
+	a.authRoutes()
 	a.handler = a.authenticate(a.mux)
 	return a
 }
@@ -216,6 +221,9 @@ func (a *API) systemRoutes() {
 	h := a.Config.Harness
 	route[httpcontract.Empty, Bootstrap](a, "GET", "/bootstrap", "bootstrap", "System", func(r *http.Request, _ httpcontract.Empty) (Bootstrap, error) {
 		v := Bootstrap{Version: a.Config.Version, PublicURL: a.publicURL()}
+		if a.Config.Auth != nil {
+			v.Auth, _ = a.Config.Auth.View(r.Context(), auth.IdentityFromContext(r.Context()))
+		}
 		if a.Config.NetworkSettings != nil {
 			v.Network = a.Config.NetworkSettings(r.Context())
 		}
@@ -738,56 +746,33 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 			r.Header.Set("X-Request-ID", domain.ID("request"))
 		}
 		w.Header().Set("X-Request-ID", r.Header.Get("X-Request-ID"))
-		if origin := r.Header.Get("Origin"); origin != "" && origin != "http://"+r.Host && origin != "https://"+r.Host {
-			httpcontract.Failure(w, r, domain.Forbidden("cross-origin Owner requests are not allowed"))
+		if a.Config.Auth == nil {
+			httpcontract.JSON(w, 401, httpcontract.Error{Code: "unauthorized", Message: "Sign in to this Server."})
 			return
 		}
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if token == "" {
-			if cookie, err := r.Cookie("astral_owner"); err == nil {
-				token = cookie.Value
-			}
-		}
-		if a.Config.OwnerToken == "" || subtle.ConstantTimeCompare([]byte(token), []byte(a.Config.OwnerToken)) != 1 {
-			httpcontract.JSON(w, 401, httpcontract.Error{Code: "unauthorized", Message: "Sign in with this Server's Owner token."})
+		if err := a.Config.Auth.CheckOrigin(r); err != nil {
+			httpcontract.Failure(w, r, err)
 			return
 		}
-		next.ServeHTTP(w, r)
+		identity, err := a.Config.Auth.Authenticate(r)
+		if err != nil {
+			httpcontract.Failure(w, r, err)
+			return
+		}
+		ctx, release := a.Config.Auth.Bind(r.Context(), identity)
+		defer release()
+		if ctx.Err() != nil {
+			httpcontract.JSON(w, 401, httpcontract.Error{Code: "unauthorized", Message: "This session has ended."})
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-type LoginRequest struct {
-	Token string `json:"token"`
-}
-
-func (a *API) Login(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); origin != "" && origin != "http://"+r.Host && origin != "https://"+r.Host {
-		httpcontract.Failure(w, r, domain.Forbidden("cross-origin sign-in is not allowed"))
-		return
-	}
-	var request LoginRequest
-	if err := httpcontract.Decode(r, &request); err != nil {
-		httpcontract.Failure(w, r, err)
-		return
-	}
-	if a.Config.OwnerToken == "" || subtle.ConstantTimeCompare([]byte(request.Token), []byte(a.Config.OwnerToken)) != 1 {
-		httpcontract.JSON(w, 401, httpcontract.Error{Code: "unauthorized", Message: "The Owner token is not valid."})
-		return
-	}
-	http.SetCookie(w, &http.Cookie{Name: "astral_owner", Value: request.Token, Path: "/", HttpOnly: true, Secure: r.TLS != nil || r.Header.Get("Origin") == "https://"+r.Host, SameSite: http.SameSiteStrictMode, MaxAge: 60 * 60 * 24 * 30})
-	httpcontract.JSON(w, 200, httpcontract.OK{OK: true})
-}
-func (a *API) Logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: "astral_owner", Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
-	httpcontract.JSON(w, 200, httpcontract.OK{OK: true})
 }
 
 // Contract is constructed from runtime route declarations without touching
 // external resources. The generated file is reproducible and contains no keys.
 func Contract() *httpcontract.Contract {
 	a := New(Config{})
-	a.Contract.Describe(httpcontract.Operation{Method: "POST", Path: "/auth/session", ID: "login", Tag: "Authentication", Request: reflect.TypeFor[LoginRequest](), Response: reflect.TypeFor[httpcontract.OK]()})
-	a.Contract.Describe(httpcontract.Operation{Method: "DELETE", Path: "/auth/session", ID: "logout", Tag: "Authentication", Response: reflect.TypeFor[httpcontract.OK]()})
 	a.Contract.Merge(gateway.New(nil, nil).Contract)
 	return a.Contract
 }

@@ -3,7 +3,9 @@
 package transport
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/oines/astral/internal/domain"
 )
 
@@ -50,7 +51,7 @@ type Request struct {
 type Handler func(context.Context, Request, *Responder) error
 
 type Peer struct {
-	conn    *websocket.Conn
+	conn    net.Conn
 	handler Handler
 	ctx     context.Context
 	cancel  context.CancelCauseFunc
@@ -82,23 +83,20 @@ type header struct {
 	err  error
 }
 
-func New(conn *websocket.Conn, handler Handler) *Peer {
+func New(conn net.Conn, handler Handler) *Peer {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	p := &Peer{conn: conn, handler: handler, ctx: ctx, cancel: cancel, streams: map[string]*stream{}, done: make(chan struct{})}
-	conn.SetReadLimit(128 << 10)
 	go p.read()
 	return p
 }
 func (p *Peer) Done() <-chan struct{} { return p.done }
 func (p *Peer) Close() error {
 	p.cancel(ErrDisconnected)
-	err := p.conn.Close(websocket.StatusGoingAway, "shutdown")
-	// The peer may have closed its socket after our read loop was cancelled.
-	// EOF during this explicit shutdown is an already-closed connection.
-	if errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) ||
-		websocket.CloseStatus(err) == websocket.StatusNormalClosure || websocket.CloseStatus(err) == websocket.StatusGoingAway {
+	err := p.conn.Close()
+	if errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 		return nil
 	}
+
 	return err
 }
 func (p *Peer) send(value frame) error {
@@ -108,9 +106,20 @@ func (p *Peer) send(value frame) error {
 	}
 	p.write.Lock()
 	defer p.write.Unlock()
-	ctx, cancel := context.WithTimeout(p.ctx, 15*time.Second)
-	defer cancel()
-	return p.conn.Write(ctx, websocket.MessageText, raw)
+	if len(raw) > 128<<10 {
+		return errors.New("computer protocol frame exceeds 128 KiB")
+	}
+	if err := p.conn.SetWriteDeadline(time.Now().Add(15 * time.Second)); err != nil {
+		return err
+	}
+	defer p.conn.SetWriteDeadline(time.Time{})
+	var prefix [4]byte
+	binary.BigEndian.PutUint32(prefix[:], uint32(len(raw)))
+	if _, err := io.Copy(p.conn, bytes.NewReader(prefix[:])); err != nil {
+		return err
+	}
+	_, err = io.Copy(p.conn, bytes.NewReader(raw))
+	return err
 }
 func (p *Peer) makeStream(id string, incoming bool) (*stream, error) {
 	p.mu.Lock()
@@ -144,10 +153,18 @@ func (p *Peer) find(id string) *stream { p.mu.Lock(); defer p.mu.Unlock(); retur
 
 func (p *Peer) read() {
 	defer close(p.done)
-	defer func() { p.cancel(ErrDisconnected); _ = p.conn.CloseNow() }()
+	defer func() { p.cancel(ErrDisconnected); _ = p.conn.Close() }()
 	for {
-		_, raw, err := p.conn.Read(p.ctx)
-		if err != nil {
+		var prefix [4]byte
+		if _, err := io.ReadFull(p.conn, prefix[:]); err != nil {
+			return
+		}
+		size := binary.BigEndian.Uint32(prefix[:])
+		if size == 0 || size > 128<<10 {
+			return
+		}
+		raw := make([]byte, int(size))
+		if _, err := io.ReadFull(p.conn, raw); err != nil {
 			return
 		}
 		var f frame

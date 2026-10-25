@@ -12,6 +12,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { validateVersion } from './release-version.mjs'
+import { webFixtureCookie } from './web-auth-fixture.mjs'
 
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../', import.meta.url))
@@ -153,21 +154,22 @@ async function snapshot() {
       if (!health.ok) { await delay(150); continue }
       const status = await health.json()
       if (status.status !== 'ok' || status.version !== version) { await delay(150); continue }
-      const owner = await readFile(path.join(installRoot, 'data/server/owner.token'))
+      const identity = await readFile(path.join(installRoot, 'data/server/computer-identity/identity.pem'))
+      const cookie = await webFixtureCookie(path.join(installRoot,'data/server'),ready.url)
       const master = await readFile(path.join(installRoot, 'data/server/master.key'))
-      const response = await fetch(`${ready.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${owner.toString('utf8').trim()}` }, signal: AbortSignal.timeout(3000) })
+      const response = await fetch(`${ready.url}/api/v1/bootstrap`, { headers: { Cookie: cookie }, signal: AbortSignal.timeout(3000) })
       if (!response.ok) { await delay(150); continue }
       const bootstrap = await response.json()
       const local = bootstrap.computers.find(computer => computer.kind === 'local')
       if (!local?.id || !local.online) { await delay(150); continue }
-      return { pid, owner, master, computerID: local.id }
+      return { pid, identity, master, computerID: local.id }
     } catch { /* Startup/reconnection may still be in progress; do not log secrets. */ }
     await delay(150)
   }
   throw new Error('Installed Server did not expose its actual healthy, authenticated, online Local Computer state.')
 }
 function sameIdentity(before, after) {
-  assert.ok(before.owner.equals(after.owner), 'Owner credential changed')
+  assert.ok(before.identity.equals(after.identity), 'Server security identity changed')
   assert.ok(before.master.equals(after.master), 'Credential encryption key changed')
   assert.ok(before.computerID === after.computerID, 'Local Computer identity changed')
 }
@@ -233,7 +235,7 @@ async function main() {
     const second = await snapshot()
     assert.notEqual(second.pid, first.pid, 'Repeat installation did not restart the actual service')
     sameIdentity(first, second)
-    console.log('Headless same-format reinstallation preserved Owner, encryption key and Local Computer identity.')
+    console.log('Headless same-format reinstallation preserved Web account, Server identity, encryption key and Local Computer identity.')
 
     const sumFile = path.join(payload, 'SHA256SUMS')
     const goodSums = await readFile(sumFile, 'utf8')
@@ -257,7 +259,7 @@ async function main() {
     assert.notEqual(recovered.pid, second.pid, 'Recovery did not restart the previous Server')
     sameIdentity(second, recovered)
     assert.equal((await stat(nativeBinary)).mode, originalNativeMode, 'Installer fixtures changed the original distribution executable permissions')
-    console.log('Native headless user-service install, HTTP/Owner readiness, identity-preserving reinstall, checksum rejection before stop, and failed-start program/service recovery passed. Synthetic local release fixtures do not establish publisher signing.')
+    console.log('Native headless user-service install, HTTP/account readiness, identity-preserving reinstall, checksum rejection before stop, and failed-start program/service recovery passed. Synthetic local release fixtures do not establish publisher signing.')
   } catch (error) {
     await reportServiceState()
     throw error

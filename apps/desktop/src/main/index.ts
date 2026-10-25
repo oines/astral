@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, se
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LocalService } from './service'
-import { externalURL, trustedSender } from './policy'
+import { desktopRequestHeaders, externalURL, trustedSender } from './policy'
 import { setLinuxLoginStart } from './login'
 import { networkArguments } from './network-arguments'
 
@@ -104,9 +104,12 @@ async function start() {
   const binary = join(bins, `astral-${system}-${architecture}${system === 'windows' ? '.exe' : ''}`)
   const token = await service.start(binary, root, bins, networkArguments(process.argv.slice(1)))
   serverURL = service.url
-  // Renderer code never receives the Owner token or a general native file API.
-  await session.defaultSession.cookies.set({ url: serverURL, name: 'astral_owner', value: token, path: '/', httpOnly: true, sameSite: 'strict', secure: serverURL.startsWith('https:') })
-  const initial = await fetch(`${serverURL}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${token}` } })
+  // Only this Electron session may attach the process-local Desktop identity,
+  // and only to the exact Server origin. Renderer JS never receives the secret.
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    callback({ requestHeaders: desktopRequestHeaders(details, window?.webContents.id, serverURL, token) })
+  })
+  const initial = await fetch(`${serverURL}/api/v1/bootstrap`, { headers: { Authorization: `Desktop ${token}` } })
   if (!initial.ok) throw new Error(`Local service initialization failed (HTTP ${initial.status}).`)
   const data = await initial.json() as { preferences: { keep_running: boolean; login_start: boolean } }
   keepRunning = data.preferences.keep_running

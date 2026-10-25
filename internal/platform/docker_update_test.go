@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -172,16 +170,11 @@ func containerUpdateFixture(t *testing.T, mode string) (context.Context, string,
 		}
 		return state
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer enrolled-token" {
-			http.Error(w, "invalid token", http.StatusForbidden)
-			return
-		}
+	_, credentials := secureStatusFixture(t, func() domain.ComputerStatus {
 		state := read()
-		_ = json.NewEncoder(w).Encode(domain.ComputerStatus{Computer: domain.Computer{Meta: domain.Meta{ID: "computer-id"}, DaemonVersion: state.Version}, Online: state.Running, BootID: state.Boot})
-	}))
-	t.Cleanup(server.Close)
-	state := fakeContainerState{Identity: "installation", Version: "v1", Boot: "original-boot", Mode: mode, Running: true, Credentials: computers.Credentials{ServerURL: server.URL, ComputerID: "computer-id", Token: "enrolled-token"}}
+		return domain.ComputerStatus{Computer: domain.Computer{Meta: domain.Meta{ID: "computer-id"}, DaemonVersion: state.Version}, Online: state.Running, BootID: state.Boot}
+	})
+	state := fakeContainerState{Identity: "installation", Version: "v1", Boot: "original-boot", Mode: mode, Running: true, Credentials: credentials}
 	raw, _ := json.Marshal(state)
 	if err := os.WriteFile(statePath, raw, 0600); err != nil {
 		t.Fatal(err)

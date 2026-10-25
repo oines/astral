@@ -20,7 +20,7 @@ async function fixture(t, { candidate = false, unsigned = false, published = fal
   const version = await readReleaseVersion()
   const tag = `v${version}`
   const macSigned = !unsigned
-  const names = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh']
+  const names = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1']
   for (const name of names) await writeFile(path.join(directory, name), `Small fixture: ${name}\n`)
   await writeFile(path.join(directory, 'checksums.txt'), `${(await Promise.all(distributionNames.map(async name => `${await digest(path.join(directory, name))}  ${name}`))).join('\n')}\n`)
   names.push('checksums.txt')

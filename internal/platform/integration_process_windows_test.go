@@ -11,8 +11,8 @@ import (
 	"github.com/oines/astral-core/standardtools/local"
 )
 
-func nativeInstallerCommand(ctx context.Context, script, server, enrollment, token, root string, container bool) *exec.Cmd {
-	args := []string{"-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Server", server, "-Enrollment", enrollment, "-Token", token, "-Root", root}
+func nativeInstallerCommand(ctx context.Context, script, server, pin, enrollment, token, root string, container bool) *exec.Cmd {
+	args := []string{"-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Server", server, "-ServerPin", pin, "-Enrollment", enrollment, "-Token", token, "-Root", root}
 	if container {
 		args = append(args, "-Container")
 	} else {

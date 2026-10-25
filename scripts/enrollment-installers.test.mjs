@@ -17,7 +17,7 @@ test('Shell enrollment checks the selected HTTP address before installing or dow
   const log = path.join(root, 'curl.log')
   await fs.writeFile(path.join(bin, 'curl'), '#!/bin/sh\nprintf "%s\\n" "$*" > "$ASTRAL_TEST_CURL_LOG"\nexit 7\n', { mode: 0o755 })
   const installation = path.join(root, 'data')
-  await assert.rejects(exec('sh', ['internal/platform/installers/install.sh', '--server', 'http://server.tailnet.ts.net:4545', '--enrollment', 'id', '--token', 'token'], {
+  await assert.rejects(exec('sh', ['internal/platform/installers/install.sh', '--server', 'http://server.tailnet.ts.net:4545', '--server-pin', 'a'.repeat(64), '--enrollment', 'id', '--token', 'token'], {
     env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, XDG_DATA_HOME: installation, ASTRAL_TEST_CURL_LOG: log },
   }), error => {
     assert.match(error.stderr, /Cannot reach Astral at http:\/\/server.tailnet.ts.net:4545/)
@@ -28,6 +28,26 @@ test('Shell enrollment checks the selected HTTP address before installing or dow
   assert.match(request, /http:\/\/server.tailnet.ts.net:4545\/health/)
   assert.doesNotMatch(request, /downloads/)
   await assert.rejects(fs.access(installation))
+})
+
+test('Shell update downloads the official release without a Server URL, pin, or health preflight', { skip: process.platform === 'win32' }, async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'astral-update-installer-test-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const bin = path.join(root, 'bin')
+  await fs.mkdir(bin)
+  const log = path.join(root, 'curl.log')
+  await fs.writeFile(path.join(bin, 'curl'), '#!/bin/sh\nprintf "%s\\n" "$*" > "$ASTRAL_TEST_CURL_LOG"\nexit 7\n', { mode: 0o755 })
+  await assert.rejects(exec('sh', ['internal/platform/installers/install.sh', '--update', '--root', path.join(root, 'existing-computer')], {
+    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, XDG_DATA_HOME: path.join(root, 'data'), ASTRAL_TEST_CURL_LOG: log },
+  }), error => {
+    assert.equal(error.code, 7)
+    assert.doesNotMatch(error.stderr, /Missing Astral Server|public-key pin|Cannot reach Astral/)
+    return true
+  })
+  const request = await fs.readFile(log, 'utf8')
+  assert.match(request, /https:\/\/github\.com\/oines\/astral\/releases\/latest\/download\/astral-/)
+  assert.match(request, /--location --proto =https --proto-redir =https/)
+  assert.doesNotMatch(request, /\/health|\/downloads\//)
 })
 
 
@@ -48,7 +68,7 @@ test('Windows PowerShell enrollment stops at an unavailable Server before instal
   await assert.rejects(exec('powershell.exe', [
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
     '-File', path.resolve('internal/platform/installers/install.ps1'),
-    '-Server', address, '-Enrollment', 'fixture-enrollment', '-Token', 'fixture-token',
+    '-Server', address, '-ServerPin', 'a'.repeat(64), '-Enrollment', 'fixture-enrollment', '-Token', 'fixture-token',
   ], { env: { ...environment, LOCALAPPDATA: installation }, timeout: 25000 }), error => {
     assert.ok(error.stderr.includes(`Cannot reach Astral at ${address}`), error.stderr)
     assert.doesNotMatch(error.stderr, /requires HTTPS/)
@@ -58,4 +78,24 @@ test('Windows PowerShell enrollment stops at an unavailable Server before instal
   // PowerShell itself may initialize its module cache under LOCALAPPDATA.
   // Astral must not create its installation root or download any artifact.
   await assert.rejects(fs.access(path.join(installation, 'Astral')))
+})
+
+test('Windows PowerShell update needs no Server arguments and reaches the release downloader', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'astral-powershell-update-test-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const source = await fs.readFile('internal/platform/installers/install.ps1', 'utf8')
+  // Test-only replacement after the real function declaration: no network,
+  // published asset, actual executable or production download override.
+  const fixture = source.replace('[Net.ServicePointManager]::SecurityProtocol =', "function Get-OfficialAsset { throw 'fixture official release reached' }\n[Net.ServicePointManager]::SecurityProtocol =")
+  const script = path.join(root, 'install.ps1')
+  await fs.writeFile(script, fixture)
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'LOCALAPPDATA'))
+  await assert.rejects(exec('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script,
+    '-Update', '-Root', path.join(root, 'existing-computer'),
+  ], { env: { ...environment, LOCALAPPDATA: path.join(root, 'LocalAppData') }, timeout: 25000 }), error => {
+    assert.match(error.stderr, /fixture official release reached/)
+    assert.doesNotMatch(error.stderr, /Missing Astral Server|public-key pin|Cannot reach Astral/)
+    return true
+  })
 })

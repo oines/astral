@@ -25,7 +25,7 @@ func TestDefaultBotIsCreatedOnceAndRespectsRenamingAndDeletion(t *testing.T) {
 	config := Config{Listen: "127.0.0.1:0", NoLocal: true, DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers")}
 	open := func() *Server {
 		t.Helper()
-		s, err := New(config)
+		s, err := newAuthenticatedTestServer(config)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -85,7 +85,7 @@ func TestExistingInstallationKeepsItsBotsAndResourceChoices(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = store.Close()
-	s, err := New(config)
+	s, err := newAuthenticatedTestServer(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestOnboardingRequiresBothResourcesAndStartsAWorkingSession(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	root := t.TempDir()
-	s, err := New(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers")})
+	s, err := newAuthenticatedTestServer(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestOnboardingRequiresBothResourcesAndStartsAWorkingSession(t *testing.T) {
 		t.Fatal("local Computer did not connect", err)
 	}
 	var bootstrap httpapi.Bootstrap
-	if err = HTTPJSON(ctx, "GET", s.URL+"/api/v1/bootstrap", s.token, nil, &bootstrap); err != nil {
+	if err = desktopJSON(ctx, "GET", s.URL+"/api/v1/bootstrap", testDesktopToken, nil, &bootstrap); err != nil {
 		t.Fatal(err)
 	}
 	if len(bootstrap.Agents) != 1 || bootstrap.Onboarding.Completed || len(bootstrap.Agents[0].AllowedComputers) != 0 {
@@ -169,7 +169,7 @@ func TestOnboardingRequiresBothResourcesAndStartsAWorkingSession(t *testing.T) {
 	}
 	complete := func(input harness.OnboardingInput) (domain.Agent, error) {
 		var bot domain.Agent
-		err := HTTPJSON(ctx, "POST", s.URL+"/api/v1/onboarding/complete", s.token, input, &bot)
+		err := desktopJSON(ctx, "POST", s.URL+"/api/v1/onboarding/complete", testDesktopToken, input, &bot)
 		return bot, err
 	}
 	for _, input := range []harness.OnboardingInput{{ModelID: profile.ID}, {ComputerID: local.ID}, {ModelID: profile.ID, ComputerID: offline.ID}, {ModelID: "missing", ComputerID: local.ID}} {
@@ -216,7 +216,7 @@ func TestOnboardingRequiresBothResourcesAndStartsAWorkingSession(t *testing.T) {
 	if _, err = complete(harness.OnboardingInput{ModelID: profile.ID, ComputerID: offline.ID}); err == nil {
 		t.Fatal("a stale setup request overwrote the completed configuration")
 	}
-	if err = HTTPJSON(ctx, "GET", s.URL+"/api/v1/bootstrap", s.token, nil, &bootstrap); err != nil || !bootstrap.Onboarding.Completed {
+	if err = desktopJSON(ctx, "GET", s.URL+"/api/v1/bootstrap", testDesktopToken, nil, &bootstrap); err != nil || !bootstrap.Onboarding.Completed {
 		t.Fatal("bootstrap did not report completed setup", err)
 	}
 	session, err := s.Harness.CreateSession(ctx, bot.ID, "")

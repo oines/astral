@@ -25,6 +25,7 @@ import (
 	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/securetransport"
 	testshell "github.com/oines/astral/internal/testkit/shell"
 )
 
@@ -57,8 +58,13 @@ func newFixture(t *testing.T, computerCount int, generate func(context.Context, 
 		t.Fatal(err)
 	}
 	f.hub = computers.NewHub(f.store)
+	identity, err := securetransport.Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.hub.SetIdentity(identity)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /internal/computers/{id}/connect", f.hub.Connect)
+	mux.HandleFunc("GET "+computers.TunnelPath, f.hub.Connect)
 	server := httptest.NewServer(mux)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request map[string]any

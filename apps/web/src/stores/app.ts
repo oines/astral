@@ -7,10 +7,12 @@ import { useIntervalFn, usePreferredDark } from '@vueuse/core'
 import { i18n } from '../i18n'
 import { request } from '../lib/api'
 import type { AstralInternalHarnessInputRequest } from '@astral/sdk'
+import { useAuthStore } from './auth'
 import type { FileRef, SessionView } from '../lib/types'
 
 export const useAppStore = defineStore('app', () => {
-  const authorized = ref(true)
+  const auth = useAuthStore()
+  const authorized = computed(() => auth.authenticated)
   const lastChatPath = ref('/')
   const drafts = ref<Record<string, { text: string; files: Array<{ uri: string; file: FileRef }>; attempt?: AstralInternalHarnessInputRequest; session?: SessionView; selection?: Partial<SessionView> }>>({})
   const query = useQuery({ ...bootstrapQuery(), enabled: () => authorized.value, staleTime: 15_000 })
@@ -51,7 +53,6 @@ export const useAppStore = defineStore('app', () => {
       localStorage.setItem('astral:language', p.language)
     }
   }, { immediate: true })
-  window.addEventListener('astral:unauthorized', () => { authorized.value = false })
   async function refresh() {
     try { await cache.invalidateQueries() }
     catch (error) {
@@ -75,11 +76,11 @@ export const useAppStore = defineStore('app', () => {
     await refresh().catch(() => undefined)
   }
   function confirmNetwork(network: NonNullable<typeof data.value>['network']) {
-    if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, network, public_url: network.public_url.value })
+    if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, network, public_url: network.public_urls.value[0] || '' })
     return network
   }
   async function refreshNetwork() { return confirmNetwork(await request(getNetworkSettings())) }
-  async function networkSettings(patch: { public_url?: string; allow_remote_management?: boolean }) {
+  async function networkSettings(patch: { public_urls?: string[]; allow_remote_management?: boolean }) {
     return confirmNetwork(await request(saveNetworkSettings({ body: patch })))
   }
   async function presentation(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean }) {

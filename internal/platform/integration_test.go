@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,7 +35,7 @@ func distributionServer(t *testing.T) (*Server, context.Context) {
 		binaryName += ".exe"
 	}
 	if _, err = os.Stat(filepath.Join(binaries, binaryName)); err != nil {
-		t.Fatal("run pnpm build:distribution before integration tests")
+		t.Fatal("build the native Astral distribution binary before integration tests")
 	}
 	root := t.TempDir()
 	s, err := New(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers"), DistributionDirectory: binaries})
@@ -56,25 +55,9 @@ func installerCommand(t *testing.T, ctx context.Context, s *Server, root string,
 	if err != nil {
 		t.Fatal(err)
 	}
-	installerName := "install.sh"
-	if runtime.GOOS == "windows" {
-		installerName = "install.ps1"
-	}
-	response, err := http.Get(s.URL + "/" + installerName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := io.ReadAll(response.Body)
-	_ = response.Body.Close()
-	if err != nil || response.StatusCode != http.StatusOK {
-		t.Fatal("could not download the installer")
-	}
-	script := filepath.Join(root, installerName)
-	if err = os.WriteFile(script, raw, 0700); err != nil {
-		t.Fatal(err)
-	}
-	command := nativeInstallerCommand(ctx, script, s.URL, enrollment.Enrollment.ID, enrollment.Token, filepath.Join(root, "daemon"), container)
-	command.Env = append(os.Environ(), "XDG_DATA_HOME="+filepath.Join(root, "installed"))
+	script, certificate := installerReleaseFixture(t, root, s.Config.DistributionDirectory)
+	command := nativeInstallerCommand(ctx, script, s.URL, enrollment.ServerPin, enrollment.Enrollment.ID, enrollment.Token, filepath.Join(root, "daemon"), container)
+	command.Env = append(os.Environ(), "XDG_DATA_HOME="+filepath.Join(root, "installed"), "CURL_CA_BUNDLE="+certificate)
 	if runtime.GOOS == "windows" {
 		command.Env = append(command.Env, "LOCALAPPDATA="+filepath.Join(root, "installed"))
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/securetransport"
 )
 
 func TestContainerPreparationWindowIsAuthenticatedAndBounded(t *testing.T) {
@@ -16,6 +17,11 @@ func TestContainerPreparationWindowIsAuthenticatedAndBounded(t *testing.T) {
 	}
 	defer store.Close()
 	hub := NewHub(store)
+	identity, err := securetransport.Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub.SetIdentity(identity)
 	defer hub.Close()
 	ctx := context.Background()
 	enrollment, err := hub.Enroll(ctx, "https://astral.example", true, false)

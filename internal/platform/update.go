@@ -11,13 +11,12 @@ import (
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/daemonservice"
-	"github.com/oines/astral/internal/serviceurl"
 )
 
 // DaemonVersion is set by the executable entry point before any Daemon starts.
 var DaemonVersion = "dev"
 
-type UpdateOptions struct{ Root, ServerURL, Container, Version string }
+type UpdateOptions struct{ Root, Container, Version string }
 
 // UpdateComputer is deliberately a local command. The caller downloads this
 // release first, then executes it on the computer being updated.
@@ -28,9 +27,6 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 	if options.Container != "" {
 		if options.Root != "" {
 			return fmt.Errorf("choose --root or --container")
-		}
-		if err := serviceurl.Validate(options.ServerURL); err != nil {
-			return err
 		}
 		identity := strings.TrimPrefix(options.Container, "astral-")
 		if !identityPattern.MatchString(identity) {
@@ -46,7 +42,7 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 		}
 		defer os.RemoveAll(directory)
 		binary := filepath.Join(directory, "astral")
-		if err = downloadVerifiedBinary(ctx, options.ServerURL, "astral-linux-"+probe.Arch, binary); err != nil {
+		if err = downloadVerifiedBinary(ctx, "astral-linux-"+probe.Arch, binary); err != nil {
 			return err
 		}
 		report("Updating the Daemon in the existing container; restarting it interrupts running tasks. Its files and installed software are retained.")
@@ -70,9 +66,6 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 	}
 	if credentials.ComputerID == "" {
 		return fmt.Errorf("this directory has no enrolled Computer")
-	}
-	if options.ServerURL != "" && strings.TrimRight(credentials.ServerURL, "/") != strings.TrimRight(options.ServerURL, "/") {
-		return fmt.Errorf("this Daemon belongs to a different Server")
 	}
 	manager, err := daemonservice.New(root)
 	if err != nil {

@@ -101,7 +101,13 @@ PY
 }
 if [[ -z $download_only && -f $config ]]; then
   [[ $listen_set == 1 ]] || listen=$(config_value listen 0.0.0.0:4545)
-  [[ $public_set == 1 ]] || public_url=$(config_value public_url '')
+  [[ $public_set == 1 ]] || public_url=$(python3 - "$config" <<'PYCFG'
+import json,sys
+with open(sys.argv[1],encoding='utf-8') as f: values=json.load(f).get('public_urls',[])
+if not isinstance(values,list) or any(not isinstance(v,str) or any(ord(c)<32 for c in v) for v in values): raise SystemExit('Invalid saved access addresses')
+print(values[0] if values else '')
+PYCFG
+)
   [[ $remote_set == 1 ]] || allow_remote=$(config_value allow_remote_management false)
 fi
 listen=${listen:-0.0.0.0:4545}
@@ -309,7 +315,7 @@ value={}
 if os.path.isfile(previous):
     with open(previous,encoding='utf-8') as f: value=json.load(f)
 if listen_set=='1': value['listen']=listen
-if public_set=='1': value['public_url']=public
+if public_set=='1': value['public_urls']=[public] if public else []
 if remote_set=='1': value['allow_remote_management']=remote=='true'
 with open(output,'w',encoding='utf-8') as f: json.dump(value,f,ensure_ascii=False)
 PY
@@ -344,10 +350,10 @@ server_url=
 for ((attempt=0; attempt<45; attempt++)); do
   pid=$(systemctl --user show "$service" --property=MainPID --value)
   if [[ $pid =~ ^[1-9][0-9]*$ && -f $ready ]]; then
-    if server_url=$(python3 - "$ready" "$pid" "$root/data/server/owner.token" <<'PY'
+    if server_url=$(python3 - "$ready" "$pid" "$root/data/server" <<'PY'
 import json,sys,urllib.parse
 with open(sys.argv[1],encoding='utf-8') as f: ready=json.load(f)
-if ready.get('pid')!=int(sys.argv[2]) or ready.get('token_file')!=sys.argv[3]: raise SystemExit(1)
+if ready.get('pid')!=int(sys.argv[2]) or ready.get('data_directory')!=sys.argv[3]: raise SystemExit(1)
 url=ready.get('url','')
 if urllib.parse.urlsplit(url).scheme not in ('http','https'): raise SystemExit(1)
 print(url)
@@ -359,7 +365,7 @@ PY
 done
 if [[ -z $server_url ]]; then
   # Capture only manager state before rollback removes the attempted unit.
-  # Never print the journal, Owner token, ready-file contents or environment.
+  # Never print the journal, credentials, ready-file contents or environment.
   systemctl --user show "$service" --property=ExecMainCode,ExecMainStatus,Result >&2 || true
   die "Server did not become ready; inspect journalctl --user -u $service"
 fi
@@ -367,7 +373,7 @@ systemctl --user is-active --quiet "$service" || die 'Server exited during start
 complete=1
 printf '\nAstral Server %s is running: %s\n' "$version" "$server_url"
 printf 'Service: systemctl --user status %s\nLogs: journalctl --user -u %s\n' "$service" "$service"
-printf 'Data: %s/data\nOwner token file (contents are not printed): %s/data/server/owner.token\n' "$root" "$root"
+printf 'Data: %s/data\nSet up Web login: %s/current/bin/astral auth setup --data %s/data/server\n' "$root" "$root" "$root"
 printf 'Local management: forward the Server over SSH, then open its local HTTP address.\n'
 printf 'Default-port example: ssh -N -L 4545:127.0.0.1:4545 USER@VPS\nThen open http://127.0.0.1:4545 in a browser.\n'
 printf 'Direct remote management is disabled unless enabled in Settings, by --allow-remote-management, or by ASTRAL_ALLOW_REMOTE_MANAGEMENT.\n'

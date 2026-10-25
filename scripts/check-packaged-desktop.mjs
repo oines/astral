@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { webFixtureCookie } from './web-auth-fixture.mjs'
 import { execFile, spawn } from 'node:child_process'
 import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -24,8 +25,12 @@ const temporary = await mkdtemp(path.join(tmpdir(), 'astral 打包 App '))
 const data = path.join(temporary, 'Astral 数据')
 const runningFile = path.join(data, 'server/running.json')
 const environment = { ...process.env, ASTRAL_DESKTOP_DATA_DIR: data, ASTRAL_SERVER_LISTEN: '127.0.0.1:0', XDG_CONFIG_HOME: path.join(temporary, 'xdg-config') }
-for (const key of ['ASTRAL_PUBLIC_URL', 'ASTRAL_ALLOW_REMOTE_MANAGEMENT', 'ELECTRON_RUN_AS_NODE']) delete environment[key]
-const args = [`--user-data-dir=${path.join(temporary, 'Electron 资料')}`]
+for (const key of ['ASTRAL_PUBLIC_URLS', 'ASTRAL_ALLOW_REMOTE_MANAGEMENT', 'ELECTRON_RUN_AS_NODE']) delete environment[key]
+const electronProfile = path.join(temporary, 'Electron 资料')
+// A loopback-only ephemeral CDP endpoint exists only in this disposable smoke.
+// It proves the real renderer receives native authentication without exposing
+// Desktop credentials or changing production startup switches.
+const args = [`--user-data-dir=${electronProfile}`, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1']
 if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox') // Only disposable root CI containers require this.
 await mkdir(data, { recursive: true, mode: 0o700 })
 const app = spawn(executable, args, { cwd: repository, env: environment, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: false })
@@ -58,6 +63,64 @@ async function rendererStarted() {
   const ids = new Set([app.pid])
   for (let pass = 0; pass < 8; pass++) for (const process of processes) if (ids.has(process.parent)) ids.add(process.pid)
   return processes.some(process => ids.has(process.pid) && /--type=renderer(?:\s|$)/.test(process.args))
+}
+
+async function rendererAuthentication() {
+  const portFile = await readFile(path.join(electronProfile, 'DevToolsActivePort'), 'utf8').catch(error => {
+    if (error.code === 'ENOENT') return ''
+    throw error
+  })
+  if (!portFile) return false
+  const port = Number(portFile.split('\n', 1)[0])
+  assert.ok(Number.isInteger(port) && port > 0 && port <= 65535, 'Electron reported an invalid debugging port')
+  const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000) })
+  assert.equal(response.status, 200, 'Electron did not expose its temporary CDP target list')
+  const targets = await response.json()
+  const target = targets.find(target => {
+    if (target.type !== 'page') return false
+    try { return new URL(target.url).origin === new URL(running.url).origin } catch { return false }
+  })
+  if (!target) return false
+  const endpoint = new URL(target.webSocketDebuggerUrl)
+  assert.equal(endpoint.protocol, 'ws:')
+  assert.equal(endpoint.hostname, '127.0.0.1')
+  assert.equal(Number(endpoint.port), port)
+  const result = await evaluateRenderer(endpoint.href, `(async () => {
+    const response = await fetch('/auth/status', { credentials: 'same-origin', cache: 'no-store' });
+    return { origin: location.origin, status: response.status, auth: await response.json() };
+  })()`)
+  assert.equal(result.origin, new URL(running.url).origin, 'Authentication must be checked in the managed renderer')
+  assert.equal(result.status, 200, 'The actual Desktop renderer could not reach its authentication endpoint')
+  assert.equal(result.auth.authenticated, true, 'The actual Desktop renderer was not authenticated')
+  assert.equal(result.auth.desktop, true, 'The renderer used a browser cookie instead of the process-local Desktop identity')
+  return true
+}
+
+async function evaluateRenderer(endpoint, expression) {
+  const socket = new globalThis.WebSocket(endpoint)
+  let timer
+  try {
+    return await new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('The Desktop renderer authentication check timed out.')), 10_000)
+      socket.addEventListener('error', () => reject(new Error('The temporary Electron CDP connection failed.')), { once: true })
+      socket.addEventListener('close', () => reject(new Error('The temporary Electron CDP connection closed before authentication was checked.')), { once: true })
+      socket.addEventListener('open', () => {
+        socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+      }, { once: true })
+      socket.addEventListener('message', event => {
+        try {
+          const message = JSON.parse(String(event.data))
+          if (message.id !== 1) return
+          if (message.error || message.result?.exceptionDetails) throw new Error('The Desktop renderer could not evaluate its authentication state.')
+          assert.ok(message.result?.result && Object.hasOwn(message.result.result, 'value'), 'The renderer returned no authentication result')
+          resolve(message.result.result.value)
+        } catch (error) { reject(error) }
+      })
+    })
+  } finally {
+    clearTimeout(timer)
+    socket.close()
+  }
 }
 
 async function windowsSnapshot(script, timeout = 30_000) {
@@ -135,12 +198,12 @@ try {
     if (exit) throw new Error(`Packaged App exited before startup (${JSON.stringify(exit)}).\n${output}`)
     running = await readFile(runningFile, 'utf8').then(JSON.parse).catch(() => undefined)
     if (!running) return false
-    const token = (await readFile(path.join(data, 'server/owner.token'), 'utf8')).trim()
+    const cookie = await webFixtureCookie(path.join(data,'server'),running.url)
     let response
     try {
       // Bootstrap's optional Docker probe has its own three-second budget.
       // A cold Windows CLI must not consume the entire client's budget too.
-      response = await fetch(`${running.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) })
+      response = await fetch(`${running.url}/api/v1/bootstrap`, { headers: { Cookie: cookie }, signal: AbortSignal.timeout(10_000) })
     } catch (error) {
       if (error.name === 'TimeoutError' || ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE'].includes(error.cause?.code)) return false
       throw error
@@ -150,6 +213,12 @@ try {
     return bootstrap.computers.some(computer => computer.local && computer.online)
   }, 'The packaged App did not start its Server and connect the local Daemon.', 45_000)
   await waitFor(async () => { if (exit) throw new Error(`Packaged App exited before renderer startup.\n${output}`); return rendererStarted() }, 'The actual packaged Electron App did not start a renderer.', 30_000)
+  await waitFor(async () => {
+    if (failure) throw failure
+    if (exit) throw new Error(`Packaged App exited before renderer authentication.\n${output}`)
+    return rendererAuthentication()
+  }, 'The actual Desktop renderer did not authenticate with its native identity.', 30_000)
+  console.log('Actual Desktop renderer /auth/status confirms authenticated=true and desktop=true.')
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
   console.log(`Requesting ${process.platform === 'win32' ? 'crash cleanup' : 'normal App quit'} with SIGTERM (App PID ${app.pid}, Server PID ${running.pid}).`)
   if (process.platform === 'win32') await rendererStarted()
@@ -163,7 +232,7 @@ try {
   await waitFor(() => !alive(running.pid), 'The Go Server survived the packaged Electron App.', 20_000)
   await waitForWindowsDescendants()
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
-  console.log(`Actual packaged ${process.platform}/${arch} App startup, renderer, online local Daemon, no local user-service registration, and ${process.platform === 'win32' ? 'crash cleanup' : 'normal app.quit shutdown'} passed.`)
+  console.log(`Actual packaged ${process.platform}/${arch} App startup, authenticated native renderer, online local Daemon, no local user-service registration, and ${process.platform === 'win32' ? 'crash cleanup' : 'normal app.quit shutdown'} passed.`)
 } catch (error) {
   console.error(output)
   throw error

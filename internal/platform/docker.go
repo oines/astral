@@ -183,6 +183,9 @@ type DockerOptions struct {
 	Binary         string
 	EnrollmentFile string
 	Runtime        *DockerInfo
+	// RefreshEnrollment remounts an atomically replaced enrollment file in an
+	// existing container. Starting an already running container is a no-op.
+	RefreshEnrollment bool
 }
 
 // ContainerInstallation records the local provisioning target for explicit
@@ -331,7 +334,11 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 		return "", err
 	}
 	if id != "" {
-		if err = runDocker(ctx, reportLine("starting"), "start", id); err != nil {
+		action := "start"
+		if options.RefreshEnrollment {
+			action = "restart"
+		}
+		if err = runDocker(ctx, reportLine("starting"), action, id); err != nil {
 			return id, err
 		}
 		return id, nil
@@ -383,7 +390,7 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 		return "", domain.Conflict("the data volume belongs to another operation")
 	}
 	// Native Linux and OrbStack retain host networking. Docker Desktop uses its
-	// ordinary bridge and the separately authenticated local TLS entry point.
+	// ordinary bridge and the authenticated tunnel on the main Server listener.
 	host, err := os.Hostname()
 	if err != nil {
 		return "", err
@@ -492,25 +499,26 @@ func (s *Server) provision(operation domain.Provisioning) {
 	enrollmentPath := filepath.Join(root, "enrollment.json")
 	var enrollment ConnectOptions
 	alreadyRegistered := false
+	refreshEnrollment := false
 	if operation.EnrollmentID != "" {
 		if err = ReadJSON(enrollmentPath, &enrollment); err != nil {
 			fail(err)
 			return
 		}
-		// Explicit retry renews the same enrollment and container, not a new
-		// Computer. Already registered credentials remain in its data volume.
+		// Registered identities remain in their data volume. An expired unused
+		// pairing is replaced; retry must never resurrect a previously leaked token.
 		var record domain.Enrollment
 		if err = s.Store.Get(ctx, "enrollments", operation.EnrollmentID, &record); err != nil {
 			fail(err)
 			return
 		}
 		alreadyRegistered = record.State == "registered"
-		record.ExpiresAt = time.Now().UTC().Add(15 * time.Minute)
-		if err = s.Store.Save(ctx, "enrollments", &record.Meta, &record); err != nil {
-			fail(err)
-			return
+		if !alreadyRegistered && time.Now().After(record.ExpiresAt) {
+			operation.EnrollmentID = ""
+			refreshEnrollment = true
 		}
-	} else {
+	}
+	if operation.EnrollmentID == "" {
 		localURL := s.URL
 		if probe.Desktop && (runtime.GOOS == "windows" || runtime.GOOS == "darwin") {
 			localURL = s.ContainerURL()
@@ -525,7 +533,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 			return
 		}
 		operation.EnrollmentID = result.Enrollment.ID
-		enrollment = ConnectOptions{ServerURL: localURL, EnrollmentID: result.Enrollment.ID, Token: result.Token}
+		enrollment = ConnectOptions{ServerURL: localURL, ServerPin: result.ServerPin, EnrollmentID: result.Enrollment.ID, Token: result.Token}
 		if err = WriteJSON(enrollmentPath, enrollment); err != nil {
 			fail(err)
 			return
@@ -538,7 +546,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 			return
 		}
 	}
-	id, err := LaunchContainer(ctx, DockerOptions{Identity: operation.ID, Binary: binary, EnrollmentFile: enrollmentPath, Runtime: &probe}, report)
+	id, err := LaunchContainer(ctx, DockerOptions{Identity: operation.ID, Binary: binary, EnrollmentFile: enrollmentPath, Runtime: &probe, RefreshEnrollment: refreshEnrollment}, report)
 	operation.ContainerID = id
 	if err != nil {
 		fail(err)
