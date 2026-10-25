@@ -24,7 +24,7 @@ import (
 	"github.com/oines/astral-core/standardtools"
 	"github.com/oines/astral-core/standardtools/local"
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/modelbridge"
+	"github.com/oines/astral/internal/serviceurl"
 	"github.com/oines/astral/internal/transport"
 )
 
@@ -53,7 +53,7 @@ type daemonProcess struct {
 }
 
 func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
-	if err := modelbridge.ValidateURL(credentials.ServerURL); err != nil {
+	if err := serviceurl.Validate(credentials.ServerURL); err != nil {
 		return nil, err
 	}
 	root, err := filepath.Abs(root)
@@ -72,10 +72,7 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 		return nil, err
 	}
 	shell := local.DefaultShell()
-	client, err := NewHTTPClient(credentials.ServerCA)
-	if err != nil {
-		return nil, err
-	}
+	client := NewHTTPClient()
 	var container *domain.ContainerInfo
 	if raw := os.Getenv("ASTRAL_CONTAINER_INFO"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &container); err != nil {

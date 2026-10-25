@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useQuery, useQueryCache } from '@pinia/colada'
 import { bootstrapQuery, bootstrapQueryKey, listComputersQuery, listSessionsQuery, listSessionsQueryKey } from '@astral/sdk/colada'
-import { getPreferences, savePreferences, updateSession } from '@astral/sdk'
+import { getNetworkSettings, getPreferences, saveNetworkSettings, savePreferences, updateSession } from '@astral/sdk'
 import { useIntervalFn, usePreferredDark } from '@vueuse/core'
 import { i18n } from '../i18n'
 import { request } from '../lib/api'
@@ -74,6 +74,14 @@ export const useAppStore = defineStore('app', () => {
     }
     await refresh().catch(() => undefined)
   }
+  function confirmNetwork(network: NonNullable<typeof data.value>['network']) {
+    if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, network, public_url: network.public_url.value })
+    return network
+  }
+  async function refreshNetwork() { return confirmNetwork(await request(getNetworkSettings())) }
+  async function networkSettings(patch: { public_url?: string; allow_remote_management?: boolean }) {
+    return confirmNetwork(await request(saveNetworkSettings({ body: patch })))
+  }
   async function presentation(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean }) {
     await request(updateSession({ path: { id }, body: patch }))
     if (sessionViews.value[id]) Object.assign(sessionViews.value[id], patch)
@@ -94,7 +102,7 @@ export const useAppStore = defineStore('app', () => {
     if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, agents: data.value.agents.filter(agent => agent.id !== id) })
   }
   const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).map(s => [s.id, sessionViews.value[s.id] ?? s])))
-  return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, presentation, forgetSession, forgetAgent }
+  return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, refreshNetwork, networkSettings, presentation, forgetSession, forgetAgent }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAppStore, import.meta.hot))

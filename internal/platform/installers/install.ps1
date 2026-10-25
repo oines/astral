@@ -11,8 +11,13 @@ param(
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 $serverUri = [Uri]$Server
-if (-not $serverUri.IsAbsoluteUri -or ($serverUri.Scheme -ne 'https' -and -not ($serverUri.Scheme -eq 'http' -and $serverUri.IsLoopback))) { throw 'Remote Astral access requires HTTPS.' }
+if (-not $serverUri.IsAbsoluteUri -or -not $serverUri.Host -or $serverUri.Scheme -notin @('http', 'https') -or $serverUri.UserInfo -or $serverUri.Query -or $serverUri.Fragment) { throw 'Astral Server URL must use HTTP or HTTPS without credentials, a query or a fragment.' }
 $Server = $Server.TrimEnd('/')
+try {
+  Invoke-WebRequest -UseBasicParsing -MaximumRedirection 0 -TimeoutSec 20 "$Server/health" | Out-Null
+} catch {
+  throw "Cannot reach Astral at $Server. Check the Server address, firewall, and Tailscale/LAN connection, then copy the command again. $($_.Exception.Message)"
+}
 $cpu = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITEW6432')
 if (-not $cpu) { $cpu = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE') }
 switch ($cpu.ToUpperInvariant()) { 'AMD64' { $arch = 'amd64' }; 'ARM64' { $arch = 'arm64' }; default { throw "Unsupported CPU architecture: $cpu" } }

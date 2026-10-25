@@ -9,6 +9,7 @@ import { useI18n } from 'vue-i18n'
 import type { Profile, Provider } from '../../lib/types'
 import { errorText, object, request } from '../../lib/api'
 import { useAction } from '../../composables/useAction'
+import { useClipboard } from '../../composables/useClipboard'
 import { useSettingsSave } from '../../composables/useSettingsSave'
 import SettingsFeedback from './SettingsFeedback.vue'
 import { useAppStore } from '../../stores/app'
@@ -20,6 +21,7 @@ defineProps<{ embedded?: boolean }>()
 const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
+const { copy } = useClipboard()
 const saves = useSettingsSave()
 const providers = useQuery(listProvidersQuery())
 const profiles = useQuery(listModelsQuery())
@@ -175,7 +177,7 @@ function scheduleAuthorization(epoch: number) {
     } catch (error) { if (epoch === authEpoch) action.error.value = errorText(error) }
   }, Math.max(5, authorization.value?.interval || 5) * 1000)
 }
-async function copyCode() { if (authorization.value?.user_code) await action.run(() => navigator.clipboard.writeText(authorization.value!.user_code!)) }
+async function copyCode() { if (authorization.value?.user_code) await copy(authorization.value.user_code) }
 </script>
 <template>
   <div

@@ -3186,6 +3186,9 @@
             },
             "type": "array"
           },
+          "network": {
+            "$ref": "#/components/schemas/astral_internal_httpapi_NetworkSettings"
+          },
           "onboarding": {
             "$ref": "#/components/schemas/astral_internal_harness_Onboarding"
           },
@@ -3208,6 +3211,7 @@
         "required": [
           "version",
           "public_url",
+          "network",
           "host",
           "preferences",
           "onboarding",
@@ -3536,6 +3540,128 @@
         },
         "required": [
           "before_id"
+        ],
+        "type": "object"
+      },
+      "astral_internal_httpapi_NetworkAddress": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "label",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "astral_internal_httpapi_NetworkBoolSetting": {
+        "properties": {
+          "editable": {
+            "type": "boolean"
+          },
+          "saved_value": {
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "cli",
+              "environment",
+              "settings",
+              "default"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "value",
+          "saved_value",
+          "source",
+          "editable"
+        ],
+        "type": "object"
+      },
+      "astral_internal_httpapi_NetworkPatch": {
+        "properties": {
+          "allow_remote_management": {
+            "type": "boolean"
+          },
+          "listen": {
+            "type": "string"
+          },
+          "public_url": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "astral_internal_httpapi_NetworkSettings": {
+        "properties": {
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_httpapi_NetworkAddress"
+            },
+            "type": "array"
+          },
+          "allow_remote_management": {
+            "$ref": "#/components/schemas/astral_internal_httpapi_NetworkBoolSetting"
+          },
+          "listen": {
+            "$ref": "#/components/schemas/astral_internal_httpapi_NetworkStringSetting"
+          },
+          "public_url": {
+            "$ref": "#/components/schemas/astral_internal_httpapi_NetworkStringSetting"
+          },
+          "restart_required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "listen",
+          "public_url",
+          "allow_remote_management",
+          "addresses",
+          "restart_required"
+        ],
+        "type": "object"
+      },
+      "astral_internal_httpapi_NetworkStringSetting": {
+        "properties": {
+          "editable": {
+            "type": "boolean"
+          },
+          "saved_value": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "cli",
+              "environment",
+              "settings",
+              "discovery",
+              "default"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "saved_value",
+          "source",
+          "editable"
         ],
         "type": "object"
       },
@@ -9096,6 +9222,90 @@
         ],
         "tags": [
           "Sessions"
+        ]
+      }
+    },
+    "/api/v1/settings/network": {
+      "get": {
+        "operationId": "getNetworkSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpapi_NetworkSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "System"
+        ]
+      },
+      "patch": {
+        "operationId": "saveNetworkSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_httpapi_NetworkPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpapi_NetworkSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "owner": []
+          },
+          {
+            "ownerCookie": []
+          }
+        ],
+        "tags": [
+          "System"
         ]
       }
     },

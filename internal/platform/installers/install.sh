@@ -9,7 +9,15 @@ for arg in "$@"; do
   case "$arg" in --server) next_server=1 ;; --update) update=1 ;; esac
 done
 if [ -z "$server" ]; then echo "Missing Astral Server URL." >&2; exit 2; fi
-case "$server" in https://*|http://127.0.0.1:*|http://localhost:*|http://\[::1\]:*) ;; *) echo "Remote Astral access requires HTTPS." >&2; exit 2 ;; esac
+case "$server" in http://*|https://*) ;; *) echo "Astral Server URL must use HTTP or HTTPS." >&2; exit 2 ;; esac
+case "$server" in *'@'*|*'?'*|*'#'*) echo "Astral Server URL must not contain credentials, a query or a fragment." >&2; exit 2 ;; esac
+server=${server%/}
+# Fail before installing files or building an agent environment if this machine
+# cannot reach the exact address selected in Astral.
+if ! curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --proto '=http,https' "$server/health" -o /dev/null; then
+  echo "Cannot reach Astral at $server. Check the Server address, firewall, and Tailscale/LAN connection, then copy the command again." >&2
+  exit 1
+fi
 case "$(uname -s)" in Darwin) target_os=darwin ;; Linux) target_os=linux ;; *) echo "Use install.ps1 on Windows." >&2; exit 2 ;; esac
 case "$(uname -m)" in arm64|aarch64) target_arch=arm64 ;; x86_64|amd64) target_arch=amd64 ;; *) echo "Unsupported CPU architecture." >&2; exit 2 ;; esac
 install_base="${XDG_DATA_HOME:-$HOME/.local/share}/astral/bin"

@@ -1,4 +1,9 @@
 export const settingsUxEn = {
+  clipboardManualTitle: 'Copy manually', clipboardManualHint: 'The browser could not copy this text. It is selected below; use your device’s copy command.', clipboardManualText: 'Text to copy',
+  networkAccess: 'Network access', allowRemoteManagement: 'Allow remote management', allowRemoteManagementHint: 'Allow direct remote access to the web interface and management API, with Owner authentication. Turning this off does not stop Computer connections or your local reverse proxy.',
+  networkAddress: 'Access address', networkAddressHint: 'Full HTTP or HTTPS URL for other devices. Leave blank to select automatically.', networkEffectiveAddress: 'Current address', networkAddressExistingHint: 'Used for new connection commands. Existing Computers keep their saved server address.',
+  networkSource: 'Source: {source}.', networkSourceLocked: 'Controlled by {source}; change it where Astral is started.',
+  networkSources: { cli: 'command-line argument', environment: 'environment variable', settings: 'app settings', discovery: 'automatic discovery', default: 'default' },
   settingsSaving: 'Saving…', settingsNotApplied: 'This change was not applied.', settingsUnconfirmed: 'The result is not confirmed yet.', settingsCheckStatus: 'Check status', settingsValueRequired: 'Enter a value.',
   botBasics: 'Basic settings', botComputerPermissions: 'Computer access', botPlatforms: 'Chat platforms', connectPlatform: 'Connect a platform', choosePlatform: 'Choose a platform',
   botIdentity: 'Identity', botModelSettings: 'Models', botSearchSettings: 'Web search', botAvatarHint: 'An emoji or a short label.',
@@ -12,6 +17,11 @@ export const settingsUxEn = {
   settingsSearchBots: 'Find a Bot…', settingsSearchComputers: 'Find a Computer…', accountDeleteHint: 'Delete this unused account connection.', saveFailedRefresh: 'The configuration changed. Review it and retry.',
 }
 export const settingsUxZh: typeof settingsUxEn = {
+  clipboardManualTitle: '手动复制', clipboardManualHint: '浏览器未能复制这些内容。下方文字已选中，请使用设备上的复制操作。', clipboardManualText: '要复制的文字',
+  networkAccess: '网络访问', allowRemoteManagement: '允许远程管理', allowRemoteManagementHint: '允许其他设备直接访问网页和管理 API，仍需 Owner 身份验证。关闭时不影响电脑连接或你配置的本地反向代理。',
+  networkAddress: '访问地址', networkAddressHint: '供其他设备使用的完整 HTTP 或 HTTPS 地址，留空时自动选择。', networkEffectiveAddress: '当前使用地址', networkAddressExistingHint: '用于生成新的接入命令，已连接的电脑保留原来的服务器地址。',
+  networkSource: '来源：{source}。', networkSourceLocked: '由{source}控制，请在启动 Astral 的位置修改。',
+  networkSources: { cli: '命令行参数', environment: '环境变量', settings: '应用设置', discovery: '自动发现', default: '默认值' },
   settingsSaving: '保存中…', settingsNotApplied: '本次修改未生效。', settingsUnconfirmed: '结果尚未确认。', settingsCheckStatus: '检查状态', settingsValueRequired: '请输入内容。',
   botBasics: '基本设置', botComputerPermissions: '电脑权限', botPlatforms: '聊天平台', connectPlatform: '连接平台', choosePlatform: '选择平台',
   botIdentity: '身份信息', botModelSettings: '模型', botSearchSettings: '网页搜索', botAvatarHint: '使用表情或简短文字。',

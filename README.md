@@ -41,6 +41,8 @@ Start the binary for your machine, for example:
 
 Open `http://127.0.0.1:4545`. The server prints the path of its private Owner token file; enter that token at the Web sign-in screen. The token is stored in an HttpOnly cookie after sign-in. The desktop app performs this local handoff in its main process.
 
+The HTTP listener defaults to `0.0.0.0:4545` so other Computers can connect. Direct remote access to the Web UI and Owner API is disabled until **Settings → Security & Access → Allow remote management** is enabled. Set the access address there or select it when adding a Computer. For HTTPS, configure your own reverse proxy; an intentional loopback proxy can expose the local management entry. See [deployment](docs/deployment.md) for configuration priority, Tailscale addresses and container access.
+
 Use a new, empty data directory for this version. Host schema 3 and Core format 10 replace the previous formats; older data is rejected, with no migration or compatibility mode. Choose a persistent location instead of `/tmp` for regular use.
 
 A fresh installation includes a Bot named **Astral**, which you can rename later in Settings. The two-step setup connects a model service and selects a model, then selects or connects a Computer. **Start using Astral** grants access to the selected online Computer and saves both defaults together. The first conversation is ready to use those resources; there is no separate Bot creation step. Existing installations keep their Bots and resource choices, and setup does not reappear after completion or recreate a renamed or deleted Bot.

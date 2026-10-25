@@ -29,15 +29,17 @@ import (
 )
 
 type Config struct {
-	Harness         *harness.Service
-	Channels        *channels.Service
-	OwnerToken      string
-	PublicURL       string
-	DataDirectory   string
-	Version         string
-	HostInfo        func(context.Context) domain.HostInfo
-	UseLocal        func(context.Context) (domain.ComputerStatus, error)
-	CreateContainer func(context.Context, string) (domain.Provisioning, error)
+	Harness             *harness.Service
+	Channels            *channels.Service
+	OwnerToken          string
+	PublicURL           string
+	DataDirectory       string
+	Version             string
+	HostInfo            func(context.Context) domain.HostInfo
+	UseLocal            func(context.Context) (domain.ComputerStatus, error)
+	CreateContainer     func(context.Context, string) (domain.Provisioning, error)
+	NetworkSettings     func(context.Context) NetworkSettings
+	SaveNetworkSettings func(context.Context, NetworkPatch) (NetworkSettings, error)
 }
 type API struct {
 	Config   Config
@@ -52,6 +54,7 @@ type Preferences struct {
 type Bootstrap struct {
 	Version     string                  `json:"version"`
 	PublicURL   string                  `json:"public_url"`
+	Network     NetworkSettings         `json:"network"`
 	Host        domain.HostInfo         `json:"host"`
 	Preferences Preferences             `json:"preferences"`
 	Onboarding  harness.Onboarding      `json:"onboarding"`
@@ -163,6 +166,7 @@ func New(config Config) *API {
 	a.sessionRoutes()
 	a.attemptRoutes()
 	a.systemRoutes()
+	a.networkRoutes()
 	a.streamRoutes()
 	a.handler = a.authenticate(a.mux)
 	return a
@@ -211,7 +215,10 @@ func (a *API) computers(ctx context.Context) ([]domain.ComputerStatus, error) {
 func (a *API) systemRoutes() {
 	h := a.Config.Harness
 	route[httpcontract.Empty, Bootstrap](a, "GET", "/bootstrap", "bootstrap", "System", func(r *http.Request, _ httpcontract.Empty) (Bootstrap, error) {
-		v := Bootstrap{Version: a.Config.Version, PublicURL: a.Config.PublicURL}
+		v := Bootstrap{Version: a.Config.Version, PublicURL: a.publicURL()}
+		if a.Config.NetworkSettings != nil {
+			v.Network = a.Config.NetworkSettings(r.Context())
+		}
 		if a.Config.HostInfo != nil {
 			v.Host = a.Config.HostInfo(r.Context())
 		}
@@ -322,7 +329,7 @@ func (a *API) systemRoutes() {
 	route[EnrollmentInput, computers.EnrollmentResult](a, "POST", "/computers/enrollments", "enrollComputer", "Computers", func(r *http.Request, input EnrollmentInput) (computers.EnrollmentResult, error) {
 		server := input.ServerURL
 		if server == "" {
-			server = a.Config.PublicURL
+			server = a.publicURL()
 		}
 		return h.Hub.Enroll(r.Context(), server, input.Container, false)
 	})
@@ -767,7 +774,7 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 		httpcontract.JSON(w, 401, httpcontract.Error{Code: "unauthorized", Message: "The Owner token is not valid."})
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: "astral_owner", Value: request.Token, Path: "/", HttpOnly: true, Secure: r.TLS != nil || strings.HasPrefix(a.Config.PublicURL, "https://"), SameSite: http.SameSiteStrictMode, MaxAge: 60 * 60 * 24 * 30})
+	http.SetCookie(w, &http.Cookie{Name: "astral_owner", Value: request.Token, Path: "/", HttpOnly: true, Secure: r.TLS != nil || r.Header.Get("Origin") == "https://"+r.Host, SameSite: http.SameSiteStrictMode, MaxAge: 60 * 60 * 24 * 30})
 	httpcontract.JSON(w, 200, httpcontract.OK{OK: true})
 }
 func (a *API) Logout(w http.ResponseWriter, r *http.Request) {

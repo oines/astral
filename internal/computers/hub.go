@@ -18,8 +18,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/serviceurl"
 	"github.com/oines/astral/internal/transport"
 )
 
@@ -48,7 +48,7 @@ func tokenHash(token string) string {
 }
 
 func (h *Hub) Enroll(ctx context.Context, serverURL string, container, local bool) (EnrollmentResult, error) {
-	if err := modelbridge.ValidateURL(serverURL); err != nil {
+	if err := serviceurl.Validate(serverURL); err != nil {
 		return EnrollmentResult{}, err
 	}
 	token := domain.ID("enroll")

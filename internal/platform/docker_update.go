@@ -61,10 +61,14 @@ func UpdateContainerDaemon(ctx context.Context, identity, binaryPath, expectedVe
 	if json.Unmarshal(raw, &credentials) != nil || credentials.ComputerID == "" {
 		return errors.New("existing container has no usable enrolled Computer credentials")
 	}
-	// host.docker.internal is a container DNS name. The bridge certificate also
-	// covers loopback so the local updater can verify the same pinned listener.
-	if parsed, parseErr := url.Parse(credentials.ServerURL); parseErr == nil && credentials.ServerCA != "" && parsed.Hostname() == "host.docker.internal" {
-		parsed.Host = net.JoinHostPort("127.0.0.1", parsed.Port())
+	// host.docker.internal resolves inside Docker Desktop. The updater runs on
+	// its host and reaches the same main listener through loopback.
+	if parsed, parseErr := url.Parse(credentials.ServerURL); parseErr == nil && parsed.Hostname() == "host.docker.internal" {
+		port := parsed.Port()
+		parsed.Host = "127.0.0.1"
+		if port != "" {
+			parsed.Host = net.JoinHostPort("127.0.0.1", port)
+		}
 		credentials.ServerURL = parsed.String()
 	}
 	before, _ := computerStatus(ctx, credentials)

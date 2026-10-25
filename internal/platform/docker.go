@@ -512,14 +512,10 @@ func (s *Server) provision(operation domain.Provisioning) {
 		}
 	} else {
 		localURL := s.URL
-		serverCA := ""
-		if s.Config.TLSCertificate != "" {
-			localURL = s.Config.PublicURL
-		}
 		if probe.Desktop && (runtime.GOOS == "windows" || runtime.GOOS == "darwin") {
-			localURL, serverCA, err = s.ensureContainerBridge(ctx)
-			if err != nil {
-				fail(err)
+			localURL = s.ContainerURL()
+			if localURL == "" {
+				fail(domain.Invalid("Docker Desktop requires the Astral Server main listener to be reachable from the container; use the default wildcard listen address"))
 				return
 			}
 		}
@@ -529,7 +525,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 			return
 		}
 		operation.EnrollmentID = result.Enrollment.ID
-		enrollment = ConnectOptions{ServerURL: localURL, ServerCA: serverCA, EnrollmentID: result.Enrollment.ID, Token: result.Token}
+		enrollment = ConnectOptions{ServerURL: localURL, EnrollmentID: result.Enrollment.ID, Token: result.Token}
 		if err = WriteJSON(enrollmentPath, enrollment); err != nil {
 			fail(err)
 			return

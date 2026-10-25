@@ -43,7 +43,7 @@ Its unit is in `${XDG_CONFIG_HOME:-~/.config}/systemd/user/astral-server.service
 
 ## Opening the Web UI
 
-The default listener is `127.0.0.1:4545`. From your computer:
+The default HTTP listener is `0.0.0.0:4545`, with direct remote management disabled. Computers can connect on that port. To open the local management entry from your computer:
 
 ```sh
 ssh -N -L 4545:127.0.0.1:4545 USER@VPS
@@ -51,13 +51,19 @@ ssh -N -L 4545:127.0.0.1:4545 USER@VPS
 
 Open `http://127.0.0.1:4545` locally. The installer prints the path to the VPS's private `data/server/owner.token` file, but never its contents. Read that file yourself through your existing SSH access and enter the token on the Web sign-in screen. Protect it like a password; do not paste it into an issue or diagnostic report.
 
-For a domain, keep the listener on loopback and put an HTTPS reverse proxy in front of it:
+For direct LAN/Tailscale browser access, enable remote management explicitly, either in Settings after signing in over SSH or during installation:
 
 ```sh
-bash install-server.sh --public-url https://astral.example.com
+bash install-server.sh --allow-remote-management --public-url http://YOUR-TAILSCALE-IP:4545
 ```
 
-See [deployment and operations](deployment.md) for proxy and WebSocket/SSE requirements. Direct TLS is also supported with `--tls-cert /absolute/cert.pem --tls-key /absolute/key.pem`. A non-loopback `--listen` requires an HTTPS public URL, and public HTTP URLs are rejected. The Go Server also applies its normal URL and TLS validation. The installer does not configure DNS, a firewall, certificates or a proxy.
+For a domain, a loopback listener and your own HTTPS reverse proxy can expose the local management entry:
+
+```sh
+bash install-server.sh --listen 127.0.0.1:4545 --public-url https://astral.example.com
+```
+
+See [deployment and operations](deployment.md) for proxy and WebSocket/SSE requirements. Astral provides HTTP only; clients also accept reverse-proxy HTTPS with normal certificate verification. The installer does not configure DNS, a firewall, certificates or a proxy. A local proxy intentionally reaches the complete loopback management entry regardless of the direct remote-management switch.
 
 ## Logout and reboot
 
@@ -71,7 +77,9 @@ The administrator may need an elevated session. The installer never runs this co
 
 ## Updating and failure recovery
 
-Run the installer again, optionally selecting `--tag`. Omitted listen, public URL and TLS settings retain their saved values; pass `--public-url ''`, or both `--tls-cert '' --tls-key ''`, to clear those settings deliberately. Updating restarts the Server and interrupts active sessions and connected Computer dispatch.
+Run the installer again, optionally selecting `--tag`. Omitted network options retain their saved values. Pass `--public-url ''` for automatic address selection or `--allow-remote-management=false` to disable direct remote management. Installer options update `data/server/network.json`; the user-service unit leaves network options to the normal resolver so App settings remain editable. Explicit runtime CLI arguments and environment variables still take priority. Updating restarts the Server and interrupts active sessions and connected Computer dispatch.
+
+Older development installations with native TLS or Docker TLS bridge configuration require the explicit [offline network migration](deployment.md#offline-network-migration) before installing this version. The runtime has no old TLS or bridge compatibility path.
 
 Before stopping an existing service, the installer queries both executables' data-format metadata. It only allows the same Host schema and Core format. An old development binary without this capability, or nonempty unmanaged data without a trusted program, is rejected. There is no automatic migration across incompatible formats: use a separate empty root or an explicit migration procedure when one is provided.
 

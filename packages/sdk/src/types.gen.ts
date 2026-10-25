@@ -992,6 +992,7 @@ export type AstralInternalHttpapiBootstrap = {
     computers: Array<AstralInternalDomainComputerStatus>;
     host: AstralInternalDomainHostInfo;
     models: Array<AstralInternalDomainModelProfile>;
+    network: AstralInternalHttpapiNetworkSettings;
     onboarding: AstralInternalHarnessOnboarding;
     preferences: AstralInternalHttpapiPreferences;
     public_url: string;
@@ -1094,6 +1095,40 @@ export type AstralInternalHttpapiLoginRequest = {
 
 export type AstralInternalHttpapiMovePending = {
     before_id: string;
+};
+
+export type AstralInternalHttpapiNetworkAddress = {
+    kind: string;
+    label: string;
+    url: string;
+};
+
+export type AstralInternalHttpapiNetworkBoolSetting = {
+    editable: boolean;
+    saved_value: boolean;
+    source: 'cli' | 'environment' | 'settings' | 'default';
+    value: boolean;
+};
+
+export type AstralInternalHttpapiNetworkPatch = {
+    allow_remote_management?: boolean;
+    listen?: string;
+    public_url?: string;
+};
+
+export type AstralInternalHttpapiNetworkSettings = {
+    addresses: Array<AstralInternalHttpapiNetworkAddress>;
+    allow_remote_management: AstralInternalHttpapiNetworkBoolSetting;
+    listen: AstralInternalHttpapiNetworkStringSetting;
+    public_url: AstralInternalHttpapiNetworkStringSetting;
+    restart_required: boolean;
+};
+
+export type AstralInternalHttpapiNetworkStringSetting = {
+    editable: boolean;
+    saved_value: string;
+    source: 'cli' | 'environment' | 'settings' | 'discovery' | 'default';
+    value: string;
 };
 
 export type AstralInternalHttpapiPreferences = {
@@ -3740,6 +3775,56 @@ export type StopSessionResponses = {
 };
 
 export type StopSessionResponse = StopSessionResponses[keyof StopSessionResponses];
+
+export type GetNetworkSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/network';
+};
+
+export type GetNetworkSettingsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type GetNetworkSettingsError = GetNetworkSettingsErrors[keyof GetNetworkSettingsErrors];
+
+export type GetNetworkSettingsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiNetworkSettings;
+};
+
+export type GetNetworkSettingsResponse = GetNetworkSettingsResponses[keyof GetNetworkSettingsResponses];
+
+export type SaveNetworkSettingsData = {
+    body: AstralInternalHttpapiNetworkPatch;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/network';
+};
+
+export type SaveNetworkSettingsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SaveNetworkSettingsError = SaveNetworkSettingsErrors[keyof SaveNetworkSettingsErrors];
+
+export type SaveNetworkSettingsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiNetworkSettings;
+};
+
+export type SaveNetworkSettingsResponse = SaveNetworkSettingsResponses[keyof SaveNetworkSettingsResponses];
 
 export type StorageInfoData = {
     body?: never;

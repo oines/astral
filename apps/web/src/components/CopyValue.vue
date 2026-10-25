@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useClipboard } from '@vueuse/core'
+import { useClipboard } from '../composables/useClipboard'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@astral/ui'
 import { Check, Copy } from '@astral/icons'
 import { errorText } from '../lib/api'
 const props = defineProps<{ value?: string; label: string }>()
 const { t } = useI18n()
-const { copy, copied } = useClipboard({ legacy: true })
+const { copy, copied } = useClipboard()
 const error = ref('')
 async function copyValue() {
   if (!props.value) return

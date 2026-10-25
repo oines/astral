@@ -13,12 +13,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/platform"
+	"github.com/oines/astral/internal/serviceurl"
 )
 
 var Version = "dev"
@@ -98,7 +99,7 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) error {
 func usage(out io.Writer) {
 	fmt.Fprint(out, `Astral — persistent agents on your Computers
 
-  astral serve [--listen 127.0.0.1:4545] [--public-url https://…]
+  astral serve [--listen 0.0.0.0:4545] [--public-url http://…] [--allow-remote-management]
   astral computer connect --server URL --enrollment ID --token TOKEN [--container]
   astral computer service status|logs|start|stop|restart|uninstall --root DIRECTORY
   astral computer update --server URL --root DIRECTORY
@@ -112,28 +113,37 @@ func usage(out io.Writer) {
   astral doctor
   astral auth token [--data DIRECTORY]
   astral maintenance weixin-wire-ownership --data DIRECTORY [--purge-unowned]
+  astral maintenance with-data-lock --data DIRECTORY --computers-dir DIRECTORY -- COMMAND [ARGS...]
   astral version [--json | --data-formats]
 
-Remote access requires HTTPS. Owner credentials are read from a private file.
+The Server serves HTTP. Use your own reverse proxy for HTTPS when needed.
+Remote management is disabled by default; Computer connections remain available.
+Network settings: explicit CLI > environment > saved settings > discovery/defaults.
+Owner credentials are read from a private file.
 Computer registration tokens are temporary; normal Daemon credentials are saved locally.
 `)
 }
 func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 	f := flags("serve", stderr)
 	var config platform.Config
-	f.StringVar(&config.Listen, "listen", "127.0.0.1:4545", "Server listen address")
-	f.StringVar(&config.PublicURL, "public-url", "", "HTTPS URL reachable by remote Computers")
+	listen := f.String("listen", "", "HTTP listen address (default 0.0.0.0:4545)")
+	publicURL := f.String("public-url", "", "HTTP or reverse-proxy HTTPS address reachable by other devices")
+	remoteManagement := f.Bool("allow-remote-management", false, "allow remote Web UI and Owner API access (Owner authentication still required)")
 	f.StringVar(&config.DataDirectory, "data", "", "Server database directory")
 	f.StringVar(&config.ComputerDirectory, "computers-dir", "", "local Daemon data directory (separate from Server data)")
 	f.StringVar(&config.WebDirectory, "web-dir", "", "shared Web UI build directory")
 	f.StringVar(&config.DistributionDirectory, "distribution-dir", "", "release binaries directory")
-	f.StringVar(&config.TLSCertificate, "tls-cert", "", "TLS certificate PEM")
-	f.StringVar(&config.TLSKey, "tls-key", "", "TLS private key PEM")
 	f.BoolVar(&config.NoLocal, "no-local", false, "do not start the local Daemon automatically")
 	ready := f.String("ready-file", "", "write private startup information for the desktop shell")
 	parentPID := f.Int("parent-pid", 0, "stop this managed Server if its desktop parent exits")
 	managedStdin := f.Bool("managed-stdin", false, "stop this managed Server when its desktop input pipe closes")
 	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if f.NArg() != 0 {
+		return fmt.Errorf("unexpected serve argument %q; use --allow-remote-management=false for an explicit false value", f.Arg(0))
+	}
+	if err := serveNetworkOptions(&config, f, *listen, *publicURL, *remoteManagement, os.LookupEnv); err != nil {
 		return err
 	}
 	if *parentPID != 0 || *managedStdin {
@@ -185,6 +195,43 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 	<-ctx.Done()
 	return nil
 }
+
+// Keep absence distinct from an explicit empty address or false switch. The
+// platform resolves these inputs above saved preferences without overwriting
+// the user's lower-priority configuration.
+func serveNetworkOptions(config *platform.Config, f *flag.FlagSet, listen, publicURL string, allowRemote bool, lookup func(string) (string, bool)) error {
+	f.Visit(func(option *flag.Flag) {
+		switch option.Name {
+		case "listen":
+			config.NetworkCLI.Listen = &listen
+		case "public-url":
+			config.NetworkCLI.PublicURL = &publicURL
+		case "allow-remote-management":
+			config.NetworkCLI.AllowRemoteManagement = &allowRemote
+		}
+	})
+	if config.NetworkCLI.Listen == nil {
+		if value, set := lookup("ASTRAL_SERVER_LISTEN"); set {
+			config.NetworkEnvironment.Listen = &value
+		}
+	}
+	if config.NetworkCLI.PublicURL == nil {
+		if value, set := lookup("ASTRAL_PUBLIC_URL"); set {
+			config.NetworkEnvironment.PublicURL = &value
+		}
+	}
+	if config.NetworkCLI.AllowRemoteManagement == nil {
+		if value, set := lookup("ASTRAL_ALLOW_REMOTE_MANAGEMENT"); set {
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("ASTRAL_ALLOW_REMOTE_MANAGEMENT must be true or false")
+			}
+			config.NetworkEnvironment.AllowRemoteManagement = &parsed
+		}
+	}
+	return nil
+}
+
 func computer(ctx context.Context, args []string, out, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: astral computer connect|daemon|service|update")
@@ -273,7 +320,7 @@ func connectOwner(ctx context.Context, args []string, out, stderr io.Writer) err
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	if err := modelbridge.ValidateURL(*server); err != nil {
+	if err := serviceurl.Validate(*server); err != nil {
 		return err
 	}
 	if *tokenFile == "" {
@@ -331,7 +378,7 @@ func ownerRequest(ctx context.Context, args []string, out, stderr io.Writer) err
 		}
 		return fmt.Errorf("server and Owner token file are required")
 	}
-	if err := modelbridge.ValidateURL(config.Server); err != nil {
+	if err := serviceurl.Validate(config.Server); err != nil {
 		return err
 	}
 	token, err := os.ReadFile(config.TokenFile)
@@ -422,7 +469,7 @@ func session(ctx context.Context, args []string, out, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if err = modelbridge.ValidateURL(config.Server); err != nil {
+		if err = serviceurl.Validate(config.Server); err != nil {
 			return err
 		}
 		token, err := os.ReadFile(config.TokenFile)

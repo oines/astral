@@ -11,7 +11,7 @@ import (
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/daemonservice"
-	"github.com/oines/astral/internal/modelbridge"
+	"github.com/oines/astral/internal/serviceurl"
 )
 
 // DaemonVersion is set by the executable entry point before any Daemon starts.
@@ -29,7 +29,7 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 		if options.Root != "" {
 			return fmt.Errorf("choose --root or --container")
 		}
-		if err := modelbridge.ValidateURL(options.ServerURL); err != nil {
+		if err := serviceurl.Validate(options.ServerURL); err != nil {
 			return err
 		}
 		identity := strings.TrimPrefix(options.Container, "astral-")

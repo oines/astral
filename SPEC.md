@@ -328,7 +328,19 @@ macOS、Windows、Linux 共用统一可执行程序，包含 Server、嵌入 Web
 
 更新采用复制命令后在目标电脑或容器宿主机执行的方式。新程序下载并校验后，裸机切换当前用户服务使用的版本并重启；容器只替换原容器内的数据目录之外的 Daemon 可执行文件，重启同一容器。保留电脑身份、凭据、Agent 文件、容器 ID、可写层与卷，更新失败尝试恢复旧程序。重启会中断运行任务，界面和命令必须说明这一后果。更新不自动重建容器或迁移 Agent 环境，不增加远程自动升级控制协议。
 
-新建容器使用 Ubuntu 24.04 和完整开发、数据、文档、媒体、OCR、中文字体、浏览器测试环境。镜像工具层与最终 Daemon 程序层分离，程序不放在 AgentHome 数据中。Windows Docker Desktop 使用 Linux 容器即可，不要求用户进入 WSL 或额外开启 host networking；同机 Docker 连接使用持久身份的专用 TLS 通道，不向容器开放 Owner API。
+新建容器使用 Ubuntu 24.04 和完整开发、数据、文档、媒体、OCR、中文字体、浏览器测试环境。镜像工具层与最终 Daemon 程序层分离，程序不放在 AgentHome 数据中。Windows Docker Desktop 使用 Linux 容器即可，不要求用户进入 WSL 或额外开启 host networking；同机 Docker Desktop 容器通过 `http://host.docker.internal:4545`（实际端口随监听配置）连接 Server 主端口，不额外创建 TLS 桥接端口或证书。
+
+### Server 监听、管理访问与接入地址
+
+Server 仅提供 HTTP，默认监听 `0.0.0.0:4545`。Desktop 使用独立的 loopback 地址加载界面；Daemon 接入与管理访问共享主端口，但采用不同的访问边界。需要 HTTPS 时由用户部署反向代理，Astral 的客户端、接入脚本与 Daemon 同时支持 HTTP/WS 和具有正常证书验证的 HTTPS/WSS。
+
+默认关闭“允许远程管理”。loopback 连接可访问完整 Web UI 与需 Owner 认证的管理 API；直接远程连接仅允许明确列出的健康检查、安装下载、注册、容器准备、Daemon 状态与连接路由。远程首页、静态文件、登录、OpenAPI 和全部 Owner API 均不可达。开启后允许远程管理路由，但 Owner 认证及 Bot、Computer 的权限规则保持不变。连接来源只依据实际 TCP 对端，不信任 Host、Origin、X-Forwarded-For 等请求头。用户显式配置的 loopback 反向代理或 Tailscale Serve 可以转发完整本地管理入口；关闭开关不撤销这些代理。
+
+“访问地址”是提供给其他设备与接入命令的完整 Server URL，与监听地址和远程管理开关独立。各字段按显式 CLI 参数、环境变量、持久 App 设置、自动发现、默认值的顺序取值；未设置与明确的 `false` 必须区分。高优先级覆盖不改写低优先级设置，界面显示实际来源并禁用受 CLI/环境变量控制的编辑。访问地址和远程管理立即生效，监听地址变更在重启后生效。
+
+未指定访问地址时，优先选择已实际配置并代理到本 Server 的 Tailscale Serve HTTPS 地址，其次是 Tailscale 完整 MagicDNS 名称、Tailscale IP、局域网 IP，最后回退 loopback。不因安装了 Tailscale 就虚构 HTTPS 地址，不用系统短主机名代替可达地址。远程接入弹窗直接显示并允许选择或编辑地址；安装脚本、下载与 Daemon 目标采用同一个选择，目标电脑在下载和构建前检查连接。已注册 Daemon 保留原地址，不因设置改变而静默迁移。
+
+旧 TLS 桥接及配置仅通过停止服务后的显式迁移工具转换；运行时代码不保留旧协议、证书或桥接回退。迁移保留 Computer 身份、凭据、容器 ID、可写层和数据卷，需要替换 Daemon 程序时仅修改原容器内的程序文件，不重建环境。
 
 ### Container 与 Remote
 
@@ -340,7 +352,7 @@ macOS、Windows、Linux 共用统一可执行程序，包含 Server、嵌入 Web
 
 Remote Computer 同样通过在目标机器执行接入命令连接 Server，网络由用户自备。V1 不负责自动建立 VPN、NAT 穿透或中继网络。
 
-Server 与 Daemon 的内部传输必须支持请求关联、取消、增量输出、文件流、连接状态与身份验证；跨主机连接使用安全传输。具体采用 gRPC、HTTP 多路流或其他传输不在本规格中提前固定。
+Server 与 Daemon 的内部传输必须支持请求关联、取消、增量输出、文件流、连接状态与身份验证；网络由用户提供，可使用局域网、Tailscale 或 HTTPS 反向代理。实际连接使用 HTTP/WS 或 HTTPS/WSS，HTTPS 证书验证不得跳过。
 
 ### CLI
 
