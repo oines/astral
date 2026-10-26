@@ -5,15 +5,15 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { runInNewContext } from 'node:vm'
-import { evaluateRenderer, rendererAuthentication } from './desktop-renderer-auth.mjs'
+import { evaluateRenderer, managedRendererEndpoint, rendererAuthentication } from './desktop-renderer-auth.mjs'
 
 const origin = 'http://127.0.0.1:4545'
 
-async function fixture(t) {
+async function fixture(t, targets) {
   const profile = await mkdtemp(path.join(tmpdir(), 'astral-renderer-test-'))
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'Content-Type': 'application/json' })
-    response.end(JSON.stringify([{ type: 'page', url: `${origin}/`, webSocketDebuggerUrl: `ws://127.0.0.1:${server.address().port}/target` }]))
+    response.end(JSON.stringify(targets ? targets(server.address().port) : [{ type: 'page', url: `${origin}/`, webSocketDebuggerUrl: `ws://127.0.0.1:${server.address().port}/target` }]))
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   await writeFile(path.join(profile, 'DevToolsActivePort'), `${server.address().port}\n/browser`)
@@ -23,6 +23,20 @@ async function fixture(t) {
   })
   return profile
 }
+
+test('shared renderer discovery rejects foreign page origins and nonlocal CDP endpoints', async t => {
+  const foreign = await fixture(t, port => [{ type: 'page', url: `${origin}@unrelated.example/`, webSocketDebuggerUrl: `ws://127.0.0.1:${port}/target` }])
+  assert.equal(await managedRendererEndpoint(foreign, origin), false, 'An origin prefix must not select a foreign page')
+  for (const endpoint of [
+    port => `ws://unrelated.example:${port}/target`,
+    port => `wss://127.0.0.1:${port}/target`,
+    port => `ws://127.0.0.1:${port === 65535 ? 65534 : port + 1}/target`,
+    port => `ws://unexpected:fixture@127.0.0.1:${port}/target`,
+  ]) {
+    const profile = await fixture(t, port => [{ type: 'page', url: `${origin}/`, webSocketDebuggerUrl: endpoint(port) }])
+    await assert.rejects(managedRendererEndpoint(profile, origin))
+  }
+})
 
 function cdpMessage(message) {
   return class extends globalThis.EventTarget {

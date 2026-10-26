@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import test from 'node:test'
-import { desktopUpdateFeeds, writeDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
+import { desktopArtifactName, desktopUpdateFeeds, writeDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { desktopNames, digest, distributionNames, macSigningReportName } from './release-assets.mjs'
 import { compareVersions, createDraft } from './release-draft.mjs'
 import { readReleaseVersion } from './release-version.mjs'
@@ -15,6 +15,17 @@ const sourceSHA = 'a'.repeat(40)
 const repository = 'oines/astral'
 const clone = value => JSON.parse(JSON.stringify(value))
 const json = (body, status = 200) => ({ status, ok: status >= 200 && status < 300, json: async () => clone(body) })
+
+test('release inventories use the native electron-builder Linux target artifact names', () => {
+  const linux = desktopNames('0.1.0').filter(name => name.includes('-linux-')).sort()
+  assert.deepEqual(linux, [
+    'Astral-0.1.0-linux-amd64.deb',
+    'Astral-0.1.0-linux-arm64.AppImage',
+    'Astral-0.1.0-linux-arm64.deb',
+    'Astral-0.1.0-linux-x86_64.AppImage',
+  ])
+  assert.equal(desktopUpdateFeeds('0.1.0').find(feed => feed.name === 'latest-x64-linux.yml').asset, 'Astral-0.1.0-linux-x86_64.AppImage')
+})
 
 test('the installed electron-updater reads all six final-byte feeds using its actual platform naming rules', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'astral-real-updater-feed-'))
@@ -41,7 +52,7 @@ test('the installed electron-updater reads all six final-byte feeds using its ac
         const expected = desktopUpdateFeeds(version).find(feed => feed.name === requested)
         assert.ok(expected, `Unexpected channel filename for ${platform}/${arch}: ${requested}`)
         const platformName = { win32: 'win', darwin: 'mac', linux: 'linux' }[platform]
-        assert.ok(expected.asset.includes(`-${platformName}-${arch}.`))
+        assert.equal(expected.asset, desktopArtifactName(version, platformName, arch, platform === 'win32' ? 'exe' : platform === 'darwin' ? 'zip' : 'AppImage'))
         assert.equal(info.version, version)
         assert.equal(provider.resolveFiles(info)[0].url.href, `https://github.com/oines/astral/releases/download/v${version}/${expected.asset}`)
       }

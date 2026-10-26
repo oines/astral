@@ -11,6 +11,7 @@ import { setLinuxLoginStart } from './login'
 import { networkArguments } from './network-arguments'
 import { DesktopUpdates, updateChannel, updateFeed } from './updates'
 import { DesktopShutdown } from './shutdown'
+import { nativeWindowAppearance, titleBarAppearance } from './window-appearance'
 import type { DesktopUpdateState } from '../shared/updates'
 
 app.setName('Astral')
@@ -128,6 +129,7 @@ function createWindow() {
     icon: applicationIcon(),
     show: false, backgroundColor: '#f4f4f1',
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 17, y: 14 } } : {}),
+    ...nativeWindowAppearance(process.platform, nativeTheme.shouldUseDarkColors),
     webPreferences: {
       preload: join(directory, '../preload/index.cjs'),
       nodeIntegration: false, contextIsolation: true, sandbox: true,
@@ -196,6 +198,11 @@ async function start() {
   ipcMain.handle('astral:open-external', async (event, url: unknown) => {
     assertSender(event)
     await shell.openExternal(externalURL(url))
+  })
+  ipcMain.handle('astral:appearance', (event, dark: unknown) => {
+    assertSender(event)
+    const appearance = titleBarAppearance(dark)
+    if (process.platform === 'win32' || process.platform === 'linux') window?.setTitleBarOverlay(appearance)
   })
   await configureUpdates()
   const settings: MenuItemConstructorOptions = { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => { show(); window?.webContents.send('astral:open-settings') } }

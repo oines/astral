@@ -324,6 +324,8 @@ Linux Server 的 Local Computer 是 Linux 服务所在机器。访问网页的�
 
 macOS、Windows、Linux 共用统一可执行程序，包含 Server、嵌入 Web UI、CLI 和 Daemon。Windows 的桌面、Server 与裸机 Daemon 原生运行，不要求 WSL。Windows 接入提供 PowerShell 命令，使用现代 Windows 内置 `curl.exe` 从官方 HTTPS 下载 bootstrap 并检查成功后才执行；macOS/Linux 提供 shell 命令，选择依据目标电脑的平台。
 
+Desktop 三个平台均隐藏独立系统标题栏，使用 44px 的应用顶部区域。macOS 保留左侧红绿灯和现有侧栏开关位置；Windows、Linux 使用右侧原生最小化、最大化／还原、关闭按钮，侧栏开关靠左，不保留红绿灯空位。顶部空白区域通过原生拖动区域支持移动窗口及双击最大化／还原，交互控件排除在拖动区域外；保留系统缩放、窗口贴靠及原有关闭后驻留行为。窗口按钮随应用实际浅色／深色主题变化，页面内容避让窗口按钮；普通浏览器不增加桌面标题栏。
+
 裸机接入自动注册当前用户的 Astral Daemon：macOS LaunchAgent 在系统设置“登录项与扩展”可见，Windows 在任务计划程序中注册当前用户登录任务（InteractiveToken、LeastPrivilege、可见），Linux 使用 systemd 用户服务。不得提权或默认注册系统级服务，不自动启用 Linux linger。普通原生接入使用一个 Daemon；同机连接多个 Server 等需求可通过不同 `--root` 数据目录运行多个实例，容器各自独立。服务提供状态、日志、启动、停止、重启、卸载命令。服务运行状态与 Server 在线状态分别确认。Desktop 内本机 Daemon 由 Server 生命周期管理，容器内 Daemon 由 Docker 管理。
 
 电脑详情提供管理员“更新 Daemon”动作，通过现有已认证的内层 TLS 隧道发送独立管理 RPC，不属于 Agent 的 Computer API 或执行能力。Server 从固定官方 GitHub latest release 解析不可变版本、平台架构资产和 SHA-256；Daemon 再校验目标平台与下载字节，不接受用户或 Agent 提供的程序 URL。每次请求检查最新发行版，不受当前 Server 版本限制；目标不高于 Daemon 时不替换，不自动降级。Daemon 比 Server 新时提醒更新 Server，但不阻止继续更新 Daemon。下载阶段因断链取消，完成交接后的更新独立于旧连接：裸机通过原生服务管理器启动可见、当前用户权限的一次性更新任务，切换用户服务的程序并重启，任务结束清理注册；新容器由同一 Go 二进制的 supervisor 替换数据目录之外的 Daemon 程序并重启子 Daemon，不退出或重建容器。Server 观察同一电脑以新 Boot ID 和预期版本重连才确认成功；失败尝试恢复旧程序。保留电脑身份、凭据、Agent 文件、容器 ID、可写层与卷；重启会中断任务，界面和命令须说明后果。本机 Daemon 随 Server 更新，不独立替换。复制命令后在目标电脑或容器宿主机执行的更新方式保留；宿主机命令只替换原容器程序并重启同一容器，不迁移 Agent 环境。更新命令不接受 `--server` 或替换 pin，不预检 Server 当前首选地址；使用目标电脑既有 credentials 中的 URL/pin 查询状态并重连，支持通过第二个访问地址配对的电脑。`computer update` 只选择现有 `--root` 或 `--container`，网络地址的手动修改与更新分开。
