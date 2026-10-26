@@ -66,7 +66,7 @@ func TestEveryAdapterOmitsOptionalDefaults(t *testing.T) {
 		params                         url.Values
 	}{
 		{"tavily", "POST", "/search", "Authorization", "Bearer key", map[string]any{"query": "query"}, nil},
-		{"exa", "POST", "/search", "x-api-key", "key", map[string]any{"query": "query"}, nil},
+		{"exa", "POST", "/search", "x-api-key", "key", map[string]any{"query": "query", "contents": map[string]any{"highlights": true}}, nil},
 		{"deepseek", "POST", "/v1/tools/search", "Authorization", "Bearer key", map[string]any{"query": "query"}, nil},
 		{"brave", "GET", "/res/v1/web/search", "X-Subscription-Token", "key", nil, url.Values{"q": {"query"}}},
 		{"google", "GET", "/customsearch/v1", "Authorization", "", nil, url.Values{"q": {"query"}, "key": {"key"}, "cx": {"engine"}}},
@@ -74,7 +74,7 @@ func TestEveryAdapterOmitsOptionalDefaults(t *testing.T) {
 		{"serper", "POST", "/search", "X-API-KEY", "key", map[string]any{"q": "query"}, nil},
 		{"searxng", "GET", "/search", "Authorization", "Bearer key", nil, url.Values{"q": {"query"}, "format": {"json"}}},
 		{"jina", "GET", "/search", "Authorization", "Bearer key", nil, url.Values{"q": {"query"}}},
-		{"bocha", "POST", "/v1/web-search", "Authorization", "Bearer key", map[string]any{"query": "query"}, nil},
+		{"bocha", "POST", "/v1/web-search", "Authorization", "Bearer key", map[string]any{"query": "query", "summary": true}, nil},
 		{"duckduckgo", "POST", "/html/", "Authorization", "", nil, url.Values{"q": {"query"}}},
 		{"yandex", "POST", "/v2/web/search", "Authorization", "Api-Key key", map[string]any{"query": map[string]any{"searchType": "SEARCH_TYPE_COM", "queryText": "query"}, "folderId": "folder"}, nil},
 	}

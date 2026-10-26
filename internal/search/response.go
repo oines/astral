@@ -27,6 +27,7 @@ type searchItem struct {
 	Passage       string   `json:"passage"`
 	Highlights    []string `json:"highlights"`
 	ExtraSnippets []string `json:"extra_snippets"`
+	Chunks        []string `json:"chunks"`
 	PublishedDate string   `json:"publishedDate"`
 	Published     string   `json:"published_date"`
 	DatePublished string   `json:"datePublished"`
@@ -37,12 +38,48 @@ type searchItem struct {
 }
 
 func (item searchItem) result() Result {
-	summary := first(item.Content, item.Text, item.Summary, item.Passage, item.Snippet, item.Description, strings.Join(item.Highlights, "\n"))
-	if len(item.ExtraSnippets) > 0 {
-		summary = strings.TrimSpace(summary + "\n" + strings.Join(item.ExtraSnippets, "\n"))
+	summary := firstNonBlankContent(item.Content, item.Text, item.Summary, item.Passage, item.Snippet, item.Description, strings.Join(item.Highlights, "\n"), strings.Join(item.Chunks, "\n"))
+	for _, snippet := range item.ExtraSnippets {
+		if strings.TrimSpace(snippet) == "" {
+			continue
+		}
+		if summary != "" {
+			summary += "\n"
+		}
+		summary += snippet
 	}
 	return Result{Title: first(item.Title, item.Name), URL: first(item.URL, item.Link), Summary: summary,
 		PublishedAt: first(item.PublishedDate, item.Published, item.DatePublished, item.PublishedTime, item.Date, item.Age), Author: item.Author}
+}
+
+// Check for content without changing the source text's whitespace or length.
+func firstNonBlankContent(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func decodeSearchItems(raw json.RawMessage) ([]searchItem, error) {
+	var objects []*searchItem
+	if json.Unmarshal(raw, &objects) != nil || objects == nil {
+		return nil, errors.New("missing or invalid search results")
+	}
+	items := make([]searchItem, len(objects))
+	for i, object := range objects {
+		if object == nil {
+			return nil, errors.New("invalid item in search results")
+		}
+		items[i] = *object
+	}
+	return items, nil
+}
+
+func validJSONObject(raw json.RawMessage) bool {
+	var object map[string]json.RawMessage
+	return json.Unmarshal(raw, &object) == nil && object != nil
 }
 
 func errorMessage(data []byte) string {
@@ -80,48 +117,91 @@ func parseResults(adapter string, data []byte) ([]Result, error) {
 		raw = object["results"]
 	case "brave":
 		var web struct {
-			Results []searchItem `json:"results"`
+			Results json.RawMessage `json:"results"`
 		}
-		if len(object["web"]) == 0 && len(object["query"]) > 0 {
-			return []Result{}, nil
+		if len(object["web"]) == 0 || bytes.Equal(bytes.TrimSpace(object["web"]), []byte("null")) {
+			var query struct {
+				Original string `json:"original"`
+			}
+			var responseType string
+			if validJSONObject(object["query"]) && json.Unmarshal(object["query"], &query) == nil &&
+				query.Original != "" && json.Unmarshal(object["type"], &responseType) == nil && responseType == "search" {
+				return []Result{}, nil
+			}
+			return nil, errors.New("missing web results")
 		}
-		if json.Unmarshal(object["web"], &web) != nil {
+		if !validJSONObject(object["web"]) || json.Unmarshal(object["web"], &web) != nil {
 			return nil, errors.New("invalid web results")
 		}
-		items = web.Results
+		raw = web.Results
 	case "google":
 		raw = object["items"]
-		if len(raw) == 0 && len(object["searchInformation"]) > 0 {
-			return []Result{}, nil
+		if len(raw) == 0 {
+			var info struct {
+				TotalResults string `json:"totalResults"`
+			}
+			if validJSONObject(object["searchInformation"]) && json.Unmarshal(object["searchInformation"], &info) == nil && info.TotalResults == "0" {
+				return []Result{}, nil
+			}
+			return nil, errors.New("missing search results")
 		}
 	case "serper":
+		if len(object["statusCode"]) > 0 {
+			var code *int
+			if json.Unmarshal(object["statusCode"], &code) != nil || code == nil {
+				return nil, errors.New("invalid search status code")
+			}
+			if *code < 200 || *code >= 300 {
+				return nil, errors.New(first(errorMessage(data), fmt.Sprintf("search failed with status code %d", *code)))
+			}
+		}
 		raw = object["organic"]
 	case "jina":
-		var code int
-		_ = json.Unmarshal(object["code"], &code)
-		if code != 0 && code != 200 {
-			return nil, errors.New(first(errorMessage(data), fmt.Sprintf("search failed with code %d", code)))
+		for _, field := range []string{"code", "status"} {
+			if len(object[field]) == 0 {
+				continue
+			}
+			var value *int
+			if json.Unmarshal(object[field], &value) != nil || value == nil {
+				return nil, fmt.Errorf("invalid search %s", field)
+			}
+			success := *value == 200
+			if field == "status" {
+				success = *value/100 == 200
+			}
+			if !success {
+				return nil, errors.New(first(errorMessage(data), fmt.Sprintf("search failed with %s %d", field, *value)))
+			}
 		}
 		raw = object["data"]
 	case "bocha":
 		var wire struct {
-			Code int `json:"code"`
+			Code *int `json:"code"`
 			Data *struct {
 				WebPages struct {
-					Value []searchItem `json:"value"`
+					Value json.RawMessage `json:"value"`
 				} `json:"webPages"`
 			} `json:"data"`
 		}
 		if json.Unmarshal(data, &wire) != nil {
 			return nil, errors.New("invalid search response")
 		}
-		if wire.Code != 0 && wire.Code != 200 {
-			return nil, errors.New(first(errorMessage(data), fmt.Sprintf("search failed with code %d", wire.Code)))
+		if len(object["code"]) > 0 && wire.Code == nil {
+			return nil, errors.New("invalid search code")
+		}
+		if wire.Code != nil && *wire.Code != 200 {
+			return nil, errors.New(first(errorMessage(data), fmt.Sprintf("search failed with code %d", *wire.Code)))
 		}
 		if wire.Data == nil {
 			return nil, errors.New("missing search data")
 		}
-		items = wire.Data.WebPages.Value
+		if value := wire.Data.WebPages.Value; len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			var err error
+			items, err = decodeSearchItems(value)
+			if err != nil {
+				return nil, err
+			}
+		}
 	case "sogou":
 		var wire struct {
 			Response *struct {
@@ -160,9 +240,11 @@ func parseResults(adapter string, data []byte) ([]Result, error) {
 		return nil, errors.New("search adapter is not supported")
 	}
 	switch adapter {
-	case "tavily", "exa", "deepseek", "searxng", "google", "serper", "jina":
-		if json.Unmarshal(raw, &items) != nil || string(raw) == "null" {
-			return nil, errors.New("missing or invalid search results")
+	case "tavily", "exa", "deepseek", "searxng", "brave", "google", "serper", "jina":
+		var err error
+		items, err = decodeSearchItems(raw)
+		if err != nil {
+			return nil, err
 		}
 	}
 	results := make([]Result, 0, len(items))
@@ -196,7 +278,7 @@ func plainText(raw string) string {
 func parseYandex(data []byte) ([]Result, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	results := []Result{}
-	seenResponse := false
+	seenResponse, seenResults, noResults := false, false, false
 	for {
 		token, err := decoder.Token()
 		if errors.Is(err, io.EOF) {
@@ -212,6 +294,8 @@ func parseYandex(data []byte) ([]Result, error) {
 		switch start.Name.Local {
 		case "response":
 			seenResponse = true
+		case "results":
+			seenResults = true
 		case "error":
 			var detail struct {
 				Code string `xml:"code,attr"`
@@ -222,6 +306,7 @@ func parseYandex(data []byte) ([]Result, error) {
 			}
 			// Yandex's documented code 15 means no matching results.
 			if detail.Code == "15" {
+				noResults = true
 				continue
 			}
 			return nil, fmt.Errorf("search error %s: %s", detail.Code, detail.Text)
@@ -248,7 +333,7 @@ func parseYandex(data []byte) ([]Result, error) {
 			}
 		}
 	}
-	if !seenResponse {
+	if !seenResponse || !seenResults && !noResults {
 		return nil, errors.New("missing XML search response")
 	}
 	return results, nil

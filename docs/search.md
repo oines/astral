@@ -1,6 +1,6 @@
 # 网页搜索
 
-实现与资料核对日期：2026-10-22。界面使用 Bot；后端实体仍名为 Agent。
+实现与资料核对日期：2026-10-26。界面使用 Bot；后端实体仍名为 Agent。
 
 在“设置 → 网页搜索”添加连接，再在具体 Bot 的基本设置中选择该服务。每个 Bot 同时使用一个搜索实例，调用在 Astral Server 上执行，不使用当前电脑的命令环境。一次调用失败时不会自动尝试其他服务。
 
@@ -23,9 +23,32 @@
 - `recency`：正整数，表示过去多少天。需要绝对日期的服务以调用时的 UTC 日期计算范围；只支持离散时间段的服务明确拒绝其他数值。
 - `limit`：正整数，直接映射到上游数量参数。Astral 不把它改成默认值或强制压到某个上限；超出服务允许范围时由上游返回错误。没有原生数量参数的接口明确拒绝此参数。
 
-未提供可选参数时，Astral 不发送对应的上游字段。也不额外指定搜索深度、Exa 内容选项、DeepSeek `need_content` 或 Bocha `summary`，由服务自身决定默认行为。
+未提供可选参数时，Astral 不发送对应的上游筛选或数量字段。内容返回选项独立于这些筛选：Exa 明确发送 `contents.highlights: true`，因为裸搜索请求可能只返回元数据；Bocha 明确发送 `summary: true`，使长片段选项清楚地写入请求。Exa 不请求全文或额外的 AI 摘要，其他服务沿用其普通搜索摘要，不额外指定搜索深度或 DeepSeek `need_content`。
 
 输出统一为 `provider_id`、`query`、`results`；每条结果提供 `title`、`url`、`summary`，以及可用的 `published_at`、`author`。保留每一条有效 HTTP(S) 来源及其完整摘要，保持上游顺序。没有固定 5 条结果、900 字符、8,000 Token 或 4 MiB 响应正文限制。多段 highlights、extra snippets、Yandex passages 完整拼接。失效或不安全的来源 URL 不作为可点击结果返回。
+
+这些字段是统一的 Agent 输出契约，不能随服务的原生响应结构变化：
+
+- 成功响应的 `provider_id`、`query` 为字符串，`results` 始终是数组；合法无结果返回 `[]`，不返回 `null`。
+- 每个结果始终包含字符串 `title`、`url`、`summary`。`summary` 是服务提供的正文片段、摘要或描述，Astral 不调用另一个模型重写；来源确实不提供内容时保留空字符串，不用标题冒充摘要。
+- 空白内容字段不能遮住后续有效的片段；非空内容保留原始字符，不增加摘要长度限制。多段内容按上游顺序拼接。
+- `published_at` 和 `author` 为可选字符串，没有来源资料时省略。日期沿用上游可用的日期表示，不虚构精确时间。
+- 已知的业务错误、无效 JSON/XML/HTML 或字段类型错误报告失败，不能伪装成搜索成功或零结果。各服务官方允许的字段省略和空结果仍被接受。
+
+| 服务 | 归一化内容来源 |
+| --- | --- |
+| Tavily | 每条 `results[].content` |
+| Exa | 显式请求的 `results[].highlights`；原生结果有 `text` 或 `summary` 时保留该内容 |
+| DeepSeek Search | 每条 `results[].summary`；上游明确返回 `content` 时保留该内容 |
+| Brave | `web.results[].description` 及 `extra_snippets` |
+| Google Custom Search | `items[].snippet` |
+| Sogou / Tencent | 解码每条 `Response.Pages` JSON 字符串后读取 `passage` 等内容字段 |
+| Serper | `organic[].snippet` |
+| SearXNG | `results[].content` |
+| Jina | `data[].content` 等正文/描述字段，缺失时保留可用的 `chunks` |
+| Bocha | `data.webPages.value[].summary`，未启用长摘要时读取 `snippet` |
+| DuckDuckGo | HTML 结果的 `result__snippet` 文本 |
+| Yandex | 解码 XML 中每个文档的 `passages.passage` 文本 |
 
 “不限制输出”不改变上游服务自身的默认数量、最大数量、摘要长度、计费规则或模型的上下文容量，也不意味着自动翻页或抓取完整网页。请求仍可取消，并有 40 秒超时。
 
@@ -69,10 +92,10 @@ Google Custom Search JSON API 已关闭新客户接入，现有客户须在 **20
 
 请求格式依据本地 astral-code 的可选参数语义、Memoh 的服务范围与以下官方资料核对。适配器的本地 HTTP 协议测试不等于所有付费账号的线上验收；没有使用用户的真实搜索凭据。
 
-- [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)、[Exa Search](https://docs.exa.ai/reference/search)、[DeepSeek Search](https://api-docs.deepseek.com/guides/search/)。
+- [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)、[Exa Search](https://exa.ai/docs/reference/search)、[Exa 官方接入说明](https://github.com/exa-labs/agent-skills/blob/main/skills/build-with-exa/references/search.md)、[DeepSeek Search](https://api-docs.deepseek.com/guides/search/)。
 - [Brave Web Search](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started)、[Google cse.list](https://developers.google.com/custom-search/v1/reference/rest/v1/cse/list)、[腾讯 SearchPro](https://cloud.tencent.com/document/api/1806/121811)。
 - [Serper](https://serper.dev)、[SearXNG Search API](https://docs.searxng.org/dev/search_api.html)、[Jina 官方 OpenAPI](https://docs.jina.ai/openapi.json)。
-- [Bocha 官方开放平台](https://open.bocha.cn)、[Bocha 官方插件协议类型](https://github.com/bocha-ai/dsh-web-search-bocha/blob/main/src/types.ts)、[DuckDuckGo 查询语法](https://duckduckgo.com/duckduckgo-help-pages/results/syntax)。
+- [Bocha 官方开放平台](https://open.bocha.cn)、[Bocha 官方接入契约](https://github.com/Bocha-Labs/bocha-skills/blob/main/bocha-web-search/SKILL.md)、[Bocha 官方插件协议类型](https://github.com/bocha-ai/dsh-web-search-bocha/blob/main/src/types.ts)、[DuckDuckGo 查询语法](https://duckduckgo.com/duckduckgo-help-pages/results/syntax)。
 - [Yandex WebSearch REST](https://aistudio.yandex.ru/en/docs/search-api/api-ref/WebSearch/search)、[Yandex 站点筛选语法](https://yandex.com/support/search/en/query-language/qlanguage)。
 
 具体测试和浏览器证据见 [验证记录](verification.md)。
