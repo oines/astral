@@ -2,15 +2,17 @@ import { computed, ref, watch } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useQuery, useQueryCache } from '@pinia/colada'
 import { bootstrapQuery, bootstrapQueryKey, listComputersQuery, listSessionsQuery, listSessionsQueryKey } from '@astral/sdk/colada'
-import { getPreferences, savePreferences, updateSession } from '@astral/sdk'
+import { getNetworkSettings, getPreferences, saveNetworkSettings, savePreferences, updateSession } from '@astral/sdk'
 import { useIntervalFn, usePreferredDark } from '@vueuse/core'
 import { i18n } from '../i18n'
 import { request } from '../lib/api'
 import type { AstralInternalHarnessInputRequest } from '@astral/sdk'
+import { useAuthStore } from './auth'
 import type { FileRef, SessionView } from '../lib/types'
 
 export const useAppStore = defineStore('app', () => {
-  const authorized = ref(true)
+  const auth = useAuthStore()
+  const authorized = computed(() => auth.authenticated)
   const lastChatPath = ref('/')
   const drafts = ref<Record<string, { text: string; files: Array<{ uri: string; file: FileRef }>; attempt?: AstralInternalHarnessInputRequest; session?: SessionView; selection?: Partial<SessionView> }>>({})
   const query = useQuery({ ...bootstrapQuery(), enabled: () => authorized.value, staleTime: 15_000 })
@@ -51,7 +53,6 @@ export const useAppStore = defineStore('app', () => {
       localStorage.setItem('astral:language', p.language)
     }
   }, { immediate: true })
-  window.addEventListener('astral:unauthorized', () => { authorized.value = false })
   async function refresh() {
     try { await cache.invalidateQueries() }
     catch (error) {
@@ -74,6 +75,14 @@ export const useAppStore = defineStore('app', () => {
     }
     await refresh().catch(() => undefined)
   }
+  function confirmNetwork(network: NonNullable<typeof data.value>['network']) {
+    if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, network, public_url: network.public_urls.value[0] || '' })
+    return network
+  }
+  async function refreshNetwork() { return confirmNetwork(await request(getNetworkSettings())) }
+  async function networkSettings(patch: { public_urls?: string[]; allow_remote_management?: boolean }) {
+    return confirmNetwork(await request(saveNetworkSettings({ body: patch })))
+  }
   async function presentation(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean }) {
     await request(updateSession({ path: { id }, body: patch }))
     if (sessionViews.value[id]) Object.assign(sessionViews.value[id], patch)
@@ -87,8 +96,14 @@ export const useAppStore = defineStore('app', () => {
     cache.setQueryData(listSessionsQueryKey(), (sessionQuery.data.value ?? []).filter(session => session.id !== id))
     if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, sessions: data.value.sessions.filter(session => session.id !== id) })
   }
+  function forgetAgent(id: string) {
+    const owned = [...sessions.value, ...Object.values(sessionViews.value), ...Object.values(drafts.value).flatMap(draft => draft.session ? [draft.session] : [])]
+    for (const session of owned) if (session.agent_id === id) forgetSession(session.id)
+    delete drafts.value[`new:${id}`]
+    if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, agents: data.value.agents.filter(agent => agent.id !== id) })
+  }
   const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).map(s => [s.id, sessionViews.value[s.id] ?? s])))
-  return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, presentation, forgetSession }
+  return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, refreshNetwork, networkSettings, presentation, forgetSession, forgetAgent }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAppStore, import.meta.hot))

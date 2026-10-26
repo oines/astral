@@ -19,6 +19,7 @@ import (
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/securetransport"
 )
 
 type Platform struct {
@@ -68,8 +69,13 @@ func New(t *testing.T, computerCount int, generate func(context.Context, int, ma
 		t.Fatal(err)
 	}
 	p.Hub = computers.NewHub(p.Store)
+	identity, err := securetransport.Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Hub.SetIdentity(identity)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /internal/computers/{id}/connect", p.Hub.Connect)
+	mux.HandleFunc("GET "+computers.TunnelPath, p.Hub.Connect)
 	server := httptest.NewServer(mux)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request map[string]any

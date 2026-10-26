@@ -112,8 +112,11 @@ jobs:
         env:
           SOURCE_SHA: ${{ needs.validate.outputs.sha }}
         run: node scripts/release-version.mjs formats --binary dist/bin/astral-linux-amd64 --sha "$SOURCE_SHA" > dist/bin/release-formats.json
-      - name: Include the versioned user-mode Linux Server installer
-        run: cp scripts/install-server.sh dist/bin/install-server.sh
+      - name: Include Server and pinned Computer installers
+        run: |
+          cp scripts/install-server.sh dist/bin/install-server.sh
+          cp internal/platform/installers/install.sh dist/bin/install-computer.sh
+          cp internal/platform/installers/install.ps1 dist/bin/install-computer.ps1
       - name: Require generated contracts to match committed sources
         run: git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

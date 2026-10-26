@@ -754,3 +754,30 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
   .account-chat-controls { width: 100%; flex-wrap: wrap; justify-content: flex-end; }
   .account-chat-reply { flex: 1 1 148px; max-width: 200px; margin-right: auto; }
 }
+
+/* Authentication uses the same controls and grouped settings as the rest of Astral. */
+.auth-form h2 { font-size: 16px; margin: 0; }
+.auth-methods { display: flex; flex-wrap: wrap; gap: 12px; }
+.auth-settings-form { display: flex; flex-direction: column; }
+.settings-group > .auth-settings-form:not(:first-child) { border-top: 1px solid var(--panel-line); }
+.auth-form-actions { padding: 0 0 var(--settings-row-padding); display: flex; gap: 8px; justify-content: flex-end; }
+.auth-group-error { margin: 0 0 var(--settings-row-padding); }
+.auth-inline-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.auth-inline-form input { flex: 1; min-width: 120px; }
+.auth-setup-qr { width: 200px; height: 200px; border-radius: 8px; align-self: center; background: white; }
+.auth-secret { user-select: all; overflow-wrap: anywhere; font-size: 14px; }
+.auth-recovery-codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; padding: 16px; background: var(--bg); border-radius: 8px; user-select: text; }
+.auth-device-copy { min-width: 0; flex: 1; }
+.auth-device-copy small { display: block; }
+.network-address-field { min-width: 0; flex: 1; }
+.network-address-field input { width: 100%; }
+.network-address-field small { display: block; margin-top: 4px; }
+
+:is(.auth-list-section, .network-settings) .settings-group:has(> .resource-row) > .preference-row { margin-inline: var(--settings-group-padding); }
+.auth-list-section .settings-group:has(> .resource-row) > .auth-group-error { margin-inline: var(--settings-group-padding); }
+.auth-list-section .resource-row ~ .preference-row { border-top: 1px solid var(--panel-line); }
+.network-address-row { position: relative; }
+.network-address-row::before { content: ''; position: absolute; top: 0; left: var(--settings-group-padding); right: var(--settings-group-padding); height: 1px; background: var(--panel-line); pointer-events: none; }
+
+.auth-recovery-codes code { overflow-wrap: anywhere; }
+@media (max-width: 540px) { .auth-recovery-codes { grid-template-columns: 1fr; } }

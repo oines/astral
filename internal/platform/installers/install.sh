@@ -2,14 +2,32 @@
 set -eu
 umask 077
 server=
+server_pin=
 update=0
 next_server=0
+next_pin=0
 for arg in "$@"; do
   if [ "$next_server" = 1 ]; then server=$arg; next_server=0; continue; fi
-  case "$arg" in --server) next_server=1 ;; --update) update=1 ;; esac
+  if [ "$next_pin" = 1 ]; then server_pin=$arg; next_pin=0; continue; fi
+  case "$arg" in --server) next_server=1 ;; --server-pin) next_pin=1 ;; --update) update=1 ;; esac
 done
-if [ -z "$server" ]; then echo "Missing Astral Server URL." >&2; exit 2; fi
-case "$server" in https://*|http://127.0.0.1:*|http://localhost:*|http://\[::1\]:*) ;; *) echo "Remote Astral access requires HTTPS." >&2; exit 2 ;; esac
+if [ "$update" != 1 ]; then
+  if [ -z "$server" ]; then echo "Missing Astral Server URL." >&2; exit 2; fi
+  case "$server" in http://*|https://*) ;; *) echo "Astral Server URL must use HTTP or HTTPS." >&2; exit 2 ;; esac
+  case "$server" in *'@'*|*'?'*|*'#'*) echo "Astral Server URL must not contain credentials, a query or a fragment." >&2; exit 2 ;; esac
+  case "$server_pin" in *[!a-fA-F0-9]*|'') echo "A valid Server public-key pin is required; copy a new pairing command." >&2; exit 2 ;; esac
+  if [ "${#server_pin}" != 64 ]; then echo "Invalid Server public-key pin." >&2; exit 2; fi
+  server=${server%/}
+  # Enrollment checks its selected address before installing files or building
+  # an Agent environment. Updates use the existing credentials instead.
+  if ! curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --proto '=http,https' "$server/health" -o /dev/null; then
+    echo "Cannot reach Astral at $server. Check the Server address, firewall, and Tailscale/LAN connection, then copy the command again." >&2
+    exit 1
+  fi
+elif [ -n "$server" ] || [ -n "$server_pin" ]; then
+  echo "Updates use the existing Computer credentials; --server and --server-pin are not accepted." >&2
+  exit 2
+fi
 case "$(uname -s)" in Darwin) target_os=darwin ;; Linux) target_os=linux ;; *) echo "Use install.ps1 on Windows." >&2; exit 2 ;; esac
 case "$(uname -m)" in arm64|aarch64) target_arch=arm64 ;; x86_64|amd64) target_arch=amd64 ;; *) echo "Unsupported CPU architecture." >&2; exit 2 ;; esac
 install_base="${XDG_DATA_HOME:-$HOME/.local/share}/astral/bin"
@@ -18,8 +36,11 @@ chmod 700 "$install_base"
 temporary="$(mktemp -d "$install_base/install.XXXXXX")"
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 binary_name="astral-$target_os-$target_arch"
-curl --fail --silent --show-error "$server/downloads/$binary_name" -o "$temporary/astral"
-curl --fail --silent --show-error "$server/downloads/checksums.txt" -o "$temporary/checksums.txt"
+# The Server may use HTTP, so executable trust must come from the official
+# HTTPS release, never from that Server or its unauthenticated checksum file.
+release_base=https://github.com/oines/astral/releases/latest/download
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' "$release_base/$binary_name" -o "$temporary/astral"
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' "$release_base/checksums.txt" -o "$temporary/checksums.txt"
 expected="$(awk -v file="$binary_name" '$2 == file { print $1 }' "$temporary/checksums.txt")"
 if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$temporary/astral" | awk '{print $1}')"; else actual="$(shasum -a 256 "$temporary/astral" | awk '{print $1}')"; fi
 if [ "${#expected}" != 64 ] || [ "$actual" != "$expected" ]; then echo "Astral binary checksum did not match; the installed version is unchanged." >&2; exit 1; fi

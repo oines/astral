@@ -351,7 +351,7 @@ func (s *Service) archiveTelegramResult(ctx context.Context, t *telegram, target
 		event.Observation.Trigger = ""
 		event.Observation.ExternalEventID = stableID("operation", method, string(value))
 		event.Observation.ID = stableID("event", t.connection.ID, event.Observation.ExternalEventID)
-		if _, err := s.Store.Archive(ctx, normalizeSelf(event.Observation)); err != nil {
+		if _, err := s.archiveEvent(ctx, normalizeSelf(event.Observation)); err != nil {
 			return err
 		}
 	}
@@ -364,7 +364,7 @@ func (s *Service) archiveTelegramResult(ctx context.Context, t *telegram, target
 			messageID := telegramID(id)
 			eventID := stableID("operation", target.ID, "deleted", messageID)
 			event := domain.Observation{SchemaVersion: 1, ID: stableID("event", target.ConnectionID, eventID), ExternalEventID: eventID, ConnectionID: target.ConnectionID, ConversationID: target.ID, MessageID: messageID, Kind: "message.deleted", ReceivedAt: time.Now().UTC(), SentAt: time.Now().UTC(), Text: fmt.Sprintf("Message %s deleted", messageID)}
-			if _, err := s.Store.Archive(ctx, event); err != nil {
+			if _, err := s.archiveEvent(ctx, event); err != nil {
 				return err
 			}
 		}

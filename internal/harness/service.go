@@ -36,6 +36,7 @@ type Service struct {
 	cancel    context.CancelFunc
 	mu        sync.Mutex
 	deleteMu  sync.Mutex
+	agentMu   sync.RWMutex
 	runtimes  map[string]*runtime
 	closed    bool
 	changes   chan string
@@ -58,6 +59,8 @@ type runtime struct {
 	messageTool      core.ToolDefinition
 	compactionPrompt string
 	contextUsage     *ContextUsage
+	titleCancel      context.CancelFunc
+	titleDone        chan struct{}
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
@@ -82,6 +85,9 @@ func (s *Service) open(ctx context.Context, id string) (*runtime, error) {
 	}
 	if record.Deletion != nil {
 		return nil, domain.Missing("Session", id)
+	}
+	if err := s.agentAvailable(ctx, record.AgentID); err != nil {
+		return nil, err
 	}
 	s.mu.Lock()
 	if s.closed {
@@ -132,6 +138,9 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	var agent domain.Agent
 	if err = s.Store.Get(ctx, "agents", r.agentID, &agent); err != nil {
 		return err
+	}
+	if agent.Deletion {
+		return domain.Missing("Bot", agent.ID)
 	}
 	if record.ModelRef == "" {
 		return domain.Conflict("select a model before opening this Session")
@@ -226,6 +235,11 @@ func (s *Service) Core(ctx context.Context, id string) (*core.Session, error) {
 	return r.core.Load(), nil
 }
 func (s *Service) CreateSession(ctx context.Context, agentID, title string) (domain.Session, error) {
+	release, err := s.LockAgent(ctx, agentID)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	defer release()
 	var agent domain.Agent
 	if err := s.Store.Get(ctx, "agents", agentID, &agent); err != nil {
 		return domain.Session{}, err
@@ -243,7 +257,12 @@ func (s *Service) CreateSession(ctx context.Context, agentID, title string) (dom
 		record.Title = "New session"
 		record.TitleSource = domain.TitleDefault
 	}
-	if err = s.Store.Save(ctx, "sessions", &record.Meta, &record); err != nil {
+	if err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		if err := availableAgent(ctx, tx, agentID); err != nil {
+			return err
+		}
+		return tx.Save(ctx, "sessions", &record.Meta, &record)
+	}); err != nil {
 		return record, err
 	}
 	err = s.InitializeSession(ctx, record.ID)

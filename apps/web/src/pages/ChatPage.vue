@@ -10,6 +10,7 @@ import { useSurfaceStore } from '../stores/surface'
 import { useSession } from '../composables/useSession'
 import type { SessionView } from '../lib/types'
 import { errorText, newMeta, request } from '../lib/api'
+import { randomID } from '../lib/browser'
 import Sidebar from '../components/Sidebar.vue'
 import Composer from '../components/Composer.vue'
 import Transcript from '../components/Transcript.vue'
@@ -54,7 +55,7 @@ async function started(sessionID: string) {
 async function fork(entryID: string) {
   error.value = ''
   const retryKey = `astral:fork:${id.value}:${entryID}`
-  const targetID = sessionStorage.getItem(retryKey) || `session_${crypto.randomUUID()}`
+  const targetID = sessionStorage.getItem(retryKey) || `session_${randomID()}`
   sessionStorage.setItem(retryKey, targetID)
   try {
     const session = await request(forkSession({ path: { id: id.value }, body: { id: targetID, entry_id: entryID, title: '' } }))

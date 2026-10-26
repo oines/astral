@@ -1,9 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
+import { isIP } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
+import { randomBytes } from 'node:crypto'
 
-interface Ready { url: string; pid: number; token_file: string }
+interface Ready { url: string; pid: number }
 export class LocalService {
   child?: ChildProcess
   url = ''
@@ -13,15 +15,16 @@ export class LocalService {
   private closed?: Promise<void>
   onUnexpectedExit?: (detail: string) => void
 
-  async start(binary: string, root: string, distribution: string): Promise<string> {
+  async start(binary: string, root: string, distribution: string, networkArguments: string[] = []): Promise<string> {
     await mkdir(root, { recursive: true, mode: 0o700 })
     this.temporary = await mkdtemp(join(root, '.desktop-'))
     const readyFile = join(this.temporary, 'ready.json')
-    const args = ['serve', '--listen', process.env.ASTRAL_SERVER_LISTEN || '127.0.0.1:4545', '--data', join(root, 'server'), '--computers-dir', join(root, 'computers'), '--distribution-dir', distribution, '--ready-file', readyFile, '--parent-pid', String(process.pid), '--managed-stdin']
-    if (process.env.ASTRAL_PUBLIC_URL) args.push('--public-url', process.env.ASTRAL_PUBLIC_URL)
-    if (process.env.ASTRAL_TLS_CERT) args.push('--tls-cert', process.env.ASTRAL_TLS_CERT)
-    if (process.env.ASTRAL_TLS_KEY) args.push('--tls-key', process.env.ASTRAL_TLS_KEY)
+    // Environment variables remain environment inputs to the Go resolver.
+    // Only arguments explicitly supplied by the user have CLI precedence.
+    const args = ['serve', ...networkArguments, '--data', join(root, 'server'), '--computers-dir', join(root, 'computers'), '--distribution-dir', distribution, '--ready-file', readyFile, '--parent-pid', String(process.pid), '--managed-stdin']
     this.child = spawn(binary, args, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    const credential = randomBytes(32).toString('hex')
+    this.child.stdin!.write(`${JSON.stringify({ desktop_token: credential })}\n`)
     this.closed = new Promise(resolve => this.child!.once('close', () => resolve()))
     // A startup failure can close the pipe before stop() requests shutdown.
     this.child.stdin?.on('error', () => {})
@@ -40,11 +43,12 @@ export class LocalService {
         if (failure) throw failure
         const ready = await readFile(readyFile, 'utf8').then(raw => JSON.parse(raw) as Ready).catch(() => undefined)
         if (ready) {
-          if (ready.pid !== this.child.pid || resolve(ready.token_file) !== join(resolve(root), 'server/owner.token')) throw new Error('Invalid local service startup response.')
+          if (ready.pid !== this.child.pid) throw new Error('Invalid local service startup response.')
           const url = new URL(ready.url)
-          if (!['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)) throw new Error('The desktop service must listen on loopback.')
+          const loopback = ['[::1]', 'localhost'].includes(url.hostname) || (isIP(url.hostname) === 4 && url.hostname.startsWith('127.'))
+          if (url.protocol !== 'http:' || !loopback) throw new Error('The desktop service must provide a local HTTP address.')
           this.url = url.origin
-          return (await readFile(ready.token_file, 'utf8')).trim()
+          return credential
         }
         await delay(100)
       }

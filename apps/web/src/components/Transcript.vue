@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useClipboard, useNow } from '@vueuse/core'
+import { useNow } from '@vueuse/core'
+import { useClipboard } from '../composables/useClipboard'
 import { useI18n } from 'vue-i18n'
 import { Button, Popover } from '@astral/ui'
 import { ArrowDown, Check, Copy, Ellipsis, File, GitBranch } from '@astral/icons'
@@ -23,7 +24,7 @@ const groups = computed(() => transcriptGroups(props.state))
 const now = useNow({ interval: 60_000 })
 const formatTimestamp = computed(() => createMessageTimeFormatter(locale.value))
 const timestamps = computed(() => Object.fromEntries(groups.value.filter(group => group.role === 'assistant' && !group.active).map(group => [group.key, formatTimestamp.value(group.entries.findLast(entry => messageText(entry))?.time, now.value)])))
-const { copy, copied } = useClipboard({ legacy: true })
+const { copy, copied } = useClipboard()
 const copiedGroup = ref('')
 const copyError = ref('')
 function groupText(group: TranscriptGroup) { return group.entries.map(messageText).filter(Boolean).join('\n\n') }

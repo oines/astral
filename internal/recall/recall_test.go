@@ -48,6 +48,15 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) session(t *testing.T, id, agent string) {
 	t.Helper()
+	var owner domain.Agent
+	if err := f.store.Get(f.ctx, "agents", agent, &owner); domain.IsMissing(err) {
+		owner = domain.Agent{Meta: domain.Meta{ID: agent}, Name: agent}
+		if err = f.store.Save(f.ctx, "agents", &owner.Meta, &owner); err != nil {
+			t.Fatal(err)
+		}
+	} else if err != nil {
+		t.Fatal(err)
+	}
 	record := domain.Session{Meta: domain.Meta{ID: id}, AgentID: agent, Title: id, Source: "web", ModelRef: "missing-model~1"}
 	if err := f.store.Save(f.ctx, "sessions", &record.Meta, &record); err != nil {
 		t.Fatal(err)

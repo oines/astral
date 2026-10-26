@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ChatPage from './pages/ChatPage.vue'
 import SettingsPage from './pages/SettingsPage.vue'
 import OnboardingPage from './pages/OnboardingPage.vue'
 import ChatPageSkeleton from './components/ChatPageSkeleton.vue'
+import ManualCopyDialog from './components/ManualCopyDialog.vue'
 import { useI18n } from 'vue-i18n'
-import { login } from '@astral/sdk'
 import { Button, useDelayedPending } from '@astral/ui'
-import { ArrowRight, AstralLogo } from '@astral/icons'
+import { AstralLogo } from '@astral/icons'
 import { useAppStore } from './stores/app'
-import { request, errorText } from './lib/api'
+import { errorText } from './lib/api'
 
+import LoginPage from './pages/LoginPage.vue'
+import { useAuthStore } from './stores/auth'
+
+const auth = useAuthStore()
 const app = useAppStore()
+void auth.refresh()
 const route = useRoute()
 const router = useRouter()
 const unsubscribeSettings = window.astralDesktop?.onSettings?.(() => { void router.push('/settings/general') })
@@ -23,59 +28,28 @@ watch(() => route.path, path => {
   if (!path.startsWith('/settings')) app.lastChatPath = path
 }, { immediate: true })
 const { t } = useI18n()
-const token = ref('')
-const busy = ref(false)
-const error = ref('')
-async function signIn() {
-  busy.value = true
-  error.value = ''
-  try {
-    await request(login({ body: { token: token.value.trim() } }))
-    token.value = ''
-    app.authorized = true
-    await app.refresh()
-  } catch (e) { error.value = errorText(e) }
-  finally { busy.value = false }
-}
 </script>
 <template>
   <div
-    v-if="!app.authorized"
+    v-if="!auth.ready"
     class="login-screen"
   >
-    <form
-      class="login-form stack"
-      @submit.prevent="signIn"
-    >
+    <div class="login-form stack">
       <AstralLogo lockup />
-      <h1>{{ t('signIn') }}</h1>
       <p class="muted">
-        {{ t('tokenHint') }}
-      </p>
-      <label class="label">{{ t('token') }}<input
-        v-model="token"
-        type="password"
-        autocomplete="current-password"
-        required
-        autofocus
-      ></label>
-      <p
-        v-if="error"
-        class="error-box"
-      >
-        {{ error }}
+        {{ auth.error || t('authLoading') }}
       </p>
       <Button
-        type="submit"
-        variant="primary"
-        :busy="busy"
+        v-if="auth.error"
+        @click="auth.refresh"
       >
-        {{ t('connect') }}<ArrowRight />
+        {{ t('retry') }}
       </Button>
-    </form>
+    </div>
   </div>
+  <LoginPage v-else-if="!app.authorized" />
   <template v-else-if="app.data">
-    <OnboardingPage v-if="app.data.onboarding?.completed === false" />
+    <OnboardingPage v-if="app.data.onboarding?.completed === false && !inSettings" />
     <KeepAlive v-else>
       <component :is="inSettings ? SettingsPage : ChatPage" />
     </KeepAlive>
@@ -111,4 +85,5 @@ async function signIn() {
       </Button>
     </div>
   </div>
+  <ManualCopyDialog />
 </template>

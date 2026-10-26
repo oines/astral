@@ -29,11 +29,12 @@ type EnrollmentRequest struct {
 }
 type Credentials struct {
 	ServerURL  string `json:"server_url"`
-	ServerCA   string `json:"server_ca,omitempty"`
+	ServerPin  string `json:"server_pin"`
 	ComputerID string `json:"computer_id"`
 	Token      string `json:"token"`
 }
 type EnrollmentResult struct {
+	ServerPin         string            `json:"server_pin"`
 	Enrollment        domain.Enrollment `json:"enrollment"`
 	Token             string            `json:"token"`
 	Command           string            `json:"command"`

@@ -26,6 +26,7 @@ import (
 	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/securetransport"
 	testshell "github.com/oines/astral/internal/testkit/shell"
 )
 
@@ -48,8 +49,13 @@ func fixture(t *testing.T, count int) *setup {
 		t.Fatal(err)
 	}
 	hub := computers.NewHub(store)
+	identity, err := securetransport.Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub.SetIdentity(identity)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /internal/computers/{id}/connect", hub.Connect)
+	mux.HandleFunc("GET "+computers.TunnelPath, hub.Connect)
 	server := httptest.NewServer(mux)
 	s := &setup{store: store, hub: hub, server: server, ctx: ctx}
 	t.Cleanup(func() {
@@ -270,7 +276,7 @@ func TestProcessOriginalComputerAndBootCannotBeRebound(t *testing.T) {
 	}
 }
 
-func TestEnrollmentRetryAndAgentAllowlistRemainExplicit(t *testing.T) {
+func TestEnrollmentIsConsumedAndAgentAllowlistRemainsExplicit(t *testing.T) {
 	s := fixture(t, 1)
 	e, err := s.hub.Enroll(s.ctx, s.server.URL, true, false)
 	if err != nil {
@@ -281,9 +287,8 @@ func TestEnrollmentRetryAndAgentAllowlistRemainExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.hub.Register(s.ctx, e.Enrollment.ID, request)
-	if err != nil || first != second {
-		t.Fatalf("enrollment retry duplicated identity: %v", err)
+	if _, err := s.hub.Register(s.ctx, e.Enrollment.ID, request); err == nil {
+		t.Fatal("consumed enrollment reissued credentials")
 	}
 	request.Token = "invalid"
 	if _, err = s.hub.Register(s.ctx, e.Enrollment.ID, request); err == nil {
@@ -293,10 +298,11 @@ func TestEnrollmentRetryAndAgentAllowlistRemainExplicit(t *testing.T) {
 		t.Fatal("new Computer silently expanded the Agent allowlist")
 	}
 	unauthorized := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/internal/computers/"+first.ComputerID+"/connect", nil)
+	r := httptest.NewRequest(http.MethodGet, computers.TunnelPath, nil)
+	r.Header.Set("Authorization", "Bearer secret")
 	r.SetPathValue("id", first.ComputerID)
 	s.hub.Connect(unauthorized, r)
-	if unauthorized.Code != http.StatusUnauthorized {
+	if unauthorized.Code != http.StatusForbidden {
 		t.Fatalf("unauthorized daemon status=%d", unauthorized.Code)
 	}
 }

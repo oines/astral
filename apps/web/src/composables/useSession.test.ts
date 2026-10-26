@@ -3,8 +3,9 @@ import { effectScope, nextTick, ref, type EffectScope } from 'vue'
 import type { SessionView, Snapshot } from '../lib/types'
 import { useSession } from './useSession'
 
-const app = vi.hoisted(() => ({ sessionViews: {} as Record<string, SessionView> }))
+const app = vi.hoisted(() => ({ authorized: true, sessionViews: {} as Record<string, SessionView> }))
 vi.mock('../stores/app', () => ({ useAppStore: () => app }))
+vi.mock('../stores/auth', () => ({ useAuthStore: () => ({ refresh: vi.fn() }) }))
 vi.mock('../lib/api', () => ({
   errorText: (error: unknown) => String(error),
   object: (value: unknown) => value && typeof value === 'object' ? value : {},

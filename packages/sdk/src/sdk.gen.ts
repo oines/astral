@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentCapabilityData, AgentCapabilityErrors, AgentCapabilityResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentDownloadAttachmentData, AgentDownloadAttachmentErrors, AgentDownloadAttachmentResponses, AgentFileReferenceData, AgentFileReferenceErrors, AgentFileReferenceResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentMessageData, AgentMessageErrors, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendFileData, AgentSendFileErrors, AgentSendFileResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramOperationData, AgentTelegramOperationErrors, AgentTelegramOperationResponses, AgentTelegramOperationsData, AgentTelegramOperationsErrors, AgentTelegramOperationsResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetSessionData, GetSessionErrors, GetSessionResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, ImportModelsData, ImportModelsErrors, ImportModelsResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, RefreshModelData, RefreshModelErrors, RefreshModelResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionAttemptData, SessionAttemptErrors, SessionAttemptRequestData, SessionAttemptRequestErrors, SessionAttemptRequestResponses, SessionAttemptResponses, SessionAttemptsData, SessionAttemptsErrors, SessionAttemptsResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses } from './types.gen';
+import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentCapabilityData, AgentCapabilityErrors, AgentCapabilityResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentDownloadAttachmentData, AgentDownloadAttachmentErrors, AgentDownloadAttachmentResponses, AgentFileReferenceData, AgentFileReferenceErrors, AgentFileReferenceResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentMessageData, AgentMessageErrors, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendFileData, AgentSendFileErrors, AgentSendFileResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramOperationData, AgentTelegramOperationErrors, AgentTelegramOperationResponses, AgentTelegramOperationsData, AgentTelegramOperationsErrors, AgentTelegramOperationsResponses, AuthAccountData, AuthAccountErrors, AuthAccountResponses, AuthEventsData, AuthEventsErrors, AuthEventsResponse, AuthEventsResponses, AuthLoginData, AuthLoginErrors, AuthLoginRecoveryData, AuthLoginRecoveryErrors, AuthLoginRecoveryResponses, AuthLoginResponses, AuthLoginTotpData, AuthLoginTotpErrors, AuthLoginTotpResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginErrors, AuthPasskeyLoginBeginResponses, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishErrors, AuthPasskeyLoginFinishResponses, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginErrors, AuthPasskeyRegisterBeginResponses, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishErrors, AuthPasskeyRegisterFinishResponses, AuthPasskeyRemoveData, AuthPasskeyRemoveErrors, AuthPasskeyRemoveResponses, AuthPasswordlessData, AuthPasswordlessErrors, AuthPasswordlessResponses, AuthReauthenticateData, AuthReauthenticateErrors, AuthReauthenticateResponses, AuthRecoveryCodesData, AuthRecoveryCodesErrors, AuthRecoveryCodesResponses, AuthSessionRevokeData, AuthSessionRevokeErrors, AuthSessionRevokeResponses, AuthSessionsRevokeData, AuthSessionsRevokeErrors, AuthSessionsRevokeResponses, AuthSettingsData, AuthSettingsErrors, AuthSettingsResponses, AuthStatusData, AuthStatusErrors, AuthStatusResponses, AuthTotpBeginData, AuthTotpBeginErrors, AuthTotpBeginResponses, AuthTotpConfirmData, AuthTotpConfirmErrors, AuthTotpConfirmResponses, AuthTotpRemoveData, AuthTotpRemoveErrors, AuthTotpRemoveResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteComputerData, DeleteComputerErrors, DeleteComputerResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetNetworkSettingsData, GetNetworkSettingsErrors, GetNetworkSettingsResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetSessionData, GetSessionErrors, GetSessionResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, ImportModelsData, ImportModelsErrors, ImportModelsResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, RefreshModelData, RefreshModelErrors, RefreshModelResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SaveNetworkSettingsData, SaveNetworkSettingsErrors, SaveNetworkSettingsResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionAttemptData, SessionAttemptErrors, SessionAttemptRequestData, SessionAttemptRequestErrors, SessionAttemptRequestResponses, SessionAttemptResponses, SessionAttemptsData, SessionAttemptsErrors, SessionAttemptsResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -19,29 +19,37 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 export const listAgents = <ThrowOnError extends boolean = false>(options?: Options<ListAgentsData, ThrowOnError>): RequestResult<ListAgentsResponses, ListAgentsErrors, ThrowOnError> => (options?.client ?? client).get<ListAgentsResponses, ListAgentsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/agents',
     ...options
 });
 
 export const saveAgent = <ThrowOnError extends boolean = false>(options: Options<SaveAgentData, ThrowOnError>): RequestResult<SaveAgentResponses, SaveAgentErrors, ThrowOnError> => (options.client ?? client).post<SaveAgentResponses, SaveAgentErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/agents',
     ...options,
     headers: {
@@ -51,29 +59,37 @@ export const saveAgent = <ThrowOnError extends boolean = false>(options: Options
 });
 
 export const deleteAgent = <ThrowOnError extends boolean = false>(options: Options<DeleteAgentData, ThrowOnError>): RequestResult<DeleteAgentResponses, DeleteAgentErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAgentResponses, DeleteAgentErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/agents/{id}',
     ...options
 });
 
 export const startWeixinLogin = <ThrowOnError extends boolean = false>(options: Options<StartWeixinLoginData, ThrowOnError>): RequestResult<StartWeixinLoginResponses, StartWeixinLoginErrors, ThrowOnError> => (options.client ?? client).post<StartWeixinLoginResponses, StartWeixinLoginErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/agents/{id}/weixin/login',
     ...options,
     headers: {
@@ -82,30 +98,314 @@ export const startWeixinLogin = <ThrowOnError extends boolean = false>(options: 
     }
 });
 
-export const listBindings = <ThrowOnError extends boolean = false>(options?: Options<ListBindingsData, ThrowOnError>): RequestResult<ListBindingsResponses, ListBindingsErrors, ThrowOnError> => (options?.client ?? client).get<ListBindingsResponses, ListBindingsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+export const authSettings = <ThrowOnError extends boolean = false>(options?: Options<AuthSettingsData, ThrowOnError>): RequestResult<AuthSettingsResponses, AuthSettingsErrors, ThrowOnError> => (options?.client ?? client).get<AuthSettingsResponses, AuthSettingsErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth',
+    ...options
+});
+
+export const authAccount = <ThrowOnError extends boolean = false>(options: Options<AuthAccountData, ThrowOnError>): RequestResult<AuthAccountResponses, AuthAccountErrors, ThrowOnError> => (options.client ?? client).post<AuthAccountResponses, AuthAccountErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/account',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const authEvents = <ThrowOnError extends boolean = false>(options?: Options<AuthEventsData, ThrowOnError, AuthEventsResponse>): Promise<ServerSentEventsResult<AuthEventsResponses>> => (options?.client ?? client).sse.get<AuthEventsResponses, AuthEventsErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/events',
+    ...options
+});
+
+export const authPasskeyRegisterBegin = <ThrowOnError extends boolean = false>(options: Options<AuthPasskeyRegisterBeginData, ThrowOnError>): RequestResult<AuthPasskeyRegisterBeginResponses, AuthPasskeyRegisterBeginErrors, ThrowOnError> => (options.client ?? client).post<AuthPasskeyRegisterBeginResponses, AuthPasskeyRegisterBeginErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/passkeys/begin',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const authPasskeyRegisterFinish = <ThrowOnError extends boolean = false>(options: Options<AuthPasskeyRegisterFinishData, ThrowOnError>): RequestResult<AuthPasskeyRegisterFinishResponses, AuthPasskeyRegisterFinishErrors, ThrowOnError> => (options.client ?? client).post<AuthPasskeyRegisterFinishResponses, AuthPasskeyRegisterFinishErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/passkeys/finish',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const authPasskeyRemove = <ThrowOnError extends boolean = false>(options: Options<AuthPasskeyRemoveData, ThrowOnError>): RequestResult<AuthPasskeyRemoveResponses, AuthPasskeyRemoveErrors, ThrowOnError> => (options.client ?? client).delete<AuthPasskeyRemoveResponses, AuthPasskeyRemoveErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/passkeys/{id}',
+    ...options
+});
+
+export const authPasswordless = <ThrowOnError extends boolean = false>(options: Options<AuthPasswordlessData, ThrowOnError>): RequestResult<AuthPasswordlessResponses, AuthPasswordlessErrors, ThrowOnError> => (options.client ?? client).patch<AuthPasswordlessResponses, AuthPasswordlessErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/passwordless',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const authReauthenticate = <ThrowOnError extends boolean = false>(options: Options<AuthReauthenticateData, ThrowOnError>): RequestResult<AuthReauthenticateResponses, AuthReauthenticateErrors, ThrowOnError> => (options.client ?? client).post<AuthReauthenticateResponses, AuthReauthenticateErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/reauth',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const authRecoveryCodes = <ThrowOnError extends boolean = false>(options?: Options<AuthRecoveryCodesData, ThrowOnError>): RequestResult<AuthRecoveryCodesResponses, AuthRecoveryCodesErrors, ThrowOnError> => (options?.client ?? client).post<AuthRecoveryCodesResponses, AuthRecoveryCodesErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/recovery-codes',
+    ...options
+});
+
+export const authSessionsRevoke = <ThrowOnError extends boolean = false>(options?: Options<AuthSessionsRevokeData, ThrowOnError>): RequestResult<AuthSessionsRevokeResponses, AuthSessionsRevokeErrors, ThrowOnError> => (options?.client ?? client).delete<AuthSessionsRevokeResponses, AuthSessionsRevokeErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/sessions',
+    ...options
+});
+
+export const authSessionRevoke = <ThrowOnError extends boolean = false>(options: Options<AuthSessionRevokeData, ThrowOnError>): RequestResult<AuthSessionRevokeResponses, AuthSessionRevokeErrors, ThrowOnError> => (options.client ?? client).delete<AuthSessionRevokeResponses, AuthSessionRevokeErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/sessions/{id}',
+    ...options
+});
+
+export const authTotpRemove = <ThrowOnError extends boolean = false>(options?: Options<AuthTotpRemoveData, ThrowOnError>): RequestResult<AuthTotpRemoveResponses, AuthTotpRemoveErrors, ThrowOnError> => (options?.client ?? client).delete<AuthTotpRemoveResponses, AuthTotpRemoveErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/totp',
+    ...options
+});
+
+export const authTotpBegin = <ThrowOnError extends boolean = false>(options?: Options<AuthTotpBeginData, ThrowOnError>): RequestResult<AuthTotpBeginResponses, AuthTotpBeginErrors, ThrowOnError> => (options?.client ?? client).post<AuthTotpBeginResponses, AuthTotpBeginErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/totp/begin',
+    ...options
+});
+
+export const authTotpConfirm = <ThrowOnError extends boolean = false>(options: Options<AuthTotpConfirmData, ThrowOnError>): RequestResult<AuthTotpConfirmResponses, AuthTotpConfirmErrors, ThrowOnError> => (options.client ?? client).post<AuthTotpConfirmResponses, AuthTotpConfirmErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/auth/totp/confirm',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const listBindings = <ThrowOnError extends boolean = false>(options?: Options<ListBindingsData, ThrowOnError>): RequestResult<ListBindingsResponses, ListBindingsErrors, ThrowOnError> => (options?.client ?? client).get<ListBindingsResponses, ListBindingsErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/bindings',
     ...options
 });
 
 export const bindConversation = <ThrowOnError extends boolean = false>(options: Options<BindConversationData, ThrowOnError>): RequestResult<BindConversationResponses, BindConversationErrors, ThrowOnError> => (options.client ?? client).post<BindConversationResponses, BindConversationErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/bindings',
     ...options,
     headers: {
@@ -115,57 +415,73 @@ export const bindConversation = <ThrowOnError extends boolean = false>(options: 
 });
 
 export const unbindConversation = <ThrowOnError extends boolean = false>(options: Options<UnbindConversationData, ThrowOnError>): RequestResult<UnbindConversationResponses, UnbindConversationErrors, ThrowOnError> => (options.client ?? client).delete<UnbindConversationResponses, UnbindConversationErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/bindings/{id}',
     ...options
 });
 
 export const bootstrap = <ThrowOnError extends boolean = false>(options?: Options<BootstrapData, ThrowOnError>): RequestResult<BootstrapResponses, BootstrapErrors, ThrowOnError> => (options?.client ?? client).get<BootstrapResponses, BootstrapErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/bootstrap',
     ...options
 });
 
 export const listComputers = <ThrowOnError extends boolean = false>(options?: Options<ListComputersData, ThrowOnError>): RequestResult<ListComputersResponses, ListComputersErrors, ThrowOnError> => (options?.client ?? client).get<ListComputersResponses, ListComputersErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers',
     ...options
 });
 
 export const createLocalContainer = <ThrowOnError extends boolean = false>(options: Options<CreateLocalContainerData, ThrowOnError>): RequestResult<CreateLocalContainerResponses, CreateLocalContainerErrors, ThrowOnError> => (options.client ?? client).post<CreateLocalContainerResponses, CreateLocalContainerErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers/containers',
     ...options,
     headers: {
@@ -175,15 +491,19 @@ export const createLocalContainer = <ThrowOnError extends boolean = false>(optio
 });
 
 export const enrollComputer = <ThrowOnError extends boolean = false>(options: Options<EnrollComputerData, ThrowOnError>): RequestResult<EnrollComputerResponses, EnrollComputerErrors, ThrowOnError> => (options.client ?? client).post<EnrollComputerResponses, EnrollComputerErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers/enrollments',
     ...options,
     headers: {
@@ -193,85 +513,127 @@ export const enrollComputer = <ThrowOnError extends boolean = false>(options: Op
 });
 
 export const getEnrollment = <ThrowOnError extends boolean = false>(options: Options<GetEnrollmentData, ThrowOnError>): RequestResult<GetEnrollmentResponses, GetEnrollmentErrors, ThrowOnError> => (options.client ?? client).get<GetEnrollmentResponses, GetEnrollmentErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers/enrollments/{id}',
     ...options
 });
 
 export const computerHost = <ThrowOnError extends boolean = false>(options?: Options<ComputerHostData, ThrowOnError>): RequestResult<ComputerHostResponses, ComputerHostErrors, ThrowOnError> => (options?.client ?? client).get<ComputerHostResponses, ComputerHostErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers/host',
     ...options
 });
 
 export const useLocalComputer = <ThrowOnError extends boolean = false>(options?: Options<UseLocalComputerData, ThrowOnError>): RequestResult<UseLocalComputerResponses, UseLocalComputerErrors, ThrowOnError> => (options?.client ?? client).post<UseLocalComputerResponses, UseLocalComputerErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers/local',
     ...options
 });
 
 export const computerMaintenance = <ThrowOnError extends boolean = false>(options: Options<ComputerMaintenanceData, ThrowOnError>): RequestResult<ComputerMaintenanceResponses, ComputerMaintenanceErrors, ThrowOnError> => (options.client ?? client).get<ComputerMaintenanceResponses, ComputerMaintenanceErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers/maintenance/{id}',
     ...options
 });
 
 export const getComputerOperation = <ThrowOnError extends boolean = false>(options: Options<GetComputerOperationData, ThrowOnError>): RequestResult<GetComputerOperationResponses, GetComputerOperationErrors, ThrowOnError> => (options.client ?? client).get<GetComputerOperationResponses, GetComputerOperationErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers/operations/{id}',
     ...options
 });
 
-export const updateComputer = <ThrowOnError extends boolean = false>(options: Options<UpdateComputerData, ThrowOnError>): RequestResult<UpdateComputerResponses, UpdateComputerErrors, ThrowOnError> => (options.client ?? client).patch<UpdateComputerResponses, UpdateComputerErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+export const deleteComputer = <ThrowOnError extends boolean = false>(options: Options<DeleteComputerData, ThrowOnError>): RequestResult<DeleteComputerResponses, DeleteComputerErrors, ThrowOnError> => (options.client ?? client).delete<DeleteComputerResponses, DeleteComputerErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/computers/{id}',
+    ...options
+});
+
+export const updateComputer = <ThrowOnError extends boolean = false>(options: Options<UpdateComputerData, ThrowOnError>): RequestResult<UpdateComputerResponses, UpdateComputerErrors, ThrowOnError> => (options.client ?? client).patch<UpdateComputerResponses, UpdateComputerErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers/{id}',
     ...options,
     headers: {
@@ -281,43 +643,55 @@ export const updateComputer = <ThrowOnError extends boolean = false>(options: Op
 });
 
 export const revokeComputer = <ThrowOnError extends boolean = false>(options: Options<RevokeComputerData, ThrowOnError>): RequestResult<RevokeComputerResponses, RevokeComputerErrors, ThrowOnError> => (options.client ?? client).post<RevokeComputerResponses, RevokeComputerErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/computers/{id}/revoke',
     ...options
 });
 
 export const listConnections = <ThrowOnError extends boolean = false>(options?: Options<ListConnectionsData, ThrowOnError>): RequestResult<ListConnectionsResponses, ListConnectionsErrors, ThrowOnError> => (options?.client ?? client).get<ListConnectionsResponses, ListConnectionsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/connections',
     ...options
 });
 
 export const saveConnection = <ThrowOnError extends boolean = false>(options: Options<SaveConnectionData, ThrowOnError>): RequestResult<SaveConnectionResponses, SaveConnectionErrors, ThrowOnError> => (options.client ?? client).post<SaveConnectionResponses, SaveConnectionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/connections',
     ...options,
     headers: {
@@ -327,29 +701,37 @@ export const saveConnection = <ThrowOnError extends boolean = false>(options: Op
 });
 
 export const deleteConnection = <ThrowOnError extends boolean = false>(options: Options<DeleteConnectionData, ThrowOnError>): RequestResult<DeleteConnectionResponses, DeleteConnectionErrors, ThrowOnError> => (options.client ?? client).delete<DeleteConnectionResponses, DeleteConnectionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/connections/{id}',
     ...options
 });
 
 export const resolveConversation = <ThrowOnError extends boolean = false>(options: Options<ResolveConversationData, ThrowOnError>): RequestResult<ResolveConversationResponses, ResolveConversationErrors, ThrowOnError> => (options.client ?? client).post<ResolveConversationResponses, ResolveConversationErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/connections/{id}/conversations',
     ...options,
     headers: {
@@ -359,43 +741,55 @@ export const resolveConversation = <ThrowOnError extends boolean = false>(option
 });
 
 export const listConversations = <ThrowOnError extends boolean = false>(options?: Options<ListConversationsData, ThrowOnError>): RequestResult<ListConversationsResponses, ListConversationsErrors, ThrowOnError> => (options?.client ?? client).get<ListConversationsResponses, ListConversationsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/conversations',
     ...options
 });
 
 export const conversationMessages = <ThrowOnError extends boolean = false>(options: Options<ConversationMessagesData, ThrowOnError>): RequestResult<ConversationMessagesResponses, ConversationMessagesErrors, ThrowOnError> => (options.client ?? client).get<ConversationMessagesResponses, ConversationMessagesErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/conversations/{id}/messages',
     ...options
 });
 
 export const setConversationProactive = <ThrowOnError extends boolean = false>(options: Options<SetConversationProactiveData, ThrowOnError>): RequestResult<SetConversationProactiveResponses, SetConversationProactiveErrors, ThrowOnError> => (options.client ?? client).patch<SetConversationProactiveResponses, SetConversationProactiveErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/conversations/{id}/proactive',
     ...options,
     headers: {
@@ -405,57 +799,73 @@ export const setConversationProactive = <ThrowOnError extends boolean = false>(o
 });
 
 export const eventSchema = <ThrowOnError extends boolean = false>(options?: Options<EventSchemaData, ThrowOnError>): RequestResult<EventSchemaResponses, EventSchemaErrors, ThrowOnError> => (options?.client ?? client).get<EventSchemaResponses, EventSchemaErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/event-schema',
     ...options
 });
 
 export const fileContent = <ThrowOnError extends boolean = false>(options: Options<FileContentData, ThrowOnError>): RequestResult<FileContentResponses, FileContentErrors, ThrowOnError> => (options.client ?? client).get<FileContentResponses, FileContentErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/files/{id}/content',
     ...options
 });
 
 export const listModels = <ThrowOnError extends boolean = false>(options?: Options<ListModelsData, ThrowOnError>): RequestResult<ListModelsResponses, ListModelsErrors, ThrowOnError> => (options?.client ?? client).get<ListModelsResponses, ListModelsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/models',
     ...options
 });
 
 export const saveModel = <ThrowOnError extends boolean = false>(options: Options<SaveModelData, ThrowOnError>): RequestResult<SaveModelResponses, SaveModelErrors, ThrowOnError> => (options.client ?? client).post<SaveModelResponses, SaveModelErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/models',
     ...options,
     headers: {
@@ -465,71 +875,91 @@ export const saveModel = <ThrowOnError extends boolean = false>(options: Options
 });
 
 export const deleteModel = <ThrowOnError extends boolean = false>(options: Options<DeleteModelData, ThrowOnError>): RequestResult<DeleteModelResponses, DeleteModelErrors, ThrowOnError> => (options.client ?? client).delete<DeleteModelResponses, DeleteModelErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/models/{id}',
     ...options
 });
 
 export const refreshModel = <ThrowOnError extends boolean = false>(options: Options<RefreshModelData, ThrowOnError>): RequestResult<RefreshModelResponses, RefreshModelErrors, ThrowOnError> => (options.client ?? client).post<RefreshModelResponses, RefreshModelErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/models/{id}/refresh',
     ...options
 });
 
 export const verifyModel = <ThrowOnError extends boolean = false>(options: Options<VerifyModelData, ThrowOnError>): RequestResult<VerifyModelResponses, VerifyModelErrors, ThrowOnError> => (options.client ?? client).post<VerifyModelResponses, VerifyModelErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/models/{id}/verify',
     ...options
 });
 
 export const observationDelivery = <ThrowOnError extends boolean = false>(options: Options<ObservationDeliveryData, ThrowOnError>): RequestResult<ObservationDeliveryResponses, ObservationDeliveryErrors, ThrowOnError> => (options.client ?? client).get<ObservationDeliveryResponses, ObservationDeliveryErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/observations/{id}/delivery',
     ...options
 });
 
 export const completeOnboarding = <ThrowOnError extends boolean = false>(options: Options<CompleteOnboardingData, ThrowOnError>): RequestResult<CompleteOnboardingResponses, CompleteOnboardingErrors, ThrowOnError> => (options.client ?? client).post<CompleteOnboardingResponses, CompleteOnboardingErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/onboarding/complete',
     ...options,
     headers: {
@@ -539,43 +969,55 @@ export const completeOnboarding = <ThrowOnError extends boolean = false>(options
 });
 
 export const listOutbox = <ThrowOnError extends boolean = false>(options?: Options<ListOutboxData, ThrowOnError>): RequestResult<ListOutboxResponses, ListOutboxErrors, ThrowOnError> => (options?.client ?? client).get<ListOutboxResponses, ListOutboxErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/outbox',
     ...options
 });
 
 export const getPreferences = <ThrowOnError extends boolean = false>(options?: Options<GetPreferencesData, ThrowOnError>): RequestResult<GetPreferencesResponses, GetPreferencesErrors, ThrowOnError> => (options?.client ?? client).get<GetPreferencesResponses, GetPreferencesErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/preferences',
     ...options
 });
 
 export const savePreferences = <ThrowOnError extends boolean = false>(options: Options<SavePreferencesData, ThrowOnError>): RequestResult<SavePreferencesResponses, SavePreferencesErrors, ThrowOnError> => (options.client ?? client).put<SavePreferencesResponses, SavePreferencesErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/preferences',
     ...options,
     headers: {
@@ -585,71 +1027,91 @@ export const savePreferences = <ThrowOnError extends boolean = false>(options: O
 });
 
 export const providerAuthorization = <ThrowOnError extends boolean = false>(options: Options<ProviderAuthorizationData, ThrowOnError>): RequestResult<ProviderAuthorizationResponses, ProviderAuthorizationErrors, ThrowOnError> => (options.client ?? client).get<ProviderAuthorizationResponses, ProviderAuthorizationErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/provider-authorizations/{id}',
     ...options
 });
 
 export const listProviderPresets = <ThrowOnError extends boolean = false>(options?: Options<ListProviderPresetsData, ThrowOnError>): RequestResult<ListProviderPresetsResponses, ListProviderPresetsErrors, ThrowOnError> => (options?.client ?? client).get<ListProviderPresetsResponses, ListProviderPresetsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/provider-presets',
     ...options
 });
 
 export const presetModels = <ThrowOnError extends boolean = false>(options: Options<PresetModelsData, ThrowOnError>): RequestResult<PresetModelsResponses, PresetModelsErrors, ThrowOnError> => (options.client ?? client).get<PresetModelsResponses, PresetModelsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/provider-presets/{id}/models',
     ...options
 });
 
 export const listProviders = <ThrowOnError extends boolean = false>(options?: Options<ListProvidersData, ThrowOnError>): RequestResult<ListProvidersResponses, ListProvidersErrors, ThrowOnError> => (options?.client ?? client).get<ListProvidersResponses, ListProvidersErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/providers',
     ...options
 });
 
 export const saveProvider = <ThrowOnError extends boolean = false>(options: Options<SaveProviderData, ThrowOnError>): RequestResult<SaveProviderResponses, SaveProviderErrors, ThrowOnError> => (options.client ?? client).post<SaveProviderResponses, SaveProviderErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/providers',
     ...options,
     headers: {
@@ -659,57 +1121,73 @@ export const saveProvider = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 export const deleteProvider = <ThrowOnError extends boolean = false>(options: Options<DeleteProviderData, ThrowOnError>): RequestResult<DeleteProviderResponses, DeleteProviderErrors, ThrowOnError> => (options.client ?? client).delete<DeleteProviderResponses, DeleteProviderErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/providers/{id}',
     ...options
 });
 
 export const authorizeProvider = <ThrowOnError extends boolean = false>(options: Options<AuthorizeProviderData, ThrowOnError>): RequestResult<AuthorizeProviderResponses, AuthorizeProviderErrors, ThrowOnError> => (options.client ?? client).post<AuthorizeProviderResponses, AuthorizeProviderErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/providers/{id}/authorize',
     ...options
 });
 
 export const modelCatalog = <ThrowOnError extends boolean = false>(options: Options<ModelCatalogData, ThrowOnError>): RequestResult<ModelCatalogResponses, ModelCatalogErrors, ThrowOnError> => (options.client ?? client).get<ModelCatalogResponses, ModelCatalogErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/providers/{id}/catalog',
     ...options
 });
 
 export const importModels = <ThrowOnError extends boolean = false>(options: Options<ImportModelsData, ThrowOnError>): RequestResult<ImportModelsResponses, ImportModelsErrors, ThrowOnError> => (options.client ?? client).post<ImportModelsResponses, ImportModelsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/providers/{id}/import',
     ...options,
     headers: {
@@ -719,85 +1197,109 @@ export const importModels = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 export const modelRecommendation = <ThrowOnError extends boolean = false>(options: Options<ModelRecommendationData, ThrowOnError>): RequestResult<ModelRecommendationResponses, ModelRecommendationErrors, ThrowOnError> => (options.client ?? client).get<ModelRecommendationResponses, ModelRecommendationErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/providers/{id}/model-recommendation',
     ...options
 });
 
 export const reasoningFormats = <ThrowOnError extends boolean = false>(options?: Options<ReasoningFormatsData, ThrowOnError>): RequestResult<ReasoningFormatsResponses, ReasoningFormatsErrors, ThrowOnError> => (options?.client ?? client).get<ReasoningFormatsResponses, ReasoningFormatsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/reasoning-formats',
     ...options
 });
 
 export const resourceUsage = <ThrowOnError extends boolean = false>(options: Options<ResourceUsageData, ThrowOnError>): RequestResult<ResourceUsageResponses, ResourceUsageErrors, ThrowOnError> => (options.client ?? client).get<ResourceUsageResponses, ResourceUsageErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/resources/{kind}/{id}/usage',
     ...options
 });
 
 export const listSearchAdapters = <ThrowOnError extends boolean = false>(options?: Options<ListSearchAdaptersData, ThrowOnError>): RequestResult<ListSearchAdaptersResponses, ListSearchAdaptersErrors, ThrowOnError> => (options?.client ?? client).get<ListSearchAdaptersResponses, ListSearchAdaptersErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/search-adapters',
     ...options
 });
 
 export const listSearchProviders = <ThrowOnError extends boolean = false>(options?: Options<ListSearchProvidersData, ThrowOnError>): RequestResult<ListSearchProvidersResponses, ListSearchProvidersErrors, ThrowOnError> => (options?.client ?? client).get<ListSearchProvidersResponses, ListSearchProvidersErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/search-providers',
     ...options
 });
 
 export const saveSearchProvider = <ThrowOnError extends boolean = false>(options: Options<SaveSearchProviderData, ThrowOnError>): RequestResult<SaveSearchProviderResponses, SaveSearchProviderErrors, ThrowOnError> => (options.client ?? client).post<SaveSearchProviderResponses, SaveSearchProviderErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/search-providers',
     ...options,
     headers: {
@@ -807,29 +1309,37 @@ export const saveSearchProvider = <ThrowOnError extends boolean = false>(options
 });
 
 export const deleteSearchProvider = <ThrowOnError extends boolean = false>(options: Options<DeleteSearchProviderData, ThrowOnError>): RequestResult<DeleteSearchProviderResponses, DeleteSearchProviderErrors, ThrowOnError> => (options.client ?? client).delete<DeleteSearchProviderResponses, DeleteSearchProviderErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/search-providers/{id}',
     ...options
 });
 
 export const testSearchProvider = <ThrowOnError extends boolean = false>(options: Options<TestSearchProviderData, ThrowOnError>): RequestResult<TestSearchProviderResponses, TestSearchProviderErrors, ThrowOnError> => (options.client ?? client).post<TestSearchProviderResponses, TestSearchProviderErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/search-providers/{id}/test',
     ...options,
     headers: {
@@ -839,29 +1349,37 @@ export const testSearchProvider = <ThrowOnError extends boolean = false>(options
 });
 
 export const listSessions = <ThrowOnError extends boolean = false>(options?: Options<ListSessionsData, ThrowOnError>): RequestResult<ListSessionsResponses, ListSessionsErrors, ThrowOnError> => (options?.client ?? client).get<ListSessionsResponses, ListSessionsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions',
     ...options
 });
 
 export const createSession = <ThrowOnError extends boolean = false>(options: Options<CreateSessionData, ThrowOnError>): RequestResult<CreateSessionResponses, CreateSessionErrors, ThrowOnError> => (options.client ?? client).post<CreateSessionResponses, CreateSessionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions',
     ...options,
     headers: {
@@ -871,43 +1389,55 @@ export const createSession = <ThrowOnError extends boolean = false>(options: Opt
 });
 
 export const deleteSession = <ThrowOnError extends boolean = false>(options: Options<DeleteSessionData, ThrowOnError>): RequestResult<DeleteSessionResponses, DeleteSessionErrors, ThrowOnError> => (options.client ?? client).delete<DeleteSessionResponses, DeleteSessionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}',
     ...options
 });
 
 export const getSession = <ThrowOnError extends boolean = false>(options: Options<GetSessionData, ThrowOnError>): RequestResult<GetSessionResponses, GetSessionErrors, ThrowOnError> => (options.client ?? client).get<GetSessionResponses, GetSessionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}',
     ...options
 });
 
 export const updateSession = <ThrowOnError extends boolean = false>(options: Options<UpdateSessionData, ThrowOnError>): RequestResult<UpdateSessionResponses, UpdateSessionErrors, ThrowOnError> => (options.client ?? client).patch<UpdateSessionResponses, UpdateSessionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}',
     ...options,
     headers: {
@@ -917,15 +1447,19 @@ export const updateSession = <ThrowOnError extends boolean = false>(options: Opt
 });
 
 export const decideApproval = <ThrowOnError extends boolean = false>(options: Options<DecideApprovalData, ThrowOnError>): RequestResult<DecideApprovalResponses, DecideApprovalErrors, ThrowOnError> => (options.client ?? client).post<DecideApprovalResponses, DecideApprovalErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/approvals/{approval}',
     ...options,
     headers: {
@@ -936,15 +1470,19 @@ export const decideApproval = <ThrowOnError extends boolean = false>(options: Op
 
 export const uploadAttachment = <ThrowOnError extends boolean = false>(options: Options<UploadAttachmentData, ThrowOnError>): RequestResult<UploadAttachmentResponses, UploadAttachmentErrors, ThrowOnError> => (options.client ?? client).post<UploadAttachmentResponses, UploadAttachmentErrors, ThrowOnError>({
     bodySerializer: null,
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/attachments',
     ...options,
     headers: {
@@ -954,57 +1492,73 @@ export const uploadAttachment = <ThrowOnError extends boolean = false>(options: 
 });
 
 export const sessionAttempts = <ThrowOnError extends boolean = false>(options: Options<SessionAttemptsData, ThrowOnError>): RequestResult<SessionAttemptsResponses, SessionAttemptsErrors, ThrowOnError> => (options.client ?? client).get<SessionAttemptsResponses, SessionAttemptsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/attempts',
     ...options
 });
 
 export const sessionAttempt = <ThrowOnError extends boolean = false>(options: Options<SessionAttemptData, ThrowOnError>): RequestResult<SessionAttemptResponses, SessionAttemptErrors, ThrowOnError> => (options.client ?? client).get<SessionAttemptResponses, SessionAttemptErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/attempts/{attempt}',
     ...options
 });
 
 export const sessionAttemptRequest = <ThrowOnError extends boolean = false>(options: Options<SessionAttemptRequestData, ThrowOnError>): RequestResult<SessionAttemptRequestResponses, SessionAttemptRequestErrors, ThrowOnError> => (options.client ?? client).get<SessionAttemptRequestResponses, SessionAttemptRequestErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/attempts/{attempt}/request',
     ...options
 });
 
 export const compactSession = <ThrowOnError extends boolean = false>(options: Options<CompactSessionData, ThrowOnError>): RequestResult<CompactSessionResponses, CompactSessionErrors, ThrowOnError> => (options.client ?? client).post<CompactSessionResponses, CompactSessionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/compact',
     ...options,
     headers: {
@@ -1014,15 +1568,19 @@ export const compactSession = <ThrowOnError extends boolean = false>(options: Op
 });
 
 export const selectComputer = <ThrowOnError extends boolean = false>(options: Options<SelectComputerData, ThrowOnError>): RequestResult<SelectComputerResponses, SelectComputerErrors, ThrowOnError> => (options.client ?? client).post<SelectComputerResponses, SelectComputerErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/computer',
     ...options,
     headers: {
@@ -1032,85 +1590,109 @@ export const selectComputer = <ThrowOnError extends boolean = false>(options: Op
 });
 
 export const sessionContext = <ThrowOnError extends boolean = false>(options: Options<SessionContextData, ThrowOnError>): RequestResult<SessionContextResponses, SessionContextErrors, ThrowOnError> => (options.client ?? client).get<SessionContextResponses, SessionContextErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/context',
     ...options
 });
 
 export const continueSession = <ThrowOnError extends boolean = false>(options: Options<ContinueSessionData, ThrowOnError>): RequestResult<ContinueSessionResponses, ContinueSessionErrors, ThrowOnError> => (options.client ?? client).post<ContinueSessionResponses, ContinueSessionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/continue',
     ...options
 });
 
 export const sessionEntry = <ThrowOnError extends boolean = false>(options: Options<SessionEntryData, ThrowOnError>): RequestResult<SessionEntryResponses, SessionEntryErrors, ThrowOnError> => (options.client ?? client).get<SessionEntryResponses, SessionEntryErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/entries/{entry}',
     ...options
 });
 
 export const historyImage = <ThrowOnError extends boolean = false>(options: Options<HistoryImageData, ThrowOnError>): RequestResult<HistoryImageResponses, HistoryImageErrors, ThrowOnError> => (options.client ?? client).get<HistoryImageResponses, HistoryImageErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/entries/{entry}/images/{index}',
     ...options
 });
 
 export const sessionEvents = <ThrowOnError extends boolean = false>(options: Options<SessionEventsData, ThrowOnError, SessionEventsResponse>): Promise<ServerSentEventsResult<SessionEventsResponses>> => (options.client ?? client).sse.get<SessionEventsResponses, SessionEventsErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/events',
     ...options
 });
 
 export const forkSession = <ThrowOnError extends boolean = false>(options: Options<ForkSessionData, ThrowOnError>): RequestResult<ForkSessionResponses, ForkSessionErrors, ThrowOnError> => (options.client ?? client).post<ForkSessionResponses, ForkSessionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/fork',
     ...options,
     headers: {
@@ -1120,29 +1702,37 @@ export const forkSession = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 export const sessionHistory = <ThrowOnError extends boolean = false>(options: Options<SessionHistoryData, ThrowOnError>): RequestResult<SessionHistoryResponses, SessionHistoryErrors, ThrowOnError> => (options.client ?? client).get<SessionHistoryResponses, SessionHistoryErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/history',
     ...options
 });
 
 export const submitInput = <ThrowOnError extends boolean = false>(options: Options<SubmitInputData, ThrowOnError>): RequestResult<SubmitInputResponses, SubmitInputErrors, ThrowOnError> => (options.client ?? client).post<SubmitInputResponses, SubmitInputErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/inputs',
     ...options,
     headers: {
@@ -1152,29 +1742,37 @@ export const submitInput = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 export const inputReceipt = <ThrowOnError extends boolean = false>(options: Options<InputReceiptData, ThrowOnError>): RequestResult<InputReceiptResponses, InputReceiptErrors, ThrowOnError> => (options.client ?? client).get<InputReceiptResponses, InputReceiptErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/inputs/{input}',
     ...options
 });
 
 export const selectModel = <ThrowOnError extends boolean = false>(options: Options<SelectModelData, ThrowOnError>): RequestResult<SelectModelResponses, SelectModelErrors, ThrowOnError> => (options.client ?? client).post<SelectModelResponses, SelectModelErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/model',
     ...options,
     headers: {
@@ -1184,15 +1782,19 @@ export const selectModel = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 export const clearPending = <ThrowOnError extends boolean = false>(options: Options<ClearPendingData, ThrowOnError>): RequestResult<ClearPendingResponses, ClearPendingErrors, ThrowOnError> => (options.client ?? client).post<ClearPendingResponses, ClearPendingErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/pending/clear',
     ...options,
     headers: {
@@ -1202,29 +1804,37 @@ export const clearPending = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 export const removePending = <ThrowOnError extends boolean = false>(options: Options<RemovePendingData, ThrowOnError>): RequestResult<RemovePendingResponses, RemovePendingErrors, ThrowOnError> => (options.client ?? client).delete<RemovePendingResponses, RemovePendingErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/pending/{input}',
     ...options
 });
 
 export const updatePending = <ThrowOnError extends boolean = false>(options: Options<UpdatePendingData, ThrowOnError>): RequestResult<UpdatePendingResponses, UpdatePendingErrors, ThrowOnError> => (options.client ?? client).patch<UpdatePendingResponses, UpdatePendingErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/pending/{input}',
     ...options,
     headers: {
@@ -1234,15 +1844,19 @@ export const updatePending = <ThrowOnError extends boolean = false>(options: Opt
 });
 
 export const movePending = <ThrowOnError extends boolean = false>(options: Options<MovePendingData, ThrowOnError>): RequestResult<MovePendingResponses, MovePendingErrors, ThrowOnError> => (options.client ?? client).post<MovePendingResponses, MovePendingErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/pending/{input}/move',
     ...options,
     headers: {
@@ -1252,71 +1866,131 @@ export const movePending = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 export const exportRollout = <ThrowOnError extends boolean = false>(options: Options<ExportRolloutData, ThrowOnError>): RequestResult<ExportRolloutResponses, ExportRolloutErrors, ThrowOnError> => (options.client ?? client).get<ExportRolloutResponses, ExportRolloutErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/rollout',
     ...options
 });
 
 export const sessionSnapshot = <ThrowOnError extends boolean = false>(options: Options<SessionSnapshotData, ThrowOnError>): RequestResult<SessionSnapshotResponses, SessionSnapshotErrors, ThrowOnError> => (options.client ?? client).get<SessionSnapshotResponses, SessionSnapshotErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/snapshot',
     ...options
 });
 
 export const stopSession = <ThrowOnError extends boolean = false>(options: Options<StopSessionData, ThrowOnError>): RequestResult<StopSessionResponses, StopSessionErrors, ThrowOnError> => (options.client ?? client).post<StopSessionResponses, StopSessionErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/sessions/{id}/stop',
     ...options
 });
 
-export const storageInfo = <ThrowOnError extends boolean = false>(options?: Options<StorageInfoData, ThrowOnError>): RequestResult<StorageInfoResponses, StorageInfoErrors, ThrowOnError> => (options?.client ?? client).get<StorageInfoResponses, StorageInfoErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+export const getNetworkSettings = <ThrowOnError extends boolean = false>(options?: Options<GetNetworkSettingsData, ThrowOnError>): RequestResult<GetNetworkSettingsResponses, GetNetworkSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetNetworkSettingsResponses, GetNetworkSettingsErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/settings/network',
+    ...options
+});
+
+export const saveNetworkSettings = <ThrowOnError extends boolean = false>(options: Options<SaveNetworkSettingsData, ThrowOnError>): RequestResult<SaveNetworkSettingsResponses, SaveNetworkSettingsErrors, ThrowOnError> => (options.client ?? client).patch<SaveNetworkSettingsResponses, SaveNetworkSettingsErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/settings/network',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const storageInfo = <ThrowOnError extends boolean = false>(options?: Options<StorageInfoData, ThrowOnError>): RequestResult<StorageInfoResponses, StorageInfoErrors, ThrowOnError> => (options?.client ?? client).get<StorageInfoResponses, StorageInfoErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/storage',
     ...options
 });
 
 export const pollWeixinLogin = <ThrowOnError extends boolean = false>(options: Options<PollWeixinLoginData, ThrowOnError>): RequestResult<PollWeixinLoginResponses, PollWeixinLoginErrors, ThrowOnError> => (options.client ?? client).post<PollWeixinLoginResponses, PollWeixinLoginErrors, ThrowOnError>({
-    security: [{
-            key: 'owner',
-            scheme: 'bearer',
-            type: 'http'
-        }, {
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
             in: 'cookie',
-            name: 'astral_owner',
+            name: 'astral_session',
             type: 'apiKey'
-        }],
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
     url: '/api/v1/weixin/logins/{id}/poll',
     ...options,
     headers: {
@@ -1325,16 +1999,54 @@ export const pollWeixinLogin = <ThrowOnError extends boolean = false>(options: O
     }
 });
 
-export const logout = <ThrowOnError extends boolean = false>(options?: Options<LogoutData, ThrowOnError>): RequestResult<LogoutResponses, LogoutErrors, ThrowOnError> => (options?.client ?? client).delete<LogoutResponses, LogoutErrors, ThrowOnError>({ url: '/auth/session', ...options });
-
-export const login = <ThrowOnError extends boolean = false>(options: Options<LoginData, ThrowOnError>): RequestResult<LoginResponses, LoginErrors, ThrowOnError> => (options.client ?? client).post<LoginResponses, LoginErrors, ThrowOnError>({
-    url: '/auth/session',
+export const authLogin = <ThrowOnError extends boolean = false>(options: Options<AuthLoginData, ThrowOnError>): RequestResult<AuthLoginResponses, AuthLoginErrors, ThrowOnError> => (options.client ?? client).post<AuthLoginResponses, AuthLoginErrors, ThrowOnError>({
+    url: '/auth/login',
     ...options,
     headers: {
         'Content-Type': 'application/json',
         ...options.headers
     }
 });
+
+export const authPasskeyLoginBegin = <ThrowOnError extends boolean = false>(options: Options<AuthPasskeyLoginBeginData, ThrowOnError>): RequestResult<AuthPasskeyLoginBeginResponses, AuthPasskeyLoginBeginErrors, ThrowOnError> => (options.client ?? client).post<AuthPasskeyLoginBeginResponses, AuthPasskeyLoginBeginErrors, ThrowOnError>({
+    url: '/auth/login/passkey/begin',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const authPasskeyLoginFinish = <ThrowOnError extends boolean = false>(options: Options<AuthPasskeyLoginFinishData, ThrowOnError>): RequestResult<AuthPasskeyLoginFinishResponses, AuthPasskeyLoginFinishErrors, ThrowOnError> => (options.client ?? client).post<AuthPasskeyLoginFinishResponses, AuthPasskeyLoginFinishErrors, ThrowOnError>({
+    url: '/auth/login/passkey/finish',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const authLoginRecovery = <ThrowOnError extends boolean = false>(options: Options<AuthLoginRecoveryData, ThrowOnError>): RequestResult<AuthLoginRecoveryResponses, AuthLoginRecoveryErrors, ThrowOnError> => (options.client ?? client).post<AuthLoginRecoveryResponses, AuthLoginRecoveryErrors, ThrowOnError>({
+    url: '/auth/login/recovery',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const authLoginTotp = <ThrowOnError extends boolean = false>(options: Options<AuthLoginTotpData, ThrowOnError>): RequestResult<AuthLoginTotpResponses, AuthLoginTotpErrors, ThrowOnError> => (options.client ?? client).post<AuthLoginTotpResponses, AuthLoginTotpErrors, ThrowOnError>({
+    url: '/auth/login/totp',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const authLogout = <ThrowOnError extends boolean = false>(options?: Options<AuthLogoutData, ThrowOnError>): RequestResult<AuthLogoutResponses, AuthLogoutErrors, ThrowOnError> => (options?.client ?? client).delete<AuthLogoutResponses, AuthLogoutErrors, ThrowOnError>({ url: '/auth/session', ...options });
+
+export const authStatus = <ThrowOnError extends boolean = false>(options?: Options<AuthStatusData, ThrowOnError>): RequestResult<AuthStatusResponses, AuthStatusErrors, ThrowOnError> => (options?.client ?? client).get<AuthStatusResponses, AuthStatusErrors, ThrowOnError>({ url: '/auth/status', ...options });
 
 /**
  * List this Bot's accounts, with access scopes and without credentials.

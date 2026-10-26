@@ -25,14 +25,104 @@ import (
 
 func weixinTestAdapter(t *testing.T, endpoint string, store *persistence.Store) *weixinAdapter {
 	t.Helper()
-	adapter, err := NewWeixin(domain.Connection{Meta: domain.Meta{ID: "weixin-account"}, Config: encoded(WeixinConfig{BaseURL: endpoint, CDNBaseURL: endpoint + "/c2c"})},
-		string(encoded(WeixinCredential{BotToken: "secret-login-token", BotID: "bot-id", UserID: "scanner-id", BaseURL: endpoint})), nil)
+	connection := domain.Connection{Meta: domain.Meta{ID: "weixin-account"}, AgentID: "weixin-test-bot", Adapter: "weixin.ilink", AccountID: "bot-id", Config: encoded(WeixinConfig{BaseURL: endpoint, CDNBaseURL: endpoint + "/c2c"})}
+	credential := string(encoded(WeixinCredential{BotToken: "secret-login-token", BotID: "bot-id", UserID: "scanner-id", BaseURL: endpoint}))
+	if store != nil {
+		var agent domain.Agent
+		if err := store.Get(t.Context(), "agents", connection.AgentID, &agent); domain.IsMissing(err) {
+			agent = domain.Agent{Meta: domain.Meta{ID: connection.AgentID}, Name: "Weixin test Bot", AllowedComputers: []string{}}
+			if err := store.Save(t.Context(), "agents", &agent.Meta, &agent); err != nil {
+				t.Fatal(err)
+			}
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		var current domain.Connection
+		if err := store.Get(t.Context(), "connections", connection.ID, &current); err == nil {
+			connection = current
+		} else if domain.IsMissing(err) {
+			if err := store.Update(t.Context(), func(tx *persistence.Tx) error {
+				var err error
+				connection.CredentialID, err = tx.PutSecret(t.Context(), credential)
+				if err != nil {
+					return err
+				}
+				return tx.Save(t.Context(), "connections", &connection.Meta, &connection)
+			}); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			t.Fatal(err)
+		}
+	}
+	adapter, err := NewWeixin(connection, credential, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := adapter.(*weixinAdapter)
 	w.setStore(store)
 	return w
+}
+
+func TestWeixinPrivateCacheWritesRequireLiveOwner(t *testing.T) {
+	for _, phase := range []string{"deleting-Bot", "removed-account", "anonymous-cache"} {
+		t.Run(phase, func(t *testing.T) {
+			store, err := persistence.Open(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			w := weixinTestAdapter(t, weixinDefaultURL, store)
+			if err := w.putWire(t.Context(), "context", "peer", "original-private-value"); err != nil {
+				t.Fatal(err)
+			}
+			var original weixinWireRecord
+			if err := store.Get(t.Context(), "weixin_wire", w.wireID("context", "peer"), &original); err != nil {
+				t.Fatal(err)
+			}
+			switch phase {
+			case "deleting-Bot":
+				var agent domain.Agent
+				if err := store.Get(t.Context(), "agents", w.connection.AgentID, &agent); err != nil {
+					t.Fatal(err)
+				}
+				agent.Deletion = true
+				if err := store.Save(t.Context(), "agents", &agent.Meta, &agent); err != nil {
+					t.Fatal(err)
+				}
+			case "removed-account":
+				if err := store.Update(t.Context(), func(tx *persistence.Tx) error {
+					return tx.Purge(t.Context(), "connections", w.connection.ID, w.connection.Revision)
+				}); err != nil {
+					t.Fatal(err)
+				}
+			case "anonymous-cache":
+				original.ConnectionID = ""
+				if err := store.Save(t.Context(), "weixin_wire", &original.Meta, &original); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := w.putWire(t.Context(), "context", "peer", "late-private-value"); err == nil {
+				t.Fatal("late or anonymous private cache write was admitted")
+			}
+			if phase != "anonymous-cache" {
+				if err := w.putWire(t.Context(), "context", "new-peer", "late-new-value"); err == nil {
+					t.Fatal("late response created a new private cache")
+				}
+				var late weixinWireRecord
+				if err := store.Get(t.Context(), "weixin_wire", w.wireID("context", "new-peer"), &late); !domain.IsMissing(err) {
+					t.Fatal("late response persisted private data:", err)
+				}
+			}
+			var unchanged weixinWireRecord
+			if err := store.Get(t.Context(), "weixin_wire", original.ID, &unchanged); err != nil || unchanged.Revision != original.Revision || unchanged.ConnectionID != original.ConnectionID {
+				t.Fatalf("rejected write changed cache metadata: %+v %v", unchanged, err)
+			}
+			if value, err := store.Secret(t.Context(), original.CredentialID); err != nil || value != "original-private-value" {
+				t.Fatal("rejected write rotated a private credential:", err)
+			}
+		})
+	}
 }
 
 func TestWeixinLoginValidation(t *testing.T) {

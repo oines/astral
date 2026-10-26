@@ -166,6 +166,25 @@ func (s *Store) List(ctx context.Context, kind string) ([]Record, error) {
 	return list(ctx, s.db, kind)
 }
 
+// Retained lists historical configuration as well as current documents for
+// permanent resource cleanup; it is not an API for restoring deleted records.
+func (s *Store) Retained(ctx context.Context, kind string) ([]Record, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id,revision,data FROM documents WHERE kind=? UNION SELECT id,revision,data FROM versions WHERE kind=?", kind, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []Record
+	for rows.Next() {
+		var record Record
+		if err := rows.Scan(&record.ID, &record.Revision, &record.Data); err != nil {
+			return nil, err
+		}
+		result = append(result, record)
+	}
+	return result, rows.Err()
+}
+
 type Tx struct {
 	tx    *sql.Tx
 	store *Store
@@ -316,16 +335,36 @@ func (tx *Tx) PutSecret(ctx context.Context, value string) (string, error) {
 	return id, err
 }
 
+// DeleteSecret is idempotent so interrupted resource deletion can resume.
+func (tx *Tx) DeleteSecret(ctx context.Context, id string) error {
+	if id == "" {
+		return nil
+	}
+	_, err := tx.tx.ExecContext(ctx, "DELETE FROM secrets WHERE id=?", id)
+	return err
+}
+
 // RotateSecret refreshes an OAuth token without changing the identity of its
 // authorization grant. Normal API-key edits always use PutSecret and a new
 // provider revision instead.
 func (s *Store) RotateSecret(ctx context.Context, id, value string) error {
+	return s.rotateSecret(ctx, s.db, id, value)
+}
+
+// RotateSecret participates in the caller's resource-liveness transaction.
+func (tx *Tx) RotateSecret(ctx context.Context, id, value string) error {
+	return tx.store.rotateSecret(ctx, tx.tx, id, value)
+}
+
+func (s *Store) rotateSecret(ctx context.Context, writer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, id, value string) error {
 	nonce := make([]byte, s.cipher.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return err
 	}
 	sealed := s.cipher.Seal(nonce, nonce, []byte(value), []byte(id))
-	result, err := s.db.ExecContext(ctx, "UPDATE secrets SET value=? WHERE id=?", sealed, id)
+	result, err := writer.ExecContext(ctx, "UPDATE secrets SET value=? WHERE id=?", sealed, id)
 	if err != nil {
 		return err
 	}

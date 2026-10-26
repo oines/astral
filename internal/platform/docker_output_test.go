@@ -3,7 +3,10 @@ package platform
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -28,11 +31,20 @@ func TestDockerOutputPreservesCancellationWithoutOutput(t *testing.T) {
 	}
 }
 
-func TestDockerOutputPreservesMissingExecutable(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
+func TestDockerOutputRejectsExecutableFromCurrentDirectory(t *testing.T) {
+	root := t.TempDir()
+	name := "docker"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.WriteFile(filepath.Join(root, name), []byte("must not run"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	t.Setenv("PATH", ".")
 	_, err := dockerOutput(context.Background(), "version")
-	if !errors.Is(err, exec.ErrNotFound) {
-		t.Fatalf("missing Docker executable lost its cause: %v", err)
+	if !errors.Is(err, exec.ErrDot) {
+		t.Fatalf("Docker from the current directory must remain rejected: %v", err)
 	}
 }
 

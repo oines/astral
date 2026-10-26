@@ -88,7 +88,7 @@ if (process.argv[2] === '--child') {
     console.log('Failed Server startup released its temporary directory.')
     const token = await service.start(binary, directory, binaries)
     serverPIDs.add(service.child.pid)
-    const bootstrap = await fetch(`${service.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${token}` } })
+    const bootstrap = await fetch(`${service.url}/api/v1/bootstrap`, { headers: { Authorization: `Desktop ${token}` } })
     assert.equal(bootstrap.status, 200)
     const first = await bootstrap.json()
     assert.equal(first.computers.length, 1)
@@ -117,7 +117,7 @@ if (process.argv[2] === '--child') {
     try {
       const reopenedToken = await reopened.start(binary, directory, binaries)
       serverPIDs.add(reopened.child.pid)
-      const response = await fetch(`${reopened.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${reopenedToken}` } })
+      const response = await fetch(`${reopened.url}/api/v1/bootstrap`, { headers: { Authorization: `Desktop ${reopenedToken}` } })
       const next = await response.json()
       assert.equal(next.computers[0].id, first.computers[0].id)
       await assertNoLocalService(directory)
@@ -125,7 +125,7 @@ if (process.argv[2] === '--child') {
       await reopened.stop()
     }
     for (const pid of serverPIDs) assert.ok(!alive(pid), `Managed Server ${pid} is still running after the lifecycle test`)
-    console.log('Desktop service startup, private Owner handoff, graceful stop, parent crash, identity-preserving restart, and absence of a separate local Daemon service passed.')
+    console.log('Desktop service startup, private Desktop identity handoff, graceful stop, parent crash, identity-preserving restart, and absence of a separate local Daemon service passed.')
   } finally {
     parent?.kill('SIGTERM')
     if (parentEnded) await waitForParent(parentEnded)

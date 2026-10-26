@@ -5,11 +5,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -18,8 +19,9 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/securetransport"
+	"github.com/oines/astral/internal/serviceurl"
 	"github.com/oines/astral/internal/transport"
 )
 
@@ -30,16 +32,34 @@ type connection struct {
 	hello     Hello
 	connected time.Time
 }
+type authenticationBucket struct {
+	tokens  float64
+	updated time.Time
+}
+
 type Hub struct {
-	Store   *persistence.Store
-	Gateway GatewayHandler
-	mu      sync.RWMutex
-	live    map[string]*connection
-	grants  map[string]domain.ExecutionBinding
+	Store          *persistence.Store
+	Gateway        GatewayHandler
+	ContainerURL   func(*http.Request, string) string
+	identity       *securetransport.Identity
+	pending        chan struct{}
+	authenticating map[string]int
+	attempts       map[string]authenticationBucket
+	mu             sync.RWMutex
+	live           map[string]*connection
+	grants         map[string]domain.ExecutionBinding
 }
 
 func NewHub(store *persistence.Store) *Hub {
-	return &Hub{Store: store, live: map[string]*connection{}, grants: map[string]domain.ExecutionBinding{}}
+	return &Hub{Store: store, live: map[string]*connection{}, grants: map[string]domain.ExecutionBinding{}, pending: make(chan struct{}, 64), authenticating: map[string]int{}, attempts: map[string]authenticationBucket{}}
+}
+
+func (h *Hub) SetIdentity(identity *securetransport.Identity) { h.identity = identity }
+func (h *Hub) ServerPin() string {
+	if h.identity == nil {
+		return ""
+	}
+	return h.identity.Pin()
 }
 
 func tokenHash(token string) string {
@@ -48,7 +68,10 @@ func tokenHash(token string) string {
 }
 
 func (h *Hub) Enroll(ctx context.Context, serverURL string, container, local bool) (EnrollmentResult, error) {
-	if err := modelbridge.ValidateURL(serverURL); err != nil {
+	if h.identity == nil {
+		return EnrollmentResult{}, errors.New("computer identity for this Server is not configured")
+	}
+	if err := serviceurl.Validate(serverURL); err != nil {
 		return EnrollmentResult{}, err
 	}
 	token := domain.ID("enroll")
@@ -56,14 +79,14 @@ func (h *Hub) Enroll(ctx context.Context, serverURL string, container, local boo
 	if err := h.Store.Save(ctx, "enrollments", &e.Meta, &e); err != nil {
 		return EnrollmentResult{}, err
 	}
-	cmd := "curl --fail --silent --show-error " + shellQuote(strings.TrimRight(serverURL, "/")+"/install.sh") +
-		" | sh -s -- --server " + shellQuote(serverURL) + " --enrollment " + shellQuote(e.ID) + " --token " + shellQuote(token)
-	ps := "& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing " + powerShellQuote(strings.TrimRight(serverURL, "/")+"/install.ps1") + ").Content)) -Server " + powerShellQuote(serverURL) + " -Enrollment " + powerShellQuote(e.ID) + " -Token " + powerShellQuote(token)
+	cmd := "--server " + shellQuote(serverURL) + " --server-pin " + shellQuote(h.ServerPin()) + " --enrollment " + shellQuote(e.ID) + " --token " + shellQuote(token)
+	ps := "-Server " + powerShellQuote(serverURL) + " -ServerPin " + powerShellQuote(h.ServerPin()) + " -Enrollment " + powerShellQuote(e.ID) + " -Token " + powerShellQuote(token)
+
 	if container {
 		cmd += " --container"
 		ps += " -Container"
 	}
-	return EnrollmentResult{Enrollment: e, Token: token, Command: cmd, PowerShellCommand: ps}, nil
+	return EnrollmentResult{Enrollment: e, Token: token, ServerPin: h.ServerPin(), Command: ShellInstallerCommand(cmd), PowerShellCommand: PowerShellInstallerCommand(ps)}, nil
 }
 func shellQuote(value string) string      { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 func powerShellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
@@ -100,10 +123,7 @@ func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest
 		if subtle.ConstantTimeCompare([]byte(e.TokenHash), []byte(hash)) != 1 || time.Now().After(e.ExpiresAt) {
 			return domain.Forbidden("enrollment expired or invalid")
 		}
-		if e.State == "registered" {
-			credentials.ComputerID = e.ComputerID
-			return nil
-		}
+
 		if e.State != "waiting" {
 			return domain.Conflict("enrollment is no longer available")
 		}
@@ -128,20 +148,14 @@ func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest
 		if err = tx.Save(ctx, "computers", &c.Meta, &c); err != nil {
 			return err
 		}
-		e.State, e.ComputerID, e.CredentialID = "registered", c.ID, credential
-		credentials.ComputerID = c.ID
+		e.State, e.ComputerID, e.CredentialID, e.TokenHash = "registered", c.ID, credential, ""
+		credentials.ComputerID, credentials.Token, credentials.ServerPin = c.ID, token, h.ServerPin()
 		return tx.Save(ctx, "enrollments", &e.Meta, &e)
 	})
 	if err != nil {
 		return credentials, err
 	}
-	// Read outside the transaction: the SQLite store uses one writer connection.
-	var c domain.Computer
-	if err = h.Store.Get(ctx, "computers", credentials.ComputerID, &c); err != nil {
-		return credentials, err
-	}
-	credentials.Token, err = h.Store.Secret(ctx, c.TokenID)
-	return credentials, err
+	return credentials, nil
 }
 
 func validateHello(hello Hello) error {
@@ -180,45 +194,170 @@ func applyEnvironment(c *domain.Computer, hello Hello) bool {
 	return c.Hostname != previous.Hostname || c.OS != previous.OS || c.Arch != previous.Arch || c.Shell != previous.Shell || c.Home != previous.Home || c.Root != previous.Root || c.DaemonVersion != previous.DaemonVersion || !sameContainer
 }
 
+// Connect is the only network entry for enrollment and Computer authentication.
+// No secret or Computer metadata is accepted in HTTP headers or query strings.
 func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	var c domain.Computer
-	if err := h.Store.Get(r.Context(), "computers", id, &c); err != nil || c.Revoked {
-		http.Error(w, "computer is unavailable", http.StatusForbidden)
+	if h.identity == nil {
+		http.Error(w, "computer identity is unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	secret, err := h.Store.Secret(r.Context(), c.TokenID)
-	if err != nil || secret == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+secret)) != 1 {
-		http.Error(w, "invalid computer credential", http.StatusUnauthorized)
+	if r.Header.Get("Origin") != "" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "" || r.Header.Get("X-Astral-Hello") != "" {
+		http.Error(w, "invalid computer tunnel request", http.StatusForbidden)
 		return
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(r.Header.Get("X-Astral-Hello"))
-	var hello Hello
-	if err != nil || len(raw) > 4096 || json.Unmarshal(raw, &hello) != nil || validateHello(hello) != nil {
-		http.Error(w, "invalid daemon environment", http.StatusBadRequest)
+	source, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		http.Error(w, "invalid peer", 400)
 		return
 	}
-	// Persist the latest reported environment so the same information remains
-	// available offline. Read again in the transaction to preserve concurrent edits.
-	if err = h.Store.Update(r.Context(), func(tx *persistence.Tx) error {
-		if err := tx.Get(r.Context(), "computers", id, &c); err != nil {
-			return err
+	h.mu.Lock()
+	now := time.Now()
+	bucket, known := h.attempts[source]
+	if !known && len(h.attempts) >= 4096 {
+		for key, previous := range h.attempts {
+			if now.Sub(previous.updated) > 2*time.Minute {
+				delete(h.attempts, key)
+			}
 		}
-		if c.Revoked {
-			return domain.Forbidden("computer is unavailable")
-		}
-		if !applyEnvironment(&c, hello) {
-			return nil
-		}
-		return tx.Save(r.Context(), "computers", &c.Meta, &c)
-	}); err != nil {
-		http.Error(w, "computer environment could not be saved", http.StatusServiceUnavailable)
+	}
+	if !known && len(h.attempts) >= 4096 {
+		h.mu.Unlock()
+		http.Error(w, "computer authentication is busy", http.StatusTooManyRequests)
 		return
 	}
-	conn, err := websocket.Accept(w, r, nil)
+	if !known {
+		bucket = authenticationBucket{tokens: 64, updated: now}
+	}
+	bucket.tokens = min(64, bucket.tokens+now.Sub(bucket.updated).Seconds()*16)
+	allowed := bucket.tokens >= 1
+	if allowed {
+		bucket.tokens--
+	}
+	bucket.updated = now
+	h.attempts[source] = bucket
+	h.mu.Unlock()
+	if !allowed {
+		http.Error(w, "too many computer authentication attempts", http.StatusTooManyRequests)
+		return
+	}
+	select {
+	case h.pending <- struct{}{}:
+	default:
+		http.Error(w, "computer authentication is busy", http.StatusTooManyRequests)
+		return
+	}
+	h.mu.Lock()
+	h.authenticating[source]++
+	count := h.authenticating[source]
+	h.mu.Unlock()
+	released := false
+	release := func() {
+		if released {
+			return
+		}
+		released = true
+		<-h.pending
+		h.mu.Lock()
+		h.authenticating[source]--
+		if h.authenticating[source] == 0 {
+			delete(h.authenticating, source)
+		}
+		h.mu.Unlock()
+	}
+	defer release()
+	if count > 16 {
+		http.Error(w, "too many computer authentication attempts", http.StatusTooManyRequests)
+		return
+	}
+	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
 	}
+	raw := websocket.NetConn(r.Context(), ws, websocket.MessageBinary)
+	ws.SetReadLimit(64 << 10)
+	defer raw.Close()
+	conn := tls.Server(raw, h.identity.ServerConfig())
+	handshakeCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	err = conn.HandshakeContext(handshakeCtx)
+	cancel()
+	if err != nil {
+		return
+	}
+	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
+	var request tunnelRequest
+	if readAuthentication(conn, &request) != nil {
+		return
+	}
+	response := tunnelResponse{}
+	switch request.Operation {
+	case "register":
+		credentials, err := h.Register(r.Context(), request.EnrollmentID, EnrollmentRequest{Token: request.Token, Hello: request.Hello})
+		if err != nil {
+			response.Error = err.Error()
+		} else {
+			response.Credentials = &credentials
+		}
+	case "prepare":
+		err := h.PrepareContainer(r.Context(), request.EnrollmentID, request.Token)
+		if err != nil {
+			response.Error = err.Error()
+		} else if h.ContainerURL != nil {
+			response.LocalContainerURL = h.ContainerURL(r, request.Hostname)
+		}
+	case "status", "connect":
+		computer, err := h.authenticateComputer(r.Context(), request.ComputerID, request.Token)
+		if err != nil {
+			response.Error = "invalid Computer credential"
+		} else if request.Operation == "status" {
+			status := h.Status(computer)
+			status.TokenID = ""
+			response.Status = &status
+		} else if err = validateHello(request.Hello); err != nil {
+			response.Error = err.Error()
+		}
+	default:
+		response.Error = "unsupported Computer authentication operation"
+	}
+	if request.Operation == "connect" && response.Error == "" {
+		if err = h.saveEnvironment(r.Context(), request.ComputerID, request.Hello); err != nil {
+			response.Error = "Computer is unavailable"
+		}
+	}
+	if writeAuthentication(conn, response) != nil || response.Error != "" || request.Operation != "connect" {
+		return
+	}
+	_ = conn.SetDeadline(time.Time{})
+	release()
+	h.serveConnection(r.Context(), conn, request.ComputerID, request.Hello)
+}
+
+func (h *Hub) authenticateComputer(ctx context.Context, id, token string) (domain.Computer, error) {
+	var computer domain.Computer
+	if token == "" || h.Store.Get(ctx, "computers", id, &computer) != nil || computer.Revoked {
+		return computer, domain.Forbidden("invalid Computer credential")
+	}
+	secret, err := h.Store.Secret(ctx, computer.TokenID)
+	if err != nil || secret == "" || subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
+		return computer, domain.Forbidden("invalid Computer credential")
+	}
+	return computer, nil
+}
+func (h *Hub) saveEnvironment(ctx context.Context, id string, hello Hello) error {
+	return h.Store.Update(ctx, func(tx *persistence.Tx) error {
+		var computer domain.Computer
+		if err := tx.Get(ctx, "computers", id, &computer); err != nil {
+			return err
+		}
+		if computer.Revoked {
+			return domain.Forbidden("Computer is revoked")
+		}
+		if !applyEnvironment(&computer, hello) {
+			return nil
+		}
+		return tx.Save(ctx, "computers", &computer.Meta, &computer)
+	})
+}
+func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hello Hello) {
 	active := &connection{hello: hello, connected: time.Now().UTC()}
 	ready := make(chan struct{})
 	active.peer = transport.New(conn, func(ctx context.Context, request transport.Request, out *transport.Responder) error {
@@ -254,6 +393,13 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	h.mu.Lock()
+	var current domain.Computer
+	if err := h.Store.Get(ctx, "computers", id, &current); err != nil || current.Revoked {
+		h.mu.Unlock()
+		close(ready)
+		_ = active.peer.Close()
+		return
+	}
 	old := h.live[id]
 	h.live[id] = active
 	h.mu.Unlock()
@@ -404,6 +550,24 @@ func (h *Hub) Revoke(ctx context.Context, id string) error {
 	}
 	return nil
 }
+
+// Forget releases Server-side connection and execution grant state after a
+// registration has been deleted. It does not manage the remote Daemon process.
+func (h *Hub) Forget(id string) {
+	h.mu.Lock()
+	active := h.live[id]
+	delete(h.live, id)
+	for key, grant := range h.grants {
+		if grant.ComputerID == id {
+			delete(h.grants, key)
+		}
+	}
+	h.mu.Unlock()
+	if active != nil {
+		_ = active.peer.Close()
+	}
+}
+
 func (h *Hub) Close() error {
 	h.mu.Lock()
 	peers := make([]*transport.Peer, 0, len(h.live))

@@ -81,11 +81,10 @@ func computerService(ctx context.Context, args []string, out, stderr io.Writer) 
 func computerUpdate(ctx context.Context, args []string, out, stderr io.Writer) error {
 	f := flags("computer update", stderr)
 	root := f.String("root", "", "existing Daemon data directory")
-	server := f.String("server", "", "Server supplying this release")
 	container := f.String("container", "", "existing Astral container identity or name")
 	f.Bool("update", false, "installer update operation")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	return platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, ServerURL: *server, Container: *container, Version: Version}, func(message string) { fmt.Fprintln(out, message) })
+	return platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, Container: *container, Version: Version}, func(message string) { fmt.Fprintln(out, message) })
 }

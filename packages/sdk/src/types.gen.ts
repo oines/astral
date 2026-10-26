@@ -362,6 +362,109 @@ export type AstralCoreUsage = {
     reasoning_tokens?: number;
 };
 
+export type AstralInternalAuthAccountInput = {
+    password: string;
+    username: string;
+};
+
+export type AstralInternalAuthCeremony = {
+    challenge_id: string;
+    public_key: unknown;
+};
+
+export type AstralInternalAuthCodeInput = {
+    challenge_id: string;
+    code: string;
+};
+
+export type AstralInternalAuthLoginInput = {
+    password: string;
+    username: string;
+};
+
+export type AstralInternalAuthLoginResult = {
+    authenticated: boolean;
+    challenge_id?: string;
+    methods?: Array<string>;
+};
+
+export type AstralInternalAuthPasskeyBeginInput = {
+    challenge_id?: string;
+};
+
+export type AstralInternalAuthPasskeyFinishInput = {
+    challenge_id: string;
+    credential: unknown;
+};
+
+export type AstralInternalAuthPasskeyName = {
+    name: string;
+};
+
+export type AstralInternalAuthPasskeyView = {
+    created_at: string;
+    id: string;
+    last_used_at: string;
+    name: string;
+    rp_id: string;
+};
+
+export type AstralInternalAuthPasswordlessInput = {
+    enabled: boolean;
+};
+
+export type AstralInternalAuthReauthInput = {
+    method?: 'password' | 'passkey';
+    password?: string;
+};
+
+export type AstralInternalAuthRecoveryCodes = {
+    codes: Array<string>;
+};
+
+export type AstralInternalAuthSessionView = {
+    created_at: string;
+    current: boolean;
+    expires_at: string;
+    id: string;
+    last_used_at: string;
+    user_agent: string;
+};
+
+export type AstralInternalAuthStatus = {
+    authenticated: boolean;
+    configured: boolean;
+    desktop: boolean;
+    methods: Array<string>;
+    passkey_available: boolean;
+    passwordless: boolean;
+    username: string;
+};
+
+export type AstralInternalAuthTotpConfirm = {
+    code: string;
+    setup_id: string;
+};
+
+export type AstralInternalAuthTotpSetup = {
+    secret: string;
+    setup_id: string;
+    uri: string;
+};
+
+export type AstralInternalAuthView = {
+    configured: boolean;
+    current_session_id: string;
+    desktop: boolean;
+    passkeys: Array<AstralInternalAuthPasskeyView>;
+    passwordless: boolean;
+    reauth_until: string;
+    recovery_codes_remaining: number;
+    sessions: Array<AstralInternalAuthSessionView>;
+    totp_enabled: boolean;
+    username: string;
+};
+
 export type AstralInternalChannelsCapabilities = {
     adapter: string;
     caption_limit: number;
@@ -449,6 +552,7 @@ export type AstralInternalComputersEnrollmentResult = {
     command: string;
     enrollment: AstralInternalDomainEnrollment;
     powershell_command: string;
+    server_pin: string;
     token: string;
 };
 
@@ -459,6 +563,7 @@ export type AstralInternalDomainAgent = {
     default_computer_id?: string;
     default_model_id?: string;
     default_reasoning?: AstralCoreReasoningOptions;
+    deletion?: boolean;
     id: string;
     name: string;
     persona?: string;
@@ -990,9 +1095,11 @@ export type AstralInternalHttpapiBindingInput = {
 
 export type AstralInternalHttpapiBootstrap = {
     agents: Array<AstralInternalDomainAgent>;
+    auth: AstralInternalAuthView;
     computers: Array<AstralInternalDomainComputerStatus>;
     host: AstralInternalDomainHostInfo;
     models: Array<AstralInternalDomainModelProfile>;
+    network: AstralInternalHttpapiNetworkSettings;
     onboarding: AstralInternalHarnessOnboarding;
     preferences: AstralInternalHttpapiPreferences;
     public_url: string;
@@ -1089,12 +1196,49 @@ export type AstralInternalHttpapiIntent = {
     id: string;
 };
 
-export type AstralInternalHttpapiLoginRequest = {
-    token: string;
-};
-
 export type AstralInternalHttpapiMovePending = {
     before_id: string;
+};
+
+export type AstralInternalHttpapiNetworkAddress = {
+    kind: string;
+    label: string;
+    url: string;
+};
+
+export type AstralInternalHttpapiNetworkBoolSetting = {
+    editable: boolean;
+    saved_value: boolean;
+    source: 'cli' | 'environment' | 'settings' | 'default';
+    value: boolean;
+};
+
+export type AstralInternalHttpapiNetworkPatch = {
+    allow_remote_management?: boolean;
+    listen?: string;
+    public_urls?: Array<string>;
+};
+
+export type AstralInternalHttpapiNetworkSettings = {
+    addresses: Array<AstralInternalHttpapiNetworkAddress>;
+    allow_remote_management: AstralInternalHttpapiNetworkBoolSetting;
+    listen: AstralInternalHttpapiNetworkStringSetting;
+    public_urls: AstralInternalHttpapiNetworkUrlsSetting;
+    restart_required: boolean;
+};
+
+export type AstralInternalHttpapiNetworkStringSetting = {
+    editable: boolean;
+    saved_value: string;
+    source: 'cli' | 'environment' | 'settings' | 'discovery' | 'default';
+    value: string;
+};
+
+export type AstralInternalHttpapiNetworkUrlsSetting = {
+    editable: boolean;
+    saved_value: Array<string>;
+    source: 'cli' | 'environment' | 'settings' | 'discovery' | 'default';
+    value: Array<string>;
 };
 
 export type AstralInternalHttpapiPreferences = {
@@ -1196,6 +1340,10 @@ export type AstralInternalHttpapiUsage = {
     agents: Array<AstralInternalDomainAgent>;
     profiles: Array<AstralInternalDomainModelProfile>;
     sessions: Array<AstralInternalDomainSession>;
+};
+
+export type AstralInternalHttpcontractEmpty = {
+    [key: string]: unknown;
 };
 
 export type AstralInternalHttpcontractError = {
@@ -1579,6 +1727,360 @@ export type StartWeixinLoginResponses = {
 
 export type StartWeixinLoginResponse = StartWeixinLoginResponses[keyof StartWeixinLoginResponses];
 
+export type AuthSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth';
+};
+
+export type AuthSettingsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthSettingsError = AuthSettingsErrors[keyof AuthSettingsErrors];
+
+export type AuthSettingsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthView;
+};
+
+export type AuthSettingsResponse = AuthSettingsResponses[keyof AuthSettingsResponses];
+
+export type AuthAccountData = {
+    body: AstralInternalAuthAccountInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/account';
+};
+
+export type AuthAccountErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthAccountError = AuthAccountErrors[keyof AuthAccountErrors];
+
+export type AuthAccountResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type AuthAccountResponse = AuthAccountResponses[keyof AuthAccountResponses];
+
+export type AuthEventsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/events';
+};
+
+export type AuthEventsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthEventsError = AuthEventsErrors[keyof AuthEventsErrors];
+
+export type AuthEventsResponses = {
+    /**
+     * OK
+     */
+    200: string;
+};
+
+export type AuthEventsResponse = AuthEventsResponses[keyof AuthEventsResponses];
+
+export type AuthPasskeyRegisterBeginData = {
+    body: AstralInternalAuthPasskeyName;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/begin';
+};
+
+export type AuthPasskeyRegisterBeginErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthPasskeyRegisterBeginError = AuthPasskeyRegisterBeginErrors[keyof AuthPasskeyRegisterBeginErrors];
+
+export type AuthPasskeyRegisterBeginResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthCeremony;
+};
+
+export type AuthPasskeyRegisterBeginResponse = AuthPasskeyRegisterBeginResponses[keyof AuthPasskeyRegisterBeginResponses];
+
+export type AuthPasskeyRegisterFinishData = {
+    body: AstralInternalAuthPasskeyFinishInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passkeys/finish';
+};
+
+export type AuthPasskeyRegisterFinishErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthPasskeyRegisterFinishError = AuthPasskeyRegisterFinishErrors[keyof AuthPasskeyRegisterFinishErrors];
+
+export type AuthPasskeyRegisterFinishResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthPasskeyView;
+};
+
+export type AuthPasskeyRegisterFinishResponse = AuthPasskeyRegisterFinishResponses[keyof AuthPasskeyRegisterFinishResponses];
+
+export type AuthPasskeyRemoveData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/passkeys/{id}';
+};
+
+export type AuthPasskeyRemoveErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthPasskeyRemoveError = AuthPasskeyRemoveErrors[keyof AuthPasskeyRemoveErrors];
+
+export type AuthPasskeyRemoveResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type AuthPasskeyRemoveResponse = AuthPasskeyRemoveResponses[keyof AuthPasskeyRemoveResponses];
+
+export type AuthPasswordlessData = {
+    body: AstralInternalAuthPasswordlessInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/passwordless';
+};
+
+export type AuthPasswordlessErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthPasswordlessError = AuthPasswordlessErrors[keyof AuthPasswordlessErrors];
+
+export type AuthPasswordlessResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthView;
+};
+
+export type AuthPasswordlessResponse = AuthPasswordlessResponses[keyof AuthPasswordlessResponses];
+
+export type AuthReauthenticateData = {
+    body: AstralInternalAuthReauthInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/reauth';
+};
+
+export type AuthReauthenticateErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthReauthenticateError = AuthReauthenticateErrors[keyof AuthReauthenticateErrors];
+
+export type AuthReauthenticateResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthLoginResult;
+};
+
+export type AuthReauthenticateResponse = AuthReauthenticateResponses[keyof AuthReauthenticateResponses];
+
+export type AuthRecoveryCodesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/recovery-codes';
+};
+
+export type AuthRecoveryCodesErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthRecoveryCodesError = AuthRecoveryCodesErrors[keyof AuthRecoveryCodesErrors];
+
+export type AuthRecoveryCodesResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthRecoveryCodes;
+};
+
+export type AuthRecoveryCodesResponse = AuthRecoveryCodesResponses[keyof AuthRecoveryCodesResponses];
+
+export type AuthSessionsRevokeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/sessions';
+};
+
+export type AuthSessionsRevokeErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthSessionsRevokeError = AuthSessionsRevokeErrors[keyof AuthSessionsRevokeErrors];
+
+export type AuthSessionsRevokeResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type AuthSessionsRevokeResponse = AuthSessionsRevokeResponses[keyof AuthSessionsRevokeResponses];
+
+export type AuthSessionRevokeData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/sessions/{id}';
+};
+
+export type AuthSessionRevokeErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthSessionRevokeError = AuthSessionRevokeErrors[keyof AuthSessionRevokeErrors];
+
+export type AuthSessionRevokeResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type AuthSessionRevokeResponse = AuthSessionRevokeResponses[keyof AuthSessionRevokeResponses];
+
+export type AuthTotpRemoveData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/totp';
+};
+
+export type AuthTotpRemoveErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthTotpRemoveError = AuthTotpRemoveErrors[keyof AuthTotpRemoveErrors];
+
+export type AuthTotpRemoveResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type AuthTotpRemoveResponse = AuthTotpRemoveResponses[keyof AuthTotpRemoveResponses];
+
+export type AuthTotpBeginData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/totp/begin';
+};
+
+export type AuthTotpBeginErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthTotpBeginError = AuthTotpBeginErrors[keyof AuthTotpBeginErrors];
+
+export type AuthTotpBeginResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthTotpSetup;
+};
+
+export type AuthTotpBeginResponse = AuthTotpBeginResponses[keyof AuthTotpBeginResponses];
+
+export type AuthTotpConfirmData = {
+    body: AstralInternalAuthTotpConfirm;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/totp/confirm';
+};
+
+export type AuthTotpConfirmErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthTotpConfirmError = AuthTotpConfirmErrors[keyof AuthTotpConfirmErrors];
+
+export type AuthTotpConfirmResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthRecoveryCodes;
+};
+
+export type AuthTotpConfirmResponse = AuthTotpConfirmResponses[keyof AuthTotpConfirmResponses];
+
 export type ListBindingsData = {
     body?: never;
     path?: never;
@@ -1888,6 +2390,35 @@ export type GetComputerOperationResponses = {
 };
 
 export type GetComputerOperationResponse = GetComputerOperationResponses[keyof GetComputerOperationResponses];
+
+export type DeleteComputerData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/api/v1/computers/{id}';
+};
+
+export type DeleteComputerErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type DeleteComputerError = DeleteComputerErrors[keyof DeleteComputerErrors];
+
+export type DeleteComputerResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type DeleteComputerResponse = DeleteComputerResponses[keyof DeleteComputerResponses];
 
 export type UpdateComputerData = {
     body: AstralInternalHttpapiComputerUpdate;
@@ -3713,6 +4244,56 @@ export type StopSessionResponses = {
 
 export type StopSessionResponse = StopSessionResponses[keyof StopSessionResponses];
 
+export type GetNetworkSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/network';
+};
+
+export type GetNetworkSettingsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type GetNetworkSettingsError = GetNetworkSettingsErrors[keyof GetNetworkSettingsErrors];
+
+export type GetNetworkSettingsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiNetworkSettings;
+};
+
+export type GetNetworkSettingsResponse = GetNetworkSettingsResponses[keyof GetNetworkSettingsResponses];
+
+export type SaveNetworkSettingsData = {
+    body: AstralInternalHttpapiNetworkPatch;
+    path?: never;
+    query?: never;
+    url: '/api/v1/settings/network';
+};
+
+export type SaveNetworkSettingsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SaveNetworkSettingsError = SaveNetworkSettingsErrors[keyof SaveNetworkSettingsErrors];
+
+export type SaveNetworkSettingsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiNetworkSettings;
+};
+
+export type SaveNetworkSettingsResponse = SaveNetworkSettingsResponses[keyof SaveNetworkSettingsResponses];
+
 export type StorageInfoData = {
     body?: never;
     path?: never;
@@ -3765,55 +4346,180 @@ export type PollWeixinLoginResponses = {
 
 export type PollWeixinLoginResponse = PollWeixinLoginResponses[keyof PollWeixinLoginResponses];
 
-export type LogoutData = {
+export type AuthLoginData = {
+    body: AstralInternalAuthLoginInput;
+    path?: never;
+    query?: never;
+    url: '/auth/login';
+};
+
+export type AuthLoginErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthLoginError = AuthLoginErrors[keyof AuthLoginErrors];
+
+export type AuthLoginResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthLoginResult;
+};
+
+export type AuthLoginResponse = AuthLoginResponses[keyof AuthLoginResponses];
+
+export type AuthPasskeyLoginBeginData = {
+    body: AstralInternalAuthPasskeyBeginInput;
+    path?: never;
+    query?: never;
+    url: '/auth/login/passkey/begin';
+};
+
+export type AuthPasskeyLoginBeginErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthPasskeyLoginBeginError = AuthPasskeyLoginBeginErrors[keyof AuthPasskeyLoginBeginErrors];
+
+export type AuthPasskeyLoginBeginResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthCeremony;
+};
+
+export type AuthPasskeyLoginBeginResponse = AuthPasskeyLoginBeginResponses[keyof AuthPasskeyLoginBeginResponses];
+
+export type AuthPasskeyLoginFinishData = {
+    body: AstralInternalAuthPasskeyFinishInput;
+    path?: never;
+    query?: never;
+    url: '/auth/login/passkey/finish';
+};
+
+export type AuthPasskeyLoginFinishErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthPasskeyLoginFinishError = AuthPasskeyLoginFinishErrors[keyof AuthPasskeyLoginFinishErrors];
+
+export type AuthPasskeyLoginFinishResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthLoginResult;
+};
+
+export type AuthPasskeyLoginFinishResponse = AuthPasskeyLoginFinishResponses[keyof AuthPasskeyLoginFinishResponses];
+
+export type AuthLoginRecoveryData = {
+    body: AstralInternalAuthCodeInput;
+    path?: never;
+    query?: never;
+    url: '/auth/login/recovery';
+};
+
+export type AuthLoginRecoveryErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthLoginRecoveryError = AuthLoginRecoveryErrors[keyof AuthLoginRecoveryErrors];
+
+export type AuthLoginRecoveryResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthLoginResult;
+};
+
+export type AuthLoginRecoveryResponse = AuthLoginRecoveryResponses[keyof AuthLoginRecoveryResponses];
+
+export type AuthLoginTotpData = {
+    body: AstralInternalAuthCodeInput;
+    path?: never;
+    query?: never;
+    url: '/auth/login/totp';
+};
+
+export type AuthLoginTotpErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AuthLoginTotpError = AuthLoginTotpErrors[keyof AuthLoginTotpErrors];
+
+export type AuthLoginTotpResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAuthLoginResult;
+};
+
+export type AuthLoginTotpResponse = AuthLoginTotpResponses[keyof AuthLoginTotpResponses];
+
+export type AuthLogoutData = {
     body?: never;
     path?: never;
     query?: never;
     url: '/auth/session';
 };
 
-export type LogoutErrors = {
+export type AuthLogoutErrors = {
     /**
      * Operation error
      */
     default: AstralInternalHttpcontractError;
 };
 
-export type LogoutError = LogoutErrors[keyof LogoutErrors];
+export type AuthLogoutError = AuthLogoutErrors[keyof AuthLogoutErrors];
 
-export type LogoutResponses = {
+export type AuthLogoutResponses = {
     /**
      * OK
      */
     200: AstralInternalHttpcontractOk;
 };
 
-export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
+export type AuthLogoutResponse = AuthLogoutResponses[keyof AuthLogoutResponses];
 
-export type LoginData = {
-    body: AstralInternalHttpapiLoginRequest;
+export type AuthStatusData = {
+    body?: never;
     path?: never;
     query?: never;
-    url: '/auth/session';
+    url: '/auth/status';
 };
 
-export type LoginErrors = {
+export type AuthStatusErrors = {
     /**
      * Operation error
      */
     default: AstralInternalHttpcontractError;
 };
 
-export type LoginError = LoginErrors[keyof LoginErrors];
+export type AuthStatusError = AuthStatusErrors[keyof AuthStatusErrors];
 
-export type LoginResponses = {
+export type AuthStatusResponses = {
     /**
      * OK
      */
-    200: AstralInternalHttpcontractOk;
+    200: AstralInternalAuthStatus;
 };
 
-export type LoginResponse = LoginResponses[keyof LoginResponses];
+export type AuthStatusResponse = AuthStatusResponses[keyof AuthStatusResponses];
 
 export type AgentAccountsData = {
     body?: never;

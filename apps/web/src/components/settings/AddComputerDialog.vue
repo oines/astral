@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { useQuery } from '@pinia/colada'
 import { useIntervalFn } from '@vueuse/core'
 import { listComputersQuery } from '@astral/sdk/colada'
@@ -12,12 +12,15 @@ import { errorText, request } from '../../lib/api'
 import { computerSummary } from '../../lib/computer-info'
 import { useAction } from '../../composables/useAction'
 import { useAppStore } from '../../stores/app'
+import { useClipboard } from '../../composables/useClipboard'
+import { randomID } from '../../lib/browser'
 defineProps<{ confirmLabel?: string }>()
 const adding = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ connected: [computer: Computer] }>()
 const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
+const { copy, copied } = useClipboard()
 const list = useQuery(listComputersQuery())
 const mode = ref<'choose' | 'local' | 'container' | 'remote'>('choose')
 const container = ref(false)
@@ -28,11 +31,13 @@ const enrollmentResult = ref<AstralInternalComputersEnrollmentResult>()
 const computerID = ref('')
 const connected = computed(() => list.data.value?.find(c => c.id === computerID.value && c.online))
 const intent = ref('')
-const copied = ref(false)
+const serverAddress = ref('')
+const addressListID = useId()
 const displayedCommand = computed(() => commandPlatform.value === 'powershell' ? enrollmentResult.value?.powershell_command || '' : enrollmentResult.value?.command || '')
 const activeOperationKey = 'astral:pending-container'
 let restoring = false
 let interacted = false
+let remoteGeneration = 0
 const pending = localStorage.getItem(activeOperationKey)
 if (pending) {
   try {
@@ -48,6 +53,7 @@ if (pending) {
   } catch { localStorage.removeItem(activeOperationKey) }
 }
 function add() {
+  remoteGeneration++
   interacted = true
   mode.value = 'choose'
   operation.value = undefined
@@ -55,12 +61,14 @@ function add() {
   enrollmentResult.value = undefined
   computerID.value = ''
   copied.value = false
+  serverAddress.value = app.data?.network.public_urls.value[0] || ''
   commandPlatform.value = app.data?.host.os === 'windows' ? 'powershell' : 'shell'
-  intent.value = crypto.randomUUID()
+  intent.value = randomID()
   action.error.value = ''
 }
 function chooseMode(value: typeof mode.value) {
   interacted = true
+  if (mode.value !== value) remoteGeneration++
   mode.value = value
   computerID.value = value === 'container' ? operation.value?.computer_id || '' : value === 'remote' ? enrollment.value?.computer_id || '' : ''
   action.error.value = ''
@@ -88,9 +96,18 @@ async function remote() {
   if (action.busy.value) return
   chooseMode('remote')
   copied.value = false
+  const generation = ++remoteGeneration
+  const serverURL = serverAddress.value.trim()
+  const useContainer = container.value
+  const current = () => generation === remoteGeneration && adding.value && mode.value === 'remote'
+    && serverAddress.value.trim() === serverURL && container.value === useContainer
   await action.run(async () => {
-    enrollmentResult.value = await request(enrollComputer({ body: { container: container.value } }))
-    enrollment.value = enrollmentResult.value.enrollment
+    try {
+      const result = await request(enrollComputer({ body: { container: useContainer, server_url: serverURL } }))
+      if (!current()) return
+      enrollmentResult.value = result
+      enrollment.value = result.enrollment
+    } catch (error) { if (current()) throw error }
   })
 }
 let polling = false
@@ -122,10 +139,18 @@ useIntervalFn(async () => {
 }, 3000)
 async function copyCommand() {
   if (!enrollmentResult.value) return
-  await action.run(async () => { await navigator.clipboard.writeText(displayedCommand.value); copied.value = true })
+  await copy(displayedCommand.value)
 }
 watch(commandPlatform, () => { copied.value = false })
+watch([serverAddress, container], () => {
+  remoteGeneration++
+  enrollmentResult.value = undefined
+  enrollment.value = undefined
+  computerID.value = ''
+  copied.value = false
+})
 watch(adding, open => {
+  if (!open) remoteGeneration++
   if (restoring) { restoring = false; return }
   const provisioning = operation.value && !['connected', 'failed'].includes(operation.value.state)
   if (open && !action.busy.value && !provisioning && enrollment.value?.state !== 'waiting') add()
@@ -185,6 +210,30 @@ function finish() {
         class="stack"
       >
         <SettingsSection>
+          <SettingsRow
+            :label="t('computerCommand.serverAddress')"
+            :description="t('computerCommand.serverAddressHint')"
+          >
+            <input
+              v-model="serverAddress"
+              type="url"
+              :list="addressListID"
+              :aria-label="t('computerCommand.serverAddress')"
+              :disabled="action.busy.value"
+              autocomplete="url"
+              spellcheck="false"
+              required
+            >
+            <datalist :id="addressListID">
+              <option
+                v-for="address in app.data?.network.addresses"
+                :key="address.url"
+                :value="address.url"
+              >
+                {{ address.label }}
+              </option>
+            </datalist>
+          </SettingsRow>
           <SettingsRow :label="t(container ? 'computerCommand.hostPlatform' : 'computerCommand.targetPlatform')">
             <select
               v-model="commandPlatform"
@@ -205,9 +254,11 @@ function finish() {
           </p><label class="row"><input
             v-model="container"
             type="checkbox"
+            :disabled="action.busy.value"
           >{{ t('useContainer') }}</label><Button
             variant="primary"
             :busy="action.busy.value"
+            :disabled="!serverAddress.trim()"
             @click="remote"
           >
             {{ t('generateCommand') }}

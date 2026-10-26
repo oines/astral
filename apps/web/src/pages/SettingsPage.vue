@@ -5,11 +5,12 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useQuery } from '@pinia/colada'
 import { storageInfoQuery } from '@astral/sdk/colada'
-import { deleteSession, getPreferences, logout } from '@astral/sdk'
+import { deleteSession, getPreferences } from '@astral/sdk'
 import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, Bot, HardDrive, Shield, Terminal, AstralLogo, Copy, Search } from '@astral/icons'
 import { Button, ConfirmPopover, Select, Switch, SettingsSection, SettingsRow } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { useAction } from '../composables/useAction'
+import { useClipboard } from '../composables/useClipboard'
 import { useSettingsSave } from '../composables/useSettingsSave'
 import { bytes, request } from '../lib/api'
 import ModelsSettings from '../components/settings/ModelsSettings.vue'
@@ -18,10 +19,13 @@ import AgentsSettings from '../components/settings/AgentsSettings.vue'
 import SearchSettings from '../components/settings/SearchSettings.vue'
 import BotSettingsNav from '../components/settings/BotSettingsNav.vue'
 import SettingsFeedback from '../components/settings/SettingsFeedback.vue'
+import NetworkSettings from '../components/settings/NetworkSettings.vue'
+import AuthSettings from '../components/settings/AuthSettings.vue'
 const app = useAppStore()
 const route = useRoute()
 const { t } = useI18n()
 const action = useAction()
+const { copy } = useClipboard()
 const saves = useSettingsSave()
 const section = ref(typeof route.params.section === 'string' ? route.params.section : 'general')
 watch(() => route.path, path => { if (path.startsWith('/settings')) section.value = typeof route.params.section === 'string' ? route.params.section : 'general' })
@@ -47,7 +51,7 @@ watch(() => route.fullPath, async (next, previous) => {
     reveal = content.value?.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: 160, easing: 'cubic-bezier(.2,.8,.2,1)' })
   }
 })
-async function copyDiagnostics() { await action.run(() => navigator.clipboard.writeText(JSON.stringify({ version: app.data?.version, host: app.data?.host, computers: app.computers.map(c => ({ name: c.name, online: c.online, error: c.last_error })) }, null, 2)), t('copied')) }
+async function copyDiagnostics() { if (await copy(JSON.stringify({ version: app.data?.version, host: app.data?.host, computers: app.computers.map(c => ({ name: c.name, online: c.online, error: c.last_error })) }, null, 2))) action.success.value = t('copied') }
 const storage = useQuery({ ...storageInfoQuery(), enabled: () => section.value === 'storage' })
 const links = [
   ['general', 'general', Settings2], ['appearance', 'appearance', Sun], ['models', 'models', SlidersHorizontal], ['search', 'webSearch', Globe], ['computers', 'computers', Monitor], ['agents', 'agents', Bot], ['storage', 'storage', HardDrive], ['security', 'security', Shield], ['advanced', 'advanced', Terminal],
@@ -66,7 +70,7 @@ async function removeSession(session: (typeof app.sessions)[number]) {
     await Promise.allSettled([app.refresh(), storage.refetch()])
   })
 }
-async function copyText(value: string) { await action.run(() => navigator.clipboard.writeText(value), t('copied')) }
+async function copyText(value: string) { if (await copy(value)) action.success.value = t('copied') }
 async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
   const field = Object.keys(patch)[0] || 'preferences'
   await saves.run('preferences', field, {
@@ -323,36 +327,8 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           v-else-if="section === 'security'"
           class="settings-sections"
         >
-          <SettingsSection
-            :title="t('accessSession')"
-            :description="t('accessDescription')"
-          >
-            <SettingsRow :label="t('connectionAddress')">
-              <span class="muted mono break-word">{{ app.data?.public_url }}</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                :aria-label="t('copy')"
-                :title="t('copy')"
-                @click="copyText(app.data?.public_url || '')"
-              >
-                <Copy />
-              </Button>
-            </SettingsRow>
-          </SettingsSection>
-          <SettingsSection>
-            <SettingsRow
-              :label="t('disconnect')"
-              :description="t('signOutHint')"
-            >
-              <Button
-                :busy="action.busy.value"
-                @click="action.run(async () => { await request(logout()); app.authorized = false })"
-              >
-                {{ t('disconnect') }}
-              </Button>
-            </SettingsRow>
-          </SettingsSection>
+          <NetworkSettings />
+          <AuthSettings />
         </div>
         <div
           v-else-if="section === 'advanced'"

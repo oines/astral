@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { webFixtureCookie } from './web-auth-fixture.mjs'
+import { rendererAuthentication } from './desktop-renderer-auth.mjs'
 import { execFile, spawn } from 'node:child_process'
 import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -24,8 +26,12 @@ const temporary = await mkdtemp(path.join(tmpdir(), 'astral 打包 App '))
 const data = path.join(temporary, 'Astral 数据')
 const runningFile = path.join(data, 'server/running.json')
 const environment = { ...process.env, ASTRAL_DESKTOP_DATA_DIR: data, ASTRAL_SERVER_LISTEN: '127.0.0.1:0', XDG_CONFIG_HOME: path.join(temporary, 'xdg-config') }
-for (const key of ['ASTRAL_PUBLIC_URL', 'ASTRAL_TLS_CERT', 'ASTRAL_TLS_KEY', 'ELECTRON_RUN_AS_NODE']) delete environment[key]
-const args = [`--user-data-dir=${path.join(temporary, 'Electron 资料')}`]
+for (const key of ['ASTRAL_PUBLIC_URLS', 'ASTRAL_ALLOW_REMOTE_MANAGEMENT', 'ELECTRON_RUN_AS_NODE']) delete environment[key]
+const electronProfile = path.join(temporary, 'Electron 资料')
+// A loopback-only ephemeral CDP endpoint exists only in this disposable smoke.
+// It proves the real renderer receives native authentication without exposing
+// Desktop credentials or changing production startup switches.
+const args = [`--user-data-dir=${electronProfile}`, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1']
 if (process.platform === 'linux' && process.getuid?.() === 0) args.push('--no-sandbox') // Only disposable root CI containers require this.
 await mkdir(data, { recursive: true, mode: 0o700 })
 const app = spawn(executable, args, { cwd: repository, env: environment, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: false })
@@ -33,6 +39,7 @@ let output = ''
 let failure
 let exit
 let running
+let rendererDiagnostic = 'The managed renderer has not been discovered.'
 const windowsDescendants = new Map()
 let windowsAppBirth
 app.stdout.on('data', chunk => { output = (output + chunk).slice(-6000) })
@@ -49,7 +56,7 @@ async function waitFor(check, message, timeout = 30_000) {
     if (await check()) return
     await delay(250)
   }
-  throw new Error(message)
+  throw new Error(typeof message === 'function' ? message() : message)
 }
 async function rendererStarted() {
   if (process.platform === 'win32') return windowsRendererStarted()
@@ -135,21 +142,28 @@ try {
     if (exit) throw new Error(`Packaged App exited before startup (${JSON.stringify(exit)}).\n${output}`)
     running = await readFile(runningFile, 'utf8').then(JSON.parse).catch(() => undefined)
     if (!running) return false
-    const token = (await readFile(path.join(data, 'server/owner.token'), 'utf8')).trim()
+    const cookie = await webFixtureCookie(path.join(data,'server'),running.url)
     let response
     try {
       // Bootstrap's optional Docker probe has its own three-second budget.
       // A cold Windows CLI must not consume the entire client's budget too.
-      response = await fetch(`${running.url}/api/v1/bootstrap`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) })
+      response = await fetch(`${running.url}/api/v1/bootstrap`, { headers: { Cookie: cookie }, signal: AbortSignal.timeout(10_000) })
     } catch (error) {
       if (error.name === 'TimeoutError' || ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE'].includes(error.cause?.code)) return false
       throw error
     }
     assert.equal(response.status, 200)
     const bootstrap = await response.json()
+    assert.equal(bootstrap.onboarding.completed, false, 'The packaged App smoke must use a fresh onboarding profile')
     return bootstrap.computers.some(computer => computer.local && computer.online)
   }, 'The packaged App did not start its Server and connect the local Daemon.', 45_000)
   await waitFor(async () => { if (exit) throw new Error(`Packaged App exited before renderer startup.\n${output}`); return rendererStarted() }, 'The actual packaged Electron App did not start a renderer.', 30_000)
+  await waitFor(async () => {
+    if (failure) throw failure
+    if (exit) throw new Error(`Packaged App exited before renderer authentication.\n${output}`)
+    return rendererAuthentication(electronProfile, running.url, { diagnose: message => { rendererDiagnostic = message } })
+  }, () => `The actual Desktop renderer did not authenticate with its native identity.\nLast renderer state: ${rendererDiagnostic}`, 30_000)
+  console.log('Actual Desktop renderer /auth/status confirms authenticated=true and desktop=true.')
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
   console.log(`Requesting ${process.platform === 'win32' ? 'crash cleanup' : 'normal App quit'} with SIGTERM (App PID ${app.pid}, Server PID ${running.pid}).`)
   if (process.platform === 'win32') await rendererStarted()
@@ -163,7 +177,7 @@ try {
   await waitFor(() => !alive(running.pid), 'The Go Server survived the packaged Electron App.', 20_000)
   await waitForWindowsDescendants()
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
-  console.log(`Actual packaged ${process.platform}/${arch} App startup, renderer, online local Daemon, no local user-service registration, and ${process.platform === 'win32' ? 'crash cleanup' : 'normal app.quit shutdown'} passed.`)
+  console.log(`Actual packaged ${process.platform}/${arch} App startup, authenticated native renderer, online local Daemon, no local user-service registration, and ${process.platform === 'win32' ? 'crash cleanup' : 'normal app.quit shutdown'} passed.`)
 } catch (error) {
   console.error(output)
   throw error

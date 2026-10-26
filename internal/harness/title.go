@@ -80,6 +80,12 @@ func (r *runtime) maybeGenerateSessionTitle(userQuery string) {
 		if err := tx.Get(ctx, "sessions", r.id, &record); err != nil {
 			return err
 		}
+		if record.Deletion != nil {
+			return nil
+		}
+		if err := tx.RequireActiveAgent(ctx, record.AgentID); err != nil {
+			return err
+		}
 		if record.BindingID != "" {
 			return nil
 		}
@@ -101,8 +107,11 @@ func (r *runtime) maybeGenerateSessionTitle(userQuery string) {
 		return
 	}
 	s.notify(r.id)
+	r.titleCancel, r.titleDone = cancel, make(chan struct{})
+	done := r.titleDone
 	go func() {
 		defer finish()
+		defer close(done)
 		title := r.generateSessionTitle(ctx, claimed, userQuery)
 		if title == "" {
 			return

@@ -71,6 +71,9 @@ func (s *Service) CompleteOnboarding(ctx context.Context, input OnboardingInput)
 		if err := tx.Get(ctx, "agents", state.AgentID, &agent); err != nil {
 			return err
 		}
+		if agent.Deletion {
+			return domain.Missing("Bot", agent.ID)
+		}
 		if state.Completed {
 			if agent.DefaultModelID == input.ModelID && agent.DefaultComputerID == input.ComputerID {
 				return nil // A lost acknowledgement can be retried without rewriting.

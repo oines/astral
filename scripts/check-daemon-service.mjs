@@ -34,9 +34,8 @@ let uninstalled = false
 let cleanupFailure
 const failures = []
 process.env.ASTRAL_SERVER_LISTEN = '127.0.0.1:0'
-delete process.env.ASTRAL_PUBLIC_URL
-delete process.env.ASTRAL_TLS_CERT
-delete process.env.ASTRAL_TLS_KEY
+delete process.env.ASTRAL_PUBLIC_URLS
+delete process.env.ASTRAL_ALLOW_REMOTE_MANAGEMENT
 
 async function run(executable, ...args) {
   const result = await execute(executable, args, { cwd: repository, windowsHide: true, timeout: 90_000, maxBuffer: 1 << 20 })
@@ -44,7 +43,7 @@ async function run(executable, ...args) {
 }
 async function state() { return JSON.parse(await run(binary, 'computer', 'service', 'status', '--root', daemonRoot)) }
 async function api(url, token, body) {
-  const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(5000) })
+  const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Desktop ${token}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(5000) })
   if (!response.ok) throw new Error(`Native service test received HTTP ${response.status}: ${await response.text()}`)
   return response.json()
 }
@@ -52,7 +51,8 @@ async function waitStatus(credentials, expectedOnline, previousBoot) {
   const deadline = Date.now() + 45_000
   let last
   while (Date.now() < deadline) {
-    last = await api(`${server.url}/internal/computers/${credentials.computer_id}/status`, credentials.token)
+    last = JSON.parse(await run(binary, 'computer', 'status', '--root', daemonRoot))
+    assert.equal(last.id, credentials.computer_id)
     if (last.online === expectedOnline && (!expectedOnline || !previousBoot || last.boot_id !== previousBoot)) return last
     await delay(200)
   }
@@ -61,7 +61,7 @@ async function waitStatus(credentials, expectedOnline, previousBoot) {
 
 async function reportFailureState() {
   // Collect evidence before uninstall removes the task and the temporary root.
-  // Credentials, enrollment payloads and Owner handoff files contain secrets.
+  // Credentials and enrollment payloads contain secrets.
   try { console.error(`Managed Daemon status: ${await run(binary, 'computer', 'service', 'status', '--root', daemonRoot)}`) }
   catch (error) { console.error('Cannot read managed Daemon status:', error.message) }
 
@@ -94,7 +94,7 @@ try {
   const owner = await server.start(binary, path.join(temporary, 'server'), binaries)
   const enrollment = await api(`${server.url}/api/v1/computers/enrollments`, owner, { container: false })
   const enrollmentFile = path.join(temporary, 'enrollment.json')
-  await writeFile(enrollmentFile, JSON.stringify({ server_url: server.url, enrollment_id: enrollment.enrollment.id, token: enrollment.token }), { mode: 0o600 })
+  await writeFile(enrollmentFile, JSON.stringify({ server_url: server.url, server_pin: enrollment.server_pin, enrollment_id: enrollment.enrollment.id, token: enrollment.token }), { mode: 0o600 })
   created = true
   await run(binary, 'computer', 'connect', '--enrollment-file', enrollmentFile, '--root', daemonRoot)
   const credentialFile = path.join(daemonRoot, 'credentials.json')
@@ -119,7 +119,7 @@ try {
   const updatedBinary = path.join(temporary, `updated astral${suffix}`)
   await copyFile(binary, updatedBinary)
   if (system !== 'windows') await chmod(updatedBinary, 0o700)
-  await run(updatedBinary, 'computer', 'update', '--server', server.url, '--root', daemonRoot)
+  await run(updatedBinary, 'computer', 'update', '--root', daemonRoot)
   const updated = await waitStatus(credentials, true, started.boot_id)
   assert.equal(updated.id, first.id)
   assert.equal(updated.daemon_version, first.daemon_version)

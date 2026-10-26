@@ -136,7 +136,7 @@ func (s *Service) AccountOperation(ctx context.Context, b domain.ExecutionBindin
 		defer cancel()
 		event := domain.Observation{SchemaVersion: 1, ConnectionID: accountID, ConversationID: chat.ID, Kind: "message.deleted", MessageID: messageID, ExternalEventID: domain.ID("delete"), SentAt: time.Now().UTC(), ReceivedAt: time.Now().UTC()}
 		event.ID = stableID("event", accountID, event.ExternalEventID)
-		if _, err = s.Store.Archive(persist, event); err != nil {
+		if _, err = s.archiveEvent(persist, event); err != nil {
 			return ChatOperationResult{Result: raw}, err
 		}
 	}

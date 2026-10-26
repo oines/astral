@@ -248,6 +248,16 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 	return receipt, err
 }
 func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputKind) (InputReceipt, error) {
+	var record domain.Session
+	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
+		return InputReceipt{}, err
+	}
+	if record.Deletion != nil {
+		return InputReceipt{}, domain.Missing("Session", r.id)
+	}
+	if err := r.service.agentAvailable(ctx, record.AgentID); err != nil {
+		return InputReceipt{}, err
+	}
 	var receipt core.InputReceipt
 	var err error
 	switch kind {
