@@ -485,6 +485,7 @@ export type AstralInternalChannelsCapabilities = {
 };
 
 export type AstralInternalChannelsChatOperation = {
+    account_scoped?: boolean;
     documentation: string;
     message_scoped: boolean;
     name: string;
@@ -512,13 +513,14 @@ export type AstralInternalChannelsStatus = {
 };
 
 export type AstralInternalChannelsTelegramOperation = {
+    account_scoped?: boolean;
     documentation: string;
     name: string;
     parameters: Array<string>;
 };
 
 export type AstralInternalChannelsTelegramRequest = {
-    conversation_id: string;
+    conversation_id?: string;
     files?: {
         [key: string]: string;
     };
@@ -1008,6 +1010,13 @@ export type AstralInternalGatewaySendText = {
     reply_to?: string;
     text: string;
     title?: string;
+};
+
+export type AstralInternalGatewayTelegramStickerDownloadRequest = {
+    custom_emoji_id?: string;
+    file_id: string;
+    path: string;
+    set_name?: string;
 };
 
 export type AstralInternalHarnessContextUsage = {
@@ -4667,6 +4676,64 @@ export type AgentTelegramOperationsResponses = {
 };
 
 export type AgentTelegramOperationsResponse = AgentTelegramOperationsResponses[keyof AgentTelegramOperationsResponses];
+
+export type AgentTelegramStickerContentData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        set_name?: string;
+        custom_emoji_id?: string;
+        file_id: string;
+    };
+    url: '/v1/accounts/{id}/telegram/stickers/content';
+};
+
+export type AgentTelegramStickerContentErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentTelegramStickerContentError = AgentTelegramStickerContentErrors[keyof AgentTelegramStickerContentErrors];
+
+export type AgentTelegramStickerContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type AgentTelegramStickerContentResponse = AgentTelegramStickerContentResponses[keyof AgentTelegramStickerContentResponses];
+
+export type AgentDownloadTelegramStickerData = {
+    body: AstralInternalGatewayTelegramStickerDownloadRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/accounts/{id}/telegram/stickers/download';
+};
+
+export type AgentDownloadTelegramStickerErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentDownloadTelegramStickerError = AgentDownloadTelegramStickerErrors[keyof AgentDownloadTelegramStickerErrors];
+
+export type AgentDownloadTelegramStickerResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayReferenceResponse;
+};
+
+export type AgentDownloadTelegramStickerResponse = AgentDownloadTelegramStickerResponses[keyof AgentDownloadTelegramStickerResponses];
 
 export type AgentTelegramOperationData = {
     body: AstralInternalChannelsTelegramRequest;

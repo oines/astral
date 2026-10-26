@@ -117,6 +117,7 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	register[channels.TelegramRequest, channels.TelegramResult](s, "POST", "/v1/accounts/{id}/telegram/{operation}", "agentTelegramOperation", func(r *http.Request, request channels.TelegramRequest) (channels.TelegramResult, error) {
 		return c.TelegramOperation(r.Context(), binding(r), r.PathValue("id"), r.PathValue("operation"), request)
 	})
+	s.telegramStickerRoutes()
 	register[httpcontract.Empty, []domain.Connection](s, "GET", "/v1/accounts", "agentAccounts", func(r *http.Request, _ httpcontract.Empty) ([]domain.Connection, error) {
 		return c.VisibleConnections(r.Context(), binding(r).AgentID)
 	})
