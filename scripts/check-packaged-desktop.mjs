@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
 import { rendererAuthentication } from './desktop-renderer-auth.mjs'
+import { checkDesktopWindow } from './check-desktop-window.mjs'
 import { execFile, spawn } from 'node:child_process'
 import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -164,6 +165,7 @@ try {
     return rendererAuthentication(electronProfile, running.url, { diagnose: message => { rendererDiagnostic = message } })
   }, () => `The actual Desktop renderer did not authenticate with its native identity.\nLast renderer state: ${rendererDiagnostic}`, 30_000)
   console.log('Actual Desktop renderer /auth/status confirms authenticated=true and desktop=true.')
+  await checkDesktopWindow(electronProfile, running.url)
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
   console.log(`Requesting ${process.platform === 'win32' ? 'crash cleanup' : 'normal App quit'} with SIGTERM (App PID ${app.pid}, Server PID ${running.pid}).`)
   if (process.platform === 'win32') await rendererStarted()
