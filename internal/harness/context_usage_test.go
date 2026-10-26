@@ -161,3 +161,74 @@ func TestReportedContextUsageFollowsBranchBeyondRecentHistory(t *testing.T) {
 		t.Fatalf("last report was lost outside the recent UI pages: %+v, %v", view.ContextUsage, err)
 	}
 }
+
+func TestReportedContextUsageDistinguishesMissingInputFromZero(t *testing.T) {
+	number := func(value int) *int { return &value }
+	steps := []struct {
+		name  string
+		usage map[string]any
+		input *int
+	}{
+		{"empty report", map[string]any{}, nil},
+		{"output without input", map[string]any{"completion_tokens": 7}, nil},
+		{"aliased counts", map[string]any{"input_tokens": 1234, "output_tokens": 3}, number(1234)},
+		{"missing input retains previous report", map[string]any{"output_tokens": 9}, nil},
+		{"input without output", map[string]any{"prompt_tokens": 777}, number(777)},
+		{"explicit aliased zero without output", map[string]any{"input_tokens": 0}, number(0)},
+		{"native zero precedes alias", map[string]any{"prompt_tokens": 0, "input_tokens": 999, "completion_tokens": 5}, number(0)},
+	}
+	p := testkit.New(t, 0, func(_ context.Context, n int, _ map[string]any) any {
+		reply := testkit.Text("done").(map[string]any)
+		reply["usage"] = steps[n-1].usage
+		return reply
+	})
+	var previous *harness.ContextUsage
+	check := func(t *testing.T, view harness.View) {
+		t.Helper()
+		if previous == nil {
+			if view.ContextUsage != nil {
+				t.Fatalf("missing input invented an input report: %+v", view.ContextUsage)
+			}
+		} else if view.ContextUsage == nil || *view.ContextUsage != *previous {
+			t.Fatalf("input report changed: got %+v, want %+v", view.ContextUsage, previous)
+		}
+	}
+	for i, step := range steps {
+		t.Run(step.name, func(t *testing.T) {
+			if _, err := p.Harness.Submit(p.Context, p.Session.ID, harness.InputRequest{ID: fmt.Sprint(i), Text: "hello"}); err != nil {
+				t.Fatal(err)
+			}
+			view := p.Idle(t, p.Session.ID)
+			if step.input != nil {
+				if view.ContextUsage == nil || view.ContextUsage.InputTokens != *step.input || view.ContextUsage.ContextWindow != 128000 {
+					t.Fatalf("known input was not reported: %+v", view.ContextUsage)
+				}
+				if previous != nil && view.ContextUsage.EntryID == previous.EntryID {
+					t.Fatal("a new input report reused the previous entry")
+				}
+				previous = view.ContextUsage
+			}
+			check(t, view)
+			if err := p.Harness.Close(p.Context); err != nil {
+				t.Fatal(err)
+			}
+			p.Harness = harness.New(p.Store, p.CoreStore, p.Harness.Models, p.Hub)
+			reopened, err := p.Harness.View(p.Context, p.Session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			check(t, reopened)
+			if i == 3 {
+				child, err := p.Harness.Fork(p.Context, p.Session.ID, view.HeadID, "Partial usage", "partial-usage-fork")
+				if err != nil {
+					t.Fatal(err)
+				}
+				forked, err := p.Harness.View(p.Context, child.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				check(t, forked)
+			}
+		})
+	}
+}

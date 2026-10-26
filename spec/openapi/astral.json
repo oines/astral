@@ -1043,8 +1043,14 @@
           "cached_input_tokens": {
             "type": "integer"
           },
+          "input_missing": {
+            "type": "boolean"
+          },
           "input_tokens": {
             "type": "integer"
+          },
+          "output_missing": {
+            "type": "boolean"
           },
           "output_tokens": {
             "type": "integer"

@@ -35,7 +35,7 @@ func (r *runtime) reportedContextUsage(ctx context.Context, head string) (*Conte
 					report = r.contextUsage
 					goto done
 				}
-				if entry.Kind != core.EntryMessage || entry.Message == nil || entry.Message.Role != core.RoleAssistant || entry.Message.Failed() || !entry.Usage.Available {
+				if entry.Kind != core.EntryMessage || entry.Message == nil || entry.Message.Role != core.RoleAssistant || entry.Message.Failed() || !entry.Usage.Available || entry.Usage.InputMissing {
 					continue
 				}
 				report = &ContextUsage{EntryID: entry.ID, InputTokens: entry.Usage.InputTokens}
