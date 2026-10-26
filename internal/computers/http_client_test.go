@@ -7,19 +7,15 @@ import (
 )
 
 func TestServerClientSupportsHTTPAndRejectsRedirects(t *testing.T) {
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { t.Error("followed redirect with enrollment credentials") }))
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { t.Error("followed Server redirect") }))
 	defer target.Close()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer secret" {
-			t.Error("missing authorization")
-		}
 		http.Redirect(w, r, target.URL, http.StatusFound)
 	}))
 	defer server.Close()
 	client := NewHTTPClient()
 	defer client.CloseIdleConnections()
 	request, _ := http.NewRequest("GET", server.URL, nil)
-	request.Header.Set("Authorization", "Bearer secret")
 	response, err := client.Do(request)
 	if err != nil {
 		t.Fatal(err)

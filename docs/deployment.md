@@ -6,38 +6,109 @@ The default root is the operating system's user configuration directory plus `as
 
 | Location | Contents |
 | --- | --- |
-| `server/astral.db` | Versioned resources, IM observations, routing and delivery state |
+| `server/astral.db` | Resources, IM state, the administrator account and browser-session records |
 | `server/core.db` | Durable Core rollouts, actual model requests and frozen multimodal inputs |
-| `server/master.key` | Key for encrypted provider/channel credentials |
-| `server/owner.token` | Owner access credential |
-| `server/network.json` | Saved listener, access address and remote-management preference |
+| `server/master.key` | Key for encrypted provider/channel credentials and account secrets |
+| `server/computer-identity/identity.pem` | Persistent private Server identity and its 100-year self-signed tunnel certificate |
+| `server/network.json` | Saved listener, access-address list and remote-management preference |
+| `server/control.json` | Private, process-lifetime connection information for local account administration |
 | `computers/local/` | Local Computer identity, Daemon state and AgentHome directories |
 | `computers/provisioning/` | Local-container enrollment and provisioning files |
 
-Use `--data` and `--computers-dir` to choose separate locations. Original attachments and working files belong to their Computer; remote files and container volumes are not stored in the server database. Frozen image payloads inside `core.db` are part of conversation history.
+Use `--data` and `--computers-dir` to choose separate locations. Original attachments and working files belong to their Computer; remote files and container volumes are not stored in the Server database. Frozen image payloads inside `core.db` are part of conversation history.
 
-Back up the server data directory, including its encryption key, while the server is stopped or with a consistent SQLite backup procedure. Back up Computer homes and container volumes independently. Restoring configuration without `master.key` cannot decrypt saved credentials. Removing or revoking a resource in Settings preserves existing history and Computer files.
+Back up the complete Server data directory while the Server is stopped or with a consistent SQLite backup procedure. Preserve `master.key` and the Computer tunnel identity along with the databases: the first decrypts saved credentials, and the second preserves enrolled Daemons' trust in this Server. Back up Computer homes and container volumes independently. The old `owner.token` login mechanism is removed; there is no old-token exchange or legacy authentication endpoint.
 
-## Listener and remote management
+## Listener, addresses and remote management
 
-Astral serves HTTP on `0.0.0.0:4545` by default. The Desktop loads its local loopback address. Direct remote connections can enroll Computers, download the installer and binaries, and connect authenticated Daemons. The Web UI, sign-in, OpenAPI and all Owner management APIs are unavailable to direct remote connections until **Settings → Security & Access → Allow remote management** is enabled. Enabling it retains Owner authentication. HTTP is suitable for a network you provide, such as a LAN or Tailscale; use your own HTTPS reverse proxy when needed.
+Astral serves HTTP on `0.0.0.0:4545` by default. The Web UI, management API and encrypted Computer tunnel share this main port. Astral does not terminate browser HTTPS; configure a reverse proxy or Tailscale Serve when desired. Username/password and TOTP login work over either HTTP or HTTPS. Passkeys require an actual HTTPS browser page and a supported WebAuthn implementation.
 
-The access check uses the actual TCP peer. Host, Origin and forwarded-address headers cannot make a remote connection local. An explicitly configured local reverse proxy, SSH tunnel or Tailscale Serve appears as a loopback connection and can expose the complete local management entry even while direct remote management is disabled. Configure those forwarding services deliberately.
+**Allow remote management** defaults to off. Direct remote connections can reach the health check and Computer tunnel; the Web UI, sign-in, OpenAPI and management APIs are unavailable until this switch is enabled. Enabling it still requires account authentication. A remote-management request is classified by its actual TCP peer, never by `Host`, `Origin` or a forwarded-address header. An intentional loopback proxy, SSH tunnel or Tailscale Serve can expose the complete local management entry while the switch is off; it still cannot bypass Web login.
 
-**Access address** is the full URL placed in enrollment commands and maintenance downloads. It does not change the listener or remote-management switch. The default is chosen from an actual Tailscale Serve HTTPS proxy for this Server, full MagicDNS name, Tailscale IP, LAN IP and finally loopback. The target machine still checks reachability before downloading. The remote enrollment dialog can choose another suggested address or accept a custom HTTP/HTTPS URL. Changing the preference does not rewrite existing Daemon addresses.
+**Access addresses** is a list of complete HTTP/HTTPS origins. The first configured address is the default for new enrollment commands; the Add Computer dialog can select another discovered or custom address. Addresses do not change the listener or enable remote management. An empty list selects automatic discovery: an actual Tailscale Serve HTTPS proxy for this Server, full MagicDNS name, Tailscale IP, LAN IP and finally loopback. Installing Tailscale alone does not imply an HTTPS endpoint. Changing this list does not rewrite existing Daemon connection files.
 
 Each network field resolves independently in this order:
 
-1. Explicit `--listen`, `--public-url`, `--allow-remote-management[=false]` arguments.
-2. `ASTRAL_SERVER_LISTEN`, `ASTRAL_PUBLIC_URL`, `ASTRAL_ALLOW_REMOTE_MANAGEMENT` environment variables.
+1. Explicit `--listen`, repeated `--public-url`, or `--allow-remote-management[=false]` arguments.
+2. `ASTRAL_SERVER_LISTEN`, `ASTRAL_PUBLIC_URLS`, or `ASTRAL_ALLOW_REMOTE_MANAGEMENT`.
 3. Saved App settings in `server/network.json`.
 4. Address discovery, then defaults.
 
-An explicit false value overrides a saved true value. Process overrides leave saved settings intact; the UI shows their source and prevents editing controlled fields. The remote-management switch and access address apply immediately. Listener changes require restarting the Server. To bind all IPv4 interfaces explicitly, use `--listen 0.0.0.0:4545`; use `--listen 127.0.0.1:4545` for a loopback-only deployment. Loopback-only binding prevents Docker Desktop containers from reaching the main port.
+The address list is replaced as a whole at the selected priority; lists are not merged. `--public-url ''` or `ASTRAL_PUBLIC_URLS='[]'` selects automatic discovery. An explicit false overrides a saved true. Process overrides do not overwrite saved settings; the UI shows the source and disables editing controlled fields. Addresses and remote management apply immediately; listener changes require a restart. Loopback-only binding prevents Docker Desktop containers from reaching the main port.
+
+```sh
+astral serve --listen 0.0.0.0:4545 --allow-remote-management \
+  --public-url https://astral.example.com \
+  --public-url http://100.64.0.10:4545
+```
+
+Equivalent environment values include:
+
+```sh
+export ASTRAL_SERVER_LISTEN='0.0.0.0:4545'
+export ASTRAL_PUBLIC_URLS='["https://astral.example.com","http://100.64.0.10:4545"]'
+export ASTRAL_ALLOW_REMOTE_MANAGEMENT=true
+```
+
+Management Host and cross-site checks are enabled by default. Allowed hostnames and origins are derived from explicit access addresses, loopback, actual local interfaces and reliable discovered addresses. Arbitrary incoming hosts are not learned, wildcard bind addresses are not access hostnames, and the Computer tunnel uses its own pinned authentication boundary.
+
+## Administrator login and browser devices
+
+Desktop opens directly into its own local Server. Its main process sends a fresh random identity through the child's private stdin at startup and attaches it only to requests for that Server. This identity lasts for the managed process, is not a browser Cookie and is not exposed to renderer JavaScript. Localhost by itself grants no Desktop identity. Desktop does not appear in the Web device list and cannot be signed out by Web-session deletion, password changes or account recovery.
+
+Web login uses one administrator account. A Desktop user creates it in **Settings → Security & Access** when browser access is needed. Headless administrators initialize or recover it through the deployment machine's local CLI:
+
+```sh
+astral auth setup --data /path/to/server --username admin
+astral auth reset --data /path/to/server --username admin
+```
+
+These commands prompt for a hidden password and confirmation. They use the running Server's private loopback HTTPS control channel, protected by the pinned Server identity, a process-lifetime secret and data-directory permissions. They also work offline while holding the ordinary exclusive Server data lock. Account reset removes TOTP/Passkeys and revokes all Web logins; it does not remove Bots, conversations, Computer identities or Desktop access. No public first-visitor administrator registration or email recovery endpoint exists.
+
+Passwords use salted Argon2id hashes. A successful login creates a random browser-session token; the Server persists its digest and expiry. Cookies are HttpOnly and SameSite Strict, with Secure on HTTPS. Sessions default to 30 days, enforced by the Server. HTTP login is supported without a separate unsafe-login switch.
+
+HTTP and HTTPS use separate cookie names (`astral_session` and `__Host-astral_session`). HTTPS always sets Secure, Path `/` and no Domain. Each protocol reads only its own cookie, so switching between HTTP and HTTPS on the same hostname does not cause a Secure-cookie overwrite failure; each login and logout affects its own session.
+
+Public authentication requests have a 128 KiB body limit and a 10-second body-read deadline. At most eight requests per actual TCP peer and 64 globally may read authentication bodies concurrently; credential attempts have separate rate limits. These bounds apply to authentication requests, not file transfers or long-running Agent work.
+
+Adding and confirming either TOTP or a Passkey automatically enables the second step; there is no independent 2FA switch. Password login then requires one available second factor: TOTP, Passkey on HTTPS, or an unused recovery code. The **Allow Passkey passwordless login** switch defaults off and requires at least one Passkey. When enabled, Passkey login can skip username, password and TOTP; choosing password login still requires the second step. Removing the final Passkey also disables passwordless login; removing the final authentication method disables 2FA and removes its recovery codes.
+
+Passkeys are created as discoverable credentials and require user verification such as fingerprint, face or device PIN. Their RP ID is the HTTPS hostname; registering one domain does not make that credential usable at every configured IP/domain. HTTP pages cannot register or use them, including the localhost development exception. Desktop directs Passkey setup to the configured HTTPS Web page. A password-plus-Passkey-only account must use HTTPS for that factor, or use a saved recovery code; HTTP does not silently skip 2FA.
+
+**Logged-in devices** lists all unexpired Web sessions, including offline browsers and CLI logins, with user agent, login/last-used times and a current-device marker. One row represents a browser/CLI login session, not a physical hardware identity. Deletion revokes the credential immediately and ends its bound SSE/other requests; offline clients are rejected on their next request. Sign out all devices and account/password resets revoke Web sessions without touching Desktop or Daemons. Deleting a Web session does not delete its Passkey. Sensitive settings changes and remote-session deletion require recent complete verification; Desktop is its own trusted local recovery entry.
+
+Completing that verification rotates the session's random credential; the previous credential cannot authorize new requests or inherit the renewed verification window. The session ID, already authenticated streams and original absolute expiry stay the same. Changing authentication methods revokes other Web sessions; changing the password revokes all of them.
+
+## Runtime options and unattended initialization
+
+Explicit CLI arguments take priority over their corresponding environment values. Only network preferences additionally use saved App settings and discovery.
+
+| CLI option | Environment | Meaning |
+| --- | --- | --- |
+| `--data` | `ASTRAL_SERVER_DATA_DIR` | Server data directory |
+| `--computers-dir` | `ASTRAL_COMPUTER_DATA_DIR` | Local Daemon/provisioning data directory |
+| `--web-dir` | `ASTRAL_WEB_DIR` | External shared Web build, when not using the embedded UI |
+| `--distribution-dir` | `ASTRAL_DISTRIBUTION_DIR` | Local release binaries used for creating local Computer containers |
+| `--no-local` | `ASTRAL_NO_LOCAL` | Do not start the local Daemon automatically |
+| repeated `--trusted-proxy` | `ASTRAL_TRUSTED_PROXIES` | Trusted reverse-proxy IPs/CIDRs; environment is a JSON array |
+| `--web-session-ttl` | `ASTRAL_WEB_SESSION_TTL` | Positive Go duration; default `720h` |
+| `--initial-admin-username` | `ASTRAL_ADMIN_USERNAME` | First administrator username |
+| `--initial-admin-password-file` | `ASTRAL_ADMIN_PASSWORD_FILE` or `ASTRAL_ADMIN_PASSWORD` | First administrator password; direct environment and file forms are mutually exclusive |
+
+Initial administrator inputs apply only when no Web account exists; they never reset an existing password, factors or sessions on restart. For unattended deployment, supply the username and a private password file, for example:
+
+```sh
+ASTRAL_ADMIN_USERNAME=admin \
+ASTRAL_ADMIN_PASSWORD_FILE=/run/secrets/astral-admin-password \
+ASTRAL_SERVER_DATA_DIR=/var/lib/astral/server \
+astral serve
+```
+
+The password file is read at startup; keep it private. To recover an existing account, use `astral auth reset` deliberately. The CLI does not accept a plaintext password command-line argument.
 
 ## Linux behind an HTTPS proxy
 
-Copy the appropriate binary and, for enrollment downloads and container creation, all six distribution binaries to the host. The Web app is embedded; Node and pnpm are not needed at runtime.
+The shared Web app is embedded in the unified binary; Node and pnpm are not runtime dependencies. All six distribution binaries are useful when this Server creates local Computer containers; remote enrollment and maintenance installers fetch their programs from official HTTPS release assets instead of this Server.
 
 ```sh
 /opt/astral/bin/astral serve \
@@ -48,9 +119,9 @@ Copy the appropriate binary and, for enrollment downloads and container creation
   --distribution-dir /opt/astral/distribution
 ```
 
-Run the service as the account whose permissions the Local Computer should have. Commands execute directly as that account. Local AgentHome boundaries organize files; they do not form an operating-system sandbox.
+Run as the OS user whose permissions the local Computer should have. A user-service unit can launch the command above with `Restart=on-failure`, `UMask=0077` and `WantedBy=default.target`; the [headless installer](headless-install.md) manages this service without a system-wide daemon or elevation. Commands on a native Computer execute as that user; AgentHome is not an OS sandbox.
 
-A minimal Caddy reverse proxy is:
+A minimal Caddy configuration is:
 
 ```caddyfile
 astral.example.com {
@@ -58,44 +129,30 @@ astral.example.com {
 }
 ```
 
-The proxy must pass WebSocket upgrades and stream SSE responses without buffering. Caddy handles both in this configuration; see its [streaming documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#streaming). The HTTP backend is on loopback, so this proxy intentionally exposes the local management entry; Owner authentication remains required. The public HTTPS address is used as HTTPS/WSS by clients. Astral does not terminate TLS or manage certificates.
+Proxies must preserve the external Host, pass WebSocket upgrades and stream SSE without buffering. By default only loopback peers are trusted to report `X-Forwarded-Proto: https`; other proxy addresses require `--trusted-proxy IP_OR_CIDR` or `ASTRAL_TRUSTED_PROXIES='["172.20.0.5"]'`. An explicit empty list/argument disables proxy trust. Forwarded Host and client-address headers do not establish trust. The external HTTPS address must also be an allowed access address, so Passkey origin checks and Secure Cookies reflect the browser's actual URL.
 
-Example systemd unit, after creating an `astral` service account and writable data directories:
+## Docker-hosted Server
 
-```ini
-[Unit]
-Description=Astral server and local Computer
-After=network-online.target
-Wants=network-online.target
+This authentication and network model supports a Server inside a container: persist its complete Server data directory, publish the main HTTP port, configure the externally reachable access address, explicitly enable remote management and initialize the administrator locally or through the initial-account environment values. A separate proxy container is a remote peer; trust its exact IP/CIDR when it terminates HTTPS. Container-local address discovery cannot infer the host's published port, NAT address or public domain.
 
-[Service]
-Type=simple
-User=astral
-Group=astral
-WorkingDirectory=/opt/astral
-ExecStart=/opt/astral/bin/astral serve --listen 127.0.0.1:4545 --public-url https://astral.example.com --data /var/lib/astral/server --computers-dir /var/lib/astral/computers --distribution-dir /opt/astral/distribution
-Restart=on-failure
-RestartSec=3
-TimeoutStopSec=30
-UMask=0077
-
-[Install]
-WantedBy=multi-user.target
-```
-
-The service account needs access to the local Docker runtime only if you use the local-container shortcut. The target shown in the Web interface is this Linux server, regardless of the browser's operating system.
+There is currently no official Server image or Compose package. The Ubuntu image described below is the Computer/Agent execution environment, not a Server deployment image. A Docker-hosted Server's local Computer executes inside that container, not on its host; `--no-local` lets a deployment use separate Daemons. Do not assume mounting a Docker socket alone makes the host-container shortcut work: Docker-host paths and the chosen Server address must be valid from the actual execution environment.
 
 ## Remote and container Computers
 
-Generate an enrollment command in Settings and run it on the intended machine. The installer selects its OS/architecture, verifies the downloaded binary against the server's SHA-256 manifest, then registers the Daemon. Enrollment credentials expire after 15 minutes; the Daemon stores its own credential privately after registration. Repeating a successful command reuses the existing identity.
+Generate an enrollment command in Settings and run it on the intended machine. The command includes a temporary token and the Server's public SPKI SHA-256 pin. The installer script and programs are fetched from `oines/astral`'s official HTTPS release assets, with SHA-256 verification. An HTTP Server cannot replace those executables or their trusted bootstrap script. The Server no longer serves `/install.sh`, `/install.ps1` or `/downloads/`.
 
-The installer stores versioned executables under `$XDG_DATA_HOME/astral/bin/<sha256>/astral` (or `~/.local/share/astral/bin/…`) on macOS/Linux, and `%LOCALAPPDATA%\Astral\bin\<sha256>\astral.exe` on Windows. Daemon state stays under the default root's `computers/<server-hash>/<enrollment-id>` unless `--root` is supplied. Program files and Agent homes are separate.
+Server/Daemon enrollment, container preparation, status and RPC use `GET /internal/computer-tunnel`: WS or WSS transports an inner TLS 1.3 connection. The Daemon checks the copied Server pin before sending enrollment or long-term credentials. Outer HTTPS retains normal CA/hostname verification; inner TLS remains required even over WSS. There is no plaintext fallback and no credential or Hello metadata in outer headers/query strings. VPN is optional; Astral does not create NAT traversal or a relay.
 
-Native enrollment automatically installs **Astral Daemon (<instance-id>)** for the current OS user. macOS uses a LaunchAgent, visible in System Settings → General → Login Items & Extensions; Windows uses a visible logon task under Task Scheduler → Astral, with `InteractiveToken` and `LeastPrivilege`; Linux uses a systemd user unit visible through `systemctl --user`. Installation does not elevate or enable Linux lingering. The user must have an available login/user service session. A desktop-managed local Daemon remains owned by its Server, and a container Daemon remains owned by Docker.
+The Server identity is generated once, stored with its data and uses a 100-year self-signed certificate with no renewal process. Daemons pin the public key, not a domain or exact certificate bytes. Preserve that identity when moving the Server; changing the network address does not require changing its identity. A mismatch fails instead of silently accepting a replacement.
 
-Use the exact executable printed by installation and the Computer data root for local maintenance:
+Temporary registration tokens expire after 15 minutes and are consumed on successful registration. Container preparation can extend the fixed deadline to 90 minutes after enrollment creation. A consumed command cannot recover long-term credentials. Repeating a successful command on the same machine can reuse its saved local credentials; it does not re-register with the consumed token. Until used or expired, treat the entire command as a secret. Each Computer receives its own long-term token, stored privately; revocation closes its connection and blocks further authentication.
+
+The installer stores versioned executables under `$XDG_DATA_HOME/astral/bin/<sha256>/astral` (or `~/.local/share/astral/bin/…`) on macOS/Linux, and `%LOCALAPPDATA%\Astral\bin\<sha256>\astral.exe` on Windows. Daemon state stays under the default root's `computers/<server-hash>/<enrollment-id>` unless `--root` is supplied. Program files and Agent homes are separate. Multiple native instances may use distinct roots to connect to different Servers; each container has its own instance.
+
+Native enrollment installs **Astral Daemon (<instance-id>)** for the current user. macOS uses a LaunchAgent visible in System Settings → General → Login Items & Extensions; Windows uses a visible Task Scheduler → Astral logon task with `InteractiveToken` and `LeastPrivilege`; Linux uses `systemctl --user`. Windows PowerShell enrollment/update bootstrap uses the `curl.exe` included with modern Windows, not WSL. Installation does not elevate or enable Linux lingering. The user needs an available login/user-service session. Desktop manages its own local Daemon lifecycle, and Docker manages container Daemons.
 
 ```sh
+astral computer status --root DIRECTORY
 astral computer service status --root DIRECTORY
 astral computer service logs --root DIRECTORY
 astral computer service stop --root DIRECTORY
@@ -104,67 +161,35 @@ astral computer service restart --root DIRECTORY
 astral computer service uninstall --root DIRECTORY
 ```
 
-Service status reports the local process manager; the Computers page separately reports authenticated Server connectivity. A running service alone does not mean that its Computer is online. `--foreground` skips service registration for an existing supervisor or a disposable test.
+`computer status` authenticates through the pinned encrypted tunnel. `computer service status` inspects the local process manager; a running service alone does not prove Server connectivity. `--foreground` skips service installation and keeps the enrolled Daemon attached to the terminal until stopped.
 
-Container mode creates a Ubuntu 24.04 environment with Bash, Git/LFS, search/network/build tools, Python with uv and common data/document libraries, Node LTS/pnpm, Go, Rust/Cargo, Java 21/Maven, LibreOffice/Pandoc/Poppler, FFmpeg/ImageMagick/Tesseract, Chinese and emoji fonts, and Playwright Chromium. Language and Python package versions are pinned in `internal/platform/computer-image/Dockerfile`; Ubuntu security packages are resolved at image build. The image is intentionally substantial and the first build/download takes longer. Agent-installed software lives in the container writable layer as well as its data volume.
+Container mode creates Ubuntu 24.04 with Bash, Git/LFS, search/network/build tools, Python/uv and common data/document libraries, Node LTS/pnpm, Go, Rust/Cargo, Java 21/Maven, LibreOffice/Pandoc/Poppler, FFmpeg/ImageMagick/Tesseract, Chinese/emoji fonts and Playwright Chromium. Language and Python versions are pinned in `internal/platform/computer-image/Dockerfile`; Ubuntu security packages resolve at build time. The first build/download is substantial. Installed software lives in the writable layer as well as its data volume.
 
-Local Docker endpoints include Unix sockets and the Windows Docker Engine named pipe. Docker Desktop must run Linux containers. The shortcut does not require enabling Docker Desktop host networking: same-host containers connect to `http://host.docker.internal:4545` on the main Server listener (using the actual configured port). The default remote-management restriction applies to these connections too. There is no separate bridge listener, certificate or certificate-pinning store. Linux Docker and OrbStack use their host-network path. Remote containers retain the enrollment address selected for their Server; the Docker Desktop rewrite is limited to a confirmed same-host enrollment. Remote Docker contexts are rejected by the local shortcut.
+Docker Desktop uses Linux containers and reaches a confirmed same-host Server through `http://host.docker.internal:4545` on the configured main port. It does not require Docker Desktop host networking or a dedicated TLS bridge. That HTTP route still carries the inner pinned TLS tunnel. Linux Docker and OrbStack use their host-network path. Remote containers retain the selected reachable enrollment address; remote Docker contexts are rejected by the local shortcut.
 
 ### Updating an enrolled Computer
 
-After updating the Desktop/Server distribution, open Computer details and copy the update command for the target computer's shell. Run it locally on the enrolled machine, or on the Docker host for a container. The command fetches and checks the new executable; temporary enrollment tokens are not reused. Native updates switch the user service to the new versioned executable and verify a new Daemon boot/version is online. Failure attempts to restore the previous service executable.
+Open Computer details and copy the shell/PowerShell update command. Run it on the enrolled machine, or on the Docker host for a container. The command fetches and checks the new official HTTPS release program; temporary enrollment tokens are not reused. Update commands do not accept `--server` or a replacement pin and do not preflight the Server's current preferred address. Status/reconnection uses the enrolled machine's existing `credentials.json` URL and pin, so computers paired through a second access address remain updatable. The saved Server pin is retained, never replaced by an update response.
 
-Container updates transfer and verify the Linux executable inside the existing container, replace only `/usr/local/bin/astral`, and restart the same container. The container identity, writable layer, data volume and credentials remain. Failure attempts to restore the previous binary. Updating does not rebuild the container to pick up a new Ubuntu/tool image. New environments use the new recipe; replacing an existing environment is a separate user decision. Restarting interrupts active tasks, so run the command when those tasks can be stopped.
-
-The creator passes container name, creator hostname, image, data volume and mount path through `ASTRAL_CONTAINER_INFO`. The Daemon reports those values and its actual data root; the Server retains them for offline inspection. No Docker socket or host management service is added. Older local containers can recover their recorded name and volume from provisioning records; other unavailable fields remain unknown until reported by an updated Daemon.
-
-Container names are `astral-<operation-identity>` and volumes append `-data`; both carry an `astral.operation` label. Revocation disconnects the Computer and prevents further dispatch. It does not delete the container or its data volume. Stop or remove those explicitly on their host when no longer needed.
-
-For a remote network, the enrollment URL must be reachable from the target machine. Astral does not create a VPN, NAT tunnel or relay.
-
-## Offline network migration
-
-Older development versions used native Server TLS or a dedicated Docker Desktop TLS bridge. The current runtime has no reader or fallback for those settings. Before installing this version over that data, use the explicit conversion in `scripts/migrate-network.mjs` from the new source checkout. This is a development-layout migration; it does not implement general database format migrations or Desktop automatic updates. It requires Node and the local Docker CLI when converting containers.
-
-Quit the Desktop or stop the headless Server, and stop the affected containers. Keep a consistent backup of Server and Computer data. First inspect the plan, using the actual Server/Computer data directories:
+After downloading a verified release program, its local commands are:
 
 ```sh
-node scripts/migrate-network.mjs \
-  --server-data '/path/to/astral/schema-3/server' \
-  --computers-dir '/path/to/astral/schema-3/computers' \
-  --listen 0.0.0.0:4545
+astral computer update --root /path/to/existing-daemon
+astral computer update --container astral-EXISTING-CONTAINER
 ```
 
-For an installer-managed headless Server, add `--installer-root /path/to/astral-server`; use its `data/server` and `data/computers` directories. The tool converts the old installer preferences into `server/network.json` and removes the old generated network/TLS arguments from the owned systemd user unit. Reload that user manager with `systemctl --user daemon-reload` after applying and before starting the updated service.
+Native updates switch the user service executable and verify a new Daemon boot/version; failure attempts to restore the previous service executable.
 
-For bridge containers, pass every affected existing container explicitly with repeated `--container ID` and supply `--container-binary /verified/release/astral-linux-arm64` (or `amd64`, matching the existing image). Mixed architectures can use `--container-binary-amd64` and `--container-binary-arm64`. Verify those files against the new distribution's checksums first.
+Container updates transfer and verify the Linux executable, replace only `/usr/local/bin/astral` and restart the same container. The container ID, writable layer, data volume, credentials and installed software remain. Failure attempts to restore the previous binary. No image rebuild or Agent-environment replacement occurs. Restarting interrupts active tasks.
 
-Apply through the new release's native Astral binary, which holds exclusive operating-system locks throughout the conversion. This prevents Server/Daemon startup and concurrent migrations while the script changes configuration. Use identical data directories in both commands:
+The creator supplies name, host, image, volume and mount metadata through `ASTRAL_CONTAINER_INFO`; the Daemon reports its actual root. The Server retains this information for offline inspection. No Docker socket or additional host service is added. Containers are named `astral-<operation-identity>` and their volumes append `-data`, with `astral.operation` labels. Revocation does not delete their container, data volume or files; remove those deliberately on the host when no longer needed.
 
-```sh
-/path/to/new-native-astral maintenance with-data-lock \
-  --data '/path/to/astral/schema-3/server' \
-  --computers-dir '/path/to/astral/schema-3/computers' -- \
-  node scripts/migrate-network.mjs \
-    --server-data '/path/to/astral/schema-3/server' \
-    --computers-dir '/path/to/astral/schema-3/computers' \
-    --listen 0.0.0.0:4545 \
-    --container EXISTING-ID --container-binary /verified/release/astral-linux-arm64 \
-    --apply
-```
+## Web account and CLI
 
-Omit the container options when none are affected. Apply and explicit recovery refuse execution without the lock wrapper. The tool converts the host enrollment files and credentials inside the stopped data volume, and replaces the Daemon program in the same container. It preserves Computer credentials and identity, container IDs, mounts, writable-layer contents and Agent files. It never starts, removes, rebuilds or recreates containers.
-
-Native Server TLS requires an explicit mapping, for example `--from-url https://old-host:4545 --server-url http://new-host:4545`, or a new HTTPS reverse-proxy address. Other enrolled computers keep their stored URLs: update their connection configuration explicitly on those computers if the old address is being removed. The tool refuses to discard an unmapped private CA.
-
-Every original changed file and container program is backed up before mutation under `server/network-migrations/`, with a receipt for `001-http-main-listener`. Keep that directory private because it contains credentials. A failure attempts to restore the original configuration and container programs and reports any incomplete recovery. An interrupted transaction prevents another apply; use `--restore-backup /path/to/the.backup` through the same lock wrapper to restore it explicitly. After a successful conversion, install the new Server/Desktop before starting it and restarting the same containers; the old Daemon cannot use the new remote HTTP address.
-
-## Owner access and CLI
-
-The Owner controls one server data domain. Use its private token file to connect the CLI:
+CLI management uses the same administrator account and Web-session lifecycle:
 
 ```sh
-astral connect --server https://astral.example.com --token-file /private/path/owner.token
+astral connect --server https://astral.example.com --username admin
 astral doctor
 astral resources computers
 astral resources agents
@@ -175,7 +200,9 @@ astral sessions export SESSION_ID
 astral sessions stop SESSION_ID
 ```
 
-Use `astral request METHOD /api/v1/PATH --body-file FILE` for other documented Owner API operations. The running server exposes `/openapi.json`. Agent commands use the bound loopback URL in the latest environment snapshot’s `local_api`; each Agent on a Computer receives its own port and view. they do not receive Owner, model-provider or Telegram credentials.
+Login prompts for a hidden password and, if needed, a TOTP or recovery code. Interactive browser Passkey ceremonies are not performed by this CLI. Its login credential is stored privately in `client.session`, while `client.json` records the selected Server and session-file path; these live under the default OS Astral root. The CLI session appears in logged-in devices and can be revoked. It does not use the Desktop identity or an Owner bearer token.
+
+Use `astral request METHOD /api/v1/PATH --body-file FILE` for other management operations. `/openapi.json` describes the current routes. Agent commands use the separate bound loopback API in the latest environment snapshot's `local_api`; that per-Agent view never receives administrator, provider or IM account credentials.
 
 ## Telegram
 
@@ -185,8 +212,8 @@ Configure accounts in Settings → Bots → choose a Bot → Connect a platform 
 
 ## Desktop troubleshooting
 
-Desktop stores its current data under the OS user configuration directory in `astral/schema-3/`. The CLI accepts explicit `--data` and `--computers-dir` paths when opening that same data through headless mode. Do not run two servers against one data directory simultaneously; the process lock reports the conflict. For an isolated desktop test, set `ASTRAL_DESKTOP_DATA_DIR` and optionally `ASTRAL_SERVER_LISTEN`. `ASTRAL_PUBLIC_URL` and `ASTRAL_ALLOW_REMOTE_MANAGEMENT` configure the managed Server with environment priority. Explicit Desktop network arguments have CLI priority; the Desktop does not turn defaults or environment values into CLI overrides.
+Desktop stores current data under the OS user configuration directory in `astral/schema-3/`. CLI `--data` and `--computers-dir` can open those same directories in headless mode, but never run two Servers against the same data concurrently. `ASTRAL_DESKTOP_DATA_DIR` selects an isolated Desktop data root. `ASTRAL_SERVER_LISTEN`, `ASTRAL_PUBLIC_URLS` and `ASTRAL_ALLOW_REMOTE_MANAGEMENT` configure its managed Server with environment priority; Desktop does not promote defaults or environment values into CLI overrides.
 
-The desktop main process owns the Go child. A normal quit waits for service shutdown; a crashed parent is detected by the server. An enrolled user-service Daemon and a container Computer have their own lifecycles.
+The main process owns the Go child. Quitting waits for shutdown; loss of the private stdin pipe or desktop parent ends the managed Server. Enrolled user-service and container Daemons have separate lifecycles. Restarting Desktop establishes a fresh private Desktop identity without requiring Web account credentials.
 
-Development packages are unsigned and unnotarized. A distributable signed release requires an Apple signing identity and notarization configuration; see [Electron's release requirements](https://www.electronjs.org/docs/latest/tutorial/code-signing). The build does not include credentials or silently attempt those steps.
+Development packages are unsigned and unnotarized. Distributable signed releases require Apple signing and notarization configuration through the [release process](releasing.md); build sources contain no signing credentials. Packaging alone does not establish native interactive acceptance or public release availability.

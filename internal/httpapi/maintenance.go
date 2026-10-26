@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/httpcontract"
-	"github.com/oines/astral/internal/serviceurl"
 )
 
 func (a *API) registerComputerMaintenance() {
@@ -15,11 +15,11 @@ func (a *API) registerComputerMaintenance() {
 		if err := a.Config.Harness.Store.Get(r.Context(), "computers", r.PathValue("id"), &computer); err != nil {
 			return domain.ComputerMaintenance{}, err
 		}
-		return maintenanceCommands(a.publicURL(), computer)
+		return maintenanceCommands(computer)
 	})
 }
 
-func maintenanceCommands(server string, computer domain.Computer) (domain.ComputerMaintenance, error) {
+func maintenanceCommands(computer domain.Computer) (domain.ComputerMaintenance, error) {
 	value := domain.ComputerMaintenance{Manager: "unknown"}
 	if computer.Local || computer.Kind == "local" {
 		value.Manager = "desktop"
@@ -28,14 +28,10 @@ func maintenanceCommands(server string, computer domain.Computer) (domain.Comput
 	if computer.Revoked {
 		return value, domain.Forbidden("This Computer's connection has been revoked.")
 	}
-	if err := serviceurl.Validate(server); err != nil {
-		return value, err
-	}
 	quote := func(text string) string { return "'" + strings.ReplaceAll(text, "'", "'\\''") + "'" }
 	psQuote := func(text string) string { return "'" + strings.ReplaceAll(text, "'", "''") + "'" }
-	base := strings.TrimRight(server, "/")
-	value.Command = "curl --fail --silent --show-error " + quote(base+"/install.sh") + " | sh -s -- --update --server " + quote(server)
-	value.PowerShellCommand = "& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing " + psQuote(base+"/install.ps1") + ").Content)) -Update -Server " + psQuote(server)
+	value.Command = "--update"
+	value.PowerShellCommand = "-Update"
 	if computer.Kind == "container" {
 		if computer.Container == nil || computer.Container.Name == "" {
 			return domain.ComputerMaintenance{}, domain.Conflict("Reconnect this container's Daemon so it can report its container name before updating.")
@@ -58,5 +54,7 @@ func maintenanceCommands(server string, computer domain.Computer) (domain.Comput
 			value.Manager = "task-scheduler"
 		}
 	}
+	value.Command = computers.ShellInstallerCommand(value.Command)
+	value.PowerShellCommand = computers.PowerShellInstallerCommand(value.PowerShellCommand)
 	return value, nil
 }

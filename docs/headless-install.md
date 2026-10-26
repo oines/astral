@@ -28,7 +28,7 @@ The version above illustrates the tag format; it is not a claim that this releas
 
 The installer obtains all six macOS/Linux/Windows distribution binaries, the license, third-party notices and checksum files. SHA-256 is checked against `SHA256SUMS`, the distribution binaries are additionally checked against `checksums.txt`, and metadata is checked against the release manifest. Before activating a program, its actual `version` and `version --data-formats` output must match the manifest. Checksums come from the same GitHub release over HTTPS; they do not constitute a separate publisher signature.
 
-Programs live in versioned directories under `${XDG_DATA_HOME:-~/.local/share}/astral-server/releases/`. An atomic `current` symlink selects the active distribution. Databases, credentials, `master.key` and Computer files are outside those version directories, under `astral-server/data/`.
+Programs live in versioned directories under `${XDG_DATA_HOME:-~/.local/share}/astral-server/releases/`. An atomic `current` symlink selects the active distribution. Databases, credentials, `master.key`, the persistent Computer tunnel identity and Computer files are outside those version directories, under `astral-server/data/`. Keep the full data directory when updating or replacing a program.
 
 The service is visible as **Astral Server**:
 
@@ -49,7 +49,16 @@ The default HTTP listener is `0.0.0.0:4545`, with direct remote management disab
 ssh -N -L 4545:127.0.0.1:4545 USER@VPS
 ```
 
-Open `http://127.0.0.1:4545` locally. The installer prints the path to the VPS's private `data/server/owner.token` file, but never its contents. Read that file yourself through your existing SSH access and enter the token on the Web sign-in screen. Protect it like a password; do not paste it into an issue or diagnostic report.
+First create the Web administrator on the VPS using the command printed by the installer. For the default installation root:
+
+```sh
+~/.local/share/astral-server/current/bin/astral auth setup \
+  --data ~/.local/share/astral-server/data/server --username admin
+```
+
+The command prompts for a hidden password and confirmation. It uses the running Server's private local control channel and does not publish an account-creation endpoint. The same command works offline while holding the data lock. `astral auth reset --data DIRECTORY --username admin` deliberately resets an existing account, clears its factors and revokes every Web login while retaining business data and Computer identities.
+
+Open `http://127.0.0.1:4545` locally and sign in with that username and password. Localhost and an SSH tunnel do not grant Desktop identity or bypass login. There is no `owner.token` login or old-token compatibility path.
 
 For direct LAN/Tailscale browser access, enable remote management explicitly, either in Settings after signing in over SSH or during installation:
 
@@ -63,7 +72,17 @@ For a domain, a loopback listener and your own HTTPS reverse proxy can expose th
 bash install-server.sh --listen 127.0.0.1:4545 --public-url https://astral.example.com
 ```
 
-See [deployment and operations](deployment.md) for proxy and WebSocket/SSE requirements. Astral provides HTTP only; clients also accept reverse-proxy HTTPS with normal certificate verification. The installer does not configure DNS, a firewall, certificates or a proxy. A local proxy intentionally reaches the complete loopback management entry regardless of the direct remote-management switch.
+The installer accepts one `--public-url`; set multiple access addresses afterward in Settings, or use repeated `astral serve --public-url` arguments / the JSON-array `ASTRAL_PUBLIC_URLS` environment value for a directly managed process. The first configured address is used by default in enrollment commands. Runtime CLI arguments take priority over environment, saved App settings and automatic discovery; an override does not rewrite lower-priority settings.
+
+See [deployment and operations](deployment.md) for proxy, Host, trusted-proxy and WebSocket/SSE requirements. A local proxy intentionally reaches the loopback management entry regardless of the direct remote-management switch, but account login remains required. Separate proxy containers require explicit trusted-proxy IP/CIDR configuration to report HTTPS; forwarded client/Host headers do not make a remote connection local.
+
+Username/password and TOTP login are allowed over HTTP or HTTPS. Adding and confirming TOTP or a Passkey automatically enables the second step, with no separate 2FA switch. Passkeys can only be added or used from an actual HTTPS Web page and are tied to its hostname. When explicitly enabled, Passkey passwordless login skips username, password and TOTP. Recovery codes can replace the second step. The Web device list shows browser and CLI sessions; deletion invalidates them immediately and ends associated event streams. Desktop identities are separate and cannot be revoked there.
+
+Daemon connections remain encrypted even when their access address begins with HTTP: WS/WSS always carries a pinned inner TLS 1.3 connection. Its identity is a persistent Server key with a 100-year self-signed certificate, without automatic renewal. Enrollment commands pin that public key, and their temporary token is consumed once on successful registration. The copied installer and programs are fetched from the official HTTPS release, not from the HTTP Server. Preserve the Server identity when backing up or moving the deployment.
+
+Astral does not configure DNS, a firewall, public HTTPS certificates or a proxy. This installer is a native Linux user-service deployment; an official Docker Server image/Compose package is not included. The Ubuntu Computer image is an Agent execution environment, not the Server image.
+
+For remote API use, `astral connect --server URL --username admin` prompts for the password and an available TOTP/recovery code. It stores a private `client.session` credential under the local Astral root; it follows the same expiry and device-revocation rules as Web login. It does not use the private local account-administration channel as a remote authentication shortcut.
 
 ## Logout and reboot
 
@@ -77,15 +96,13 @@ The administrator may need an elevated session. The installer never runs this co
 
 ## Updating and failure recovery
 
-Run the installer again, optionally selecting `--tag`. Omitted network options retain their saved values. Pass `--public-url ''` for automatic address selection or `--allow-remote-management=false` to disable direct remote management. Installer options update `data/server/network.json`; the user-service unit leaves network options to the normal resolver so App settings remain editable. Explicit runtime CLI arguments and environment variables still take priority. Updating restarts the Server and interrupts active sessions and connected Computer dispatch.
+Run the installer again, optionally selecting `--tag`. Omitted network options retain their saved values. Pass `--public-url ''` for automatic address selection or `--allow-remote-management=false` to disable direct remote management. Installer options update `data/server/network.json`; the user-service unit leaves network options to the normal resolver so App settings remain editable. Explicit runtime CLI arguments and environment variables still take priority. Updating restarts the Server and interrupts active runs and connected Computer dispatch. Persisted browser logins remain valid until their expiry or explicit revocation; restarting the service is not a password reset.
 
-Older development installations with native TLS or Docker TLS bridge configuration require the explicit [offline network migration](deployment.md#offline-network-migration) before installing this version. The runtime has no old TLS or bridge compatibility path.
-
-Before stopping an existing service, the installer queries both executables' data-format metadata. It only allows the same Host schema and Core format. An old development binary without this capability, or nonempty unmanaged data without a trusted program, is rejected. There is no automatic migration across incompatible formats: use a separate empty root or an explicit migration procedure when one is provided.
+Before stopping an existing service, the installer queries both executables' data-format metadata. It only allows the same Host schema and Core format. An old development binary without this capability, or nonempty unmanaged data without a trusted program, is rejected. There is no automatic migration across incompatible formats: use a separate empty root or an explicit migration procedure when one is provided. This pre-release authentication/protocol change intentionally has no legacy Owner-token, native Server-TLS or old Daemon protocol reader.
 
 If activation or startup fails, the installer restores the previous program selection, service definition and saved installer settings, then attempts to restart the previously running service. Old version directories remain available. It does not remove original data, credentials, encryption keys or Computer files. Recovery of the service is **not** a database rollback; the installer never promises to undo writes made during an attempted startup. If service restoration also fails, it reports the retained backup location and service inspection command.
 
-Back up the data and encryption key consistently before updating; see [the backup instructions](deployment.md#data-directories). The installer does not replace that backup. A failed first startup can leave newly initialized data; its format-probe program is retained so a retry can validate the data format without guessing.
+Back up the data, encryption key and persistent Server identity consistently before updating; see [the backup instructions](deployment.md#data-directories). The installer does not replace that backup. A failed first startup can leave newly initialized data; its format-probe program is retained so a retry can validate the data format without guessing.
 
 ## Inspecting without installing
 

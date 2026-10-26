@@ -3,7 +3,9 @@ package platform
 import (
 	"context"
 	"net/http"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +31,7 @@ func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testin
 	defer cancel()
 	root := t.TempDir()
 	config := Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers")}
-	s, err := New(config)
+	s, err := newAuthenticatedTestServer(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,27 +47,27 @@ func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testin
 	if err != nil || again.ID != local.ID {
 		t.Fatal("local shortcut duplicated a Computer")
 	}
-	if _, err = New(config); err == nil {
+	if _, err = newAuthenticatedTestServer(config); err == nil {
 		t.Fatal("two Servers opened the same state domain")
 	}
 	var bootstrap httpapi.Bootstrap
-	if err = HTTPJSON(ctx, "GET", s.URL+"/api/v1/bootstrap", s.token, nil, &bootstrap); err != nil {
+	if err = desktopJSON(ctx, "GET", s.URL+"/api/v1/bootstrap", testDesktopToken, nil, &bootstrap); err != nil {
 		t.Fatal(err)
 	}
 	if bootstrap.Host.Hostname == "" || bootstrap.Host.OS == "" || len(bootstrap.Computers) != 1 {
 		t.Fatal("bootstrap confused Server host with browser")
 	}
-	assertPrivate(t, filepath.Join(s.Config.DataDirectory, "owner.token"))
+	assertPrivate(t, filepath.Join(s.Config.DataDirectory, "control.json"))
 	enrollment, err := s.Hub.Enroll(ctx, s.URL, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(enrollment.Command, "/install.sh") || !strings.Contains(enrollment.Command, enrollment.Enrollment.ID) {
+	if !strings.Contains(enrollment.Command, "/install-computer.sh") || !strings.Contains(enrollment.Command, enrollment.Enrollment.ID) {
 		t.Fatal("enrollment did not produce an installer command")
 	}
 	remoteCtx, stopRemote := context.WithCancel(ctx)
 	done := make(chan error, 1)
-	options := ConnectOptions{ServerURL: s.URL, EnrollmentID: enrollment.Enrollment.ID, Token: enrollment.Token, Root: filepath.Join(root, "remote"), Foreground: true}
+	options := ConnectOptions{ServerURL: s.URL, ServerPin: s.Hub.ServerPin(), EnrollmentID: enrollment.Enrollment.ID, Token: enrollment.Token, Root: filepath.Join(root, "remote"), Foreground: true}
 	go func() { done <- Connect(remoteCtx, options, nil) }()
 	var remote domain.Computer
 	await(t, ctx, func() bool {
@@ -97,7 +99,7 @@ func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testin
 	if err = s.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
-	s2, err := New(config)
+	s2, err := newAuthenticatedTestServer(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,13 +114,23 @@ func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testin
 }
 
 func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) {
-	// An unavailable executable is a real supported failure mode, not a mocked
-	// successful container. No Computer is registered by the failed operation.
-	t.Setenv("PATH", t.TempDir())
+	// A broken selected CLI is a supported failure mode. Keep this independent
+	// of any real Docker installation that standard-location discovery finds.
+	bin := t.TempDir()
+	name := "docker"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.WriteFile(filepath.Join(bin, name), []byte("unusable Docker executable"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("DOCKER_HOST", "unix:///unavailable-astral-test.sock")
+	t.Setenv("DOCKER_CONTEXT", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	root := t.TempDir()
-	s, err := New(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers"), NoLocal: true})
+	s, err := newAuthenticatedTestServer(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers"), NoLocal: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,15 +166,15 @@ func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode != 200 {
-		t.Fatal("installer endpoint is unavailable")
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatal("Server still serves an untrusted installer endpoint")
 	}
 }
 
 func TestRestoreKnownLocalContainerMetadataWithoutRuntimeAccess(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	s, err := New(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers"), NoLocal: true})
+	s, err := newAuthenticatedTestServer(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers"), NoLocal: true})
 	if err != nil {
 		t.Fatal(err)
 	}

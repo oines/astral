@@ -1,8 +1,8 @@
 # Astral 系统规格
 
-版本：1.10
+版本：1.11
 
-日期：2026-10-24，Asia/Singapore
+日期：2026-10-25，Asia/Singapore
 
 状态：V1 实现规范，尚非功能交付声明
 
@@ -318,29 +318,63 @@ Linux Server 的 Local Computer 是 Linux 服务所在机器。访问网页的�
 
 例如，用户已经接入一台远程 Mac mini，且该机器安装了 OrbStack。再次 Add Computer、选择“连接其他机器”、勾选“使用容器”、复制命令并在这台 Mac mini 执行后，列表中新增一台 Container Computer。如果这台 Mac mini 本身就是 Server 部署机器，也可以直接点击“使用本机容器”。原 Mac mini Computer 保留；两者拥有独立身份、执行目标和 Agent 关联。它们不自动共享 AgentHome 或工作文件，显式挂载的目录按实际配置解释。
 
-接入命令携带或取得目标 Server 信息及本次注册所需的凭据，自动完成平台连接；凭据交付、有效期和重复执行语义在实现时细化。正常运行的连接仍需内部身份验证，不能把“执行命令后自动添加”实现成任何匿名 Daemon 都能注册。
+接入命令包含目标 Server URL、SPKI SHA-256 公钥指纹和临时注册 Token。脚本与程序从官方 GitHub HTTPS release 资产下载并校验，不通过用户可能使用 HTTP 的 Server 下载可执行代码。Daemon 先验证内层 TLS 的 Server 身份，再发送注册凭据；注册成功只下发一次独立电脑凭据并消费临时 Token。普通注册有效期 15 分钟，容器准备可延长到创建注册记录后的固定 90 分钟；不能通过重试不断延长。完整命令在使用或过期前仍是敏感信息，不能因传输加密而宣称泄漏无害。重复运行成功命令只能复用目标机器已保存的凭据，不能再次从已消费 Token 领取长期凭据。
 
 ### 跨平台、后台运行与更新
 
-macOS、Windows、Linux 共用统一可执行程序，包含 Server、嵌入 Web UI、CLI 和 Daemon。Windows 的桌面、Server 与裸机 Daemon 原生运行，不要求 WSL。Windows 接入提供 PowerShell 命令，macOS/Linux 提供 shell 命令；选择依据目标电脑的平台。
+macOS、Windows、Linux 共用统一可执行程序，包含 Server、嵌入 Web UI、CLI 和 Daemon。Windows 的桌面、Server 与裸机 Daemon 原生运行，不要求 WSL。Windows 接入提供 PowerShell 命令，使用现代 Windows 内置 `curl.exe` 从官方 HTTPS 下载 bootstrap 并检查成功后才执行；macOS/Linux 提供 shell 命令，选择依据目标电脑的平台。
 
-裸机接入自动注册当前用户的 Astral Daemon：macOS LaunchAgent 在系统设置“登录项与扩展”可见，Windows 在任务计划程序中注册当前用户登录任务（InteractiveToken、LeastPrivilege、可见），Linux 使用 systemd 用户服务。不得提权或默认注册系统级服务，不自动启用 Linux linger。多连接按电脑数据目录区分服务实例，提供状态、日志、启动、停止、重启、卸载命令。服务运行状态与 Server 在线状态分别确认。Desktop 内本机 Daemon 由 Server 生命周期管理，容器内 Daemon 由 Docker 管理。
+裸机接入自动注册当前用户的 Astral Daemon：macOS LaunchAgent 在系统设置“登录项与扩展”可见，Windows 在任务计划程序中注册当前用户登录任务（InteractiveToken、LeastPrivilege、可见），Linux 使用 systemd 用户服务。不得提权或默认注册系统级服务，不自动启用 Linux linger。普通原生接入使用一个 Daemon；同机连接多个 Server 等需求可通过不同 `--root` 数据目录运行多个实例，容器各自独立。服务提供状态、日志、启动、停止、重启、卸载命令。服务运行状态与 Server 在线状态分别确认。Desktop 内本机 Daemon 由 Server 生命周期管理，容器内 Daemon 由 Docker 管理。
 
-更新采用复制命令后在目标电脑或容器宿主机执行的方式。新程序下载并校验后，裸机切换当前用户服务使用的版本并重启；容器只替换原容器内的数据目录之外的 Daemon 可执行文件，重启同一容器。保留电脑身份、凭据、Agent 文件、容器 ID、可写层与卷，更新失败尝试恢复旧程序。重启会中断运行任务，界面和命令必须说明这一后果。更新不自动重建容器或迁移 Agent 环境，不增加远程自动升级控制协议。
+更新采用复制命令后在目标电脑或容器宿主机执行的方式。新程序下载并校验后，裸机切换当前用户服务使用的版本并重启；容器只替换原容器内的数据目录之外的 Daemon 可执行文件，重启同一容器。保留电脑身份、凭据、Agent 文件、容器 ID、可写层与卷，更新失败尝试恢复旧程序。重启会中断运行任务，界面和命令必须说明这一后果。更新不自动重建容器或迁移 Agent 环境，不增加远程自动升级控制协议。更新命令不接受 `--server` 或替换 pin，不预检 Server 当前首选地址；使用目标电脑既有 credentials 中的 URL/pin 查询状态并重连，支持通过第二个访问地址配对的电脑。`computer update` 只选择现有 `--root` 或 `--container`，网络地址的手动修改与更新分开。
 
 新建容器使用 Ubuntu 24.04 和完整开发、数据、文档、媒体、OCR、中文字体、浏览器测试环境。镜像工具层与最终 Daemon 程序层分离，程序不放在 AgentHome 数据中。Windows Docker Desktop 使用 Linux 容器即可，不要求用户进入 WSL 或额外开启 host networking；同机 Docker Desktop 容器通过 `http://host.docker.internal:4545`（实际端口随监听配置）连接 Server 主端口，不额外创建 TLS 桥接端口或证书。
 
 ### Server 监听、管理访问与接入地址
 
-Server 仅提供 HTTP，默认监听 `0.0.0.0:4545`。Desktop 使用独立的 loopback 地址加载界面；Daemon 接入与管理访问共享主端口，但采用不同的访问边界。需要 HTTPS 时由用户部署反向代理，Astral 的客户端、接入脚本与 Daemon 同时支持 HTTP/WS 和具有正常证书验证的 HTTPS/WSS。
+Server 仅对外提供 HTTP，默认监听 `0.0.0.0:4545`。Desktop 使用本机 loopback 地址加载界面；管理访问和 Daemon 加密隧道共享主端口。HTTPS 由用户的反向代理或 Tailscale Serve 提供。用户名密码及 TOTP 登录同时允许 HTTP、HTTPS，不增加“不安全登录”开关；Passkey 仅允许当前实际通过 HTTPS 打开的网页使用。Daemon 连接在两种外层协议下均有内层 TLS，不以用户使用 VPN 为安全前提。
 
-默认关闭“允许远程管理”。loopback 连接可访问完整 Web UI 与需 Owner 认证的管理 API；直接远程连接仅允许明确列出的健康检查、安装下载、注册、容器准备、Daemon 状态与连接路由。远程首页、静态文件、登录、OpenAPI 和全部 Owner API 均不可达。开启后允许远程管理路由，但 Owner 认证及 Bot、Computer 的权限规则保持不变。连接来源只依据实际 TCP 对端，不信任 Host、Origin、X-Forwarded-For 等请求头。用户显式配置的 loopback 反向代理或 Tailscale Serve 可以转发完整本地管理入口；关闭开关不撤销这些代理。
+默认关闭“允许远程管理”。loopback 可到达完整管理入口，但仍必须验证 Desktop 身份或网页登录会话；普通浏览器不能因 localhost 而免认证。直接远程连接仅能访问明确列出的健康检查与 Computer tunnel，Web UI、登录、OpenAPI 及全部管理 API 在关闭时不可达。开启只改变路由可达性，不改变认证或 Bot/Computer 授权。来源依据实际 TCP 对端，不采信 Host、Origin、X-Forwarded-For 来冒充本机。用户主动配置的 loopback 反代、SSH 转发或 Tailscale Serve 能暴露本地管理入口；关闭远程管理不撤销这些转发，但转发也不能绕过网页登录。
 
-“访问地址”是提供给其他设备与接入命令的完整 Server URL，与监听地址和远程管理开关独立。各字段按显式 CLI 参数、环境变量、持久 App 设置、自动发现、默认值的顺序取值；未设置与明确的 `false` 必须区分。高优先级覆盖不改写低优先级设置，界面显示实际来源并禁用受 CLI/环境变量控制的编辑。访问地址和远程管理立即生效，监听地址变更在重启后生效。
+“访问地址”支持多个完整 HTTP/HTTPS origin，首项用于默认生成接入命令，添加电脑时可选其他发现或自定义地址。列表与监听及远程管理独立，不自动开启管理访问。每个字段的优先级为显式 CLI 参数、环境变量、持久 App 设置、自动发现、默认值；地址列表整体取高优先级来源，不跨来源合并。高优先级覆盖不改写低优先级设置，界面显示来源并禁用受控项。访问地址及远程管理立即生效，监听变更重启生效。
 
-未指定访问地址时，优先选择已实际配置并代理到本 Server 的 Tailscale Serve HTTPS 地址，其次是 Tailscale 完整 MagicDNS 名称、Tailscale IP、局域网 IP，最后回退 loopback。不因安装了 Tailscale 就虚构 HTTPS 地址，不用系统短主机名代替可达地址。远程接入弹窗直接显示并允许选择或编辑地址；安装脚本、下载与 Daemon 目标采用同一个选择，目标电脑在下载和构建前检查连接。已注册 Daemon 保留原地址，不因设置改变而静默迁移。
+CLI 的 `--public-url` 可以重复；环境变量 `ASTRAL_PUBLIC_URLS` 使用 JSON 字符串数组。`--public-url ''` 或 `ASTRAL_PUBLIC_URLS=[]` 明确使用自动发现。监听和管理开关分别对应 `--listen` / `ASTRAL_SERVER_LISTEN` 与 `--allow-remote-management[=false]` / `ASTRAL_ALLOW_REMOTE_MANAGEMENT`，明确 false 必须覆盖低优先级 true。
 
-旧 TLS 桥接及配置仅通过停止服务后的显式迁移工具转换；运行时代码不保留旧协议、证书或桥接回退。迁移保留 Computer 身份、凭据、容器 ID、可写层和数据卷，需要替换 Daemon 程序时仅修改原容器内的程序文件，不重建环境。
+自动发现依次考虑实际代理到本 Server 的 Tailscale Serve HTTPS 地址、完整 MagicDNS、Tailscale IP、局域网 IP 和 loopback，不虚构 HTTPS 或使用不可达短主机名。所选地址仅决定 Server 目标，安装脚本与程序下载始终来自官方 HTTPS release。已注册 Daemon 保留其存储的地址，设置改变不会静默改写；同一个 Server 身份不因域名/IP 改变而改变。
+
+管理入口默认执行 Host 白名单及 Origin/跨站请求检查，名单由本机 loopback、真实网卡地址、可靠发现结果和明确配置的访问地址推导。`0.0.0.0` / `::` 是监听通配地址，不是允许的访问主机名；不接受陌生请求自动加入名单，也不采用 `*.ts.net` 等宽泛通配。仅明确可信代理可以报告外层 HTTPS：默认信任 loopback，`--trusted-proxy` 可重复配置 IP/CIDR，`ASTRAL_TRUSTED_PROXIES` 是 JSON 数组，明确空值关闭信任。代理须保留外部 Host；转发 Host 和客户端地址头不授予信任。Computer tunnel 使用独立的 TLS/电脑身份边界，不受管理网页域名选择限制。
+
+### Desktop 与网页登录认证
+
+认证分为 Desktop 本机身份、Web 管理员会话和 Computer 凭据，三者分别管理。当前没有用户数据兼容负担，旧 Owner Token 登录、Bearer 管理认证、旧 Cookie 及旧 HTTP Computer 注册/状态/连接协议直接删除，不做凭据兑换或运行时兼容。旧网络/TLS 桥接转换脚本不属于本实现。
+
+Desktop 打开后直接使用自己管理的本机 Server，不要求创建 Web 账户或输入密码。Electron 主进程生成运行期随机凭据，通过 Go 子进程的私有 stdin 交付，仅向该 Server 的受信任界面请求附加认证；凭据不放在 URL、进程参数、日志、浏览器 Cookie 或 Renderer JavaScript 中。Server 验证专用凭据及真实 loopback 来源，不能只凭 localhost 信任。主进程退出或私有输入管道断开后结束托管 Server；重启建立新身份。网页无权撤销 Desktop 身份。
+
+Web 管理维护一个管理员账户，用户名和密码可修改，不增加公开注册、多人组织或角色体系。密码使用随机 salt 的 Argon2id 校验值，登录、验证码和 Passkey 尝试有次数及资源限制。没有账户时网页只提示尚未初始化，不允许第一个公网访问者认领管理员。Desktop 从安全设置创建或恢复；Headless 使用 `astral auth setup/reset --data DIRECTORY --username USER`，终端隐藏输入密码并确认。CLI 在 Server 运行时使用数据目录权限和运行期密钥保护的本机控制通道，停止时持有排他锁配置账户。reset 清除因素与 Web 会话，保留业务数据、Computer 和 Desktop。
+
+无人值守首次启动可使用 `ASTRAL_ADMIN_USERNAME` 配合 `ASTRAL_ADMIN_PASSWORD` 或 `ASTRAL_ADMIN_PASSWORD_FILE`，后两者不能同时设置；CLI 对应 `--initial-admin-username` 和 `--initial-admin-password-file`。仅在账户不存在时初始化，重启不得重置已有密码、2FA 或会话。数据等运行参数对应 `ASTRAL_SERVER_DATA_DIR`、`ASTRAL_COMPUTER_DATA_DIR`、`ASTRAL_WEB_DIR`、`ASTRAL_DISTRIBUTION_DIR`、`ASTRAL_NO_LOCAL`，显式 CLI 参数优先。浏览器会话期限可通过 `--web-session-ttl` / `ASTRAL_WEB_SESSION_TTL` 配置正 Go duration，默认 `720h`。
+
+登录成功签发每个浏览器独立的随机会话 Token，Server 持久化摘要、登录时间、最近活动和过期时间。Cookie 使用 HttpOnly、SameSite Strict，HTTPS 下加 Secure；过期由 Server 强制执行。默认有效期 30 天，重启不延长或清除已持久的有效会话。退出撤销当前会话，设备列表删除立即撤销指定凭据并结束其绑定的 SSE 等请求，离线客户端下次请求拒绝。改密码、重置账户和退出所有设备撤销 Web 会话，不影响 Desktop 或 Daemon。设备列表包含未过期浏览器/CLI 会话并标记当前设备，不是在线连接列表或物理硬件指纹；Desktop 不进入该存储，也不提供网页撤销入口。删除登录会话不删除 Passkey。
+
+公开认证请求体上限 128 KiB、读取期限 10 秒；同一实际 TCP 来源最多同时读取 8 个认证请求，全局最多 64 个，凭据尝试另行限频。提前拒绝、超限或超时的未读请求体关闭连接，不在处理结束后无限制排空。这些限制不作用于普通文件流或长任务。完整重新验证后轮换当前会话 Token；旧凭据不能发起新请求或继承新的近期认证权限。保留会话 ID、已有流和原绝对到期时间；未完成第二步或持久化失败不提升权限。
+
+成功确认添加 TOTP 或 Passkey 任一方式后自动开启第二步，没有独立 2FA 开关。用户名密码登录须再完成 TOTP、HTTPS 下可用的 Passkey 或一次性恢复码中的一种；同时配置 TOTP 和 Passkey 时任选一种。未确认配置不生效。最后一个有效因素被删除后自动关闭 2FA 并清理恢复码，需要明确确认和近期完整认证。
+
+“允许 Passkey 免密登录”是独立开关，默认关闭且至少有一个 Passkey 才能开启。开启后可直接通过 Passkey 登录，跳过用户名、密码和 TOTP；改选密码登录仍按第二步规则验证。删除最后一个 Passkey 同时关闭免密；若还保留 TOTP，2FA 不关闭。服务端强制区分密码后的第二步与直接免密挑战，不允许前端隐藏按钮充当权限判断。
+
+Passkey 添加和使用都要求实际 HTTPS 页面及浏览器 WebAuthn 支持，localhost 的浏览器开发例外也不放行。Desktop 中的配置操作引导到 HTTPS 网页。使用可发现凭据支持不输入用户名的登录，认证必须包含指纹、面容或设备 PIN 等用户验证；服务端验证挑战有效期/一次性、签名、RP ID、Origin 和 UV。RP ID 绑定对应 HTTPS 主机名，不承诺一个 Passkey 跨所有 IP/域名通用。HTTP 不能静默绕过仅 Passkey 的第二步；可以改用 HTTPS、已保存的恢复码，或通过本机可信入口配置 TOTP/恢复账户。添加、解绑、恢复认证方式及修改安全设置必须具备近期完整验证；Desktop 的专用本机身份作为可信入口。
+
+HTTP 与 HTTPS 使用独立 Cookie 名称，分别为 `astral_session`、`__Host-astral_session`；根据可信实际访问协议只读取对应名称，不回退读取另一种。HTTPS Cookie 固定 Secure、Path `/` 且没有 Domain。两种协议在同一主机名下可分别登录、退出，不因浏览器的 Secure Cookie 覆盖保护形成登录循环。
+
+### Computer 加密协议
+
+Server/Daemon 通信的唯一网络入口是 `GET /internal/computer-tunnel`。Daemon 主动连接外层 WS 或具有正常 CA/主机名验证的 WSS，内部固定建立 TLS 1.3，再执行注册、容器准备、电脑状态查询或长期连接认证；两层 TLS 是正常支持的部署方式。不在外层 Authorization、Hello 请求头或 query 中传电脑凭据，不提供明文降级或旧协议端点。
+
+每个 Server 首次启动生成独立 Ed25519 私钥和 100 年自签证书，随数据持久化，不做自动续签。Daemon 固定信任配对命令提供的 SPKI SHA-256 公钥指纹；TLS 证明对应私钥持有者身份后才能发送临时或长期 Token。公钥不匹配则拒绝，不自动接受新身份；证书、域名或 IP 不作为静默改 pin 的理由。备份和搬迁必须保留此私钥；重新生成等同改变信任身份。
+
+首次注册成功后为每台 Computer 下发独立长期 Token，成功消费临时 Token，后续不可重领凭据。长期凭据与 Server pin 存入电脑私有数据目录；撤销拒绝后续认证并关闭当前连接。认证不替代 Agent 的允许电脑集合、Session 归属和执行 Boot/Grant 绑定校验。
+
+传输使用有界长度帧与增量流：认证消息 16 KiB、RPC 帧 128 KiB、数据块 32 KiB、每流窗口 8、连接并发调用 128；TLS 握手 10 秒、初始认证 15 秒，并限制待认证连接数量和来源频率。限额控制单帧和资源占用，不把大文件总量、聊天长度或长任务时长偷偷截断。WebSocket 到 net.Conn 的转换后仍限制外层消息大小，不能因关闭默认 read limit 形成无界内存入口。更新只使用已保存的 pin，不能从更新响应自动替换信任。
 
 ### Container 与 Remote
 
@@ -352,11 +386,13 @@ Server 仅提供 HTTP，默认监听 `0.0.0.0:4545`。Desktop 使用独立的 lo
 
 Remote Computer 同样通过在目标机器执行接入命令连接 Server，网络由用户自备。V1 不负责自动建立 VPN、NAT 穿透或中继网络。
 
-Server 与 Daemon 的内部传输必须支持请求关联、取消、增量输出、文件流、连接状态与身份验证；网络由用户提供，可使用局域网、Tailscale 或 HTTPS 反向代理。实际连接使用 HTTP/WS 或 HTTPS/WSS，HTTPS 证书验证不得跳过。
+Server 与 Daemon 的内部传输支持请求关联、取消、增量输出、文件流、连接状态与身份验证；用户提供实际可达网络，可选择局域网、Tailscale、直接公网或 HTTPS 反代。无论 HTTP/WS 还是 HTTPS/WSS，内层固定使用带 Server 公钥 pin 的 TLS 1.3；外层 HTTPS 仍不得跳过正常证书验证。
+
+本轮不交付官方 Docker Server 镜像或 Compose 文件。Server 容器应持久化完整数据/身份、配置宿主机可达地址、显式开启远程管理并初始化管理员；容器内自动发现不能推断宿主机发布端口或公网地址。其本机 Computer 指容器内部，不是 Docker 宿主机，`--no-local` 可只使用独立 Daemon。Ubuntu Computer 镜像与 Server 部署镜像是不同对象，不因可以运行同一 Go 二进制就宣称已交付 Server Docker 安装流程。
 
 ### CLI
 
-CLI 复用 Server 的业务入口，支持服务启动、连接与基本资源/Session 操作、诊断。CLI 不拥有另一套 Agent 状态，也不单独实现模型循环。
+CLI 复用 Server 的业务入口，支持服务启动、连接与基本资源/Session 操作、诊断。CLI 不拥有另一套 Agent 状态，也不单独实现模型循环。`astral connect --server URL --username USER` 使用 Web 管理员密码与 TOTP/恢复码登录，私有 `client.session` 保存凭据，`client.json` 指向选中的 Server 和会话文件；受同样的过期与设备撤销约束。CLI 不执行交互式 Passkey 仪式，不使用 Owner Token 或 Desktop 专用身份。`astral computer status --root DIRECTORY` 从已保存的 Computer 凭据及 pin 查询加密通道状态，`computer service status` 单独查询本机进程管理器。
 
 不同 Server 部署拥有各自的数据域。桌面与 Linux 使用相同前端，不表示两个 Server 自动同步 Session。
 
@@ -1059,7 +1095,7 @@ Settings 使用独立视图、紧凑左侧导航和稳定的单列内容，不�
 | Computers，中文为“电脑” | 使用本机/本机容器快捷入口、复制接入命令及可选“使用容器”、接入进度、名称、连接状态和必要诊断；使用情况链接到 Bot 权限页，不重复提供授权表单 |
 | Bot | Bot 列表进入独立设置，管理身份、资源选择、电脑权限及平台；平台下先选账号，再管理该账号的配置、聊天访问权限与聊天列表 |
 | Data & Storage | 仅列出已归档会话，提供搜索、恢复和永久删除；展示存储用量及位置 |
-| Security & Access | Owner 访问 Server 的认证与入口配置；不承担 Agent 的 Computer 选择 |
+| Security & Access | 网络入口与访问地址、单管理员账户、TOTP/Passkey/免密和已登录 Web/CLI 设备；Desktop 身份不进入可撤销设备列表，不承担 Agent 的 Computer 选择 |
 | Advanced | 诊断、版本、连接与执行问题信息；不暴露无产品意义的 Core 内部旋钮 |
 
 数据维护必须说明对象范围；删除一类业务记录不能被表现为同时删除 Computer 工作文件。没有实现的数据管理能力不显示虚假操作入口。
@@ -1267,6 +1303,12 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A50 | 本机目标识别 | 快捷入口显示 Server 本机的名称与系统；从其他设备访问 Headless 时，目标仍为服务器，不误指浏览器设备 |
 | A51 | 多 IM 架构 | QQ NapCat/官方、微信、飞书复用 IMStore、Session、Probe 与 Outbox。全部聊天操作受账号 all/specified 限制；API 访问不建 Session；Core 通用执行语义不变 |
 | A52 | Adapter 能力差异 | 配置、Conversation 类型、事件与发送能力按实际 Adapter 表达；不支持的能力明确反馈，不在 UI 或回执中伪造支持 |
+| A53 | Desktop 身份 | 私有启动通道自动认证，凭据不进入 Cookie/Renderer；本机浏览器不能冒充，Web 撤销不影响 Desktop |
+| A54 | Web 账户与会话 | 无公开认领入口；密码登录独立会话，Server 执行过期和立即撤销，离线设备同样列出，绑定 SSE 撤销后结束 |
+| A55 | 自动 2FA 与免密 | 确认 TOTP/Passkey 任一后自动第二步，无总开关；免密默认关闭，开启后 Passkey 可跳过用户名/密码/TOTP |
+| A56 | Passkey 与 HTTP | HTTP 允许密码/TOTP/恢复码但禁止 Passkey；HTTPS 验证 RP/Origin/UV 和一次挑战，不静默跳过第二步 |
+| A57 | Computer 加密配对 | 错 pin 与旧明文协议拒绝；注册 Token 并发只消费一次，WS/WSS 内始终 TLS 1.3，外层 HTTPS 校验保持 |
+| A58 | 管理入口与配置 | Host/跨站检查默认启用；代理信任明确，CLI > 环境 > 设置 > 自动发现；多地址与远程管理独立 |
 
 ## 17 实现时待细化
 
@@ -1275,7 +1317,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | 项目 | 需要收敛的内容 | 已固定的约束 |
 | --- | --- | --- |
 | Go 服务工程 | HTTP 框架、配置加载、业务数据库、迁移工具、发行与更新方案 | Go Server/Daemon；Core 独立接入；不因参考 Memoh 前端而复制其后端 |
-| Daemon 内部协议 | 传输、连接方向、握手、内部身份、流控、取消、进程句柄存活协议 | 支持本地/容器/远程；调用绑定原目标；网络由用户自备 |
+| Daemon 内部协议 | 持续验证流控、取消、进程句柄和更新行为 | 主动连接；WS/WSS 内固定 TLS 1.3、公钥 pin 和一次注册；本地/容器/远程共用绑定语义 |
 | Computer 接入 | 本机快捷入口与命令接入共用的准备流程、安装分发、注册凭据、重复执行、默认容器镜像与数据卷、运行时检测、升级和本地卸载方式 | Desktop/Headless 都支持使用本机及本机容器；其他机器复制命令接入；不要求跨机器宿主机调度或容器编排 |
 | localhost 绑定 | 端口或入口分配、生命周期、并发绑定、接口说明发现 | Agent 无需 Token；平台确定身份和视图；旧进程绑定不漂移 |
 | 被动维护与图片入口 | Core 分批应用、自动摘要、共享图片处理 | 复用已有预算/取消/原子提交，不启动主 Agent |

@@ -2,10 +2,8 @@ package platform
 
 import (
 	"context"
-	"crypto/subtle"
 	"embed"
 	"errors"
-	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
@@ -17,6 +15,7 @@ import (
 	"time"
 
 	"github.com/oines/astral-core/store/sqlite"
+	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
@@ -26,6 +25,7 @@ import (
 	"github.com/oines/astral/internal/httpcontract"
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/securetransport"
 )
 
 // The release build copies the shared Vite output into web/. A source checkout
@@ -36,7 +36,7 @@ var embeddedWeb embed.FS
 
 type Config struct {
 	Listen                string
-	PublicURL             string
+	PublicURLs            []string
 	DataDirectory         string
 	ComputerDirectory     string
 	WebDirectory          string
@@ -46,6 +46,11 @@ type Config struct {
 	AllowRemoteManagement bool
 	NetworkCLI            NetworkValues
 	NetworkEnvironment    NetworkValues
+	DesktopToken          string
+	InitialAdminUsername  string
+	InitialAdminPassword  string
+	SessionLifetime       time.Duration
+	TrustedProxies        []string
 	NoLocal               bool
 }
 type Running struct {
@@ -65,7 +70,8 @@ type Server struct {
 	Listener         net.Listener
 	HTTP             *http.Server
 	URL              string
-	token            string
+	Auth             *auth.Service
+	control          *localControl
 	lock             *os.File
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -125,25 +131,6 @@ func New(config Config) (server *Server, err error) {
 		return nil, err
 	}
 	s.Config.Listen = s.network.activeListen.Value
-	tokenPath := filepath.Join(config.DataDirectory, "owner.token")
-	raw, readErr := os.ReadFile(tokenPath)
-	if errors.Is(readErr, os.ErrNotExist) {
-		s.token = domain.ID("owner")
-		err = WritePrivate(tokenPath, []byte(s.token+"\n"))
-	} else if readErr != nil {
-		err = readErr
-	} else {
-		s.token = strings.TrimSpace(string(raw))
-	}
-	if err != nil {
-		return nil, err
-	}
-	if len(s.token) < 32 {
-		return nil, fmt.Errorf("owner token file is invalid")
-	}
-	if err = ProtectPrivate(tokenPath); err != nil {
-		return nil, err
-	}
 	s.Store, err = persistence.Open(config.DataDirectory)
 	if err != nil {
 		return nil, err
@@ -181,10 +168,39 @@ func New(config Config) (server *Server, err error) {
 	s.network.addresses = s.network.discover(discoveryCtx, address, s.URL)
 	s.network.discoveredAt = time.Now()
 	stopDiscovery()
-	s.Config.PublicURL = s.PublicURL()
+	s.Config.PublicURLs = s.network.snapshot().PublicURLs.Value
 
 	s.ctx, s.cancel = context.WithCancel(context.Background())
+	identity, identityErr := securetransport.Load(filepath.Join(config.DataDirectory, "computer-identity"))
+	if identityErr != nil {
+		return nil, identityErr
+	}
 	s.Hub = computers.NewHub(s.Store)
+	s.Hub.SetIdentity(identity)
+	s.Hub.ContainerURL = func(r *http.Request, hostname string) string {
+		local, _ := os.Hostname()
+		if hostname != "" && local == hostname && loopbackRequest(r.RemoteAddr) {
+			return s.ContainerURL()
+		}
+		return ""
+	}
+	s.Auth, err = auth.New(s.Store, &auth.Config{DesktopToken: config.DesktopToken, WebOrigins: s.WebOrigins, RequestOrigin: s.RequestOrigin, SessionLifetime: config.SessionLifetime})
+	if err != nil {
+		return nil, err
+	}
+	if config.InitialAdminUsername != "" || config.InitialAdminPassword != "" {
+		status, statusErr := s.Auth.Status(context.Background())
+		if statusErr != nil {
+			return nil, statusErr
+		}
+		if !status.Configured {
+			if err = s.Auth.Setup(context.Background(), config.InitialAdminUsername, config.InitialAdminPassword); err != nil {
+				return nil, err
+			}
+		}
+	}
+	s.Config.InitialAdminPassword = ""
+
 	s.Harness = harness.New(s.Store, s.CoreStore, &modelbridge.Bridge{Store: s.Store, ModelCatalog: modelbridge.NewModelCatalog(filepath.Join(s.Store.Directory, "cache", "models.dev.json"), nil)}, s.Hub)
 	// Deletion recovery can remove IM accounts before any channel worker starts.
 	s.Channels = channels.New(s.Store, s.Harness)
@@ -196,32 +212,31 @@ func New(config Config) (server *Server, err error) {
 	}
 	agentGateway := gateway.New(s.Harness, s.Channels)
 	s.Hub.Gateway = agentGateway.Handle
-	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, OwnerToken: s.token, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
+	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, Auth: s.Auth, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
 		HostInfo: s.HostInfo, UseLocal: s.UseLocal, CreateContainer: s.CreateContainer,
-		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings})
+		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings, ValidateAccessAddresses: s.ValidateAccessAddresses})
 	mux := http.NewServeMux()
 	mux.Handle("/api/", s.Owner)
-	mux.HandleFunc("POST /auth/session", s.Owner.Login)
-	mux.HandleFunc("DELETE /auth/session", s.Owner.Logout)
+	mux.Handle("/auth/", s.Owner.AuthHandler())
+	mux.HandleFunc("/internal/", http.NotFound)
+	mux.HandleFunc("/downloads/", http.NotFound)
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) { httpcontract.JSON(w, 200, httpapi.Contract().Document()) })
 	computerMux := http.NewServeMux()
 	for _, routes := range []*http.ServeMux{mux, computerMux} {
 		routes.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 			httpcontract.JSON(w, 200, map[string]string{"status": "ok", "version": s.Config.Version})
 		})
-		routes.HandleFunc("POST /internal/enrollments/{id}", s.register)
-		routes.HandleFunc("GET /internal/computers/{id}/connect", s.Hub.Connect)
-		routes.HandleFunc("GET /internal/computers/{id}/status", s.computerStatus)
-		routes.HandleFunc("POST /internal/enrollments/{id}/prepare", s.prepareContainer)
-		routes.HandleFunc("GET /install.sh", s.installer)
-		routes.HandleFunc("GET /install.ps1", s.powerShellInstaller)
-		routes.HandleFunc("GET /downloads/{name}", s.downloadBinary)
+		routes.HandleFunc("GET "+computers.TunnelPath, s.Hub.Connect)
 	}
 	mux.Handle("/", s.web())
-	s.HTTP = &http.Server{Handler: s.accessHandler(mux, computerMux), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
+	s.HTTP = &http.Server{Handler: s.accessHandler(s.managementBoundary(mux), computerMux), BaseContext: func(net.Listener) context.Context { return s.ctx }, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
 	return s, nil
 }
 func (s *Server) Start() error {
+	if err := s.startLocalControl(); err != nil {
+		return err
+	}
+
 	if err := s.Channels.Start(s.ctx); err != nil {
 		return err
 	}
@@ -269,6 +284,9 @@ func (s *Server) Close(ctx context.Context) error {
 		s.cancel()
 	}
 	var all []error
+	if s.control != nil {
+		all = append(all, s.control.Close(ctx))
+	}
 	if s.Channels != nil {
 		all = append(all, s.Channels.Close(ctx))
 	}
@@ -316,62 +334,6 @@ func (s *Server) Close(ctx context.Context) error {
 		all = append(all, s.lock.Close())
 	}
 	return errors.Join(all...)
-}
-func (s *Server) register(w http.ResponseWriter, r *http.Request) {
-	var request computers.EnrollmentRequest
-	if err := httpcontract.Decode(r, &request); err != nil {
-		httpcontract.Failure(w, r, err)
-		return
-	}
-	credentials, err := s.Hub.Register(r.Context(), r.PathValue("id"), request)
-	if err != nil {
-		httpcontract.Failure(w, r, err)
-		return
-	}
-	credentials.ServerURL = s.PublicURL()
-	httpcontract.JSON(w, 200, credentials)
-}
-
-func (s *Server) prepareContainer(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Hostname string `json:"hostname"`
-	}
-	if r.ContentLength != 0 {
-		if err := httpcontract.Decode(r, &input); err != nil {
-			httpcontract.Failure(w, r, err)
-			return
-		}
-	}
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if err := s.Hub.PrepareContainer(r.Context(), r.PathValue("id"), token); err != nil {
-		httpcontract.Failure(w, r, err)
-		return
-	}
-	response := struct {
-		Prepared          bool   `json:"prepared"`
-		LocalContainerURL string `json:"local_container_url,omitempty"`
-	}{Prepared: true}
-	hostname, _ := os.Hostname()
-	if loopbackRequest(r.RemoteAddr) && input.Hostname != "" && input.Hostname == hostname {
-		response.LocalContainerURL = s.ContainerURL()
-	}
-	httpcontract.JSON(w, 200, response)
-}
-
-func (s *Server) computerStatus(w http.ResponseWriter, r *http.Request) {
-	var c domain.Computer
-	err := s.Store.Get(r.Context(), "computers", r.PathValue("id"), &c)
-	if err != nil {
-		httpcontract.Failure(w, r, domain.Forbidden("invalid Computer"))
-		return
-	}
-	token, err := s.Store.Secret(r.Context(), c.TokenID)
-	if err != nil || c.Revoked || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
-		httpcontract.JSON(w, 401, httpcontract.Error{Code: "unauthorized", Message: "invalid Computer credential"})
-		return
-	}
-	c.TokenID = ""
-	httpcontract.JSON(w, 200, s.Hub.Status(c))
 }
 func (s *Server) UseLocal(ctx context.Context) (domain.ComputerStatus, error) {
 	status, err := s.useLocal(ctx, true)
@@ -441,6 +403,7 @@ func (s *Server) useLocal(ctx context.Context, reenroll bool) (domain.ComputerSt
 	// Local port changes do not create another Computer identity.
 	localURL := s.URL
 	credentials.ServerURL = localURL
+	credentials.ServerPin = s.Hub.ServerPin()
 	d, err := computers.NewDaemon(root, credentials)
 	if err != nil {
 		lock.Close()
@@ -452,7 +415,7 @@ func (s *Server) useLocal(ctx context.Context, reenroll bool) (domain.ComputerSt
 		var record domain.Computer
 		err = s.Store.Get(ctx, "computers", credentials.ComputerID, &record)
 		if domain.IsMissing(err) && reenroll {
-			credentials = computers.Credentials{ServerURL: localURL}
+			credentials = computers.Credentials{ServerURL: localURL, ServerPin: s.Hub.ServerPin()}
 		} else if err != nil || record.Revoked {
 			lock.Close()
 			s.mu.Unlock()
@@ -476,6 +439,7 @@ func (s *Server) useLocal(ctx context.Context, reenroll bool) (domain.ComputerSt
 			return domain.ComputerStatus{}, err
 		}
 		credentials.ServerURL = localURL
+		credentials.ServerPin = s.Hub.ServerPin()
 	}
 	if err = WriteJSON(credentialsPath, credentials); err != nil {
 		lock.Close()

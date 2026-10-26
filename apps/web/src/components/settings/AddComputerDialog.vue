@@ -61,7 +61,7 @@ function add() {
   enrollmentResult.value = undefined
   computerID.value = ''
   copied.value = false
-  serverAddress.value = app.data?.network.public_url.value || ''
+  serverAddress.value = app.data?.network.public_urls.value[0] || ''
   commandPlatform.value = app.data?.host.os === 'windows' ? 'powershell' : 'shell'
   intent.value = randomID()
   action.error.value = ''

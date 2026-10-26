@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useQuery } from '@pinia/colada'
 import { storageInfoQuery } from '@astral/sdk/colada'
-import { deleteSession, getPreferences, logout } from '@astral/sdk'
+import { deleteSession, getPreferences } from '@astral/sdk'
 import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, Bot, HardDrive, Shield, Terminal, AstralLogo, Copy, Search } from '@astral/icons'
 import { Button, ConfirmPopover, Select, Switch, SettingsSection, SettingsRow } from '@astral/ui'
 import { useAppStore } from '../stores/app'
@@ -20,6 +20,7 @@ import SearchSettings from '../components/settings/SearchSettings.vue'
 import BotSettingsNav from '../components/settings/BotSettingsNav.vue'
 import SettingsFeedback from '../components/settings/SettingsFeedback.vue'
 import NetworkSettings from '../components/settings/NetworkSettings.vue'
+import AuthSettings from '../components/settings/AuthSettings.vue'
 const app = useAppStore()
 const route = useRoute()
 const { t } = useI18n()
@@ -327,19 +328,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           class="settings-sections"
         >
           <NetworkSettings />
-          <SettingsSection>
-            <SettingsRow
-              :label="t('disconnect')"
-              :description="t('signOutHint')"
-            >
-              <Button
-                :busy="action.busy.value"
-                @click="action.run(async () => { await request(logout()); app.authorized = false })"
-              >
-                {{ t('disconnect') }}
-              </Button>
-            </SettingsRow>
-          </SettingsSection>
+          <AuthSettings />
         </div>
         <div
           v-else-if="section === 'advanced'"

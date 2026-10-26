@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-func nativeInstallerCommand(ctx context.Context, script, server, enrollment, token, root string, container bool) *exec.Cmd {
-	args := []string{script, "--server", server, "--enrollment", enrollment, "--token", token, "--root", root}
+func nativeInstallerCommand(ctx context.Context, script, server, pin, enrollment, token, root string, container bool) *exec.Cmd {
+	args := []string{script, "--server", server, "--server-pin", pin, "--enrollment", enrollment, "--token", token, "--root", root}
 	if container {
 		args = append(args, "--container")
 	} else {

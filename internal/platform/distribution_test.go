@@ -17,11 +17,11 @@ func TestDistributionDownloadChecksBytesBeforeReplacingExecutable(t *testing.T) 
 	binary := []byte("release binary")
 	digest := sha256.Sum256(binary)
 	corrupt := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/downloads/checksums.txt":
+		case "/checksums.txt":
 			fmt.Fprintf(w, "%x  %s\n", digest, name)
-		case "/downloads/" + name:
+		case "/" + name:
 			if corrupt {
 				w.Write([]byte("interrupted or tampered"))
 			} else {
@@ -33,11 +33,11 @@ func TestDistributionDownloadChecksBytesBeforeReplacingExecutable(t *testing.T) 
 	}))
 	defer server.Close()
 	target := filepath.Join(t.TempDir(), name)
-	if err := downloadVerifiedBinary(context.Background(), server.URL, name, target); err != nil {
+	if err := downloadReleaseBinary(context.Background(), server.URL, name, target, server.Client()); err != nil {
 		t.Fatal(err)
 	}
 	corrupt = true
-	if err := downloadVerifiedBinary(context.Background(), server.URL, name, target); err == nil {
+	if err := downloadReleaseBinary(context.Background(), server.URL, name, target, server.Client()); err == nil {
 		t.Fatal("accepted mismatched distribution")
 	}
 	data, err := os.ReadFile(target)

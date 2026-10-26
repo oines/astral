@@ -3,7 +3,7 @@ package computers
 import "net/http"
 
 // NewHTTPClient retains system certificate verification for HTTPS reverse
-// proxies and refuses redirects so enrollment credentials keep their target.
+// proxies and refuses redirects so the pinned tunnel keeps its exact target.
 func NewHTTPClient() *http.Client {
 	return &http.Client{
 		Transport:     http.DefaultTransport.(*http.Transport).Clone(),

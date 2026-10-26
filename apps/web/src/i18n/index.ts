@@ -1,3 +1,4 @@
+import { authEn, authZh } from './auth'
 import { searchEn, searchZh } from './search'
 import { onboardingEn, onboardingZh } from './onboarding'
 import { channelsEn, channelsZh } from './channels'
@@ -10,7 +11,7 @@ import { settingsUxEn, settingsUxZh } from './settings-ux'
 import { computersEn, computersZh } from './computers'
 import { reasoningEn, reasoningZh } from './reasoning'
 const en = {
-  ...channelsEn, ...detailEn, ...redesignEn, ...providersEn, ...settingsEn, ...settingsUxEn, ...searchEn, ...onboardingEn, ...computersEn, ...reasoningEn,
+  ...authEn, ...channelsEn, ...detailEn, ...redesignEn, ...providersEn, ...settingsEn, ...settingsUxEn, ...searchEn, ...onboardingEn, ...computersEn, ...reasoningEn,
   common: { more: 'More' }, stopped: 'Stopped', bottom: 'Jump to latest', thinkingProcess: 'Thinking', noModelMatch: 'No matching models.',
   runCommand: 'Run command', readFile: 'Read file', writeFile: 'Write file', editFile: 'Edit file',
   application: 'Application', conversation: 'Conversation', interface: 'Interface',
@@ -34,7 +35,7 @@ const en = {
   archive: 'Archive session', unarchive: 'Unarchive', pin: 'Pin session', unpin: 'Unpin session', rename: 'Rename session', older: 'Load earlier messages', details: 'View details',
   welcome: 'What would you like to work on?', welcomeText: 'Choose a Bot to start a conversation. Its model and Computer are ready when you are.',
   setup: 'A little setup, then you’re ready.', setupModels: 'Configure a model', setupAgent: 'Create a Bot',
-  signIn: 'Connect to your Astral', token: 'Owner access token', tokenHint: 'On the server, run astral auth token. Desktop connects automatically.', connect: 'Connect',
+  connect: 'Connect',
   loginStart: 'Open at login', keepRunning: 'Keep running when the window closes', desktopOnly: 'Available in the Astral desktop app.', inputDefault: 'New messages while working',
   theme: 'Theme', language: 'Language', system: 'System', light: 'Light', dark: 'Dark', allow: 'Allow', deny: 'Deny', approval: 'Your decision is needed',
   attach: 'Attach files', upload: 'Uploading to Computer…', attachmentError: 'Attachment upload failed', historicalImage: 'Image preserved in this conversation',
@@ -47,7 +48,7 @@ const en = {
   disconnect: 'Sign out', loading: 'Loading…', empty: 'Nothing here yet.', inspect: 'Inspect', result: 'Result', source: 'Source', terminal: 'Terminal output',
 }
 const zh: typeof en = {
-  ...channelsZh, ...detailZh, ...redesignZh, ...providersZh, ...settingsZh, ...settingsUxZh, ...searchZh, ...onboardingZh, ...computersZh, ...reasoningZh,
+  ...authZh, ...channelsZh, ...detailZh, ...redesignZh, ...providersZh, ...settingsZh, ...settingsUxZh, ...searchZh, ...onboardingZh, ...computersZh, ...reasoningZh,
   common: { more: '更多' }, stopped: '已停止', bottom: '回到最新消息', thinkingProcess: '思考过程', noModelMatch: '没有匹配的模型。',
   runCommand: '运行命令', readFile: '读取文件', writeFile: '写入文件', editFile: '修改文件',
   application: '应用', conversation: '对话', interface: '界面',
@@ -71,7 +72,7 @@ const zh: typeof en = {
   archive: '归档会话', unarchive: '取消归档', pin: '固定会话', unpin: '取消固定', rename: '重命名会话', older: '加载更早的消息', details: '查看详情',
   welcome: '今天想一起做些什么？', welcomeText: '选择一个 Bot，开始新的工作。会话将使用它的默认模型与电脑。',
   setup: '配置一下，就可以开始了。', setupModels: '配置模型', setupAgent: '创建 Bot',
-  signIn: '连接你的 Astral', token: 'Owner 访问令牌', tokenHint: '在服务器运行 astral auth token 获取。桌面应用会自动连接。', connect: '连接',
+  connect: '连接',
   loginStart: '登录时启动', keepRunning: '关闭窗口后继续运行', desktopOnly: '可在 Astral 桌面应用中设置。', inputDefault: '工作期间收到新消息时',
   theme: '主题', language: '语言', system: '跟随系统', light: '浅色', dark: '深色', allow: '允许', deny: '拒绝', approval: '需要你做出决定',
   attach: '添加附件', upload: '正在上传到电脑…', attachmentError: '附件上传失败', historicalImage: '已保存在会话中的图片',

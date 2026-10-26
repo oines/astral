@@ -15,6 +15,7 @@ import (
 	"time"
 
 	sessions "github.com/oines/astral-core"
+	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/gateway"
 	"github.com/oines/astral/internal/harness"
@@ -23,7 +24,11 @@ import (
 
 func apiFixture(t *testing.T, p *testkit.Platform) (*API, *httptest.Server) {
 	t.Helper()
-	a := New(Config{Harness: p.Harness, Channels: channels.New(p.Store, p.Harness), OwnerToken: "owner-test-key", DataDirectory: p.Directory, Version: "test"})
+	authentication, err := auth.New(p.Store, &auth.Config{DesktopToken: "desktop-test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(Config{Harness: p.Harness, Channels: channels.New(p.Store, p.Harness), Auth: authentication, DataDirectory: p.Directory, Version: "test"})
 	server := httptest.NewServer(a)
 	t.Cleanup(server.Close)
 	return a, server
@@ -35,7 +40,7 @@ func request(t *testing.T, ctx context.Context, server *httptest.Server, method,
 		t.Fatal(err)
 	}
 	if auth {
-		r.Header.Set("Authorization", "Bearer owner-test-key")
+		r.Header.Set("Authorization", "Desktop desktop-test-key")
 	}
 	response, err := server.Client().Do(r)
 	if err != nil {
@@ -60,7 +65,7 @@ func TestOwnerAuthAndIndependentHistoricalImageAndOriginalDownload(t *testing.T)
 		t.Fatalf("stream upload failed: %d %v", response.StatusCode, err)
 	}
 	r, _ := http.NewRequestWithContext(p.Context, "GET", server.URL+"/api/v1/files/"+file.File.ID+"/content?session_id="+p.Session.ID, nil)
-	r.Header.Set("Authorization", "Bearer owner-test-key")
+	r.Header.Set("Authorization", "Desktop desktop-test-key")
 	r.Header.Set("Range", "bytes=8-15")
 	response, err = server.Client().Do(r)
 	if err != nil {

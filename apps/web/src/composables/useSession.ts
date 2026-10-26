@@ -4,12 +4,14 @@ import { addEntry, applyEvent, emptyState, fromSnapshot } from '../lib/session-s
 import { errorText, request } from '../lib/api'
 import type { SessionEvent, Snapshot } from '../lib/types'
 import { useAppStore } from '../stores/app'
+import { useAuthStore } from '../stores/auth'
 
 export function useSession(sessionID: Ref<string>) {
   const state = ref(emptyState())
   const connection = ref('connecting')
   const error = ref('')
   const app = useAppStore()
+  const auth = useAuthStore()
   let source: EventSource | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let generation = 0
@@ -21,7 +23,7 @@ export function useSession(sessionID: Ref<string>) {
   }
   function connect() {
     close()
-    if (!sessionID.value) return
+    if (!sessionID.value || !app.authorized) return
     const current = generation
     const transport = new EventSource(`/api/v1/sessions/${encodeURIComponent(sessionID.value)}/events`)
     source = transport
@@ -48,7 +50,7 @@ export function useSession(sessionID: Ref<string>) {
     source.onerror = () => {
       // A proxy can return 502 during a restart, after which native EventSource
       // may stop retrying. Every recovery starts with a fresh server snapshot.
-      if (active()) reconnect()
+      if (active()) { void auth.refresh(); reconnect() }
     }
   }
   function reconnect() {
@@ -79,6 +81,7 @@ export function useSession(sessionID: Ref<string>) {
     for (const entry of page.entries ?? []) addEntry(state.value, entry)
     state.value.traceCursor = page.next_cursor
   }
+  watch(() => app.authorized, value => { if (!value) { generation++; close() } else if (sessionID.value) connect() })
   watch(sessionID, (_, previous) => {
     if (previous) delete app.sessionViews[previous]
     generation++

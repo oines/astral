@@ -3,7 +3,6 @@ package computers
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -19,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral-core/standardtools"
 	"github.com/oines/astral-core/standardtools/local"
@@ -102,17 +100,9 @@ func (d *Daemon) Run(ctx context.Context, report func(error)) error {
 	return ctx.Err()
 }
 func (d *Daemon) Connect(ctx context.Context) error {
-	u := strings.TrimRight(d.Credentials.ServerURL, "/") + "/internal/computers/" + d.Credentials.ComputerID + "/connect"
-	u = strings.Replace(u, "https://", "wss://", 1)
-	u = strings.Replace(u, "http://", "ws://", 1)
-	hello, _ := json.Marshal(d.Hello)
-	headers := http.Header{"Authorization": {"Bearer " + d.Credentials.Token}, "X-Astral-Hello": {base64.RawURLEncoding.EncodeToString(hello)}}
-	conn, response, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPHeader: headers, HTTPClient: d.httpClient})
+	conn, _, err := authenticateTunnel(ctx, d.Credentials.ServerURL, d.Credentials.ServerPin, tunnelRequest{Operation: "connect", ComputerID: d.Credentials.ComputerID, Token: d.Credentials.Token, Hello: d.Hello}, d.httpClient)
 	if err != nil {
-		if response != nil {
-			return fmt.Errorf("daemon connection rejected (HTTP %d)", response.StatusCode)
-		}
-		return fmt.Errorf("daemon cannot reach server: %w", err)
+		return err
 	}
 	peer := transport.New(conn, d.handle)
 	d.mu.Lock()

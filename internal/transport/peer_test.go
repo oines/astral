@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -18,6 +20,22 @@ import (
 	"github.com/oines/astral/internal/transport"
 )
 
+func TestOversizedProtocolFrameClosesBeforeReadingPayload(t *testing.T) {
+	left, right := net.Pipe()
+	peer := transport.New(left, nil)
+	t.Cleanup(func() { _ = peer.Close(); _ = right.Close() })
+	go func() {
+		var prefix [4]byte
+		binary.BigEndian.PutUint32(prefix[:], ^uint32(0))
+		_, _ = right.Write(prefix[:])
+	}()
+	select {
+	case <-peer.Done():
+	case <-time.After(time.Second):
+		t.Fatal("peer attempted to read an oversized payload")
+	}
+}
+
 func pair(t *testing.T, handler transport.Handler) *transport.Peer {
 	t.Helper()
 	servers := make(chan *transport.Peer, 1)
@@ -26,7 +44,7 @@ func pair(t *testing.T, handler transport.Handler) *transport.Peer {
 		if err != nil {
 			return
 		}
-		p := transport.New(conn, handler)
+		p := transport.New(websocket.NetConn(context.Background(), conn, websocket.MessageBinary), handler)
 		servers <- p
 		<-p.Done()
 	}))
@@ -34,7 +52,7 @@ func pair(t *testing.T, handler transport.Handler) *transport.Peer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := transport.New(conn, nil)
+	client := transport.New(websocket.NetConn(context.Background(), conn, websocket.MessageBinary), nil)
 	server := <-servers
 	t.Cleanup(func() { _ = client.Close(); _ = server.Close(); httpServer.Close() })
 	return client
@@ -177,7 +195,7 @@ func TestCloseAfterRemoteSocketHasAlreadyClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	peer := transport.New(conn, nil)
+	peer := transport.New(websocket.NetConn(context.Background(), conn, websocket.MessageBinary), nil)
 	close(drop)
 	select {
 	case <-peer.Done():

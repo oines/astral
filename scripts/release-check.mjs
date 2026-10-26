@@ -26,7 +26,7 @@ export async function checkReleaseTools() {
     rejects('release-version.mjs', ['check', '--tag'], 'Usage:')
 
     const sourceSHA = '1'.repeat(40)
-    const packageNames = [...distributionNames, ...desktopNames('0.1.0'), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh']
+    const packageNames = [...distributionNames, ...desktopNames('0.1.0'), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1']
     assert.equal(distributionNames.length, 6)
     assert.equal(desktopNames('0.1.0').length, 12)
     for (const name of packageNames) await writeFile(path.join(temporary, 'input', name), `Small fixture only: ${name}\n`)

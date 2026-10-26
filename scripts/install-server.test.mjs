@@ -121,7 +121,7 @@ test('reinstallation preserves saved network choices, including false, unless ex
   const root = path.join(directory, 'server')
   await mkdir(path.join(root, 'data/server'), { recursive: true })
   const settings = path.join(root, 'data/server/network.json')
-  const original = JSON.stringify({ listen: '127.0.0.1:8888', public_url: 'http://host:8888', allow_remote_management: false })
+  const original = JSON.stringify({ listen: '127.0.0.1:8888', public_urls: ['http://host:8888'], allow_remote_management: false })
   await writeFile(settings, original)
   const args = [installer, '--root', root, '--dry-run']
   const saved = await run('bash', args)

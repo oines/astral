@@ -71,7 +71,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   if (path.resolve(input) === path.resolve(output) || path.resolve(output).startsWith(`${path.resolve(input)}${path.sep}`)) throw new Error('Output must be outside the input artifact directory.')
   await mkdir(output, { recursive: true })
   if ((await readdir(output)).length) throw new Error('Candidate output directory must be empty; refusing to mix earlier release files.')
-  const required = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', ...(macSigned ? [macSigningReportName] : [])]
+  const required = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', ...(macSigned ? [macSigningReportName] : [])]
   const allowed = new Set([...required, 'checksums.txt', 'release-formats.json'])
   const inputs = new Map()
   for (const file of await walk(input)) {

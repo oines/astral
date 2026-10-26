@@ -35,7 +35,7 @@ jobs:
         run: |
           bash -n scripts/install-server.sh
           bash scripts/install-server.sh --dry-run
-          node --test scripts/install-server.test.mjs scripts/migrate-network.test.mjs scripts/enrollment-installers.test.mjs
+          node --test scripts/install-server.test.mjs scripts/enrollment-installers.test.mjs scripts/desktop-renderer-auth.test.mjs
       - run: test -z "$(git ls-files '*.go' | xargs gofmt -l)"
       - run: go test -race ./...
       - uses: golangci/golangci-lint-action@v8

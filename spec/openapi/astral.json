@@ -1055,6 +1055,345 @@
         },
         "type": "object"
       },
+      "astral_internal_auth_AccountInput": {
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_Ceremony": {
+        "properties": {
+          "challenge_id": {
+            "type": "string"
+          },
+          "public_key": {}
+        },
+        "required": [
+          "challenge_id",
+          "public_key"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_CodeInput": {
+        "properties": {
+          "challenge_id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_id",
+          "code"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_LoginInput": {
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_LoginResult": {
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "challenge_id": {
+            "type": "string"
+          },
+          "methods": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "authenticated"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_PasskeyBeginInput": {
+        "properties": {
+          "challenge_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "astral_internal_auth_PasskeyFinishInput": {
+        "properties": {
+          "challenge_id": {
+            "type": "string"
+          },
+          "credential": {}
+        },
+        "required": [
+          "challenge_id",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_PasskeyName": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_PasskeyView": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rp_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "last_used_at",
+          "rp_id"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_PasswordlessInput": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_ReauthInput": {
+        "properties": {
+          "method": {
+            "enum": [
+              "password",
+              "passkey"
+            ],
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "astral_internal_auth_RecoveryCodes": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "codes"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_SessionView": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "user_agent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "expires_at",
+          "last_used_at",
+          "user_agent",
+          "current"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_Status": {
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "desktop": {
+            "type": "boolean"
+          },
+          "methods": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "passkey_available": {
+            "type": "boolean"
+          },
+          "passwordless": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "authenticated",
+          "desktop",
+          "username",
+          "passwordless",
+          "methods",
+          "passkey_available"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_TOTPConfirm": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "setup_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "setup_id",
+          "code"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_TOTPSetup": {
+        "properties": {
+          "secret": {
+            "type": "string"
+          },
+          "setup_id": {
+            "type": "string"
+          },
+          "uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "setup_id",
+          "secret",
+          "uri"
+        ],
+        "type": "object"
+      },
+      "astral_internal_auth_View": {
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "current_session_id": {
+            "type": "string"
+          },
+          "desktop": {
+            "type": "boolean"
+          },
+          "passkeys": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_auth_PasskeyView"
+            },
+            "type": "array"
+          },
+          "passwordless": {
+            "type": "boolean"
+          },
+          "reauth_until": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recovery_codes_remaining": {
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_auth_SessionView"
+            },
+            "type": "array"
+          },
+          "totp_enabled": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "username",
+          "desktop",
+          "current_session_id",
+          "passwordless",
+          "totp_enabled",
+          "passkeys",
+          "sessions",
+          "recovery_codes_remaining",
+          "reauth_until"
+        ],
+        "type": "object"
+      },
       "astral_internal_channels_Capabilities": {
         "properties": {
           "adapter": {
@@ -1331,11 +1670,15 @@
           "powershell_command": {
             "type": "string"
           },
+          "server_pin": {
+            "type": "string"
+          },
           "token": {
             "type": "string"
           }
         },
         "required": [
+          "server_pin",
           "enrollment",
           "token",
           "command",
@@ -3171,6 +3514,9 @@
             },
             "type": "array"
           },
+          "auth": {
+            "$ref": "#/components/schemas/astral_internal_auth_View"
+          },
           "computers": {
             "items": {
               "$ref": "#/components/schemas/astral_internal_domain_ComputerStatus"
@@ -3209,6 +3555,7 @@
           }
         },
         "required": [
+          "auth",
           "version",
           "public_url",
           "network",
@@ -3521,17 +3868,6 @@
         ],
         "type": "object"
       },
-      "astral_internal_httpapi_LoginRequest": {
-        "properties": {
-          "token": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
-        ],
-        "type": "object"
-      },
       "astral_internal_httpapi_MovePending": {
         "properties": {
           "before_id": {
@@ -3599,8 +3935,11 @@
           "listen": {
             "type": "string"
           },
-          "public_url": {
-            "type": "string"
+          "public_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -3619,8 +3958,8 @@
           "listen": {
             "$ref": "#/components/schemas/astral_internal_httpapi_NetworkStringSetting"
           },
-          "public_url": {
-            "$ref": "#/components/schemas/astral_internal_httpapi_NetworkStringSetting"
+          "public_urls": {
+            "$ref": "#/components/schemas/astral_internal_httpapi_NetworkURLsSetting"
           },
           "restart_required": {
             "type": "boolean"
@@ -3628,7 +3967,7 @@
         },
         "required": [
           "listen",
-          "public_url",
+          "public_urls",
           "allow_remote_management",
           "addresses",
           "restart_required"
@@ -3655,6 +3994,42 @@
           },
           "value": {
             "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "saved_value",
+          "source",
+          "editable"
+        ],
+        "type": "object"
+      },
+      "astral_internal_httpapi_NetworkURLsSetting": {
+        "properties": {
+          "editable": {
+            "type": "boolean"
+          },
+          "saved_value": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "cli",
+              "environment",
+              "settings",
+              "discovery",
+              "default"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -3995,6 +4370,10 @@
           "sessions",
           "profiles"
         ],
+        "type": "object"
+      },
+      "astral_internal_httpcontract_Empty": {
+        "properties": {},
         "type": "object"
       },
       "astral_internal_httpcontract_Error": {
@@ -4836,13 +5215,22 @@
         "scheme": "bearer",
         "type": "http"
       },
-      "owner": {
-        "scheme": "bearer",
-        "type": "http"
+      "desktop": {
+        "description": "Desktop TOKEN; private runtime identity accepted only from loopback.",
+        "in": "header",
+        "name": "Authorization",
+        "type": "apiKey"
       },
-      "ownerCookie": {
+      "webSessionHTTP": {
+        "description": "Browser session for HTTP requests only.",
         "in": "cookie",
-        "name": "astral_owner",
+        "name": "astral_session",
+        "type": "apiKey"
+      },
+      "webSessionHTTPS": {
+        "description": "Secure host-only browser session for HTTPS requests only.",
+        "in": "cookie",
+        "name": "__Host-astral_session",
         "type": "apiKey"
       }
     }
@@ -4884,10 +5272,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -4930,10 +5321,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -4986,10 +5380,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5044,14 +5441,671 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
           "Channels"
+        ]
+      }
+    },
+    "/api/v1/auth": {
+      "get": {
+        "operationId": "authSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_View"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/account": {
+      "post": {
+        "operationId": "authAccount",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_AccountInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/events": {
+      "get": {
+        "operationId": "authEvents",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/begin": {
+      "post": {
+        "operationId": "authPasskeyRegisterBegin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_PasskeyName"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_Ceremony"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/finish": {
+      "post": {
+        "operationId": "authPasskeyRegisterFinish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_PasskeyFinishInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_PasskeyView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/passkeys/{id}": {
+      "delete": {
+        "operationId": "authPasskeyRemove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/passwordless": {
+      "patch": {
+        "operationId": "authPasswordless",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_PasswordlessInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_View"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/reauth": {
+      "post": {
+        "operationId": "authReauthenticate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_ReauthInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_LoginResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/recovery-codes": {
+      "post": {
+        "operationId": "authRecoveryCodes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_RecoveryCodes"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "delete": {
+        "operationId": "authSessionsRevoke",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "operationId": "authSessionRevoke",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/totp": {
+      "delete": {
+        "operationId": "authTOTPRemove",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/totp/begin": {
+      "post": {
+        "operationId": "authTOTPBegin",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_TOTPSetup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/totp/confirm": {
+      "post": {
+        "operationId": "authTOTPConfirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_TOTPConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_RecoveryCodes"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Authentication"
         ]
       }
     },
@@ -5085,10 +6139,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5131,10 +6188,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5187,10 +6247,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5225,10 +6288,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5266,10 +6332,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5314,10 +6383,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5362,10 +6434,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5410,10 +6485,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5448,10 +6526,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5486,10 +6567,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5534,10 +6618,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5582,10 +6669,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5638,10 +6728,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5694,10 +6787,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5742,10 +6838,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5783,10 +6882,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5829,10 +6931,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5885,10 +6990,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5943,10 +7051,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -5984,10 +7095,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6048,10 +7162,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6106,10 +7223,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6144,10 +7264,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6209,10 +7332,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6250,10 +7376,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6296,10 +7425,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6352,10 +7484,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6400,10 +7535,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6448,10 +7586,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6496,10 +7637,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6544,10 +7688,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6595,10 +7742,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6633,10 +7783,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6679,10 +7832,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6727,10 +7883,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6768,10 +7927,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6819,10 +7981,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6860,10 +8025,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6906,10 +8074,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -6962,10 +8133,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7010,10 +8184,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7061,10 +8238,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7119,10 +8299,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7175,10 +8358,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7226,10 +8412,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7282,10 +8471,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7323,10 +8515,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7364,10 +8559,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7410,10 +8608,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7466,10 +8667,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7524,10 +8728,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7565,10 +8772,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7611,10 +8821,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7667,10 +8880,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7713,10 +8929,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7769,10 +8988,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7835,10 +9057,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7910,10 +9135,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -7982,10 +9210,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8038,10 +9269,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8094,10 +9328,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8152,10 +9389,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8210,10 +9450,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8258,10 +9501,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8306,10 +9552,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8362,10 +9611,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8443,10 +9695,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8507,10 +9762,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8565,10 +9823,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8637,10 +9898,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8695,10 +9959,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8751,10 +10018,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8809,10 +10079,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8867,10 +10140,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8923,10 +10199,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -8987,10 +10266,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9053,10 +10335,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9118,10 +10403,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9166,10 +10454,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9214,10 +10505,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9252,10 +10546,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9298,10 +10595,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9336,10 +10636,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9394,10 +10697,13 @@
         },
         "security": [
           {
-            "owner": []
+            "desktop": []
           },
           {
-            "ownerCookie": []
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
           }
         ],
         "tags": [
@@ -9405,9 +10711,209 @@
         ]
       }
     },
+    "/auth/login": {
+      "post": {
+        "operationId": "authLogin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_LoginInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_LoginResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/auth/login/passkey/begin": {
+      "post": {
+        "operationId": "authPasskeyLoginBegin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_PasskeyBeginInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_Ceremony"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/auth/login/passkey/finish": {
+      "post": {
+        "operationId": "authPasskeyLoginFinish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_PasskeyFinishInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_LoginResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/auth/login/recovery": {
+      "post": {
+        "operationId": "authLoginRecovery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_CodeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_LoginResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/auth/login/totp": {
+      "post": {
+        "operationId": "authLoginTOTP",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_auth_CodeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_auth_LoginResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
     "/auth/session": {
       "delete": {
-        "operationId": "logout",
+        "operationId": "authLogout",
         "responses": {
           "200": {
             "content": {
@@ -9433,25 +10939,17 @@
         "tags": [
           "Authentication"
         ]
-      },
-      "post": {
-        "operationId": "login",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_httpapi_LoginRequest"
-              }
-            }
-          },
-          "required": true
-        },
+      }
+    },
+    "/auth/status": {
+      "get": {
+        "operationId": "authStatus",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                  "$ref": "#/components/schemas/astral_internal_auth_Status"
                 }
               }
             },

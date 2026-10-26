@@ -37,7 +37,7 @@ export async function createDraft(directory, { publicRelease = false, environmen
         typeof manifest.ci_run_url !== 'string' || !manifest.ci_run_url.startsWith(runPrefix) || !/^\d+$/.test(manifest.ci_run_url.slice(runPrefix.length))) throw new Error('Public publishing requires this GitHub Actions run and its matching release/CI metadata.')
     if (manifest.host_schema !== 3 || manifest.core_format !== 10 || manifest.data_formats?.host !== 3 || manifest.data_formats?.core !== 10 || Object.keys(manifest.data_formats).length !== 2) throw new Error('Public releases currently support only the Host 3 / Core 10 data baseline.')
   }
-  const requiredNames = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'checksums.txt', 'release-manifest.json', 'RELEASE_NOTES.md', ...(macSigned ? [macSigningReportName] : [])]
+  const requiredNames = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'checksums.txt', 'release-manifest.json', 'RELEASE_NOTES.md', ...(macSigned ? [macSigningReportName] : [])]
   const sumLines = (await readFile(path.join(directory, 'SHA256SUMS'), 'utf8')).trim().split('\n')
   const sums = new Map()
   for (const line of sumLines) {

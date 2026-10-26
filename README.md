@@ -39,9 +39,19 @@ Start the binary for your machine, for example:
 ./dist/bin/astral-darwin-arm64 serve --data /tmp/astral-fresh/server --computers-dir /tmp/astral-fresh/computers --distribution-dir dist/bin
 ```
 
-Open `http://127.0.0.1:4545`. The server prints the path of its private Owner token file; enter that token at the Web sign-in screen. The token is stored in an HttpOnly cookie after sign-in. The desktop app performs this local handoff in its main process.
+Keep that Server running and initialize its Web administrator from another terminal:
 
-The HTTP listener defaults to `0.0.0.0:4545` so other Computers can connect. Direct remote access to the Web UI and Owner API is disabled until **Settings → Security & Access → Allow remote management** is enabled. Set the access address there or select it when adding a Computer. For HTTPS, configure your own reverse proxy; an intentional loopback proxy can expose the local management entry. See [deployment](docs/deployment.md) for configuration priority, Tailscale addresses and container access.
+```sh
+./dist/bin/astral-darwin-arm64 auth setup --data /tmp/astral-fresh/server --username admin
+```
+
+The password is entered through a hidden terminal prompt. Open `http://127.0.0.1:4545` and sign in with the account. Desktop opens directly into its own local Server through a private process-lifetime startup identity; it does not require a Web account. The old Owner-token login and Cookie handoff are removed.
+
+The HTTP listener defaults to `0.0.0.0:4545` so other Computers can connect. Direct remote Web UI and management API access defaults off; enable **Settings → Security & Access → Allow remote management** to permit it, while retaining account login. Configure multiple access addresses there or select a reachable address when adding a Computer. Explicit CLI arguments override environment, saved settings and discovery; repeated `--public-url` or JSON-array `ASTRAL_PUBLIC_URLS` supplies the list.
+
+Password and TOTP login work over HTTP or HTTPS. A confirmed TOTP or Passkey automatically adds a second step; there is no separate 2FA switch. Passkeys require an actual HTTPS page and system user verification. Optional Passkey passwordless login defaults off and, when enabled, skips username, password and TOTP. Browser/CLI logins have independent sessions that default to 30 days with immediate device revocation; Desktop is absent from that list and cannot be revoked there.
+
+Daemon traffic always uses TLS 1.3 inside WS/WSS, with a persistent Server identity, a 100-year self-signed certificate and a public-key pin in the pairing command. Registration tokens are consumed once. VPN is optional; browser HTTPS can be supplied by your reverse proxy or Tailscale Serve. Installers and executable downloads come from the official HTTPS release assets, never this Server's HTTP port. See [deployment](docs/deployment.md) for account recovery, configuration, trusted proxies and container networking.
 
 Use a new, empty data directory for this version. Host schema 3 and Core format 10 replace the previous formats; older data is rejected, with no migration or compatibility mode. Choose a persistent location instead of `/tmp` for regular use.
 
@@ -63,11 +73,11 @@ pnpm --filter @astral/desktop package:linux    # Linux AppImage / deb
 
 Native platform packages are written to `apps/desktop/release/`. Windows installs for the current user without administrator privileges. Linux supports AppImage and Debian packages. The default build is unsigned; signing and notarization require the distributor's Apple credentials and release process.
 
-Electron manages the local Go server, local Daemon, window, menu, tray and login preference. Closing the window follows the General setting; quitting stops the managed service. A server also stops if its desktop parent dies. Renderer code receives neither the Owner token nor a general native filesystem API.
+Electron manages the local Go server, local Daemon, window, menu, tray and login preference. Closing the window follows the General setting; quitting stops the managed service. A server also stops if its desktop parent dies. Renderer code receives neither the private Desktop credential nor a general native filesystem API. The startup credential travels through private stdin and is not a browser Cookie; Web logout, password resets and device removal do not affect it.
 
 Desktop stores current data under the OS user configuration directory in `astral/schema-3/`: `~/Library/Application Support/astral/schema-3/` on macOS, `%APPDATA%\astral\schema-3\` on Windows, and `$XDG_CONFIG_HOME/astral/schema-3/` (normally `~/.config/astral/schema-3/`) on Linux. Data from earlier formats stays in its original directory. `ASTRAL_DESKTOP_DATA_DIR` can select another directory; it must be empty or already use the current formats.
 
-Enrolling a native Windows Computer uses PowerShell and does not require WSL. Local containers use Docker Desktop in Linux-container mode; on macOS use Docker Desktop or OrbStack, and on Linux use the local Docker Engine. Docker Desktop itself may use WSL 2 internally, but Astral does not ask the user to run enrollment commands there.
+Enrolling a native Windows Computer uses PowerShell and the `curl.exe` included with modern Windows; it does not require WSL. Local containers use Docker Desktop in Linux-container mode; on macOS use Docker Desktop or OrbStack, and on Linux use the local Docker Engine. Docker Desktop itself may use WSL 2 internally, but Astral does not ask the user to run enrollment commands there.
 
 ## Computers, files and conversations
 
@@ -77,9 +87,11 @@ Enrolling a native Windows Computer uses PowerShell and does not require WSL. Lo
 - **Use a local container** creates a persistent container through the server's local Docker-compatible runtime.
 - **Connect another machine** produces an expiring enrollment command. Its container option creates a separate Computer on the machine where the command runs.
 
-Native enrollment installs a visible **Astral Daemon** service for the current user: a macOS LaunchAgent, Windows logon task in Task Scheduler, or Linux `systemctl --user` unit. It never installs a system-wide daemon or requests elevation. The daemon runs with that user’s permissions after login.
+Native enrollment uses the Server pin before sending its temporary token, then installs a visible **Astral Daemon** service for the current user: a macOS LaunchAgent, Windows logon task in Task Scheduler, or Linux `systemctl --user` unit. It never installs a system-wide daemon or requests elevation. The daemon runs with that user’s permissions after login.
 
-New containers use Ubuntu 24.04 with development languages, build/network tools, Python data and document libraries, office/PDF/media/OCR tools, Chinese fonts and Playwright Chromium. **Computer details → Update Daemon** provides a local shell or PowerShell command. Updating restarts the native user service or the same existing container; it retains the Computer identity, Agent files and container-installed software. Existing containers are not rebuilt to adopt a new base image. Running tasks are interrupted by the restart.
+New containers use Ubuntu 24.04 with development languages, build/network tools, Python data and document libraries, office/PDF/media/OCR tools, Chinese fonts and Playwright Chromium. **Computer details → Update Daemon** provides a local shell or PowerShell command. Updating restarts the native user service or the same existing container; it retains the Computer identity, Agent files and container-installed software. Existing containers are not rebuilt to adopt a new base image. Updates use the enrolled computer's saved Server address and pin, not the Server's current default access address. Running tasks are interrupted by the restart.
+
+The Ubuntu Computer image is separate from Server deployment; this repository does not yet ship an official Docker Server image or Compose package. A Docker-hosted Server must persist its data/identity, configure an external address and initialize its Web administrator; `--no-local` can leave execution to separate Daemons.
 
 Registration does not automatically grant a Bot access to a Computer. The initial setup explicitly grants access when you finish; subsequently, open the Bot's **Computer access** page to grant access and optionally set its default. A session can change its current Computer while idle. Existing process handles and file references remain attached to their original Computer.
 

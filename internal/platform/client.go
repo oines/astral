@@ -1,11 +1,9 @@
 package platform
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,11 +19,13 @@ import (
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/daemonservice"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/securetransport"
 	"github.com/oines/astral/internal/serviceurl"
 )
 
 type ConnectOptions struct {
 	ServerURL    string `json:"server_url"`
+	ServerPin    string `json:"server_pin"`
 	EnrollmentID string `json:"enrollment_id"`
 	Token        string `json:"token"`
 	Root         string `json:"root,omitempty"`
@@ -35,48 +35,6 @@ type ConnectOptions struct {
 
 var identityPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
 
-func HTTPJSON(ctx context.Context, method, url, token string, input, output any) error {
-	var body io.Reader
-	if input != nil {
-		raw, err := json.Marshal(input)
-		if err != nil {
-			return err
-		}
-		body = bytes.NewReader(raw)
-	}
-	request, err := http.NewRequestWithContext(ctx, method, url, body)
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	if token != "" {
-		request.Header.Set("Authorization", "Bearer "+token)
-	}
-	client := computers.NewHTTPClient()
-	defer client.CloseIdleConnections()
-	response, err := client.Do(request)
-	if err != nil {
-		return fmt.Errorf("astral server could not be reached: %w", err)
-	}
-	defer response.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
-	if err != nil {
-		return err
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		var problem struct {
-			Message string `json:"message"`
-		}
-		if json.Unmarshal(raw, &problem) == nil && problem.Message != "" {
-			return fmt.Errorf("astral returned HTTP %d: %s", response.StatusCode, problem.Message)
-		}
-		return fmt.Errorf("astral returned HTTP %d", response.StatusCode)
-	}
-	if output != nil {
-		return json.Unmarshal(raw, output)
-	}
-	return nil
-}
 func connectRoot(options ConnectOptions) (string, error) {
 	if options.Root != "" {
 		return filepath.Abs(options.Root)
@@ -90,6 +48,9 @@ func connectRoot(options ConnectOptions) (string, error) {
 }
 func Connect(ctx context.Context, options ConnectOptions, report func(string)) error {
 	if err := serviceurl.Validate(options.ServerURL); err != nil {
+		return err
+	}
+	if _, err := securetransport.ClientConfig(options.ServerPin); err != nil {
 		return err
 	}
 	if !identityPattern.MatchString(options.EnrollmentID) {
@@ -110,16 +71,16 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 		return readErr
 	}
 	if credentials.ComputerID != "" {
-		if credentials.ServerURL != options.ServerURL {
+		if credentials.ServerURL != options.ServerURL || credentials.ServerPin != options.ServerPin {
 			return domain.Conflict("this Daemon directory belongs to a different Server")
 		}
 	} else {
-		d, createErr := computers.NewDaemon(root, computers.Credentials{ServerURL: options.ServerURL})
+		d, createErr := computers.NewDaemon(root, computers.Credentials{ServerURL: options.ServerURL, ServerPin: options.ServerPin})
 		if createErr != nil {
 			return createErr
 		}
 		registerCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err = HTTPJSON(registerCtx, "POST", strings.TrimRight(options.ServerURL, "/")+"/internal/enrollments/"+options.EnrollmentID, "", computers.EnrollmentRequest{Token: options.Token, Hello: d.Hello}, &credentials)
+		credentials, err = computers.RegisterRemote(registerCtx, options.ServerURL, options.ServerPin, options.EnrollmentID, options.Token, d.Hello)
 		cancel()
 		if err != nil {
 			return err
@@ -198,7 +159,7 @@ func computerStatus(ctx context.Context, c computers.Credentials) (domain.Comput
 	var status domain.ComputerStatus
 	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	err := HTTPJSON(bounded, "GET", strings.TrimRight(c.ServerURL, "/")+"/internal/computers/"+c.ComputerID+"/status", c.Token, nil, &status)
+	status, err := computers.RemoteStatus(bounded, c)
 	return status, err
 }
 func RunDaemon(ctx context.Context, root, credentialsPath string, report func(string)) error {
@@ -305,7 +266,7 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 	}
 	if installation.ID == "" {
 		hostname, _ := os.Hostname()
-		if err = HTTPJSON(ctx, "POST", strings.TrimRight(options.ServerURL, "/")+"/internal/enrollments/"+options.EnrollmentID+"/prepare", options.Token, map[string]string{"hostname": hostname}, &preparation); err != nil {
+		if preparation.LocalContainerURL, err = computers.PrepareRemoteContainer(ctx, options.ServerURL, options.ServerPin, options.EnrollmentID, options.Token, hostname); err != nil {
 			return fmt.Errorf("claim container preparation before building its environment: %w", err)
 		}
 	}
@@ -341,7 +302,7 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 	if runtime.GOOS == "linux" && runtime.GOARCH == probe.Arch {
 		binary, err = os.Executable()
 	} else {
-		err = downloadVerifiedBinary(ctx, options.ServerURL, "astral-linux-"+probe.Arch, binary)
+		err = downloadVerifiedBinary(ctx, "astral-linux-"+probe.Arch, binary)
 	}
 	if err != nil {
 		return err
@@ -363,12 +324,33 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 	return nil
 }
 
-func downloadVerifiedBinary(ctx context.Context, serverURL, name, target string) error {
+const officialReleaseBase = "https://github.com/oines/astral/releases/latest/download"
+
+func downloadVerifiedBinary(ctx context.Context, name, target string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{CheckRedirect: func(request *http.Request, via []*http.Request) error {
+		if len(via) >= 8 || request.URL.Scheme != "https" {
+			return errors.New("official release redirect is not trusted")
+		}
+		switch request.URL.Hostname() {
+		case "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
+			return nil
+		default:
+			return errors.New("official release redirect has an unexpected host")
+		}
+	}}
+	defer client.CloseIdleConnections()
+	return downloadReleaseBinary(ctx, officialReleaseBase, name, target, client)
+}
+
+func downloadReleaseBinary(ctx context.Context, base, name, target string, client *http.Client) error {
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme != "https" {
+		return errors.New("official executable downloads require HTTPS")
+	}
 	get := func(file string) (*http.Response, error) {
-		request, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(serverURL, "/")+"/downloads/"+file, nil)
+		request, err := http.NewRequestWithContext(ctx, "GET", base+"/"+file, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -392,13 +374,15 @@ func downloadVerifiedBinary(ctx context.Context, serverURL, name, target string)
 		return err
 	}
 	expected := ""
+	matches := 0
 	for _, line := range strings.Split(string(raw), "\n") {
 		parts := strings.Fields(line)
 		if len(parts) == 2 && parts[1] == name {
 			expected = parts[0]
+			matches++
 		}
 	}
-	if len(raw) > 8192 || len(expected) != 64 {
+	if len(raw) > 8192 || len(expected) != 64 || matches != 1 {
 		return fmt.Errorf("daemon distribution has no valid checksum")
 	}
 	response, err := get(name)
