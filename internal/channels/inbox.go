@@ -127,32 +127,29 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 	}
 	observation := messages.Observation(event, connection, conversation, nil, "")
 	for _, attachment := range event.Attachments {
+		sticker, thumbnail := stickerImage(event.Attachments, attachment)
+		if thumbnail && sticker.Format == "static" {
+			// The static original is already an image; retain its thumbnail for
+			// downloads without sending the model a second copy of the sticker.
+			continue
+		}
+		if attachment.Sticker != nil && attachment.Sticker.Format != "static" && attachment.Sticker.ThumbnailRef == "" {
+			observation.Content = append(observation.Content, core.Text("[Sticker preview unavailable: Telegram supplied no thumbnail. The animated or video original remains available through its download-url.]")...)
+		}
 		if attachment.Kind != "image" && !strings.HasPrefix(attachment.MediaType, "image/") {
 			continue
 		}
-		download, err := s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
+		content, err := s.observationImage(ctx, b, conversation, event, connection, attachment)
 		if err != nil {
+			if sticker != nil && ctx.Err() == nil {
+				// A thumbnail is optional, and static sticker pixels can also be
+				// unavailable. Preserve the received sticker and its reusable ID.
+				observation.Content = append(observation.Content, core.Text("[Sticker preview unavailable: the image could not be downloaded or decoded. Original sticker metadata and download-url are retained.]")...)
+				continue
+			}
 			return err
 		}
-		data, readErr := io.ReadAll(io.LimitReader(download.Body, (20<<20)+1))
-		closeErr := download.Body.Close()
-		if err := errors.Join(readErr, closeErr); err != nil {
-			return err
-		}
-		if len(data) > 20<<20 {
-			observation.Content = append(observation.Content, core.Text("[Image preview omitted: original exceeds the 20 MiB inline image preparation budget. The attachment remains available through its download-url.]")...)
-			continue
-		}
-		processed, err := core.ProcessImage(ctx, data, core.ImageOptions{})
-		if err != nil {
-			return err
-		}
-		if processed.IsError {
-			return domain.Invalid(processed.Content[0].Text)
-		}
-		image := processed.Content[1]
-		image.URL = messages.AttachmentDownloadPath(conversation.ID, event.MessageID, attachment.Ref)
-		observation.Content = append(observation.Content, image)
+		observation.Content = append(observation.Content, content...)
 	}
 	var trigger *core.Message
 	if event.Trigger != "" && !event.Self {
@@ -164,6 +161,43 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 		return err
 	}
 	return s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "routed"})
+}
+
+func stickerImage(attachments []domain.Attachment, image domain.Attachment) (*domain.StickerMetadata, bool) {
+	if image.Sticker != nil {
+		return image.Sticker, false
+	}
+	for _, original := range attachments {
+		if original.Sticker != nil && original.Sticker.ThumbnailRef != "" && original.Sticker.ThumbnailRef == image.Ref {
+			return original.Sticker, true
+		}
+	}
+	return nil, false
+}
+
+func (s *Service) observationImage(ctx context.Context, b domain.ConversationBinding, conversation domain.Conversation, event domain.Observation, connection domain.Connection, attachment domain.Attachment) ([]core.Content, error) {
+	download, err := s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
+	if err != nil {
+		return nil, err
+	}
+	data, readErr := io.ReadAll(io.LimitReader(download.Body, (20<<20)+1))
+	closeErr := download.Body.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return nil, err
+	}
+	if len(data) > 20<<20 {
+		return core.Text("[Image preview omitted: original exceeds the 20 MiB inline image preparation budget. The attachment remains available through its download-url.]"), nil
+	}
+	processed, err := core.ProcessImage(ctx, data, core.ImageOptions{})
+	if err != nil {
+		return nil, err
+	}
+	if processed.IsError {
+		return nil, domain.Invalid(processed.Content[0].Text)
+	}
+	image := processed.Content[1]
+	image.URL = messages.AttachmentDownloadPath(conversation.ID, event.MessageID, attachment.Ref)
+	return []core.Content{image}, nil
 }
 
 // DeliveryView combines the fixed channel destination with Core's current

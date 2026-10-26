@@ -88,7 +88,22 @@ func Observation(event domain.Observation, connection domain.Connection, convers
 		}
 		body.WriteString(Escape(event.Text))
 		for _, a := range event.Attachments {
-			fmt.Fprintf(&body, "\n<attachment type=\"%s\" name=\"%s\" mime=\"%s\" file-id=\"%s\" size=\"%d\" download-url=\"%s\"/>", Escape(a.Kind), Escape(a.Name), Escape(a.MediaType), Escape(a.Ref), a.Size, Escape(AttachmentDownloadPath(conversation.ID, event.MessageID, a.Ref)))
+			fmt.Fprintf(&body, "\n<attachment type=\"%s\" name=\"%s\" mime=\"%s\" file-id=\"%s\" size=\"%d\" download-url=\"%s\"", Escape(a.Kind), Escape(a.Name), Escape(a.MediaType), Escape(a.Ref), a.Size, Escape(AttachmentDownloadPath(conversation.ID, event.MessageID, a.Ref)))
+			if sticker := a.Sticker; sticker != nil {
+				fmt.Fprintf(&body, " platform-file-id=\"%s\" sticker-type=\"%s\" sticker-format=\"%s\" width=\"%d\" height=\"%d\"", Escape(a.ExternalID), Escape(sticker.Type), Escape(sticker.Format), sticker.Width, sticker.Height)
+				for _, attribute := range []struct{ name, value string }{{"emoji", sticker.Emoji}, {"set-name", sticker.SetName}, {"file-unique-id", sticker.UniqueID}, {"custom-emoji-id", sticker.CustomEmojiID}, {"thumbnail-ref", sticker.ThumbnailRef}} {
+					if attribute.value != "" {
+						fmt.Fprintf(&body, " %s=\"%s\"", attribute.name, Escape(attribute.value))
+					}
+				}
+			}
+			for _, original := range event.Attachments {
+				if original.Sticker != nil && original.Sticker.ThumbnailRef == a.Ref {
+					fmt.Fprintf(&body, " preview-of=\"%s\" preview-only=\"true\"", Escape(original.Ref))
+					break
+				}
+			}
+			body.WriteString("/>")
 		}
 		local, _ := AttachmentParts(files)
 		body.WriteString(local)
@@ -98,8 +113,31 @@ func Observation(event domain.Observation, connection domain.Connection, convers
 		body.WriteString("\n</message>")
 	}
 	_, images := AttachmentParts(files)
-	metadata, _ := json.Marshal(Metadata{Source: "im", DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: event.Text, Sender: event.Sender, Files: files, Attachments: event.Attachments})
+	metadata, _ := json.Marshal(Metadata{Source: "im", DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: observationDisplayText(event), Sender: event.Sender, Files: files, Attachments: event.Attachments})
 	return core.Message{Role: core.RoleUser, ContextKind: "im.observation", Content: append(core.Text(body.String()), images...), Metadata: metadata}
+}
+
+func observationDisplayText(event domain.Observation) string {
+	if event.Text != "" || event.Kind == "message.deleted" {
+		return event.Text
+	}
+	var labels []string
+	for _, attachment := range event.Attachments {
+		if sticker := attachment.Sticker; sticker != nil {
+			label := "Sticker"
+			switch sticker.Format {
+			case "animated":
+				label = "Animated sticker"
+			case "video":
+				label = "Video sticker"
+			}
+			if sticker.Emoji != "" {
+				label += " " + sticker.Emoji
+			}
+			labels = append(labels, "["+label+"]")
+		}
+	}
+	return strings.Join(labels, "\n")
 }
 
 func Trigger(event domain.Observation) core.Message {

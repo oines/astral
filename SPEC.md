@@ -1,6 +1,6 @@
 # Astral 系统规格
 
-版本：1.12
+版本：1.13
 
 日期：2026-10-26，Asia/Singapore
 
@@ -831,6 +831,8 @@ Agent 的 Bash / 脚本
 切换 Computer 后，新执行环境取得新 Daemon 的本地入口，平台视图仍属于同一个 Agent。旧进程中的入口维持其原绑定，不能因为 Current Computer 改变而重新解释旧请求的文件路径。
 
 ### 能力面
+
+Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用、格式、emoji、贴纸包名称和尺寸。IMStore 只归档元数据及平台引用，不在 Server 或 Computer 创建独立的附件文件，不创建 FileRef；需要文件时由 Agent 主动调用现有下载 API，并提供目标路径。静态 WebP 沿用图片的内存预览处理，TGS/WebM 只使用关联的独立缩略图作为模型图片输入，明确区分预览与原件。预览缺失或不可用不阻止贴纸消息交付；预览 payload 按现有 Core 历史机制持久化和重放，小静态图片的预览可能保留原始字节，但不额外保存独立附件文件。发送使用账号的具名 `sendSticker` API，可复用同一 Telegram Bot 账号内的原件 `file_id` 或显式上传文件；本功能不更改 `send_message` 工具的 schema 或行为。
 
 以下为 v1 接口形态草案，正式字段由 OpenAPI 固定：
 

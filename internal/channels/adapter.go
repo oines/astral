@@ -54,9 +54,10 @@ type Batch struct {
 	NextCursor string
 }
 type Download struct {
-	Body io.ReadCloser
-	Size int64
-	Name string
+	Body      io.ReadCloser
+	Size      int64
+	Name      string
+	MediaType string
 }
 type Send struct {
 	domain.MessageOptions

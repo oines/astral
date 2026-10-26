@@ -307,13 +307,29 @@ type Sender struct {
 }
 
 type Attachment struct {
-	Ref        string `json:"ref"`
-	ExternalID string `json:"external_id"`
-	Kind       string `json:"kind"`
-	Name       string `json:"name"`
-	MediaType  string `json:"media_type,omitempty"`
-	Size       int64  `json:"size,omitempty"`
-	FileURI    string `json:"file_uri,omitempty"`
+	Ref        string           `json:"ref"`
+	ExternalID string           `json:"external_id"`
+	Kind       string           `json:"kind"`
+	Name       string           `json:"name"`
+	MediaType  string           `json:"media_type,omitempty"`
+	Size       int64            `json:"size,omitempty"`
+	FileURI    string           `json:"file_uri,omitempty"`
+	Sticker    *StickerMetadata `json:"sticker,omitempty"`
+}
+
+// StickerMetadata describes a platform sticker while Attachment identifies its
+// original downloadable file. ThumbnailRef points to an image attachment in the
+// same observation; it never replaces the animated or video original.
+type StickerMetadata struct {
+	Type          string `json:"type"`
+	Format        string `json:"format"`
+	Emoji         string `json:"emoji,omitempty"`
+	SetName       string `json:"set_name,omitempty"`
+	UniqueID      string `json:"unique_id,omitempty"`
+	CustomEmojiID string `json:"custom_emoji_id,omitempty"`
+	Width         int    `json:"width"`
+	Height        int    `json:"height"`
+	ThumbnailRef  string `json:"thumbnail_ref,omitempty"`
 }
 
 type Observation struct {

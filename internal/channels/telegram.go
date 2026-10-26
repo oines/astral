@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -181,6 +182,34 @@ type telegramFile struct {
 	Width    int    `json:"width"`
 	Height   int    `json:"height"`
 }
+type telegramSticker struct {
+	telegramFile
+	Type          string        `json:"type"`
+	IsAnimated    bool          `json:"is_animated"`
+	IsVideo       bool          `json:"is_video"`
+	Emoji         string        `json:"emoji"`
+	SetName       string        `json:"set_name"`
+	CustomEmojiID string        `json:"custom_emoji_id"`
+	Thumbnail     *telegramFile `json:"thumbnail"`
+}
+
+func (s telegramSticker) format() (format, extension, mediaType string) {
+	if s.IsVideo {
+		return "video", ".webm", "video/webm"
+	}
+	if s.IsAnimated {
+		return "animated", ".tgs", "application/x-tgsticker"
+	}
+	return "static", ".webp", "image/webp"
+}
+
+func (s telegramSticker) preview() string {
+	if emoji := strings.TrimSpace(s.Emoji); emoji != "" {
+		return "[Sticker " + emoji + "]"
+	}
+	return "[Sticker]"
+}
+
 type telegramMessage struct {
 	ID              int64                `json:"message_id"`
 	ThreadID        int64                `json:"message_thread_id"`
@@ -201,6 +230,7 @@ type telegramMessage struct {
 	Voice           *telegramFile        `json:"voice"`
 	Video           *telegramFile        `json:"video"`
 	Animation       *telegramFile        `json:"animation"`
+	Sticker         *telegramSticker     `json:"sticker"`
 }
 type telegramUpdate struct {
 	ID                int64            `json:"update_id"`
@@ -304,6 +334,9 @@ func (t *telegram) normalize(updateID int64, message telegramMessage, edited boo
 		if observation.ReplyPreview == "" {
 			observation.ReplyPreview = message.Reply.Caption
 		}
+		if observation.ReplyPreview == "" && message.Reply.Sticker != nil {
+			observation.ReplyPreview = message.Reply.Sticker.preview()
+		}
 		if len([]rune(observation.ReplyPreview)) > 500 {
 			observation.ReplyPreview = string([]rune(observation.ReplyPreview)[:500])
 		}
@@ -366,6 +399,25 @@ func (t *telegram) normalize(updateID int64, message telegramMessage, edited boo
 	}
 	if message.Animation != nil {
 		add(*message.Animation, "video", "animation-"+observation.MessageID+".mp4", "video/mp4")
+	}
+	if sticker := message.Sticker; sticker != nil && sticker.ID != "" {
+		format, extension, mediaType := sticker.format()
+		metadata := &domain.StickerMetadata{
+			Type: sticker.Type, Format: format, Emoji: sticker.Emoji, SetName: sticker.SetName,
+			UniqueID: sticker.UniqueID, CustomEmojiID: sticker.CustomEmojiID, Width: sticker.Width, Height: sticker.Height,
+		}
+		observation.Attachments = append(observation.Attachments, domain.Attachment{
+			Ref: observation.MessageID + ":" + strconv.Itoa(len(observation.Attachments)), ExternalID: sticker.ID,
+			Kind: "sticker", Name: "sticker-" + observation.MessageID + extension, MediaType: mediaType, Size: sticker.Size, Sticker: metadata,
+		})
+		if thumbnail := sticker.Thumbnail; thumbnail != nil && thumbnail.ID != "" {
+			metadata.ThumbnailRef = observation.MessageID + ":" + strconv.Itoa(len(observation.Attachments))
+			// PhotoSize has no MIME field. Download learns its JPEG/WebP format
+			// from getFile's path or the actual download response.
+			observation.Attachments = append(observation.Attachments, domain.Attachment{
+				Ref: metadata.ThumbnailRef, ExternalID: thumbnail.ID, Kind: "image", Name: "sticker-thumbnail-" + observation.MessageID, Size: thumbnail.Size,
+			})
+		}
 	}
 	event := Event{Conversation: conversation, Observation: observation}
 	command, username, addressed := strings.Cut(strings.TrimSpace(message.Text), "@")
@@ -441,7 +493,33 @@ func (t *telegram) Download(ctx context.Context, attachment domain.Attachment) (
 		response.Body.Close()
 		return Download{}, domain.Offline(fmt.Sprintf("Telegram attachment download returned HTTP %d", response.StatusCode))
 	}
-	return Download{Body: response.Body, Size: file.Size, Name: attachment.Name}, nil
+	mediaType := attachment.MediaType
+	if mediaType == "" && attachment.Kind == "image" {
+		mediaType = telegramThumbnailMediaType(file.Path, response.Header.Get("Content-Type"))
+	}
+	return Download{Body: response.Body, Size: file.Size, Name: attachment.Name, MediaType: mediaType}, nil
+}
+
+func telegramThumbnailMediaType(filePath, contentType string) string {
+	var pathType string
+	switch strings.ToLower(path.Ext(filePath)) {
+	case ".jpg", ".jpeg":
+		pathType = "image/jpeg"
+	case ".webp":
+		pathType = "image/webp"
+	}
+	responseType, _, _ := mime.ParseMediaType(contentType)
+	switch responseType {
+	case "image/jpeg", "image/webp":
+		if pathType != "" && pathType != responseType {
+			return ""
+		}
+		return responseType
+	case "", "application/octet-stream":
+		return pathType
+	default:
+		return ""
+	}
 }
 
 func utf16Length(value string) int { return len(utf16.Encode([]rune(value))) }

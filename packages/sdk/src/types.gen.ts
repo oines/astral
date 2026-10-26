@@ -582,6 +582,7 @@ export type AstralInternalDomainAttachment = {
     name: string;
     ref: string;
     size?: number;
+    sticker?: AstralInternalDomainStickerMetadata;
 };
 
 export type AstralInternalDomainComputerMaintenance = {
@@ -893,6 +894,18 @@ export type AstralInternalDomainSession = {
 
 export type AstralInternalDomainSessionDeletion = {
     rollout_id: string;
+};
+
+export type AstralInternalDomainStickerMetadata = {
+    custom_emoji_id?: string;
+    emoji?: string;
+    format: string;
+    height: number;
+    set_name?: string;
+    thumbnail_ref?: string;
+    type: string;
+    unique_id?: string;
+    width: number;
 };
 
 export type AstralInternalGatewayCapabilities = {

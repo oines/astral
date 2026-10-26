@@ -1777,6 +1777,9 @@
           },
           "size": {
             "type": "integer"
+          },
+          "sticker": {
+            "$ref": "#/components/schemas/astral_internal_domain_StickerMetadata"
           }
         },
         "required": [
@@ -2868,6 +2871,44 @@
         },
         "required": [
           "rollout_id"
+        ],
+        "type": "object"
+      },
+      "astral_internal_domain_StickerMetadata": {
+        "properties": {
+          "custom_emoji_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "set_name": {
+            "type": "string"
+          },
+          "thumbnail_ref": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "unique_id": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type",
+          "format",
+          "width",
+          "height"
         ],
         "type": "object"
       },
