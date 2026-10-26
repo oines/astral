@@ -97,7 +97,7 @@ jobs:
             package: package:windows
           - os: ubuntu-latest
             package: package:linux
-          - os: macos-14
+          - os: macos-15
             package: package:mac-ci
     runs-on: ${{ matrix.os }}
     env:
