@@ -22,7 +22,11 @@
     "test:daemon-service": "node scripts/check-daemon-service.mjs",
     "openapi-generate": "go run ./cmd/openapi",
     "sdk-generate": "openapi-ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "dev:website": "pnpm --filter astral-website dev",
+    "build:website": "pnpm --filter astral-website build",
+    "check:website": "pnpm --filter astral-website check && pnpm --filter astral-website build && pnpm --filter astral-website check:site",
+    "preview:website": "pnpm --filter astral-website preview"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

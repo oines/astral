@@ -1,7 +1,15 @@
 name: Check and build
 on:
   push:
+    paths-ignore:
+      - "apps/website/**"
+      - ".github/workflows/website.yml"
+      - "wrangler.jsonc"
   pull_request:
+    paths-ignore:
+      - "apps/website/**"
+      - ".github/workflows/website.yml"
+      - "wrangler.jsonc"
 permissions:
   contents: read
 concurrency:

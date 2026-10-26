@@ -296,4 +296,4 @@ NapCat 对自己发出的私聊消息可能不返回 `target_id`；此时仅在�
 | [腾讯 iLink 协议参考](https://github.com/Tencent/openclaw-weixin/blob/874637a0dbc24050f72d1385add4fc6170a2d726/docs/protocol.md) | `874637a0dbc24050f72d1385add4fc6170a2d726`，客户端版本 `2.4.10`；客户端类型不等于完整服务端契约 |
 | [飞书官方 Go SDK](https://github.com/larksuite/oapi-sdk-go/tree/v3.12.2) | `github.com/larksuite/oapi-sdk-go/v3 v3.12.2`，固定于 `go.mod` / `go.sum` |
 
-运行 `go test -race ./internal/channels ./internal/gateway ./internal/httpapi` 可复跑相关后端回归；完整构建和项目检查见 [README](../README.md#development-and-verification)。依赖许可和发布物 notice 说明见 [第三方致谢](../THIRD_PARTY.md)。
+运行 `go test -race ./internal/channels ./internal/gateway ./internal/httpapi` 可复跑相关后端回归；完整构建和项目检查见 [开发指南](development.md#development-and-verification)。依赖许可和发布物 notice 说明见 [第三方致谢](../THIRD_PARTY.md)。

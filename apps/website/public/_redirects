@@ -1,0 +1,17 @@
+# Keep old public documentation links working after the navigation rewrite.
+/docs /docs/start/introduction/ 301
+/zh-cn/docs /zh-cn/docs/start/introduction/ 301
+/docs/developers/architecture /docs/hosting/architecture/ 301
+/docs/developers/api /docs/hosting/command-line/ 301
+/docs/developers/contributing /docs/usage/skills/ 301
+/zh-cn/docs/developers/architecture /zh-cn/docs/hosting/architecture/ 301
+/zh-cn/docs/developers/api /zh-cn/docs/hosting/command-line/ 301
+/zh-cn/docs/developers/contributing /zh-cn/docs/usage/skills/ 301
+/docs/ /docs/start/introduction/ 301
+/zh-cn/docs/ /zh-cn/docs/start/introduction/ 301
+/docs/developers/architecture/ /docs/hosting/architecture/ 301
+/docs/developers/api/ /docs/hosting/command-line/ 301
+/docs/developers/contributing/ /docs/usage/skills/ 301
+/zh-cn/docs/developers/architecture/ /zh-cn/docs/hosting/architecture/ 301
+/zh-cn/docs/developers/api/ /zh-cn/docs/hosting/command-line/ 301
+/zh-cn/docs/developers/contributing/ /zh-cn/docs/usage/skills/ 301

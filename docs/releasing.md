@@ -81,7 +81,7 @@ The collector retains an explicit `candidate` command for review-only fixtures o
 
 The first public data baseline is **Host schema 3 / Core format 10**. The collector and publisher both enforce it. An unexpected format change blocks publication until versioned migration support and its acceptance tests are implemented. Existing data already using these formats can be retained. Earlier private development formats are outside this baseline and require a fresh installation; never relabel a database's format without converting its data.
 
-Current releases support fresh installation and manual updates that retain the same data formats. Desktop users can install the next package over the existing App while retaining its data directory. The [Linux VPS installer](headless-install.md) checks both programs' format metadata before stopping the old current-user service and activating a replacement. A format mismatch is rejected. [Computer Daemon update commands](../README.md#computers-files-and-conversations) retain the existing native service or container; they do not rebuild the Agent environment.
+Current releases support fresh installation and manual updates that retain the same data formats. Desktop users can install the next package over the existing App while retaining its data directory. The [Linux VPS installer](headless-install.md) checks both programs' format metadata before stopping the old current-user service and activating a replacement. A format mismatch is rejected. [Computer Daemon update commands](deployment.md#updating-an-enrolled-computer) retain the existing native service or container; they do not rebuild the Agent environment.
 
 These capabilities remain unfinished and are recorded as such in the manifest:
 

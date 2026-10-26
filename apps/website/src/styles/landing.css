@@ -1,0 +1,146 @@
+.hero { padding-top: 80px; padding-bottom: 48px; text-align: center; }
+.product-kind { margin: 0 0 24px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+/* The established two-line product headline stays the primary display text. */
+.hero h1 { margin: 0; font-size: clamp(42px, 5.9vw, 76px); font-weight: 500; line-height: 1.12; letter-spacing: -.045em; text-wrap: balance; }
+.hero h1 span { display: block; }
+.hero h1 span:last-child { color: var(--muted); }
+.hero.hero-zh h1 { font-size: clamp(32px, 4.4vw, 57px); line-height: 1.3; letter-spacing: -.02em; }
+.hero-intro { font-size: 18px; line-height: 1.65; margin: 28px auto 0; white-space: pre-line; font-weight: 400; }
+.hero-detail { color: var(--muted); font-size: 14px; line-height: 1.8; max-width: 550px; margin: 12px auto 0; }
+.hero-actions { display: flex; align-items: center; justify-content: center; gap: 13px; margin-top: 27px; }
+.hero-meta { display: flex; list-style: none; justify-content: center; flex-wrap: wrap; padding: 0; gap: 0; margin: 23px 0 0; font-size: 11px; line-height: 1.8; color: var(--muted); }
+.hero-meta li + li::before { content: '·'; margin: 0 12px; color: var(--subtle); }
+
+.demo-wrap { padding-bottom: 4px; }
+.workflow { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--page); text-align: left; }
+.workflow-topline { padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); background: var(--canvas); }
+.workflow-title { font-size: 13px; font-weight: 500; }
+.example-label { color: var(--muted); font-size: 11px; flex-shrink: 0; }
+.session-transcript { max-width: 800px; padding: 32px 32px 28px; margin-inline: auto; }
+.session-user { max-width: 540px; margin: 0 0 28px auto; padding: 12px 16px; background: var(--surface); border-radius: 9px 9px 3px 9px; }
+.session-user p, .session-response p { margin: 0; font-size: 14px; line-height: 1.85; }
+.session-assistant { display: grid; grid-template-columns: 25px minmax(0, 1fr); gap: 14px; }
+.session-avatar { margin-top: 2px; }
+.session-executions { list-style: none; margin: 0; padding: 0; }
+.session-executions > li + li { margin-top: 24px; }
+.session-execution { margin-top: 6px; }
+.session-execution summary { display: grid; grid-template-columns: minmax(0, 1fr) auto 14px; align-items: center; gap: 16px; min-height: 44px; padding: 8px 0; list-style: none; font-size: 12px; color: var(--muted); }
+.session-execution summary::-webkit-details-marker { display: none; }
+.session-execution summary:hover { color: var(--ink); }
+.execution-action, .execution-computer { display: flex; align-items: center; gap: 8px; }
+.execution-action svg, .execution-computer svg { flex-shrink: 0; }
+.execution-computer { color: var(--muted); }
+.execution-computer small { margin-left: 8px; font-size: inherit; color: var(--subtle); }
+.execution-chevron { justify-self: end; }
+.session-execution[open] .execution-chevron { transform: rotate(90deg); }
+.execution-detail { padding: 14px 16px; margin: 2px 0 8px; background: var(--canvas); border-radius: 4px; }
+/* Monospace is limited to the command and its output. */
+.execution-detail code, .execution-detail pre { font-family: var(--mono); font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.execution-detail pre { margin: 10px 0 0; color: var(--muted); }
+.session-result { margin-top: 24px; }
+.session-report { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+.workflow-caption { margin: 0; padding: 15px 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7; }
+
+/* Supporting sections use regular-weight headings; the hero carries the emphasis. */
+.section { display: grid; grid-template-columns: 1fr 1fr; gap: 88px; padding-block: 76px; }
+.section + .section { border-top: 1px solid var(--line); }
+.section h2, .run-section h2 { font-size: 30px; line-height: 1.4; letter-spacing: -.02em; font-weight: 400; white-space: pre-line; margin: 0; text-wrap: balance; }
+:lang(zh-CN) :is(.section h2, .run-section h2, .closing h2) { letter-spacing: 0; }
+.section-copy p { color: var(--muted); font-size: 15px; line-height: 1.9; margin: 0 0 20px; }
+.section-copy .section-lead { color: var(--ink); margin-bottom: 12px; }
+.chat-section { align-items: start; }
+.chat-copy .chat-intro { margin-top: 20px; }
+.chat-copy h3 { font-size: 17px; line-height: 1.5; font-weight: 500; margin: 32px 0 10px; }
+.chat-copy .chat-support { font-size: 13px; margin-bottom: 20px; }
+.group-chat { min-width: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.group-chat-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 22px; border-bottom: 1px solid var(--line); background: var(--canvas); }
+.group-chat-heading h3 { margin: 0; line-height: 1.6; }
+.group-messages { margin: 0; padding: 24px 22px; list-style: none; }
+.group-messages > li + li { margin-top: 24px; }
+.group-sender { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; line-height: 20px; }
+.group-bot { color: var(--ink); }
+.group-messages p { font-size: 14px; line-height: 1.8; margin: 6px 0 0; }
+.group-attachment { margin-top: 12px; }
+.group-attachment summary { display: grid; grid-template-columns: 16px minmax(0, 1fr) 14px; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px; background: var(--surface); border-radius: 5px; list-style: none; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.group-attachment summary::-webkit-details-marker { display: none; }
+.group-attachment summary:hover { background: var(--hover); }
+.attachment-hint { display: block; font-size: 12px; color: var(--muted); }
+.group-attachment[open] .attachment-chevron { transform: rotate(90deg); }
+.attachment-preview { padding: 16px 12px 4px; }
+.attachment-preview h4 { margin: 0; font-size: 13px; line-height: 1.8; font-weight: 500; }
+.attachment-preview p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.attachment-preview h4:not(:first-child) { margin-top: 14px; }
+.group-chat-caption { margin: 0; padding: 14px 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.8; }
+.feature-list article + article { border-top: 1px solid var(--line); margin-top: 26px; padding-top: 26px; }
+.feature-list h3 { font-size: 17px; line-height: 1.5; font-weight: 500; margin: 0 0 10px; }
+.feature-list p { font-size: 15px; line-height: 1.9; color: var(--muted); margin: 0; }
+.run-section { background: var(--canvas); border-block: 1px solid var(--line); padding: 60px 0; }
+.run-intro { color: var(--muted); font-size: 15px; line-height: 1.8; margin: 14px 0 0; }
+.run-options { display: grid; grid-template-columns: 1fr 1fr; margin-top: 36px; gap: 80px; }
+.run-options h3 { font-size: 18px; line-height: 1.5; font-weight: 500; margin: 0 0 12px; }
+.run-options p { font-size: 15px; line-height: 1.9; color: var(--muted); max-width: 440px; margin: 0 0 20px; }
+.inline-links { display: flex; flex-wrap: wrap; gap: 25px; margin-top: 24px; }
+.faq-section { display: grid; grid-template-columns: 1fr 1fr; gap: 88px; border-top: 1px solid var(--line); padding-block: 44px 54px; }
+.faq-section h2 { font-size: 20px; font-weight: 400; line-height: 1.5; margin: 14px 0 0; }
+.faq-list details { border-bottom: 1px solid var(--line); }
+.faq-list summary { display: flex; align-items: center; justify-content: space-between; list-style: none; gap: 20px; padding: 17px 0; font-size: 14px; font-weight: 400; line-height: 1.7; }
+.faq-list summary::-webkit-details-marker { display: none; }
+.faq-list summary svg { flex-shrink: 0; color: var(--muted); }
+.faq-list details[open] summary svg { transform: rotate(45deg); }
+.faq-list details p { font-size: 14px; line-height: 1.85; color: var(--muted); margin: 0 0 20px; padding-right: 20px; }
+.closing { padding: 48px 0 76px; text-align: center; }
+.closing h2 { font-size: 32px; font-weight: 400; letter-spacing: -.02em; line-height: 1.5; margin: 0; text-wrap: balance; }
+.closing h2 span { display: block; }
+.closing h2 span:first-child { color: var(--muted); }
+.closing .hero-actions { gap: 24px; margin-top: 28px; }
+
+@media (max-width: 900px) {
+  .section, .faq-section { gap: 48px; }
+  .run-options { gap: 48px; }
+}
+@media (max-width: 700px) {
+  .hero { padding-top: 56px; padding-bottom: 35px; }
+  .product-kind { margin-bottom: 22px; }
+  .hero h1 { font-size: clamp(39px,8vw,53px); }
+  .hero.hero-zh h1 { font-size: clamp(29px,6.5vw,43px); }
+  .hero-intro { font-size: 16px; margin-top: 24px; }
+  .hero-detail { max-width: 370px; font-size: 13px; }
+  .workflow-topline { padding: 14px 16px; gap: 8px; }
+  .session-transcript { padding: 24px 18px; }
+  .session-user { max-width: 90%; margin-bottom: 24px; }
+  .session-assistant { grid-template-columns: 20px minmax(0, 1fr); gap: 10px; }
+  .session-avatar { width: 20px; }
+  .session-execution summary { grid-template-columns: minmax(0, 1fr) 14px; row-gap: 5px; column-gap: 8px; }
+  .execution-action { grid-column: 1; }
+  .execution-computer { grid-column: 1; padding-left: 22px; }
+  .execution-chevron { grid-column: 2; grid-row: 1 / 3; }
+  .execution-computer small { margin-left: 6px; }
+  .execution-detail { padding: 12px; }
+  .execution-detail code, .execution-detail pre { font-size: 11px; }
+  .workflow-caption { padding: 13px 16px; }
+  .section, .faq-section { grid-template-columns: 1fr; gap: 24px; padding-block: 48px; }
+  .section h2, .run-section h2 { font-size: 26px; }
+  .group-chat-heading, .group-chat-caption { padding-inline: 18px; }
+  .group-messages { padding-inline: 18px; }
+  .run-section { padding-block: 44px; }
+  .run-options { grid-template-columns: 1fr; gap: 28px; margin-top: 28px; }
+  .run-options article + article { padding-top: 28px; border-top: 1px solid var(--line); }
+  .run-options p { max-width: none; }
+  .faq-section { padding-bottom: 36px; gap: 10px; }
+  .faq-section h2 { margin-top: 0; }
+  .closing { padding-top: 40px; padding-bottom: 56px; }
+  .closing h2 { font-size: 27px; }
+}
+@media (max-width: 380px) {
+  .hero h1 { font-size: 35px; }
+  .hero.hero-zh h1 { font-size: 26px; }
+  .hero-actions { gap: 9px; }
+  .button { padding-inline: 13px; font-size: 12px; }
+  .hero-intro { font-size: 14px; }
+  .hero-meta { font-size: 10px; }
+  .hero-meta li + li::before { margin-inline: 7px; }
+  .workflow-title { font-size: 12px; }
+  .example-label { font-size: 10px; }
+  .session-transcript { padding-inline: 14px; }
+  .session-user { max-width: 94%; }
+}

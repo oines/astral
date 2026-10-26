@@ -26,3 +26,8 @@ coverage.out
 /docs/im-platforms-qa.md
 /docs/model-reasoning-plan.md
 /docs/verification/
+
+# Astro website build and local preview state.
+apps/website/.astro/
+apps/website/artifacts/
+.wrangler/

@@ -1,0 +1,57 @@
+---
+import { Menu, X, Sun, Moon } from '@lucide/astro';
+import { navigation, homePath, docPath, alternatePath, repository, type Locale } from '../lib/site';
+interface Props { locale: Locale; docs?: boolean; }
+const { locale, docs = false } = Astro.props;
+const t = navigation[locale];
+---
+<div class="site-header">
+  <a class="site-brand" href={homePath(locale)} aria-label={locale === 'en' ? 'Astral home' : 'Astral 首页'}>
+    <img class="brand-light" src="/brand/astral-lockup.svg" alt="Astral" width="260" height="80" />
+    <img class="brand-dark" src="/brand/astral-lockup-inverse.svg" alt="Astral" width="260" height="80" />
+  </a>
+  {docs && <div class="header-search"><slot name="search" /></div>}
+  <nav id="site-navigation" class="site-nav" aria-label={locale === 'en' ? 'Main navigation' : '主导航'}>
+    <a href={`${homePath(locale)}#product`} aria-current={!docs ? 'page' : undefined}>{t.product}</a>
+    <a href={docPath(locale)} aria-current={docs ? 'page' : undefined}>{t.docs}</a>
+    <a href={repository} target="_blank" rel="noopener noreferrer">{t.github}</a>
+    <a class="nav-get" href={docPath(locale, 'start/get-astral')}>{t.get}</a>
+  </nav>
+  <div class="site-actions">
+    <a class="language-link" href={alternatePath(Astro.url.pathname)} lang={locale === 'en' ? 'zh-CN' : 'en'} aria-label={t.language}>{locale === 'en' ? '中文' : 'EN'}</a>
+    <button type="button" class="icon-button theme-toggle" aria-label={t.theme} title={t.theme}>
+      <Sun class="theme-light-icon" aria-hidden="true" /><Moon class="theme-dark-icon" aria-hidden="true" />
+    </button>
+    <button type="button" class="icon-button mobile-menu-toggle" aria-controls="site-navigation" aria-expanded="false" aria-label={t.menu} data-open-label={t.menu} data-close-label={t.close}>
+      <Menu class="menu-open-icon" aria-hidden="true" /><X class="menu-close-icon" aria-hidden="true" style="display:none" />
+    </button>
+  </div>
+</div>
+<script>
+  const themeButton = document.querySelector<HTMLButtonElement>('.theme-toggle');
+  themeButton?.addEventListener('click', () => {
+    const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('starlight-theme', theme); } catch {}
+    window.dispatchEvent(new CustomEvent('theme-change', { detail: { theme } }));
+  });
+  const menu = document.querySelector<HTMLElement>('#site-navigation');
+  const toggle = document.querySelector<HTMLButtonElement>('.mobile-menu-toggle');
+  function setMenu(open: boolean) {
+    if (!toggle || !menu) return;
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', (open ? toggle.dataset.closeLabel : toggle.dataset.openLabel) || 'Menu');
+    menu.toggleAttribute('data-open', open);
+    const openIcon = toggle.querySelector<SVGElement>('.menu-open-icon');
+    const closeIcon = toggle.querySelector<SVGElement>('.menu-close-icon');
+    if (openIcon) openIcon.style.display = open ? 'none' : '';
+    if (closeIcon) closeIcon.style.display = open ? '' : 'none';
+  }
+  toggle?.addEventListener('click', () => setMenu(toggle.getAttribute('aria-expanded') !== 'true'));
+  menu?.addEventListener('click', (event) => { if ((event.target as Element).closest('a')) setMenu(false); });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && toggle?.getAttribute('aria-expanded') === 'true') { setMenu(false); toggle.focus(); }
+  });
+  document.addEventListener('click', (event) => { if (!(event.target as Element).closest('.site-header')) setMenu(false); });
+  matchMedia('(min-width: 601px)').addEventListener('change', (event) => { if (event.matches) setMenu(false); });
+</script>

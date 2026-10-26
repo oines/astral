@@ -4,7 +4,7 @@ import vue from 'eslint-plugin-vue'
 import vueParser from 'vue-eslint-parser'
 
 export default ts.config(
-  { ignores: ['**/dist/**', '**/out/**', '**/release/**', '**/node_modules/**', 'packages/sdk/src/**', 'internal/platform/web/**'] },
+  { ignores: ['**/dist/**', '**/out/**', '**/release/**', '**/node_modules/**', '**/.astro/**', 'apps/website/artifacts/**', 'packages/sdk/src/**', 'internal/platform/web/**'] },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...vue.configs['flat/recommended'],
@@ -25,5 +25,5 @@ export default ts.config(
     },
   },
   { files: ['**/*.vue'], languageOptions: { parser: vueParser, parserOptions: { parser: ts.parser, extraFileExtensions: ['.vue'] } } },
-  { files: ['scripts/**/*.mjs', '**/*.config.mjs'], languageOptions: { globals: { process: 'readonly', console: 'readonly', URL: 'readonly', Buffer: 'readonly', fetch: 'readonly', AbortSignal: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly' } } },
+  { files: ['scripts/**/*.mjs', 'apps/website/scripts/**/*.mjs', '**/*.config.mjs'], languageOptions: { globals: { process: 'readonly', console: 'readonly', URL: 'readonly', Buffer: 'readonly', fetch: 'readonly', AbortSignal: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly' } } },
 )

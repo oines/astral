@@ -1,0 +1,46 @@
+name: Website
+on:
+  push:
+    paths:
+      - 'apps/website/**'
+      - '.github/workflows/website.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'eslint.config.mjs'
+      - 'wrangler.jsonc'
+  pull_request:
+    paths:
+      - 'apps/website/**'
+      - '.github/workflows/website.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'eslint.config.mjs'
+      - 'wrangler.jsonc'
+permissions:
+  contents: read
+concurrency:
+  group: website-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  website:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.31.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26.7.0'
+          cache: pnpm
+      - run: pnpm --filter astral-website... install --frozen-lockfile
+      - run: pnpm check:website
+        env:
+          SITE_URL: ${{ github.ref == 'refs/heads/main' && 'https://astral.oines.dev' || '' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: astral-website
+          path: apps/website/dist/
+          retention-days: 7

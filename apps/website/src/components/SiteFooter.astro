@@ -1,0 +1,16 @@
+---
+import { docPath, repository, type Locale } from '../lib/site';
+const { locale = 'en' } = Astro.props as { locale: Locale };
+const zh = locale === 'zh-cn';
+---
+<footer class="site-footer">
+  <div class="site-width footer-inner">
+    <div class="footer-meta">Astral <span aria-hidden="true">·</span> {zh ? '开源个人 Agent' : 'Open-source personal agent'}<br />© {new Date().getFullYear()} Astral contributors. AGPL-3.0.</div>
+    <nav class="footer-links" aria-label={zh ? '页脚导航' : 'Footer navigation'}>
+      <a href={docPath(locale)}>{zh ? '文档' : 'Documentation'}</a>
+      <a href={docPath(locale, 'hosting/architecture')}>{zh ? '运行方式' : 'How it runs'}</a>
+      <a href={repository} target="_blank" rel="noopener noreferrer">GitHub</a>
+      <a href={`${repository}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">{zh ? '开源许可' : 'License'}</a>
+    </nav>
+  </div>
+</footer>

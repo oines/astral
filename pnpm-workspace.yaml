@@ -10,4 +10,4 @@ onlyBuiltDependencies:
 overrides:
   vue: 3.5.40
   markstream-vue: 2.0.0
-  zod: 3.25.76
+  'zod@<4': 3.25.76

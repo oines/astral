@@ -1,0 +1,40 @@
+---
+import { FileText, ChevronRight } from '@lucide/astro';
+import type { Locale } from '../lib/site';
+const { locale } = Astro.props as { locale: Locale };
+const zh = locale === 'zh-cn';
+---
+<div class="group-chat" aria-label={zh ? '群成员共同请求任务并接收结果的示例' : 'An example of group members requesting work and receiving the result'}>
+  <div class="group-chat-heading">
+    <h3 class="workflow-title">{zh ? '项目讨论' : 'Project chat'}</h3>
+    <span class="example-label">{zh ? '群聊示例' : 'Group chat example'}</span>
+  </div>
+  <ol class="group-messages" aria-label={zh ? '群聊消息' : 'Group messages'}>
+    <li>
+      <span class="group-sender">{zh ? '小林' : 'Maya'}</span>
+      <p>{zh ? '@Astral 把台式机上这周的项目记录整理成周报，发到群里。' : '@Astral Turn this week’s project notes on my desktop into a weekly update and send it here.'}</p>
+    </li>
+    <li>
+      <span class="group-sender">{zh ? '小周' : 'Leo'}</span>
+      <p>{zh ? '@Astral 加上下周待办，方便大家接着跟进。' : '@Astral Include next week’s tasks so we can follow up together.'}</p>
+    </li>
+    <li>
+      <span class="group-sender group-bot"><img src="/brand/astral-mark.svg" width="20" height="20" alt="" />Astral</span>
+      <p>{zh ? '已读取台式机上的项目记录，整理好本周进展和下周待办。周报发在这里：' : 'I’ve read the project notes on your desktop and put this week’s progress and next week’s tasks into the update. Here it is:'}</p>
+      <details class="group-attachment">
+        <summary>
+          <FileText size={16} aria-hidden="true" />
+          <span>weekly-update.md<span class="attachment-hint">{zh ? '查看示例文件' : 'Preview sample file'}</span></span>
+          <ChevronRight class="attachment-chevron" size={14} aria-hidden="true" />
+        </summary>
+        <div class="attachment-preview">
+          <h4>{zh ? '本周进展' : 'This week'}</h4>
+          <p>{zh ? '整理了项目反馈，更新了使用说明。' : 'Reviewed project feedback and updated the user guide.'}</p>
+          <h4>{zh ? '下周待办' : 'Next week'}</h4>
+          <p>{zh ? '跟进待确认的问题，准备下一轮演示。' : 'Follow up on open questions and prepare the next demo.'}</p>
+        </div>
+      </details>
+    </li>
+  </ol>
+  <p class="group-chat-caption">{zh ? '每个聊天对应独立的 Session，也可以在 Astral 中打开并继续。' : 'Each chat has its own session, which you can also open and continue in Astral.'}</p>
+</div>

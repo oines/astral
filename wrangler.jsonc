@@ -1,0 +1,6 @@
+{
+  // Match this name to the Pages project when creating it in Cloudflare.
+  "name": "astral-website",
+  "pages_build_output_dir": "./apps/website/dist",
+  "compatibility_date": "2026-10-26"
+}

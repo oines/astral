@@ -1,0 +1,67 @@
+---
+import { Laptop, Monitor, Server, Check, FileText, ChevronRight } from '@lucide/astro';
+import type { Locale } from '../lib/site';
+const { locale } = Astro.props as { locale: Locale };
+const zh = locale === 'zh-cn';
+const executions = [
+  {
+    machine: 'MacBook', os: 'macOS', icon: Laptop,
+    response: zh ? '先读取 MacBook 上的项目说明，确认检查方式。' : 'First, I’ll read the project instructions on your MacBook.',
+    tool: zh ? '读取项目说明' : 'Read project instructions',
+    command: 'cat ~/Projects/atlas/README.md',
+    output: 'atlas/\n  src/             Application source\n  tests/           Test suite\n  package.json     Build & test commands',
+  },
+  {
+    machine: zh ? '家庭服务器' : 'Home server', os: 'Linux', icon: Server,
+    response: zh ? '接着在 Linux 服务器已有的项目目录中运行测试。' : 'Next, I’ll run the tests in the existing checkout on your Linux server.',
+    tool: zh ? '运行测试' : 'Run tests',
+    command: 'cd /srv/atlas && pnpm test',
+    output: 'Test suite passed.\nExit code: 0',
+  },
+  {
+    machine: zh ? '台式机' : 'Desktop', os: 'Windows', icon: Monitor,
+    response: zh ? '再用 Windows 台式机上的环境检查构建。' : 'Then I’ll check the build in your Windows environment.',
+    tool: zh ? '检查构建' : 'Check the build',
+    command: 'Set-Location C:\\Projects\\atlas; pnpm build',
+    output: 'Build completed.\nOutput: dist/',
+  },
+];
+---
+<section class="workflow" id="workflow" aria-label={zh ? '一个 Session 跨多台电脑执行的示例' : 'One session running across multiple computers'}>
+  <div class="workflow-topline">
+    <span class="workflow-title">{zh ? '一个 Session，跨电脑执行' : 'One session, across computers'}</span>
+    <span class="example-label">{zh ? '交互示例' : 'Interactive example'}</span>
+  </div>
+  <div class="session-transcript" aria-label={zh ? '完整会话记录' : 'Complete session transcript'}>
+    <div class="session-user">
+      <span class="sr-only">{zh ? '你：' : 'You:'}</span>
+      <p>{zh ? '检查 atlas 项目在这几台电脑上的运行情况，把结果汇总给我。' : 'Check the atlas project across my computers and summarize the results here.'}</p>
+    </div>
+    <div class="session-assistant">
+      <img class="session-avatar" src="/brand/astral-mark.svg" width="25" height="25" alt="Astral" />
+      <div class="session-response">
+        <ol class="session-executions" aria-label={zh ? '同一会话中的执行记录' : 'Executions in this session'}>
+          {executions.map((execution) => <li>
+            <p>{execution.response}</p>
+            <details class="session-execution">
+              <summary>
+                <span class="execution-action"><Check size={14} aria-hidden="true" />{execution.tool}</span>
+                <span class="execution-computer"><execution.icon size={15} stroke-width={1.5} aria-hidden="true" /><span>{execution.machine}{' '}<small>{execution.os}</small></span></span>
+                <ChevronRight class="execution-chevron" size={14} aria-hidden="true" />
+              </summary>
+              <div class="execution-detail">
+                <code>{execution.command}</code>
+                <pre>{execution.output}</pre>
+              </div>
+            </details>
+          </li>)}
+        </ol>
+        <div class="session-result">
+          <p>{zh ? 'Linux 测试和 Windows 构建均已完成。项目说明、执行结果和环境信息已整理到同一份报告中。' : 'The Linux tests and Windows build are complete. I’ve brought the project notes, results, and environment details into one report.'}</p>
+          <span class="session-report"><FileText size={15} aria-hidden="true" />platform-check.md</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="workflow-caption">{zh ? '消息、执行记录和结果，始终在这一个 Session 中。' : 'Every message, execution, and result stays in this session.'}</p>
+</section>

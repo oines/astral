@@ -1,0 +1,14 @@
+---
+import { navigation, homePath, docPath, repository } from '../lib/site';
+const locale = Astro.url.pathname.startsWith('/zh-cn') ? 'zh-cn' : 'en';
+const t = navigation[locale];
+---
+<div class="docs-mobile-links" aria-label={locale === 'en' ? 'Website links' : '网站导航'}>
+  <a href={homePath(locale)}>{t.product}</a>
+  <a href={docPath(locale, 'start/get-astral')}>{t.get}</a>
+  <a href={repository} target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+</div>
+<style>
+  .docs-mobile-links { display: flex; flex-wrap: wrap; gap: 8px 24px; border-top: 1px solid var(--line); padding-block: 16px 24px; }
+  .docs-mobile-links a { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; }
+</style>

@@ -1,0 +1,6 @@
+---
+import Search from '@astrojs/starlight/components/Search.astro';
+import SiteHeader from './SiteHeader.astro';
+const locale = Astro.url.pathname.startsWith('/zh-cn') ? 'zh-cn' : 'en';
+---
+<SiteHeader locale={locale} docs><Search slot="search" /></SiteHeader>

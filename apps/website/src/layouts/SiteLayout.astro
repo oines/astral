@@ -1,0 +1,47 @@
+---
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { navigation, type Locale } from '../lib/site';
+import '../styles/base.css';
+interface Props { locale: Locale; title: string; description: string; }
+const { locale, title, description } = Astro.props;
+const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
+---
+<!doctype html>
+<html lang={locale === 'en' ? 'en' : 'zh-CN'} data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Astral" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" type="image/svg+xml" href="/brand/astral-mark.svg" />
+    <link rel="preload" href="/fonts/inter-latin-variable.woff2" as="font" type="font/woff2" crossorigin />
+    {canonical && <link rel="canonical" href={canonical} />}
+    {Astro.site && <>
+      <link rel="alternate" hreflang="en" href={new URL('/', Astro.site)} />
+      <link rel="alternate" hreflang="zh-CN" href={new URL('/zh-cn/', Astro.site)} />
+      <link rel="alternate" hreflang="x-default" href={new URL('/', Astro.site)} />
+    </>}
+    <script is:inline>
+      try {
+        const saved = localStorage.getItem('starlight-theme');
+        document.documentElement.dataset.theme = saved === 'light' || saved === 'dark' ? saved : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{navigation[locale].skip}</a>
+    <header class="marketing-header"><div class="site-width"><SiteHeader locale={locale} /></div></header>
+    <main id="main"><slot /></main>
+    <SiteFooter locale={locale} />
+  </body>
+</html>
+<style>
+  .marketing-header { position: sticky; top: 0; z-index: 20; background: var(--page); border-bottom: 1px solid var(--line); }
+</style>
