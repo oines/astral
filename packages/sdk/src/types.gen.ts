@@ -730,6 +730,7 @@ export type AstralInternalDomainMarkdownTemplateParam = {
 };
 
 export type AstralInternalDomainModelProfile = {
+    available?: boolean;
     catalog_at?: string;
     catalog_source?: string;
     created_at: string;
@@ -744,6 +745,7 @@ export type AstralInternalDomainModelProfile = {
     };
     protocol?: string;
     provider_id: string;
+    provider_name?: string;
     reasoning_controls?: AstralModelsReasoningControls;
     reasoning_error?: string;
     recommendation_sources?: {
@@ -753,7 +755,9 @@ export type AstralInternalDomainModelProfile = {
         [key: string]: unknown;
     };
     revision: number;
+    unavailable_reason?: string;
     updated_at: string;
+    user_modified?: boolean;
     verification?: AstralInternalDomainModelVerification;
 };
 
@@ -1099,7 +1103,9 @@ export type AstralInternalHarnessView = {
     head_id: string;
     id: string;
     last_run?: AstralCoreRunRecord;
+    model_available: boolean;
     model_ref?: string;
+    model_unavailable_reason?: string;
     options: AstralCoreGenerationOptions;
     parent_session_id?: string;
     pending: Array<AstralInternalHarnessPendingInput>;
@@ -1426,7 +1432,6 @@ export type AstralInternalModelbridgeDiscovery = {
 
 export type AstralInternalModelbridgeImportModelsInput = {
     ids?: Array<string>;
-    refresh: boolean;
 };
 
 export type AstralInternalModelbridgeImportModelsResult = {
@@ -1459,6 +1464,13 @@ export type AstralInternalModelbridgeProviderPreset = {
     reasoning_format?: string;
     regions?: Array<AstralInternalModelbridgePresetRegion>;
     requires_url?: boolean;
+};
+
+export type AstralInternalModelbridgeRefreshResult = {
+    added: number;
+    removed: number;
+    unchanged: number;
+    updated: number;
 };
 
 export type AstralInternalPersistenceStoredObservation = {
@@ -2856,33 +2868,6 @@ export type DeleteModelResponses = {
 
 export type DeleteModelResponse = DeleteModelResponses[keyof DeleteModelResponses];
 
-export type RefreshModelData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/models/{id}/refresh';
-};
-
-export type RefreshModelErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type RefreshModelError = RefreshModelErrors[keyof RefreshModelErrors];
-
-export type RefreshModelResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalDomainModelProfile;
-};
-
-export type RefreshModelResponse = RefreshModelResponses[keyof RefreshModelResponses];
-
 export type VerifyModelData = {
     body?: never;
     path: {
@@ -3306,6 +3291,33 @@ export type ModelRecommendationResponses = {
 };
 
 export type ModelRecommendationResponse = ModelRecommendationResponses[keyof ModelRecommendationResponses];
+
+export type RefreshProviderModelsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/providers/{id}/refresh';
+};
+
+export type RefreshProviderModelsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type RefreshProviderModelsError = RefreshProviderModelsErrors[keyof RefreshProviderModelsErrors];
+
+export type RefreshProviderModelsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalModelbridgeRefreshResult;
+};
+
+export type RefreshProviderModelsResponse = RefreshProviderModelsResponses[keyof RefreshProviderModelsResponses];
 
 export type ReasoningFormatsData = {
     body?: never;

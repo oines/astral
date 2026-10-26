@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { saveModel, refreshModel, modelRecommendation, type AstralInternalModelbridgeDiscovery as Discovery } from '@astral/sdk'
+import { saveModel, modelRecommendation, type AstralInternalModelbridgeDiscovery as Discovery } from '@astral/sdk'
 import { Button, Modal, Select } from '@astral/ui'
 import { useI18n } from 'vue-i18n'
 import type { Profile, Provider } from '../../lib/types'
@@ -129,13 +129,6 @@ async function save() {
     }
     const saved = await request(saveModel({ body: copy }))
     emit('saved', saved); emit('update:open', false)
-  })
-}
-async function refresh() {
-  await action.run(async () => {
-    if (!form.value?.id) return
-    form.value = editableProfile(await request(refreshModel({ path: { id: form.value.id } })))
-    syncJSON(); emit('saved', form.value)
   })
 }
 const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'image_token_budget', label: 'imageBudget' }, { key: 'input_price', label: 'inputPrice' }, { key: 'output_price', label: 'outputPrice' }]
@@ -312,14 +305,6 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
             >
               {{ t('source') }}: {{ form.catalog_source }}
             </p>
-            <Button
-              v-if="form.id"
-              size="small"
-              :busy="action.busy.value"
-              @click="refresh"
-            >
-              {{ t('refreshModelDefaults') }}
-            </Button>
           </div>
         </details>
       </div>

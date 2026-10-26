@@ -10,6 +10,7 @@ import { prepareInputAttempt, sameInputContent } from '../lib/input-attempt'
 import { useAppStore } from '../stores/app'
 import ModelSelection from './ModelSelection.vue'
 import type { ModelSelection as Selection } from '../lib/model-reasoning'
+import { modelUnavailableLabel } from '../lib/model-availability'
 const props = defineProps<{ view: SessionView; live: boolean }>()
 const emit = defineEmits<{ compact: []; started: [id: string] }>()
 const app = useAppStore()
@@ -43,6 +44,9 @@ const retrying = computed(() => attempt.value && sameInputContent(attempt.value,
 watch(inputContent, () => { if (!busy.value) error.value = '' })
 watch(() => app.data?.preferences.running_input, value => { if (value) mode.value = value })
 const running = computed(() => ['running', 'stopping', 'compacting'].includes(view.value.status))
+const selectedProfile = computed(() => app.models.find(model => model.id === view.value.profile_id))
+const modelAvailable = computed(() => !!selectedProfile.value?.available && (!props.view.id || view.value.model_available))
+const unavailableReason = computed(() => selectedProfile.value?.unavailable_reason || view.value.model_unavailable_reason || 'model_missing')
 const canContinue = computed(() => view.value.can_continue)
 const agent = computed(() => app.agents.find(a => a.id === view.value.agent_id))
 const computers = computed(() => app.computers.filter(c => agent.value?.allowed_computers.includes(c.id) && !c.revoked))
@@ -59,7 +63,7 @@ async function ensureSession() {
   const desired = { ...view.value }
   if (!draft.session) {
     const created = await request(createSession({ body: { agent_id: desired.agent_id, title: '' } }))
-    draft.session = { ...created, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', can_continue: false, approvals: [], pending: [], unresolved: [] }
+    draft.session = { ...created, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', can_continue: false, model_available: app.availableModels.some(model => model.id === created.profile_id), approvals: [], pending: [], unresolved: [] }
   }
   const session = draft.session
   if (desired.computer_id && desired.computer_id !== session.computer_id) {
@@ -85,7 +89,7 @@ async function send(overrideMode?: string) {
     })
     return
   }
-  if (!props.live || busy.value || uploading.value) return
+  if (!props.live || busy.value || uploading.value || !modelAvailable.value) return
   if (!text.value.trim() && !files.value.length) {
     if (canContinue.value) {
       busy.value = true
@@ -244,7 +248,14 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
       </div>
     </div>
     <p
-      v-if="view.error"
+      v-if="!modelAvailable"
+      class="muted small"
+      role="status"
+    >
+      {{ modelUnavailableLabel(unavailableReason, t) }}{{ t('selectAvailableModelHint') }}
+    </p>
+    <p
+      v-else-if="view.error"
       class="muted small"
       role="status"
     >
@@ -484,7 +495,7 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
               :aria-label="sendLabel"
               :title="sendLabel"
               :busy="busy || queueBusy"
-              :disabled="uploading || (!composerText.trim() && !attachments.length && (Boolean(editing) || !canContinue)) || !live"
+              :disabled="uploading || (!editing && !modelAvailable) || (!composerText.trim() && !attachments.length && (Boolean(editing) || !canContinue)) || !live"
             >
               <Check v-if="editing" /><ListEnd v-else-if="running && mode === 'follow_up'" /><ArrowUp v-else />
             </Button>
@@ -537,6 +548,7 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
         <ModelSelection
           :model-value="view.profile_id || ''"
           :reasoning="view.reasoning"
+          :unavailable-reason="view.model_unavailable_reason"
           :busy="modelBusy"
           composer
           @select="changeModel"
@@ -577,7 +589,7 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
             <Button
               variant="secondary"
               size="small"
-              :disabled="running"
+              :disabled="running || !modelAvailable"
               @click="emit('compact')"
             >
               {{ t('compact') }}

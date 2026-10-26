@@ -152,7 +152,7 @@ function preventDeleteDismiss(event: Event) { if (action.busy.value) event.preve
           class="resource-row"
           @click="openAgent(bot.id)"
         >
-          <span class="agent-avatar">{{ bot.avatar || bot.name.slice(0, 1) }}</span><span><strong>{{ bot.name }}</strong><small>{{ app.models.find(m => m.id === bot.default_model_id)?.name || t('agentNoModel') }}</small></span><ChevronRight />
+          <span class="agent-avatar">{{ bot.avatar || bot.name.slice(0, 1) }}</span><span><strong>{{ bot.name }}</strong><small>{{ app.models.find(m => m.id === bot.default_model_id)?.name || t(bot.default_model_id ? 'modelUnavailable_model_missing' : 'agentNoModel') }}</small></span><ChevronRight />
         </button>
         <p
           v-if="!visibleAgents.length"

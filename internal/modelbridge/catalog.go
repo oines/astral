@@ -88,11 +88,6 @@ func (b *Bridge) Catalog(ctx context.Context, providerID string) ([]Discovery, e
 			query.Set(field, cursor)
 			req.URL.RawQuery = query.Encode()
 		}
-		if provider.PresetID == "codex" {
-			q := req.URL.Query()
-			q.Set("client_version", "0.1.0")
-			req.URL.RawQuery = q.Encode()
-		}
 		if key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)
 			if provider.Protocol == "anthropic-messages" {
@@ -163,6 +158,13 @@ func (b *Bridge) Catalog(ctx context.Context, providerID string) ([]Discovery, e
 				v.ID = v.Slug
 				v.Name = v.DisplayNameSnake
 			}
+			if provider.Protocol == "google-generative-ai" {
+				v.ID = strings.TrimPrefix(v.Name, "models/")
+				v.Name = v.DisplayName
+			}
+			if strings.TrimSpace(v.ID) == "" {
+				return nil, domain.Invalid("model catalog entry is missing its model ID")
+			}
 			if isSelfHostedGateway(provider.PresetID) {
 				if v.Kind != "" && v.Kind != "chat" || v.Mode != "" && v.Mode != "chat" && v.Mode != "responses" {
 					continue
@@ -175,10 +177,8 @@ func (b *Bridge) Catalog(ctx context.Context, providerID string) ([]Discovery, e
 				if !slices.Contains(v.Methods, "generateContent") {
 					continue
 				}
-				v.ID = strings.TrimPrefix(v.Name, "models/")
-				v.Name = v.DisplayName
 			}
-			if v.ID == "" || seen[v.ID] {
+			if seen[v.ID] {
 				continue
 			}
 			seen[v.ID] = true
@@ -225,27 +225,4 @@ func (b *Bridge) Catalog(ctx context.Context, providerID string) ([]Discovery, e
 		cursor = envelope.LastID
 	}
 	return nil, domain.Invalid("provider model catalog exceeded 20 pages")
-}
-
-func (b *Bridge) Refresh(ctx context.Context, id string) (domain.ModelProfile, error) {
-	var p domain.ModelProfile
-	if err := b.Store.Get(ctx, "models", id, &p); err != nil {
-		return p, err
-	}
-	catalog, err := b.Catalog(ctx, p.ProviderID)
-	if err != nil {
-		return p, err
-	}
-	for _, item := range catalog {
-		if item.ID != p.ModelID {
-			continue
-		}
-		now := time.Now().UTC()
-		p.Recommendations, p.CatalogAt, p.CatalogSource = item.Recommendations, &now, item.Source
-		p.RecommendationSources = item.RecommendationSources
-		// Overrides are deliberately not merged into or replaced by discovery.
-		err = b.SaveProfile(ctx, &p)
-		return p, err
-	}
-	return p, domain.Missing("model in provider catalog", p.ModelID)
 }

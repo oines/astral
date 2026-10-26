@@ -2,12 +2,13 @@
 import { computed, nextTick, onDeactivated, onUnmounted, ref, watch } from 'vue'
 import { useQuery } from '@pinia/colada'
 import { listModelsQuery, listModelsQueryKey, listProvidersQuery, listProvidersQueryKey } from '@astral/sdk/colada'
-import { authorizeProvider, deleteModel, deleteProvider, importModels, listProviderPresets, modelCatalog, presetModels, listProviders, listModels, providerAuthorization, saveModel, saveProvider, type AstralInternalModelbridgeAuthorization as Authorization, type AstralInternalModelbridgeDiscovery as Discovery, type AstralInternalModelbridgeProviderPreset as Preset } from '@astral/sdk'
+import { authorizeProvider, deleteModel, deleteProvider, importModels, refreshProviderModels, listProviderPresets, presetModels, listProviders, listModels, providerAuthorization, saveModel, saveProvider, type AstralInternalModelbridgeAuthorization as Authorization, type AstralInternalModelbridgeDiscovery as Discovery, type AstralInternalModelbridgeProviderPreset as Preset } from '@astral/sdk'
 import { Button, Modal, SettingsSection, Switch } from '@astral/ui'
 import { ArrowLeft, Brain, ChevronRight, Copy, Eye, Pencil, Plus, ProviderIcon, RefreshCw, Search, Trash2, Wrench } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Profile, Provider } from '../../lib/types'
 import { errorText, object, request } from '../../lib/api'
+import { modelUnavailableLabel } from '../../lib/model-availability'
 import { useAction } from '../../composables/useAction'
 import { useClipboard } from '../../composables/useClipboard'
 import { useSettingsSave } from '../../composables/useSettingsSave'
@@ -21,6 +22,8 @@ defineProps<{ embedded?: boolean }>()
 const { t } = useI18n()
 const app = useAppStore()
 const action = useAction()
+const refreshingCatalogs = ref(new Set<string>())
+const refreshErrors = ref<Record<string, string>>({})
 const { copy } = useClipboard()
 const saves = useSettingsSave()
 const providers = useQuery(listProvidersQuery())
@@ -29,6 +32,7 @@ const presets = useQuery({ key: ['provider-presets'], query: () => request(listP
 const search = ref('')
 const detail = ref(false)
 const providerID = ref('')
+const catalogBusy = computed(() => refreshingCatalogs.value.has(providerID.value))
 const presetID = ref('')
 const root = ref<HTMLElement>()
 watch([detail, providerID, presetID], async () => { await nextTick(); root.value?.closest<HTMLElement>('.settings-main')?.scrollTo({ top: 0 }) })
@@ -50,7 +54,7 @@ const modelSearch = ref('')
 const modelPage = ref(1)
 const localModels = computed(() => profiles.data.value?.filter(p => p.provider_id === providerID.value) || [])
 const modelRows = computed(() => {
-  const rows = localModels.value.length ? localModels.value.map(profile => ({ id: profile.model_id, name: profile.name, values: { ...profile.recommendations, ...profile.overrides }, profile, suggestion: undefined as Discovery | undefined })) : suggestions.value.map(suggestion => ({ id: suggestion.id, name: suggestion.name, values: suggestion.recommendations, profile: undefined as Profile | undefined, suggestion }))
+  const rows = provider.value ? localModels.value.map(profile => ({ id: profile.model_id, name: profile.name, values: { ...profile.recommendations, ...profile.overrides }, profile, suggestion: undefined as Discovery | undefined })) : suggestions.value.map(suggestion => ({ id: suggestion.id, name: suggestion.name, values: suggestion.recommendations, profile: undefined as Profile | undefined, suggestion }))
   return rows.filter(p => `${p.id} ${p.name}`.toLowerCase().includes(modelSearch.value.trim().toLowerCase()))
 })
 const pageCount = computed(() => Math.max(1, Math.ceil(modelRows.value.length / 8)))
@@ -61,7 +65,7 @@ watch(() => [preset.value?.id, providerID.value], async () => {
   const epoch = ++catalogEpoch
   suggestions.value = []; catalogError.value = ''; catalogLoading.value = true
   try {
-    const items = preset.value ? await request(presetModels({ path: { id: preset.value.id } })) : []
+    const items = preset.value && !providerID.value ? await request(presetModels({ path: { id: preset.value.id } })) : []
     if (epoch === catalogEpoch) suggestions.value = items
   } catch (error) { if (epoch === catalogEpoch) catalogError.value = errorText(error) }
   finally { if (epoch === catalogEpoch) catalogLoading.value = false }
@@ -78,25 +82,29 @@ async function savedProvider(saved: Provider, autoImport: boolean, origin: strin
   if (modal) addOpen.value = false
   if (modal || current) {
     if (providerID.value !== saved.id) openProvider(saved, presets.data.value?.find(p => p.id === saved.preset_id))
-    if (autoImport) await importCatalog(true)
+    if (autoImport) await importCatalog()
   }
   await app.refresh().catch(() => undefined)
 }
-async function importCatalog(refresh: boolean) {
+async function importCatalog() {
   await action.run(async () => {
     if (!provider.value) return
-    const result = await request(importModels({ path: { id: provider.value.id }, body: { refresh } }))
+    const result = await request(importModels({ path: { id: provider.value.id }, body: {} }))
     await app.refresh()
     action.success.value = t('modelsImported', { count: result.imported.length })
     if (result.catalog_error) action.success.value += ` · ${t('usingBuiltInCatalog')}`
     if (result.skipped.length && !result.imported.length && !localModels.value.length) action.success.value = t('catalogNeedsLimits')
   })
 }
-async function fetchCatalog() {
-  await action.run(async () => {
-    if (!provider.value) return
-    suggestions.value = await request(modelCatalog({ path: { id: provider.value.id } }))
-  })
+async function refreshCatalog(id = provider.value?.id) {
+  if (!id || refreshingCatalogs.value.has(id)) return
+  refreshingCatalogs.value.add(id)
+  delete refreshErrors.value[id]
+  try {
+    await request(refreshProviderModels({ path: { id } }))
+    await app.refresh()
+  } catch (error) { refreshErrors.value[id] = errorText(error) }
+  finally { refreshingCatalogs.value.delete(id) }
 }
 async function toggleProvider(enabled: boolean) {
   const id = provider.value?.id
@@ -139,7 +147,7 @@ const modelOpen = ref(false)
 const editModel = ref<Profile>()
 const newSuggestion = ref<Discovery>()
 function openModel(p?: Profile, suggestion?: Discovery) { editModel.value = p; newSuggestion.value = suggestion; modelOpen.value = true }
-async function modelSaved() { await app.refresh(); action.success.value = t('saved') }
+async function modelSaved() { await app.refresh() }
 const deleteTarget = ref<{ kind: 'providers' | 'models'; id: string; name: string; revision: number }>()
 async function remove() {
   await action.run(async () => {
@@ -172,7 +180,11 @@ function scheduleAuthorization(epoch: number) {
       const next = await request(providerAuthorization({ path: { id: flow.id } }))
       if (epoch !== authEpoch) return
       authorization.value = next
-      if (next.status === 'connected') { await app.refresh(); await importCatalog(true) }
+      if (next.status === 'connected') {
+        const id = provider.value?.id
+        await app.refresh()
+        if (id) await refreshCatalog(id)
+      }
       else if (next.status === 'pending') scheduleAuthorization(epoch)
     } catch (error) { if (epoch === authEpoch) action.error.value = errorText(error) }
   }, Math.max(5, authorization.value?.interval || 5) * 1000)
@@ -339,8 +351,8 @@ async function copyCode() { if (authorization.value?.user_code) await copy(autho
           <Button
             v-if="provider"
             size="small"
-            :busy="action.busy.value"
-            @click="importCatalog(true)"
+            :busy="catalogBusy"
+            @click="refreshCatalog()"
           >
             <RefreshCw />{{ t('refreshModels') }}
           </Button>
@@ -354,10 +366,11 @@ async function copyCode() { if (authorization.value?.user_code) await copy(autho
           </Button>
         </div>
         <p
-          v-if="catalogError"
+          v-if="refreshErrors[providerID] || (!provider && catalogError)"
           class="error-box"
+          role="alert"
         >
-          {{ catalogError }}
+          {{ refreshErrors[providerID] || catalogError }}
         </p>
         <div
           v-for="row in visibleModels"
@@ -371,7 +384,7 @@ async function copyCode() { if (authorization.value?.user_code) await copy(autho
             :aria-label="t('editModelNamed', { name: row.name })"
             @click="openModel(row.profile, row.suggestion)"
           >
-            <strong>{{ row.name }}</strong><small v-if="row.id !== row.name">{{ row.id }}</small>
+            <strong>{{ row.name }}</strong><small v-if="row.id !== row.name">{{ row.id }}</small><small v-if="row.profile && !row.profile.available">{{ modelUnavailableLabel(row.profile.unavailable_reason, t) }}</small>
           </button>
           <div
             v-else
@@ -404,7 +417,7 @@ async function copyCode() { if (authorization.value?.user_code) await copy(autho
             <Switch
               :model-value="saves.value(`model:${row.profile.id}/enabled`, row.profile.enabled !== false)"
               :label="t('enableModel', { name: row.name })"
-              :disabled="action.busy.value"
+              :disabled="action.busy.value || catalogBusy"
               @update:model-value="toggleModel(row.profile!, $event)"
             />
             <Button
@@ -469,19 +482,11 @@ async function copyCode() { if (authorization.value?.user_code) await copy(autho
           </Button>
         </div>
         <p
-          v-if="!localModels.length && suggestions.length"
+          v-if="!provider && suggestions.length"
           class="model-catalog-note muted small"
         >
-          {{ provider ? t('catalogPreviewHint') : t('saveProviderToUseModels') }}
+          {{ t('saveProviderToUseModels') }}
         </p>
-        <Button
-          v-if="provider && !suggestions.length && !localModels.length"
-          size="small"
-          :busy="action.busy.value"
-          @click="fetchCatalog"
-        >
-          {{ t('catalog') }}
-        </Button>
       </SettingsSection>
     </template>
     <Modal
@@ -514,6 +519,7 @@ async function copyCode() { if (authorization.value?.user_code) await copy(autho
       :name="deleteTarget?.name || ''"
       :busy="action.busy.value"
       :error-message="action.error.value"
+      :description="t(deleteTarget?.kind === 'providers' ? 'deleteProviderHint' : 'deleteModelHint')"
       @update:open="value => { if (!value) deleteTarget = undefined }"
       @confirm="remove"
     />

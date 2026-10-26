@@ -33,7 +33,7 @@ export const useAppStore = defineStore('app', () => {
   watch(activeAgentID, value => localStorage.setItem('astral:agent', value))
   const computers = computed(() => computerQuery.data.value ?? data.value?.computers ?? [])
   const models = computed(() => data.value?.models ?? [])
-  const availableModels = computed(() => models.value.filter(model => model.enabled !== false))
+  const availableModels = computed(() => models.value.filter(model => model.available))
   const sessions = computed(() => (sessionQuery.data.value ?? data.value?.sessions ?? []).map(s => sessionViews.value[s.id] ?? s))
   let refreshing = false
   useIntervalFn(async () => {

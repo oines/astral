@@ -49,14 +49,18 @@ func reasoningConfig(profile domain.ModelProfile, provider domain.Provider, valu
 // saved route is reported on that profile, without hiding other resources.
 func (b *Bridge) DescribeProfile(ctx context.Context, profile domain.ModelProfile) domain.ModelProfile {
 	profile.ReasoningControls, profile.ReasoningError = nil, ""
+	available := false
+	profile.Available, profile.ProviderName, profile.UnavailableReason = &available, "", ""
 	var provider domain.Provider
 	if err := b.Store.Get(ctx, "providers", profile.ProviderID, &provider); err != nil {
-		profile.ReasoningError = err.Error()
+		profile.UnavailableReason = "provider_missing"
 		return profile
 	}
+	profile.ProviderName = provider.Name
 	values, _, err := profile.Effective()
 	if err != nil {
 		profile.ReasoningError = err.Error()
+		profile.UnavailableReason = "invalid_configuration"
 		return profile
 	}
 	config, protocol, err := reasoningConfig(profile, provider, values)
@@ -70,7 +74,28 @@ func (b *Bridge) DescribeProfile(ctx context.Context, profile domain.ModelProfil
 	if err != nil {
 		profile.ReasoningError = fmt.Sprintf("reasoning settings: %s", err)
 	}
+	switch {
+	case profile.Enabled != nil && !*profile.Enabled:
+		profile.UnavailableReason = "model_disabled"
+	case provider.Enabled != nil && !*provider.Enabled:
+		profile.UnavailableReason = "provider_disabled"
+	case profile.ReasoningError != "":
+		profile.UnavailableReason = "invalid_configuration"
+	default:
+		available = true
+	}
 	return profile
+}
+
+// Availability describes whether the current selection can start a new request.
+// Historical versions remain independently readable after their resource is removed.
+func (b *Bridge) Availability(ctx context.Context, profileID string) (bool, string) {
+	var profile domain.ModelProfile
+	if err := b.Store.Get(ctx, "models", profileID, &profile); err != nil {
+		return false, "model_missing"
+	}
+	profile = b.DescribeProfile(ctx, profile)
+	return profile.Available != nil && *profile.Available, profile.UnavailableReason
 }
 
 func (b *Bridge) ListProfiles(ctx context.Context) ([]domain.ModelProfile, error) {

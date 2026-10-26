@@ -141,7 +141,7 @@ func TestVerificationRevisionAndImmutableCredentials(t *testing.T) {
 	}
 }
 
-func TestCatalogRefreshRetainsOverridesAndNativeEfforts(t *testing.T) {
+func TestCatalogProvidesNativeEffortsForImportedModel(t *testing.T) {
 	ctx := context.Background()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -164,10 +164,11 @@ func TestCatalogRefreshRetainsOverridesAndNativeEfforts(t *testing.T) {
 	if err = bridge.SaveProfile(ctx, &profile); err != nil {
 		t.Fatal(err)
 	}
-	profile, err = bridge.Refresh(ctx, profile.ID)
-	if err != nil {
-		t.Fatal(err)
+	catalog, err := bridge.Catalog(ctx, provider.ID)
+	if err != nil || len(catalog) != 1 {
+		t.Fatalf("catalog: %+v %v", catalog, err)
 	}
+	profile.Recommendations = catalog[0].Recommendations
 	values, sources, err := profile.Effective()
 	if err != nil || values.MaxOutputTokens != 16384 || values.ContextWindow != 1048576 || values.Defaults.Reasoning.Effort != "low" || sources["max_output_tokens"] != "override" {
 		t.Fatalf("catalog overwrote overrides: %+v %v", values, err)

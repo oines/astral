@@ -8,7 +8,7 @@ function entry(id: string, sequence: number, rest: Partial<Entry>): Entry {
 const view: SessionView = {
   id: 'session', agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Work',
   archived: false, pinned: false, source: 'web', rollout_id: 'rollout', head_id: 'head',
-  status: 'running', can_continue: false, run_id: 'run', options: {}, approvals: [], pending: [], unresolved: [], event_sequence: 0,
+  status: 'running', can_continue: false, model_available: true, run_id: 'run', options: {}, approvals: [], pending: [], unresolved: [], event_sequence: 0,
 }
 function snapshot(history: Entry[] = [], trace: Entry[] = []): Snapshot {
   return { epoch: 'server-a', view, history: { entries: history, head_id: 'head' }, trace: { entries: trace, head_id: 'head' } }

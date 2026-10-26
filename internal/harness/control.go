@@ -29,10 +29,30 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 	if agent.DefaultComputerID != "" && !slices.Contains(agent.AllowedComputers, agent.DefaultComputerID) {
 		return domain.Invalid("default Computer must be allowed for this Agent")
 	}
+	var previous domain.Agent
+	if agent.Revision > 0 {
+		if err := s.Store.Get(ctx, "agents", agent.ID, &previous); err != nil {
+			return err
+		}
+		if previous.Deletion {
+			return domain.Missing("Bot", agent.ID)
+		}
+	}
 	for _, selection := range []struct {
-		model     string
-		reasoning *core.ReasoningOptions
-	}{{agent.DefaultModelID, agent.DefaultReasoning}, {agent.ProbeModelID, agent.ProbeReasoning}} {
+		model             string
+		reasoning         *core.ReasoningOptions
+		previousModel     string
+		previousReasoning *core.ReasoningOptions
+	}{
+		{agent.DefaultModelID, agent.DefaultReasoning, previous.DefaultModelID, previous.DefaultReasoning},
+		{agent.ProbeModelID, agent.ProbeReasoning, previous.ProbeModelID, previous.ProbeReasoning},
+	} {
+		// Deleted or disabled models leave their saved references intact. An
+		// unrelated edit or repair of the other selection must still be possible;
+		// only a newly chosen model/reasoning pair needs current validation.
+		if agent.Revision > 0 && selection.model == selection.previousModel && jsonEqual(selection.reasoning, selection.previousReasoning) {
+			continue
+		}
 		if selection.model == "" {
 			if selection.reasoning != nil {
 				return domain.Invalid("a reasoning override requires an explicit model")

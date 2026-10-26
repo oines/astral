@@ -2,9 +2,9 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useQuery, useQueryCache } from '@pinia/colada'
+import { useQueryCache } from '@pinia/colada'
 import { completeOnboarding } from '@astral/sdk'
-import { bootstrapQueryKey, listProvidersQuery } from '@astral/sdk/colada'
+import { bootstrapQueryKey } from '@astral/sdk/colada'
 import { ArrowLeft, ArrowRight, AstralLogo, Check, Monitor, Plus, Server } from '@astral/icons'
 import { Button, Select, SettingsRow, SettingsSection } from '@astral/ui'
 import { useAppStore } from '../stores/app'
@@ -15,7 +15,6 @@ import AddComputerDialog from '../components/settings/AddComputerDialog.vue'
 const app = useAppStore()
 const router = useRouter()
 const cache = useQueryCache()
-const providers = useQuery(listProvidersQuery())
 const { t, locale } = useI18n()
 const bot = computed(() => app.agents.find(agent => agent.id === app.data?.onboarding.agent_id))
 const storageKey = `astral:setup:${app.data?.public_url}:${bot.value?.id}`
@@ -39,7 +38,7 @@ const busy = ref(false)
 const error = ref('')
 const scroll = ref<HTMLElement>()
 const heading = ref<HTMLElement>()
-const modelOptions = computed(() => app.availableModels.map(model => ({ value: model.id, label: model.name, description: providers.data.value?.find(provider => provider.id === model.provider_id)?.name })))
+const modelOptions = computed(() => app.availableModels.map(model => ({ value: model.id, label: model.name, description: model.provider_name })))
 
 watch(() => app.availableModels, models => {
   if (!models.some(model => model.id === modelID.value)) modelID.value = models.length === 1 ? models[0]!.id : ''

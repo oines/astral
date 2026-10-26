@@ -165,6 +165,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	}
 	config := r.coreConfig(model, record)
 	session, err := core.OpenSession(ctx, config, r.id)
+	created := errors.Is(err, core.ErrNotFound)
 	if errors.Is(err, core.ErrNotFound) {
 		if record.ParentSessionID != "" {
 			parent, openErr := s.open(ctx, record.ParentSessionID)
@@ -187,7 +188,11 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	if err == nil {
 		err = r.finishInterruptedTools(ctx)
 	}
-	if err == nil {
+	// Reopening history must not require the current Provider/Profile to still
+	// exist or be enabled. The persisted model reference resolves its immutable
+	// snapshot for inspection; execution reconciles the current selection in
+	// continueLocked/Compact. Only a newly created Session needs initial setup.
+	if err == nil && created {
 		err = r.syncSelection(ctx)
 	}
 	return err

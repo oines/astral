@@ -66,8 +66,10 @@ func (b *Bridge) accountCatalog(ctx context.Context, provider domain.Provider) (
 		return nil, domain.Invalid("account model catalog exceeds 8 MiB")
 	}
 	var envelope struct {
-		Models []json.RawMessage `json:"models"`
-		Data   []json.RawMessage `json:"data"`
+		Models        []json.RawMessage `json:"models"`
+		Data          []json.RawMessage `json:"data"`
+		HasMore       bool              `json:"has_more"`
+		NextPageToken string            `json:"nextPageToken"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return nil, domain.Invalid("invalid account model catalog response")
@@ -75,6 +77,12 @@ func (b *Bridge) accountCatalog(ctx context.Context, provider domain.Provider) (
 	items := envelope.Data
 	if provider.PresetID == "codex" {
 		items = envelope.Models
+	}
+	if items == nil {
+		return nil, domain.Invalid("account model catalog response did not contain a model list")
+	}
+	if envelope.HasMore || envelope.NextPageToken != "" {
+		return nil, domain.Invalid("account model catalog response is incomplete")
 	}
 	return accountDiscoveries(provider, req.URL.String(), items)
 }
@@ -100,6 +108,13 @@ func accountDiscoveries(provider domain.Provider, source string, items []json.Ra
 	for i, item := range items {
 		if err := json.Unmarshal(item, &entries[i]); err != nil {
 			return nil, domain.Invalid("invalid account model catalog entry")
+		}
+		id := entries[i].ID
+		if provider.PresetID == "codex" {
+			id = entries[i].Slug
+		}
+		if strings.TrimSpace(id) == "" {
+			return nil, domain.Invalid("account model catalog entry is missing its model ID")
 		}
 		if entries[i].Picker && !strings.EqualFold(entries[i].Policy.State, "disabled") {
 			hasPickerModels = true

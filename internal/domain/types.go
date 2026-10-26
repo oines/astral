@@ -96,10 +96,15 @@ type Provider struct {
 }
 
 // Recommendations and Overrides keep their provenance independently. An
-// override is removed to restore the recommendation, never overwritten during
-// a catalog refresh. Unknown capability values remain unknown.
+// override is removed to restore the recommendation. A user-modified profile
+// keeps its whole configuration while still listed by its provider; an absent
+// model is removed from current inventory. Unknown capabilities remain unknown.
 type ModelProfile struct {
 	Meta
+	UserModified          bool                            `json:"user_modified,omitempty"`
+	Available             *bool                           `json:"available,omitempty"`
+	ProviderName          string                          `json:"provider_name,omitempty"`
+	UnavailableReason     string                          `json:"unavailable_reason,omitempty"`
 	Description           string                          `json:"description,omitempty"`
 	Enabled               *bool                           `json:"enabled,omitempty"`
 	ProviderID            string                          `json:"provider_id"`

@@ -78,7 +78,7 @@ func TestCatalogImportKeepsEditsAndSkipsUnknownLimits(t *testing.T) {
 	if err := b.SaveProvider(ctx, &provider, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	first, err := b.ImportModels(ctx, provider.ID, ImportModelsInput{Refresh: true})
+	first, err := b.ImportModels(ctx, provider.ID, ImportModelsInput{})
 	if err != nil || len(first.Imported) != 1 || len(first.Skipped) != 2 || first.Skipped[0] != "unknown" || first.Skipped[1] != "missing-output" {
 		t.Fatalf("first import: %+v %v", first, err)
 	}
@@ -92,7 +92,7 @@ func TestCatalogImportKeepsEditsAndSkipsUnknownLimits(t *testing.T) {
 	if err := b.SaveProfile(ctx, &profile); err != nil {
 		t.Fatal(err)
 	}
-	second, err := b.ImportModels(ctx, provider.ID, ImportModelsInput{Refresh: true})
+	second, err := b.ImportModels(ctx, provider.ID, ImportModelsInput{})
 	if err != nil || len(second.Imported) != 0 || len(second.Skipped) != 3 {
 		t.Fatalf("second import: %+v %v", second, err)
 	}

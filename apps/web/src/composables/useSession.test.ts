@@ -23,7 +23,7 @@ class Stream extends EventTarget {
 function snapshot(id: string, epoch: string): Snapshot {
   return {
     epoch,
-    view: { id, agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Work', archived: false, pinned: false, source: 'web', rollout_id: 'rollout', head_id: 'head', event_sequence: 0, status: 'idle', can_continue: false, options: {}, approvals: [], pending: [], unresolved: [] },
+    view: { id, agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Work', archived: false, pinned: false, source: 'web', rollout_id: 'rollout', head_id: 'head', event_sequence: 0, status: 'idle', can_continue: false, model_available: true, options: {}, approvals: [], pending: [], unresolved: [] },
     history: { entries: [], head_id: 'head' }, trace: { entries: [], head_id: 'head' },
   }
 }

@@ -17,19 +17,21 @@ type PendingInput struct {
 }
 type View struct {
 	domain.Session
-	RolloutID     string                     `json:"rollout_id"`
-	HeadID        string                     `json:"head_id"`
-	Status        string                     `json:"status"`
-	CanContinue   bool                       `json:"can_continue"`
-	EventSequence uint64                     `json:"event_sequence"`
-	Attempt       *sessions.AttemptStatus    `json:"attempt,omitempty"`
-	RunID         string                     `json:"run_id,omitempty"`
-	Error         string                     `json:"error,omitempty"`
-	LastRun       *sessions.RunRecord        `json:"last_run,omitempty"`
-	Pending       []PendingInput             `json:"pending"`
-	Approvals     []sessions.PendingApproval `json:"approvals"`
-	Unresolved    []sessions.ToolRecord      `json:"unresolved"`
-	ContextUsage  *ContextUsage              `json:"context_usage,omitempty"`
+	RolloutID              string                     `json:"rollout_id"`
+	HeadID                 string                     `json:"head_id"`
+	Status                 string                     `json:"status"`
+	CanContinue            bool                       `json:"can_continue"`
+	EventSequence          uint64                     `json:"event_sequence"`
+	Attempt                *sessions.AttemptStatus    `json:"attempt,omitempty"`
+	RunID                  string                     `json:"run_id,omitempty"`
+	Error                  string                     `json:"error,omitempty"`
+	LastRun                *sessions.RunRecord        `json:"last_run,omitempty"`
+	Pending                []PendingInput             `json:"pending"`
+	Approvals              []sessions.PendingApproval `json:"approvals"`
+	Unresolved             []sessions.ToolRecord      `json:"unresolved"`
+	ContextUsage           *ContextUsage              `json:"context_usage,omitempty"`
+	ModelAvailable         bool                       `json:"model_available"`
+	ModelUnavailableReason string                     `json:"model_unavailable_reason,omitempty"`
 }
 
 // InspectContext describes persisted context without appending environment or
@@ -60,6 +62,10 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	if err = s.Store.Get(ctx, "sessions", id, &view.Session); err != nil {
 		return view, err
 	}
+	view.ModelAvailable, view.ModelUnavailableReason = s.Models.Availability(ctx, view.ProfileID)
+	if !view.ModelAvailable {
+		view.CanContinue = false
+	}
 	state := snapshot.State
 	view.RolloutID, view.HeadID, view.LastRun = state.RolloutID, state.Branch.HeadID, state.LastRun
 	if view.ContextUsage, err = r.reportedContextUsage(ctx, view.HeadID); err != nil {
@@ -87,7 +93,7 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	if resolved {
 		view.Error = ""
 	}
-	if len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && !resolved && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started"))) {
+	if len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && (!view.ModelAvailable || !resolved && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started")))) {
 		view.Status = "needs_attention"
 	}
 	pending, err := r.core.Load().PeekQueuedInputs(ctx)

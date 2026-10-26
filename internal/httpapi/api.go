@@ -257,20 +257,6 @@ func (a *API) systemRoutes() {
 		if err != nil {
 			return v, err
 		}
-		providers, err := readAll[domain.Provider](r.Context(), h.Store, "providers")
-		if err != nil {
-			return v, err
-		}
-		disabled := map[string]bool{}
-		for _, provider := range providers {
-			disabled[provider.ID] = provider.Enabled != nil && !*provider.Enabled
-		}
-		for i := range v.Models {
-			if disabled[v.Models[i].ProviderID] {
-				no := false
-				v.Models[i].Enabled = &no
-			}
-		}
 		return v, err
 	})
 	route[harness.OnboardingInput, domain.Agent](a, "POST", "/onboarding/complete", "completeOnboarding", "System", func(r *http.Request, input harness.OnboardingInput) (domain.Agent, error) {
@@ -449,6 +435,9 @@ func (a *API) resources() {
 	route[modelbridge.ImportModelsInput, modelbridge.ImportModelsResult](a, "POST", "/providers/{id}/import", "importModels", "Models", func(r *http.Request, input modelbridge.ImportModelsInput) (modelbridge.ImportModelsResult, error) {
 		return h.Models.ImportModels(r.Context(), r.PathValue("id"), input)
 	})
+	route[httpcontract.Empty, modelbridge.RefreshResult](a, "POST", "/providers/{id}/refresh", "refreshProviderModels", "Models", func(r *http.Request, _ httpcontract.Empty) (modelbridge.RefreshResult, error) {
+		return h.Models.RefreshProvider(r.Context(), r.PathValue("id"))
+	})
 	route[ProviderInput, domain.Provider](a, "POST", "/providers", "saveProvider", "Models", func(r *http.Request, input ProviderInput) (domain.Provider, error) {
 		err := h.Models.SaveProvider(r.Context(), &input.Provider, input.APIKey, input.Headers)
 		return input.Provider, err
@@ -468,13 +457,6 @@ func (a *API) resources() {
 			return input, err
 		}
 		return h.Models.DescribeProfile(r.Context(), input), nil
-	})
-	route[httpcontract.Empty, domain.ModelProfile](a, "POST", "/models/{id}/refresh", "refreshModel", "Models", func(r *http.Request, _ httpcontract.Empty) (domain.ModelProfile, error) {
-		profile, err := h.Models.Refresh(r.Context(), r.PathValue("id"))
-		if err != nil {
-			return profile, err
-		}
-		return h.Models.DescribeProfile(r.Context(), profile), nil
 	})
 	route[httpcontract.Empty, domain.ModelVerification](a, "POST", "/models/{id}/verify", "verifyModel", "Models", func(r *http.Request, _ httpcontract.Empty) (domain.ModelVerification, error) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
@@ -572,14 +554,18 @@ func (a *API) resources() {
 		}
 		return result, nil
 	}, httpcontract.Parameter{Name: "session_id"})
-	for _, resource := range []struct{ path, kind, operation string }{{"providers", "providers", "deleteProvider"}, {"models", "models", "deleteModel"}, {"search-providers", "search", "deleteSearchProvider"}} {
-		route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/"+resource.path+"/{id}", resource.operation, "Resources", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
-			err := h.Store.Update(r.Context(), func(tx *persistence.Tx) error {
-				return tx.Delete(r.Context(), resource.kind, r.PathValue("id"), revision(r))
-			})
-			return httpcontract.OK{OK: true}, err
-		}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
-	}
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/providers/{id}", "deleteProvider", "Models", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.Models.DeleteProvider(r.Context(), r.PathValue("id"), revision(r))
+	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/models/{id}", "deleteModel", "Models", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.Models.DeleteProfile(r.Context(), r.PathValue("id"), revision(r))
+	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/search-providers/{id}", "deleteSearchProvider", "Resources", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		err := h.Store.Update(r.Context(), func(tx *persistence.Tx) error {
+			return tx.Delete(r.Context(), "search", r.PathValue("id"), revision(r))
+		})
+		return httpcontract.OK{OK: true}, err
+	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
 }
 func (a *API) sessionRoutes() {
 	h := a.Config.Harness

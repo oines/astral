@@ -1,26 +1,26 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useQuery } from '@pinia/colada'
-import { listProvidersQuery } from '@astral/sdk/colada'
 import type { AstralCoreReasoningOptions as Reasoning } from '@astral/sdk'
 import { ModelPicker } from '@astral/ui'
 import { ChevronDown } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { modelReasoning, reasoningSelection, type ModelSelection } from '../lib/model-reasoning'
+import { modelUnavailableLabel } from '../lib/model-availability'
 
-const props = defineProps<{ modelValue: string; reasoning?: Reasoning; label?: string; emptyLabel?: string; busy?: boolean; composer?: boolean }>()
+const props = defineProps<{ modelValue: string; reasoning?: Reasoning; label?: string; emptyLabel?: string; busy?: boolean; composer?: boolean; unavailableReason?: string }>()
 const emit = defineEmits<{ select: [selection: ModelSelection] }>()
 const app = useAppStore()
-const providers = useQuery(listProvidersQuery())
 const { t } = useI18n()
 const profile = computed(() => app.models.find(model => model.id === props.modelValue))
-const modelLabel = computed(() => profile.value?.name || (props.modelValue ? t('missing') : props.emptyLabel || t('model')))
-const reasoningState = computed(() => modelReasoning(profile.value, props.reasoning, t))
+const unavailableReason = computed(() => props.modelValue && (props.unavailableReason || !profile.value?.available) ? props.unavailableReason || profile.value?.unavailable_reason || 'model_missing' : '')
+const modelName = computed(() => profile.value?.name || (props.modelValue ? t('model') : props.emptyLabel || t('model')))
+const modelLabel = computed(() => unavailableReason.value ? `${modelName.value} · ${modelUnavailableLabel(unavailableReason.value, t)}` : modelName.value)
+const reasoningState = computed(() => modelReasoning(unavailableReason.value ? undefined : profile.value, props.reasoning, t))
 const models = computed(() => {
-  const result = app.availableModels.map(model => ({ value: model.id, label: model.name, group: model.provider_id, groupLabel: providers.data.value?.find(provider => provider.id === model.provider_id)?.name || t('providers'), keywords: model.model_id, disabled: false }))
+  const result = app.availableModels.map(model => ({ value: model.id, label: model.name, group: model.provider_id, groupLabel: model.provider_name || '', keywords: model.model_id, disabled: false }))
   if (props.emptyLabel) result.unshift({ value: '', label: props.emptyLabel, group: '', groupLabel: '', keywords: '', disabled: false })
-  if (props.modelValue && !result.some(model => model.value === props.modelValue)) result.push({ value: props.modelValue, label: `${modelLabel.value} · ${t('disabled')}`, group: '', groupLabel: '', keywords: '', disabled: true })
+  if (props.modelValue && !result.some(model => model.value === props.modelValue)) result.push({ value: props.modelValue, label: modelLabel.value, group: '', groupLabel: '', keywords: '', disabled: true })
   return result
 })
 function chooseModel(profile_id: string) {

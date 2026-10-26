@@ -46,7 +46,7 @@ function sidebarOpened(element: Element) {
 }
 const initialView = computed<SessionView>(() => {
   const agent = app.agents.find(a => a.id === app.activeAgentID)
-  return { ...newMeta(), agent_id: app.activeAgentID, title: t('newSession'), archived: false, pinned: false, source: 'web', options: {}, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', can_continue: false, approvals: [], pending: [], unresolved: [], profile_id: agent?.default_model_id || '', reasoning: agent?.default_reasoning, computer_id: agent?.default_computer_id || '' }
+  return { ...newMeta(), agent_id: app.activeAgentID, title: t('newSession'), archived: false, pinned: false, source: 'web', options: {}, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', can_continue: false, model_available: readyToStart.value || false, approvals: [], pending: [], unresolved: [], profile_id: agent?.default_model_id || '', reasoning: agent?.default_reasoning, computer_id: agent?.default_computer_id || '' }
 })
 async function started(sessionID: string) {
   await router.push(`/sessions/${sessionID}`)

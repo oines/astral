@@ -161,7 +161,12 @@ func (b *Bridge) SaveProvider(ctx context.Context, p *domain.Provider, key *stri
 }
 
 func (b *Bridge) SaveProfile(ctx context.Context, p *domain.ModelProfile) error {
-	p.ReasoningControls, p.ReasoningError = nil, ""
+	return b.saveProfile(ctx, p, true)
+}
+
+func (b *Bridge) saveProfile(ctx context.Context, p *domain.ModelProfile, userModified bool) error {
+	clearProfilePresentation(p)
+	p.UserModified = userModified
 	if p.ProviderID == "" || strings.TrimSpace(p.ModelID) == "" || strings.TrimSpace(p.Name) == "" {
 		return domain.Invalid("provider, model ID and display name are required")
 	}
@@ -201,7 +206,16 @@ func (b *Bridge) SaveProfile(ctx context.Context, p *domain.ModelProfile) error 
 		Messages: []core.Message{core.User("Validate model defaults.")}, MaxOutputTokens: values.MaxOutputTokens, Options: values.Defaults}); err != nil {
 		return domain.Invalid(err.Error())
 	}
-	return b.Store.Save(ctx, "models", &p.Meta, p)
+	return b.Store.Update(ctx, func(tx *persistence.Tx) error {
+		var current domain.Provider
+		if err := tx.Get(ctx, "providers", provider.ID, &current); err != nil {
+			return err
+		}
+		if current.Revision != provider.Revision {
+			return domain.Conflict("provider changed while saving the model; reload it before saving")
+		}
+		return tx.Save(ctx, "models", &p.Meta, p)
+	})
 }
 
 func Reference(p domain.ModelProfile, provider domain.Provider) string {

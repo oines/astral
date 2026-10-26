@@ -126,8 +126,7 @@ func FindPreset(id string) *ProviderPreset {
 }
 
 type ImportModelsInput struct {
-	IDs     []string `json:"ids,omitempty"`
-	Refresh bool     `json:"refresh"`
+	IDs []string `json:"ids,omitempty"`
 }
 type ImportModelsResult struct {
 	Imported     []domain.ModelProfile `json:"imported"`
@@ -205,7 +204,7 @@ func (b *Bridge) ImportModels(ctx context.Context, providerID string, input Impo
 		}
 		now := time.Now().UTC()
 		p := domain.ModelProfile{ProviderID: providerID, ModelID: item.ID, Name: item.Name, Protocol: item.Protocol, Dialect: item.Dialect, Recommendations: item.Recommendations, RecommendationSources: item.RecommendationSources, Overrides: map[string]json.RawMessage{}, CatalogSource: item.Source, CatalogAt: &now}
-		if err := b.SaveProfile(ctx, &p); err != nil {
+		if err := b.saveProfile(ctx, &p, false); err != nil {
 			return result, fmt.Errorf("import %s: %w", item.ID, err)
 		}
 		result.Imported = append(result.Imported, p)
