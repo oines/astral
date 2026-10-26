@@ -1,6 +1,6 @@
 # Astral 系统规格
 
-版本：1.13
+版本：1.14
 
 日期：2026-10-26，Asia/Singapore
 
@@ -834,6 +834,10 @@ Agent 的 Bash / 脚本
 
 Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用、格式、emoji、贴纸包名称和尺寸。IMStore 只归档元数据及平台引用，不在 Server 或 Computer 创建独立的附件文件，不创建 FileRef；需要文件时由 Agent 主动调用现有下载 API，并提供目标路径。静态 WebP 沿用图片的内存预览处理，TGS/WebM 只使用关联的独立缩略图作为模型图片输入，明确区分预览与原件。预览缺失或不可用不阻止贴纸消息交付；预览 payload 按现有 Core 历史机制持久化和重放，小静态图片的预览可能保留原始字节，但不额外保存独立附件文件。发送使用账号的具名 `sendSticker` API，可复用同一 Telegram Bot 账号内的原件 `file_id` 或显式上传文件；本功能不更改 `send_message` 工具的 schema 或行为。
 
+`getStickerSet` 与 `getCustomEmojiStickers` 是目录中明确标记 `account_scoped: true` 的 Telegram 账号资源只读操作；查询指定贴纸包的完整列表或最多 200 个已知自定义 emoji 的贴纸元数据，不要求 Session 绑定聊天，也不扩大其他操作的聊天或 Topic 权限。账号必须属于当前 Bot 且处于启用状态；显式传入聊天时仍校验其账号与访问权限。查询返回原始平台 JSON，不创建 IM Observation、Session、Computer 文件或 FileRef，不自动下载整包。Agent 从 `t.me/addstickers/<name>` 或 `t.me/addemoji/<name>` 提取名称查询，再按需读取图片。
+
+资源内容接口以 `file_id` 和恰好一个 `set_name | custom_emoji_id` 定位，每次重新查询官方资源，确认文件是该资源中的原件、单张缩略图或整包缩略图后才调用内部 `getFile` 流式读取；不接受任意文件代理，不向 Agent 返回包含 Bot 凭据的下载 URL。GET 只传输字节且禁用缓存，POST 下载必须明确目标路径，沿当前命令原 Computer 写入，写入成功后才创建 FileRef；切换电脑不改变该来源。预览与原件在使用上仍明确区分，发送原件可直接复用同账号的原件 `file_id`。
+
 以下为 v1 接口形态草案，正式字段由 OpenAPI 固定：
 
 | 能力 | 示例接口 | 行为 |
@@ -852,9 +856,11 @@ Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用�
 | 消息 ID | `GET /v1/conversations/{id}/messages/{message_id}` | 最新归档版本 |
 | 原始附件 | `GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content` | 文件字节响应，沿现有 Daemon 分块通道流式传输 |
 | 平台操作目录 | `GET /v1/accounts/{id}/operations` | 按账号发现已实现的具名操作，不暴露凭据或任意路径代理 |
-| 平台操作 | `POST /v1/accounts/{id}/operations/{operation}` | 验证账号、目标聊天、所有引用消息；不创建 Session；删除成功追加归档事实 |
-| Telegram 目录 | `GET /v1/accounts/{id}/telegram/operations` | 聊天相关具名操作及官方参数说明 |
+| 平台操作 | `POST /v1/accounts/{id}/operations/{operation}` | 按目录区分账号资源读取与聊天操作；验证账号及适用的聊天/消息权限，不创建 Session |
+| Telegram 目录 | `GET /v1/accounts/{id}/telegram/operations` | 具名操作、账号资源/聊天作用域及官方参数说明 |
 | Telegram 操作 | `POST /v1/accounts/{id}/telegram/{operation}` | 分别验证目标、来源和嵌套聊天引用；不提供任意 HTTP 代理 |
+| 贴纸资源内容 | `GET /v1/accounts/{id}/telegram/stickers/content` | 验证所选贴纸包或自定义 emoji 内的原件/缩略图，流式返回字节，不保存文件 |
+| 贴纸资源下载 | `POST /v1/accounts/{id}/telegram/stickers/download` | 验证同一资源来源，显式写到调用方原 Computer 路径并返回 FileRef |
 | 附件下载 | `POST /v1/attachments/download` | 将平台附件下载到调用方明确指定的 Computer 路径 |
 | 文件引用 | `POST /v1/files/reference` | 将当前 Computer 路径转为来源固定的 FileRef/可引用链接 |
 | API 说明 | `GET /v1/capabilities` | 当前视图支持的能力与文档入口 |

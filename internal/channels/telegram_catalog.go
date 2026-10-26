@@ -1,4 +1,4 @@
-// Chat-scoped Telegram Bot API 10.3 operations, from https://core.telegram.org/bots/api.
+// Scoped Telegram Bot API 10.3 operations, from https://core.telegram.org/bots/api.
 // The catalog is explicit: platform-wide identity, credentials, webhooks and
 // update-consumption methods are deliberately outside the Agent chat boundary.
 package channels
@@ -8,10 +8,13 @@ import "strings"
 type TelegramOperation struct {
 	Name          string   `json:"name"`
 	Parameters    []string `json:"parameters"`
+	AccountScoped bool     `json:"account_scoped,omitempty"`
 	Documentation string   `json:"documentation"`
 }
 
 var telegramOperations = []TelegramOperation{
+	{Name: "getStickerSet", Parameters: []string{"name"}, AccountScoped: true, Documentation: "https://core.telegram.org/bots/api#getstickerset"},
+	{Name: "getCustomEmojiStickers", Parameters: []string{"custom_emoji_ids"}, AccountScoped: true, Documentation: "https://core.telegram.org/bots/api#getcustomemojistickers"},
 	{Name: "sendMessage", Parameters: strings.Fields("business_connection_id chat_id message_thread_id direct_messages_topic_id ephemeral_message_parameters text parse_mode entities link_preview_options disable_notification protect_content allow_paid_broadcast message_effect_id suggested_post_parameters reply_parameters reply_markup"), Documentation: "https://core.telegram.org/bots/api#sendmessage"},
 	{Name: "forwardMessage", Parameters: strings.Fields("chat_id message_thread_id direct_messages_topic_id from_chat_id video_start_timestamp disable_notification protect_content message_effect_id suggested_post_parameters message_id"), Documentation: "https://core.telegram.org/bots/api#forwardmessage"},
 	{Name: "forwardMessages", Parameters: strings.Fields("chat_id message_thread_id direct_messages_topic_id from_chat_id message_ids disable_notification protect_content"), Documentation: "https://core.telegram.org/bots/api#forwardmessages"},

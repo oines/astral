@@ -17,9 +17,10 @@ import (
 )
 
 // Parameters follow the linked Bot API method. Astral supplies chat_id and the
-// selected Topic. Files maps multipart field names to Computer paths or FileRefs.
+// selected Topic for chat operations. Account-scoped resource reads do not need
+// a conversation. Files maps multipart field names to Computer paths or FileRefs.
 type TelegramRequest struct {
-	ConversationID       string            `json:"conversation_id"`
+	ConversationID       string            `json:"conversation_id,omitempty"`
 	SourceConversationID string            `json:"source_conversation_id,omitempty"`
 	Parameters           map[string]any    `json:"parameters"`
 	Files                map[string]string `json:"files,omitempty"`
@@ -38,6 +39,13 @@ func (s *Service) telegramAccount(ctx context.Context, agentID, id string) (*tel
 	}
 	if !c.Enabled {
 		return nil, c, domain.Offline("account is disabled")
+	}
+	var agent domain.Agent
+	if err := s.Store.Get(ctx, "agents", agentID, &agent); err != nil {
+		return nil, c, err
+	}
+	if agent.Deletion {
+		return nil, c, domain.Missing("Bot", agentID)
 	}
 	a, err := s.adapter(ctx, c)
 	if err != nil {
@@ -60,6 +68,9 @@ func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBindi
 		return TelegramResult{}, domain.Invalid("unknown chat operation; inspect the account's operations catalog")
 	}
 	operation := telegramOperations[index]
+	if operation.AccountScoped {
+		return s.telegramResourceOperation(ctx, b, accountID, method, request)
+	}
 	t, connection, err := s.telegramAccount(ctx, b.AgentID, accountID)
 	if err != nil {
 		return TelegramResult{}, err

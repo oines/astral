@@ -10,12 +10,13 @@ import (
 	"github.com/oines/astral/internal/domain"
 )
 
-// Named operations expose only chat-scoped protocol capabilities. The account
+// Named operations expose explicitly scoped protocol capabilities. The account
 // selects the protocol; the caller cannot supply a URL or alternate destination.
 type ChatOperation struct {
 	Name          string   `json:"name"`
 	Parameters    []string `json:"parameters"`
 	MessageScoped bool     `json:"message_scoped"`
+	AccountScoped bool     `json:"account_scoped,omitempty"`
 	Documentation string   `json:"documentation"`
 }
 type ChatOperationRequest = TelegramRequest
@@ -51,11 +52,11 @@ func chatOperations(adapter Adapter) []ChatOperation {
 		result = append(result, WeixinOperationsCatalog()...)
 	case *telegram:
 		for _, op := range telegramOperations {
-			result = append(result, ChatOperation{Name: op.Name, Parameters: op.Parameters, Documentation: op.Documentation})
+			result = append(result, ChatOperation{Name: op.Name, Parameters: op.Parameters, AccountScoped: op.AccountScoped, Documentation: op.Documentation})
 		}
 	case *feishu:
 		for _, op := range FeishuOperationsCatalog() {
-			result = append(result, ChatOperation(op))
+			result = append(result, ChatOperation{Name: op.Name, Parameters: op.Parameters, MessageScoped: op.MessageScoped, Documentation: op.Documentation})
 		}
 	case *napcat:
 		for _, op := range []ChatOperation{

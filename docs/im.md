@@ -71,10 +71,12 @@ The Host prompt points to this discovery entry and explains the command credenti
 | `POST /v1/im/messages` | `{conversation_id?,text,reply_to?,format?,…}` sends text and waits for the platform result |
 | `POST /v1/im/files` | `{conversation_id?,file_uri?|path?,text?,reply_to?,format?,…}` sends a file and waits for the platform result |
 | `GET /v1/im/receipts/{id}` | Inspect queued, accepted, failed, blocked or unknown sends |
-| `GET /v1/accounts/{id}/operations` | Named chat operations supported by this account, parameters and official documentation |
-| `POST /v1/accounts/{id}/operations/{operation}` | Invoke a named operation within the selected account and chat scope |
-| `GET /v1/accounts/{id}/telegram/operations` | Explicit Bot chat operation names, parameters and official method documentation |
+| `GET /v1/accounts/{id}/operations` | Named operations, account-resource/chat scope, parameters and official documentation |
+| `POST /v1/accounts/{id}/operations/{operation}` | Invoke a named operation within its declared account-resource or chat scope |
+| `GET /v1/accounts/{id}/telegram/operations` | Explicit Telegram operation names, scope, parameters and official method documentation |
 | `POST /v1/accounts/{id}/telegram/{operation}` | Invoke a named, scoped Telegram operation |
+| `GET /v1/accounts/{id}/telegram/stickers/content` | Stream a selected original or thumbnail using `file_id` and exactly one of `set_name` or `custom_emoji_id` |
+| `POST /v1/accounts/{id}/telegram/stickers/download` | The same resource source plus `path`; explicitly save to the calling Computer and return a FileRef |
 | `GET /v1/openapi.json` | Current request and response schemas |
 
 All platform chat and message IDs are strings. QQ uses `private:<user ID>` and `group:<group ID>` to preserve its distinct address spaces. Topic IDs are only accepted by adapters that support them.
@@ -91,7 +93,7 @@ An Agent that needs a file must explicitly download its original through the exi
 
 ## Named Telegram operations
 
-The catalog follows the [Telegram Bot API](https://core.telegram.org/bots/api) chat methods, including message send/edit/delete/reactions, copy/forward, member and chat management, invites, forum Topics, chat-scoped commands, polls, stickers, media, games and invoices. The Bot still needs the permissions required by Telegram. Identity, credentials, webhook management and update consumption are outside this API.
+The catalog follows the [Telegram Bot API](https://core.telegram.org/bots/api), including message send/edit/delete/reactions, copy/forward, member and chat management, invites, forum Topics, chat-scoped commands, polls, stickers, media, games and invoices. The Bot still needs the permissions required by Telegram. Identity, credentials, webhook management and update consumption are outside this API.
 
 A request supplies `conversation_id`, optional `source_conversation_id` for copy/forward operations, `parameters` using the method's documented fields, and optional `files` mapping multipart field names to Computer paths or FileRefs. Astral supplies `chat_id` and the selected Topic. File fields in nested media can refer to `attach://<field>`.
 
@@ -109,11 +111,35 @@ The target, copy/forward source and nested chat references each require access t
 
 Named operations return Telegram's result directly and archive accepted messages or deletion facts. Each invocation makes one attempt.
 
+### Sticker packs and custom emoji resources
+
+[`getStickerSet`](https://core.telegram.org/bots/api#getstickerset) and [`getCustomEmojiStickers`](https://core.telegram.org/bots/api#getcustomemojistickers) have `account_scoped: true` in both operation catalogs. These are read-only resources of the selected, enabled Telegram account owned by the current Bot. They need no `conversation_id`, including in unbound Web Sessions and Topic-bound Sessions. If a conversation is explicitly supplied, it must still be accessible through that account. Chat access restrictions on all other operations are unchanged.
+
+For `https://t.me/addstickers/oines1`, use `getStickerSet` with `{"parameters":{"name":"oines1"}}`. The name is the final component of an `addstickers` or `addemoji` link, not the full URL. The result contains the complete set's metadata and sticker list, including original `file_id` values and available thumbnails. `getCustomEmojiStickers` accepts `{"parameters":{"custom_emoji_ids":["<custom-emoji-id>"]}}`, with at most 200 IDs. Results retain Telegram's JSON shape. Neither method downloads image bytes, creates messages, activates a Session, or registers FileRefs.
+
+Read a selected image on demand through the content endpoint, or explicitly save it with:
+
+```http
+POST /v1/accounts/<account-id>/telegram/stickers/download
+Content-Type: application/json
+Authorization: Bearer <calling-command-credential>
+
+{
+  "set_name": "oines1",
+  "file_id": "<original-or-thumbnail-file-id-from-result>",
+  "path": "/absolute/path/sticker.webp"
+}
+```
+
+Supply exactly one source: `set_name`, or a single `custom_emoji_id`. The Server queries that resource again and accepts only a matching original or thumbnail file ID in its current result; a sticker set's own thumbnail is also readable. It never offers arbitrary `getFile` access or returns Telegram's credential-bearing file URLs. The content endpoint streams bytes with private, non-cacheable headers and creates no file. The download endpoint streams to the explicit path on the credential's original Computer and registers that file only after the write succeeds, even if the Session has switched Computers. There is no resource cache, automatic pack download, or synthetic IM observation.
+
+Metadata is not image pixels: use the thumbnail's `file_id` to inspect a small preview, or the sticker's original `file_id` to download the original. A preview is not the full animation. Reuse the original `file_id` with the account's named `sendSticker` operation to send a selected sticker directly; this does not require first saving it locally. Thumbnail IDs cannot be used as sticker originals, and `send_message` remains unchanged.
+
 ## Additional platform operations
 
 The account operation catalog uses the same Computer HTTP API and Agent view. No additional model tools are registered. Telegram's existing named-operation paths remain available. NapCat exposes chat/message lookup, deletion and selected group member operations; Feishu exposes chat/history/message lookup, deletion and reactions; Weixin exposes `set_typing`. QQ official Bot currently has no extra named operations; use the shared send and archive endpoints.
 
-Requests supply `conversation_id` and an allowlisted `parameters` object. Every target belongs to the selected account and must pass its `all | specified` scope. Globally addressed messages must already be archived in that chat, and adapters also verify remote chat membership where needed. Parameters cannot supply a URL or override the destination. A successful delete appends the deletion fact to IMStore. Reading platform history does not backfill Core or activate a Session.
+Chat operations supply `conversation_id` and an allowlisted `parameters` object; only the explicitly marked Telegram account-resource reads above may omit a chat. Every chat target belongs to the selected account and must pass its `all | specified` scope. Globally addressed messages must already be archived in that chat, and adapters also verify remote chat membership where needed. Parameters cannot supply a URL or override the destination. A successful delete appends the deletion fact to IMStore. Reading platform history does not backfill Core or activate a Session.
 
 These direct operations make one attempt. Use the text/file endpoints for sends with persisted request identities. NapCat generic execution exceptions remain `unknown` in the internal send record, because its timeout response may follow submission to QQ.
 

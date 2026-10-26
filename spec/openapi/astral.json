@@ -1482,6 +1482,9 @@
       },
       "astral_internal_channels_ChatOperation": {
         "properties": {
+          "account_scoped": {
+            "type": "boolean"
+          },
           "documentation": {
             "type": "string"
           },
@@ -1567,6 +1570,9 @@
       },
       "astral_internal_channels_TelegramOperation": {
         "properties": {
+          "account_scoped": {
+            "type": "boolean"
+          },
           "documentation": {
             "type": "string"
           },
@@ -1607,7 +1613,6 @@
           }
         },
         "required": [
-          "conversation_id",
           "parameters"
         ],
         "type": "object"
@@ -3228,6 +3233,27 @@
         },
         "required": [
           "text"
+        ],
+        "type": "object"
+      },
+      "astral_internal_gateway_TelegramStickerDownloadRequest": {
+        "properties": {
+          "custom_emoji_id": {
+            "type": "string"
+          },
+          "file_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "set_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "path"
         ],
         "type": "object"
       },
@@ -11169,7 +11195,7 @@
     },
     "/v1/accounts/{id}/operations/{operation}": {
       "post": {
-        "description": "Invoke a discovered platform operation within this account's authorized chat scope. Makes one attempt.",
+        "description": "Invoke a discovered operation with its account-resource or authorized chat scope. Makes one attempt.",
         "operationId": "agentAccountOperation",
         "parameters": [
           {
@@ -11233,7 +11259,7 @@
     },
     "/v1/accounts/{id}/telegram/operations": {
       "get": {
-        "description": "Discover named Telegram chat operations; other platforms use the account operations catalog.",
+        "description": "Discover named Telegram operations and whether each reads account resources or requires an authorized chat.",
         "operationId": "agentTelegramOperations",
         "parameters": [
           {
@@ -11254,6 +11280,133 @@
                     "$ref": "#/components/schemas/astral_internal_channels_TelegramOperation"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/accounts/{id}/telegram/stickers/content": {
+      "get": {
+        "description": "Stream a verified sticker resource's original or thumbnail; supply file_id and exactly one of set_name or custom_emoji_id.",
+        "operationId": "agentTelegramStickerContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "set_name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_emoji_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/accounts/{id}/telegram/stickers/download": {
+      "post": {
+        "description": "Download a verified sticker resource to an explicit calling-Computer path and return a file reference.",
+        "operationId": "agentDownloadTelegramSticker",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_gateway_TelegramStickerDownloadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
                 }
               }
             },
