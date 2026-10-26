@@ -3,12 +3,20 @@ import { createReadStream } from 'node:fs'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
+/** electron-builder uses target-specific names for Linux x64 artifacts. */
+export function desktopArtifactName(version, platform, architecture, extension) {
+  const targetArchitecture = platform === 'linux' && architecture === 'x64'
+    ? { AppImage: 'x86_64', deb: 'amd64' }[extension] || architecture
+    : architecture
+  return `Astral-${version}-${platform}-${targetArchitecture}.${extension}`
+}
+
 /** Names match electron-updater GenericProvider with channel=latest-${process.arch}. */
 export function desktopUpdateFeeds(version) {
   return ['x64', 'arm64'].flatMap(arch => [
-    { name: `latest-${arch}.yml`, asset: `Astral-${version}-win-${arch}.exe` },
-    { name: `latest-${arch}-mac.yml`, asset: `Astral-${version}-mac-${arch}.zip` },
-    { name: `latest-${arch}-linux${arch === 'arm64' ? '-arm64' : ''}.yml`, asset: `Astral-${version}-linux-${arch}.AppImage` },
+    { name: `latest-${arch}.yml`, asset: desktopArtifactName(version, 'win', arch, 'exe') },
+    { name: `latest-${arch}-mac.yml`, asset: desktopArtifactName(version, 'mac', arch, 'zip') },
+    { name: `latest-${arch}-linux${arch === 'arm64' ? '-arm64' : ''}.yml`, asset: desktopArtifactName(version, 'linux', arch, 'AppImage') },
   ])
 }
 
