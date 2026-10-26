@@ -62,7 +62,7 @@ func Inspect(ctx context.Context, data string) (Plan, error) {
 		}
 	}
 	if p.Host.Missing && !p.Core.Missing {
-		return p, fmt.Errorf("Host database is missing while Core history exists; restore the complete data snapshot")
+		return p, fmt.Errorf("missing Host database while Core history exists; restore the complete data snapshot")
 	}
 	if p.Core.Missing {
 		if !p.Host.Missing {
@@ -71,7 +71,7 @@ func Inspect(ctx context.Context, data string) (Plan, error) {
 				return p, refErr
 			}
 			if references {
-				return p, fmt.Errorf("Core database is missing while Host session references exist; restore the complete data snapshot")
+				return p, fmt.Errorf("missing Core database while Host session references exist; restore the complete data snapshot")
 			}
 		}
 	}
@@ -143,7 +143,7 @@ func prepare(ctx context.Context, data, version string, protect func(string) err
 	if !plan.Host.Missing {
 		key, err := os.ReadFile(filepath.Join(data, "master.key"))
 		if err != nil || len(key) != 32 {
-			return nil, fmt.Errorf("Host database requires its original 32-byte master.key; migration stopped")
+			return nil, fmt.Errorf("existing Host database requires its original 32-byte master.key; migration stopped")
 		}
 	}
 	if !plan.Pending {

@@ -347,7 +347,7 @@ func inspectMigration(ctx context.Context, db *sql.DB, plan migrationPlan) (Migr
 	if err := rows.Err(); err != nil {
 		return status, err
 	}
-	if previous != format && !(previous == 0 && format == BaselineVersion) {
+	if previous != format && (previous != 0 || format != BaselineVersion) {
 		return status, fmt.Errorf("Host format %d and migration ledger %d disagree: %w", format, previous, errMigrationCorrupt)
 	}
 	status.NeedsMigration = previous < plan.target
