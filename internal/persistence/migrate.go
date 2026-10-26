@@ -190,7 +190,7 @@ func Migrate(ctx context.Context, directory string) error {
 	abs, missing, err := migrationPath(directory)
 	if err != nil || missing {
 		if missing {
-			return fmt.Errorf("Host migration database disappeared: %w", os.ErrNotExist)
+			return fmt.Errorf("host migration database disappeared: %w", os.ErrNotExist)
 		}
 		return err
 	}
@@ -207,7 +207,7 @@ func Migrate(ctx context.Context, directory string) error {
 // Resolving an inspection path must not create directories or databases.
 func migrationPath(directory string) (string, bool, error) {
 	if directory == "" {
-		return "", false, errors.New("Host data directory is required")
+		return "", false, errors.New("host data directory is required")
 	}
 	abs, err := filepath.Abs(filepath.Join(directory, "astral.db"))
 	if err != nil {
@@ -235,7 +235,7 @@ func migrationPath(directory string) (string, bool, error) {
 func newMigrationProvider(db *sql.DB, plan migrationPlan) (*goose.Provider, error) {
 	for _, migration := range plan.goMigrations {
 		if migration == nil || !migration.UseTx || migration.UpFnNoTxContext != nil {
-			return nil, errors.New("Host Go migrations require a transaction-scoped up function")
+			return nil, errors.New("host Go migrations require a transaction-scoped up function")
 		}
 	}
 	store, err := database.NewStore(goose.DialectSQLite3, goose.DefaultTablename)
@@ -255,7 +255,7 @@ func newMigrationProvider(db *sql.DB, plan migrationPlan) (*goose.Provider, erro
 	// Reject missing steps in the binary before opening a migration transaction.
 	for i, source := range sources {
 		if source.Version != BaselineVersion+int64(i) {
-			return nil, fmt.Errorf("Host migration chain is not sequential at %d", source.Version)
+			return nil, fmt.Errorf("host migration chain is not sequential at %d", source.Version)
 		}
 		if source.Type == goose.TypeSQL {
 			contents, err := fs.ReadFile(plan.files, source.Path)
@@ -268,16 +268,16 @@ func newMigrationProvider(db *sql.DB, plan migrationPlan) (*goose.Provider, erro
 				}
 				annotation := strings.TrimSpace(strings.Replace(strings.ReplaceAll(line, "--", ""), "+goose", "", 1))
 				if strings.EqualFold(annotation, "NO TRANSACTION") {
-					return nil, fmt.Errorf("Host SQL migration %d disables its transaction", source.Version)
+					return nil, fmt.Errorf("host SQL migration %d disables its transaction", source.Version)
 				}
 				if strings.EqualFold(annotation, "ENVSUB ON") {
-					return nil, fmt.Errorf("Host SQL migration %d depends on environment substitution", source.Version)
+					return nil, fmt.Errorf("host SQL migration %d depends on environment substitution", source.Version)
 				}
 			}
 		}
 	}
 	if len(sources) == 0 || sources[len(sources)-1].Version != plan.target {
-		return nil, fmt.Errorf("Host migration target does not match format %d", plan.target)
+		return nil, fmt.Errorf("host migration target does not match format %d", plan.target)
 	}
 	return p, nil
 }
@@ -305,12 +305,12 @@ func inspectMigration(ctx context.Context, db *sql.DB, plan migrationPlan) (Migr
 			return status, err
 		}
 		if count != 1 {
-			return status, fmt.Errorf("Host schema is missing %s: %w", table, errMigrationFormat)
+			return status, fmt.Errorf("host schema is missing %s: %w", table, errMigrationFormat)
 		}
 	}
 	status.Current = format
 	if format < BaselineVersion || format > plan.target {
-		return status, fmt.Errorf("Host format %d cannot migrate to %d: %w", format, plan.target, errMigrationFormat)
+		return status, fmt.Errorf("host format %d cannot migrate to %d: %w", format, plan.target, errMigrationFormat)
 	}
 	var hasLedger bool
 	if err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?)", goose.DefaultTablename).Scan(&hasLedger); err != nil {
@@ -318,14 +318,14 @@ func inspectMigration(ctx context.Context, db *sql.DB, plan migrationPlan) (Migr
 	}
 	if !hasLedger {
 		if format != BaselineVersion {
-			return status, fmt.Errorf("Host format %d has no migration ledger: %w", format, errMigrationCorrupt)
+			return status, fmt.Errorf("host format %d has no migration ledger: %w", format, errMigrationCorrupt)
 		}
 		status.NeedsMigration = true
 		return status, nil
 	}
 	rows, err := db.QueryContext(ctx, "SELECT version_id, is_applied FROM goose_db_version ORDER BY id")
 	if err != nil {
-		return status, fmt.Errorf("Host migration ledger: %w: %v", errMigrationCorrupt, err)
+		return status, fmt.Errorf("host migration ledger: %w: %v", errMigrationCorrupt, err)
 	}
 	defer rows.Close()
 	previous := int64(-1)
@@ -340,7 +340,7 @@ func inspectMigration(ctx context.Context, db *sql.DB, plan migrationPlan) (Migr
 			expected = BaselineVersion
 		}
 		if !applied || version != expected || version > format {
-			return status, fmt.Errorf("Host migration ledger is not an applied prefix at %d: %w", version, errMigrationCorrupt)
+			return status, fmt.Errorf("host migration ledger is not an applied prefix at %d: %w", version, errMigrationCorrupt)
 		}
 		previous = version
 	}
@@ -348,7 +348,7 @@ func inspectMigration(ctx context.Context, db *sql.DB, plan migrationPlan) (Migr
 		return status, err
 	}
 	if previous != format && (previous != 0 || format != BaselineVersion) {
-		return status, fmt.Errorf("Host format %d and migration ledger %d disagree: %w", format, previous, errMigrationCorrupt)
+		return status, fmt.Errorf("host format %d and migration ledger %d disagree: %w", format, previous, errMigrationCorrupt)
 	}
 	status.NeedsMigration = previous < plan.target
 	return status, nil
@@ -364,14 +364,14 @@ func migrateDatabase(ctx context.Context, db *sql.DB, plan migrationPlan) error 
 		return err
 	}
 	if _, err = p.Up(ctx); err != nil {
-		return fmt.Errorf("Host migration: %w", err)
+		return fmt.Errorf("host migration: %w", err)
 	}
 	status, err = inspectMigration(ctx, db, plan)
 	if err != nil {
 		return err
 	}
 	if status.NeedsMigration {
-		return errors.New("Host migration did not reach the target format")
+		return errors.New("host migration did not reach the target format")
 	}
 	return nil
 }
@@ -409,7 +409,7 @@ type migrationStore struct{ database.Store }
 func (s migrationStore) Insert(ctx context.Context, db database.DBTxConn, req database.InsertRequest) error {
 	if req.Version != 0 {
 		if _, ok := db.(*sql.Tx); !ok {
-			return errors.New("Host migration requires a transaction")
+			return errors.New("host migration requires a transaction")
 		}
 		format, err := readFormatMarkers(ctx, db)
 		if err != nil {
@@ -420,7 +420,7 @@ func (s migrationStore) Insert(ctx context.Context, db database.DBTxConn, req da
 			expected = BaselineVersion
 		}
 		if format != expected {
-			return fmt.Errorf("Host migration %d starts from format %d: %w", req.Version, format, errMigrationFormat)
+			return fmt.Errorf("host migration %d starts from format %d: %w", req.Version, format, errMigrationFormat)
 		}
 		if _, err = db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version=%d;", req.Version)); err != nil {
 			return err

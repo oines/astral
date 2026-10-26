@@ -96,7 +96,12 @@ async function configureUpdates() {
   const { autoUpdater } = electronUpdater
   // Fixed public feed. No Renderer URL, credentials, or environment token is consulted.
   autoUpdater.setFeedURL({ provider: 'generic', url: updateFeed, channel: updateChannel(process.arch), useMultipleRangeRequest: false })
-  updates = new DesktopUpdates(autoUpdater, app.getVersion(), prepareShutdown, unavailable)
+  updates = new DesktopUpdates(autoUpdater, app.getVersion(), async () => {
+    await prepareShutdown()
+    // AppImageUpdater can launch the replacement before quitting this process.
+    // Release only after confirmed Server exit so the new app can take the lock.
+    app.releaseSingleInstanceLock()
+  }, unavailable)
   updates.onState = state => {
     if (window && !window.isDestroyed()) window.webContents.send('astral:update-state', state)
   }

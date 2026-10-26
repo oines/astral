@@ -235,6 +235,8 @@ func run()error{var c config;raw,e:=os.ReadFile(os.Args[1]);if e!=nil{return e};
   console.log(`Native ${system} Owner update RPC → official-release fixture TLS/hash → independent user update job → new boot/version → command-tree cleanup and identity preservation passed.`)
 } catch (error) {
   await diagnostics()
+  const message = String(error.message).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+  console.error(`::error title=Native Daemon update acceptance::${message}`)
   throw error
 } finally {
   allowDownload()
