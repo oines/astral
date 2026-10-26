@@ -18,7 +18,7 @@ func (s *Service) recallRoutes() {
 		{Name: "archived", Type: "boolean", Description: "Omit to include both archived and active Sessions."},
 		{Name: "title", Description: "Case-insensitive literal substring of the Session title."},
 	}
-	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: "GET", Path: "/v1/sessions", ID: "agentSessions", Tag: "Agent Gateway", Query: listParameters,
+	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: "GET", Path: "/v1/sessions", ID: "agentSessions", Tag: "Agent Gateway", CommandAuth: true, Query: listParameters,
 		Description: "List this Agent's Sessions across Computers, newest activity first. Returns lightweight metadata, includes archived Sessions by default, and never opens execution runtimes. Follow next_cursor to enumerate the fixed snapshot."},
 		func(_ http.ResponseWriter, r *http.Request, _ httpcontract.Empty) (recall.SessionPage, error) {
 			if err := validateRecallQuery(r, listParameters); err != nil {
@@ -40,7 +40,7 @@ func (s *Service) recallRoutes() {
 			return s.Harness.Recall.List(r.Context(), binding(r).AgentID, recall.ListRequest{Cursor: values.Get("cursor"), Limit: integerValue(limit),
 				Source: values.Get("source"), ConversationID: values.Get("conversation_id"), Archived: archived, Title: values.Get("title")})
 		})
-	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: "POST", Path: "/v1/sessions/search", ID: "agentSearchSessions", Tag: "Agent Gateway",
+	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: "POST", Path: "/v1/sessions/search", ID: "agentSearchSessions", Tag: "Agent Gateway", CommandAuth: true,
 		Description: "Search committed text across this Agent's Sessions. Returns flat passages around real keyword matches; multiple passages from one Session are allowed. Filters precede pagination. Defaults: all whitespace-separated terms, case-insensitive, newest first, 600 characters per passage, 50 passages per page. Short Chinese words, code identifiers and punctuation match literally. No hidden per-Session quota, semantic summarization or global output budget. Independent Fork copies remain distinct. Shared-rollout ancestors are deduplicated, each Session exposes only its own history path, and pre-compaction originals remain searchable. The first request catches the index up to captured heads or fails; an empty page is not an unindexed-history result. Resume with cursor and optional limit. Use each hit's read_url to expand it."},
 		func(_ http.ResponseWriter, r *http.Request, request recall.SearchRequest) (recall.SearchPage, error) {
 			if len(r.URL.Query()) != 0 {
@@ -57,7 +57,7 @@ func (s *Service) recallRoutes() {
 		{Name: "offset", Type: "integer", Description: "Exact zero-based Unicode character offset within around's text part. Omit to center on the reference. Use offset=end, before=0, after=0 to continue a long part."},
 		{Name: "length", Type: "integer", Description: "Characters per text part, default 4000; 1–16384. start/end/total_chars describe each returned slice; this is not a total response budget."},
 	}
-	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: "GET", Path: "/v1/sessions/{id}/history", ID: "agentHistory", Tag: "Agent Gateway", Query: readParameters,
+	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: "GET", Path: "/v1/sessions/{id}/history", ID: "agentHistory", Tag: "Agent Gateway", CommandAuth: true, Query: readParameters,
 		Description: "Read normalized history text with roles, tool names, provenance and stable character offsets. With no location, returns recent text parts. With around, returns the hit and its requested neighbors. Items are chronological; follow older_cursor or newer_cursor to navigate. Page cursors keep the original head while the Session grows. References remain usable after restart/index rebuild. This Agent API returns text parts; the Owner history API retains raw Core entries. It reads persistent data without loading a model or running a Session."},
 		func(_ http.ResponseWriter, r *http.Request, _ httpcontract.Empty) (recall.HistoryPage, error) {
 			if err := validateRecallQuery(r, readParameters); err != nil {

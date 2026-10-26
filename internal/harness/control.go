@@ -73,7 +73,7 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 	if agent.ID == "" {
 		agent.ID = domain.ID("agent")
 	}
-	return s.Store.Update(ctx, func(tx *persistence.Tx) error {
+	err := s.Store.Update(ctx, func(tx *persistence.Tx) error {
 		if agent.Revision != 0 {
 			if err := availableAgent(ctx, tx, agent.ID); err != nil {
 				return err
@@ -90,6 +90,10 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 		}
 		return tx.Save(ctx, "agents", &agent.Meta, agent)
 	})
+	if err == nil && s.Hub != nil {
+		s.Hub.ReconcileAgentCommands(ctx, agent.ID)
+	}
+	return err
 }
 
 func (r *runtime) syncSelection(ctx context.Context) error {

@@ -67,6 +67,7 @@ func TestRecallThroughComputerGatewayWithoutUsableModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	requests := p.Requests.Load()
+	client := testkit.ComputerAPI(t, p, binding)
 	call := func(method, path string, input, output any, status int) {
 		t.Helper()
 		var body []byte
@@ -80,7 +81,7 @@ func TestRecallThroughComputerGatewayWithoutUsableModel(t *testing.T) {
 		if input != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
-		response, err := http.DefaultClient.Do(req)
+		response, err := client.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}

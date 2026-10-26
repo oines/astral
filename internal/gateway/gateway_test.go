@@ -169,9 +169,10 @@ func TestAttachmentBytesAndFilteredPaginationThroughRealGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	client := testkit.ComputerAPI(t, p, b)
 	query := func(after int64) MessagePage {
 		t.Helper()
-		response, err := http.Get(fmt.Sprintf("%s/v1/conversations/%s/messages?q=needle&limit=1&after=%d", b.APIURL, conversation.ID, after))
+		response, err := client.Get(fmt.Sprintf("%s/v1/conversations/%s/messages?q=needle&limit=1&after=%d", b.APIURL, conversation.ID, after))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -194,7 +195,7 @@ func TestAttachmentBytesAndFilteredPaginationThroughRealGateway(t *testing.T) {
 		t.Fatalf("filtered cursor skipped match: %+v", second)
 	}
 	path := "/v1/conversations/" + conversation.ID + "/messages/141/attachments/original:0/content"
-	response, err := http.Get(b.APIURL + path)
+	response, err := client.Get(b.APIURL + path)
 	if err != nil {
 		t.Fatal(err)
 	}

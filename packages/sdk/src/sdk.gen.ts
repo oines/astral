@@ -2051,12 +2051,25 @@ export const authStatus = <ThrowOnError extends boolean = false>(options?: Optio
 /**
  * List this Bot's accounts, with access scopes and without credentials.
  */
-export const agentAccounts = <ThrowOnError extends boolean = false>(options?: Options<AgentAccountsData, ThrowOnError>): RequestResult<AgentAccountsResponses, AgentAccountsErrors, ThrowOnError> => (options?.client ?? client).get<AgentAccountsResponses, AgentAccountsErrors, ThrowOnError>({ url: '/v1/accounts', ...options });
+export const agentAccounts = <ThrowOnError extends boolean = false>(options?: Options<AgentAccountsData, ThrowOnError>): RequestResult<AgentAccountsResponses, AgentAccountsErrors, ThrowOnError> => (options?.client ?? client).get<AgentAccountsResponses, AgentAccountsErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/accounts',
+    ...options
+});
 
 /**
  * Resolve an authorized platform chat ID and optional Topic without creating a Session.
  */
 export const agentResolveConversation = <ThrowOnError extends boolean = false>(options: Options<AgentResolveConversationData, ThrowOnError>): RequestResult<AgentResolveConversationResponses, AgentResolveConversationErrors, ThrowOnError> => (options.client ?? client).post<AgentResolveConversationResponses, AgentResolveConversationErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/v1/accounts/{id}/conversations/resolve',
     ...options,
     headers: {
@@ -2068,12 +2081,25 @@ export const agentResolveConversation = <ThrowOnError extends boolean = false>(o
 /**
  * Discover supported operations, request parameters and documentation for this account.
  */
-export const agentAccountOperations = <ThrowOnError extends boolean = false>(options: Options<AgentAccountOperationsData, ThrowOnError>): RequestResult<AgentAccountOperationsResponses, AgentAccountOperationsErrors, ThrowOnError> => (options.client ?? client).get<AgentAccountOperationsResponses, AgentAccountOperationsErrors, ThrowOnError>({ url: '/v1/accounts/{id}/operations', ...options });
+export const agentAccountOperations = <ThrowOnError extends boolean = false>(options: Options<AgentAccountOperationsData, ThrowOnError>): RequestResult<AgentAccountOperationsResponses, AgentAccountOperationsErrors, ThrowOnError> => (options.client ?? client).get<AgentAccountOperationsResponses, AgentAccountOperationsErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/accounts/{id}/operations',
+    ...options
+});
 
 /**
  * Invoke a discovered platform operation within this account's authorized chat scope. Makes one attempt.
  */
 export const agentAccountOperation = <ThrowOnError extends boolean = false>(options: Options<AgentAccountOperationData, ThrowOnError>): RequestResult<AgentAccountOperationResponses, AgentAccountOperationErrors, ThrowOnError> => (options.client ?? client).post<AgentAccountOperationResponses, AgentAccountOperationErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/v1/accounts/{id}/operations/{operation}',
     ...options,
     headers: {
@@ -2085,12 +2111,25 @@ export const agentAccountOperation = <ThrowOnError extends boolean = false>(opti
 /**
  * Discover named Telegram chat operations; other platforms use the account operations catalog.
  */
-export const agentTelegramOperations = <ThrowOnError extends boolean = false>(options: Options<AgentTelegramOperationsData, ThrowOnError>): RequestResult<AgentTelegramOperationsResponses, AgentTelegramOperationsErrors, ThrowOnError> => (options.client ?? client).get<AgentTelegramOperationsResponses, AgentTelegramOperationsErrors, ThrowOnError>({ url: '/v1/accounts/{id}/telegram/operations', ...options });
+export const agentTelegramOperations = <ThrowOnError extends boolean = false>(options: Options<AgentTelegramOperationsData, ThrowOnError>): RequestResult<AgentTelegramOperationsResponses, AgentTelegramOperationsErrors, ThrowOnError> => (options.client ?? client).get<AgentTelegramOperationsResponses, AgentTelegramOperationsErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/accounts/{id}/telegram/operations',
+    ...options
+});
 
 /**
  * Invoke a named Telegram operation. Destination and credential identity are supplied by the Host.
  */
 export const agentTelegramOperation = <ThrowOnError extends boolean = false>(options: Options<AgentTelegramOperationData, ThrowOnError>): RequestResult<AgentTelegramOperationResponses, AgentTelegramOperationErrors, ThrowOnError> => (options.client ?? client).post<AgentTelegramOperationResponses, AgentTelegramOperationErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/v1/accounts/{id}/telegram/{operation}',
     ...options,
     headers: {
@@ -2103,6 +2142,11 @@ export const agentTelegramOperation = <ThrowOnError extends boolean = false>(opt
  * Write an original attachment to an explicit path on the calling Computer and return a file reference.
  */
 export const agentDownloadAttachment = <ThrowOnError extends boolean = false>(options: Options<AgentDownloadAttachmentData, ThrowOnError>): RequestResult<AgentDownloadAttachmentResponses, AgentDownloadAttachmentErrors, ThrowOnError> => (options.client ?? client).post<AgentDownloadAttachmentResponses, AgentDownloadAttachmentErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/v1/attachments/download',
     ...options,
     headers: {
@@ -2111,49 +2155,126 @@ export const agentDownloadAttachment = <ThrowOnError extends boolean = false>(op
     }
 });
 
-export const agentCapabilities = <ThrowOnError extends boolean = false>(options?: Options<AgentCapabilitiesData, ThrowOnError>): RequestResult<AgentCapabilitiesResponses, AgentCapabilitiesErrors, ThrowOnError> => (options?.client ?? client).get<AgentCapabilitiesResponses, AgentCapabilitiesErrors, ThrowOnError>({ url: '/v1/capabilities', ...options });
+export const agentCapabilities = <ThrowOnError extends boolean = false>(options?: Options<AgentCapabilitiesData, ThrowOnError>): RequestResult<AgentCapabilitiesResponses, AgentCapabilitiesErrors, ThrowOnError> => (options?.client ?? client).get<AgentCapabilitiesResponses, AgentCapabilitiesErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/capabilities',
+    ...options
+});
 
-export const agentCapability = <ThrowOnError extends boolean = false>(options: Options<AgentCapabilityData, ThrowOnError>): RequestResult<AgentCapabilityResponses, AgentCapabilityErrors, ThrowOnError> => (options.client ?? client).get<AgentCapabilityResponses, AgentCapabilityErrors, ThrowOnError>({ url: '/v1/capabilities/{id}', ...options });
+export const agentCapability = <ThrowOnError extends boolean = false>(options: Options<AgentCapabilityData, ThrowOnError>): RequestResult<AgentCapabilityResponses, AgentCapabilityErrors, ThrowOnError> => (options.client ?? client).get<AgentCapabilityResponses, AgentCapabilityErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/capabilities/{id}',
+    ...options
+});
 
 /**
  * List this Bot's allowed Computers and current connection status.
  */
-export const agentComputers = <ThrowOnError extends boolean = false>(options?: Options<AgentComputersData, ThrowOnError>): RequestResult<AgentComputersResponses, AgentComputersErrors, ThrowOnError> => (options?.client ?? client).get<AgentComputersResponses, AgentComputersErrors, ThrowOnError>({ url: '/v1/computers', ...options });
+export const agentComputers = <ThrowOnError extends boolean = false>(options?: Options<AgentComputersData, ThrowOnError>): RequestResult<AgentComputersResponses, AgentComputersErrors, ThrowOnError> => (options?.client ?? client).get<AgentComputersResponses, AgentComputersErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/computers',
+    ...options
+});
 
 /**
  * Inspect this listener's bound Bot, Session, source Computer, working directory and AgentHome.
  */
-export const agentContext = <ThrowOnError extends boolean = false>(options?: Options<AgentContextData, ThrowOnError>): RequestResult<AgentContextResponses, AgentContextErrors, ThrowOnError> => (options?.client ?? client).get<AgentContextResponses, AgentContextErrors, ThrowOnError>({ url: '/v1/context', ...options });
+export const agentContext = <ThrowOnError extends boolean = false>(options?: Options<AgentContextData, ThrowOnError>): RequestResult<AgentContextResponses, AgentContextErrors, ThrowOnError> => (options?.client ?? client).get<AgentContextResponses, AgentContextErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/context',
+    ...options
+});
 
 /**
  * List known authorized chats.
  */
-export const agentConversations = <ThrowOnError extends boolean = false>(options?: Options<AgentConversationsData, ThrowOnError>): RequestResult<AgentConversationsResponses, AgentConversationsErrors, ThrowOnError> => (options?.client ?? client).get<AgentConversationsResponses, AgentConversationsErrors, ThrowOnError>({ url: '/v1/conversations', ...options });
+export const agentConversations = <ThrowOnError extends boolean = false>(options?: Options<AgentConversationsData, ThrowOnError>): RequestResult<AgentConversationsResponses, AgentConversationsErrors, ThrowOnError> => (options?.client ?? client).get<AgentConversationsResponses, AgentConversationsErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/conversations',
+    ...options
+});
 
 /**
  * Get this chat's send_message description and platform-specific argument schema.
  */
-export const agentMessageTool = <ThrowOnError extends boolean = false>(options: Options<AgentMessageToolData, ThrowOnError>): RequestResult<AgentMessageToolResponses, AgentMessageToolErrors, ThrowOnError> => (options.client ?? client).get<AgentMessageToolResponses, AgentMessageToolErrors, ThrowOnError>({ url: '/v1/conversations/{id}/message-tool', ...options });
+export const agentMessageTool = <ThrowOnError extends boolean = false>(options: Options<AgentMessageToolData, ThrowOnError>): RequestResult<AgentMessageToolResponses, AgentMessageToolErrors, ThrowOnError> => (options.client ?? client).get<AgentMessageToolResponses, AgentMessageToolErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/conversations/{id}/message-tool',
+    ...options
+});
 
 /**
  * Read archived messages. Filter q before pagination; continue with after=next_sequence.
  */
-export const agentMessages = <ThrowOnError extends boolean = false>(options: Options<AgentMessagesData, ThrowOnError>): RequestResult<AgentMessagesResponses, AgentMessagesErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagesResponses, AgentMessagesErrors, ThrowOnError>({ url: '/v1/conversations/{id}/messages', ...options });
+export const agentMessages = <ThrowOnError extends boolean = false>(options: Options<AgentMessagesData, ThrowOnError>): RequestResult<AgentMessagesResponses, AgentMessagesErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagesResponses, AgentMessagesErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/conversations/{id}/messages',
+    ...options
+});
 
 /**
  * Read the latest archived version of a platform message.
  */
-export const agentMessage = <ThrowOnError extends boolean = false>(options: Options<AgentMessageData, ThrowOnError>): RequestResult<AgentMessageResponses, AgentMessageErrors, ThrowOnError> => (options.client ?? client).get<AgentMessageResponses, AgentMessageErrors, ThrowOnError>({ url: '/v1/conversations/{id}/messages/{message_id}', ...options });
+export const agentMessage = <ThrowOnError extends boolean = false>(options: Options<AgentMessageData, ThrowOnError>): RequestResult<AgentMessageResponses, AgentMessageErrors, ThrowOnError> => (options.client ?? client).get<AgentMessageResponses, AgentMessageErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/conversations/{id}/messages/{message_id}',
+    ...options
+});
 
 /**
  * Stream original attachment bytes; this does not save them on a Computer.
  */
-export const agentAttachmentContent = <ThrowOnError extends boolean = false>(options: Options<AgentAttachmentContentData, ThrowOnError>): RequestResult<AgentAttachmentContentResponses, AgentAttachmentContentErrors, ThrowOnError> => (options.client ?? client).get<AgentAttachmentContentResponses, AgentAttachmentContentErrors, ThrowOnError>({ url: '/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content', ...options });
+export const agentAttachmentContent = <ThrowOnError extends boolean = false>(options: Options<AgentAttachmentContentData, ThrowOnError>): RequestResult<AgentAttachmentContentResponses, AgentAttachmentContentErrors, ThrowOnError> => (options.client ?? client).get<AgentAttachmentContentResponses, AgentAttachmentContentErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content',
+    ...options
+});
 
 /**
  * Reference an existing Computer file for Web delivery; snapshot=true fixes its version.
  */
 export const agentFileReference = <ThrowOnError extends boolean = false>(options: Options<AgentFileReferenceData, ThrowOnError>): RequestResult<AgentFileReferenceResponses, AgentFileReferenceErrors, ThrowOnError> => (options.client ?? client).post<AgentFileReferenceResponses, AgentFileReferenceErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/v1/files/reference',
     ...options,
     headers: {
@@ -2166,6 +2287,11 @@ export const agentFileReference = <ThrowOnError extends boolean = false>(options
  * Send a Computer path or astral-file reference with a stable Idempotency-Key; wait for platform acceptance or a send error.
  */
 export const agentSendFile = <ThrowOnError extends boolean = false>(options: Options<AgentSendFileData, ThrowOnError>): RequestResult<AgentSendFileResponses, AgentSendFileErrors, ThrowOnError> => (options.client ?? client).post<AgentSendFileResponses, AgentSendFileErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/v1/im/files',
     ...options,
     headers: {
@@ -2178,6 +2304,11 @@ export const agentSendFile = <ThrowOnError extends boolean = false>(options: Opt
  * Send text with a stable Idempotency-Key and wait for platform acceptance or an error containing its receipt ID.
  */
 export const agentSendText = <ThrowOnError extends boolean = false>(options: Options<AgentSendTextData, ThrowOnError>): RequestResult<AgentSendTextResponses, AgentSendTextErrors, ThrowOnError> => (options.client ?? client).post<AgentSendTextResponses, AgentSendTextErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/v1/im/messages',
     ...options,
     headers: {
@@ -2189,17 +2320,38 @@ export const agentSendText = <ThrowOnError extends boolean = false>(options: Opt
 /**
  * Read this Bot's persisted send outcome. Unknown outcomes are not automatically retried.
  */
-export const agentSendReceipt = <ThrowOnError extends boolean = false>(options: Options<AgentSendReceiptData, ThrowOnError>): RequestResult<AgentSendReceiptResponses, AgentSendReceiptErrors, ThrowOnError> => (options.client ?? client).get<AgentSendReceiptResponses, AgentSendReceiptErrors, ThrowOnError>({ url: '/v1/im/receipts/{id}', ...options });
+export const agentSendReceipt = <ThrowOnError extends boolean = false>(options: Options<AgentSendReceiptData, ThrowOnError>): RequestResult<AgentSendReceiptResponses, AgentSendReceiptErrors, ThrowOnError> => (options.client ?? client).get<AgentSendReceiptResponses, AgentSendReceiptErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/im/receipts/{id}',
+    ...options
+});
 
 /**
  * List this Agent's Sessions across Computers, newest activity first. Returns lightweight metadata, includes archived Sessions by default, and never opens execution runtimes. Follow next_cursor to enumerate the fixed snapshot.
  */
-export const agentSessions = <ThrowOnError extends boolean = false>(options?: Options<AgentSessionsData, ThrowOnError>): RequestResult<AgentSessionsResponses, AgentSessionsErrors, ThrowOnError> => (options?.client ?? client).get<AgentSessionsResponses, AgentSessionsErrors, ThrowOnError>({ url: '/v1/sessions', ...options });
+export const agentSessions = <ThrowOnError extends boolean = false>(options?: Options<AgentSessionsData, ThrowOnError>): RequestResult<AgentSessionsResponses, AgentSessionsErrors, ThrowOnError> => (options?.client ?? client).get<AgentSessionsResponses, AgentSessionsErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/sessions',
+    ...options
+});
 
 /**
  * Search committed text across this Agent's Sessions. Returns flat passages around real keyword matches; multiple passages from one Session are allowed. Filters precede pagination. Defaults: all whitespace-separated terms, case-insensitive, newest first, 600 characters per passage, 50 passages per page. Short Chinese words, code identifiers and punctuation match literally. No hidden per-Session quota, semantic summarization or global output budget. Independent Fork copies remain distinct. Shared-rollout ancestors are deduplicated, each Session exposes only its own history path, and pre-compaction originals remain searchable. The first request catches the index up to captured heads or fails; an empty page is not an unindexed-history result. Resume with cursor and optional limit. Use each hit's read_url to expand it.
  */
 export const agentSearchSessions = <ThrowOnError extends boolean = false>(options: Options<AgentSearchSessionsData, ThrowOnError>): RequestResult<AgentSearchSessionsResponses, AgentSearchSessionsErrors, ThrowOnError> => (options.client ?? client).post<AgentSearchSessionsResponses, AgentSearchSessionsErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/v1/sessions/search',
     ...options,
     headers: {
@@ -2211,4 +2363,12 @@ export const agentSearchSessions = <ThrowOnError extends boolean = false>(option
 /**
  * Read normalized history text with roles, tool names, provenance and stable character offsets. With no location, returns recent text parts. With around, returns the hit and its requested neighbors. Items are chronological; follow older_cursor or newer_cursor to navigate. Page cursors keep the original head while the Session grows. References remain usable after restart/index rebuild. This Agent API returns text parts; the Owner history API retains raw Core entries. It reads persistent data without loading a model or running a Session.
  */
-export const agentHistory = <ThrowOnError extends boolean = false>(options: Options<AgentHistoryData, ThrowOnError>): RequestResult<AgentHistoryResponses, AgentHistoryErrors, ThrowOnError> => (options.client ?? client).get<AgentHistoryResponses, AgentHistoryErrors, ThrowOnError>({ url: '/v1/sessions/{id}/history', ...options });
+export const agentHistory = <ThrowOnError extends boolean = false>(options: Options<AgentHistoryData, ThrowOnError>): RequestResult<AgentHistoryResponses, AgentHistoryErrors, ThrowOnError> => (options.client ?? client).get<AgentHistoryResponses, AgentHistoryErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/sessions/{id}/history',
+    ...options
+});

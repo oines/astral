@@ -40,8 +40,14 @@ func (c *Contract) Document() map[string]any {
 			"webSessionHTTP":  map[string]any{"type": "apiKey", "in": "cookie", "name": "astral_session", "description": "Browser session for HTTP requests only."},
 			"webSessionHTTPS": map[string]any{"type": "apiKey", "in": "cookie", "name": "__Host-astral_session", "description": "Secure host-only browser session for HTTPS requests only."},
 			"daemon":          map[string]any{"type": "http", "scheme": "bearer"},
+			"command":         CommandSecurityScheme(),
 		}}}
 }
+
+func CommandSecurityScheme() map[string]any {
+	return map[string]any{"type": "http", "scheme": "bearer", "description": "Temporary Computer API credential from the calling exec_command's ASTRAL_API_TOKEN environment variable. Required for every local API request, including capability discovery. Valid only while that command and its original Daemon connection remain active; never store or print the credential."}
+}
+
 func (c *Contract) Merge(other *Contract) {
 	for k, v := range other.Paths {
 		c.Paths[k] = v
@@ -57,6 +63,7 @@ type Operation struct {
 	Request, Response     reflect.Type
 	Status                int
 	Auth                  bool
+	CommandAuth           bool
 	ContentType           string
 	Query                 []Parameter
 }
@@ -96,7 +103,9 @@ func (c *Contract) Describe(o Operation) {
 	if o.Description != "" {
 		operation["description"] = o.Description
 	}
-	if o.Auth {
+	if o.CommandAuth {
+		operation["security"] = []any{map[string]any{"command": []string{}}}
+	} else if o.Auth {
 		operation["security"] = []any{map[string]any{"desktop": []string{}}, map[string]any{"webSessionHTTP": []string{}}, map[string]any{"webSessionHTTPS": []string{}}}
 	}
 	parameters := []any{}

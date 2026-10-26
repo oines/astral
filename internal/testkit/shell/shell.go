@@ -55,13 +55,13 @@ func CWD() string {
 // incompatible flags and PS 5.1 native argument parsing can lose JSON quotes.
 func HTTP(method, url, body string) string {
 	if runtime.GOOS == "windows" {
-		command := "$ProgressPreference = 'SilentlyContinue'; [Console]::Write((Invoke-WebRequest -UseBasicParsing -Method " + quote(method) + " -Uri " + quote(url)
+		command := "$ProgressPreference = 'SilentlyContinue'; [Console]::Write((Invoke-WebRequest -UseBasicParsing -Headers @{Authorization = 'Bearer ' + $env:ASTRAL_API_TOKEN} -Method " + quote(method) + " -Uri " + quote(url)
 		if body != "" {
 			command += " -ContentType 'application/json' -Body " + quote(body)
 		}
 		return command + ").Content)"
 	}
-	command := "curl --fail --silent --request " + quote(method)
+	command := `printf 'Authorization: Bearer %s\n' "$ASTRAL_API_TOKEN" | curl --fail --silent --header @- --request ` + quote(method)
 	if body != "" {
 		command += " --header 'Content-Type: application/json' --data " + quote(body)
 	}

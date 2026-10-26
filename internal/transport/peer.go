@@ -21,6 +21,8 @@ import (
 const chunkSize = 32 << 10
 const window = 8
 const maxCalls = 128
+const heartbeatInterval = 20 * time.Second
+const heartbeatTimeout = 10 * time.Second
 
 var ErrDisconnected = errors.New("computer connection closed")
 
@@ -51,14 +53,17 @@ type Request struct {
 type Handler func(context.Context, Request, *Responder) error
 
 type Peer struct {
-	conn    net.Conn
-	handler Handler
-	ctx     context.Context
-	cancel  context.CancelCauseFunc
-	write   sync.Mutex
-	mu      sync.Mutex
-	streams map[string]*stream
-	done    chan struct{}
+	conn        net.Conn
+	handler     Handler
+	ctx         context.Context
+	cancel      context.CancelCauseFunc
+	write       sync.Mutex
+	mu          sync.Mutex
+	streams     map[string]*stream
+	pingID      string
+	pingReplies chan string
+	pong        chan struct{}
+	done        chan struct{}
 }
 
 type stream struct {
@@ -84,9 +89,19 @@ type header struct {
 }
 
 func New(conn net.Conn, handler Handler) *Peer {
+	return newPeer(conn, handler, heartbeatInterval, heartbeatTimeout)
+}
+
+func newPeer(conn net.Conn, handler Handler, interval, timeout time.Duration) *Peer {
 	ctx, cancel := context.WithCancelCause(context.Background())
-	p := &Peer{conn: conn, handler: handler, ctx: ctx, cancel: cancel, streams: map[string]*stream{}, done: make(chan struct{})}
+	p := &Peer{
+		conn: conn, handler: handler, ctx: ctx, cancel: cancel,
+		streams: map[string]*stream{}, pingReplies: make(chan string, 1),
+		pong: make(chan struct{}, 1), done: make(chan struct{}),
+	}
 	go p.read()
+	go p.replyHeartbeats()
+	go p.sendHeartbeats(interval, timeout)
 	return p
 }
 func (p *Peer) Done() <-chan struct{} { return p.done }
@@ -151,6 +166,94 @@ func (p *Peer) remove(s *stream, err error) {
 }
 func (p *Peer) find(id string) *stream { p.mu.Lock(); defer p.mu.Unlock(); return p.streams[id] }
 
+func (p *Peer) sendHeartbeats(interval, timeout time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			if !p.heartbeat(timeout) {
+				return
+			}
+		}
+	}
+}
+
+func (p *Peer) heartbeat(timeout time.Duration) bool {
+	p.mu.Lock()
+	if p.ctx.Err() != nil {
+		p.mu.Unlock()
+		return false
+	}
+	p.pingID = domain.ID("heartbeat")
+	id := p.pingID
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		p.pingID = ""
+		p.mu.Unlock()
+	}()
+	// Include time spent waiting for the writer: an unresponsive connection
+	// must not postpone its heartbeat deadline by blocking a protocol write.
+	timer := time.AfterFunc(timeout, func() {
+		_ = p.conn.SetDeadline(time.Now())
+		_ = p.Close()
+	})
+	defer timer.Stop()
+	if err := p.send(frame{ID: id, Kind: "ping"}); err != nil {
+		_ = p.Close()
+		return false
+	}
+	select {
+	case <-p.ctx.Done():
+		return false
+	case <-p.pong:
+		return true
+	}
+}
+
+func (p *Peer) replyHeartbeats() {
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case id := <-p.pingReplies:
+			if err := p.send(frame{ID: id, Kind: "pong"}); err != nil {
+				_ = p.Close()
+				return
+			}
+		}
+	}
+}
+
+func (p *Peer) handleHeartbeat(f frame) bool {
+	if f.Method != "" || len(f.Params) != 0 || len(f.Meta) != 0 || len(f.Data) != 0 || f.Error != nil {
+		return false
+	}
+	if f.Kind == "ping" {
+		// The read loop must keep consuming while the reply is written. Two
+		// peers can send ping together, including over an unbuffered net.Conn.
+		select {
+		case p.pingReplies <- f.ID:
+			return true
+		default:
+			return false
+		}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.pingID == f.ID {
+		p.pingID = ""
+		select {
+		case p.pong <- struct{}{}:
+		default:
+		}
+	}
+	return true
+}
+
 func (p *Peer) read() {
 	defer close(p.done)
 	defer func() { p.cancel(ErrDisconnected); _ = p.conn.Close() }()
@@ -170,6 +273,12 @@ func (p *Peer) read() {
 		var f frame
 		if json.Unmarshal(raw, &f) != nil || f.ID == "" {
 			return
+		}
+		if f.Kind == "ping" || f.Kind == "pong" {
+			if !p.handleHeartbeat(f) {
+				return
+			}
+			continue
 		}
 		if f.Kind == "open" {
 			if p.handler == nil {
@@ -296,7 +405,15 @@ type Responder struct {
 	sentHeaders bool
 }
 
+// Abort cancels this call without closing its peer. It unblocks response writes
+// that are waiting for stream credits; serve sends the final response and
+// releases the stream after the handler observes cancellation and returns.
+func (r *Responder) Abort(err error) { r.s.cancel(err) }
+
 func (r *Responder) Headers(meta any) error {
+	if r.s.ctx.Err() != nil {
+		return context.Cause(r.s.ctx)
+	}
 	if r.sentHeaders {
 		return errors.New("response headers already sent")
 	}
@@ -327,11 +444,17 @@ func (r *Responder) JSON(value any) error {
 func (s *stream) write(data []byte) (int, error) {
 	total := 0
 	for len(data) > 0 {
+		if s.ctx.Err() != nil {
+			return total, context.Cause(s.ctx)
+		}
 		n := min(len(data), chunkSize)
 		select {
 		case <-s.ctx.Done():
 			return total, context.Cause(s.ctx)
 		case <-s.credits:
+		}
+		if s.ctx.Err() != nil {
+			return total, context.Cause(s.ctx)
 		}
 		if err := s.peer.send(frame{ID: s.id, Kind: "data", Data: data[:n]}); err != nil {
 			return total, err
@@ -400,6 +523,9 @@ func (b *body) Close() error {
 }
 
 func (p *Peer) Call(ctx context.Context, method string, params any, input io.Reader) (json.RawMessage, io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	raw, err := json.Marshal(params)
 	if err != nil {
 		return nil, nil, err
@@ -413,6 +539,16 @@ func (p *Peer) Call(ctx context.Context, method string, params any, input io.Rea
 			_ = closer.Close()
 		}
 	})
+	if err = ctx.Err(); err != nil {
+		p.remove(s, err)
+		return nil, nil, err
+	}
+	if err = p.send(frame{ID: s.id, Kind: "open", Method: method, Params: raw}); err != nil {
+		p.remove(s, err)
+		return nil, nil, err
+	}
+	// Register only after open was written. A cancel arriving before open
+	// would be ignored by the remote peer and could leave a new call running.
 	stop := context.AfterFunc(ctx, func() {
 		s.cancel(ctx.Err())
 		_ = p.send(frame{ID: s.id, Kind: "cancel"})
@@ -420,11 +556,6 @@ func (p *Peer) Call(ctx context.Context, method string, params any, input io.Rea
 			_ = closer.Close()
 		}
 	})
-	if err = p.send(frame{ID: s.id, Kind: "open", Method: method, Params: raw}); err != nil {
-		stop()
-		p.remove(s, err)
-		return nil, nil, err
-	}
 	go func() {
 		defer func() {
 			if s.ctx.Err() != nil {
