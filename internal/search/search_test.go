@@ -39,7 +39,8 @@ func TestExactlyOneSelectedProviderAndNoFallbackOnFailure(t *testing.T) {
 		}
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body["query"] != "query" || len(body) != 1 {
+		contents, _ := body["contents"].(map[string]any)
+		if body["query"] != "query" || len(body) != 2 || len(contents) != 1 || contents["highlights"] != true {
 			t.Error("invalid Exa request")
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": []any{map[string]any{"title": "Exa", "url": "https://example.test/exa", "highlights": []string{"Highlight"}, "author": "Author"}}})

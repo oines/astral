@@ -151,6 +151,9 @@ func buildRequest(ctx context.Context, adapter Adapter, provider domain.SearchPr
 	case "exa":
 		authHeader, auth = "x-api-key", keys["api_key"]
 		body["query"] = input.Query
+		// Bare searches return metadata only. Request source excerpts without
+		// fetching full page text or generating Exa-side summaries.
+		body["contents"] = map[string]any{"highlights": true}
 		setLimit("numResults")
 		if len(input.Domains) > 0 {
 			body["includeDomains"] = input.Domains
@@ -227,6 +230,7 @@ func buildRequest(ctx context.Context, adapter Adapter, provider domain.SearchPr
 		setCount("count")
 	case "bocha":
 		body["query"] = input.Query
+		body["summary"] = true
 		setLimit("count")
 		if len(input.Domains) > 0 {
 			body["include"] = strings.Join(input.Domains, ",")
