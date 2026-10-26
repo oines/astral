@@ -170,7 +170,11 @@ cleanup() {
     printf 'Installation failed; restoring the previous program and user service.\n' >&2
     systemctl --user stop "$service" >/dev/null 2>&1 || recovery_failed=1
     if [[ -n $recovery_program && -n ${old_program:-} ]]; then
-      "$recovery_program" migrate recover --data "$root/data/server" || recovery_failed=1
+      # A program may fail before opening data or even initializing its CLI.
+      # Only a real migration journal requires the new recovery command.
+      if [[ -f $root/data/server/migration-state.json ]]; then
+        "$recovery_program" migrate recover --data "$root/data/server" || recovery_failed=1
+      fi
       if [[ -f $root/data/server/last-upgrade.json ]]; then
         current_upgrade=$(sha256sum "$root/data/server/last-upgrade.json" | awk '{print $1}')
         if [[ $current_upgrade != "$previous_upgrade" ]]; then

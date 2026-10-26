@@ -39,7 +39,7 @@ func (m *Manager) StartUpdate(ctx context.Context, executable string) error {
 		return err
 	case "windows":
 		target := "\\Astral\\Astral Daemon update (" + m.id + ")"
-		query := `$ErrorActionPreference='Stop'; $task=Get-ScheduledTask -TaskPath '\Astral\' -TaskName ` + psQuote("Astral Daemon update ("+m.id+")") + ` -ErrorAction SilentlyContinue; if($null -ne $task){$task.State.ToString()}`
+		query := windowsUpdateTaskQuery("Astral Daemon update (" + m.id + ")")
 		state, e := m.command(ctx, "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", query)
 		if e != nil {
 			return e
@@ -70,6 +70,13 @@ func (m *Manager) StartUpdate(ctx context.Context, executable string) error {
 		return err
 	}
 	return fmt.Errorf("update jobs unsupported on %s", m.platform)
+}
+
+func windowsUpdateTaskQuery(name string) string {
+	// A missing first-run task is expected. Without an explicit success exit,
+	// Windows PowerShell can return the failed cmdlet's status even though its
+	// missing-task error was suppressed and the conditional completed normally.
+	return `$ErrorActionPreference='Stop'; $task=Get-ScheduledTask -TaskPath '\Astral\' -TaskName ` + psQuote(name) + ` -ErrorAction SilentlyContinue; if($null -ne $task){$task.State.ToString()}; exit 0`
 }
 
 // FinishUpdate unregisters the one-shot job without touching the Daemon service.

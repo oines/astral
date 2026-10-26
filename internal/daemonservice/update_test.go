@@ -4,10 +4,31 @@ import (
 	"context"
 	"encoding/xml"
 	"os"
+	"os/exec"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestWindowsUpdateQueryAcceptsMissingTask(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("requires native Windows PowerShell and Task Scheduler")
+	}
+	m, _, _ := serviceFixture(t, "windows")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// Query only a unique nonexistent task; never register, stop or delete one.
+	script := windowsUpdateTaskQuery("Astral update probe (" + m.id + ")")
+	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	if err != nil {
+		t.Fatalf("missing update task must be a successful empty query: %v: %s", err, output)
+	}
+	if strings.TrimSpace(string(output)) != "" {
+		t.Fatalf("expected no matching task: %s", output)
+	}
+}
 
 func TestUpdateHelperUsesIndependentUserJob(t *testing.T) {
 	for _, platform := range []string{"linux", "darwin", "windows"} {
