@@ -29,6 +29,7 @@ was_enabled=0
 old_current=
 recovery_program=
 previous_upgrade=
+upgrade_baseline_ready=0
 
 die() { printf 'Astral Server: %s\n' "$*" >&2; exit 1; }
 usage() {
@@ -175,7 +176,7 @@ cleanup() {
       if [[ -f $root/data/server/migration-state.json ]]; then
         "$recovery_program" migrate recover --data "$root/data/server" || recovery_failed=1
       fi
-      if [[ -f $root/data/server/last-upgrade.json ]]; then
+      if [[ $upgrade_baseline_ready == 1 && -f $root/data/server/last-upgrade.json ]]; then
         current_upgrade=$(sha256sum "$root/data/server/last-upgrade.json" | awk '{print $1}')
         if [[ $current_upgrade != "$previous_upgrade" ]]; then
           "$recovery_program" migrate restore --data "$root/data/server" --latest || recovery_failed=1
@@ -329,7 +330,13 @@ if systemctl --user is-enabled --quiet "$service"; then was_enabled=1; fi
 mutating=1
 if [[ $had_unit == 1 ]]; then systemctl --user stop "$service"; fi
 recovery_program=$release/bin/astral
+# Finish an earlier interrupted attempt before recording this attempt's base.
+# Recovery can itself restore an older last-upgrade record from the snapshot.
+if [[ -f $root/data/server/migration-state.json ]]; then
+  "$recovery_program" migrate recover --data "$root/data/server" || die 'the previous migration could not be recovered; data and backups were retained'
+fi
 if [[ -f $root/data/server/last-upgrade.json ]]; then previous_upgrade=$(sha256sum "$root/data/server/last-upgrade.json" | awk '{print $1}'); fi
+upgrade_baseline_ready=1
 if [[ -f $config ]]; then cp "$config" "$stage/previous-config.json"; had_config=1; fi
 config_snapshot=1
 python3 - "$stage/new-config.json" "$config" "$listen_set" "$listen" "$public_set" "$public_url" "$remote_set" "$allow_remote" <<'PY'
