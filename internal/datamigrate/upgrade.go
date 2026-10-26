@@ -137,7 +137,7 @@ func prepare(ctx context.Context, data, version string, protect func(string) err
 		return nil, readErr
 	}
 	plan, err := Inspect(ctx, data)
-	if err != nil || !plan.Pending {
+	if err != nil {
 		return nil, err
 	}
 	if !plan.Host.Missing {
@@ -145,6 +145,9 @@ func prepare(ctx context.Context, data, version string, protect func(string) err
 		if err != nil || len(key) != 32 {
 			return nil, fmt.Errorf("Host database requires its original 32-byte master.key; migration stopped")
 		}
+	}
+	if !plan.Pending {
+		return nil, nil
 	}
 	backup, err := snapshot(ctx, data, version, protect)
 	if err != nil {

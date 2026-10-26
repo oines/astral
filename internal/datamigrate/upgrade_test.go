@@ -328,3 +328,75 @@ func TestMissingCoreIsAllowedDuringFirstHostInitialization(t *testing.T) {
 		t.Fatalf("inspection created Core instead of leaving initialization to Open: %v", err)
 	}
 }
+
+func TestCurrentDataStillRequiresItsOriginalMasterKey(t *testing.T) {
+	for _, missing := range []bool{true, false} {
+		name := "invalid"
+		if missing {
+			name = "missing"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			data := fixture(t)
+			upgrade, err := Prepare(ctx, data, "0.1.0", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = upgrade.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			plan, err := Inspect(ctx, data)
+			if err != nil || plan.Pending {
+				t.Fatalf("fixture was not fully adopted: %+v %v", plan, err)
+			}
+			before := make(map[string][]byte)
+			for _, file := range []string{"astral.db", "core.db", resultName} {
+				before[file], err = os.ReadFile(filepath.Join(data, file))
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			key := filepath.Join(data, "master.key")
+			const invalidKey = "invalid-key"
+			if missing {
+				err = os.Remove(key)
+			} else {
+				err = os.WriteFile(key, []byte(invalidKey), 0600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if next, err := Prepare(ctx, data, "0.1.1", nil); err == nil || next != nil || !strings.Contains(err.Error(), "master.key") {
+				t.Fatalf("current data bypassed key validation: %v", err)
+			}
+			if raw, err := os.ReadFile(key); missing {
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("missing key was replaced: %v", err)
+				}
+			} else if err != nil || string(raw) != invalidKey {
+				t.Fatalf("invalid key was replaced: %q %v", raw, err)
+			}
+			for file, original := range before {
+				raw, err := os.ReadFile(filepath.Join(data, file))
+				if err != nil || string(raw) != string(original) {
+					t.Fatalf("key rejection modified %s: %v", file, err)
+				}
+			}
+			if _, err = os.Stat(filepath.Join(data, journalName)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("key rejection started a new upgrade: %v", err)
+			}
+		})
+	}
+}
+
+func TestPrepareEmptyDirectoryLeavesFreshInitializationToStores(t *testing.T) {
+	data := t.TempDir()
+	upgrade, err := Prepare(context.Background(), data, "0.1.0", nil)
+	if err != nil || upgrade != nil {
+		t.Fatalf("empty data requires an existing master key: %v", err)
+	}
+	entries, err := os.ReadDir(data)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("maintenance initialized fresh data: %v %v", entries, err)
+	}
+}
