@@ -7,8 +7,9 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
-	github.com/oines/astral-core v0.0.0-20261025012953-9026297e71e8
+	github.com/oines/astral-core v0.0.0-20261026104715-d62783173ec2
 	github.com/pquerna/otp v1.5.0
+	github.com/pressly/goose/v3 v3.26.0
 	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.58.0
@@ -26,11 +27,15 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
+	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/image v0.24.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
 )
 
 require (

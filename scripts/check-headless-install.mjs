@@ -87,6 +87,9 @@ async function publishFixture() {
     data_formats: metadata.data_formats,
     host_schema: metadata.data_formats.host,
     core_format: metadata.data_formats.core,
+    migration_status: metadata.migration_status,
+    migration_baselines: metadata.migration_baselines,
+    migration_targets: metadata.migration_targets,
     distribution_names: names,
     assets,
   })}\n`)
@@ -258,8 +261,59 @@ async function main() {
     const recovered = await snapshot()
     assert.notEqual(recovered.pid, second.pid, 'Recovery did not restart the previous Server')
     sameIdentity(second, recovered)
+
+    // Leave the old service stopped while preparing a genuine interrupted
+    // migration: starting it here would consume the journal before installation.
+    // Dropping only the ledgers makes the real migration CLI adopt each current
+    // baseline again, with verified full snapshots rather than invented backups.
+    await command('systemctl', ['--user', 'stop', service], { timeout: 45_000 })
+    const data = path.join(installRoot, 'data/server')
+    const resultFile = path.join(data, 'last-upgrade.json')
+    const markerFile = path.join(data, 'journal-recovery-marker.txt')
+    const marker = 'Keep data written after the previous committed upgrade.\n'
+    const adoptBaseline = async () => {
+      await command('python3', ['-c', `import pathlib,sqlite3,sys
+for name in ('astral.db','core.db'):
+    with sqlite3.connect(pathlib.Path(sys.argv[1])/name) as db:
+        db.execute('DROP TABLE goose_db_version')
+`, data])
+      await command(nativeBinary, ['migrate', '--data', data], { timeout: 120_000 })
+      const record = JSON.parse(await readFile(resultFile, 'utf8'))
+      assert.equal(record.schema, 1, 'Migration CLI did not record a committed snapshot')
+      assert.ok(path.isAbsolute(record.backup), 'Migration CLI did not record an absolute snapshot path')
+      return record
+    }
+    const previousUpgrade = await adoptBaseline()
+    await writeFile(markerFile, marker, { mode: 0o600 })
+    const interruptedUpgrade = await adoptBaseline()
+    assert.notEqual(interruptedUpgrade.backup, previousUpgrade.backup, 'Migration fixture reused a snapshot')
+    assert.equal(await exists(path.join(previousUpgrade.backup, 'files/journal-recovery-marker.txt')), false, 'Earlier snapshot unexpectedly contains the later data marker')
+    assert.equal(await readFile(path.join(interruptedUpgrade.backup, 'files/journal-recovery-marker.txt'), 'utf8'), marker, 'Interrupted snapshot omitted the later data marker')
+    const snapshotRecord = JSON.parse(await readFile(path.join(interruptedUpgrade.backup, 'files/last-upgrade.json'), 'utf8'))
+    assert.equal(snapshotRecord.backup, previousUpgrade.backup, 'Interrupted snapshot does not contain the previous upgrade record')
+    // Simulate a crash after Commit wrote last-upgrade.json, but before its
+    // journal removal persisted. Recovering this snapshot restores the earlier
+    // record while retaining the later data, which must become this attempt's
+    // baseline rather than cause another restore to the older snapshot.
+    await writeFile(path.join(data, 'migration-state.json'), `${JSON.stringify({ schema: 1, backup: interruptedUpgrade.backup })}\n`, { mode: 0o600 })
+    await atomicWrite(path.join(payload, nativeName), `#!/bin/sh\ncase "$1" in\n  version|migrate) exec ${quote(nativeBinary)} "$@" ;;\n  serve) ${quote(nativeBinary)} migrate recover --data ${quote(data)} || exit $? ;;\nesac\nprintf 'Deliberate headless CI startup failure after journal recovery.\\n' >&2\nexit 77\n`, { mode: 0o700 })
+    await publishFixture()
+    const interruptedFailure = await install(false)
+    assert.ok(interruptedFailure.startupFailure, 'Interrupted-migration startup failed for an unexpected reason')
+    assert.equal(await exists(path.join(data, 'migration-state.json')), false, 'Installer did not finish the earlier journal recovery')
+    assert.equal(await exists(markerFile), true, 'Failed installation restored an extra generation and lost later data')
+    assert.equal(await readFile(markerFile, 'utf8'), marker, 'Failed installation changed data retained by journal recovery')
+    const restoredRecord = JSON.parse(await readFile(resultFile, 'utf8'))
+    assert.equal(restoredRecord.backup, previousUpgrade.backup, 'Failed installation restored beyond the recovered baseline')
+    // The installer preserves a previously stopped service's state. Start the
+    // restored old unit explicitly; the prior case covers automatic restart of
+    // a service that was running when installation began.
+    await command('systemctl', ['--user', 'start', service])
+    const afterJournalRecovery = await snapshot()
+    sameIdentity(recovered, afterJournalRecovery)
+    assert.equal(await readFile(markerFile, 'utf8'), marker, 'Restored old Server lost the retained data marker')
     assert.equal((await stat(nativeBinary)).mode, originalNativeMode, 'Installer fixtures changed the original distribution executable permissions')
-    console.log('Native headless user-service install, HTTP/account readiness, identity-preserving reinstall, checksum rejection before stop, and failed-start program/service recovery passed. Synthetic local release fixtures do not establish publisher signing.')
+    console.log('Native headless user-service install, HTTP/account readiness, identity-preserving reinstall, checksum rejection before stop, failed-start recovery, and interrupted-journal recovery without an extra rollback passed. Synthetic local release fixtures do not establish publisher signing.')
   } catch (error) {
     await reportServiceState()
     throw error

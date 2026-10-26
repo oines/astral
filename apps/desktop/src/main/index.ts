@@ -1,20 +1,30 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, session, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { access } from 'node:fs/promises'
+import electronUpdater from 'electron-updater'
 import { LocalService } from './service'
 import { desktopRequestHeaders, externalURL, trustedSender } from './policy'
 import { setLinuxLoginStart } from './login'
 import { networkArguments } from './network-arguments'
+import { DesktopUpdates, updateChannel, updateFeed } from './updates'
+import { DesktopShutdown } from './shutdown'
+import type { DesktopUpdateState } from '../shared/updates'
 
 app.setName('Astral')
 if (process.platform === 'win32') app.setAppUserModelId('com.oines.astral')
 const single = app.requestSingleInstanceLock()
 if (!single) app.quit()
 const service = new LocalService()
+const shutdown = new DesktopShutdown(() => service.stop())
+let updates: DesktopUpdates | undefined
+let updateTimer: ReturnType<typeof setTimeout> | undefined
+let updateInterval: ReturnType<typeof setInterval> | undefined
 let window: BrowserWindow | undefined
 let tray: Tray | undefined
 let quitting = false
-let shutdownComplete = false
 let keepRunning = true
 let serverURL = ''
 const directory = fileURLToPath(new URL('.', import.meta.url))
@@ -50,6 +60,67 @@ async function setLoginStart(enabled: boolean) {
 }
 function assertSender(event: IpcMainInvokeEvent) {
   if (event.sender !== window?.webContents || !trustedSender(event.senderFrame?.url, event.senderFrame?.parent, serverURL)) throw new Error('Native access is unavailable to this page.')
+}
+async function prepareShutdown() {
+  quitting = true
+  traceLifecycle('Server stop requested')
+  try {
+    await shutdown.prepare()
+    tray?.destroy()
+    clearTimeout(updateTimer)
+    clearInterval(updateInterval)
+    traceLifecycle('Server and its pipes exited')
+  } catch (error) {
+    quitting = false
+    throw error
+  }
+}
+async function configureUpdates() {
+  let unavailable: DesktopUpdateState['unavailable']
+  if (!app.isPackaged) unavailable = 'development'
+  else if (process.platform === 'linux' && !process.env.APPIMAGE) unavailable = 'package'
+  else if (process.platform === 'win32') {
+    // An extracted ZIP has no NSIS installation to replace. Offer the installer instead.
+    try { await access(join(dirname(process.execPath), 'Uninstall Astral.exe')) }
+    catch { unavailable = 'windows-zip' }
+  }
+  else if (process.platform === 'darwin') {
+    try {
+      const bundle = join(app.getAppPath(), '../../..')
+      const run = promisify(execFile)
+      await run('/usr/bin/codesign', ['--verify', '--strict', bundle])
+      const { stderr } = await run('/usr/bin/codesign', ['--display', '--verbose=4', bundle])
+      if (!stderr.includes('TeamIdentifier=6N6W6Z6739') || !stderr.includes('Authority=Developer ID Application: ')) unavailable = 'signature'
+    } catch { unavailable = 'signature' }
+  }
+  const { autoUpdater } = electronUpdater
+  // Fixed public feed. No Renderer URL, credentials, or environment token is consulted.
+  autoUpdater.setFeedURL({ provider: 'generic', url: updateFeed, channel: updateChannel(process.arch), useMultipleRangeRequest: false })
+  updates = new DesktopUpdates(autoUpdater, app.getVersion(), async () => {
+    await prepareShutdown()
+    // AppImageUpdater can launch the replacement before quitting this process.
+    // Release only after confirmed Server exit so the new app can take the lock.
+    app.releaseSingleInstanceLock()
+  }, unavailable)
+  updates.onState = state => {
+    if (window && !window.isDestroyed()) window.webContents.send('astral:update-state', state)
+  }
+  updates.onInstallError = error => {
+    // The service is already stopped; restart the current installation on installer failure.
+    dialog.showErrorBox('Astral update failed', `${error.message}\n\nAstral will reopen the current version.`)
+    app.relaunch()
+    app.quit()
+  }
+  ipcMain.handle('astral:update-state', event => { assertSender(event); return updates!.state() })
+  ipcMain.handle('astral:update-check', event => { assertSender(event); return updates!.check() })
+  ipcMain.handle('astral:update-install', event => { assertSender(event); return updates!.install() })
+  if (!unavailable) {
+    // Checking is independent of opening Settings. Installation always needs an explicit action.
+    updateTimer = setTimeout(() => { void updates?.check() }, 30_000)
+    updateInterval = setInterval(() => { void updates?.check() }, 6 * 60 * 60 * 1000)
+    updateTimer.unref()
+    updateInterval.unref()
+  }
 }
 function createWindow() {
   window = new BrowserWindow({
@@ -126,6 +197,7 @@ async function start() {
     assertSender(event)
     await shell.openExternal(externalURL(url))
   })
+  await configureUpdates()
   const settings: MenuItemConstructorOptions = { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => { show(); window?.webContents.send('astral:open-settings') } }
   const applicationMenu: MenuItemConstructorOptions = process.platform === 'darwin'
     ? { label: 'Astral', submenu: [{ role: 'about' }, settings, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }
@@ -158,16 +230,11 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => {
   traceLifecycle(`${signal} Quit request returned`)
 })
 app.on('before-quit', event => {
-  traceLifecycle(`before-quit: quitting=${quitting}, shutdownComplete=${shutdownComplete}`)
-  if (shutdownComplete) return
+  traceLifecycle(`before-quit: quitting=${quitting}, shutdownComplete=${shutdown.complete}`)
+  if (shutdown.complete) return
   event.preventDefault()
   if (quitting) return
-  quitting = true
-  tray?.destroy()
-  traceLifecycle('Server stop requested')
-  void service.stop().finally(() => {
-    traceLifecycle(`Server stop settled: exitCode=${service.child?.exitCode}, signalCode=${service.child?.signalCode}`)
-    shutdownComplete = true
+  void prepareShutdown().then(() => {
     // Leave Electron's native before-quit dispatch before requesting Quit again.
     // A Promise callback can reenter it and have its quitting state overwritten.
     setTimeout(() => {
@@ -175,6 +242,9 @@ app.on('before-quit', event => {
       app.quit()
       traceLifecycle('second Quit request returned')
     }, 0)
+  }).catch(error => {
+    show()
+    dialog.showErrorBox('Astral could not quit safely', error instanceof Error ? error.message : String(error))
   })
 })
 app.on('will-quit', () => traceLifecycle('will-quit'))

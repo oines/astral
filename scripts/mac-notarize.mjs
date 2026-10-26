@@ -38,7 +38,7 @@ export function acceptedSubmission(value) {
 function submissionResponse(result, expectedID, requireStatus = false) {
   const response = JSON.parse(result?.stdout)
   if (typeof response?.id !== 'string' || !uuid.test(response.id)) throw new Error('Invalid Apple submission ID.')
-  if (expectedID && response.id.toLowerCase() !== expectedID) throw new Error('Unexpected Apple submission ID.')
+  if (expectedID && response.id.toLowerCase() !== expectedID) throw Object.assign(new Error('Unexpected Apple submission ID.'), { code: 'ERR_NOTARY_ID' })
   if (requireStatus && !submissionStatuses.has(response.status)) throw new Error('Unknown Apple submission status.')
   return response
 }
@@ -85,22 +85,32 @@ export async function submit(file, configuration, { run = command, record = writ
     throw new Error('Apple notarization upload was not confirmed: the submit command failed; no waiting or approval was performed.')
   }
   log(`Apple notarization ${id}: upload CLI completed (exit 0)`)
+  if (['Invalid', 'Rejected'].includes(uploadResponse.status)) return acceptedSubmission({ id, status: uploadResponse.status })
 
   let response
   try {
-    const result = await run('xcrun', ['notarytool', 'wait', id, ...auth, '--timeout', '30m', '--output-format', 'json'], { timeout: 1_860_000 })
+    const result = await run('xcrun', ['notarytool', 'wait', id, ...auth, '--timeout', '2m', '--output-format', 'json'], { timeout: 180_000 })
     response = submissionResponse(result, id, true)
-  } catch { /* Query this exact submission once after an interrupted or unusable wait. */ }
+  } catch (error) {
+    if (error?.code === 'ERR_NOTARY_ID') throw error
+    // Query this exact submission once after an interrupted or unusable wait.
+  }
   if (!response || response.status === 'In Progress') {
     try {
       const result = await run('xcrun', ['notarytool', 'info', id, ...auth, '--output-format', 'json'])
       response = submissionResponse(result, id, true)
-    } catch { /* The saved upload ID remains available for a later read-only query. */ }
+    } catch (error) {
+      if (error?.code === 'ERR_NOTARY_ID') throw error
+      // The saved upload ID remains available for a later read-only query.
+    }
   }
-  if (!response) throw new Error(`Apple notarization ${id} status could not be confirmed after waiting; the submission ID was saved and no artifacts are approved.`)
+  if (!response) {
+    log(`Apple notarization ${id}: status unknown after confirmed upload; releasing signed artifacts with notarization pending`)
+    return { id, status: 'Unknown' }
+  }
   await save(response)
   log(`Apple notarization ${id}: ${response.status}`)
-  if (response.status === 'In Progress') throw new Error(`Apple notarization ${id} is still In Progress after the wait timed out or was interrupted; this is not an Apple rejection. No artifacts are approved.`)
+  if (response.status === 'In Progress') return { id, status: 'In Progress' }
   return acceptedSubmission({ id, status: response.status })
 }
 
@@ -116,12 +126,12 @@ export async function staple(target, { run = command, pause = delay } = {}) {
   await run('xcrun', ['stapler', 'validate', target])
 }
 
-export async function verifyNotarizedApp(app, arch, { stapled = true, run = command, inspect = verifyApp } = {}) {
+export async function verifyNotarizedApp(app, arch, { stapled = true, notarized = true, run = command, inspect = verifyApp } = {}) {
   await inspect(app)
   const architecture = await run('/usr/bin/lipo', ['-archs', path.join(app, 'Contents/MacOS/Astral')])
   if (architecture.stdout.trim() !== (arch === 'x64' ? 'x86_64' : 'arm64')) throw new Error(`Unexpected packaged App architecture: ${arch}`)
-  if (stapled) await run('xcrun', ['stapler', 'validate', app])
-  await run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=2', app])
+  if (stapled && notarized) await run('xcrun', ['stapler', 'validate', app])
+  if (notarized) await run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=2', app])
 }
 
 async function asset(file) {
@@ -175,10 +185,13 @@ async function notarizeApp(app, arch) {
     const dmgFields = `${dmgSignature.stdout}\n${dmgSignature.stderr}`.split('\n')
     if (!dmgFields.includes(`Authority=${configuration.identity}`) || !dmgFields.includes(`TeamIdentifier=${configuration.team}`) || !dmgFields.some(line => /^Timestamp=.+/.test(line))) throw new Error('The DMG does not carry the intended timestamped Developer ID signature.')
     const dmgSubmission = { kind: 'dmg', arch, ...await submit(dmg, configuration) }
-    await staple(dmg)
-    await staple(app)
-    await verifyNotarizedApp(app, arch)
-    await command('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=2', dmg])
+    const notarized = dmgSubmission.status === 'Accepted'
+    if (notarized) {
+      await staple(dmg)
+      await staple(app)
+      await command('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=2', dmg])
+    }
+    await verifyNotarizedApp(app, arch, { notarized })
     await command('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', app, zip])
 
     // Re-open the bytes users download. This also catches packaging an old App
@@ -186,7 +199,7 @@ async function notarizeApp(app, arch) {
     const extracted = path.join(temporary, 'extracted')
     await command('/usr/bin/ditto', ['-x', '-k', zip, extracted])
     const extractedApp = path.join(extracted, 'Astral.app')
-    await verifyNotarizedApp(extractedApp, arch)
+    await verifyNotarizedApp(extractedApp, arch, { notarized })
     const nativeTested = arch === process.arch
     if (nativeTested) {
       await command(process.execPath, ['scripts/check-packaged-desktop.mjs'], {
@@ -199,7 +212,7 @@ async function notarizeApp(app, arch) {
     // The mounted copy predates App stapling. Its outer DMG has already passed
     // stapler validation; require the enclosed App's signature and Gatekeeper
     // acceptance without claiming that this copy carries its own ticket.
-    try { await verifyNotarizedApp(path.join(mount, 'Astral.app'), arch, { stapled: false }) }
+    try { await verifyNotarizedApp(path.join(mount, 'Astral.app'), arch, { stapled: false, notarized }) }
     finally { await command('/usr/bin/hdiutil', ['detach', mount]) }
     await writeReport(arch, {
       version, source_sha: configuration.sourceSHA, arch, native_tested: nativeTested,
@@ -214,10 +227,11 @@ async function finalize() {
   const reports = await Promise.all(['binaries', 'x64', 'arm64'].map(async name => JSON.parse(await readFile(path.join(reportDirectory, `${name}.json`), 'utf8'))))
   if (reports.some(report => report.version !== version || report.source_sha !== configuration.sourceSHA)) throw new Error('Notarization reports do not describe the current source/version.')
   if (reports.filter(report => report.native_tested === true).length !== 1 || !reports.some(report => report.arch === process.arch && report.native_tested)) throw new Error('The final native ZIP App has not passed startup/shutdown acceptance.')
+  const notarized = reports.flatMap(report => report.notarizations).every(item => item.status === 'Accepted')
   const report = {
-    schema_version: 1, version, source_sha: configuration.sourceSHA, team_id: configuration.team,
-    certificate_expires_at: configuration.expiration, status: 'accepted', native_tested_arch: process.arch,
-    checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: true, gatekeeper: true, packaged_app_startup_shutdown: true },
+    schema_version: 2, version, source_sha: configuration.sourceSHA, team_id: configuration.team,
+    certificate_expires_at: configuration.expiration, status: 'signed', notarization_status: notarized ? 'accepted' : 'pending', native_tested_arch: process.arch,
+    checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: notarized, gatekeeper: notarized, packaged_app_startup_shutdown: true },
     notarizations: reports.flatMap(report => report.notarizations), assets: reports.flatMap(report => report.assets),
   }
   const files = new Map([
@@ -226,7 +240,7 @@ async function finalize() {
   ])
   await validateMacSigningReport(report, { version, sourceSHA: configuration.sourceSHA, files })
   await writeFile(path.join(releaseDirectory, 'mac-signing-report.json'), `${JSON.stringify(report, null, 2)}\n`)
-  console.log('Mac signatures, Apple notarization, stapling, final DMG/ZIP checks and native App startup/shutdown passed.')
+  console.log(`Mac signatures, final DMG/ZIP checks and native App startup/shutdown passed. Apple notarization: ${report.notarization_status}.`)
 }
 
 async function main() {

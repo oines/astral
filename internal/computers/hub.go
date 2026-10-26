@@ -38,6 +38,7 @@ type authenticationBucket struct {
 }
 
 type Hub struct {
+	updates            daemonUpdates
 	Store              *persistence.Store
 	Gateway            GatewayHandler
 	ContainerURL       func(*http.Request, string) string
@@ -577,6 +578,7 @@ func (h *Hub) Forget(id string) {
 }
 
 func (h *Hub) Close() error {
+	h.cancelDaemonUpdates()
 	h.mu.Lock()
 	peers := make([]*transport.Peer, 0, len(h.live))
 	for _, active := range h.live {

@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import test from 'node:test'
+import { desktopUpdateFeeds, writeDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { desktopNames, digest, distributionNames, macSigningReportName } from './release-assets.mjs'
 import { compareVersions, createDraft } from './release-draft.mjs'
 import { readReleaseVersion } from './release-version.mjs'
@@ -13,6 +15,42 @@ const sourceSHA = 'a'.repeat(40)
 const repository = 'oines/astral'
 const clone = value => JSON.parse(JSON.stringify(value))
 const json = (body, status = 200) => ({ status, ok: status >= 200 && status < 300, json: async () => clone(body) })
+
+test('the installed electron-updater reads all six final-byte feeds using its actual platform naming rules', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'astral-real-updater-feed-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const version = await readReleaseVersion()
+  for (const { asset } of desktopUpdateFeeds(version)) await writeFile(path.join(directory, asset), `Final bytes for ${asset}`)
+  await writeDesktopUpdateFeeds(directory, version)
+  const require = createRequire(new URL('../apps/desktop/package.json', import.meta.url))
+  const { GenericProvider } = require(path.join(path.dirname(require.resolve('electron-updater')), 'providers/GenericProvider.js'))
+  const previous = process.env.TEST_UPDATER_ARCH
+  try {
+    for (const arch of ['x64', 'arm64']) {
+      process.env.TEST_UPDATER_ARCH = arch
+      for (const platform of ['win32', 'darwin', 'linux']) {
+        let requested
+        const provider = new GenericProvider({ url: 'https://github.com/oines/astral/releases/latest/download/', channel: `latest-${arch}` }, {}, {
+          platform,
+          executor: { request: async options => {
+            requested = path.basename(options.path.split('?', 1)[0])
+            return readFile(path.join(directory, requested), 'utf8')
+          } },
+        })
+        const info = await provider.getLatestVersion()
+        const expected = desktopUpdateFeeds(version).find(feed => feed.name === requested)
+        assert.ok(expected, `Unexpected channel filename for ${platform}/${arch}: ${requested}`)
+        const platformName = { win32: 'win', darwin: 'mac', linux: 'linux' }[platform]
+        assert.ok(expected.asset.includes(`-${platformName}-${arch}.`))
+        assert.equal(info.version, version)
+        assert.equal(provider.resolveFiles(info)[0].url.href, `https://github.com/oines/astral/releases/download/v${version}/${expected.asset}`)
+      }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.TEST_UPDATER_ARCH
+    else process.env.TEST_UPDATER_ARCH = previous
+  }
+})
 
 async function fixture(t, { candidate = false, unsigned = false, published = false, draft = false, hideTagLookup = false, previous = [], failUpload = false, wrongUploadDigest = false, movedTag = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'astral-publish-fixture-'))
@@ -26,8 +64,8 @@ async function fixture(t, { candidate = false, unsigned = false, published = fal
   names.push('checksums.txt')
   if (macSigned) {
     const report = {
-      schema_version: 1, version, source_sha: sourceSHA, team_id: '6N6W6Z6739',
-      certificate_expires_at: new Date(Date.now() + 366 * 86_400_000).toISOString(), status: 'accepted', native_tested_arch: 'arm64',
+      schema_version: 2, version, source_sha: sourceSHA, team_id: '6N6W6Z6739',
+      certificate_expires_at: new Date(Date.now() + 366 * 86_400_000).toISOString(), status: 'signed', notarization_status: 'accepted', native_tested_arch: 'arm64',
       checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: true, gatekeeper: true, packaged_app_startup_shutdown: true },
       notarizations: [{ kind: 'binaries' }, { kind: 'dmg', arch: 'arm64' }, { kind: 'dmg', arch: 'x64' }].map((item, index) => ({ ...item, id: `12345678-1234-4234-8234-${String(index + 1).padStart(12, '0')}`, status: 'Accepted' })),
       assets: await Promise.all(names.filter(name => name.startsWith('astral-darwin-') || name.includes('-mac-')).map(async name => ({ name, size: (await readFile(path.join(directory, name))).length, sha256: await digest(path.join(directory, name)) }))),
@@ -35,13 +73,18 @@ async function fixture(t, { candidate = false, unsigned = false, published = fal
     await writeFile(path.join(directory, macSigningReportName), JSON.stringify(report))
     names.push(macSigningReportName)
   }
+  await writeDesktopUpdateFeeds(directory, version)
+  names.push(...desktopUpdateFeeds(version).map(feed => feed.name))
+  const formats = { schema_version: 1, version, source_sha: sourceSHA, data_formats: { host: 3, core: 10 }, host_schema: 3, core_format: 10, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 10 }, migration_targets: { host: 3, core: 10 } }
+  await writeFile(path.join(directory, 'release-formats.json'), JSON.stringify(formats))
+  names.push('release-formats.json')
   const purpose = candidate ? (macSigned ? 'mac-signed-candidate' : 'unsigned-candidate') : 'release'
   const notes = `Astral ${version}\n\n<!-- astral-${purpose}:${sourceSHA} -->\n`
   const manifest = {
     schema_version: 1, purpose, public_release_ready: !candidate, version, tag, source_sha: sourceSHA, repository,
     candidate_run_url: `https://github.com/${repository}/actions/runs/123`, ci_run_url: `https://github.com/${repository}/actions/runs/122`,
     data_formats: { host: 3, core: 10 }, host_schema: 3, core_format: 10, core_module_version: 'fixture',
-    migration_status: 'not-implemented', desktop_updater: 'not-implemented',
+    migration_status: 'goose', migration_baselines: { host: 3, core: 10 }, migration_targets: { host: 3, core: 10 }, desktop_updater: 'electron-updater',
     signing: { macos: macSigned ? 'signed-and-notarized' : 'not-signed-or-notarized', windows: 'not-signed', linux: 'not-signed' },
     distribution_names: distributionNames,
     assets: await Promise.all(names.map(async name => ({ name, size: (await readFile(path.join(directory, name))).length, sha256: await digest(path.join(directory, name)) }))),
@@ -210,7 +253,7 @@ test('published tags reject different source, notes, assets or upload states wit
   }
 })
 
-test('public mode requires GitHub Actions context, matching run metadata and the supported baseline', async t => {
+test('public mode requires GitHub Actions context, matching run metadata and Goose migration declarations', async t => {
   for (const change of [
     value => { value.options.environment.CI = 'false' },
     value => { value.options.environment.GITHUB_ACTIONS = 'false' },
@@ -226,6 +269,69 @@ test('public mode requires GitHub Actions context, matching run metadata and the
     change(value)
     await value.updateManifest(() => {})
     await assert.rejects(createDraft(value.directory, value.options), /matching release manifest|matching release\/CI|data baseline/)
+    assert.equal(value.remote.calls.length, 0)
+  }
+})
+
+test('valid Developer ID signatures can publish while Apple is still processing, without claiming acceptance', async t => {
+  const value = await fixture(t)
+  const name = path.join(value.directory, macSigningReportName)
+  const report = JSON.parse(await readFile(name, 'utf8'))
+  report.notarizations[0].status = 'In Progress'
+  report.notarizations[1].status = 'Unknown'
+  report.notarization_status = 'pending'
+  report.checks.stapling = false
+  report.checks.gatekeeper = false
+  await writeFile(name, JSON.stringify(report))
+  await value.updateManifest(manifest => {
+    manifest.signing.macos = 'signed-notarization-pending'
+  })
+  // Rebuild evidence for changed bytes rather than relaxing final-byte checks.
+  const record = value.manifest.assets.find(asset => asset.name === macSigningReportName)
+  record.size = (await readFile(name)).length
+  record.sha256 = await digest(name)
+  await value.updateManifest(() => {})
+  const release = await createDraft(value.directory, value.options)
+  assert.equal(release.draft, false)
+})
+
+test('rejected notarizations and false accepted claims fail before contacting GitHub', async t => {
+  for (const change of [
+    report => { report.notarizations[0].status = 'Invalid' },
+    report => { report.notarizations[0].status = 'Rejected' },
+    report => { report.notarizations[0].status = 'In Progress' },
+  ]) {
+    const value = await fixture(t)
+    const file = path.join(value.directory, macSigningReportName)
+    const report = JSON.parse(await readFile(file, 'utf8'))
+    change(report)
+    await writeFile(file, JSON.stringify(report))
+    const record = value.manifest.assets.find(asset => asset.name === macSigningReportName)
+    record.size = (await readFile(file)).length
+    record.sha256 = await digest(file)
+    await value.updateManifest(() => {})
+    await assert.rejects(createDraft(value.directory, value.options), /non-rejected|must accurately match/)
+    assert.equal(value.remote.calls.length, 0)
+  }
+})
+
+test('update feeds reject wrong architecture, mutable URLs, incorrect size or SHA-512 even with matching SHA256SUMS', async t => {
+  for (const change of [
+    data => { data.files[0].url = data.files[0].url.replace('win-x64', 'win-arm64') },
+    data => { data.files[0].url = data.files[0].url.replace(/download\/v[0-9.]+\//, 'latest/download/') },
+    data => { data.files[0].size++ },
+    data => { data.files[0].sha512 = Buffer.alloc(64).toString('base64') },
+  ]) {
+    const value = await fixture(t)
+    const file = path.join(value.directory, 'latest-x64.yml')
+    const data = JSON.parse(await readFile(file, 'utf8'))
+    change(data)
+    await writeFile(file, JSON.stringify(data))
+    const record = value.manifest.assets.find(asset => asset.name === 'latest-x64.yml')
+    record.size = (await readFile(file)).length
+    record.sha256 = await digest(file)
+    await value.updateManifest(() => {})
+    await assert.rejects(createDraft(value.directory, value.options), /does not match final platform\/architecture bytes/)
     assert.equal(value.remote.calls.length, 0)
   }
 })

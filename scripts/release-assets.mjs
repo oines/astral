@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { desktopUpdateFeeds, writeDesktopUpdateFeeds, validateDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { isDirectInvocation, readReleaseVersion, validateTag } from './release-version.mjs'
 
 export const distributionNames = ['darwin', 'linux', 'windows'].flatMap(system => ['amd64', 'arm64'].map(arch => `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`))
@@ -12,24 +13,36 @@ export function desktopNames(version) {
 }
 
 export const macSigningReportName = 'mac-signing-report.json'
-const signingChecks = ['signatures', 'hardened_runtime', 'secure_timestamps', 'embedded_checksums', 'stapling', 'gatekeeper', 'packaged_app_startup_shutdown']
+const signingChecks = ['signatures', 'hardened_runtime', 'secure_timestamps', 'embedded_checksums', 'packaged_app_startup_shutdown']
+
+export function validateDataFormats(formats, { version, sourceSHA }) {
+  if (formats?.schema_version !== 1 || formats.version !== version || formats.source_sha !== sourceSHA ||
+      !Number.isSafeInteger(formats.host_schema) || !Number.isSafeInteger(formats.core_format) ||
+      formats.host_schema < 3 || formats.core_format < 10 ||
+      formats.data_formats?.host !== formats.host_schema || formats.data_formats?.core !== formats.core_format || Object.keys(formats.data_formats).length !== 2 ||
+      formats.migration_status !== 'goose' || typeof formats.core_module_version !== 'string' || !formats.core_module_version ||
+      formats.migration_baselines?.host !== 3 || formats.migration_baselines?.core !== 10 || Object.keys(formats.migration_baselines).length !== 2 ||
+      formats.migration_targets?.host !== formats.host_schema || formats.migration_targets?.core !== formats.core_format || Object.keys(formats.migration_targets).length !== 2) throw new Error('Release format metadata does not match the candidate source/version and Goose migration contract.')
+}
 
 export async function validateMacSigningReport(report, { version, sourceSHA, files }) {
   const expires = report?.certificate_expires_at
   const expiryDate = typeof expires === 'string' ? new Date(expires) : new Date(NaN)
   const validExpiry = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(expires || '') &&
     Number.isFinite(expiryDate.getTime()) && expiryDate.toISOString() === (expires.includes('.') ? expires : expires.replace('Z', '.000Z')) && expiryDate.getTime() > Date.now()
-  if (report?.schema_version !== 1 || report.version !== version || report.source_sha !== sourceSHA ||
-      report.team_id !== '6N6W6Z6739' || report.status !== 'accepted' || !validExpiry ||
+  if (report?.schema_version !== 2 || report.version !== version || report.source_sha !== sourceSHA ||
+      report.team_id !== '6N6W6Z6739' || report.status !== 'signed' || !validExpiry ||
       !['arm64', 'x64'].includes(report.native_tested_arch)) throw new Error('Mac signing report metadata does not match the candidate source/version, personal team or valid certificate contract.')
-  if (!report.checks || Object.keys(report.checks).length !== signingChecks.length || signingChecks.some(name => report.checks[name] !== true)) throw new Error('Mac signing report must pass every required signature, notarization and native acceptance check.')
+  if (!report.checks || Object.keys(report.checks).length !== signingChecks.length + 2 || signingChecks.some(name => report.checks[name] !== true)) throw new Error('Mac signing report must pass every required signature and native acceptance check.')
   const notarizations = report.notarizations
   const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
   if (!Array.isArray(notarizations) || notarizations.length !== 3 ||
-      notarizations.some(item => !item || !uuid.test(item.id || '') || item.status !== 'Accepted') ||
+      notarizations.some(item => !item || !uuid.test(item.id || '') || !['Accepted', 'In Progress', 'Unknown'].includes(item.status)) ||
       new Set(notarizations.map(item => item.id.toLowerCase())).size !== 3 ||
       notarizations.filter(item => item.kind === 'binaries' && item.arch === undefined).length !== 1 ||
-      ['arm64', 'x64'].some(arch => notarizations.filter(item => item.kind === 'dmg' && item.arch === arch).length !== 1)) throw new Error('Mac signing report must contain exactly three distinct accepted binary and DMG notarizations.')
+      ['arm64', 'x64'].some(arch => notarizations.filter(item => item.kind === 'dmg' && item.arch === arch).length !== 1)) throw new Error('Mac signing report must contain exactly three distinct non-rejected binary and DMG notarizations.')
+  const accepted = notarizations.every(item => item.status === 'Accepted')
+  if (report.notarization_status !== (accepted ? 'accepted' : 'pending') || report.checks.stapling !== accepted || report.checks.gatekeeper !== accepted) throw new Error('Mac notarization status and acceptance checks must accurately match every submission.')
   const names = [...distributionNames.filter(name => name.startsWith('astral-darwin-')), ...desktopNames(version).filter(name => name.includes('-mac-'))]
   if (!Array.isArray(report.assets) || report.assets.length !== names.length ||
       new Set(report.assets.map(asset => asset?.name)).size !== names.length ||
@@ -71,7 +84,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   if (path.resolve(input) === path.resolve(output) || path.resolve(output).startsWith(`${path.resolve(input)}${path.sep}`)) throw new Error('Output must be outside the input artifact directory.')
   await mkdir(output, { recursive: true })
   if ((await readdir(output)).length) throw new Error('Candidate output directory must be empty; refusing to mix earlier release files.')
-  const required = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', ...(macSigned ? [macSigningReportName] : [])]
+  const required = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'release-formats.json', ...(macSigned ? [macSigningReportName] : [])]
   const allowed = new Set([...required, 'checksums.txt', 'release-formats.json'])
   const inputs = new Map()
   for (const file of await walk(input)) {
@@ -87,15 +100,14 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
     if ((await stat(inputs.get(name))).size === 0) throw new Error(`Empty release artifact: ${name}`)
   }
   const formats = JSON.parse(await readFile(inputs.get('release-formats.json'), 'utf8'))
-  if (formats.schema_version !== 1 || formats.version !== version || formats.source_sha !== sourceSHA ||
-      !Number.isSafeInteger(formats.host_schema) || formats.host_schema < 1 || !Number.isSafeInteger(formats.core_format) || formats.core_format < 1 ||
-      formats.data_formats?.host !== formats.host_schema || formats.data_formats?.core !== formats.core_format ||
-      formats.migration_status !== 'not-implemented' || typeof formats.core_module_version !== 'string') throw new Error('Release format metadata does not match the candidate source/version contract.')
-  // The first public line starts from this verified format baseline. Keep later
-  // format changes blocked until their versioned migrations are implemented.
-  if (publicRelease && (formats.host_schema !== 3 || formats.core_format !== 10)) throw new Error('Public releases require the initial host schema 3 / core format 10 baseline until versioned migrations are implemented.')
-  if (macSigned) await validateMacSigningReport(JSON.parse(await readFile(inputs.get(macSigningReportName), 'utf8')), { version, sourceSHA, files: inputs })
+  validateDataFormats(formats, { version, sourceSHA })
+  const signingReport = macSigned ? JSON.parse(await readFile(inputs.get(macSigningReportName), 'utf8')) : undefined
+  if (macSigned) await validateMacSigningReport(signingReport, { version, sourceSHA, files: inputs })
+  const notarized = signingReport?.notarization_status === 'accepted'
   for (const name of required) await copyFile(inputs.get(name), path.join(output, name))
+  await writeDesktopUpdateFeeds(output, version)
+  await validateDesktopUpdateFeeds(output, version)
+  required.push(...desktopUpdateFeeds(version).map(feed => feed.name))
   const records = []
   for (const name of required.sort()) records.push({ name, size: (await stat(path.join(output, name))).size, sha256: await digest(path.join(output, name)) })
   await writeFile(path.join(output, 'checksums.txt'), `${distributionNames.map(name => `${records.find(record => record.name === name).sha256}  ${name}`).join('\n')}\n`)
@@ -115,34 +127,46 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
     core_format: formats.core_format,
     core_module_version: formats.core_module_version,
     migration_status: formats.migration_status,
-    signing: { macos: macSigned ? 'signed-and-notarized' : 'not-signed-or-notarized', windows: 'not-signed', linux: 'not-signed' },
-    desktop_updater: 'not-implemented',
+    migration_baselines: formats.migration_baselines,
+    migration_targets: formats.migration_targets,
+    signing: { macos: macSigned ? (notarized ? 'signed-and-notarized' : 'signed-notarization-pending') : 'not-signed-or-notarized', windows: 'not-signed', linux: 'not-signed' },
+    desktop_updater: 'electron-updater',
     distribution_names: distributionNames,
     assets: records,
   }
   await writeFile(path.join(output, 'release-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
   const label = macSigned ? 'Mac signed candidate' : 'unsigned candidate'
-  const macStatus = macSigned ? 'verified signed and notarized; final-byte evidence is in mac-signing-report.json' : 'not performed'
-  const body = publicRelease ? `# Astral ${version}
+  const macStatus = macSigned ? (notarized ? 'verified signed and notarized' : 'verified signed; Apple notarization is pending') + '; final-byte evidence is in mac-signing-report.json' : 'not performed'
+  const capabilities = `- macOS: install the DMG matching your Mac architecture. Developer ID signatures are verified. ${notarized ? 'Apple notarization is accepted.' : 'Apple notarization is pending; Gatekeeper may require manually allowing the app in System Settings → Privacy & Security.'} See mac-signing-report.json for exact final-byte evidence.
+- Windows: use the EXE installer for a current-user installation. Windows packages are not code-signed and may show SmartScreen warnings; ZIP builds are for manual installation.
+- Linux Desktop: AppImage supports in-app updating; install newer DEB packages manually. Linux packages are not code-signed.
+- Linux VPS: run install-server.sh for a current-user headless Server and systemd user service.
 
-- macOS: use the DMG matching your Mac's architecture, then drag Astral to Applications. The Mac packages and Darwin binaries are signed and notarized; final-byte evidence is in mac-signing-report.json.
-- Windows: use the EXE installer matching your computer's architecture for a current-user installation. Windows packages are not code-signed.
-- Linux Desktop: use the DEB package or AppImage matching your computer's architecture. Linux packages are not code-signed.
-- Linux VPS: use the attached install-server.sh for a current-user headless Server and systemd user service; run it with --help for installation options.
+Desktop checks for updates and downloads in the background. Use Settings → About & diagnostics → Restart and update to install; running tasks will be interrupted. Ordinary exit does not install updates. Remote Daemons can be updated from Computer settings or with the displayed update command; container updates retain the existing environment.
 
-Manual updates are supported only while the data formats remain the same. Quit Desktop before installing the matching new package. For an installer-managed headless Server, rerun install-server.sh with the same installation root and configuration; it rejects data-format changes before replacing the old service. Desktop and remote Daemon one-click updates are not implemented, and there is no production automatic-update feed.
-
-This public release line starts with Host schema 3 and Core format 10. Existing data in those formats can be retained. Versioned data migrations and their rollback/backup acceptance are not implemented. Earlier private data formats are outside this supported baseline; use a separate empty data root for those formats. A future data-format change requires Goose migrations before publication.
+Versioned migrations are bundled with the latest binary. Upgrades apply missing migrations in order without downloading intermediate releases. Before a migration, the Server snapshots its data; migration failure stops startup and restores that snapshot. The current target is Host ${formats.host_schema} / Core ${formats.core_format}, starting from the supported Host 3 / Core 10 baseline. Older private data formats and downgrades are not supported. Desktop installation errors can be retried; a release which cannot start may require manually reinstalling a previous version after restoring its matching data backup.
 
 - Source: ${sourceSHA}
 - Required CI: ${ciRunURL}
 - Release packaging: ${runURL}
-- Only the runner's native architecture is exercised by ordinary CI; producing an architecture's installer does not establish native execution.
+- Native acceptance covers the runner architecture; cross-building an installer does not establish native execution on every architecture.
 
 The six unified Server/Web UI/CLI/Daemon binaries and three-platform Desktop packages are included. checksums.txt covers the six binaries; SHA256SUMS covers all attached files except itself. Checksums describe exact release bytes and do not independently establish publisher authenticity.
+`
+  const body = publicRelease ? `# Astral ${version}
 
+${capabilities}
 <!-- astral-release:${sourceSHA} -->
-` : `# Astral ${version} — ${label}\n\nThis is a review-only Draft Release. It is not approved for public distribution.\n\n- Source: ${sourceSHA}\n- Required CI: ${ciRunURL}\n- Candidate packaging: ${runURL}\n- macOS signing and notarization: ${macStatus}. Windows and Linux signing: not performed.\n- Desktop one-click updating and production update metadata: not implemented; public-release gate remains pending.\n- Versioned data migrations and their rollback/backup acceptance: not implemented; public-release gate remains pending.\n- Only the runner's native architecture is exercised by ordinary CI; producing an architecture's installer does not establish native execution.\n\nThe six unified Server/Web UI/CLI/Daemon binaries and three-platform Desktop packages are collected here for review. Final checksums describe these exact candidate bytes. They do not establish publisher authenticity.\n\nDo not publish this draft or point the landing page, VPS installer, or updater at it. A public release requires the separate release gates described in docs/releasing.md.\n\n<!-- astral-${manifest.purpose}:${sourceSHA} -->\n`
+`
+    : `# Astral ${version} — ${label}
+
+This is a review-only Draft Release. It is not approved for public distribution.
+
+${capabilities}
+- macOS signing and notarization: ${macStatus}.
+
+<!-- astral-${manifest.purpose}:${sourceSHA} -->
+`
   await writeFile(path.join(output, 'RELEASE_NOTES.md'), body)
   const finalFiles = (await readdir(output)).sort()
   const sums = []

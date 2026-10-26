@@ -83,8 +83,36 @@ func computerUpdate(ctx context.Context, args []string, out, stderr io.Writer) e
 	root := f.String("root", "", "existing Daemon data directory")
 	container := f.String("container", "", "existing Astral container identity or name")
 	f.Bool("update", false, "installer update operation")
+	managed := f.Bool("managed-helper", false, "one-shot current-user update job")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	return platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, Container: *container, Version: Version}, func(message string) { fmt.Fprintln(out, message) })
+	if *managed {
+		manager, err := daemonservice.New(*root)
+		if err != nil {
+			return err
+		}
+		defer manager.FinishUpdate(context.Background())
+		file, err := os.OpenFile(filepath.Join(*root, "update.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		out = io.MultiWriter(out, file)
+	}
+	err := platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, Container: *container, Version: Version}, func(message string) { fmt.Fprintln(out, message) })
+	if err != nil && *managed {
+		fmt.Fprintln(out, "Daemon update failed:", err)
+	}
+	return err
+}
+
+func computerSupervise(ctx context.Context, args []string, out, stderr io.Writer) error {
+	f := flags("computer supervise", stderr)
+	root := f.String("root", "/var/lib/astral", "container Daemon data directory")
+	enrollment := f.String("enrollment-file", "/run/astral-enrollment.json", "container enrollment file")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	return platform.SuperviseContainer(ctx, *root, *enrollment, out, stderr)
 }

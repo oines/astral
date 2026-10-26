@@ -24,6 +24,6 @@ After it comes online, grant your Bot access and select it in a session.
 
 The current Ubuntu-based environment includes common development, document, and media tools. Your Bot can install additional software. Host project files do not appear inside automatically; copy or mount them explicitly.
 
-“Update Daemon” updates Astral's computer service and restarts the same container. Files and installed software remain, but running processes stop. This does not upgrade the base image.
+“Update Daemon” downloads and verifies the official program, then restarts the Daemon inside the same container. The container ID, writable layer, files and installed software remain; running tasks stop. The same Astral binary supervises the update, with no Docker socket access. This does not upgrade the base image. The fallback update command runs on the Docker host and restarts the existing container.
 
 Disconnecting a computer or revoking access does not delete its container or volumes. Back up work before removing those resources. Containers do not replace careful permission choices.

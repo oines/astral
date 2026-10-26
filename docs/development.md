@@ -2,7 +2,7 @@
 
 This guide covers source builds, desktop packaging, first-run setup and development checks. Run commands from the repository root. For deployment and account administration, see [deployment and operations](deployment.md); for the execution model, see [computers, sessions and execution](runtime.md).
 
-Astral is pre-release software. Desktop packages and Server/Computer binaries target macOS, Windows and Linux on ARM64 and AMD64. Native acceptance is tracked in [GitHub Actions](https://github.com/oines/astral/actions) and the [verification guide](verification.md); producing a package does not establish that every platform feature has passed interactive acceptance. Public installers and automatic Desktop updates are not yet available. See [the release process](releasing.md) for publication gates and supported updates.
+Astral is pre-release software. Desktop packages and Server/Computer binaries target macOS, Windows and Linux on ARM64 and AMD64. Native acceptance is tracked in [GitHub Actions](https://github.com/oines/astral/actions) and the [verification guide](verification.md); producing a package does not establish that every platform feature has passed interactive acceptance. Packaged release builds include Desktop updating, offline versioned migrations and remote Daemon update management. Actual installer availability depends on a successful published Release; a build or fixture check does not prove publication or an actual N→N+1 update. See [the release process](releasing.md) for publication gates and supported packages.
 
 ## Build and start
 
@@ -47,7 +47,7 @@ Password and TOTP login work over HTTP or HTTPS. A confirmed TOTP or Passkey aut
 
 Daemon traffic always uses TLS 1.3 inside WS/WSS, with a persistent Server identity, a 100-year self-signed certificate and a public-key pin in the pairing command. Registration tokens are consumed once. VPN is optional; browser HTTPS can be supplied by your reverse proxy or Tailscale Serve. Installers and executable downloads come from the official HTTPS release assets, never this Server's HTTP port. See [deployment](deployment.md) for account recovery, configuration, trusted proxies and container networking.
 
-Use a new, empty data directory for this version. Host schema 3 and Core format 10 replace the previous formats; older data is rejected, with no migration or compatibility mode. Choose a persistent location instead of `/tmp` for regular use.
+For a fresh source run, use an empty data directory and choose a persistent location instead of `/tmp` for regular use. The supported migration chain begins at Host schema 3 / Core format 10. Existing supported data is inspected and migrated offline during startup under the Server lock, with a complete Server-directory snapshot and recovery journal; normal runtime only reads its current format. The prepared stores are committed before local control, IM or HTTP begins accepting work; earlier private formats are rejected rather than guessed or relabelled. See [versioned migrations](migrations.md).
 
 ## First-run setup
 
@@ -67,11 +67,13 @@ pnpm --filter @astral/desktop package:windows  # current-user Windows installer
 pnpm --filter @astral/desktop package:linux    # Linux AppImage / deb
 ```
 
-Native platform packages are written to `apps/desktop/release/`. Windows installs for the current user without administrator privileges. Linux supports AppImage and Debian packages. The default build is unsigned; signing and notarization require the distributor's Apple credentials and release process.
+Native platform packages are written to `apps/desktop/release/`. Windows installs for the current user without administrator privileges. Linux supports AppImage and Debian packages. The default build is unsigned; official Mac signing and Apple submissions require the distributor's credentials and release process. A confirmed Apple upload can be released with notarization pending, but invalid signatures, unconfirmed uploads and Apple rejection block publication. Pending Apps may require a manual first-launch exception in System Settings → Privacy & Security.
+
+Official signed Mac Apps, current-user Windows NSIS installations and Linux AppImages check for updates in the background. Settings → About & diagnostics offers **Restart and update** after downloading. Ordinary quit does not install an update; installation waits for the managed Server and its pipes to exit. Linux DEB packages, Windows ZIP copies, unsigned/ad-hoc Mac builds and development builds use the manual download route. The six platform/architecture feeds use final package hashes after signing and any stapling. Older local builds without the updater require one manual installation. See [release updates](releasing.md#initial-data-baseline-and-updates).
 
 Electron manages the local Go server, local Daemon, window, menu, tray and login preference. Closing the window follows the General setting; quitting stops the managed service. A server also stops if its desktop parent dies. Renderer code receives neither the private Desktop credential nor a general native filesystem API. The startup credential travels through private stdin and is not a browser Cookie; Web logout, password resets and device removal do not affect it.
 
-Desktop stores current data under the OS user configuration directory in `astral/schema-3/`: `~/Library/Application Support/astral/schema-3/` on macOS, `%APPDATA%\astral\schema-3\` on Windows, and `$XDG_CONFIG_HOME/astral/schema-3/` (normally `~/.config/astral/schema-3/`) on Linux. Data from earlier formats stays in its original directory. `ASTRAL_DESKTOP_DATA_DIR` can select another directory; it must be empty or already use the current formats.
+Desktop stores current data under the OS user configuration directory in `astral/schema-3/`: `~/Library/Application Support/astral/schema-3/` on macOS, `%APPDATA%\astral\schema-3\` on Windows, and `$XDG_CONFIG_HOME/astral/schema-3/` (normally `~/.config/astral/schema-3/`) on Linux. Data from earlier formats stays in its original directory. `ASTRAL_DESKTOP_DATA_DIR` can select another directory; it must be empty or use a supported format from the published migration chain. Keep this directory across application upgrades so the new Server can migrate existing data.
 
 Enrolling a native Windows Computer uses PowerShell and the `curl.exe` included with modern Windows; it does not require WSL. Local containers use Docker Desktop in Linux-container mode; on macOS use Docker Desktop or OrbStack, and on Linux use the local Docker Engine. Docker Desktop itself may use WSL 2 internally, but Astral does not ask the user to run enrollment commands there.
 

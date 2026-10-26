@@ -9,6 +9,11 @@ import (
 	"github.com/oines/astral/internal/persistence"
 )
 
+type dataFormatVersions struct {
+	Host int `json:"host"`
+	Core int `json:"core"`
+}
+
 func version(args []string, out io.Writer) error {
 	var mode string
 	for _, arg := range args {
@@ -28,14 +33,17 @@ func version(args []string, out io.Writer) error {
 	switch mode {
 	case "--json":
 		metadata := struct {
-			Version     string `json:"version"`
-			DataFormats struct {
-				Host int `json:"host"`
-				Core int `json:"core"`
-			} `json:"data_formats"`
+			Version            string             `json:"version"`
+			DataFormats        dataFormatVersions `json:"data_formats"`
+			MigrationStatus    string             `json:"migration_status"`
+			MigrationBaselines dataFormatVersions `json:"migration_baselines"`
+			MigrationTargets   dataFormatVersions `json:"migration_targets"`
 		}{Version: Version}
 		metadata.DataFormats.Host = persistence.FormatVersion
 		metadata.DataFormats.Core = core.FormatVersion
+		metadata.MigrationStatus = "goose"
+		metadata.MigrationBaselines = dataFormatVersions{Host: int(persistence.BaselineVersion), Core: 10}
+		metadata.MigrationTargets = metadata.DataFormats
 		return json.NewEncoder(out).Encode(metadata)
 	case "--data-formats":
 		_, err := fmt.Fprintf(out, "%d %d\n", persistence.FormatVersion, core.FormatVersion)

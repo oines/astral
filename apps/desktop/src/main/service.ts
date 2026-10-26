@@ -6,6 +6,10 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
 
 interface Ready { url: string; pid: number }
+interface StartupMaintenance { pid: number; phase: string }
+export function maintenanceDeadline(startedAt: number, childPID: number | undefined, marker: StartupMaintenance | undefined): number | undefined {
+  return childPID !== undefined && marker?.pid === childPID && marker.phase === 'preparing-data' ? startedAt + 20 * 60_000 : undefined
+}
 export class LocalService {
   child?: ChildProcess
   url = ''
@@ -38,9 +42,14 @@ export class LocalService {
       if (this.url && !this.stopping) this.onUnexpectedExit?.(failure.message)
     })
     try {
-      const deadline = Date.now() + 30_000
+      const startedAt = Date.now()
+      let deadline = startedAt + 30_000
       while (Date.now() < deadline) {
         if (failure) throw failure
+        const maintenance = await readFile(join(root, 'server', 'startup-maintenance.json'), 'utf8').then(raw => JSON.parse(raw) as StartupMaintenance).catch(() => undefined)
+        // Only a marker belonging to this exact child can extend the startup
+        // budget. Old markers and ordinary startup retain the normal timeout.
+        deadline = maintenanceDeadline(startedAt, this.child.pid, maintenance) ?? deadline
         const ready = await readFile(readyFile, 'utf8').then(raw => JSON.parse(raw) as Ready).catch(() => undefined)
         if (ready) {
           if (ready.pid !== this.child.pid) throw new Error('Invalid local service startup response.')

@@ -22,6 +22,12 @@ The command contains temporary pairing credentials. Use it only on the intended 
 
 The remote computer connects outward to the Server. `127.0.0.1` refers to the same machine; a LAN, VPN, or public address must actually be reachable from the target. HTTP and HTTPS connection addresses are supported; the computer channel provides its own encryption and server identity verification. Browser access has separate requirements described in [Run a Server](/docs/hosting/server/).
 
+## Update a connected Daemon
+
+In a computer's details, use **Daemon maintenance → Update Daemon**. Confirm that running tasks will be interrupted. Astral checks the latest official release, downloads and verifies it, restarts the Daemon, and confirms the new version has reconnected. Identity, credentials and working files remain. If the Daemon is newer than your Server, Astral recommends updating Desktop or Server as well; the reminder does not block Daemon updates.
+
+The server-machine Daemon updates with Desktop or Server. If the computer is offline, lacks managed update support, or an update fails, use the Shell or PowerShell update command in the same section. Run it on the enrolled machine, or on the container's host. Native updates stay within the enrolled operating-system user's account.
+
 ## Grant a Bot access
 
 Open **Settings → Bots → your Bot → Computer access**, allow the new machine, and optionally make it the default for new sessions.

@@ -10,7 +10,9 @@ import { settingsEn, settingsZh } from './settings'
 import { settingsUxEn, settingsUxZh } from './settings-ux'
 import { computersEn, computersZh } from './computers'
 import { reasoningEn, reasoningZh } from './reasoning'
+import { updatesEn, updatesZh } from './updates'
 const en = {
+  ...updatesEn,
   ...authEn, ...channelsEn, ...detailEn, ...redesignEn, ...providersEn, ...settingsEn, ...settingsUxEn, ...searchEn, ...onboardingEn, ...computersEn, ...reasoningEn,
   common: { more: 'More' }, stopped: 'Stopped', bottom: 'Jump to latest', thinkingProcess: 'Thinking', noModelMatch: 'No matching models.',
   runCommand: 'Run command', readFile: 'Read file', writeFile: 'Write file', editFile: 'Edit file',
@@ -48,6 +50,7 @@ const en = {
   disconnect: 'Sign out', loading: 'Loading…', empty: 'Nothing here yet.', inspect: 'Inspect', result: 'Result', source: 'Source', terminal: 'Terminal output',
 }
 const zh: typeof en = {
+  ...updatesZh,
   ...authZh, ...channelsZh, ...detailZh, ...redesignZh, ...providersZh, ...settingsZh, ...settingsUxZh, ...searchZh, ...onboardingZh, ...computersZh, ...reasoningZh,
   common: { more: '更多' }, stopped: '已停止', bottom: '回到最新消息', thinkingProcess: '思考过程', noModelMatch: '没有匹配的模型。',
   runCommand: '运行命令', readFile: '读取文件', writeFile: '写入文件', editFile: '修改文件',

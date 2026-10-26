@@ -11,7 +11,9 @@
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
-  "dependencies": {},
+  "dependencies": {
+    "electron-updater": "^6.8.11"
+  },
   "scripts": {
     "dev": "node ../../scripts/build-icons.mjs && electron-vite dev",
     "build": "node ../../scripts/build-icons.mjs && electron-vite build && electron-builder --dir",

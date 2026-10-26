@@ -85,3 +85,24 @@ func TestMaintenanceEndpointRequiresOwnerAndUsesRecordedDirectory(t *testing.T) 
 		t.Fatalf("maintenance endpoint did not use the recorded target: %d %+v", response.StatusCode, value)
 	}
 }
+
+func TestDaemonUpdateEndpointIsOwnerOnlyAndRejectsArbitrarySources(t *testing.T) {
+	p := testkit.New(t, 1, nil)
+	computer := domain.Computer{Meta: domain.Meta{ID: "daemon-update"}, Kind: "remote", OS: "linux", Root: "/home/alice/astral"}
+	if err := p.Store.Save(p.Context, "computers", &computer.Meta, &computer); err != nil {
+		t.Fatal(err)
+	}
+	_, server := apiFixture(t, p)
+	for _, body := range []string{`{}`, `{"url":"https://attacker.invalid/astral","version":"999.0.0","sha256":"forged"}`} {
+		response := request(t, p.Context, server, "POST", "/api/v1/computers/maintenance/daemon-update/update", strings.NewReader(body), false)
+		response.Body.Close()
+		if response.StatusCode != 401 {
+			t.Fatalf("anonymous Daemon update accepted: %d", response.StatusCode)
+		}
+	}
+	response := request(t, p.Context, server, "POST", "/api/v1/computers/maintenance/daemon-update/update", strings.NewReader(`{"url":"https://attacker.invalid/astral"}`), true)
+	response.Body.Close()
+	if response.StatusCode != 400 {
+		t.Fatalf("update request accepted an arbitrary download source: %d", response.StatusCode)
+	}
+}

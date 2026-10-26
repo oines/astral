@@ -22,6 +22,8 @@ jobs:
       GOWORK: "off"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
@@ -37,6 +39,7 @@ jobs:
       - name: Check release versions and asset contracts
         run: |
           node scripts/release-version.mjs check
+          node scripts/check-migrations.mjs
           node scripts/release-check.mjs
           node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs
       - name: Check headless installer without installing
@@ -170,6 +173,9 @@ jobs:
           echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
       - run: pnpm test:daemon-service
+      - name: Real native Daemon management update and process cleanup
+        timeout-minutes: 12
+        run: node scripts/check-daemon-update.mjs
       - name: Native headless Server install and recovery
         if: runner.os == 'Linux'
         run: node scripts/check-headless-install.mjs

@@ -412,7 +412,7 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 		"--env", "ASTRAL_CONTAINER_INFO=" + string(metadata),
 		"--mount", "type=volume,src=" + volume + ",dst=/var/lib/astral",
 		"--mount", dockerBindMount(options.EnrollmentFile, "/run/astral-enrollment.json"),
-		image, "computer", "connect", "--enrollment-file", "/run/astral-enrollment.json", "--root", "/var/lib/astral", "--foreground"}
+		image, "computer", "supervise", "--enrollment-file", "/run/astral-enrollment.json", "--root", "/var/lib/astral"}
 	raw, err := dockerOutput(ctx, args...)
 	if err != nil {
 		return "", err

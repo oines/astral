@@ -1797,8 +1797,14 @@
       },
       "astral_internal_domain_ComputerMaintenance": {
         "properties": {
+          "can_update": {
+            "type": "boolean"
+          },
           "command": {
             "type": "string"
+          },
+          "daemon_newer": {
+            "type": "boolean"
           },
           "manager": {
             "enum": [
@@ -1813,10 +1819,20 @@
           },
           "powershell_command": {
             "type": "string"
+          },
+          "server_newer": {
+            "type": "boolean"
+          },
+          "update": {
+            "$ref": "#/components/schemas/astral_internal_domain_DaemonUpdate"
           }
         },
         "required": [
-          "manager"
+          "manager",
+          "can_update",
+          "server_newer",
+          "daemon_newer",
+          "update"
         ],
         "type": "object"
       },
@@ -2087,6 +2103,36 @@
           "session_id",
           "enabled",
           "start_sequence"
+        ],
+        "type": "object"
+      },
+      "astral_internal_domain_DaemonUpdate": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "",
+              "checking",
+              "downloading",
+              "restarting",
+              "current",
+              "complete",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
         ],
         "type": "object"
       },
@@ -6678,6 +6724,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_domain_ComputerMaintenance"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Computers"
+        ]
+      }
+    },
+    "/api/v1/computers/maintenance/{id}/update": {
+      "post": {
+        "operationId": "updateComputerDaemon",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_DaemonUpdate"
                 }
               }
             },

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag; leave empty to test Mac signing on main without creating a release
+        description: Existing version tag; leave empty to verify all platform packages and native updates without publishing
         required: false
         type: string
   push:
@@ -126,11 +126,53 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  mac:
-    name: Sign and notarize Mac distribution
+  mac-programs:
+    name: Sign Mac unified programs
     needs: [validate, distribution]
     runs-on: macos-14
-    timeout-minutes: 210
+    timeout-minutes: 20
+    environment: mac-signing
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      RELEASE_SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: unsigned-distribution
+          path: dist/bin/
+      - run: chmod +x dist/bin/astral-*
+      - name: Import personal Developer ID
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: node scripts/mac-credentials.mjs setup
+      - name: Sign standalone Mac programs and refresh all six checksums
+        run: node scripts/mac-signing.mjs sign-binaries dist/bin
+      - name: Always remove signing credentials
+        if: always()
+        timeout-minutes: 5
+        run: node scripts/mac-credentials.mjs cleanup
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-distribution
+          path: dist/bin/
+          if-no-files-found: error
+          retention-days: 7
+
+  mac:
+    name: Sign Mac packages and report notarization
+    needs: [validate, mac-programs]
+    runs-on: macos-14
+    timeout-minutes: 60
     environment: mac-signing
     env:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
@@ -151,7 +193,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: unsigned-distribution
+          name: candidate-distribution
           path: dist/bin/
       - run: chmod +x dist/bin/astral-*
       - name: Build Desktop sources before loading credentials
@@ -165,8 +207,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: node scripts/mac-credentials.mjs setup
-      - name: Sign standalone Mac programs and refresh all six checksums
-        run: node scripts/mac-signing.mjs sign-binaries dist/bin
       - name: Notarize standalone Mac programs
         run: node scripts/mac-notarize.mjs binaries dist/bin
       - name: Package and sign Intel App
@@ -177,18 +217,14 @@ jobs:
         run: pnpm --filter @astral/desktop exec electron-builder --config electron-builder.release.cjs --mac --dir --arm64 --publish never
       - name: Notarize and verify final Apple Silicon DMG and ZIP
         run: node scripts/mac-notarize.mjs app "$GITHUB_WORKSPACE/apps/desktop/release/mac-arm64/Astral.app" arm64
-      - name: Require complete Apple and native acceptance evidence
+      - name: Verify signed final bytes and record accepted or pending Apple status
         run: node scripts/mac-notarize.mjs finalize
+      - name: Verify actual signed Desktop replacement and retained data
+        run: node scripts/check-desktop-update.mjs
       - name: Always remove signing and notarization credentials
         if: always()
         timeout-minutes: 5
         run: node scripts/mac-credentials.mjs cleanup
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: candidate-distribution
-          path: dist/bin/
-          if-no-files-found: error
-          retention-days: 7
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: candidate-desktop-mac
@@ -198,18 +234,25 @@ jobs:
             apps/desktop/release/mac-signing-report.json
           if-no-files-found: error
           retention-days: 7
-      - name: Preserve public Apple submission diagnostics on failure
-        if: failure()
+      - name: Preserve public Apple submission diagnostics
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mac-notarization-diagnostics
           path: apps/desktop/release/notarization/*.json
           if-no-files-found: ignore
           retention-days: 7
+      - name: Preserve native update acceptance output on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-update-acceptance-mac
+          path: ${{ runner.temp }}/astral-update-acceptance.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   desktop:
-    if: needs.validate.outputs.tag != ''
-    needs: [validate, mac]
+    needs: [validate, mac-programs]
     strategy:
       fail-fast: false
       matrix:
@@ -281,6 +324,19 @@ jobs:
         env:
           ASTRAL_PACKAGED_APP_EXECUTABLE: /opt/Astral/astral
         run: xvfb-run -a pnpm test:packaged-desktop
+      - name: Verify actual native Windows NSIS update and retained data
+        if: runner.os == 'Windows'
+        run: node scripts/check-desktop-update.mjs
+      - name: Verify actual native Linux AppImage update and retained data
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # The disposable Ubuntu runner must permit the AppImage's Chromium
+          # user-namespace sandbox on both launches, including updater relaunch.
+          if sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          xvfb-run -a node scripts/check-desktop-update.mjs
       - name: Prepare the Linux user manager for final headless acceptance
         if: runner.os == 'Linux'
         shell: bash
@@ -300,6 +356,61 @@ jobs:
             apps/desktop/release/*.dmg
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve native update acceptance output on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-update-acceptance-${{ matrix.name }}
+          path: ${{ runner.temp }}/astral-update-acceptance.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  verify-assets:
+    name: Verify complete preview inventory and update feeds
+    if: needs.validate.outputs.tag == ''
+    needs: [validate, mac, desktop]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: candidate-*
+          path: candidate-inputs/
+      - name: Verify signed candidate bytes, migration metadata and all six update feeds
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+        run: >-
+          node scripts/release-assets.mjs candidate --mac-signed
+          --input candidate-inputs --output candidate-preview
+          --sha "$SOURCE_SHA" --tag "v$RELEASE_VERSION"
+          --repository "$GITHUB_REPOSITORY"
+          --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          --ci-run-url "$CI_URL"
+      - name: Retain the verified preview metadata without publishing
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-preview-validation
+          path: |
+            candidate-preview/release-manifest.json
+            candidate-preview/release-formats.json
+            candidate-preview/mac-signing-report.json
+            candidate-preview/latest-*.yml
+            candidate-preview/checksums.txt
+            candidate-preview/SHA256SUMS
+            candidate-preview/RELEASE_NOTES.md
           if-no-files-found: error
           retention-days: 7
 
@@ -347,7 +458,7 @@ jobs:
       - name: Record release capabilities
         run: |
           echo '### Published Astral release' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Mac programs and Desktop DMG/ZIP passed Developer ID signing, Apple notarization and package validation. The final native Windows ZIP passed startup and crash cleanup; the installed native Linux DEB passed startup and normal quit. Windows/Linux packages are unsigned. The initial supported data baseline is Host 3 / Core 10. Manual same-format updates are supported; one-click Desktop updates and cross-format migrations are not implemented.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Mac Developer ID signatures, final package bytes and native startup/shutdown are verified. Apple notarization may be pending; see the attached signing report for exact status. Native Windows ZIP and installed Linux DEB passed process lifecycle checks. Windows/Linux packages are unsigned. Desktop update feeds use final-byte SHA-512 and separate architecture channels. Versioned Goose migrations are bundled with the binary.' >> "$GITHUB_STEP_SUMMARY"
 
   published-install:
     name: Verify public VPS installation
@@ -356,6 +467,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
       - name: Prepare a disposable user manager
         shell: bash
         run: |
@@ -391,29 +509,30 @@ jobs:
           set -euo pipefail
           bash "$RUNNER_TEMP/install-server.sh" --tag "$RELEASE_TAG" --root "$RUNNER_TEMP/astral-public-install"
           systemctl --user is-active --quiet astral-server.service
-          python3 - <<'PY'
-          import json, os, pathlib, time, urllib.error, urllib.request
-          data = pathlib.Path(os.environ['RUNNER_TEMP']) / 'astral-public-install/data/server'
-          with urllib.request.urlopen('http://127.0.0.1:4545/health', timeout=10) as response:
-              health = json.load(response)
-          if health.get('status') != 'ok' or health.get('version') != os.environ['RELEASE_VERSION']:
-              raise SystemExit('Published Server health/version check failed')
-          token = (data / 'owner.token').read_text().strip()
-          request = urllib.request.Request('http://127.0.0.1:4545/api/v1/bootstrap', headers={'Authorization': 'Bearer ' + token})
-          deadline = time.monotonic() + 45
-          while True:
-              try:
-                  with urllib.request.urlopen(request, timeout=3) as response:
-                      bootstrap = json.load(response)
-                  if any(computer.get('local') and computer.get('online') for computer in bootstrap.get('computers', [])):
-                      break
-              except (urllib.error.URLError, TimeoutError):
-                  pass
-              if time.monotonic() >= deadline:
-                  raise SystemExit('Published Server did not connect its local Computer')
-              time.sleep(1)
-          print('Public download, user-service startup, authenticated Web API and local Computer checks passed.')
-          PY
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict'
+          import path from 'node:path'
+          import { readFile } from 'node:fs/promises'
+          import { setTimeout as delay } from 'node:timers/promises'
+          import { webFixtureCookie } from './scripts/web-auth-fixture.mjs'
+          const root = path.join(process.env.RUNNER_TEMP, 'astral-public-install')
+          const ready = JSON.parse(await readFile(path.join(root, 'run/ready.json'), 'utf8'))
+          const health = await fetch(`${ready.url}/health`, { signal: AbortSignal.timeout(10_000) })
+          const status = await health.json()
+          assert.equal(status.status, 'ok')
+          assert.equal(status.version, process.env.RELEASE_VERSION)
+          const cookie = await webFixtureCookie(path.join(root, 'data/server'), ready.url)
+          const deadline = Date.now() + 45_000
+          for (;;) {
+            const response = await fetch(`${ready.url}/api/v1/bootstrap`, { headers: { Cookie: cookie }, signal: AbortSignal.timeout(5000) })
+            assert.ok(response.ok, 'Published authenticated Web API failed')
+            const bootstrap = await response.json()
+            if (bootstrap.computers.some(computer => computer.local && computer.online)) break
+            if (Date.now() >= deadline) throw new Error('Published Server did not connect its local Computer')
+            await delay(300)
+          }
+          console.log('Public download, user-service startup, Web administrator login and Local Computer checks passed.')
+          JS
       - name: Remove only this test's user service
         if: always()
         shell: bash

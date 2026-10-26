@@ -5,7 +5,10 @@ directories:
 files:
   - out/**/*
   - package.json
-  - "!node_modules/**/*"
+publish:
+  provider: generic
+  url: https://github.com/oines/astral/releases/latest/download/
+electronUpdaterCompatibility: '>= 2.16'
 extraResources:
   - from: ../../dist/bin
     to: bin
@@ -20,6 +23,7 @@ extraResources:
       - trayTemplate*.png
       - icon*.png
       - icon.ico
+      - app-update.yml
 mac:
   icon: resources/icon.icns
   category: public.app-category.productivity
@@ -42,6 +46,8 @@ nsis:
   oneClick: true
   perMachine: false
   allowElevation: false
+  buildUniversalInstaller: false
+  differentialPackage: false
   deleteAppDataOnUninstall: false
 linux:
   icon: resources/icon.png

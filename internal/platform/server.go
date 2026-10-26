@@ -18,6 +18,7 @@ import (
 	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/computers"
+	"github.com/oines/astral/internal/datamigrate"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/gateway"
 	"github.com/oines/astral/internal/harness"
@@ -87,9 +88,15 @@ type Server struct {
 	startupError     string
 	network          *networkState
 	loopbackListener net.Listener
+	upgrade          *datamigrate.Upgrade
 }
 
 func New(config Config) (server *Server, err error) {
+	return NewContext(context.Background(), config)
+}
+
+// NewContext bounds the pre-serving upgrade/backup phase as well as startup.
+func NewContext(ctx context.Context, config Config) (server *Server, err error) {
 	root, err := DefaultRoot()
 	if err != nil {
 		return nil, err
@@ -123,6 +130,15 @@ func New(config Config) (server *Server, err error) {
 		}
 	}()
 	s.lock, err = Lock(filepath.Join(config.DataDirectory, "server.lock"))
+	if err != nil {
+		return nil, err
+	}
+	maintenanceFile := filepath.Join(config.DataDirectory, "startup-maintenance.json")
+	if err = WriteJSON(maintenanceFile, map[string]any{"pid": os.Getpid(), "phase": "preparing-data"}); err != nil {
+		return nil, err
+	}
+	defer os.Remove(maintenanceFile)
+	s.upgrade, err = datamigrate.Prepare(ctx, config.DataDirectory, config.Version, ProtectPrivate)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +249,12 @@ func New(config Config) (server *Server, err error) {
 	return s, nil
 }
 func (s *Server) Start() error {
+	// Commit the verified stores before starting any control, HTTP or IM work.
+	// No acknowledged user writes may later be lost to crash recovery.
+	if err := s.upgrade.Commit(); err != nil {
+		return err
+	}
+	s.upgrade = nil
 	if err := s.startLocalControl(); err != nil {
 		return err
 	}
@@ -325,6 +347,16 @@ func (s *Server) Close(ctx context.Context) error {
 	}
 	if s.Store != nil {
 		all = append(all, s.Store.Close())
+	}
+	if s.upgrade != nil {
+		if errors.Join(all...) == nil {
+			recovery, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			all = append(all, s.upgrade.Rollback(recovery))
+			cancel()
+		} else {
+			all = append(all, errors.New("shutdown incomplete; migration journal retained for recovery after the process exits"))
+		}
+		s.upgrade = nil
 	}
 	if s.localLock != nil {
 		all = append(all, s.localLock.Close())
