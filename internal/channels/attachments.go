@@ -8,7 +8,7 @@ import (
 func (s *Service) downloadSource(ctx context.Context, agentID, sessionID string, attachment domain.Attachment, connection domain.Connection) (Download, error) {
 	if attachment.FileURI != "" {
 		file, _, body, err := s.Harness.Files.Read(ctx, agentID, sessionID, attachment.FileURI, 0, nil)
-		return Download{Body: body, Name: file.DisplayName, Size: file.Size}, err
+		return Download{Body: body, Name: file.DisplayName, Size: file.Size, MediaType: file.MediaType}, err
 	}
 	adapter, err := s.adapter(ctx, connection)
 	if err != nil {
@@ -29,5 +29,9 @@ func (s *Service) AttachmentContent(ctx context.Context, b domain.ExecutionBindi
 		return Download{}, "", err
 	}
 	download, err := s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
-	return download, attachment.MediaType, err
+	mediaType := attachment.MediaType
+	if download.MediaType != "" {
+		mediaType = download.MediaType
+	}
+	return download, mediaType, err
 }
