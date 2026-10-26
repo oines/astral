@@ -129,7 +129,7 @@ jobs:
   mac-programs:
     name: Sign Mac unified programs
     needs: [validate, distribution]
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     environment: mac-signing
     env:
@@ -171,7 +171,7 @@ jobs:
   mac:
     name: Sign Mac packages and report notarization
     needs: [validate, mac-programs]
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
     environment: mac-signing
     env:
@@ -219,6 +219,8 @@ jobs:
         run: node scripts/mac-notarize.mjs app "$GITHUB_WORKSPACE/apps/desktop/release/mac-arm64/Astral.app" arm64
       - name: Verify signed final bytes and record accepted or pending Apple status
         run: node scripts/mac-notarize.mjs finalize
+      - name: Verify actual signed App renderer and titlebar layout
+        run: pnpm test:packaged-desktop
       - name: Verify actual signed Desktop replacement and retained data
         run: node scripts/check-desktop-update.mjs
       - name: Always remove signing and notarization credentials
@@ -248,6 +250,14 @@ jobs:
         with:
           name: desktop-update-acceptance-mac
           path: ${{ runner.temp }}/astral-update-acceptance.log
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Preserve actual Mac titlebar layout screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: titlebar-layout-mac
+          path: ${{ runner.temp }}/astral-titlebar/*.jpg
           if-no-files-found: ignore
           retention-days: 7
 
@@ -324,6 +334,14 @@ jobs:
         env:
           ASTRAL_PACKAGED_APP_EXECUTABLE: /opt/Astral/astral
         run: xvfb-run -a pnpm test:packaged-desktop
+      - name: Preserve actual Desktop titlebar layout screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: titlebar-layout-${{ matrix.name }}
+          path: ${{ runner.temp }}/astral-titlebar/*.jpg
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Verify actual native Windows NSIS update and retained data
         if: runner.os == 'Windows'
         run: node scripts/check-desktop-update.mjs

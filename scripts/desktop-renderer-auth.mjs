@@ -2,20 +2,20 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-class RendererNavigationError extends Error {}
+export class RendererNavigationError extends Error {}
 
-function evaluationError(message) {
+function evaluationError(message, method) {
   const exception = message.result?.exceptionDetails
   const detail = message.error?.message || exception?.exception?.description || exception?.text
   if (!detail) return undefined
-  const description = `Desktop renderer Runtime.evaluate failed${message.error?.code ? ` (${message.error.code})` : ''}: ${detail}`
+  const description = `Desktop renderer ${method} failed${message.error?.code ? ` (${message.error.code})` : ''}: ${detail}`
   // These are Chromium execution-context lifecycle failures. Arbitrary script,
   // network and authentication failures must remain fatal, not become retries.
   if (message.error?.code === -32000 && /^(Execution context was destroyed\b|Cannot find (?:default execution context|context with (?:specified )?id)\b|Inspected target navigated or closed\b)/.test(detail)) return new RendererNavigationError(description)
   return new Error(description)
 }
 
-export async function evaluateRenderer(endpoint, expression, { WebSocket = globalThis.WebSocket } = {}) {
+export async function rendererCommand(endpoint, method, params, { WebSocket = globalThis.WebSocket } = {}) {
   const socket = new WebSocket(endpoint)
   let timer
   try {
@@ -24,16 +24,16 @@ export async function evaluateRenderer(endpoint, expression, { WebSocket = globa
       socket.addEventListener('error', () => reject(new Error('The temporary Electron CDP connection failed.')), { once: true })
       socket.addEventListener('close', () => reject(new Error('The temporary Electron CDP connection closed before authentication was checked.')), { once: true })
       socket.addEventListener('open', () => {
-        socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+        socket.send(JSON.stringify({ id: 1, method, params }))
       }, { once: true })
       socket.addEventListener('message', event => {
         try {
           const message = JSON.parse(String(event.data))
           if (message.id !== 1) return
-          const error = evaluationError(message)
+          const error = evaluationError(message, method)
           if (error) throw error
-          assert.ok(message.result?.result && Object.hasOwn(message.result.result, 'value'), 'The renderer returned no authentication result')
-          resolve(message.result.result.value)
+          assert.ok(message.result, 'The renderer returned no protocol result')
+          resolve(message.result)
         } catch (error) { reject(error) }
       })
     })
@@ -43,7 +43,15 @@ export async function evaluateRenderer(endpoint, expression, { WebSocket = globa
   }
 }
 
-export async function rendererAuthentication(profile, serverURL, { diagnose = () => {}, evaluate = evaluateRenderer } = {}) {
+export async function evaluateRenderer(endpoint, expression, options) {
+  const result = await rendererCommand(endpoint, 'Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, options)
+  assert.ok(result.result && Object.hasOwn(result.result, 'value'), 'The renderer returned no authentication result')
+  return result.result.value
+}
+
+// Select only the managed page advertised by this disposable Electron profile.
+// Screenshot/navigation checks must never accept an arbitrary caller-supplied CDP URL.
+export async function managedRendererEndpoint(profile, serverURL, { diagnose = () => {} } = {}) {
   const portFile = await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8').catch(error => {
     if (error.code === 'ENOENT') return ''
     throw error
@@ -64,9 +72,18 @@ export async function rendererAuthentication(profile, serverURL, { diagnose = ()
   assert.equal(endpoint.protocol, 'ws:')
   assert.equal(endpoint.hostname, '127.0.0.1')
   assert.equal(Number(endpoint.port), port)
+  assert.equal(endpoint.username, '')
+  assert.equal(endpoint.password, '')
+  return endpoint.href
+}
+
+export async function rendererAuthentication(profile, serverURL, { diagnose = () => {}, evaluate = evaluateRenderer } = {}) {
+  const endpoint = await managedRendererEndpoint(profile, serverURL, { diagnose })
+  if (!endpoint) return false
+  const origin = new URL(serverURL).origin
   let result
   try {
-    result = await evaluate(endpoint.href, `(async () => {
+    result = await evaluate(endpoint, `(async () => {
       const documentState = () => {
         const app = document.querySelector('#app');
         const onboarding = app?.querySelector('.onboarding-layout');

@@ -43,7 +43,13 @@ export const useAppStore = defineStore('app', () => {
     finally { refreshing = false }
   }, 5000)
   watch(sidebar, value => localStorage.setItem('astral:sidebar', value ? 'open' : 'closed'))
-  watch(dark, value => document.documentElement.dataset.theme = value ? 'dark' : 'light', { immediate: true })
+  watch(dark, value => {
+    document.documentElement.dataset.theme = value ? 'dark' : 'light'
+    const desktop = window.astralDesktop
+    if (desktop?.platform === 'win32' || desktop?.platform === 'linux') {
+      void desktop.appearance(value).catch(error => console.error('The native window appearance could not follow the app theme.', error))
+    }
+  }, { immediate: true })
   watch(() => data.value?.preferences, p => {
     if (!p) return
     theme.value = p.theme || 'system'

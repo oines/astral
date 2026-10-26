@@ -7,13 +7,14 @@ import { execFile, spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { access, chmod, copyFile, cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import { createRequire } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { evaluateRenderer } from './desktop-renderer-auth.mjs'
-import { desktopUpdateFeeds } from './desktop-update-feeds.mjs'
+import { desktopArtifactName, desktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { readReleaseVersion } from './release-version.mjs'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
 
@@ -37,7 +38,7 @@ const temporary = await realpath(await mkdtemp(path.join(tmpdir(), 'astral-updat
 const fixtureApp = path.join(temporary, 'fixture-app')
 const output = path.join(temporary, 'fixture-packages')
 const installed = path.join(temporary, 'installed')
-const targetName = `Astral-${version}-${platform}-${architecture}.${process.platform === 'darwin' ? 'zip' : process.platform === 'win32' ? 'exe' : 'AppImage'}`
+const targetName = desktopArtifactName(version, platform, architecture, process.platform === 'darwin' ? 'zip' : process.platform === 'win32' ? 'exe' : 'AppImage')
 const target = path.join(desktop, 'release', targetName)
 const targetBytes = await readFile(target)
 const feedName = desktopUpdateFeeds(version).find(feed => feed.asset === targetName)?.name
@@ -118,16 +119,14 @@ try {
   const productionFeed = 'https://github.com/oines/astral/releases/latest/download/'
   assert.equal(source.split(productionFeed).length, 2, 'Fixture must replace exactly one compiled update source')
   await writeFile(main, source.replace(productionFeed, fixtureFeed))
-  const builder = ['--filter', '@astral/desktop', 'exec', 'electron-builder', '--config.directories.app=' + fixtureApp, '--config.directories.output=' + output, '--publish', 'never', `--${architecture}`]
+  const builder = ['--config.directories.app=' + fixtureApp, '--config.directories.output=' + output, '--publish', 'never', `--${architecture}`]
   if (process.platform === 'darwin') builder.push('--config', 'electron-builder.release.cjs', '--mac', '--dir')
   else if (process.platform === 'win32') builder.push('--win', 'nsis')
   else builder.push('--linux', 'AppImage')
-  // Windows pnpm is a command shim, so invoke it through cmd only with fixed arguments.
-  if (process.platform === 'win32') {
-    assert.ok(builder.every(value => !/["%!\r\n]/.test(value)), 'Unsupported shell character in the controlled CI fixture path')
-    const line = ['pnpm', ...builder].map(value => `"${value}"`).join(' ')
-    await command('cmd.exe', ['/d', '/s', '/c', `"${line}"`], { windowsVerbatimArguments: true })
-  } else await command('pnpm', builder)
+  // Invoke the installed CLI through Node directly: Windows command shims can
+  // reinterpret quoted paths and resolve pnpm relative to the wrong directory.
+  const require = createRequire(new URL('../apps/desktop/package.json', import.meta.url))
+  await command(process.execPath, [require.resolve('electron-builder/cli.js'), ...builder], { cwd: desktop })
   if (process.platform === 'darwin') {
     installedRoot = path.join(installed, 'Astral.app')
     await mkdir(installed)
@@ -141,7 +140,7 @@ try {
   } else {
     await mkdir(installed)
     executable = path.join(installed, 'Astral.AppImage')
-    await copyFile(path.join(output, `Astral-0.0.0-linux-${architecture}.AppImage`), executable)
+    await copyFile(path.join(output, desktopArtifactName('0.0.0', 'linux', architecture, 'AppImage')), executable)
     await chmod(executable, 0o755)
   }
   const environment = { ...process.env, ASTRAL_SERVER_LISTEN: '127.0.0.1:0' }

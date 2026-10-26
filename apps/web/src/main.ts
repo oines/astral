@@ -9,7 +9,10 @@ import './lib/api'
 import { i18n } from './i18n'
 import App from './App.vue'
 
-if (window.astralDesktop?.platform === 'darwin') document.documentElement.dataset.desktop = 'mac'
+const desktopPlatform = window.astralDesktop?.platform
+if (desktopPlatform === 'darwin') document.documentElement.dataset.desktop = 'mac'
+else if (desktopPlatform === 'win32') document.documentElement.dataset.desktop = 'win'
+else if (desktopPlatform === 'linux') document.documentElement.dataset.desktop = 'linux'
 
 const router = createRouter({
   history: createWebHistory(),
