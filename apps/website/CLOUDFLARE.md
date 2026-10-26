@@ -18,6 +18,8 @@
 
 命令先按根锁文件安装网站依赖，再检查并构建网站，不执行产品的发行构建。根目录的 `wrangler.jsonc` 使用相同输出路径，无需再加 Astro Cloudflare SSR adapter。
 
+在 **Git 存储库 → 管理** 中确认现有 **Cloudflare Workers and Pages** GitHub App 已获准访问 `oines/astral`。如果使用 Only select repositories，将 Astral 加入所选仓库即可。公开仓库能够被 Pages 拉取并构建，不代表 GitHub App 已有接收该仓库推送事件的权限；自动部署必须以一次实际推送产生的新部署记录验证。
+
 ## 构建环境变量
 
 在 **Production 与 Preview** 都设置：
