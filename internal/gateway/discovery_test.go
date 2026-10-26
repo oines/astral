@@ -1,10 +1,16 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/oines/astral/internal/channels"
+	"github.com/oines/astral/internal/testkit"
 )
 
 func TestDiscoveryEntryLeadsToSelfContainedLiveContracts(t *testing.T) {
@@ -29,12 +35,34 @@ func TestDiscoveryEntryLeadsToSelfContainedLiveContracts(t *testing.T) {
 	}
 	var full map[string]any
 	read(index.OpenAPIURL, &full, 200)
+	checkSecurity := func(document map[string]any) {
+		t.Helper()
+		schemes := document["components"].(map[string]any)["securitySchemes"].(map[string]any)
+		scheme := schemes["command"].(map[string]any)
+		if scheme["type"] != "http" || scheme["scheme"] != "bearer" || !strings.Contains(scheme["description"].(string), "ASTRAL_API_TOKEN") {
+			t.Fatalf("command credential definition is missing: %+v", scheme)
+		}
+		for path, raw := range document["paths"].(map[string]any) {
+			for method, rawOperation := range raw.(map[string]any) {
+				operation := rawOperation.(map[string]any)
+				security, _ := json.Marshal(operation["security"])
+				if string(security) != `[{"command":[]}]` {
+					t.Errorf("%s %s does not require its command credential: %s", method, path, security)
+				}
+			}
+		}
+	}
+	checkSecurity(full)
 	covered := map[string]bool{}
 	for _, capability := range index.Capabilities {
 		var doc CapabilityDocument
 		read(capability.ReadURL, &doc, 200)
 		if doc.ID != capability.ID || len(doc.Notes) == 0 || len(doc.Examples) == 0 {
 			t.Fatalf("missing instructions for %s", capability.ID)
+		}
+		checkSecurity(doc.OpenAPI)
+		if !strings.Contains(strings.Join(doc.Notes, " "), "ASTRAL_API_TOKEN") {
+			t.Fatalf("%s has no command authentication instructions", capability.ID)
 		}
 		paths := doc.OpenAPI["paths"].(map[string]any)
 		for path, raw := range paths {
@@ -98,4 +126,48 @@ func TestDiscoveryEntryLeadsToSelfContainedLiveContracts(t *testing.T) {
 		}
 	}
 	read("/v1/capabilities/missing", nil, 404)
+}
+
+func TestComputerDiscoveryRequiresCommandCredentialAndMatchingListener(t *testing.T) {
+	p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
+	api := New(p.Harness, channels.New(p.Store, p.Harness))
+	p.Hub.Gateway = api.Handle
+	first, err := p.Hub.Bind(p.Context, p.Agent.ID, p.Session.ID, p.Agent.DefaultComputerID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := p.Harness.CreateSession(p.Context, p.Agent.ID, "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := p.Hub.Bind(p.Context, p.Agent.ID, other.ID, p.Agent.DefaultComputerID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := testkit.ComputerAPI(t, p, first)
+	check := func(client *http.Client, address string, expected int) {
+		t.Helper()
+		request, err := http.NewRequestWithContext(p.Context, http.MethodGet, address, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.StatusCode != expected {
+			t.Fatalf("%s: status=%d body=%s", address, response.StatusCode, body)
+		}
+	}
+	for _, path := range []string{"/v1/capabilities", "/v1/capabilities/history", "/v1/openapi.json", "/v1/context"} {
+		check(http.DefaultClient, first.APIURL+path, http.StatusUnauthorized)
+		check(client, first.APIURL+path, http.StatusOK)
+		check(client, second.APIURL+path, http.StatusUnauthorized)
+	}
+	check(testkit.ComputerAPI(t, p, second), second.APIURL+"/v1/context", http.StatusOK)
 }

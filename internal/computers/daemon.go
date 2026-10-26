@@ -26,28 +26,46 @@ import (
 	"github.com/oines/astral/internal/transport"
 )
 
+// CommandAPITokenEnv names the variable holding one command's Server-issued
+// Computer API credential. API addresses remain in the environment snapshot.
+const CommandAPITokenEnv = "ASTRAL_API_TOKEN"
+
+var errDaemonCleanup = errors.New("daemon could not clean up disconnected commands")
+
 type Daemon struct {
 	Credentials Credentials
 	Root        string
 	Hello       Hello
 	httpClient  *http.Client
+	connectMu   sync.Mutex
 	mu          sync.Mutex
 	peer        *transport.Peer
+	connection  *daemonConnection
 	gateways    map[string]*localGateway
 	processes   map[string]*daemonProcess
-	executions  map[string]string
+	apiTokens   map[string]*daemonProcess
 	closed      bool
+}
+type daemonConnection struct {
+	peer        *transport.Peer
+	executions  map[string]string
+	closing     bool
+	cleanupOnce sync.Once
+	cleanupErr  error
 }
 type localGateway struct {
 	binding domain.ExecutionBinding
 	server  *http.Server
 }
 type daemonProcess struct {
-	binding domain.ExecutionBinding
-	process standardtools.Process
-	done    chan struct{}
-	exit    processExit
-	claimed bool
+	binding    domain.ExecutionBinding
+	connection *daemonConnection
+	apiToken   string
+	process    standardtools.Process
+	started    chan struct{}
+	done       chan struct{}
+	exit       processExit
+	claimed    bool
 }
 
 func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
@@ -78,16 +96,23 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 		}
 	}
 	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability}},
-		httpClient: client, gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, executions: map[string]string{}}, nil
+		httpClient: client, gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, apiTokens: map[string]*daemonProcess{}}, nil
 }
 
-// Run reconnects the same boot identity. No process is transparently recreated.
+// Run reconnects the same boot identity after reaping disconnected commands.
+// No process is transparently recreated.
 func (d *Daemon) Run(ctx context.Context, report func(error)) error {
 	backoff := time.Second
 	for ctx.Err() == nil {
 		err := d.Connect(ctx)
 		if report != nil {
 			report(err)
+		}
+		d.mu.Lock()
+		closed := d.closed
+		d.mu.Unlock()
+		if errors.Is(err, errDaemonCleanup) || closed {
+			return err
 		}
 		timer := time.NewTimer(backoff)
 		select {
@@ -100,32 +125,135 @@ func (d *Daemon) Run(ctx context.Context, report func(error)) error {
 	return ctx.Err()
 }
 func (d *Daemon) Connect(ctx context.Context) error {
+	d.connectMu.Lock()
+	defer d.connectMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	closed := d.closed
+	d.mu.Unlock()
+	if closed {
+		return errors.New("daemon is closed")
+	}
 	conn, _, err := authenticateTunnel(ctx, d.Credentials.ServerURL, d.Credentials.ServerPin, tunnelRequest{Operation: "connect", ComputerID: d.Credentials.ComputerID, Token: d.Credentials.Token, Hello: d.Hello}, d.httpClient)
 	if err != nil {
 		return err
 	}
-	peer := transport.New(conn, d.handle)
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
-		_ = peer.Close()
+		_ = conn.Close()
 		return errors.New("daemon is closed")
 	}
-	old := d.peer
+	generation := &daemonConnection{executions: map[string]string{}}
+	peer := transport.New(conn, func(ctx context.Context, request transport.Request, out *transport.Responder) error {
+		return d.handle(ctx, generation, request, out)
+	})
+	generation.peer = peer
+	d.connection = generation
 	d.peer = peer
 	d.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
 	stop := context.AfterFunc(ctx, func() { _ = peer.Close() })
 	<-peer.Done()
 	stop()
-	d.mu.Lock()
-	if d.peer == peer {
-		d.peer = nil
+	return errors.Join(transport.ErrDisconnected, d.cleanupConnection(generation))
+}
+
+func (d *Daemon) connectedLocked(generation *daemonConnection) bool {
+	if d.closed || generation == nil || d.connection != generation || generation.closing {
+		return false
 	}
+	select {
+	case <-generation.peer.Done():
+		return false
+	default:
+		return true
+	}
+}
+
+// cleanupConnection seals this generation before waiting for reserved startups.
+// A disconnected connection can never leave a command behind or accept new work.
+func (d *Daemon) cleanupConnection(generation *daemonConnection) error {
+	if generation == nil {
+		return nil
+	}
+	generation.cleanupOnce.Do(func() {
+		d.mu.Lock()
+		generation.closing = true
+		if d.connection == generation {
+			d.peer = nil
+		}
+		processes := make(map[string]*daemonProcess)
+		for id, p := range d.processes {
+			if p.connection == generation {
+				processes[id] = p
+				d.revokeProcessTokenLocked(p)
+			}
+		}
+		d.mu.Unlock()
+		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		results := make(chan error, len(processes))
+		for _, p := range processes {
+			go func() {
+				results <- d.cleanupProcess(cleanup, p)
+			}()
+		}
+		var errs []error
+		for range processes {
+			if err := <-results; err != nil {
+				errs = append(errs, err)
+			}
+		}
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if len(errs) != 0 {
+			d.closed = true
+			generation.cleanupErr = errors.Join(append([]error{errDaemonCleanup}, errs...)...)
+			return
+		}
+		for id, p := range processes {
+			if d.processes[id] == p {
+				delete(d.processes, id)
+			}
+		}
+		generation.executions = nil
+		if d.connection == generation {
+			d.connection = nil
+		}
+	})
+	return generation.cleanupErr
+}
+
+func (d *Daemon) cleanupProcess(ctx context.Context, p *daemonProcess) error {
+	select {
+	case <-p.started:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	d.mu.Lock()
+	process := p.process
 	d.mu.Unlock()
-	return transport.ErrDisconnected
+	if process == nil {
+		return nil
+	}
+	if err := process.Terminate(ctx); err != nil {
+		return err
+	}
+	select {
+	case <-p.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (d *Daemon) revokeProcessTokenLocked(p *daemonProcess) {
+	if p.apiToken != "" {
+		delete(d.apiTokens, p.apiToken)
+		p.apiToken = ""
+	}
 }
 
 func (d *Daemon) binding(b domain.ExecutionBinding) error {
@@ -170,14 +298,46 @@ func (d *Daemon) environment(b domain.ExecutionBinding) (domain.ExecutionBinding
 	return b, nil
 }
 
-func (d *Daemon) backend(b domain.ExecutionBinding) (*local.Backend, error) {
+func (d *Daemon) backend(b domain.ExecutionBinding, apiToken string) (*local.Backend, error) {
 	d.mu.Lock()
 	gateway := d.gateways[b.GrantID]
 	d.mu.Unlock()
 	if gateway == nil || gateway.binding != b {
 		return nil, domain.Forbidden("execution environment was not prepared")
 	}
-	return local.New(local.Options{CWD: b.CWD, Shell: b.Shell, Env: []string{"ASTRAL_AGENT_HOME=" + b.AgentHome}})
+	env := []string{"ASTRAL_AGENT_HOME=" + b.AgentHome}
+	if apiToken != "" {
+		env = append(env, CommandAPITokenEnv+"="+apiToken)
+	}
+	return local.New(local.Options{CWD: b.CWD, Shell: b.Shell, Env: env})
+}
+
+func (d *Daemon) localAPICredential(r *http.Request, binding domain.ExecutionBinding) (string, *transport.Peer) {
+	values := r.Header.Values("Authorization")
+	if len(values) != 1 {
+		return "", nil
+	}
+	scheme, token, ok := strings.Cut(values[0], " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || !validAPIToken(token) {
+		return "", nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	p := d.apiTokens[token]
+	if p == nil || p.binding != binding || !d.connectedLocked(p.connection) {
+		return "", nil
+	}
+	select {
+	case <-p.done:
+		return "", nil
+	default:
+		return token, p.connection.peer
+	}
+}
+
+func rejectLocalAPI(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	http.Error(w, "a live command API credential is required", http.StatusUnauthorized)
 }
 
 func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (domain.ExecutionBinding, error) {
@@ -210,19 +370,19 @@ func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (domain.ExecutionBindi
 			http.Error(w, "unsupported gateway operation", http.StatusNotFound)
 			return
 		}
+		// Reject anonymous, malformed and locally retired credentials before
+		// reading request bodies. The Server remains the final authority.
+		apiToken, peer := d.localAPICredential(r, b)
+		if peer == nil {
+			rejectLocalAPI(w)
+			return
+		}
 		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 48<<10))
 		if err != nil || len(raw) > 0 && !json.Valid(raw) {
 			http.Error(w, "gateway expects a small JSON body", http.StatusBadRequest)
 			return
 		}
-		d.mu.Lock()
-		peer := d.peer
-		d.mu.Unlock()
-		if peer == nil {
-			http.Error(w, "server is disconnected; operation was not dispatched", http.StatusServiceUnavailable)
-			return
-		}
-		call := GatewayRequest{Binding: b, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: raw, Intent: r.Header.Get("Idempotency-Key")}
+		call := GatewayRequest{Binding: b, APIToken: apiToken, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: raw, Intent: r.Header.Get("Idempotency-Key")}
 		var response GatewayResponse
 		meta, body, err := peer.Call(r.Context(), "gateway", call, nil)
 		if err == nil {
@@ -236,6 +396,10 @@ func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (domain.ExecutionBindi
 			var known *transport.Error
 			if errors.As(err, &known) && known.Outcome == "not_executed" {
 				status, code = http.StatusForbidden, known.Code
+				if known.Code == "unauthorized" {
+					status = http.StatusUnauthorized
+					w.Header().Set("WWW-Authenticate", "Bearer")
+				}
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)
@@ -258,13 +422,19 @@ func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (domain.ExecutionBindi
 	return b, nil
 }
 
-func (d *Daemon) handle(ctx context.Context, request transport.Request, out *transport.Responder) (err error) {
+func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, request transport.Request, out *transport.Responder) (err error) {
 	defer func() {
 		var tool *core.ToolError
 		if errors.As(err, &tool) {
 			err = &transport.Error{Code: tool.Code, Message: tool.Error(), Outcome: string(tool.Outcome)}
 		}
 	}()
+	d.mu.Lock()
+	connected := d.connectedLocked(generation)
+	d.mu.Unlock()
+	if !connected {
+		return domain.Offline("daemon connection is no longer active")
+	}
 	var call Call
 	if json.Unmarshal(request.Params, &call) != nil {
 		return domain.Invalid("invalid daemon call")
@@ -282,7 +452,14 @@ func (d *Daemon) handle(ctx context.Context, request transport.Request, out *tra
 		}
 		return out.JSON(b)
 	}
-	backend, err := d.backend(call.Binding)
+	apiToken := ""
+	if request.Method == "process.start" {
+		if !validAPIToken(call.APIToken) {
+			return domain.Invalid("process API credential is required")
+		}
+		apiToken = call.APIToken
+	}
+	backend, err := d.backend(call.Binding, apiToken)
 	if err != nil {
 		return err
 	}
@@ -294,7 +471,7 @@ func (d *Daemon) handle(ctx context.Context, request transport.Request, out *tra
 		return out.JSON(result)
 	}
 	if strings.HasPrefix(request.Method, "process.") {
-		return d.processCall(ctx, request, call, backend, out)
+		return d.processCall(ctx, generation, request, call, backend, out)
 	}
 	fs, err := backend.FileSystem(ctx, core.Invocation{})
 	if err != nil {
@@ -462,53 +639,80 @@ func copyContext(ctx context.Context, out io.Writer, in io.Reader) (int64, error
 	}
 }
 
-func (d *Daemon) processCall(ctx context.Context, request transport.Request, call Call, backend *local.Backend, out *transport.Responder) error {
-	if request.Method == "process.start" {
-		if call.Execution == "" {
-			return domain.Invalid("process execution identity is required")
-		}
-		d.mu.Lock()
-		if id := d.executions[call.Execution]; id != "" {
-			d.mu.Unlock()
-			return &transport.Error{Code: "already_dispatched", Message: "this execution was already dispatched; it will not be started again", Outcome: "unknown"}
-		}
-		if d.closed || len(d.processes) >= 256 {
-			d.mu.Unlock()
-			return domain.Conflict("daemon process capacity is unavailable")
-		}
-		id := domain.ID("process")
-		d.executions[call.Execution] = id
-		// Reserve before releasing the lock; process startup may overlap.
-		p := &daemonProcess{binding: call.Binding, done: make(chan struct{})}
-		d.processes[id] = p
+func (d *Daemon) startProcess(ctx context.Context, generation *daemonConnection, call Call, start func(context.Context) (standardtools.Process, error)) (string, error) {
+	if call.Execution == "" || !validAPIToken(call.APIToken) {
+		return "", domain.Invalid("process execution identity and API credential are required")
+	}
+	d.mu.Lock()
+	if !d.connectedLocked(generation) {
 		d.mu.Unlock()
-		process, err := backend.StartProcess(ctx, core.Invocation{}, call.Process)
+		return "", domain.Offline("daemon connection is no longer active")
+	}
+	if generation.executions[call.Execution] != "" {
+		d.mu.Unlock()
+		return "", &transport.Error{Code: "already_dispatched", Message: "this execution was already dispatched; it will not be started again", Outcome: "unknown"}
+	}
+	if len(d.processes) >= 256 || d.apiTokens[call.APIToken] != nil {
+		d.mu.Unlock()
+		return "", domain.Conflict("daemon process capacity or credential is unavailable")
+	}
+	id := domain.ID("process")
+	generation.executions[call.Execution] = id
+	// Publish the credential before spawning: the child may call the API before
+	// StartProcess returns. A disconnect must also account for this reservation.
+	p := &daemonProcess{binding: call.Binding, connection: generation, apiToken: call.APIToken, started: make(chan struct{}), done: make(chan struct{})}
+	d.processes[id] = p
+	d.apiTokens[call.APIToken] = p
+	d.mu.Unlock()
+	process, err := start(ctx)
+	d.mu.Lock()
+	if err != nil {
+		d.revokeProcessTokenLocked(p)
+		delete(d.processes, id)
+		close(p.started)
+		close(p.done)
+		d.mu.Unlock()
+		return "", err
+	}
+	p.process = process
+	connected := d.connectedLocked(generation)
+	close(p.started)
+	d.mu.Unlock()
+	go func() {
+		code, err := process.Wait()
 		d.mu.Lock()
+		p.exit.Code = code
 		if err != nil {
-			delete(d.processes, id)
-			d.mu.Unlock()
-			return err
+			p.exit.Error = err.Error()
 		}
-		p.process = process
-		closed := d.closed
+		d.revokeProcessTokenLocked(p)
+		close(p.done)
 		d.mu.Unlock()
-		go func() {
-			code, err := process.Wait()
-			p.exit.Code = code
-			if err != nil {
-				p.exit.Error = err.Error()
-			}
-			close(p.done)
-		}()
-		if closed {
-			_ = process.Terminate(context.Background())
-			return domain.Offline("daemon is closing")
+	}()
+	if !connected {
+		// Also terminate here if a blocked OS startup outlasted the connection's
+		// cleanup deadline. Cleanup and Terminate are safe to run concurrently.
+		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err := process.Terminate(cleanup)
+		cancel()
+		return "", errors.Join(domain.Offline("daemon connection was lost during process startup"), err)
+	}
+	return id, nil
+}
+
+func (d *Daemon) processCall(ctx context.Context, generation *daemonConnection, request transport.Request, call Call, backend *local.Backend, out *transport.Responder) error {
+	if request.Method == "process.start" {
+		id, err := d.startProcess(ctx, generation, call, func(ctx context.Context) (standardtools.Process, error) {
+			return backend.StartProcess(ctx, core.Invocation{}, call.Process)
+		})
+		if err != nil {
+			return err
 		}
 		return out.JSON(processStart{ID: id})
 	}
 	d.mu.Lock()
 	p := d.processes[call.ProcessID]
-	if p == nil || p.process == nil || p.binding != call.Binding {
+	if !d.connectedLocked(generation) || p == nil || p.process == nil || p.binding != call.Binding || p.connection != generation {
 		d.mu.Unlock()
 		return domain.Missing("process on original Computer", call.ProcessID)
 	}
@@ -551,6 +755,9 @@ func (d *Daemon) processCall(ctx context.Context, request transport.Request, cal
 			return err
 		}
 	case "process.terminate":
+		d.mu.Lock()
+		d.revokeProcessTokenLocked(p)
+		d.mu.Unlock()
 		if err := p.process.Terminate(ctx); err != nil {
 			return err
 		}
@@ -573,24 +780,17 @@ func (d *Daemon) Close(ctx context.Context) error {
 	d.mu.Lock()
 	d.closed = true
 	peer := d.peer
+	generation := d.connection
 	gateways := make([]*http.Server, 0, len(d.gateways))
-	processes := make([]standardtools.Process, 0, len(d.processes))
 	for _, g := range d.gateways {
 		gateways = append(gateways, g.server)
-	}
-	for _, p := range d.processes {
-		if p.process != nil {
-			processes = append(processes, p.process)
-		}
 	}
 	d.mu.Unlock()
 	var errs []error
 	if peer != nil {
 		errs = append(errs, peer.Close())
 	}
-	for _, p := range processes {
-		errs = append(errs, p.Terminate(ctx))
-	}
+	errs = append(errs, d.cleanupConnection(generation))
 	for _, gateway := range gateways {
 		errs = append(errs, gateway.Close())
 	}

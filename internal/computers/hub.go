@@ -38,20 +38,21 @@ type authenticationBucket struct {
 }
 
 type Hub struct {
-	Store          *persistence.Store
-	Gateway        GatewayHandler
-	ContainerURL   func(*http.Request, string) string
-	identity       *securetransport.Identity
-	pending        chan struct{}
-	authenticating map[string]int
-	attempts       map[string]authenticationBucket
-	mu             sync.RWMutex
-	live           map[string]*connection
-	grants         map[string]domain.ExecutionBinding
+	Store              *persistence.Store
+	Gateway            GatewayHandler
+	ContainerURL       func(*http.Request, string) string
+	identity           *securetransport.Identity
+	pending            chan struct{}
+	authenticating     map[string]int
+	attempts           map[string]authenticationBucket
+	mu                 sync.RWMutex
+	live               map[string]*connection
+	grants             map[string]domain.ExecutionBinding
+	commandCredentials map[string]*commandCredential
 }
 
 func NewHub(store *persistence.Store) *Hub {
-	return &Hub{Store: store, live: map[string]*connection{}, grants: map[string]domain.ExecutionBinding{}, pending: make(chan struct{}, 64), authenticating: map[string]int{}, attempts: map[string]authenticationBucket{}}
+	return &Hub{Store: store, live: map[string]*connection{}, grants: map[string]domain.ExecutionBinding{}, commandCredentials: map[string]*commandCredential{}, pending: make(chan struct{}, 64), authenticating: map[string]int{}, attempts: map[string]authenticationBucket{}}
 }
 
 func (h *Hub) SetIdentity(identity *securetransport.Identity) { h.identity = identity }
@@ -369,17 +370,20 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 		if err := json.Unmarshal(request.Params, &call); err != nil {
 			return domain.Invalid("invalid gateway request")
 		}
-		if call.Binding.ComputerID != id || call.Binding.BootID != hello.BootID {
-			return domain.Forbidden("gateway source does not match this connection")
-		}
-		if err := h.Validate(ctx, call.Binding); err != nil {
+		ctx, call, release, err := h.commandRequest(ctx, active, call)
+		if err != nil {
 			return err
 		}
+		defer release()
+		stopResponse := context.AfterFunc(ctx, func() { out.Abort(context.Cause(ctx)) })
+		defer stopResponse()
 		result, err := h.Gateway(ctx, call)
 		if err != nil {
 			return err
 		}
 		if result.Stream != nil {
+			stopStream := context.AfterFunc(ctx, func() { _ = result.Stream.Close() })
+			defer stopStream()
 			defer result.Stream.Close()
 		}
 		if err := out.Headers(result); err != nil {
@@ -405,9 +409,11 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 	h.mu.Unlock()
 	close(ready)
 	if old != nil {
+		h.revokeConnectionCredentials(old)
 		_ = old.peer.Close()
 	}
 	<-active.peer.Done()
+	h.revokeConnectionCredentials(active)
 	h.mu.Lock()
 	if h.live[id] == active {
 		delete(h.live, id)
@@ -546,6 +552,7 @@ func (h *Hub) Revoke(ctx context.Context, id string) error {
 	active := h.live[id]
 	h.mu.RUnlock()
 	if active != nil {
+		h.revokeConnectionCredentials(active)
 		_ = active.peer.Close()
 	}
 	return nil
@@ -564,6 +571,7 @@ func (h *Hub) Forget(id string) {
 	}
 	h.mu.Unlock()
 	if active != nil {
+		h.revokeConnectionCredentials(active)
 		_ = active.peer.Close()
 	}
 }
@@ -576,6 +584,7 @@ func (h *Hub) Close() error {
 	}
 	clear(h.grants)
 	h.mu.Unlock()
+	h.revokeConnectionCredentials(nil)
 	var errs []error
 	for _, peer := range peers {
 		errs = append(errs, peer.Close())

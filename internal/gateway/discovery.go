@@ -38,6 +38,9 @@ type CapabilityDocument struct {
 }
 
 type capabilityRoute struct{ method, path, description string }
+
+const commandAuthentication = "Every request, including this index, capability documents and OpenAPI, requires Authorization: Bearer using the calling exec_command's ASTRAL_API_TOKEN environment variable. Reference the variable without printing, saving or placing its expanded value in process arguments. The credential remains valid during asynchronous execution and expires when its command exits or its Daemon connection ends. Do not request or supply provider/account credentials."
+
 type capabilitySpec struct {
 	id, description string
 	notes           []string
@@ -117,7 +120,7 @@ var capabilitySpecs = []capabilitySpec{
 	{
 		id: "environment", description: "Inspect the API's bound Bot, Session, source Computer and available Computers.",
 		notes: []string{
-			"Read-only. Agent, Session and source Computer are fixed by this listener, not request-body fields. Provider and account credentials remain on the Server.",
+			"Read-only. The Server derives Bot, Session and source Computer from the command credential and verifies the listener binding; request-body fields cannot select another identity. Provider and account credentials remain on the Server.",
 			"Commands execute with the source Computer's OS permissions. Old processes retain their original listener after a Computer switch; use the latest environment entry from the selected Computer for new operations.",
 		},
 		examples: []CapabilityExample{{Description: "Inspect the listener's actual identity and working directory.", Method: "GET", Path: "/v1/context"}},
@@ -151,8 +154,8 @@ func (s *Service) discoveryRoutes() {
 	register[httpcontract.Empty, Capabilities](s, "GET", "/v1/capabilities", "agentCapabilities", func(_ *http.Request, _ httpcontract.Empty) (Capabilities, error) {
 		index := Capabilities{
 			Usage:          "Choose a capability and GET its read_url for instructions, examples and the matching OpenAPI request/response schemas. Resolve all relative URLs against local_api.base_url. Use JSON bodies for POST requests; replace example placeholders with actual discovered IDs.",
-			Authentication: "No token is needed from the bound Computer. Do not request or supply provider/account credentials.",
-			Scope:          "The listener supplies this Bot, Session and source Computer. Each operation enforces the Bot's current resource and chat access; available account operations are discovered per account.",
+			Authentication: commandAuthentication,
+			Scope:          "The Server derives this Bot, Session and source Computer from the command credential and checks its listener binding. Each operation enforces the Bot's current resource and chat access; available account operations are discovered per account.",
 			OpenAPIURL:     "/v1/openapi.json", Capabilities: []Capability{},
 		}
 		for _, capability := range capabilitySpecs {
@@ -163,7 +166,8 @@ func (s *Service) discoveryRoutes() {
 	register[httpcontract.Empty, CapabilityDocument](s, "GET", "/v1/capabilities/{id}", "agentCapability", func(r *http.Request, _ httpcontract.Empty) (CapabilityDocument, error) {
 		for _, capability := range capabilitySpecs {
 			if capability.id == r.PathValue("id") {
-				return CapabilityDocument{Capability: capability.summary(), Notes: capability.notes, Examples: capability.examples, OpenAPI: s.capabilityOpenAPI(capability)}, nil
+				notes := append([]string{commandAuthentication}, capability.notes...)
+				return CapabilityDocument{Capability: capability.summary(), Notes: notes, Examples: capability.examples, OpenAPI: s.capabilityOpenAPI(capability)}, nil
 			}
 		}
 		return CapabilityDocument{}, domain.Missing("capability", r.PathValue("id"))
@@ -202,5 +206,5 @@ func (s *Service) capabilityOpenAPI(capability capabilitySpec) map[string]any {
 		paths[route.path].(map[string]any)[method] = operation
 		collect(operation)
 	}
-	return map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": capability.description, "version": "1"}, "paths": paths, "components": map[string]any{"schemas": schemas}}
+	return map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": capability.description, "version": "1"}, "paths": paths, "components": map[string]any{"schemas": schemas, "securitySchemes": map[string]any{"command": httpcontract.CommandSecurityScheme()}}}
 }

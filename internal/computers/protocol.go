@@ -1,6 +1,7 @@
 package computers
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -43,6 +44,7 @@ type EnrollmentResult struct {
 type Call struct {
 	Binding   domain.ExecutionBinding      `json:"binding"`
 	Execution string                       `json:"execution,omitempty"`
+	APIToken  string                       `json:"api_token,omitempty"`
 	Path      string                       `json:"path,omitempty"`
 	ForRead   bool                         `json:"for_read,omitempty"`
 	Process   standardtools.ProcessRequest `json:"process,omitempty"`
@@ -61,13 +63,23 @@ type FileInfo struct {
 	Version   string    `json:"version,omitempty"`
 }
 type GatewayRequest struct {
-	Binding domain.ExecutionBinding `json:"binding"`
-	Method  string                  `json:"method"`
-	Path    string                  `json:"path"`
-	Query   string                  `json:"query,omitempty"`
-	Body    json.RawMessage         `json:"body,omitempty"`
-	Intent  string                  `json:"intent,omitempty"`
+	Binding  domain.ExecutionBinding `json:"binding"`
+	APIToken string                  `json:"api_token,omitempty"`
+	Method   string                  `json:"method"`
+	Path     string                  `json:"path"`
+	Query    string                  `json:"query,omitempty"`
+	Body     json.RawMessage         `json:"body,omitempty"`
+	Intent   string                  `json:"intent,omitempty"`
 }
+
+func validAPIToken(value string) bool {
+	if len(value) != 43 {
+		return false
+	}
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(value)
+	return err == nil && len(raw) == 32
+}
+
 type GatewayResponse struct {
 	Status  int           `json:"status"`
 	Headers http.Header   `json:"headers"`

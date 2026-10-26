@@ -5217,6 +5217,11 @@
       }
     },
     "securitySchemes": {
+      "command": {
+        "description": "Temporary Computer API credential from the calling exec_command's ASTRAL_API_TOKEN environment variable. Required for every local API request, including capability discovery. Valid only while that command and its original Daemon connection remain active; never store or print the credential.",
+        "scheme": "bearer",
+        "type": "http"
+      },
       "daemon": {
         "scheme": "bearer",
         "type": "http"
@@ -11006,6 +11011,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11057,6 +11067,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11101,6 +11116,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11160,6 +11180,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11204,6 +11229,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11263,6 +11293,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11304,6 +11339,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11334,6 +11374,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11374,6 +11419,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11408,6 +11458,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11439,6 +11494,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11473,6 +11533,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11514,6 +11579,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11579,6 +11649,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11628,6 +11703,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11686,6 +11766,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11727,6 +11812,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11782,6 +11872,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11837,6 +11932,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11878,6 +11978,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -11965,6 +12070,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -12006,6 +12116,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]
@@ -12110,6 +12225,11 @@
             "description": "Operation error"
           }
         },
+        "security": [
+          {
+            "command": []
+          }
+        ],
         "tags": [
           "Agent Gateway"
         ]

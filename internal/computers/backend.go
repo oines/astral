@@ -105,14 +105,37 @@ func (b *Backend) StartProcess(ctx context.Context, inv core.Invocation, request
 	if err != nil {
 		return nil, remoteError(err, false)
 	}
+	token, credential, err := b.Hub.issueCommandCredential(ctx, binding, inv.ExecutionID, peer)
+	if err != nil {
+		return nil, remoteError(err, false)
+	}
+	started := false
+	defer func() {
+		if !started {
+			b.Hub.revokeCommandCredential(credential)
+		}
+	}()
 	var start processStart
-	if err = peer.JSON(ctx, "process.start", Call{Binding: binding, Execution: inv.ExecutionID, Process: request}, &start); err != nil {
+	if err = peer.JSON(ctx, "process.start", Call{Binding: binding, Execution: inv.ExecutionID, Process: request, APIToken: token}, &start); err != nil {
 		return nil, remoteError(err, true)
 	}
 	lifetime, cancel := context.WithCancel(context.Background())
-	p := &remoteProcess{hub: b.Hub, peer: peer, binding: binding, id: start.ID, ctx: lifetime, cancel: cancel}
+	p := &remoteProcess{hub: b.Hub, peer: peer, binding: binding, id: start.ID, ctx: lifetime, cancel: cancel, credential: credential}
+	// Only the output attachment handshake belongs to this invocation. Once it
+	// succeeds, a yielded process must survive the caller's context ending.
+	attachCtx, cancelAttach := context.WithTimeout(ctx, 10*time.Second)
+	stopAttach := context.AfterFunc(attachCtx, cancel)
 	_, output, err := peer.Call(lifetime, "process.output", p.call(), nil)
+	stopAttach()
+	if err == nil && attachCtx.Err() != nil {
+		err = attachCtx.Err()
+	}
+	cancelAttach()
 	if err != nil {
+		b.Hub.revokeCommandCredential(credential)
+		if output != nil {
+			_ = output.Close()
+		}
 		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = peer.JSON(cleanup, "process.terminate", p.call(), nil)
 		stop()
@@ -121,6 +144,7 @@ func (b *Backend) StartProcess(ctx context.Context, inv core.Invocation, request
 	}
 	p.outputDone = make(chan struct{})
 	p.output = &processOutput{ReadCloser: output, done: p.outputDone}
+	started = true
 	return p, nil
 }
 
@@ -134,6 +158,7 @@ type remoteProcess struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	release    sync.Once
+	credential *commandCredential
 }
 
 func (p *remoteProcess) call() Call { return Call{Binding: p.binding, ProcessID: p.id} }
@@ -149,6 +174,7 @@ func (p *remoteProcess) current(ctx context.Context) error {
 }
 func (p *remoteProcess) Output() io.ReadCloser { return p.output }
 func (p *remoteProcess) Wait() (int, error) {
+	defer p.hub.revokeCommandCredential(p.credential)
 	var exit processExit
 	err := p.peer.JSON(p.ctx, "process.wait", p.call(), &exit)
 	if err != nil {
@@ -207,6 +233,7 @@ func (p *remoteProcess) Interrupt(ctx context.Context) error {
 	return remoteError(p.peer.JSON(ctx, "process.interrupt", p.call(), nil), true)
 }
 func (p *remoteProcess) Terminate(ctx context.Context) error {
+	p.hub.revokeCommandCredential(p.credential)
 	err := p.peer.JSON(ctx, "process.terminate", p.call(), nil)
 	_ = p.output.Close()
 	p.cancel()
@@ -215,6 +242,7 @@ func (p *remoteProcess) Terminate(ctx context.Context) error {
 }
 func (p *remoteProcess) releaseProcess() {
 	p.release.Do(func() {
+		p.hub.revokeCommandCredential(p.credential)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = p.peer.JSON(ctx, "process.release", p.call(), nil)

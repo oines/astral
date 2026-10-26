@@ -130,7 +130,7 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		return h.Store.Message(r.Context(), r.PathValue("id"), r.PathValue("message_id"))
 	})
 	const contentPath = "/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content"
-	s.Contract.Describe(httpcontract.Operation{Method: "GET", Path: contentPath, ID: "agentAttachmentContent", Tag: "Agent Gateway", ContentType: "application/octet-stream"})
+	s.Contract.Describe(httpcontract.Operation{Method: "GET", Path: contentPath, ID: "agentAttachmentContent", Tag: "Agent Gateway", CommandAuth: true, ContentType: "application/octet-stream"})
 	s.mux.HandleFunc("GET "+contentPath, func(w http.ResponseWriter, r *http.Request) {
 		download, mediaType, err := c.AttachmentContent(r.Context(), binding(r), r.PathValue("id"), r.PathValue("message_id"), r.PathValue("ref"))
 		if err != nil {
@@ -228,7 +228,7 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	return s
 }
 func register[Request, Response any](s *Service, method, path, id string, handler func(*http.Request, Request) (Response, error), query ...httpcontract.Parameter) {
-	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: method, Path: path, ID: id, Tag: "Agent Gateway", Query: query}, func(w http.ResponseWriter, r *http.Request, request Request) (Response, error) {
+	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: method, Path: path, ID: id, Tag: "Agent Gateway", CommandAuth: true, Query: query}, func(w http.ResponseWriter, r *http.Request, request Request) (Response, error) {
 		return handler(r, request)
 	})
 }
