@@ -22,6 +22,12 @@ description: "把服务所在电脑或远程机器接入 Astral，并授予 Bot 
 
 远程电脑主动连接 Server。`127.0.0.1` 只适用于同一台机器；局域网、VPN 或公网地址必须从目标电脑实际可达。接入地址可以是 HTTP 或 HTTPS，电脑通道自身使用加密连接和服务器身份校验。浏览器登录的网络要求见[运行 Server](/zh-cn/docs/hosting/server/)。
 
+## 更新已连接的 Daemon
+
+在电脑详情的 **Daemon 维护** 中点击 **更新 Daemon**，确认正在运行的任务会中断。Astral 检查最新官方版本、下载校验并重启 Daemon，确认新版本已重新连接。电脑身份、凭据和工作文件保留。如果 Daemon 比 Server 新，Astral 会建议同时更新 Desktop 或 Server，但不会因此阻止 Daemon 更新。
+
+服务所在电脑的本机 Daemon 随 Desktop 或 Server 更新。电脑离线、尚不支持管理更新或更新失败时，使用同一区域的 Shell 或 PowerShell 更新命令：裸机命令在目标电脑运行，容器命令在容器所在电脑运行。裸机更新始终使用原操作系统用户的权限。
+
 ## 授予 Bot 使用权限
 
 进入 **设置 → Bot → 目标 Bot → 电脑权限**，允许使用刚接入的电脑。按需要设置新会话的默认电脑。

@@ -588,9 +588,13 @@ export type AstralInternalDomainAttachment = {
 };
 
 export type AstralInternalDomainComputerMaintenance = {
+    can_update: boolean;
     command?: string;
+    daemon_newer: boolean;
     manager: 'desktop' | 'docker' | 'launchd' | 'systemd-user' | 'task-scheduler' | 'unknown';
     powershell_command?: string;
+    server_newer: boolean;
+    update: AstralInternalDomainDaemonUpdate;
 };
 
 export type AstralInternalDomainComputerStatus = {
@@ -667,6 +671,13 @@ export type AstralInternalDomainConversationBinding = {
     session_id: string;
     start_sequence: number;
     updated_at: string;
+};
+
+export type AstralInternalDomainDaemonUpdate = {
+    error?: string;
+    started_at?: string;
+    state: '' | 'checking' | 'downloading' | 'restarting' | 'current' | 'complete' | 'failed';
+    version?: string;
 };
 
 export type AstralInternalDomainEnrollment = {
@@ -2385,6 +2396,33 @@ export type ComputerMaintenanceResponses = {
 };
 
 export type ComputerMaintenanceResponse = ComputerMaintenanceResponses[keyof ComputerMaintenanceResponses];
+
+export type UpdateComputerDaemonData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/computers/maintenance/{id}/update';
+};
+
+export type UpdateComputerDaemonErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type UpdateComputerDaemonError = UpdateComputerDaemonErrors[keyof UpdateComputerDaemonErrors];
+
+export type UpdateComputerDaemonResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainDaemonUpdate;
+};
+
+export type UpdateComputerDaemonResponse = UpdateComputerDaemonResponses[keyof UpdateComputerDaemonResponses];
 
 export type GetComputerOperationData = {
     body?: never;

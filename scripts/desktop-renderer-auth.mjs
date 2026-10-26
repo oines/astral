@@ -86,7 +86,8 @@ export async function rendererAuthentication(profile, serverURL, { diagnose = ()
       if (state.origin !== ${JSON.stringify(origin)} || state.readyState !== 'complete' || !state.mounted) return { ready: false, ...state };
       const response = await fetch(${JSON.stringify(new URL('/auth/status', origin).href)}, { credentials: 'same-origin', cache: 'no-store' });
       const auth = await response.json();
-      return { ready: true, ...documentState(), status: response.status, auth };
+      const updates = await window.astralDesktop?.updates?.state();
+      return { ready: true, ...documentState(), status: response.status, auth, updates };
     })()`)
   } catch (error) {
     if (!(error instanceof RendererNavigationError)) throw error
@@ -103,5 +104,7 @@ export async function rendererAuthentication(profile, serverURL, { diagnose = ()
   // loading frame, skeletons or a login/error screen cannot prove App startup.
   // Recheck its actual visible application root after the awaited auth request.
   if (result.readyState !== 'complete' || !result.mounted || !result.onboardingVisible || result.loginScreen) return false
+  assert.ok(result.updates && /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(result.updates.currentVersion), 'The packaged Desktop update bridge must report its installed version')
+  assert.ok(['idle', 'checking', 'current', 'downloading', 'ready', 'installing', 'error', 'unavailable'].includes(result.updates.phase), 'The packaged Desktop update bridge returned an invalid lifecycle state')
   return true
 }

@@ -27,6 +27,8 @@ config_snapshot=0
 was_active=0
 was_enabled=0
 old_current=
+recovery_program=
+previous_upgrade=
 
 die() { printf 'Astral Server: %s\n' "$*" >&2; exit 1; }
 usage() {
@@ -167,6 +169,15 @@ cleanup() {
   if [[ $status != 0 && $mutating == 1 && $complete == 0 ]]; then
     printf 'Installation failed; restoring the previous program and user service.\n' >&2
     systemctl --user stop "$service" >/dev/null 2>&1 || recovery_failed=1
+    if [[ -n $recovery_program && -n ${old_program:-} ]]; then
+      "$recovery_program" migrate recover --data "$root/data/server" || recovery_failed=1
+      if [[ -f $root/data/server/last-upgrade.json ]]; then
+        current_upgrade=$(sha256sum "$root/data/server/last-upgrade.json" | awk '{print $1}')
+        if [[ $current_upgrade != "$previous_upgrade" ]]; then
+          "$recovery_program" migrate restore --data "$root/data/server" --latest || recovery_failed=1
+        fi
+      fi
+    fi
     if [[ -n $old_current ]]; then
       ln -s "$old_current" "$root/.current.restore.$$" && mv -Tf "$root/.current.restore.$$" "$root/current" || recovery_failed=1
     else rm -f "$root/current" || recovery_failed=1; fi
@@ -177,8 +188,8 @@ cleanup() {
     systemctl --user daemon-reload || recovery_failed=1
     if [[ $was_enabled == 1 ]]; then systemctl --user enable "$service" >/dev/null 2>&1 || recovery_failed=1
     else systemctl --user disable "$service" >/dev/null 2>&1 || true; fi
-    if [[ $was_active == 1 ]]; then systemctl --user start "$service" && systemctl --user is-active --quiet "$service" || recovery_failed=1; fi
-    printf 'Existing data, master.key and Computer files were not deleted or rolled back.\n' >&2
+    if [[ $was_active == 1 && $recovery_failed == 0 ]]; then systemctl --user start "$service" && systemctl --user is-active --quiet "$service" || recovery_failed=1; fi
+    printf 'Computer files were retained; any attempted data migration was restored before restarting the previous Server.\n' >&2
     if [[ $recovery_failed == 1 ]]; then printf 'Automatic service recovery was incomplete. Backups remain in %s; inspect systemctl --user status %s.\n' "$stage" "$service" >&2; fi
   fi
   [[ -z $unit_temp ]] || rm -f "$unit_temp"
@@ -233,6 +244,8 @@ if not match or any(len(part)>16 or int(part)>9007199254740991 for part in match
 if not re.fullmatch(r'[0-9a-f]{40}',m.get('source_sha','')): raise SystemExit('Invalid manifest source revision')
 host,core=m.get('host_schema'),m.get('core_format')
 if type(host) is not int or type(core) is not int or host<1 or core<1 or m.get('data_formats')!={'host':host,'core':core}: raise SystemExit('Invalid or inconsistent data-format metadata')
+baselines=m.get('migration_baselines',{})
+if m.get('migration_status')!='goose' or baselines!={'host':3,'core':10} or m.get('migration_targets')!={'host':host,'core':core} or host<3 or core<10: raise SystemExit('Invalid Goose migration ranges')
 if sorted(m.get('distribution_names',[]))!=sorted(names): raise SystemExit('Manifest must describe all six distribution binaries')
 assets=m.get('assets',[])
 if not isinstance(assets,list) or any(not isinstance(a,dict) for a in assets): raise SystemExit('Invalid asset inventory')
@@ -282,7 +295,12 @@ if [[ -n $old_program ]]; then
   [[ $resolved == "$root/releases/"* && -x $old_program ]] || die 'existing program is not an installer-managed executable'
   old_formats=$("$old_program" version --data-formats) || die 'existing program lacks data-format metadata; use a separate empty root or follow explicit migration instructions'
   [[ $old_formats =~ ^[0-9]+\ [0-9]+$ ]] || die 'existing program lacks machine-readable data formats; use a separate empty root or follow explicit migration instructions'
-  [[ $old_formats == "$new_formats" ]] || die "data format change ($old_formats -> $new_formats): automatic migration is unavailable; the old service is unchanged"
+  python3 - "$old_formats" "$new_formats" <<'PY'
+import sys
+old=list(map(int,sys.argv[1].split())); new=list(map(int,sys.argv[2].split()))
+if len(old)!=2 or len(new)!=2 or any(not baseline<=a<=b for baseline,a,b in zip((3,10),old,new)):
+    raise SystemExit('Existing data is outside the supported forward migration chain; the old service is unchanged')
+PY
 elif [[ -d $root/data && -n $(find "$root/data" -mindepth 1 -print -quit) ]]; then
   die 'existing nonempty data has no trusted installed program/format metadata; use a separate empty root or migrate explicitly'
 fi
@@ -306,6 +324,8 @@ if systemctl --user is-enabled --quiet "$service"; then was_enabled=1; fi
 # Taking this snapshot before stopping could lose a setting saved during update.
 mutating=1
 if [[ $had_unit == 1 ]]; then systemctl --user stop "$service"; fi
+recovery_program=$release/bin/astral
+if [[ -f $root/data/server/last-upgrade.json ]]; then previous_upgrade=$(sha256sum "$root/data/server/last-upgrade.json" | awk '{print $1}'); fi
 if [[ -f $config ]]; then cp "$config" "$stage/previous-config.json"; had_config=1; fi
 config_snapshot=1
 python3 - "$stage/new-config.json" "$config" "$listen_set" "$listen" "$public_set" "$public_url" "$remote_set" "$allow_remote" <<'PY'
@@ -347,8 +367,17 @@ systemctl --user daemon-reload
 systemctl --user enable "$service"
 systemctl --user start "$service"
 server_url=
-for ((attempt=0; attempt<45; attempt++)); do
+startup_limit=45
+for ((attempt=0; attempt<startup_limit; attempt++)); do
   pid=$(systemctl --user show "$service" --property=MainPID --value)
+  if [[ $pid =~ ^[1-9][0-9]*$ && -f $root/data/server/startup-maintenance.json ]]; then
+    if python3 - "$root/data/server/startup-maintenance.json" "$pid" <<'PY'
+import json,sys
+with open(sys.argv[1],encoding='utf-8') as f: state=json.load(f)
+if state.get('pid')!=int(sys.argv[2]) or state.get('phase')!='preparing-data': raise SystemExit(1)
+PY
+    then startup_limit=1200; fi
+  fi
   if [[ $pid =~ ^[1-9][0-9]*$ && -f $ready ]]; then
     if server_url=$(python3 - "$ready" "$pid" "$root/data/server" <<'PY'
 import json,sys,urllib.parse

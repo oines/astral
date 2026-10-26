@@ -96,6 +96,12 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 		}
 	}
 	if options.Foreground {
+		// A container's foreground entry point always has a parent that can
+		// replace/restart the Daemon without exiting or rebuilding the container.
+		if runtime.GOOS == "linux" && os.Getenv("ASTRAL_CONTAINER_INFO") != "" && os.Getenv("ASTRAL_CONTAINER_SUPERVISOR") != "1" {
+			output := &lineOutput{emit: report}
+			return SuperviseContainer(ctx, root, "", output, output)
+		}
 		return RunDaemon(ctx, root, credentialsPath, report)
 	}
 	executable, err := os.Executable()
@@ -177,6 +183,7 @@ func RunDaemon(ctx context.Context, root, credentialsPath string, report func(st
 		return err
 	}
 	d.Hello.Version = DaemonVersion
+	configureDaemonUpdate(d)
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

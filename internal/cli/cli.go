@@ -56,6 +56,8 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return computer(ctx, args[1:], out, stderr)
 	case "maintenance":
 		return maintenance(ctx, args[1:], out, stderr)
+	case "migrate":
+		return migrate(ctx, args[1:], out, stderr)
 	case "connect":
 		return connectOwner(ctx, args[1:], out, stderr)
 	case "doctor":
@@ -96,6 +98,9 @@ func usage(out io.Writer) {
   astral request METHOD /api/v1/PATH [--body-file FILE]
   astral doctor
   astral auth setup|reset [--data DIRECTORY]
+  astral migrate --data DIRECTORY [--status]
+  astral migrate restore --data DIRECTORY (--backup SNAPSHOT | --latest)
+  astral migrate recover --data DIRECTORY
   astral maintenance weixin-wire-ownership --data DIRECTORY [--purge-unowned]
   astral maintenance with-data-lock --data DIRECTORY --computers-dir DIRECTORY -- COMMAND [ARGS...]
   astral version [--json | --data-formats]
@@ -200,7 +205,7 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 		}
 	}
 	config.Version = Version
-	s, err := platform.New(config)
+	s, err := platform.NewContext(ctx, config)
 	if err != nil {
 		return err
 	}
@@ -333,6 +338,8 @@ func computer(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return computerService(ctx, args[1:], out, stderr)
 	case "update":
 		return computerUpdate(ctx, args[1:], out, stderr)
+	case "supervise":
+		return computerSupervise(ctx, args[1:], out, stderr)
 	default:
 		return fmt.Errorf("unknown Computer command")
 	}

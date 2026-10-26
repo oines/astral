@@ -12,10 +12,12 @@ export const computersEn = {
     shell: 'macOS / Linux · Shell', powershell: 'Windows · PowerShell',
   },
   computerMaintenance: {
+    updateDaemon: 'Update Daemon', confirmUpdate: 'Update this Daemon to the latest release? Running tasks will be interrupted.', updateServerHint: 'This Daemon is newer than the Server. Update Desktop or Server to use matching versions.',
+    states: { checking: 'Checking the official release…', downloading: 'Downloading and verifying…', restarting: 'Restarting and waiting for reconnection…', current: 'Daemon is up to date.', complete: 'Daemon is updated and connected.', failed: 'Daemon update failed. Retry or use the update command.' },
     title: 'Daemon maintenance', updateMethod: 'Update method', withServer: 'Update with Astral Desktop or Server', updateCommand: 'Update command',
     localHint: 'This Daemon runs inside this Astral Server. Updating and restarting Desktop or Server updates it too.',
-    remoteHint: 'Run the command on this Computer to update its Daemon and restart its user service. Running tasks will be interrupted; the Computer identity and data are preserved.',
-    containerHint: 'Run the command on the container host to replace its Daemon and restart the same container. Running tasks will be interrupted; the container, software environment and data are preserved.',
+    remoteHint: 'Update the connected Daemon here, or run the command on this Computer. Running tasks will be interrupted; identity and data are preserved.',
+    containerHint: 'Update the connected Daemon here, or run the command on the container host. Running tasks will be interrupted; the container, software environment and data are preserved.',
     managers: {
       desktop: 'Managed by Astral Desktop or Server.', docker: 'Use Docker on the container host to manage the container.',
       launchd: 'Manage the user service in Login Items on the target Mac.', 'systemd-user': 'Use systemctl --user on the target Computer to manage the service.',
@@ -37,10 +39,12 @@ export const computersZh: typeof computersEn = {
     shell: 'macOS / Linux · Shell', powershell: 'Windows · PowerShell',
   },
   computerMaintenance: {
+    updateDaemon: '更新 Daemon', confirmUpdate: '将这台电脑的 Daemon 更新到最新版本？正在运行的任务会中断。', updateServerHint: '此 Daemon 比 Server 新，建议更新 Desktop 或 Server。',
+    states: { checking: '正在检查官方版本…', downloading: '正在下载并校验…', restarting: '正在重启并等待重新连接…', current: 'Daemon 已是最新版本。', complete: 'Daemon 已更新并重新连接。', failed: 'Daemon 更新失败，请重试或使用更新命令。' },
     title: 'Daemon 维护', updateMethod: '更新方式', withServer: '随 Astral Desktop 或 Server 更新', updateCommand: '更新命令',
     localHint: '本机 Daemon 运行在 Astral Server 内，升级并重启 Desktop 或 Server 后一同更新。',
-    remoteHint: '在这台电脑运行命令，更新 Daemon 并重启用户服务。正在运行的任务会中断，电脑身份和数据保留。',
-    containerHint: '在容器所在电脑运行命令，替换 Daemon 并重启同一个容器。正在运行的任务会中断，容器、已安装环境和数据保留。',
+    remoteHint: '直接更新已连接的 Daemon，也可以在这台电脑运行更新命令。正在运行的任务会中断，电脑身份和数据保留。',
+    containerHint: '直接更新已连接的 Daemon，也可以在容器所在电脑运行命令。正在运行的任务会中断，容器、已安装环境和数据保留。',
     managers: {
       desktop: '由 Astral Desktop 或 Server 管理。', docker: '在容器所在电脑使用 Docker 管理容器。',
       launchd: '在目标 Mac 的“登录项”中管理用户后台服务。', 'systemd-user': '在目标电脑使用 systemctl --user 管理用户服务。',

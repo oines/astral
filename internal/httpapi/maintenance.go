@@ -7,6 +7,7 @@ import (
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/httpcontract"
+	"github.com/oines/astral/internal/releasefeed"
 )
 
 func (a *API) registerComputerMaintenance() {
@@ -15,7 +16,27 @@ func (a *API) registerComputerMaintenance() {
 		if err := a.Config.Harness.Store.Get(r.Context(), "computers", r.PathValue("id"), &computer); err != nil {
 			return domain.ComputerMaintenance{}, err
 		}
-		return maintenanceCommands(computer)
+		value, err := maintenanceCommands(computer)
+		if err != nil {
+			return value, err
+		}
+		status := a.Config.Harness.Hub.Status(computer)
+		if comparison, err := releasefeed.Compare(status.DaemonVersion, a.Config.Version); err == nil {
+			value.ServerNewer = comparison < 0
+			value.DaemonNewer = comparison > 0
+		}
+		value.CanUpdate = !computer.Local && computer.Kind != "local" && !computer.Revoked && status.Online && a.Config.Harness.Hub.CanUpdateDaemon(computer.ID)
+		value.Update = a.Config.Harness.Hub.DaemonUpdateStatus(computer.ID)
+		return value, nil
+	})
+	route[httpcontract.Empty, domain.DaemonUpdate](a, "POST", "/computers/maintenance/{id}/update", "updateComputerDaemon", "Computers", func(r *http.Request, _ httpcontract.Empty) (domain.DaemonUpdate, error) {
+		if r.ContentLength != 0 {
+			var input struct{}
+			if err := httpcontract.Decode(r, &input); err != nil {
+				return domain.DaemonUpdate{}, err
+			}
+		}
+		return a.Config.Harness.Hub.UpdateDaemon(r.Context(), r.PathValue("id"))
 	})
 }
 

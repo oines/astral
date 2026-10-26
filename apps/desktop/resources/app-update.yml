@@ -1,0 +1,3 @@
+provider: generic
+url: https://github.com/oines/astral/releases/latest/download/
+updaterCacheDirName: astral-updater

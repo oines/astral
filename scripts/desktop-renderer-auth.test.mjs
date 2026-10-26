@@ -51,6 +51,7 @@ function managedPage() {
   return {
     state,
     globals: {
+      window: { astralDesktop: { updates: { state: async () => ({ currentVersion: '0.1.0', phase: 'idle' }) } } },
       location: state.location,
       document: { get readyState() { return state.readyState }, querySelector: selector => selector === '#app' ? app : null },
       getComputedStyle: () => ({ display: state.display, visibility: state.visibility, opacity: state.opacity }),
@@ -94,7 +95,7 @@ test('a destroyed navigation context is retried, with its CDP diagnosis preserve
   })
   assert.equal(await rendererAuthentication(profile, origin, { evaluate, diagnose: value => { diagnostic = value } }), false)
   assert.match(diagnostic, /-32000.*Execution context was destroyed/)
-  assert.equal(await rendererAuthentication(profile, origin, { evaluate: async () => ({ ready: true, origin, readyState: 'complete', mounted: true, onboardingVisible: true, status: 200, auth: { authenticated: true, desktop: true } }) }), true)
+  assert.equal(await rendererAuthentication(profile, origin, { evaluate: async () => ({ ready: true, origin, readyState: 'complete', mounted: true, onboardingVisible: true, status: 200, auth: { authenticated: true, desktop: true }, updates: { currentVersion: '0.1.0', phase: 'idle' } }) }), true)
 })
 
 test('authentication rejection and a cookie-only identity fail immediately instead of retrying', async t => {
@@ -105,6 +106,13 @@ test('authentication rejection and a cookie-only identity fail immediately inste
     { status: 200, auth: { authenticated: true, desktop: false } },
   ]) {
     await assert.rejects(rendererAuthentication(profile, origin, { evaluate: async () => ({ ready: true, origin, ...result }) }), /authentication endpoint|not authenticated|browser cookie/)
+  }
+})
+
+test('a packaged renderer without a working typed update bridge cannot pass acceptance', async t => {
+  const profile = await fixture(t)
+  for (const updates of [undefined, { currentVersion: 'not-a-version', phase: 'idle' }, { currentVersion: '0.1.0', phase: 'invented' }]) {
+    await assert.rejects(rendererAuthentication(profile, origin, { evaluate: async () => ({ ready: true, origin, readyState: 'complete', mounted: true, onboardingVisible: true, status: 200, auth: { authenticated: true, desktop: true }, updates }) }), /update bridge/)
   }
 })
 

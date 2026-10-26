@@ -89,7 +89,7 @@ func Open(directory string) (*Store, error) {
 		return fail(err)
 	}
 	if version != 0 && version != FormatVersion {
-		return fail(fmt.Errorf("unsupported Astral database schema %d; initialize a new data directory", version))
+		return fail(fmt.Errorf("unsupported Astral database schema %d; stop Astral and run the newer program's migrate command before starting", version))
 	}
 	if version == 0 {
 		var tables int
@@ -103,8 +103,22 @@ func Open(directory string) (*Store, error) {
 	if _, err = db.Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;"); err != nil {
 		return fail(err)
 	}
-	if _, err = db.Exec(schema); err != nil {
-		return fail(err)
+	if version == 0 {
+		tx, beginErr := db.BeginTx(context.Background(), nil)
+		if beginErr != nil {
+			return fail(beginErr)
+		}
+		if _, err = tx.ExecContext(context.Background(), schema); err == nil {
+			err = initializeMigrationHistory(context.Background(), db, tx, currentMigrationPlan())
+		}
+		if err == nil {
+			err = tx.Commit()
+		} else {
+			_ = tx.Rollback()
+		}
+		if err != nil {
+			return fail(err)
+		}
 	}
 	if err = os.Chmod(path, 0600); err != nil {
 		return fail(err)

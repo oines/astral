@@ -1,7 +1,8 @@
 import { createReadStream } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { digest, desktopNames, distributionNames, macSigningReportName, validateMacSigningReport } from './release-assets.mjs'
+import { digest, desktopNames, distributionNames, macSigningReportName, validateMacSigningReport, validateDataFormats } from './release-assets.mjs'
+import { desktopUpdateFeeds, validateDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { isDirectInvocation, readReleaseVersion, validateTag, validateVersion } from './release-version.mjs'
 
 export function compareVersions(left, right) {
@@ -27,17 +28,17 @@ export async function createDraft(directory, { publicRelease = false, environmen
   const macSigned = publicRelease || manifest.purpose === 'mac-signed-candidate'
   const validPurpose = publicRelease ? manifest.purpose === 'release' && manifest.public_release_ready === true : ['unsigned-candidate', 'mac-signed-candidate'].includes(manifest.purpose) && manifest.public_release_ready === false
   if (manifest.schema_version !== 1 || manifest.version !== version || manifest.repository !== repository || !validPurpose || !/^[a-f0-9]{40}$/.test(manifest.source_sha) ||
-      manifest.signing?.macos !== (macSigned ? 'signed-and-notarized' : 'not-signed-or-notarized') || manifest.signing?.windows !== 'not-signed' || manifest.signing?.linux !== 'not-signed' ||
-      manifest.migration_status !== 'not-implemented' || manifest.desktop_updater !== 'not-implemented') throw new Error(publicRelease ? 'Public releases require a matching release manifest and complete Mac signing claims.' : 'Only matching review-only candidate manifests can create a draft; public releases and incomplete signing claims are forbidden.')
+      !(macSigned ? ['signed-and-notarized', 'signed-notarization-pending'] : ['not-signed-or-notarized']).includes(manifest.signing?.macos) || manifest.signing?.windows !== 'not-signed' || manifest.signing?.linux !== 'not-signed' ||
+      manifest.migration_status !== 'goose' || manifest.desktop_updater !== 'electron-updater') throw new Error(publicRelease ? 'Public releases require a matching release manifest and complete Mac signing claims.' : 'Only matching review-only candidate manifests can create a draft; public releases and incomplete signing claims are forbidden.')
   if (publicRelease) {
     const runPrefix = `https://github.com/${repository}/actions/runs/`
     if (environment.CI !== 'true' || environment.GITHUB_ACTIONS !== 'true' || !/^\d+$/.test(environment.GITHUB_RUN_ID || '') ||
         (environment.GITHUB_SERVER_URL || 'https://github.com') !== 'https://github.com' ||
         manifest.candidate_run_url !== `${runPrefix}${environment.GITHUB_RUN_ID}` ||
         typeof manifest.ci_run_url !== 'string' || !manifest.ci_run_url.startsWith(runPrefix) || !/^\d+$/.test(manifest.ci_run_url.slice(runPrefix.length))) throw new Error('Public publishing requires this GitHub Actions run and its matching release/CI metadata.')
-    if (manifest.host_schema !== 3 || manifest.core_format !== 10 || manifest.data_formats?.host !== 3 || manifest.data_formats?.core !== 10 || Object.keys(manifest.data_formats).length !== 2) throw new Error('Public releases currently support only the Host 3 / Core 10 data baseline.')
+    if (!Number.isSafeInteger(manifest.host_schema) || manifest.host_schema < 1 || !Number.isSafeInteger(manifest.core_format) || manifest.core_format < 1 || manifest.data_formats?.host !== manifest.host_schema || manifest.data_formats?.core !== manifest.core_format || Object.keys(manifest.data_formats).length !== 2) throw new Error('Public release data baseline does not match its migration metadata.')
   }
-  const requiredNames = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'checksums.txt', 'release-manifest.json', 'RELEASE_NOTES.md', ...(macSigned ? [macSigningReportName] : [])]
+  const requiredNames = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'checksums.txt', 'release-formats.json', ...desktopUpdateFeeds(version).map(feed => feed.name), 'release-manifest.json', 'RELEASE_NOTES.md', ...(macSigned ? [macSigningReportName] : [])]
   const sumLines = (await readFile(path.join(directory, 'SHA256SUMS'), 'utf8')).trim().split('\n')
   const sums = new Map()
   for (const line of sumLines) {
@@ -51,13 +52,23 @@ export async function createDraft(directory, { publicRelease = false, environmen
   for (const [name, expected] of sums) {
     if (await digest(path.join(directory, name)) !== expected) throw new Error(`Checksum mismatch before uploading ${name}.`)
   }
+  const formats = JSON.parse(await readFile(path.join(directory, 'release-formats.json'), 'utf8'))
+  validateDataFormats(formats, { version, sourceSHA: manifest.source_sha })
+  for (const key of ['data_formats', 'host_schema', 'core_format', 'core_module_version', 'migration_status', 'migration_baselines', 'migration_targets']) {
+    if (JSON.stringify(formats[key]) !== JSON.stringify(manifest[key])) throw new Error('Release format metadata and manifest must describe the same Goose migration contract.')
+  }
   const manifestNames = requiredNames.filter(name => !['release-manifest.json', 'RELEASE_NOTES.md'].includes(name))
   if (!Array.isArray(manifest.assets) || manifest.assets.length !== manifestNames.length || new Set(manifest.assets.map(asset => asset?.name)).size !== manifestNames.length) throw new Error('Manifest asset inventory is incomplete or ambiguous.')
   for (const asset of manifest.assets) {
     if (!asset || !manifestNames.includes(asset.name) || !Number.isSafeInteger(asset.size) || asset.size <= 0 || sums.get(asset.name) !== asset.sha256 || (await stat(path.join(directory, asset.name))).size !== asset.size) throw new Error('Manifest asset inventory does not match the final size and SHA256 inventory.')
   }
   if (publicRelease && (!Array.isArray(manifest.distribution_names) || manifest.distribution_names.length !== distributionNames.length || new Set(manifest.distribution_names).size !== distributionNames.length || distributionNames.some(name => !manifest.distribution_names.includes(name)))) throw new Error('Public release executable inventory is incomplete.')
-  if (macSigned) await validateMacSigningReport(JSON.parse(await readFile(path.join(directory, macSigningReportName), 'utf8')), { version, sourceSHA: manifest.source_sha, files: new Map(requiredNames.map(name => [name, path.join(directory, name)])) })
+  if (macSigned) {
+    const report = JSON.parse(await readFile(path.join(directory, macSigningReportName), 'utf8'))
+    await validateMacSigningReport(report, { version, sourceSHA: manifest.source_sha, files: new Map(requiredNames.map(name => [name, path.join(directory, name)])) })
+    if (manifest.signing.macos !== (report.notarization_status === 'accepted' ? 'signed-and-notarized' : 'signed-notarization-pending')) throw new Error('Mac signing manifest must match the actual notarization report.')
+  }
+  await validateDesktopUpdateFeeds(directory, version)
   const expectedAssets = new Map()
   for (const name of files) expectedAssets.set(name, { size: (await stat(path.join(directory, name))).size, digest: `sha256:${sums.get(name) || await digest(path.join(directory, name))}` })
   const apiBase = environment.GITHUB_API_URL || 'https://api.github.com'

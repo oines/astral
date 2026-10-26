@@ -21,6 +21,7 @@ import BotSettingsNav from '../components/settings/BotSettingsNav.vue'
 import SettingsFeedback from '../components/settings/SettingsFeedback.vue'
 import NetworkSettings from '../components/settings/NetworkSettings.vue'
 import AuthSettings from '../components/settings/AuthSettings.vue'
+import DesktopUpdates from '../components/settings/DesktopUpdates.vue'
 const app = useAppStore()
 const route = useRoute()
 const { t } = useI18n()
@@ -341,6 +342,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
               </p>
             </div>
           </SettingsSection>
+          <DesktopUpdates v-if="desktop" />
           <SettingsSection :title="t('diagnostics')">
             <SettingsRow
               :label="t('copyDiagnostics')"

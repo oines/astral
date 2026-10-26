@@ -22,6 +22,7 @@ import (
 	"github.com/oines/astral-core/standardtools"
 	"github.com/oines/astral-core/standardtools/local"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/releasefeed"
 	"github.com/oines/astral/internal/serviceurl"
 	"github.com/oines/astral/internal/transport"
 )
@@ -36,15 +37,19 @@ type Daemon struct {
 	Credentials Credentials
 	Root        string
 	Hello       Hello
-	httpClient  *http.Client
-	connectMu   sync.Mutex
-	mu          sync.Mutex
-	peer        *transport.Peer
-	connection  *daemonConnection
-	gateways    map[string]*localGateway
-	processes   map[string]*daemonProcess
-	apiTokens   map[string]*daemonProcess
-	closed      bool
+	// Update is a Host management operation, never an Agent execution capability.
+	Update     func(context.Context, releasefeed.Binary) error
+	updateMu   sync.Mutex
+	updating   bool
+	httpClient *http.Client
+	connectMu  sync.Mutex
+	mu         sync.Mutex
+	peer       *transport.Peer
+	connection *daemonConnection
+	gateways   map[string]*localGateway
+	processes  map[string]*daemonProcess
+	apiTokens  map[string]*daemonProcess
+	closed     bool
 }
 type daemonConnection struct {
 	peer        *transport.Peer
@@ -434,6 +439,39 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 	d.mu.Unlock()
 	if !connected {
 		return domain.Offline("daemon connection is no longer active")
+	}
+	if request.Method == DaemonUpdateCapability {
+		var binary releasefeed.Binary
+		if json.Unmarshal(request.Params, &binary) != nil {
+			return domain.Invalid("invalid Daemon update")
+		}
+		if err := binary.Validate(d.Hello.OS, d.Hello.Arch); err != nil {
+			return domain.Invalid(err.Error())
+		}
+		if d.Update == nil {
+			return domain.Conflict("this Daemon has no managed updater; use its update command")
+		}
+		d.updateMu.Lock()
+		if d.updating {
+			d.updateMu.Unlock()
+			return domain.Conflict("a Daemon update is already in progress")
+		}
+		if comparison, e := releasefeed.Compare(d.Hello.Version, binary.Version); e == nil && comparison >= 0 {
+			d.updateMu.Unlock()
+			if comparison > 0 {
+				return domain.Conflict("Daemon updates cannot downgrade; update the Server first")
+			}
+			return out.JSON(struct{}{})
+		}
+		d.updating = true
+		d.updateMu.Unlock()
+		if err := d.Update(ctx, binary); err != nil {
+			d.updateMu.Lock()
+			d.updating = false
+			d.updateMu.Unlock()
+			return err
+		}
+		return out.JSON(struct{}{})
 	}
 	var call Call
 	if json.Unmarshal(request.Params, &call) != nil {

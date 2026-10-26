@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/daemonservice"
+	"github.com/oines/astral/internal/releasefeed"
 )
 
 // DaemonVersion is set by the executable entry point before any Daemon starts.
@@ -42,11 +44,15 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 		}
 		defer os.RemoveAll(directory)
 		binary := filepath.Join(directory, "astral")
-		if err = downloadVerifiedBinary(ctx, "astral-linux-"+probe.Arch, binary); err != nil {
+		release, err := releasefeed.Latest(ctx, "linux", probe.Arch)
+		if err != nil {
+			return err
+		}
+		if err = release.Download(ctx, binary); err != nil {
 			return err
 		}
 		report("Updating the Daemon in the existing container; restarting it interrupts running tasks. Its files and installed software are retained.")
-		return UpdateContainerDaemon(dockerContext(ctx, probe), identity, binary, options.Version, report)
+		return UpdateContainerDaemon(dockerContext(ctx, probe), identity, binary, release.Version, report)
 	}
 	if options.Root == "" {
 		return fmt.Errorf("--root or --container is required; copy the update command from Computer details")
@@ -92,6 +98,7 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 		cancel()
 	}
 	if err == nil {
+		pruneManagedDaemonReleases(root, executable, previous.Executable)
 		report("Astral Daemon updated and online: " + credentials.ComputerID)
 		return nil
 	}
@@ -102,10 +109,35 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 	if restore == nil {
 		restore = manager.Restart(recovery)
 	}
+	if restore == nil {
+		restore = waitUpdatedComputer(recovery, credentials, before.BootID, before.DaemonVersion)
+	}
 	if restore != nil {
 		return errors.Join(fmt.Errorf("daemon update failed: %w", err), fmt.Errorf("restore previous service failed; credentials and Agent files remain at %s: %w", root, restore))
 	}
 	return fmt.Errorf("daemon update failed; the previous service executable was restored: %w", err)
+}
+
+// Keep the current and rollback programs, rather than accumulating every
+// release in a frequently updated Daemon's private staging directory.
+func pruneManagedDaemonReleases(root string, keep ...string) {
+	base := filepath.Join(root, "service", "releases")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		path := filepath.Join(base, entry.Name())
+		retained := false
+		for _, program := range keep {
+			if filepath.Dir(program) == path || runtime.GOOS == "windows" && strings.EqualFold(filepath.Dir(program), path) {
+				retained = true
+			}
+		}
+		if !retained {
+			_ = os.RemoveAll(path)
+		}
+	}
 }
 
 func waitUpdatedComputer(ctx context.Context, credentials computers.Credentials, previousBoot, version string) error {

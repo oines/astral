@@ -53,7 +53,9 @@ export async function readDataFormats(binary, sourceSHA, root = repositoryRoot) 
   const goModule = await readFile(path.join(root, 'go.mod'), 'utf8')
   const dependency = /^\s*github\.com\/oines\/astral-core\s+(\S+)\s*$/m.exec(goModule)
   if (metadata.version !== version || !Number.isSafeInteger(metadata.data_formats?.host) || metadata.data_formats.host < 1 ||
-      !Number.isSafeInteger(metadata.data_formats?.core) || metadata.data_formats.core < 1 || !dependency) {
+      !Number.isSafeInteger(metadata.data_formats?.core) || metadata.data_formats.core < 1 || !dependency ||
+      metadata.migration_status !== 'goose' || metadata.migration_baselines?.host !== 3 || metadata.migration_baselines?.core !== 10 ||
+      metadata.migration_targets?.host !== metadata.data_formats.host || metadata.migration_targets?.core !== metadata.data_formats.core) {
     throw new Error('Built executable does not report the expected release version and Host/Core data formats.')
   }
   return {
@@ -64,7 +66,9 @@ export async function readDataFormats(binary, sourceSHA, root = repositoryRoot) 
     host_schema: metadata.data_formats.host,
     core_format: metadata.data_formats.core,
     core_module_version: dependency[1],
-    migration_status: 'not-implemented',
+    migration_status: metadata.migration_status,
+    migration_baselines: metadata.migration_baselines,
+    migration_targets: metadata.migration_targets,
   }
 }
 

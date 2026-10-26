@@ -47,6 +47,7 @@ function manifest(version) {
     schema_version: 1, purpose: 'release', public_release_ready: true,
     version, tag: `v${version}`, source_sha: 'a'.repeat(40),
     host_schema: 3, core_format: 10, data_formats: { host: 3, core: 10 },
+    migration_status: 'goose', migration_baselines: { host: 3, core: 10 }, migration_targets: { host: 3, core: 10 },
     distribution_names: names,
     assets: [...names, 'checksums.txt', 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt'].map(name => ({ name, size: 1, sha256: 'b'.repeat(64) })),
   }
