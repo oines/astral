@@ -201,8 +201,13 @@ func dockerEnvironmentFixture(t *testing.T) (string, string, string) {
 	}
 	install := func(source, target string) {
 		t.Helper()
-		if err := os.Link(source, target); err == nil {
-			return
+		// Windows cannot delete a hard link to the running parent test image,
+		// even after the fixture children have exited. Each fixture executable
+		// needs its own file; Unix can keep the inexpensive hard-link path.
+		if runtime.GOOS != "windows" {
+			if err := os.Link(source, target); err == nil {
+				return
+			}
 		}
 		input, err := os.Open(source)
 		if err != nil {
@@ -226,6 +231,28 @@ func dockerEnvironmentFixture(t *testing.T) (string, string, string) {
 	t.Setenv("ASTRAL_DOCKER_ENVIRONMENT_LOG", log)
 	t.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 	return cli, directory, log
+}
+
+func TestDockerEnvironmentFixtureCleansUpAfterNativeChildrenExit(t *testing.T) {
+	cli, directory, _ := dockerEnvironmentFixture(t)
+	t.Setenv("PATH", directory)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	ctx = dockerContext(ctx, DockerInfo{Endpoint: "unix:///astral-cli-fixture.sock"})
+	if _, err := dockerOutput(ctx, "helper"); err != nil {
+		t.Fatal(err)
+	}
+	helper := "docker-credential-astral-test"
+	if runtime.GOOS == "windows" {
+		helper += ".exe"
+	}
+	// The parent test image is still running. Waiting for both native children
+	// must leave their independent fixture files immediately removable.
+	for _, file := range []string{filepath.Join(directory, helper), cli} {
+		if err := os.Remove(file); err != nil {
+			t.Fatalf("fixture executable remains locked after child exit: %v", err)
+		}
+	}
 }
 
 func TestDockerGUIFallbackRunsCredentialHelperFromSelectedInstallation(t *testing.T) {
