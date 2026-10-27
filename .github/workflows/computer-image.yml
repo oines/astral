@@ -2,9 +2,7 @@ name: Computer environment image
 
 on:
   push:
-    # Owner feature-branch pushes bootstrap this workflow before it exists on
-    # main, and allow isolated environment validation before selecting a lock.
-    branches: [main, 'codex/**']
+    branches: [main]
     paths:
       - internal/platform/computer-image/Dockerfile
       - scripts/computer-image.mjs
@@ -60,7 +58,7 @@ jobs:
         run: node scripts/computer-image-build.mjs --arch "$IMAGE_ARCH"
 
   publish-platform:
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/heads/codex/') && github.actor == github.repository_owner))) || (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner)
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == github.repository_owner)
     strategy:
       fail-fast: false
       matrix:
