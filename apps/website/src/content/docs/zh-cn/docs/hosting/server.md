@@ -1,19 +1,47 @@
 ---
 title: "运行 Server"
-description: "启动 Astral Server，设置网页登录并配置网络访问。"
+description: "一键安装 Astral Server 到 Linux VPS，设置网页登录并配置网络访问。"
 ---
 
-先按[获取 Astral](/zh-cn/docs/start/get-astral/)构建程序。下面示例假设所选二进制已命名为 `astral` 并放入 PATH；也可以替换为 `dist/bin/` 中对应文件的完整路径，Windows 使用 `.exe`。
+官方 Server 二进制已包含 Web UI，不需要单独构建或部署前端。
 
-## 启动并设置账号
+## 一键安装到 Linux VPS
 
-在仓库根目录中运行：
+使用 Linux x86_64 或 ARM64，需要 Bash、curl、Python 3 和可用的 systemd 用户会话。以将要运行 Astral 的账户执行：
+
+```sh
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+  https://github.com/oines/astral/releases/latest/download/install-server.sh | bash
+```
+
+默认安装目录为 `${XDG_DATA_HOME:-$HOME/.local/share}/astral-server`。安装器校验发行文件后，注册 `systemd --user` 的 `astral-server.service`，不会安装系统级服务，也不会自动开启用户驻留。需要退出登录后持续运行、重启后自动启动时，请 VPS 管理员用 `loginctl enable-linger USER` 为该账户开启驻留。
+
+以后升级时，以同一账户、相同安装目录重新执行安装命令。需要指定已发布版本时，将结尾的 `bash` 改为 `bash -s -- --tag v0.1.0`。未指定的网络设置会保留。
+
+## 设置网页登录
+
+执行安装器输出的账号初始化命令。默认安装目录对应：
+
+```sh
+"${XDG_DATA_HOME:-$HOME/.local/share}/astral-server/current/bin/astral" auth setup \
+  --data "${XDG_DATA_HOME:-$HOME/.local/share}/astral-server/data/server" --username admin
+```
+
+按提示隐藏输入并确认密码。默认关闭远程直接管理。通过 SSH 访问时，在你自己的电脑上运行，替换 `USER@VPS`：
+
+```sh
+ssh -N -L 4545:127.0.0.1:4545 USER@VPS
+```
+
+然后在浏览器打开 `http://127.0.0.1:4545` 登录。直接远程访问与反向代理见下方网络设置。
+
+## 手动运行
+
+也可以直接运行与系统匹配的[发行二进制](https://github.com/oines/astral/releases/latest)，或使用[源码构建](/zh-cn/docs/start/get-astral/)。下面假设程序已命名为 `astral` 并放入 PATH，Windows 使用 `.exe`。
 
 ```sh
 astral serve --data ./data/server --computers-dir ./data/computers
 ```
-
-源码构建后的 `apps/web/dist/` 会被用作产品界面。脱离仓库运行时，按发行布局放置界面，或通过 `--web-dir` 指向该目录。
 
 在另一终端为**同一个数据目录**设置网页登录：
 
@@ -21,9 +49,7 @@ astral serve --data ./data/server --computers-dir ./data/computers
 astral auth setup --data ./data/server --username admin
 ```
 
-按提示输入并确认密码，然后在 Server 本机打开 `http://127.0.0.1:4545` 登录。密码通过终端隐藏输入，无需放进命令行参数。
-
-长期运行时使用绝对数据路径，并通过系统服务管理进程。重启时沿用相同目录，避免意外创建一套空数据。
+在 Server 本机打开 `http://127.0.0.1:4545` 登录。手动启动的前台进程通过 Ctrl+C 结束。长期运行时使用绝对路径和服务管理器，重启后沿用同一数据目录。
 
 ## 网络访问的三个设置
 
@@ -39,7 +65,7 @@ astral auth setup --data ./data/server --username admin
 
 ## 通过 HTTPS 反向代理访问
 
-Astral 本身提供 HTTP。需要 HTTPS 时，让 Caddy、Nginx 或你已有的代理终止 TLS。例如，代理与 Server 在同一台机器时：
+Astral 本身提供 HTTP。需要 HTTPS 时，让 Caddy、Nginx 或你已有的代理终止 TLS。由安装器管理的 Server，可重新执行安装命令，将结尾的 `bash` 改为 `bash -s -- --public-url https://astral.example.com`；未指定的设置会保留。手动以前台进程运行、代理与 Server 在同一台机器时：
 
 ```sh
 astral serve --data /srv/astral/server --computers-dir /srv/astral/computers \

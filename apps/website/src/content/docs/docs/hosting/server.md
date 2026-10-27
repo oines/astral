@@ -1,19 +1,47 @@
 ---
 title: "Run a Server"
-description: "Start Astral Server, create a web account, and configure network access."
+description: "Install Astral Server on a Linux VPS, create a web account, and configure network access."
 ---
 
-Build the program using [Get Astral](/docs/start/get-astral/). These examples assume the matching executable is named `astral` and available on PATH. You can instead use its full path in `dist/bin/`; use `.exe` on Windows.
+Official Server binaries include the Web UI. A separate frontend build is not required.
 
-## Start and create an account
+## Install on a Linux VPS
 
-From the repository root:
+Use Linux x86_64 or ARM64 with Bash, curl, Python 3, and a running systemd user manager. Run this command as the account that will own Astral:
+
+```sh
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+  https://github.com/oines/astral/releases/latest/download/install-server.sh | bash
+```
+
+The default installation is `${XDG_DATA_HOME:-$HOME/.local/share}/astral-server`. The installer validates the release and registers `astral-server.service` with `systemd --user`. It does not install a system-wide service or enable user lingering. For continuous hosting after logout and reboot, ask the VPS administrator to enable lingering for that account with `loginctl enable-linger USER`.
+
+To upgrade later, run the installation command again using the same account and root. Use `bash -s -- --tag v0.1.0` in place of `bash` to select a published version explicitly. Omitted network settings are preserved.
+
+## Create web sign-in
+
+Run the command printed by the installer. For the default installation:
+
+```sh
+"${XDG_DATA_HOME:-$HOME/.local/share}/astral-server/current/bin/astral" auth setup \
+  --data "${XDG_DATA_HOME:-$HOME/.local/share}/astral-server/data/server" --username admin
+```
+
+Enter and confirm the hidden password. Direct remote management is off by default. To open Astral through SSH, run this on your own computer, replacing `USER@VPS`:
+
+```sh
+ssh -N -L 4545:127.0.0.1:4545 USER@VPS
+```
+
+Then open `http://127.0.0.1:4545` in your browser and sign in. The network settings below cover direct remote access and reverse proxies.
+
+## Run manually
+
+You can also start the matching [release executable](https://github.com/oines/astral/releases/latest) or a [source build](/docs/start/get-astral/). These examples assume it is named `astral` and available on PATH; use `.exe` on Windows.
 
 ```sh
 astral serve --data ./data/server --computers-dir ./data/computers
 ```
-
-The built `apps/web/dist/` supplies the product interface. Outside the repository, retain the distribution layout or point `--web-dir` to that directory.
 
 In another terminal, initialize web sign-in for the **same data directory**:
 
@@ -21,9 +49,7 @@ In another terminal, initialize web sign-in for the **same data directory**:
 astral auth setup --data ./data/server --username admin
 ```
 
-Enter and confirm the hidden password, then open `http://127.0.0.1:4545` on the Server machine. Do not put the password in command-line arguments.
-
-For persistent hosting, use absolute data paths and a system service manager. Reuse the same directories after restarting.
+Open `http://127.0.0.1:4545` on the Server machine. A manual foreground process stops with Ctrl+C. For persistent hosting, use absolute data paths and a service manager, and reuse the same directories after restarting.
 
 ## Three network settings
 
@@ -39,7 +65,7 @@ CLI arguments override environment variables, which override saved settings. The
 
 ## Use an HTTPS reverse proxy
 
-Astral serves HTTP. Use Caddy, Nginx, or your existing proxy for HTTPS. For a proxy on the same machine:
+Astral serves HTTP. Use Caddy, Nginx, or your existing proxy for HTTPS. For an installer-managed Server, rerun the installation command with `bash -s -- --public-url https://astral.example.com` in place of `bash`; omitted settings are preserved. For a foreground Server with a proxy on the same machine:
 
 ```sh
 astral serve --data /srv/astral/server --computers-dir /srv/astral/computers \
