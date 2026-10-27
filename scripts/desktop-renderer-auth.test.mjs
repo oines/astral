@@ -81,6 +81,8 @@ test('a matching CDP target does not fetch until its live managed document is lo
   state.readyState = 'loading'
   state.elements = 0
   let requests = 0
+  let updateCalls = 0
+  globals.window.astralDesktop = undefined
   const evaluate = (_endpoint, expression) => runInNewContext(expression, {
     ...globals,
     fetch: async url => {
@@ -96,9 +98,11 @@ test('a matching CDP target does not fetch until its live managed document is lo
   state.readyState = 'complete'
   assert.equal(await rendererAuthentication(profile, origin, { evaluate }), false)
   assert.equal(requests, 0)
+  globals.window.astralDesktop = { updates: { state: async () => { updateCalls++; return { currentVersion: '0.0.0', phase: 'idle' } } } }
   state.elements = 1
   assert.equal(await rendererAuthentication(profile, origin, { evaluate }), true)
   assert.equal(requests, 1)
+  assert.equal(updateCalls, 1, 'The native 0.0.0 fixture bridge is invoked only after its document is loaded')
 })
 
 test('a destroyed navigation context is retried, with its CDP diagnosis preserved', async t => {

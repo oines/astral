@@ -114,16 +114,35 @@ export async function submit(file, configuration, { run = command, record = writ
   return acceptedSubmission({ id, status: response.status })
 }
 
-export async function staple(target, { run = command, pause = delay } = {}) {
-  // An Accepted submission's ticket may take a moment to reach the CDN.
+export async function staple(target, { run = command, pause = delay, log = console.log } = {}) {
+  const output = value => typeof value === 'string' ? value.slice(0, 16_384) + (value.length > 16_384 ? '\n[truncated]' : '') : ''
+  const record = (attempt, phase, result, failed = false) => {
+    const code = failed ? result?.code : 0
+    // Only stapler is logged here: its arguments contain a file, never notary
+    // credentials. Do not serialize child errors, messages or environment data.
+    log(`Stapler diagnostic: ${JSON.stringify({
+      target, attempt, phase,
+      exit_code: Number.isSafeInteger(code) || typeof code === 'string' && /^[A-Z_0-9]{1,64}$/.test(code) ? code : null,
+      stdout: output(result?.stdout), stderr: output(result?.stderr),
+    })}`)
+  }
+  // An Accepted ticket may not yet be usable. Each attempt must both attach
+  // and validate it; a successful staple alone never approves the artifact.
   for (let attempt = 0; ; attempt++) {
-    try { await run('xcrun', ['stapler', 'staple', target]); break }
+    try {
+      for (const phase of ['staple', 'validate']) {
+        let result
+        try { result = await run('xcrun', ['stapler', phase, target]) }
+        catch (error) { record(attempt + 1, phase, error, true); throw error }
+        record(attempt + 1, phase, result)
+      }
+      return
+    }
     catch (error) {
       if (attempt >= 4) throw error
       await pause((attempt + 1) * 20_000)
     }
   }
-  await run('xcrun', ['stapler', 'validate', target])
 }
 
 export async function verifyNotarizedApp(app, arch, { stapled = true, notarized = true, run = command, inspect = verifyApp } = {}) {
