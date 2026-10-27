@@ -22,7 +22,7 @@
 
 ## 构建环境变量
 
-在 **Production 与 Preview** 都设置：
+根目录的 `wrangler.jsonc` 是 Pages 配置的来源。Pages 检测到其中的 `pages_build_output_dir` 后，会从该文件读取构建变量，不能只在 Dashboard 中设置同名变量。以下公共变量维护在顶层 `vars`，用于本地 Pages 开发和 Preview：
 
 | 变量 | 值 | 用途 |
 | --- | --- | --- |
@@ -31,9 +31,11 @@
 | `SKIP_DEPENDENCY_INSTALL` | `1` | 禁用默认全仓安装，使用构建命令中的过滤安装 |
 | `HUSKY` | `0` | 构建环境无需 Git hooks |
 
-**仅 Production** 设置 `SITE_URL=https://astral.oines.dev`，不带子路径。正式站点使用 [astral.oines.dev](https://astral.oines.dev/)，在 Pages 项目的 Custom domains 中绑定该域名。
+`env.production.vars` 包含上述完整公共变量，并额外设置 `SITE_URL=https://astral.oines.dev`，不带子路径。`vars` 按整组覆盖，不会把生产环境的值与顶层逐项合并，因此这里必须保留公共变量。没有单独定义 `env.preview`，Preview 使用顶层变量，不包含 `SITE_URL`。
 
-Preview 不设置 `SITE_URL`。预览产物的 `robots.txt` 禁止索引，正式产物生成 canonical、语言链接和 sitemap。更换正式域名后更新此变量并重新构建；该变量不会替你配置 DNS 或绑定域名。
+预览产物的 `robots.txt` 禁止索引，正式产物生成 canonical、语言链接和 sitemap。更换正式域名后，修改 `env.production.vars.SITE_URL` 并重新构建；该变量不会替你配置 DNS 或绑定域名。正式域名仍需在 Pages 项目的 Custom domains 中绑定。
+
+部署后核对实际构建日志中的变量和 Node/pnpm 版本，再检查正式站点的 canonical、`robots.txt` 和 sitemap；Dashboard 中存在变量不代表该次构建已使用它们。本地直接运行 `pnpm check:website` 不会读取 Wrangler 配置，正式构建仍需像下方命令一样显式传入 `SITE_URL`。
 
 ## 控制哪些修改触发构建
 
@@ -76,6 +78,7 @@ pnpm dlx wrangler@4.152.0 pages deploy apps/website/dist --project-name astral-w
 ## 官方参考
 
 - [Monorepo 配置](https://developers.cloudflare.com/pages/configuration/monorepos/)
+- [Wrangler 配置来源与生产、预览环境](https://developers.cloudflare.com/pages/functions/wrangler-configuration/)
 - [构建工具版本与跳过默认安装](https://developers.cloudflare.com/pages/configuration/build-image/)
 - [构建监听路径](https://developers.cloudflare.com/pages/configuration/build-watch-paths/)
 - [静态重定向](https://developers.cloudflare.com/pages/configuration/redirects/)
