@@ -36,23 +36,23 @@ Use the desktop app on macOS, Windows or Linux, or run Astral Server on your own
 
 ## Get started
 
-**Astral is pre-release software. Public installers are not yet available.** You can build and run it from source; follow the [installation guide](https://astral.oines.dev/docs/start/get-astral/).
+See [Get Astral](https://astral.oines.dev/docs/start/get-astral/) for Desktop package availability on macOS, Windows and Linux, and source-build instructions. Published packages, release notes and checksums are listed on [GitHub Releases](https://github.com/oines/astral/releases). For a headless Linux VPS, see the [Server installation guide](https://astral.oines.dev/docs/hosting/server/).
 
-Install the development tools pinned in [mise.toml](mise.toml), then:
+To build from source, install the development tools pinned in [mise.toml](mise.toml). Core and its Models packages use the dependency fixed in `go.mod`; a separate Core checkout is not required. On macOS or Linux:
 
 ```sh
 git clone https://github.com/oines/astral.git
 cd astral
 pnpm install --frozen-lockfile
-git clone https://github.com/oines/astral-core.git ../agent-core
-cp go.work.example go.work
-pnpm build:distribution
+GOWORK=off pnpm build:distribution
 ```
+
+For Windows PowerShell, see the [source-build instructions](https://astral.oines.dev/docs/start/get-astral/#build-from-source). `GOWORK=off` prevents a local workspace from replacing the pinned dependency.
 
 Choose how to run it:
 
-- **Desktop:** [build a package for your platform](https://astral.oines.dev/docs/start/get-astral/). The app manages its local Server and Computer.
-- **Server:** [start the built binary and set up your Web account](https://astral.oines.dev/docs/hosting/server/). See [deployment and operations](https://astral.oines.dev/docs/hosting/server/) for a persistent installation and remote access.
+- **Desktop:** [download or build the package for your platform](https://astral.oines.dev/docs/start/get-astral/). The app manages its local Server and Computer.
+- **Server:** [install a published release or start a source-built binary](https://astral.oines.dev/docs/hosting/server/), set up web sign-in and configure remote access.
 
 On first launch:
 
@@ -80,7 +80,7 @@ Read the [website and user documentation](https://astral.oines.dev/). Their sour
 After installing dependencies, start the backend:
 
 ```sh
-pnpm dev:server
+GOWORK=off pnpm dev:server
 ```
 
 In another terminal, start the Web app:

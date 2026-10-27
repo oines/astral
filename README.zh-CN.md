@@ -36,9 +36,9 @@ Astral 是一个开源、可自托管的个人 AI Agent。它可以在同一个�
 
 ## 开始使用
 
-**Astral 目前处于预发布阶段，尚未提供公开安装包。** 你可以从源码构建并运行；具体步骤见[获取 Astral](https://astral.oines.dev/zh-cn/docs/start/get-astral/)。
+macOS、Windows 和 Linux 桌面安装包的发布状态、下载与源码构建步骤见[获取 Astral](https://astral.oines.dev/zh-cn/docs/start/get-astral/)。已发布的安装包、发行说明和校验和见 [GitHub Releases](https://github.com/oines/astral/releases)。Linux VPS 的无界面部署见 [Server 安装指南](https://astral.oines.dev/zh-cn/docs/hosting/server/)。
 
-先安装 [mise.toml](mise.toml) 固定的开发工具版本，然后执行：
+从源码构建时，先安装 [mise.toml](mise.toml) 固定的开发工具版本。Core 及其 Models 包的依赖版本已固定在 `go.mod`，无需另行下载 Core 源码。macOS 或 Linux 执行：
 
 ```sh
 git clone https://github.com/oines/astral.git
@@ -47,10 +47,12 @@ pnpm install --frozen-lockfile
 GOWORK=off pnpm build:distribution
 ```
 
+Windows PowerShell 步骤见[源码构建说明](https://astral.oines.dev/zh-cn/docs/start/get-astral/#从源码构建)。`GOWORK=off` 可避免本地工作区覆盖固定依赖。
+
 选择运行方式：
 
-- **桌面应用**：[构建当前平台的安装包](https://astral.oines.dev/zh-cn/docs/start/get-astral/)，由应用管理本地 Server 和电脑连接。
-- **服务器**：[启动构建出的程序并设置 Web 账号](https://astral.oines.dev/zh-cn/docs/hosting/server/)。长期运行与远程访问的配置见[部署与运维](https://astral.oines.dev/zh-cn/docs/hosting/server/)。
+- **桌面应用**：[下载或构建当前平台的安装包](https://astral.oines.dev/zh-cn/docs/start/get-astral/)，由应用管理本地 Server 和电脑连接。
+- **服务器**：[安装已发布版本或运行从源码构建的程序](https://astral.oines.dev/zh-cn/docs/hosting/server/)，再设置网页登录和远程访问。
 
 首次启动后：
 
@@ -89,7 +91,7 @@ pnpm dev
 
 桌面开发、本地模型测试服务和检查命令见[开发指南](docs/development.md#development-and-verification)。参与贡献请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；界面工作遵循 [UI/UX 规范](docs/ui-ux-spec.md)。安全问题请通过 [SECURITY.md](SECURITY.md) 中的私密渠道反馈。
 
-Astral 使用 [Astral Core](https://github.com/oines/astral-core) 作为 Agent 运行核心，通过 [astral-models](https://github.com/oines/astral-models) 对接模型服务协议。
+Astral 使用 [Astral Core monorepo](https://github.com/oines/astral-core)：Core 包管理持久化会话，Models 包负责模型服务协议、认证与模型元数据。
 
 ## 许可
 
