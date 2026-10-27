@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -23,37 +22,35 @@ import (
 )
 
 type DockerInfo struct {
-	Name     string
-	Arch     string
-	Context  string
-	Endpoint string
-	Desktop  bool
+	Name          string
+	Arch          string
+	Context       string
+	Endpoint      string
+	Platform      string
+	KernelVersion string
+	Desktop       bool
+	execution     *dockerExecution
 }
 
 type dockerTargetKey struct{}
 
 func dockerContext(ctx context.Context, info DockerInfo) context.Context {
+	info.execution = dockerExecutionFor(ctx, info)
 	return context.WithValue(ctx, dockerTargetKey{}, info)
 }
 func dockerCommand(ctx context.Context, args ...string) *exec.Cmd {
 	info, fixed := ctx.Value(dockerTargetKey{}).(DockerInfo)
+	execution := dockerExecutionFor(ctx, info)
 	if fixed {
 		args = append([]string{"--host", info.Endpoint}, args...)
 	}
-	executable, lookupErr := dockerExecutable()
-	command := exec.CommandContext(ctx, executable, args...)
-	if lookupErr != nil {
-		command.Err = lookupErr
+	command := exec.CommandContext(ctx, execution.executable, args...)
+	if execution.err != nil {
+		command.Err = execution.err
 	}
+	command.Env = append([]string{}, execution.env...)
 	if fixed {
-		for _, value := range os.Environ() {
-			key, _, _ := strings.Cut(value, "=")
-			switch strings.ToUpper(key) {
-			case "DOCKER_CONTEXT", "DOCKER_HOST", "DOCKER_TLS", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "BUILDX_BUILDER", "BUILDKIT_HOST":
-				continue
-			}
-			command.Env = append(command.Env, value)
-		}
+		command.Env = fixedDockerEnvironment(command.Env)
 	}
 	return command
 }
@@ -83,7 +80,8 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 		}
 		return fixed, nil
 	}
-	if _, err := dockerExecutable(); err != nil {
+	execution := currentDockerExecution()
+	if execution.err != nil {
 		message := "Install and start Docker Engine before creating a Computer container."
 		switch runtime.GOOS {
 		case "windows":
@@ -97,14 +95,15 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 	// and a busy local runtime without treating it as an unavailable engine.
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	ctx = context.WithValue(ctx, dockerExecutionKey{}, execution)
 	var raw []byte
 	var err error
 	var dockerContext struct {
 		Name      string
 		Endpoints map[string]struct{ Host string }
 	}
-	endpoint := os.Getenv("DOCKER_HOST")
-	selected := os.Getenv("DOCKER_CONTEXT")
+	endpoint := dockerEnvironmentValue(runtime.GOOS, execution.env, "DOCKER_HOST")
+	selected := dockerEnvironmentValue(runtime.GOOS, execution.env, "DOCKER_CONTEXT")
 	if selected != "" || endpoint == "" {
 		args := []string{"context", "inspect"}
 		if selected != "" {
@@ -123,7 +122,7 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 	if !localDockerEndpoint(endpoint) {
 		return DockerInfo{}, domain.Invalid("select a local Docker context for this shortcut; remote Docker endpoints are not the Server's host")
 	}
-	info := DockerInfo{Context: dockerContext.Name, Endpoint: endpoint}
+	info := DockerInfo{Context: dockerContext.Name, Endpoint: endpoint, execution: execution}
 	ctx = dockerContextForProbe(ctx, info)
 	// Unlike info, version does not enumerate CLI plugins. A canceled info
 	// command can leave a metadata plugin holding this process's cwd on Windows.
@@ -150,7 +149,9 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 	if arch != "arm64" && arch != "amd64" {
 		return DockerInfo{}, domain.Invalid("container architecture must be arm64 or amd64")
 	}
-	info.Name, info.Arch = strings.TrimSpace(wire.Platform.Name), arch
+	info.Platform = strings.TrimSpace(wire.Platform.Name)
+	info.KernelVersion = wire.KernelVersion
+	info.Name, info.Arch = info.Platform, arch
 	if strings.Contains(strings.ToLower(wire.KernelVersion), "orbstack") {
 		info.Name = "OrbStack"
 	}
@@ -164,7 +165,7 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 // Keep context selection out of subsequent operations: both environment
 // overrides and the user's default context may change during a long build.
 func dockerContextForProbe(ctx context.Context, info DockerInfo) context.Context {
-	return context.WithValue(ctx, dockerTargetKey{}, info)
+	return dockerContext(ctx, info)
 }
 func localDockerEndpoint(endpoint string) bool {
 	parsed, err := url.Parse(endpoint)
@@ -187,6 +188,7 @@ type DockerOptions struct {
 	Binary         string
 	EnrollmentFile string
 	Runtime        *DockerInfo
+	ServerURLs     []string
 	// RefreshEnrollment remounts an atomically replaced enrollment file in an
 	// existing container. Starting an already running container is a no-op.
 	RefreshEnrollment bool
@@ -338,6 +340,9 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 		return "", err
 	}
 	if id != "" {
+		if err = injectCreatedContainer(ctx, id, options.Binary, reportLine("injecting_daemon")); err != nil {
+			return id, err
+		}
 		action := "start"
 		if options.RefreshEnrollment {
 			action = "restart"
@@ -347,40 +352,32 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 		}
 		return id, nil
 	}
-	binary, err := os.Open(options.Binary)
-	if err != nil {
-		return "", fmt.Errorf("linux daemon binary is unavailable; build the release distribution: %w", err)
+	if info, statErr := os.Stat(options.Binary); statErr != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+		return "", fmt.Errorf("the Linux Daemon executable is unavailable: %s", options.Binary)
 	}
-	defer binary.Close()
-	hash := sha256.New()
-	if _, err = io.Copy(hash, binary); err != nil {
-		return "", err
-	}
-	_, _ = hash.Write([]byte(computerDockerfile))
-	image := "astral-computer:" + hex.EncodeToString(hash.Sum(nil)[:8])
-	contextDir, err := os.MkdirTemp("", "astral-image-")
+	image, err := computerImageReference()
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(contextDir)
-	if _, err = binary.Seek(0, io.SeekStart); err != nil {
+	if err = ensureComputerImage(ctx, image, probe.Arch, reportLine("pulling_image")); err != nil {
 		return "", err
 	}
-	target, err := os.OpenFile(filepath.Join(contextDir, "astral"), os.O_CREATE|os.O_WRONLY, 0755)
+	var enrollment ConnectOptions
+	if err = ReadJSON(options.EnrollmentFile, &enrollment); err != nil {
+		return "", err
+	}
+	if report != nil {
+		report("checking_network", "Checking container access to the Server.")
+	}
+	network, serverURL, err := containerRoute(ctx, image, probe.Arch, options.Binary, enrollment, options.ServerURLs, reportLine("checking_network"))
 	if err != nil {
 		return "", err
 	}
-	_, err = io.Copy(target, binary)
-	err = errors.Join(err, target.Close())
-	if err != nil {
-		return "", err
-	}
-	dockerfile := computerDockerfile
-	if err = os.WriteFile(filepath.Join(contextDir, "Dockerfile"), []byte(dockerfile), 0644); err != nil {
-		return "", err
-	}
-	if err = runDocker(ctx, reportLine("building_image"), "build", "--progress=plain", "--platform", "linux/"+probe.Arch, "-t", image, contextDir); err != nil {
-		return "", err
+	if serverURL != enrollment.ServerURL {
+		enrollment.ServerURL = serverURL
+		if err = WriteJSON(options.EnrollmentFile, enrollment); err != nil {
+			return "", err
+		}
 	}
 	volume := name + "-data"
 	if err = runDocker(ctx, reportLine("creating_volume"), "volume", "create", "--label", "astral.operation="+options.Identity, volume); err != nil {
@@ -393,8 +390,6 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 	if strings.TrimSpace(string(label)) != options.Identity {
 		return "", domain.Conflict("the data volume belongs to another operation")
 	}
-	// Native Linux and OrbStack retain host networking. Docker Desktop uses its
-	// ordinary bridge and the authenticated tunnel on the main Server listener.
 	host, err := os.Hostname()
 	if err != nil {
 		return "", err
@@ -403,16 +398,19 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 	if err != nil {
 		return "", err
 	}
-	network := "host"
-	if probe.Desktop && (runtime.GOOS == "windows" || runtime.GOOS == "darwin") {
-		network = "bridge"
-	}
-	args := []string{"create", "--name", name, "--init", "--restart", "unless-stopped", "--network", network,
+	args := []string{"create", "--pull", "never", "--platform", "linux/" + probe.Arch, "--name", name, "--init", "--restart", "unless-stopped", "--network", network,
+		"--entrypoint", "/usr/local/bin/astral",
 		"--label", "astral.operation=" + options.Identity,
 		"--env", "ASTRAL_CONTAINER_INFO=" + string(metadata),
 		"--mount", "type=volume,src=" + volume + ",dst=/var/lib/astral",
 		"--mount", dockerBindMount(options.EnrollmentFile, "/run/astral-enrollment.json"),
 		image, "computer", "supervise", "--enrollment-file", "/run/astral-enrollment.json", "--root", "/var/lib/astral"}
+	if network == "bridge" {
+		args = append([]string{"create", "--add-host", "astral.host.internal:host-gateway"}, args[1:]...)
+	}
+	if report != nil {
+		report("creating_container", "Creating the Computer container.")
+	}
 	raw, err := dockerOutput(ctx, args...)
 	if err != nil {
 		return "", err
@@ -422,7 +420,10 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 		return id, err
 	}
 	if report != nil {
-		report("starting", "Container created: "+id)
+		report("injecting_daemon", "Installing the Daemon into the container.")
+	}
+	if err = injectContainerDaemon(ctx, id, options.Binary); err != nil {
+		return id, err
 	}
 	if err = runDocker(ctx, reportLine("starting"), "start", id); err != nil {
 		return id, err
@@ -494,12 +495,26 @@ func (s *Server) provision(operation domain.Provisioning) {
 		return
 	}
 	ctx = dockerContext(ctx, probe)
+	root := filepath.Join(s.Config.ComputerDirectory, "provisioning", operation.ID)
+	var installation ContainerInstallation
+	if readErr := ReadJSON(filepath.Join(root, "container.json"), &installation); readErr == nil {
+		if installation.Identity != operation.ID {
+			fail(domain.Conflict("this directory belongs to another container operation"))
+			return
+		}
+		if installation.Endpoint != "" && installation.Endpoint != probe.Endpoint {
+			fail(domain.Conflict("this container belongs to another local Docker endpoint; select its original context"))
+			return
+		}
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		fail(readErr)
+		return
+	}
 	binary, err := s.binary("linux", probe.Arch)
 	if err != nil {
 		fail(err)
 		return
 	}
-	root := filepath.Join(s.Config.ComputerDirectory, "provisioning", operation.ID)
 	enrollmentPath := filepath.Join(root, "enrollment.json")
 	var enrollment ConnectOptions
 	alreadyRegistered := false
@@ -524,12 +539,10 @@ func (s *Server) provision(operation domain.Provisioning) {
 	}
 	if operation.EnrollmentID == "" {
 		localURL := s.URL
-		if probe.Desktop && (runtime.GOOS == "windows" || runtime.GOOS == "darwin") {
-			localURL = s.ContainerURL()
-			if localURL == "" {
-				fail(domain.Invalid("Docker Desktop requires the Astral Server main listener to be reachable from the container; use the default wildcard listen address"))
-				return
-			}
+		if refreshEnrollment && enrollment.ServerURL != "" {
+			// The original container retains its network. Keep its previously
+			// selected reachable route when replacing only the pairing token.
+			localURL = enrollment.ServerURL
 		}
 		result, enrollErr := s.Hub.Enroll(ctx, localURL, true, false)
 		if enrollErr != nil {
@@ -550,7 +563,12 @@ func (s *Server) provision(operation domain.Provisioning) {
 			return
 		}
 	}
-	id, err := LaunchContainer(ctx, DockerOptions{Identity: operation.ID, Binary: binary, EnrollmentFile: enrollmentPath, Runtime: &probe, RefreshEnrollment: refreshEnrollment}, report)
+	network := s.network.snapshot()
+	serverURLs := append([]string{}, network.PublicURLs.Value...)
+	for _, address := range network.Addresses {
+		serverURLs = append(serverURLs, address.URL)
+	}
+	id, err := LaunchContainer(ctx, DockerOptions{Identity: operation.ID, Binary: binary, EnrollmentFile: enrollmentPath, Runtime: &probe, ServerURLs: serverURLs, RefreshEnrollment: refreshEnrollment}, report)
 	operation.ContainerID = id
 	if err != nil {
 		fail(err)

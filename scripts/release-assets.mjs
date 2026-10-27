@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { createReadStream, readFileSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { desktopArtifactName, desktopUpdateFeeds, writeDesktopUpdateFeeds, validateDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { isDirectInvocation, readReleaseVersion, validateTag } from './release-version.mjs'
+import { recipeHash, recipePath, validateLock } from './computer-image-contract.mjs'
 
 export const distributionNames = ['darwin', 'linux', 'windows'].flatMap(system => ['amd64', 'arm64'].map(arch => `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`))
 
@@ -23,6 +24,11 @@ export function validateDataFormats(formats, { version, sourceSHA }) {
       formats.migration_status !== 'goose' || typeof formats.core_module_version !== 'string' || !formats.core_module_version ||
       formats.migration_baselines?.host !== 3 || formats.migration_baselines?.core !== 11 || Object.keys(formats.migration_baselines).length !== 2 ||
       formats.migration_targets?.host !== formats.host_schema || formats.migration_targets?.core !== formats.core_format || Object.keys(formats.migration_targets).length !== 2) throw new Error('Release format metadata does not match the candidate source/version and Goose migration contract.')
+  try {
+    validateLock(formats.computer_environment, recipeHash(readFileSync(recipePath)))
+  } catch (cause) {
+    throw new Error('Release format metadata does not match the current Computer environment recipe and immutable image lock contract.', { cause })
+  }
 }
 
 export async function validateMacSigningReport(report, { version, sourceSHA, files }) {
@@ -126,6 +132,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
     host_schema: formats.host_schema,
     core_format: formats.core_format,
     core_module_version: formats.core_module_version,
+    computer_environment: formats.computer_environment,
     migration_status: formats.migration_status,
     migration_baselines: formats.migration_baselines,
     migration_targets: formats.migration_targets,

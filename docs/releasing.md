@@ -10,8 +10,8 @@ As in Magpie, the maintainer chooses a version and pushes its tag after review a
 2. For a release, update both manifests together:
 
    ```sh
-   node scripts/release-version.mjs set 0.1.0
-   node scripts/release-version.mjs check --tag v0.1.0
+   node scripts/release-version.mjs set 0.1.1
+   node scripts/release-version.mjs check --tag v0.1.1
    ```
 
    `set` edits only the root and Desktop `package.json` versions. It does not commit, tag, install dependencies or build. The lockfile does not store these workspace versions. Go builds embed the root version; Electron reads the Desktop version.
@@ -19,8 +19,8 @@ As in Magpie, the maintainer chooses a version and pushes its tag after review a
 4. From that checked `main` commit, create and push a signed tag:
 
    ```sh
-   git tag -s v0.1.0 -m 'Astral 0.1.0'
-   git push origin v0.1.0
+   git tag -s v0.1.1 -m 'Astral 0.1.1'
+   git push origin v0.1.1
    ```
 
    These are maintainer actions, not commands run by the workflow. The example does not claim the tag already exists.
@@ -49,6 +49,12 @@ Different tags can build concurrently. The final publication job is serialized; 
 
 Only the Mac job receives signing secrets, through the protected `mac-signing` Environment restricted to `main` and version tags. It uses a temporary keychain with unconditional cleanup; missing credentials fail the job. Only the final publication job has `contents: write`. It uses the job-scoped `GITHUB_TOKEN`, not a personal access token. Actions in the release workflow are pinned to commits. Pull-request CI receives no signing credentials.
 
+## Computer environment images
+
+The Ubuntu Computer environment has an independent multi-architecture image publication pipeline. Only changes to its Dockerfile or other build inputs require a new Linux amd64/arm64 environment image. An application release references a reviewed immutable image digest; application version changes and Daemon changes alone do not rebuild that environment. Verify that the pinned image is anonymously pullable for both architectures before publishing an application that requires it.
+
+Applications pull the pinned environment, create the data volume and container, copy the matching Linux unified Astral program into its writable layer, and then start the existing supervisor. No user-side image build or host-mounted runtime directory is part of this path. Existing containers, including containers created by older application-built images, are retained across application updates. Daemon maintenance replaces only their program; it does not recreate the container or upgrade the environment image. Record the resolved digest, selected architecture and actual runtime in container acceptance evidence.
+
 ## Public assets and capabilities
 
 A complete public Release contains these six unified executable names:
@@ -76,7 +82,7 @@ Public manifests use `schema_version: 1`, `purpose: "release"` and `public_relea
 
 Only the runner's native architecture is exercised. Producing and inspecting the other architecture's packages does not prove native execution there. Checksums detect changed bytes but do not independently establish publisher identity.
 
-The collector retains an explicit `candidate` command for review-only fixtures or drafts. Its unsigned default cannot become public. A public collection requires the signed Mac evidence. Candidates keep `public_release_ready: false`; the default draft uploader cannot publish them. The landing page must link only verified public releases; the VPS installer rejects manifests that are not ready. Until the first successful tagged workflow publishes its real assets, public download URLs may return 404.
+The collector retains an explicit `candidate` command for review-only fixtures or drafts. Its unsigned default cannot become public. A public collection requires the signed Mac evidence. Candidates keep `public_release_ready: false`; the default draft uploader cannot publish them. The landing page must link only verified public releases; the VPS installer rejects manifests that are not ready. Keep the website's working version-labelled fallback until a newer complete release is actually published; preparing a version or building candidates does not establish public download availability.
 
 ## Initial data baseline and updates
 
@@ -99,6 +105,8 @@ The Linux VPS installer downloads and validates the latest distribution, stops t
 The source repository is public. History/credential review, attachment and asset-license cleanup, and public dependency checks are complete; retain secret scanning and push protection for later work.
 
 Before advertising downloads, require a successful real tagged workflow and inspect its complete assets and manifest. Code, fixture tests and a successful package build do not establish that a Release is published or that an actual N→N+1 Desktop update has passed; retain those as separate acceptance evidence. The final `published-install` job downloads the installer and distribution from the actual published tag, verifies the installer checksum, installs a current-user Server service, and checks its health, authenticated API and online local Computer before removing the test service. This runs under a disposable Linux CI user. It is a post-publication check: a failure does not retract an already published Release. The earlier native CI headless checks use actual programs with a local synthetic release transport and verify installation/recovery before publication. Link the landing page to the actual published Desktop assets and the documented user-mode Linux VPS command only after these checks pass.
+
+For updates from the first public release, the native post-publication command is `node scripts/check-desktop-update.mjs --published-from v0.1.0`. Unlike the pre-publication `0.0.0` fixture, it installs the real old release, verifies its SHA256SUMS and Mac Developer ID signature, and uses the old App's unchanged official Latest source. It verifies the exact target source/version before installation, retained Session/model records, key and Computer identity, old-process exit, target Server health and final installed content against the public packages. Run it only in fresh disposable native CI accounts; Linux requires an X display. Its JSON evidence identifies both source commits and package hashes without storing credentials. A missing/newer Latest or a failed native replacement is a failed acceptance result, not permission to rewrite an existing public Release.
 
 Optional later work includes Windows commercial signing, Linux package repositories, differential downloads, staged rollout, generated changelogs, SBOM/provenance attestations and more native architecture coverage. These do not require additional release channels.
 

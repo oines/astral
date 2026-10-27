@@ -7,10 +7,32 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/daemonservice"
 	"github.com/oines/astral/internal/platform"
 )
+
+// computerProbe is an internal, credential-free container route check. The
+// caller selects the first address that reaches the intended pinned Server.
+func computerProbe(ctx context.Context, args []string, stderr io.Writer) error {
+	f := flags("computer probe", stderr)
+	server := f.String("server", "", "Astral Server URL")
+	pin := f.String("server-pin", "", "Server SPKI SHA256 fingerprint")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if f.NArg() != 0 {
+		return fmt.Errorf("unexpected computer probe argument")
+	}
+	if *server == "" || *pin == "" {
+		return fmt.Errorf("--server and --server-pin are required")
+	}
+	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return computers.ProbeServer(bounded, *server, *pin)
+}
 
 func computerService(ctx context.Context, args []string, out, stderr io.Writer) error {
 	if len(args) == 0 {

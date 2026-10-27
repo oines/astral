@@ -39,9 +39,10 @@ jobs:
       - name: Check release versions and asset contracts
         run: |
           node scripts/release-version.mjs check
+          node scripts/computer-image.mjs verify
           node scripts/check-migrations.mjs
           node scripts/release-check.mjs
-          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs scripts/check-migrations.test.mjs
+          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs scripts/check-migrations.test.mjs scripts/computer-image.test.mjs scripts/published-desktop-update.test.mjs
       - name: Check headless installer without installing
         run: |
           bash -n scripts/install-server.sh
@@ -71,7 +72,7 @@ jobs:
       GOWORK: "off"
     steps:
       - uses: actions/checkout@v4
-      - name: Reserve space for the full Ubuntu environment
+      - name: Reserve space for the published Ubuntu environment
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
           docker builder prune --force

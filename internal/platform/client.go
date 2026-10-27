@@ -260,6 +260,19 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 	if existing, findErr := findExistingContainer(ctx, identity); findErr != nil {
 		return findErr
 	} else if existing != "" {
+		created, stateErr := containerAwaitingFirstStart(ctx, existing)
+		if stateErr != nil {
+			return stateErr
+		}
+		if created {
+			binary, binaryErr := containerBinary(ctx, options.Root, probe.Arch)
+			if binaryErr != nil {
+				return binaryErr
+			}
+			if err = injectContainerDaemon(ctx, existing, binary); err != nil {
+				return err
+			}
+		}
 		if err = runDocker(ctx, report, "start", existing); err != nil {
 			return err
 		}
@@ -274,7 +287,7 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 	if installation.ID == "" {
 		hostname, _ := os.Hostname()
 		if preparation.LocalContainerURL, err = computers.PrepareRemoteContainer(ctx, options.ServerURL, options.ServerPin, options.EnrollmentID, options.Token, hostname); err != nil {
-			return fmt.Errorf("claim container preparation before building its environment: %w", err)
+			return fmt.Errorf("claim container preparation before downloading its environment: %w", err)
 		}
 	}
 	enrollmentPath := filepath.Join(options.Root, "container-enrollment.json")
@@ -296,28 +309,15 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 		inside.ServerURL = previous.ServerURL
 	} else if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
 		return previousErr
-	} else if probe.Desktop && (runtime.GOOS == "windows" || runtime.GOOS == "darwin") {
-		parsed, _ := url.Parse(options.ServerURL)
-		if isLoopbackHost(parsed.Hostname()) {
-			if preparation.LocalContainerURL == "" {
-				return domain.Invalid("the selected loopback Server address is not reachable from Docker Desktop; use a LAN/Tailscale address and bind the Server to an address Docker can reach")
-			}
-			inside.ServerURL = preparation.LocalContainerURL
-		}
 	}
-	binary := filepath.Join(options.Root, "astral-linux-"+probe.Arch)
-	if runtime.GOOS == "linux" && runtime.GOARCH == probe.Arch {
-		binary, err = os.Executable()
-	} else {
-		err = downloadVerifiedBinary(ctx, "astral-linux-"+probe.Arch, binary)
-	}
+	binary, err := containerBinary(ctx, options.Root, probe.Arch)
 	if err != nil {
 		return err
 	}
 	if err = WriteJSON(enrollmentPath, inside); err != nil {
 		return err
 	}
-	id, err := LaunchContainer(ctx, DockerOptions{Identity: identity, Binary: binary, EnrollmentFile: enrollmentPath, Runtime: &probe}, func(phase, line string) {
+	id, err := LaunchContainer(ctx, DockerOptions{Identity: identity, Binary: binary, EnrollmentFile: enrollmentPath, Runtime: &probe, ServerURLs: []string{preparation.LocalContainerURL}}, func(phase, line string) {
 		if report != nil {
 			report(phase + ": " + line)
 		}
@@ -329,6 +329,14 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 		report("Container started: " + id + ". Astral will show it online after its Daemon connects.")
 	}
 	return nil
+}
+
+func containerBinary(ctx context.Context, root, arch string) (string, error) {
+	if runtime.GOOS == "linux" && runtime.GOARCH == arch {
+		return os.Executable()
+	}
+	binary := filepath.Join(root, "astral-linux-"+arch)
+	return binary, downloadVerifiedBinary(ctx, "astral-linux-"+arch, binary)
 }
 
 const officialReleaseBase = "https://github.com/oines/astral/releases/latest/download"

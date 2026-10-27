@@ -290,6 +290,8 @@ func computer(ctx context.Context, args []string, out, stderr io.Writer) error {
 	switch args[0] {
 	case "status":
 		return computerStatus(ctx, args[1:], out, stderr)
+	case "probe":
+		return computerProbe(ctx, args[1:], stderr)
 	case "connect":
 		f := flags("computer connect", stderr)
 		var options platform.ConnectOptions

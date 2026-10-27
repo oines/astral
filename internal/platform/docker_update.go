@@ -10,8 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,16 +59,9 @@ func UpdateContainerDaemon(ctx context.Context, identity, binaryPath, expectedVe
 	if json.Unmarshal(raw, &credentials) != nil || credentials.ComputerID == "" {
 		return errors.New("existing container has no usable enrolled Computer credentials")
 	}
-	// host.docker.internal resolves inside Docker Desktop. The updater runs on
-	// its host and reaches the same main listener through loopback.
-	if parsed, parseErr := url.Parse(credentials.ServerURL); parseErr == nil && parsed.Hostname() == "host.docker.internal" {
-		port := parsed.Port()
-		parsed.Host = "127.0.0.1"
-		if port != "" {
-			parsed.Host = net.JoinHostPort("127.0.0.1", port)
-		}
-		credentials.ServerURL = parsed.String()
-	}
+	// Docker host aliases are container-only names. The manual updater runs on
+	// that host and reaches the same listener through loopback, with the pin kept.
+	credentials.ServerURL = containerServerURLOnHost(credentials.ServerURL)
 	before, _ := computerStatus(ctx, credentials)
 	file, err := os.Open(binaryPath)
 	if err != nil {

@@ -2,6 +2,7 @@ import { readFile, realpath, rename, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { recipeHash, validateLock } from './computer-image-contract.mjs'
 
 export const repositoryRoot = fileURLToPath(new URL('../', import.meta.url))
 const manifests = ['package.json', 'apps/desktop/package.json']
@@ -52,6 +53,8 @@ export async function readDataFormats(binary, sourceSHA, root = repositoryRoot) 
   const metadata = JSON.parse(execFileSync(path.resolve(binary), ['version', '--json'], { encoding: 'utf8', timeout: 15_000, maxBuffer: 64 << 10 }))
   const goModule = await readFile(path.join(root, 'go.mod'), 'utf8')
   const dependency = /^\s*github\.com\/oines\/astral-core\s+(\S+)\s*$/m.exec(goModule)
+  const environmentDirectory = path.join(root, 'internal/platform/computer-image')
+  const computerEnvironment = validateLock(JSON.parse(await readFile(path.join(environmentDirectory, 'image-lock.json'), 'utf8')), recipeHash(await readFile(path.join(environmentDirectory, 'Dockerfile'))))
   if (metadata.version !== version || !Number.isSafeInteger(metadata.data_formats?.host) || metadata.data_formats.host < 1 ||
       !Number.isSafeInteger(metadata.data_formats?.core) || metadata.data_formats.core < 1 || !dependency ||
       metadata.migration_status !== 'goose' || metadata.migration_baselines?.host !== 3 || metadata.migration_baselines?.core !== 11 ||
@@ -66,6 +69,7 @@ export async function readDataFormats(binary, sourceSHA, root = repositoryRoot) 
     host_schema: metadata.data_formats.host,
     core_format: metadata.data_formats.core,
     core_module_version: dependency[1],
+    computer_environment: computerEnvironment,
     migration_status: metadata.migration_status,
     migration_baselines: metadata.migration_baselines,
     migration_targets: metadata.migration_targets,

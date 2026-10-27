@@ -9,12 +9,14 @@ on:
       - internal/platform/computer-image/Dockerfile
       - scripts/computer-image.mjs
       - scripts/computer-image-build.mjs
+      - scripts/computer-image-contract.mjs
       - .github/workflows/computer-image.yml
   pull_request:
     paths:
       - internal/platform/computer-image/Dockerfile
       - scripts/computer-image.mjs
       - scripts/computer-image-build.mjs
+      - scripts/computer-image-contract.mjs
       - .github/workflows/computer-image.yml
   workflow_dispatch:
 
