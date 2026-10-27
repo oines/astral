@@ -58,7 +58,9 @@ jobs:
         run: node scripts/computer-image-build.mjs --arch "$IMAGE_ARCH"
 
   publish-platform:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == github.repository_owner)
+    # The owner may explicitly publish a reviewed candidate ref, so its verified
+    # lock can join the recipe PR before the ordinary release gate runs.
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner)
     strategy:
       fail-fast: false
       matrix:
