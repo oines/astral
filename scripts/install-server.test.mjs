@@ -40,14 +40,15 @@ function pythonBlock(marker) {
 }
 const releaseValidator = pythonBlock('tag=$(python3 - ')
 const manifestValidator = pythonBlock('metadata=$(python3 - ')
+const forwardFormatValidator = pythonBlock('python3 - "$old_formats" "$new_formats"')
 
 function manifest(version) {
   const names = ['darwin', 'linux', 'windows'].flatMap(system => ['amd64', 'arm64'].map(arch => `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`))
   return {
     schema_version: 1, purpose: 'release', public_release_ready: true,
     version, tag: `v${version}`, source_sha: 'a'.repeat(40),
-    host_schema: 3, core_format: 10, data_formats: { host: 3, core: 10 },
-    migration_status: 'goose', migration_baselines: { host: 3, core: 10 }, migration_targets: { host: 3, core: 10 },
+    host_schema: 3, core_format: 11, data_formats: { host: 3, core: 11 },
+    migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 },
     distribution_names: names,
     assets: [...names, 'checksums.txt', 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt'].map(name => ({ name, size: 1, sha256: 'b'.repeat(64) })),
   }
@@ -99,6 +100,35 @@ test('ordinary release versions retain published, stable-latest and public-ready
     const result = await run('python3', ['-c', manifestValidator, file, 'v0.1.0'])
     assert.notEqual(result.code, 0)
     assert.match(result.stderr, /public_release_ready/)
+  }
+})
+
+test('installer accepts the current Core baseline and rejects the previous baseline', supported, async t => {
+  const directory = await fixture(t)
+  const file = path.join(directory, 'manifest.json')
+  const current = manifest('0.1.0')
+  await writeFile(file, JSON.stringify(current))
+  assert.equal((await run('python3', ['-c', manifestValidator, file, 'v0.1.0'])).code, 0)
+  for (const value of [
+    { ...current, migration_baselines: { host: 3, core: 10 } },
+    { ...current, core_format: 10, data_formats: { host: 3, core: 10 }, migration_targets: { host: 3, core: 10 } },
+  ]) {
+    await writeFile(file, JSON.stringify(value))
+    const result = await run('python3', ['-c', manifestValidator, file, 'v0.1.0'])
+    assert.notEqual(result.code, 0)
+    assert.match(result.stderr, /Invalid Goose migration ranges/)
+  }
+})
+
+test('forward-format preflight rejects private Core formats and downgrades before updating a service', supported, async () => {
+  for (const [previous, next] of [['3 11', '3 11'], ['3 11', '3 12'], ['3 12', '4 14']]) {
+    const result = await run('python3', ['-c', forwardFormatValidator, previous, next])
+    assert.equal(result.code, 0, `${previous} → ${next}: ${result.stderr}`)
+  }
+  for (const [previous, next] of [['3 10', '3 11'], ['2 11', '3 11'], ['3 12', '3 11'], ['4 11', '3 11'], ['3', '3 11'], ['3 11 1', '3 11']]) {
+    const result = await run('python3', ['-c', forwardFormatValidator, previous, next])
+    assert.notEqual(result.code, 0, `Accepted unsupported forward formats ${previous} → ${next}`)
+    assert.match(result.stderr, /outside the supported forward migration chain/)
   }
 })
 

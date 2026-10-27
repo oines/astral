@@ -60,8 +60,7 @@ export type AstralCoreCompactionRecord = {
 };
 
 export type AstralCoreConfiguration = {
-    model_id: string;
-    options?: AstralCoreGenerationOptions;
+    selection: AstralCoreModelSelection;
     system_prompt: string;
     tools?: Array<AstralCoreToolDefinition>;
 };
@@ -204,6 +203,12 @@ export type AstralCoreModelEvent = {
     type: string;
 };
 
+export type AstralCoreModelSelection = {
+    id: string;
+    options?: AstralCoreGenerationOptions;
+    reasoning?: AstralCoreReasoningOptions;
+};
+
 export type AstralCoreModelSpec = {
     context_window: number;
     id: string;
@@ -279,6 +284,7 @@ export type AstralCoreRequestInput = {
     model: AstralCoreModelSpec;
     rollout_id: string;
     selection?: Array<number>;
+    snapshot?: unknown;
 };
 
 export type AstralCoreResponseFormat = {
@@ -360,6 +366,89 @@ export type AstralCoreUsage = {
     output_missing?: boolean;
     output_tokens?: number;
     reasoning_tokens?: number;
+};
+
+export type AstralCoreModelsReasoningBudgetControl = {
+    max?: number;
+    min?: number;
+};
+
+export type AstralCoreModelsReasoningControls = {
+    budget?: AstralCoreModelsReasoningBudgetControl;
+    diagnostics?: Array<AstralCoreModelsReasoningDiagnostic>;
+    format: string;
+    options: Array<AstralCoreModelsReasoningOption>;
+};
+
+export type AstralCoreModelsReasoningDiagnostic = {
+    code: string;
+    message: string;
+    path: string;
+};
+
+export type AstralCoreModelsReasoningMapping = {
+    efforts?: {
+        [key: string]: unknown;
+    };
+    fields: Array<string>;
+    off?: unknown;
+    on?: unknown;
+};
+
+export type AstralCoreModelsReasoningOption = {
+    id: string;
+    value: AstralCoreReasoningOptions;
+};
+
+export type AstralCoreModelsIntegrationDiscovery = {
+    dialect?: string;
+    id: string;
+    name: string;
+    protocol?: string;
+    recommendation_sources?: {
+        [key: string]: AstralCoreModelsIntegrationRecommendationSource;
+    };
+    recommendation_target?: AstralCoreModelsIntegrationRecommendationTarget;
+    recommendations: {
+        [key: string]: unknown;
+    };
+    source?: string;
+};
+
+export type AstralCoreModelsIntegrationPresetRegion = {
+    base_url: string;
+    id: string;
+    name: string;
+};
+
+export type AstralCoreModelsIntegrationProviderPreset = {
+    auth: string;
+    base_url: string;
+    category: string;
+    dialect: string;
+    docs_url?: string;
+    icon: string;
+    id: string;
+    key_placeholder?: string;
+    key_url?: string;
+    name: string;
+    protocol: string;
+    protocols?: Array<string>;
+    reasoning_format?: string;
+    regions?: Array<AstralCoreModelsIntegrationPresetRegion>;
+    requires_url?: boolean;
+};
+
+export type AstralCoreModelsIntegrationRecommendationSource = {
+    source: string;
+    updated_at: string;
+};
+
+export type AstralCoreModelsIntegrationRecommendationTarget = {
+    contract: string;
+    dialect?: string;
+    model_id: string;
+    protocol: string;
 };
 
 export type AstralInternalAuthAccountInput = {
@@ -730,6 +819,7 @@ export type AstralInternalDomainMarkdownTemplateParam = {
 };
 
 export type AstralInternalDomainModelProfile = {
+    available?: boolean;
     catalog_at?: string;
     catalog_source?: string;
     created_at: string;
@@ -744,16 +834,20 @@ export type AstralInternalDomainModelProfile = {
     };
     protocol?: string;
     provider_id: string;
-    reasoning_controls?: AstralModelsReasoningControls;
+    provider_name?: string;
+    reasoning_controls?: AstralCoreModelsReasoningControls;
     reasoning_error?: string;
     recommendation_sources?: {
-        [key: string]: AstralInternalDomainRecommendationSource;
+        [key: string]: AstralCoreModelsIntegrationRecommendationSource;
     };
+    recommendation_target?: AstralCoreModelsIntegrationRecommendationTarget;
     recommendations: {
         [key: string]: unknown;
     };
     revision: number;
+    unavailable_reason?: string;
     updated_at: string;
+    user_modified?: boolean;
     verification?: AstralInternalDomainModelVerification;
 };
 
@@ -832,7 +926,7 @@ export type AstralInternalDomainProvider = {
     preset_id?: string;
     protocol: string;
     reasoning_format?: string;
-    reasoning_mapping?: AstralModelsReasoningMapping;
+    reasoning_mapping?: AstralCoreModelsReasoningMapping;
     replay_revision?: number;
     revision: number;
     updated_at: string;
@@ -851,11 +945,6 @@ export type AstralInternalDomainProvisioning = {
     phase: string;
     revision: number;
     state: string;
-    updated_at: string;
-};
-
-export type AstralInternalDomainRecommendationSource = {
-    source: string;
     updated_at: string;
 };
 
@@ -892,12 +981,8 @@ export type AstralInternalDomainSession = {
     deletion?: AstralInternalDomainSessionDeletion;
     fork_entry_id?: string;
     id: string;
-    model_ref?: string;
-    options: AstralCoreGenerationOptions;
     parent_session_id?: string;
     pinned: boolean;
-    profile_id?: string;
-    reasoning?: AstralCoreReasoningOptions;
     revision: number;
     source: string;
     title: string;
@@ -1099,8 +1184,8 @@ export type AstralInternalHarnessView = {
     head_id: string;
     id: string;
     last_run?: AstralCoreRunRecord;
-    model_ref?: string;
-    options: AstralCoreGenerationOptions;
+    model_available: boolean;
+    model_unavailable_reason?: string;
     parent_session_id?: string;
     pending: Array<AstralInternalHarnessPendingInput>;
     pinned: boolean;
@@ -1109,6 +1194,7 @@ export type AstralInternalHarnessView = {
     revision: number;
     rollout_id: string;
     run_id?: string;
+    selection: AstralCoreModelSelection;
     source: string;
     status: string;
     title: string;
@@ -1308,7 +1394,7 @@ export type AstralInternalHttpapiProviderInput = {
     preset_id?: string;
     protocol: string;
     reasoning_format?: string;
-    reasoning_mapping?: AstralModelsReasoningMapping;
+    reasoning_mapping?: AstralCoreModelsReasoningMapping;
     replay_revision?: number;
     revision: number;
     updated_at: string;
@@ -1410,55 +1496,11 @@ export type AstralInternalModelbridgeAuthorization = {
     verification_url?: string;
 };
 
-export type AstralInternalModelbridgeDiscovery = {
-    dialect?: string;
-    id: string;
-    name: string;
-    protocol?: string;
-    recommendation_sources?: {
-        [key: string]: AstralInternalDomainRecommendationSource;
-    };
-    recommendations: {
-        [key: string]: unknown;
-    };
-    source?: string;
-};
-
-export type AstralInternalModelbridgeImportModelsInput = {
-    ids?: Array<string>;
-    refresh: boolean;
-};
-
-export type AstralInternalModelbridgeImportModelsResult = {
-    catalog_error?: string;
-    imported: Array<AstralInternalDomainModelProfile>;
-    skipped: Array<string>;
-};
-
-export type AstralInternalModelbridgePresetRegion = {
-    base_url: string;
-    id: string;
-    name: string;
-};
-
-export type AstralInternalModelbridgeProviderPreset = {
-    auth: string;
-    base_url: string;
-    catalog_date: string;
-    category: string;
-    dialect: string;
-    docs_url?: string;
-    icon: string;
-    id: string;
-    key_placeholder?: string;
-    key_url?: string;
-    model_count: number;
-    name: string;
-    protocol: string;
-    protocols?: Array<string>;
-    reasoning_format?: string;
-    regions?: Array<AstralInternalModelbridgePresetRegion>;
-    requires_url?: boolean;
+export type AstralInternalModelbridgeRefreshResult = {
+    added: number;
+    removed: number;
+    unchanged: number;
+    updated: number;
 };
 
 export type AstralInternalPersistenceStoredObservation = {
@@ -1620,38 +1662,6 @@ export type AstralInternalSearchResult = {
     summary: string;
     title: string;
     url: string;
-};
-
-export type AstralModelsReasoningBudgetControl = {
-    max?: number;
-    min?: number;
-};
-
-export type AstralModelsReasoningControls = {
-    budget?: AstralModelsReasoningBudgetControl;
-    diagnostics?: Array<AstralModelsReasoningDiagnostic>;
-    format: string;
-    options: Array<AstralModelsReasoningOption>;
-};
-
-export type AstralModelsReasoningDiagnostic = {
-    code: string;
-    message: string;
-    path: string;
-};
-
-export type AstralModelsReasoningMapping = {
-    efforts?: {
-        [key: string]: unknown;
-    };
-    fields: Array<string>;
-    off?: unknown;
-    on?: unknown;
-};
-
-export type AstralModelsReasoningOption = {
-    id: string;
-    value: AstralCoreReasoningOptions;
 };
 
 export type ListAgentsData = {
@@ -2827,6 +2837,31 @@ export type SaveModelResponses = {
 
 export type SaveModelResponse = SaveModelResponses[keyof SaveModelResponses];
 
+export type DescribeModelData = {
+    body: AstralInternalDomainModelProfile;
+    path?: never;
+    query?: never;
+    url: '/api/v1/models/describe';
+};
+
+export type DescribeModelErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type DescribeModelError = DescribeModelErrors[keyof DescribeModelErrors];
+
+export type DescribeModelResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainModelProfile;
+};
+
+export type DescribeModelResponse = DescribeModelResponses[keyof DescribeModelResponses];
+
 export type DeleteModelData = {
     body?: never;
     path: {
@@ -2855,33 +2890,6 @@ export type DeleteModelResponses = {
 };
 
 export type DeleteModelResponse = DeleteModelResponses[keyof DeleteModelResponses];
-
-export type RefreshModelData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/models/{id}/refresh';
-};
-
-export type RefreshModelErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type RefreshModelError = RefreshModelErrors[keyof RefreshModelErrors];
-
-export type RefreshModelResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalDomainModelProfile;
-};
-
-export type RefreshModelResponse = RefreshModelResponses[keyof RefreshModelResponses];
 
 export type VerifyModelData = {
     body?: never;
@@ -3086,7 +3094,7 @@ export type ListProviderPresetsResponses = {
     /**
      * OK
      */
-    200: Array<AstralInternalModelbridgeProviderPreset>;
+    200: Array<AstralCoreModelsIntegrationProviderPreset>;
 };
 
 export type ListProviderPresetsResponse = ListProviderPresetsResponses[keyof ListProviderPresetsResponses];
@@ -3113,7 +3121,7 @@ export type PresetModelsResponses = {
     /**
      * OK
      */
-    200: Array<AstralInternalModelbridgeDiscovery>;
+    200: Array<AstralCoreModelsIntegrationDiscovery>;
 };
 
 export type PresetModelsResponse = PresetModelsResponses[keyof PresetModelsResponses];
@@ -3246,37 +3254,10 @@ export type ModelCatalogResponses = {
     /**
      * OK
      */
-    200: Array<AstralInternalModelbridgeDiscovery>;
+    200: Array<AstralCoreModelsIntegrationDiscovery>;
 };
 
 export type ModelCatalogResponse = ModelCatalogResponses[keyof ModelCatalogResponses];
-
-export type ImportModelsData = {
-    body: AstralInternalModelbridgeImportModelsInput;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/api/v1/providers/{id}/import';
-};
-
-export type ImportModelsErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type ImportModelsError = ImportModelsErrors[keyof ImportModelsErrors];
-
-export type ImportModelsResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalModelbridgeImportModelsResult;
-};
-
-export type ImportModelsResponse = ImportModelsResponses[keyof ImportModelsResponses];
 
 export type ModelRecommendationData = {
     body?: never;
@@ -3302,10 +3283,37 @@ export type ModelRecommendationResponses = {
     /**
      * OK
      */
-    200: AstralInternalModelbridgeDiscovery;
+    200: AstralCoreModelsIntegrationDiscovery;
 };
 
 export type ModelRecommendationResponse = ModelRecommendationResponses[keyof ModelRecommendationResponses];
+
+export type RefreshProviderModelsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/providers/{id}/refresh';
+};
+
+export type RefreshProviderModelsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type RefreshProviderModelsError = RefreshProviderModelsErrors[keyof RefreshProviderModelsErrors];
+
+export type RefreshProviderModelsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalModelbridgeRefreshResult;
+};
+
+export type RefreshProviderModelsResponse = RefreshProviderModelsResponses[keyof RefreshProviderModelsResponses];
 
 export type ReasoningFormatsData = {
     body?: never;
@@ -3538,7 +3546,7 @@ export type CreateSessionResponses = {
     /**
      * OK
      */
-    200: AstralInternalDomainSession;
+    200: AstralInternalHarnessView;
 };
 
 export type CreateSessionResponse = CreateSessionResponses[keyof CreateSessionResponses];

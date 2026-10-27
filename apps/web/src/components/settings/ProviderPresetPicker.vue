@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { AstralInternalModelbridgeProviderPreset as Preset } from '@astral/sdk'
+import type { AstralCoreModelsIntegrationProviderPreset as Preset } from '@astral/sdk'
 import { Popover } from '@astral/ui'
 import { Check, ChevronDown, Plus, ProviderIcon, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'

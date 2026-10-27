@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	core "github.com/oines/astral-core"
+	"github.com/oines/astral-core/models/provider"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
 )
@@ -89,11 +90,6 @@ func TestVerificationRevisionAndImmutableCredentials(t *testing.T) {
 		if (selectionErr == nil) != enabled {
 			t.Fatalf("model enable state %v: %v", enabled, selectionErr)
 		}
-		if !enabled {
-			if _, err := model.Stream(ctx, core.Request{ModelID: ref}, func(core.ModelEvent) {}); err == nil {
-				t.Fatal("resolved model ignored current disabled state")
-			}
-		}
 	}
 	for _, enabled := range []bool{false, true} {
 		provider.Enabled = &enabled
@@ -103,11 +99,6 @@ func TestVerificationRevisionAndImmutableCredentials(t *testing.T) {
 		_, _, selectionErr := bridge.Selection(ctx, profile.ID)
 		if (selectionErr == nil) != enabled {
 			t.Fatalf("provider enable state %v: %v", enabled, selectionErr)
-		}
-		if !enabled {
-			if _, err := model.Stream(ctx, core.Request{ModelID: ref}, func(core.ModelEvent) {}); err == nil {
-				t.Fatal("resolved model ignored current disabled provider")
-			}
 		}
 	}
 	key = "test-new-key"
@@ -141,7 +132,7 @@ func TestVerificationRevisionAndImmutableCredentials(t *testing.T) {
 	}
 }
 
-func TestCatalogRefreshRetainsOverridesAndNativeEfforts(t *testing.T) {
+func TestCatalogProvidesNativeEffortsForImportedModel(t *testing.T) {
 	ctx := context.Background()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -159,15 +150,16 @@ func TestCatalogRefreshRetainsOverridesAndNativeEfforts(t *testing.T) {
 		t.Fatal(err)
 	}
 	profile := domain.ModelProfile{ProviderID: provider.ID, ModelID: "flash", Name: "Flash", Recommendations: map[string]json.RawMessage{
-		"context_window": raw(128000), "max_output_tokens": raw(8192),
+		"context_window": raw(128000), "max_output_tokens": raw(8192), "reasoning": raw(map[string]any{"efforts": []string{"low"}}),
 	}, Overrides: map[string]json.RawMessage{"max_output_tokens": raw(16384), "defaults": raw(core.GenerationOptions{Reasoning: core.ReasoningOptions{Effort: "low"}})}}
 	if err = bridge.SaveProfile(ctx, &profile); err != nil {
 		t.Fatal(err)
 	}
-	profile, err = bridge.Refresh(ctx, profile.ID)
-	if err != nil {
-		t.Fatal(err)
+	catalog, err := bridge.Catalog(ctx, provider.ID)
+	if err != nil || len(catalog) != 1 {
+		t.Fatalf("catalog: %+v %v", catalog, err)
 	}
+	profile.Recommendations = catalog[0].Recommendations
 	values, sources, err := profile.Effective()
 	if err != nil || values.MaxOutputTokens != 16384 || values.ContextWindow != 1048576 || values.Defaults.Reasoning.Effort != "low" || sources["max_output_tokens"] != "override" {
 		t.Fatalf("catalog overwrote overrides: %+v %v", values, err)
@@ -179,31 +171,39 @@ func TestCatalogRefreshRetainsOverridesAndNativeEfforts(t *testing.T) {
 	}
 }
 
-func TestImagesAreResolvedOnlyForTransientRequest(t *testing.T) {
+func TestImagesArePreparedBySDKWithoutMutatingPersistentInput(t *testing.T) {
 	ctx := context.Background()
-	var captured core.Request
-	base := core.ModelFunc{Specification: core.ModelSpec{ID: "test", ContextWindow: 10000, MaxOutputTokens: 1000}, Generate: func(_ context.Context, req core.Request, _ func(core.ModelEvent)) (core.Reply, error) {
-		captured = req
-		return core.Reply{Message: core.Message{Role: core.RoleAssistant, Content: core.Text("seen"), FinishReason: core.FinishStop}}, nil
-	}}
-	model := &boundModel{adapter: estimateAdapter{base}, images: "supported"}
-	request := core.Request{ModelID: "test", Messages: []core.Message{{Role: core.RoleUser, Content: []core.Content{{Type: "image", MediaType: "image/png", URL: "astral-file://computer/file", Data: raw("ZnJvemVuLXBpeGVscw==")}}}}}
-	if _, err := model.Stream(ctx, request, func(core.ModelEvent) {}); err != nil {
+	bridge := testBridge(t)
+	var captured map[string]json.RawMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Error(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"seen"}}]}`))
+	}))
+	defer server.Close()
+	connection := domain.Provider{Name: "images", Protocol: "openai-completions", Dialect: "compatible", BaseURL: server.URL}
+	if err := bridge.SaveProvider(ctx, &connection, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if captured.Messages[0].Content[0].URL != "data:image/png;base64,ZnJvemVuLXBpeGVscw==" || request.Messages[0].Content[0].URL != "astral-file://computer/file" || len(request.Messages[0].Content[0].Data) == 0 {
-		t.Fatal("transient media encoding mutated the persistent request")
+	profile := domain.ModelProfile{ProviderID: connection.ID, ModelID: "new-model", Name: "Images", Recommendations: map[string]json.RawMessage{"context_window": raw(10000), "max_output_tokens": raw(1000), "images": raw("supported"), "streaming": raw(false)}}
+	if err := bridge.SaveProfile(ctx, &profile); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := bridge.ResolveSelection(ctx, core.ModelSelection{ID: profile.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := core.Request{Messages: []core.Message{{Role: core.RoleUser, Content: []core.Content{{Type: "image", MediaType: "image/png", URL: "astral-file://computer/file", Data: raw("ZnJvemVuLXBpeGVscw==")}}}}}
+	if _, err := provider.Call(ctx, resolved.Model, request, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(captured["messages"]), "data:image/png;base64,ZnJvemVuLXBpeGVscw==") || request.Messages[0].Content[0].URL != "astral-file://computer/file" || len(request.Messages[0].Content[0].Data) == 0 {
+		t.Fatal("transient SDK media preparation mutated persistent pixels")
 	}
 	request.Messages[0].Content[0].Data = nil
-	if _, err := model.Stream(ctx, request, func(core.ModelEvent) {}); err == nil {
-		t.Fatal("a reference without frozen rollout pixels was accepted")
-	}
-	request.Messages[0].Content[0].URL = "https://external/image.png"
-	if _, err := model.Stream(ctx, request, func(core.ModelEvent) {}); err == nil {
-		t.Fatal("unbound persistent image was accepted")
+	if _, err := provider.Call(ctx, resolved.Model, request, nil); err == nil {
+		t.Fatal("reference without frozen pixels was accepted")
 	}
 }
-
-type estimateAdapter struct{ core.Model }
-
-func (estimateAdapter) EstimateTokens(context.Context, core.Request) (int, error) { return 100, nil }

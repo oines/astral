@@ -41,6 +41,11 @@ func TestContainerSupervisorPreservesEnvironmentAndRecoversFailedRelease(t *test
 				return []byte("#!/bin/sh\ntrap 'exit 0' INT TERM\nprintf '%s %s\\n' " + quote(version) + " \"$$\" > " + quote(marker) + "\nwhile :; do sleep 1; done\n")
 			}
 			paths := containerSupervisorPaths{binary: filepath.Join(programs, "astral"), backup: filepath.Join(programs, ".astral-previous"), request: filepath.Join(programs, "update.json"), reconnectTimeout: 500 * time.Millisecond}
+			if scenario == "success" {
+				// Allow the real shell startup and TLS status polling to complete
+				// under race instrumentation and concurrent package tests.
+				paths.reconnectTimeout = 3 * time.Second
+			}
 			paths.verify = func(context.Context, releasefeed.Binary) error {
 				if !tampered {
 					return nil

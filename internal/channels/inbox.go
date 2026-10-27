@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -62,7 +63,7 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 				if _, lookupErr := s.Harness.Receipt(ctx, b.SessionID, probeInputID(b.ID, window.Through)); lookupErr == nil {
 					_ = s.finishProbe(ctx, b, probeResult{through: window.Through, participate: true})
 				} else {
-					view, viewErr := s.Harness.InspectContext(ctx, b.SessionID)
+					view, viewErr := s.Harness.ReadContext(ctx, b.SessionID)
 					if viewErr == nil {
 						s.mu.Lock()
 						if s.deletingAgents[b.AgentID] {
@@ -188,7 +189,7 @@ func (s *Service) observationImage(ctx context.Context, b domain.ConversationBin
 	if len(data) > 20<<20 {
 		return core.Text("[Image preview omitted: original exceeds the 20 MiB inline image preparation budget. The attachment remains available through its download-url.]"), nil
 	}
-	processed, err := core.ProcessImage(ctx, data, core.ImageOptions{})
+	processed, err := processObservationImage(ctx, data)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +198,8 @@ func (s *Service) observationImage(ctx context.Context, b domain.ConversationBin
 	}
 	image := processed.Content[1]
 	image.URL = messages.AttachmentDownloadPath(conversation.ID, event.MessageID, attachment.Ref)
-	return []core.Content{image}, nil
+	content := core.Text(fmt.Sprintf("[IM image file-id=%q: compressed preview, at most 75,000 pixels. To inspect text or fine details, download the original attachment through its download-url and read the downloaded file.]", attachment.Ref))
+	return append(content, image), nil
 }
 
 // DeliveryView combines the fixed channel destination with Core's current

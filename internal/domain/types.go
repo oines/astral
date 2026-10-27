@@ -9,7 +9,8 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
-	models "github.com/oines/astral-models"
+	models "github.com/oines/astral-core/models"
+	"github.com/oines/astral-core/models/integration"
 )
 
 func ID(prefix string) string {
@@ -44,24 +45,20 @@ type Agent struct {
 
 type Session struct {
 	Meta
-	AgentID         string                 `json:"agent_id"`
-	Title           string                 `json:"title"`
-	TitleSource     string                 `json:"title_source,omitempty"`
-	Source          string                 `json:"source"`
-	ProfileID       string                 `json:"profile_id,omitempty"`
-	ModelRef        string                 `json:"model_ref,omitempty"`
-	Options         core.GenerationOptions `json:"options"`
-	Reasoning       *core.ReasoningOptions `json:"reasoning,omitempty"`
-	ComputerID      string                 `json:"computer_id,omitempty"`
-	CWD             string                 `json:"cwd,omitempty"`
-	ConversationID  string                 `json:"conversation_id,omitempty"`
-	BindingID       string                 `json:"binding_id,omitempty"`
-	ChannelPlatform string                 `json:"channel_platform,omitempty"`
-	ParentSessionID string                 `json:"parent_session_id,omitempty"`
-	ForkEntryID     string                 `json:"fork_entry_id,omitempty"`
-	Pinned          bool                   `json:"pinned"`
-	Archived        bool                   `json:"archived"`
-	Deletion        *SessionDeletion       `json:"deletion,omitempty"`
+	AgentID         string           `json:"agent_id"`
+	Title           string           `json:"title"`
+	TitleSource     string           `json:"title_source,omitempty"`
+	Source          string           `json:"source"`
+	ComputerID      string           `json:"computer_id,omitempty"`
+	CWD             string           `json:"cwd,omitempty"`
+	ConversationID  string           `json:"conversation_id,omitempty"`
+	BindingID       string           `json:"binding_id,omitempty"`
+	ChannelPlatform string           `json:"channel_platform,omitempty"`
+	ParentSessionID string           `json:"parent_session_id,omitempty"`
+	ForkEntryID     string           `json:"fork_entry_id,omitempty"`
+	Pinned          bool             `json:"pinned"`
+	Archived        bool             `json:"archived"`
+	Deletion        *SessionDeletion `json:"deletion,omitempty"`
 }
 
 // SessionDeletion is a durable maintenance intent, retained until every store
@@ -91,38 +88,41 @@ type Provider struct {
 	ReasoningFormat     models.ReasoningFormat   `json:"reasoning_format,omitempty"`
 	ReasoningMapping    *models.ReasoningMapping `json:"reasoning_mapping,omitempty"`
 	// ReplayRevision changes with API credentials/routing, not display labels
-	// or enable switches. Zero keeps the legacy provider-revision scope.
+	// or enable switches.
 	ReplayRevision int64 `json:"replay_revision,omitempty"`
 }
 
 // Recommendations and Overrides keep their provenance independently. An
-// override is removed to restore the recommendation, never overwritten during
-// a catalog refresh. Unknown capability values remain unknown.
+// override is removed to restore the recommendation. A user-modified profile
+// keeps its whole configuration while still listed by its provider; an absent
+// model is removed from current inventory. Unknown capabilities remain unknown.
 type ModelProfile struct {
 	Meta
-	Description           string                          `json:"description,omitempty"`
-	Enabled               *bool                           `json:"enabled,omitempty"`
-	ProviderID            string                          `json:"provider_id"`
-	Protocol              string                          `json:"protocol,omitempty"`
-	Dialect               string                          `json:"dialect,omitempty"`
-	ModelID               string                          `json:"model_id"`
-	Name                  string                          `json:"name"`
-	Recommendations       map[string]json.RawMessage      `json:"recommendations"`
-	Overrides             map[string]json.RawMessage      `json:"overrides"`
-	CatalogSource         string                          `json:"catalog_source,omitempty"`
-	CatalogAt             *time.Time                      `json:"catalog_at,omitempty"`
-	Verification          *ModelVerification              `json:"verification,omitempty"`
-	RecommendationSources map[string]RecommendationSource `json:"recommendation_sources,omitempty"`
+	UserModified          bool                              `json:"user_modified,omitempty"`
+	Available             *bool                             `json:"available,omitempty"`
+	ProviderName          string                            `json:"provider_name,omitempty"`
+	UnavailableReason     string                            `json:"unavailable_reason,omitempty"`
+	Description           string                            `json:"description,omitempty"`
+	Enabled               *bool                             `json:"enabled,omitempty"`
+	ProviderID            string                            `json:"provider_id"`
+	Protocol              string                            `json:"protocol,omitempty"`
+	Dialect               string                            `json:"dialect,omitempty"`
+	ModelID               string                            `json:"model_id"`
+	Name                  string                            `json:"name"`
+	Recommendations       map[string]json.RawMessage        `json:"recommendations"`
+	RecommendationTarget  *integration.RecommendationTarget `json:"recommendation_target,omitempty"`
+	Overrides             map[string]json.RawMessage        `json:"overrides"`
+	CatalogSource         string                            `json:"catalog_source,omitempty"`
+	CatalogAt             *time.Time                        `json:"catalog_at,omitempty"`
+	Verification          *ModelVerification                `json:"verification,omitempty"`
+	RecommendationSources map[string]RecommendationSource   `json:"recommendation_sources,omitempty"`
 	// Controls are derived from the saved connection and profile. They are never
 	// trusted as input or used as a second configuration source.
 	ReasoningControls *models.ReasoningControls `json:"reasoning_controls,omitempty"`
 	ReasoningError    string                    `json:"reasoning_error,omitempty"`
 }
 
-type RecommendationSource struct {
-	Source    string    `json:"source"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
+type RecommendationSource = integration.RecommendationSource
 
 type ModelVerification struct {
 	TestedAt         time.Time `json:"tested_at"`
@@ -133,55 +133,10 @@ type ModelVerification struct {
 	Message          string    `json:"message,omitempty"`
 }
 
-type ModelValues struct {
-	ContextWindow          int                      `json:"context_window"`
-	MaxInputTokens         int                      `json:"max_input_tokens,omitempty"`
-	MaxOutputTokens        int                      `json:"max_output_tokens"`
-	ToolCalling            string                   `json:"tool_calling,omitempty"`
-	Images                 string                   `json:"images,omitempty"`
-	Streaming              *bool                    `json:"streaming,omitempty"`
-	Reasoning              json.RawMessage          `json:"reasoning,omitempty"`
-	ReasoningFormat        models.ReasoningFormat   `json:"reasoning_format,omitempty"`
-	ReasoningMapping       *models.ReasoningMapping `json:"reasoning_mapping,omitempty"`
-	ReasoningReplay        string                   `json:"reasoning_replay,omitempty"`
-	RequireReasoningReplay bool                     `json:"require_reasoning_replay,omitempty"`
-	ImageTokenBudget       int                      `json:"image_token_budget,omitempty"`
-	Defaults               core.GenerationOptions   `json:"defaults"`
-	InputPrice             *float64                 `json:"input_price,omitempty"`
-	OutputPrice            *float64                 `json:"output_price,omitempty"`
-}
+type ModelValues = integration.ModelValues
 
 func (p ModelProfile) Effective() (ModelValues, map[string]string, error) {
-	fields := map[string]json.RawMessage{}
-	sources := map[string]string{}
-	for key, value := range p.Recommendations {
-		fields[key] = value
-		sources[key] = "recommended"
-	}
-	for key, value := range p.Overrides {
-		fields[key] = value
-		sources[key] = "override"
-	}
-	raw, err := json.Marshal(fields)
-	if err != nil {
-		return ModelValues{}, nil, err
-	}
-	var values ModelValues
-	if err = json.Unmarshal(raw, &values); err != nil {
-		return values, nil, err
-	}
-	if values.ContextWindow < 1 || values.MaxOutputTokens < 1 || values.MaxInputTokens < 0 {
-		return values, nil, Invalid("model token limits must be positive")
-	}
-	for _, capability := range []string{values.ToolCalling, values.Images} {
-		if capability != "" && capability != "unknown" && capability != "supported" && capability != "unsupported" {
-			return values, nil, Invalid("invalid capability status")
-		}
-	}
-	if err = values.Defaults.Validate(); err != nil {
-		return values, nil, Invalid(err.Error())
-	}
-	return values, sources, nil
+	return integration.EffectiveValues(p.Recommendations, p.Overrides)
 }
 
 type SearchProvider struct {

@@ -64,7 +64,7 @@ astral-windows-arm64.exe
 
 All six are needed by a Server or Desktop that offers enrollment of other platforms. Other assets are:
 
-- Desktop DMG/ZIP, NSIS/ZIP and AppImage/DEB files named `Astral-${version}-${os}-${arch}.${ext}`, with `os` equal to `mac`, `win` or `linux`, and `arch` equal to `x64` or `arm64`.
+- Desktop DMG/ZIP, NSIS/ZIP and AppImage/DEB files named `Astral-${version}-${os}-${arch}.${ext}`. Mac and Windows use `x64` or `arm64`; Linux AppImages use `x86_64` or `arm64`, and Linux DEBs use `amd64` or `arm64`.
 - `checksums.txt`, covering exactly the six unified executables.
 - `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt` and the versioned Linux `install-server.sh`.
 - `release-manifest.json`, identifying the source, CI/build runs, runtime data formats, asset sizes/hashes and implemented update capabilities.
@@ -80,7 +80,7 @@ The collector retains an explicit `candidate` command for review-only fixtures o
 
 ## Initial data baseline and updates
 
-The first supported public data baseline is **Host schema 3 / Core format 10**. Release metadata reports the actual current targets and those fixed baselines, rather than treating every later format change as unsupported. Earlier private development formats are outside the chain and are rejected; never relabel a database without converting its data. The application patch number is independent of the data version, and a release without a persisted-format change needs no empty migration.
+The first supported public data baseline is **Host schema 3 / Core format 11**. Release metadata reports the actual current targets and those fixed baselines, rather than treating every later format change as unsupported. Earlier private development formats are outside the chain and are rejected; never relabel a database without converting its data. The application patch number is independent of the data version, and a release without a persisted-format change needs no empty migration.
 
 **Versioned migrations.** Host and Core own separate Goose chains containing immutable SQL steps and self-contained Go transformations. The latest Go binary embeds every supported historical step; a user upgrading across several application releases downloads only the latest program, which applies all missing data steps in order. Normal runtime code accepts only its current format. See [the migration contract](migrations.md) for the maintenance CLI, frozen data definitions, per-step transactions and recovery acceptance.
 

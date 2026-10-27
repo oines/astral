@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { saveModel, refreshModel, modelRecommendation, type AstralInternalModelbridgeDiscovery as Discovery } from '@astral/sdk'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { saveModel, describeModel, modelRecommendation, type AstralCoreReasoningOptions as Reasoning, type AstralCoreModelsIntegrationDiscovery as Discovery } from '@astral/sdk'
 import { Button, Modal, Select } from '@astral/ui'
 import { useI18n } from 'vue-i18n'
 import type { Profile, Provider } from '../../lib/types'
 import { clone, newMeta, object, request, jsonEqual } from '../../lib/api'
 import { useAction } from '../../composables/useAction'
+import { modelReasoning, reasoningSelection } from '../../lib/model-reasoning'
 import ReasoningFormatSelect from './ReasoningFormatSelect.vue'
 const props = defineProps<{ open: boolean; provider?: Provider; profile?: Profile; suggestion?: Discovery; catalog: Discovery[] }>()
 const emit = defineEmits<{ 'update:open': [value: boolean]; saved: [profile: Profile] }>()
@@ -17,6 +18,11 @@ const reasoningJSON = ref('{}')
 const mappingJSON = ref('{}')
 const lookupBusy = ref(false)
 const lookupError = ref('')
+const preview = ref<Profile>()
+const previewError = ref('')
+let previewEpoch = 0
+let previewTimer: ReturnType<typeof setTimeout> | undefined
+let previewSignature = ''
 let lookupEpoch = 0
 let lastSuggestedName = ''
 let routeExplicit = false
@@ -48,7 +54,7 @@ function chooseModel(id: string) {
   form.value.model_id = modelID
   // Until the new ID resolves, no recommendation from the previous identity
   // may be saved under it. Explicit user overrides and edited JSON survive.
-  form.value.recommendations = {}; form.value.recommendation_sources = {}
+  form.value.recommendations = {}; form.value.recommendation_sources = {}; form.value.recommendation_target = undefined
   form.value.catalog_source = ''; form.value.catalog_at = undefined
   if (!routeExplicit) { form.value.protocol = undefined; form.value.dialect = undefined }
   if (cleanJSON.defaults) defaultsJSON.value = JSON.stringify(effective.value.defaults || {}, null, 2)
@@ -61,7 +67,7 @@ function chooseModel(id: string) {
   lookupBusy.value = true; lookupError.value = ''
   pendingLookup = (async () => {
     try {
-      const original = props.profile?.model_id === modelID ? { id: modelID, name: props.profile.name, recommendations: props.profile.recommendations, protocol: props.profile.protocol, dialect: props.profile.dialect, source: props.profile.catalog_source, recommendation_sources: props.profile.recommendation_sources } : undefined
+      const original = props.profile?.model_id === modelID ? { id: modelID, name: props.profile.name, recommendations: props.profile.recommendations, recommendation_target: props.profile.recommendation_target, protocol: props.profile.protocol, dialect: props.profile.dialect, source: props.profile.catalog_source, recommendation_sources: props.profile.recommendation_sources } : undefined
       const match = original || props.catalog.find(m => m.id === modelID) || (props.suggestion?.id === modelID ? props.suggestion : undefined) || await request(modelRecommendation({ path: { id: providerID }, query: { model_id: modelID } }))
       if (epoch !== lookupEpoch || !props.open || !form.value || form.value.model_id.trim() !== modelID || props.provider?.id !== providerID) return
       applyRecommendation(match, modelID, previousJSON, previousRoute)
@@ -81,6 +87,7 @@ function applyRecommendation(match: Discovery, id: string, previousJSON: { defau
   if (!nameExplicit && (!form.value.name || form.value.name === lastSuggestedName)) form.value.name = match.name
   lastSuggestedName = match.name
   form.value.recommendations = clone(match.recommendations)
+  form.value.recommendation_target = match.recommendation_target ? clone(match.recommendation_target) : undefined
   if (!routeExplicit && form.value.protocol === previousRoute.protocol && form.value.dialect === previousRoute.dialect) {
     form.value.protocol = match.protocol; form.value.dialect = match.dialect
   }
@@ -103,39 +110,98 @@ function selectReasoningFormat(value: string) {
   if (value !== 'custom') reset('reasoning_mapping')
 }
 function numeric(key: string, event: Event) { const value = (event.target as HTMLInputElement).value; if (value === '') reset(key); else override(key, Number(value)) }
-function capability(key: string, event: Event) { override(key, (event.target as HTMLInputElement).checked ? 'supported' : 'unsupported') }
-const reasoning = computed(() => object(effective.value.reasoning).supported !== false && Object.keys(object(effective.value.reasoning)).length > 0)
-function toggleReasoning(event: Event) {
-  const enabled = (event.target as HTMLInputElement).checked
-  if (enabled && form.value?.recommendations.reasoning) reset('reasoning')
-  else override('reasoning', enabled ? { supported: true } : { supported: false, toggle: false, disable: false, efforts: [], budget: false })
-  syncJSON()
+function capability(key: string, value: string) {
+  if (value === 'auto') reset(key)
+  else override(key, value)
+}
+function capabilityValue(key: string) {
+  const value = form.value?.overrides[key]
+  return value === 'supported' || value === 'unsupported' || value === 'unknown' ? value : 'auto'
+}
+function capabilityOptions(key: string) {
+  const value = form.value?.recommendations[key]
+  const label = value === 'supported' ? t('supported') : value === 'unsupported' ? t('unsupported') : t('unverified')
+  return [{ value: 'auto', label: `${t('capabilityAutomatic')} · ${label}` }, { value: 'supported', label: t('supported') }, { value: 'unsupported', label: t('unsupported') }, ...(capabilityValue(key) === 'unknown' ? [{ value: 'unknown', label: t('unverified') }] : [])]
+}
+function parseObjectJSON(text: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(text)
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(t('modelObjectRequired'))
+  return parsed as Record<string, unknown>
+}
+function draftProfile(): Profile {
+  if (!form.value) throw new Error(t('modelObjectRequired'))
+  const copy = clone(form.value)
+  copy.model_id = copy.model_id.trim(); copy.name = copy.name.trim() || copy.model_id
+  for (const [key, json] of [['defaults', defaultsJSON.value], ['reasoning', reasoningJSON.value]] as const) {
+    const parsed = parseObjectJSON(json)
+    if (!jsonEqual(parsed, object(effective.value[key]))) copy.overrides[key] = parsed
+  }
+  if (effective.value.reasoning_format === 'custom') copy.overrides.reasoning_mapping = parseObjectJSON(mappingJSON.value)
+  return copy
+}
+watch(() => [props.open, JSON.stringify(form.value), defaultsJSON.value, reasoningJSON.value, mappingJSON.value], () => {
+  const epoch = ++previewEpoch
+  clearTimeout(previewTimer)
+  const signature = JSON.stringify([props.provider?.id, form.value?.model_id, form.value?.protocol, form.value?.dialect, effective.value.context_window, effective.value.max_output_tokens, effective.value.reasoning_format, reasoningJSON.value, mappingJSON.value])
+  if (signature !== previewSignature) preview.value = undefined
+  previewSignature = signature; previewError.value = ''
+  if (!props.open || !form.value?.model_id.trim()) return
+  previewTimer = setTimeout(async () => {
+    try {
+      const described = await request(describeModel({ body: draftProfile() }))
+      if (epoch === previewEpoch && props.open && form.value) {
+        if (!jsonEqual(described.recommendations, form.value.recommendations)) {
+          const oldValues = effective.value
+          const untouched = { defaults: jsonMatches(defaultsJSON.value, oldValues.defaults), reasoning: jsonMatches(reasoningJSON.value, oldValues.reasoning), mapping: jsonMatches(mappingJSON.value, oldValues.reasoning_mapping) }
+          form.value.recommendations = clone(described.recommendations)
+          if (untouched.defaults) defaultsJSON.value = JSON.stringify(effective.value.defaults || {}, null, 2)
+          if (untouched.reasoning) reasoningJSON.value = JSON.stringify(effective.value.reasoning || {}, null, 2)
+          if (untouched.mapping) mappingJSON.value = JSON.stringify(effective.value.reasoning_mapping || {}, null, 2)
+        }
+        if (!jsonEqual(described.recommendation_target, form.value.recommendation_target)) {
+          form.value.recommendation_target = described.recommendation_target ? clone(described.recommendation_target) : undefined
+        }
+        if (!jsonEqual(described.recommendation_sources || {}, form.value.recommendation_sources || {})) {
+          form.value.recommendation_sources = clone(described.recommendation_sources || {})
+        }
+        preview.value = described
+      }
+    } catch (error) {
+      if (epoch === previewEpoch) previewError.value = error instanceof Error ? error.message : t('recommendationUnavailable')
+    }
+  }, 250)
+}, { immediate: true })
+onBeforeUnmount(() => { previewEpoch++; clearTimeout(previewTimer) })
+const defaultReasoning = computed<Reasoning>(() => {
+  try { return object(parseObjectJSON(defaultsJSON.value).reasoning) as Reasoning } catch { return {} }
+})
+const defaultReasoningState = computed(() => modelReasoning(preview.value, defaultReasoning.value, t, { inherit: false }))
+const defaultReasoningOptions = computed(() => {
+  const state = defaultReasoningState.value
+  return [...state.options, ...(state.budget ? [{ value: 'budget', label: t('reasoningBudget') }] : []), ...(state.value === 'unavailable' ? [{ value: 'unavailable', label: state.label, disabled: true }] : [])]
+})
+function setDefaultReasoning(value: Reasoning) {
+  try { defaultsJSON.value = JSON.stringify({ ...parseObjectJSON(defaultsJSON.value), reasoning: value }, null, 2) }
+  catch (error) { action.error.value = error instanceof Error ? error.message : t('modelObjectRequired') }
+}
+function chooseDefaultReasoning(value: string) {
+  if (value === 'budget') setDefaultReasoning({ budget_tokens: defaultReasoningState.value.budget?.min ?? 0 })
+  else {
+    const selection = reasoningSelection(value, preview.value)
+    if (selection) setDefaultReasoning(selection)
+  }
+}
+function setDefaultBudget(event: Event) {
+  const raw = (event.target as HTMLInputElement).value
+  if (raw !== '') setDefaultReasoning({ budget_tokens: Number(raw) })
 }
 async function save() {
   await action.run(async () => {
     await pendingLookup
     if (!form.value) return
-    const copy = clone(form.value)
-    copy.model_id = copy.model_id.trim(); copy.name = copy.name.trim() || copy.model_id
-    for (const [key, json] of [['defaults', defaultsJSON.value], ['reasoning', reasoningJSON.value]]) {
-      const parsed: unknown = JSON.parse(json!)
-      if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(t('modelObjectRequired'))
-      if (JSON.stringify(parsed) !== JSON.stringify(object(effective.value[key!]))) copy.overrides[key!] = parsed
-    }
-    if (effective.value.reasoning_format === 'custom') {
-      const parsed: unknown = JSON.parse(mappingJSON.value)
-      if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(t('modelObjectRequired'))
-      copy.overrides.reasoning_mapping = parsed
-    }
+    const copy = draftProfile()
     const saved = await request(saveModel({ body: copy }))
     emit('saved', saved); emit('update:open', false)
-  })
-}
-async function refresh() {
-  await action.run(async () => {
-    if (!form.value?.id) return
-    form.value = editableProfile(await request(refreshModel({ path: { id: form.value.id } })))
-    syncJSON(); emit('saved', form.value)
   })
 }
 const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'image_token_budget', label: 'imageBudget' }, { key: 'input_price', label: 'inputPrice' }, { key: 'output_price', label: 'outputPrice' }]
@@ -158,7 +224,7 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
             v-model="form.model_id"
             :aria-label="t('modelID')"
             list="provider-model-catalog"
-            placeholder="gpt-5.4"
+            :placeholder="t('modelID')"
             required
             @change="chooseModel(form.model_id)"
           ><datalist id="provider-model-catalog"><option
@@ -194,24 +260,50 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
           rows="2"
         /></label>
         <fieldset class="model-compatibility">
-          <legend>{{ t('modelCapabilities') }}</legend><div>
-            <label class="check"><input
-              type="checkbox"
-              :checked="effective.images === 'supported'"
-              @change="capability('images', $event)"
-            >{{ t('vision') }}</label>
-            <label class="check"><input
-              type="checkbox"
-              :checked="effective.tool_calling === 'supported'"
-              @change="capability('tool_calling', $event)"
-            >{{ t('toolCalling') }}</label>
-            <label class="check"><input
-              type="checkbox"
-              :checked="reasoning"
-              @change="toggleReasoning"
-            >{{ t('reasoning') }}</label>
+          <legend>{{ t('modelCapabilities') }}</legend>
+          <div class="model-field-grid">
+            <label class="label">{{ t('vision') }}<Select
+              :model-value="capabilityValue('images')"
+              :label="t('vision')"
+              :options="capabilityOptions('images')"
+              @update:model-value="capability('images', $event)"
+            /></label>
+            <label class="label">{{ t('toolCalling') }}<Select
+              :model-value="capabilityValue('tool_calling')"
+              :label="t('toolCalling')"
+              :options="capabilityOptions('tool_calling')"
+              @update:model-value="capability('tool_calling', $event)"
+            /></label>
           </div>
         </fieldset>
+        <label class="label">{{ t('defaultReasoning') }}<Select
+          :model-value="defaultReasoningState.value"
+          :label="t('defaultReasoning')"
+          :options="defaultReasoningOptions"
+          :placeholder="defaultReasoningState.label"
+          :disabled="!defaultReasoningOptions.length"
+          @update:model-value="chooseDefaultReasoning"
+        /></label>
+        <label
+          v-if="defaultReasoning.budget_tokens !== undefined"
+          class="label"
+        >{{ t('reasoningBudget') }}<input
+          type="number"
+          step="1"
+          required
+          :aria-label="t('reasoningBudget')"
+          :min="defaultReasoningState.budget?.min ?? 0"
+          :max="defaultReasoningState.budget?.max"
+          :value="defaultReasoning.budget_tokens"
+          @change="setDefaultBudget"
+        ></label>
+        <p
+          v-if="previewError || preview?.reasoning_error"
+          class="error-box"
+          role="alert"
+        >
+          {{ previewError || preview?.reasoning_error }}
+        </p>
         <div class="model-field-grid">
           <label class="label">{{ t('contextWindow') }}<input
             type="number"
@@ -312,14 +404,6 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
             >
               {{ t('source') }}: {{ form.catalog_source }}
             </p>
-            <Button
-              v-if="form.id"
-              size="small"
-              :busy="action.busy.value"
-              @click="refresh"
-            >
-              {{ t('refreshModelDefaults') }}
-            </Button>
           </div>
         </details>
       </div>
@@ -344,3 +428,8 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
     </form>
   </Modal>
 </template>
+
+<style scoped>
+.model-compatibility > .model-field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 480px) { .model-compatibility > .model-field-grid { grid-template-columns: minmax(0, 1fr); } }
+</style>

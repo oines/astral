@@ -86,7 +86,7 @@ async function fixture(t, { candidate = false, unsigned = false, published = fal
   }
   await writeDesktopUpdateFeeds(directory, version)
   names.push(...desktopUpdateFeeds(version).map(feed => feed.name))
-  const formats = { schema_version: 1, version, source_sha: sourceSHA, data_formats: { host: 3, core: 10 }, host_schema: 3, core_format: 10, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 10 }, migration_targets: { host: 3, core: 10 } }
+  const formats = { schema_version: 1, version, source_sha: sourceSHA, data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
   await writeFile(path.join(directory, 'release-formats.json'), JSON.stringify(formats))
   names.push('release-formats.json')
   const purpose = candidate ? (macSigned ? 'mac-signed-candidate' : 'unsigned-candidate') : 'release'
@@ -94,8 +94,8 @@ async function fixture(t, { candidate = false, unsigned = false, published = fal
   const manifest = {
     schema_version: 1, purpose, public_release_ready: !candidate, version, tag, source_sha: sourceSHA, repository,
     candidate_run_url: `https://github.com/${repository}/actions/runs/123`, ci_run_url: `https://github.com/${repository}/actions/runs/122`,
-    data_formats: { host: 3, core: 10 }, host_schema: 3, core_format: 10, core_module_version: 'fixture',
-    migration_status: 'goose', migration_baselines: { host: 3, core: 10 }, migration_targets: { host: 3, core: 10 }, desktop_updater: 'electron-updater',
+    data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture',
+    migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 }, desktop_updater: 'electron-updater',
     signing: { macos: macSigned ? 'signed-and-notarized' : 'not-signed-or-notarized', windows: 'not-signed', linux: 'not-signed' },
     distribution_names: distributionNames,
     assets: await Promise.all(names.map(async name => ({ name, size: (await readFile(path.join(directory, name))).length, sha256: await digest(path.join(directory, name)) }))),
@@ -272,14 +272,15 @@ test('public mode requires GitHub Actions context, matching run metadata and Goo
     value => { value.options.environment.GITHUB_REPOSITORY = 'other/repo' },
     value => { value.manifest.ci_run_url = 'https://github.com/other/repo/actions/runs/122' },
     value => { value.manifest.host_schema = 4 },
-    value => { value.manifest.data_formats.core = 11 },
+    value => { value.manifest.data_formats.core = 12 },
+    value => { value.manifest.migration_baselines.core = 10 },
     value => { value.manifest.migration_status = 'implemented' },
     value => { value.manifest.signing.macos = 'not-signed-or-notarized' },
   ]) {
     const value = await fixture(t)
     change(value)
     await value.updateManifest(() => {})
-    await assert.rejects(createDraft(value.directory, value.options), /matching release manifest|matching release\/CI|data baseline/)
+    await assert.rejects(createDraft(value.directory, value.options), /matching release manifest|matching release\/CI|data baseline|same Goose migration contract/)
     assert.equal(value.remote.calls.length, 0)
   }
 })

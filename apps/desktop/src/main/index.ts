@@ -169,8 +169,8 @@ function createWindow() {
 async function start() {
   updateApplicationIcon()
   nativeTheme.on('updated', updateApplicationIcon)
-  // Keep incompatible legacy data intact when starting the current host format.
-  const root = process.env.ASTRAL_DESKTOP_DATA_DIR || join(app.getPath('appData'), 'astral', 'schema-3')
+  // Keep incompatible legacy data intact for the current Host/Core format pair.
+  const root = process.env.ASTRAL_DESKTOP_DATA_DIR || join(app.getPath('appData'), 'astral', 'schema-3-core-11')
   const bins = app.isPackaged ? join(process.resourcesPath, 'bin') : fileURLToPath(new URL('../../../../dist/bin/', import.meta.url))
   const architecture = process.arch === 'x64' ? 'amd64' : process.arch
   const system = process.platform === 'win32' ? 'windows' : process.platform

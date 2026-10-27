@@ -220,8 +220,12 @@ func TestOnboardingRequiresBothResourcesAndStartsAWorkingSession(t *testing.T) {
 		t.Fatal("bootstrap did not report completed setup", err)
 	}
 	session, err := s.Harness.CreateSession(ctx, bot.ID, "")
-	if err != nil || session.ProfileID != profile.ID || session.ComputerID != local.ID {
+	if err != nil || session.ComputerID != local.ID {
 		t.Fatal("new conversation did not inherit setup", session, err)
+	}
+	selection, selectionErr := s.Harness.ModelSelection(ctx, session.ID)
+	if selectionErr != nil || selection.ID != profile.ID {
+		t.Fatal("new conversation did not inherit model", selection, selectionErr)
 	}
 	if _, err = s.Harness.Submit(ctx, session.ID, harness.InputRequest{ID: "setup-first-message", Text: "Check that the Computer works."}); err != nil {
 		t.Fatal(err)

@@ -41,7 +41,7 @@ jobs:
           node scripts/release-version.mjs check
           node scripts/check-migrations.mjs
           node scripts/release-check.mjs
-          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs
+          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs scripts/check-migrations.test.mjs
       - name: Check headless installer without installing
         run: |
           bash -n scripts/install-server.sh

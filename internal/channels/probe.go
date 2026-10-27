@@ -159,23 +159,14 @@ func (s *Service) shouldParticipate(ctx context.Context, b domain.ConversationBi
 	if err := s.Store.Get(ctx, "agents", b.AgentID, &agent); err != nil {
 		return false, err
 	}
-	var session domain.Session
-	if err := s.Store.Get(ctx, "sessions", b.SessionID, &session); err != nil {
-		return false, err
-	}
-	profileID := agent.ProbeModelID
-	if profileID == "" {
-		profileID = session.ProfileID
-	}
-	ref, options, err := s.Harness.Models.Selection(ctx, profileID)
+	selection, err := s.Harness.ModelSelection(ctx, b.SessionID)
 	if err != nil {
 		return false, err
 	}
-	if agent.ProbeModelID == "" && session.Reasoning != nil {
-		options.Reasoning = *session.Reasoning
-	} else if agent.ProbeModelID != "" && agent.ProbeReasoning != nil {
-		options.Reasoning = *agent.ProbeReasoning
+	if agent.ProbeModelID != "" {
+		selection = core.ModelSelection{ID: agent.ProbeModelID, Reasoning: agent.ProbeReasoning}
 	}
+	profileID := selection.ID
 	var profile domain.ModelProfile
 	if err = s.Store.Get(ctx, "models", profileID, &profile); err != nil {
 		return false, err
@@ -185,16 +176,21 @@ func (s *Service) shouldParticipate(ctx context.Context, b domain.ConversationBi
 		return false, err
 	}
 	ctx = modelbridge.WithSessionID(ctx, b.SessionID)
-	model, err := s.Harness.Models.Resolve(ctx, ref, nil)
+	selected, err := s.Harness.Models.ResolveSelection(ctx, selection)
 	if err != nil {
 		return false, err
 	}
+	model, options := selected.Model, selected.Options
 	options.ToolChoice = core.ToolChoice{Mode: "tool", Name: "decide"}
 	options.ResponseFormat, options.Stop = nil, nil
 	spec := model.Spec()
 	request := core.Request{ModelID: spec.ID, ModelRevision: spec.Revision, SystemPrompt: probePrompt,
 		Messages: probeMessages(view.Request.Messages, values.Images == "supported"), Tools: []core.ToolDefinition{decideTool}, Options: options, MaxOutputTokens: min(2048, spec.MaxOutputTokens)}
 	request.Messages = append(request.Messages, core.User("Current time: "+time.Now().UTC().Format(time.RFC3339)+"\nAgent: "+agent.Name+"\nCall decide with only participate."))
+	request, err = core.PrepareRequest(ctx, model, request)
+	if err != nil {
+		return false, err
+	}
 	limit := spec.ContextWindow - request.MaxOutputTokens - 1024
 	if spec.MaxInputTokens > 0 {
 		limit = min(limit, spec.MaxInputTokens-1024)

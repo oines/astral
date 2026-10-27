@@ -57,13 +57,13 @@ func (f *fixture) session(t *testing.T, id, agent string) {
 	} else if err != nil {
 		t.Fatal(err)
 	}
-	record := domain.Session{Meta: domain.Meta{ID: id}, AgentID: agent, Title: id, Source: "web", ModelRef: "missing-model~1"}
+	record := domain.Session{Meta: domain.Meta{ID: id}, AgentID: agent, Title: id, Source: "web"}
 	if err := f.store.Save(f.ctx, "sessions", &record.Meta, &record); err != nil {
 		t.Fatal(err)
 	}
 	f.append(t, id,
 		core.Entry{Kind: core.EntryCreated, Created: &core.CreationRecord{FormatVersion: core.FormatVersion, SessionID: id, RolloutID: id}},
-		core.Entry{Kind: core.EntryConfiguration, Configuration: &core.Configuration{ModelID: "missing-model~1"}},
+		core.Entry{Kind: core.EntryConfiguration, Configuration: &core.Configuration{Selection: core.ModelSelection{ID: "missing-model"}}},
 	)
 }
 

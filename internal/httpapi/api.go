@@ -14,7 +14,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
-	models "github.com/oines/astral-models"
+	models "github.com/oines/astral-core/models"
 
 	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/channels"
@@ -257,20 +257,6 @@ func (a *API) systemRoutes() {
 		if err != nil {
 			return v, err
 		}
-		providers, err := readAll[domain.Provider](r.Context(), h.Store, "providers")
-		if err != nil {
-			return v, err
-		}
-		disabled := map[string]bool{}
-		for _, provider := range providers {
-			disabled[provider.ID] = provider.Enabled != nil && !*provider.Enabled
-		}
-		for i := range v.Models {
-			if disabled[v.Models[i].ProviderID] {
-				no := false
-				v.Models[i].Enabled = &no
-			}
-		}
 		return v, err
 	})
 	route[harness.OnboardingInput, domain.Agent](a, "POST", "/onboarding/complete", "completeOnboarding", "System", func(r *http.Request, input harness.OnboardingInput) (domain.Agent, error) {
@@ -410,7 +396,11 @@ func (a *API) usage(ctx context.Context, kind, id string) (Usage, error) {
 		return value, err
 	}
 	for _, session := range all {
-		if (kind == "models" || kind == "providers") && modelIDs[session.ProfileID] || kind == "computers" && session.ComputerID == id || kind == "agents" && session.AgentID == id {
+		selected := core.ModelSelection{}
+		if kind == "models" || kind == "providers" {
+			selected, _ = a.Config.Harness.ModelSelection(ctx, session.ID)
+		}
+		if (kind == "models" || kind == "providers") && modelIDs[selected.ID] || kind == "computers" && session.ComputerID == id || kind == "agents" && session.AgentID == id {
 			value.Sessions = append(value.Sessions, session)
 		}
 	}
@@ -446,8 +436,8 @@ func (a *API) resources() {
 	route[httpcontract.Empty, []modelbridge.Discovery](a, "GET", "/provider-presets/{id}/models", "presetModels", "Models", func(r *http.Request, _ httpcontract.Empty) ([]modelbridge.Discovery, error) {
 		return h.Models.PresetCatalog(r.Context(), r.PathValue("id"))
 	})
-	route[modelbridge.ImportModelsInput, modelbridge.ImportModelsResult](a, "POST", "/providers/{id}/import", "importModels", "Models", func(r *http.Request, input modelbridge.ImportModelsInput) (modelbridge.ImportModelsResult, error) {
-		return h.Models.ImportModels(r.Context(), r.PathValue("id"), input)
+	route[httpcontract.Empty, modelbridge.RefreshResult](a, "POST", "/providers/{id}/refresh", "refreshProviderModels", "Models", func(r *http.Request, _ httpcontract.Empty) (modelbridge.RefreshResult, error) {
+		return h.Models.RefreshProvider(r.Context(), r.PathValue("id"))
 	})
 	route[ProviderInput, domain.Provider](a, "POST", "/providers", "saveProvider", "Models", func(r *http.Request, input ProviderInput) (domain.Provider, error) {
 		err := h.Models.SaveProvider(r.Context(), &input.Provider, input.APIKey, input.Headers)
@@ -462,19 +452,15 @@ func (a *API) resources() {
 	route[httpcontract.Empty, []domain.ModelProfile](a, "GET", "/models", "listModels", "Models", func(r *http.Request, _ httpcontract.Empty) ([]domain.ModelProfile, error) {
 		return h.Models.ListProfiles(r.Context())
 	})
+	route[domain.ModelProfile, domain.ModelProfile](a, "POST", "/models/describe", "describeModel", "Models", func(r *http.Request, input domain.ModelProfile) (domain.ModelProfile, error) {
+		return h.Models.PreviewProfile(r.Context(), input), nil
+	})
 	route[domain.ModelProfile, domain.ModelProfile](a, "POST", "/models", "saveModel", "Models", func(r *http.Request, input domain.ModelProfile) (domain.ModelProfile, error) {
 		err := h.Models.SaveProfile(r.Context(), &input)
 		if err != nil {
 			return input, err
 		}
 		return h.Models.DescribeProfile(r.Context(), input), nil
-	})
-	route[httpcontract.Empty, domain.ModelProfile](a, "POST", "/models/{id}/refresh", "refreshModel", "Models", func(r *http.Request, _ httpcontract.Empty) (domain.ModelProfile, error) {
-		profile, err := h.Models.Refresh(r.Context(), r.PathValue("id"))
-		if err != nil {
-			return profile, err
-		}
-		return h.Models.DescribeProfile(r.Context(), profile), nil
 	})
 	route[httpcontract.Empty, domain.ModelVerification](a, "POST", "/models/{id}/verify", "verifyModel", "Models", func(r *http.Request, _ httpcontract.Empty) (domain.ModelVerification, error) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
@@ -572,14 +558,18 @@ func (a *API) resources() {
 		}
 		return result, nil
 	}, httpcontract.Parameter{Name: "session_id"})
-	for _, resource := range []struct{ path, kind, operation string }{{"providers", "providers", "deleteProvider"}, {"models", "models", "deleteModel"}, {"search-providers", "search", "deleteSearchProvider"}} {
-		route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/"+resource.path+"/{id}", resource.operation, "Resources", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
-			err := h.Store.Update(r.Context(), func(tx *persistence.Tx) error {
-				return tx.Delete(r.Context(), resource.kind, r.PathValue("id"), revision(r))
-			})
-			return httpcontract.OK{OK: true}, err
-		}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
-	}
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/providers/{id}", "deleteProvider", "Models", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.Models.DeleteProvider(r.Context(), r.PathValue("id"), revision(r))
+	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/models/{id}", "deleteModel", "Models", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.Models.DeleteProfile(r.Context(), r.PathValue("id"), revision(r))
+	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
+	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/search-providers/{id}", "deleteSearchProvider", "Resources", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		err := h.Store.Update(r.Context(), func(tx *persistence.Tx) error {
+			return tx.Delete(r.Context(), "search", r.PathValue("id"), revision(r))
+		})
+		return httpcontract.OK{OK: true}, err
+	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
 }
 func (a *API) sessionRoutes() {
 	h := a.Config.Harness
@@ -604,8 +594,12 @@ func (a *API) sessionRoutes() {
 		}
 		return views, nil
 	})
-	route[SessionInput, domain.Session](a, "POST", "/sessions", "createSession", "Sessions", func(r *http.Request, input SessionInput) (domain.Session, error) {
-		return h.CreateSession(r.Context(), input.AgentID, input.Title)
+	route[SessionInput, harness.View](a, "POST", "/sessions", "createSession", "Sessions", func(r *http.Request, input SessionInput) (harness.View, error) {
+		record, err := h.CreateSession(r.Context(), input.AgentID, input.Title)
+		if err != nil {
+			return harness.View{}, err
+		}
+		return h.View(r.Context(), record.ID)
 	})
 	route[httpcontract.Empty, harness.View](a, "GET", "/sessions/{id}", "getSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (harness.View, error) {
 		return h.View(r.Context(), r.PathValue("id"))
@@ -677,7 +671,7 @@ func (a *API) sessionRoutes() {
 				if rebuildErr != nil {
 					return ContextStats{}, rebuildErr
 				}
-				model, resolveErr := h.Models.Resolve(r.Context(), request.ModelID, nil)
+				model, resolveErr := h.Models.RestoreModel(r.Context(), core.ModelSnapshot{Spec: attempt.Input.Model, Data: attempt.Input.Snapshot})
 				if resolveErr != nil {
 					return ContextStats{}, resolveErr
 				}
@@ -690,29 +684,12 @@ func (a *API) sessionRoutes() {
 		if err != nil {
 			return ContextStats{}, err
 		}
-		// Preview the next selection without committing configuration or scanning
-		// the Computer. GET context must not advance the durable Session.
-		ref, options, err := h.Models.Selection(r.Context(), status.ProfileID)
+		spec, err := h.Models.ReadSpec(r.Context(), view.Request.ModelID)
 		if err != nil {
 			return ContextStats{}, err
 		}
-		if status.Reasoning != nil {
-			options.Reasoning = *status.Reasoning
-		}
-		model, err := h.Models.Resolve(r.Context(), ref, nil)
-		if err != nil {
-			return ContextStats{}, err
-		}
-		spec := model.Spec()
-		preview := view.Request
-		preview.ModelID, preview.ModelRevision, preview.Options = ref, spec.Revision, options
-		preview.MaxOutputTokens = min(16384, spec.MaxOutputTokens)
-		preview, err = core.PrepareRequest(r.Context(), model, preview)
-		if err != nil {
-			return ContextStats{}, err
-		}
-		estimated, err := modelbridge.EstimateTokens(r.Context(), model, preview)
-		return ContextStats{EstimatedInput: estimated, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: preview.MaxOutputTokens, HeadID: view.HeadID}, err
+		return ContextStats{EstimatedInput: view.EstimatedInput, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: view.Request.MaxOutputTokens, HeadID: view.HeadID}, nil
+
 	})
 	route[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/history", "sessionHistory", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
 		return gateway.History(r.Context(), h, r.PathValue("id"), r.URL.Query().Get("cursor"), limit(r, 50), r.URL.Query().Get("trace") == "true", false)

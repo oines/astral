@@ -15,7 +15,7 @@ cd astral
 pnpm install --frozen-lockfile
 ```
 
-Run the following commands from the repository root. `GOWORK=off` uses dependencies from `go.mod` if a local `go.work` points to neighboring repositories you do not have.
+The Core dependency, including its Models packages, is pinned in `go.mod`; a separate Core checkout is not required. `GOWORK=off` prevents a local `go.work` from replacing that dependency. Run the following commands from the Astral repository root.
 
 ## Build the Server and product interface
 

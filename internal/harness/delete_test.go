@@ -153,8 +153,15 @@ func TestPermanentSessionDeletionRequiresArchivedUnboundCurrentRevision(t *testi
 	if err := f.store.Get(f.ctx, "sessions", record.ID, &record); err != nil || record.Deletion != nil {
 		t.Fatal("rejected deletion changed the Session:", err)
 	}
-	record.BindingID, record.ModelRef = "", "removed-provider~999~1"
+	record.BindingID = ""
 	if err := f.store.Save(f.ctx, "sessions", &record.Meta, &record); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := f.service.Core(f.ctx, record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = selected.SelectModel(f.ctx, core.ModelSelection{ID: "removed-provider"}); err != nil {
 		t.Fatal(err)
 	}
 	f.restart(t)

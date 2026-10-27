@@ -32,7 +32,7 @@ You only download the latest application. It includes all supported data migrati
 
 When a data conversion is needed, startup first takes exclusive ownership and backs up the complete Server directory. It keeps recovery information while migrating and preparing its databases, then commits before accepting browser, API or chat work. Migration or preparation failure restores that snapshot, and an interrupted pre-commit attempt is recovered at the next startup. A later failure does not automatically restore old data after new work may have been accepted. The Linux installer separately restores this attempt's snapshot if its activation check fails; Desktop does not automatically revert the App for every startup failure. These snapshots are in `upgrade-backups/` beside the Server directory.
 
-The first supported data baseline is Host 3 / Core 10. Older private development formats and unknown newer formats are rejected. Installing an old executable is not a data downgrade: restoring older data requires a matching backup and program version. Keep independent backups, including Computer files, rather than relying only on upgrade snapshots.
+The current supported data baseline is Host 3 / Core 11. This model and session refactor does not convert Core 10 or earlier data. Desktop starts with first-time setup in its new `schema-3-core-11/` directory and preserves older directories, including `schema-3/`, untouched. Older private development formats and unknown newer formats are rejected when explicitly selected. Installing an old executable is not a data downgrade: restoring older data requires a matching backup and program version. Keep independent backups, including Computer files, rather than relying only on upgrade snapshots.
 
 ## Update remote computers and containers
 
@@ -65,7 +65,7 @@ Check startup logs, computer details and launch arguments first. Standalone defa
 - Windows: `%APPDATA%\astral`
 - Linux: `$XDG_CONFIG_HOME/astral`, normally `~/.config/astral`
 
-Server data normally uses `server/` and local computer data uses `computers/` beneath that root. Desktop uses a `schema-3/` subdirectory in its OS application-data root; on macOS and Windows these are the Astral locations above, and on Linux this is normally `~/.config/astral/schema-3/`. The Linux VPS installer instead keeps them beneath its installation root's `data/`. Explicit paths and environment settings override defaults.
+Server data normally uses `server/` and local computer data uses `computers/` beneath that root. Desktop uses a `schema-3-core-11/` subdirectory in its OS application-data root; on macOS and Windows these are the Astral locations above, and on Linux this is normally `~/.config/astral/schema-3-core-11/`. The Linux VPS installer instead keeps them beneath its installation root's `data/`. Explicit paths and environment settings override defaults.
 
 ## Verify recovery
 

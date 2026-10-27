@@ -1,6 +1,6 @@
 # Versioned data migrations
 
-Astral upgrades data when software is updated, rather than carrying historical readers in normal business code. Application versions and data versions are independent. The first supported public baseline is **Host schema 3 / Core format 10**; earlier private formats and unknown future formats are rejected, not relabelled.
+Astral upgrades data when software is updated, rather than carrying historical readers in normal business code. Application versions and data versions are independent. The first supported public baseline is **Host schema 3 / Core format 11**; Core format 10 and earlier formats are rejected without conversion by this destructive model/session refactor; unknown future formats are rejected as well. Existing histories are not rewritten or deleted by startup.
 
 The newest unified Go binary carries every supported historical SQL/Go migration. Upgrading from an old release downloads only the latest release, then applies the missing data steps in order. It does not install intermediate Apps or fetch migration scripts from the network. A software release with no persisted-format change needs no empty migration.
 
@@ -63,5 +63,7 @@ Increment the owning data format and add the next consecutive immutable step. Up
 For Host JSON changes, consider both current documents and historical revisions. Preserve unknown values and integer precision where the conversion does not change them. For Core changes, preserve or deliberately reconstruct the relationships between Entries, Projections, State, Creation, input content digests, receipts and frozen requests. Merely rewriting table-header versions is not a migration.
 
 Released steps cannot be edited, deleted or reordered. Correct a released conversion with a new step. The execution wrapper advances format markers in the same transaction; scripts should not manually advance them. Include tests for skipped releases, SQL/Go ordering, reentry, a failing intermediate step, cold reopen, relevant historical semantics and coordinated recovery. Current synthetic future-format tests validate the executor; they do not invent support for unpublished historical formats.
+
+CI compares numbered migration sources with the latest published Astral tag, including both Host files and the Core module version pinned by that release. Changing or removing a released SQL or frozen Go migration fails the check; appending new steps is allowed. The comparison reads public module sources without executing dependency code and never relies on a local workspace or replacement.
 
 Actual release publication and a real N→N+1 update, including retained user state and failure recovery, require separate acceptance evidence. Passing migration fixtures or publishing update metadata is not that evidence.

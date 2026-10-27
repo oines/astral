@@ -28,7 +28,7 @@ const architecture = process.arch
 const platform = { darwin: 'mac', win32: 'win', linux: 'linux' }[process.platform]
 const appData = process.platform === 'darwin' ? path.join(homedir(), 'Library/Application Support') : process.platform === 'win32' ? process.env.APPDATA : process.env.XDG_CONFIG_HOME || path.join(homedir(), '.config')
 assert.ok(appData, 'Missing native application data location')
-const data = path.join(appData, 'astral/schema-3')
+const data = path.join(appData, 'astral/schema-3-core-11')
 const profile = path.join(appData, 'Astral')
 for (const existing of [data, profile]) {
   try { await access(existing); throw new Error('Existing Astral data/profile is present; refusing to run the replacement test.') } catch (error) { if (error.code !== 'ENOENT') throw error }

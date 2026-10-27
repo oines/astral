@@ -15,7 +15,7 @@ cd astral
 pnpm install --frozen-lockfile
 ```
 
-接下来的命令都在仓库根目录运行。源码工作区中的 `go.work` 若引用了你机器上不存在的相邻项目，`GOWORK=off` 会让构建使用 `go.mod` 中的依赖。
+Core 及其 Models 包的依赖版本已固定在 `go.mod`，无需另行下载 Core 源码。`GOWORK=off` 可避免本地 `go.work` 覆盖固定依赖。接下来的命令都在 Astral 仓库根目录运行。
 
 ## 构建 Server 和产品界面
 

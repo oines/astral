@@ -1,6 +1,6 @@
 # Computers, sessions and execution
 
-The Server owns configuration, credentials, sessions, IM accounts and delivery receipts. [Astral Core](https://github.com/oines/astral-core) owns the persistent agent loop. [astral-models](https://github.com/oines/astral-models) translates Core requests into provider protocols.
+The Server owns configuration, credentials, sessions, IM accounts and delivery receipts. [Astral Core](https://github.com/oines/astral-core) owns the persistent agent loop. The Models packages in that same SDK own provider authentication, runtime model metadata, request encoding and response parsing. Core owns the authoritative session model selection; the Server stores business configuration and credential references.
 
 This guide describes the runtime behavior and boundaries. The implementation follows [SPEC.md](../SPEC.md); messaging follows [the IM contract](im.md). For startup and development commands, see [the development guide](development.md).
 

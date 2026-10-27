@@ -217,7 +217,7 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	}
 	s.Config.InitialAdminPassword = ""
 
-	s.Harness = harness.New(s.Store, s.CoreStore, &modelbridge.Bridge{Store: s.Store, ModelCatalog: modelbridge.NewModelCatalog(filepath.Join(s.Store.Directory, "cache", "models.dev.json"), nil)}, s.Hub)
+	s.Harness = harness.New(s.Store, s.CoreStore, &modelbridge.Bridge{Store: s.Store, Version: config.Version, ModelCatalog: modelbridge.NewModelCatalog(filepath.Join(s.Store.Directory, "cache", "models.dev.json"), nil)}, s.Hub)
 	// Deletion recovery can remove IM accounts before any channel worker starts.
 	s.Channels = channels.New(s.Store, s.Harness)
 	if err = s.Harness.ResumeSessionDeletions(s.ctx); err != nil {

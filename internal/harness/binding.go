@@ -46,7 +46,7 @@ func (s *Service) WithStoppedSessions(ctx context.Context, ids []string, change 
 			err := change()
 			if err == nil {
 				for _, r := range runtimes {
-					if err = r.syncSelection(ctx); err != nil {
+					if err = r.syncBusinessConfig(ctx); err != nil {
 						break
 					}
 					s.notify(r.id)
@@ -78,7 +78,7 @@ func (s *Service) WithSession(ctx context.Context, id string, apply func(*core.S
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if snapshot := r.core.Load().Snapshot(); !snapshot.Running && !snapshot.Maintenance {
-		if err = r.syncSelection(ctx); err != nil {
+		if err = r.syncBusinessConfig(ctx); err != nil {
 			return err
 		}
 	}

@@ -3,249 +3,55 @@ package modelbridge
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"slices"
-	"strings"
-	"time"
 
+	"github.com/oines/astral-core/models/integration"
 	"github.com/oines/astral/internal/domain"
 )
 
-type Discovery struct {
-	ID                    string                                 `json:"id"`
-	Name                  string                                 `json:"name"`
-	Protocol              string                                 `json:"protocol,omitempty"`
-	Dialect               string                                 `json:"dialect,omitempty"`
-	Source                string                                 `json:"source,omitempty"`
-	Recommendations       map[string]json.RawMessage             `json:"recommendations"`
-	RecommendationSources map[string]domain.RecommendationSource `json:"recommendation_sources,omitempty"`
-	conflicts             map[string]bool
+type Discovery = integration.Discovery
+
+func raw(value any) json.RawMessage { data, _ := json.Marshal(value); return data }
+func (b *Bridge) providerHeaders(ctx context.Context, provider domain.Provider) (map[string]string, error) {
+	value, err := b.Store.Secret(ctx, provider.HeadersCredentialID)
+	if err != nil {
+		return nil, err
+	}
+	headers := map[string]string{}
+	if value != "" {
+		if err = json.Unmarshal([]byte(value), &headers); err != nil {
+			return nil, domain.Invalid("invalid saved provider headers")
+		}
+	}
+	return headers, nil
 }
-
-func raw(value any) json.RawMessage { b, _ := json.Marshal(value); return b }
-
-// Catalog lists only identities returned by the configured endpoint, enriched
-// with public recommendations. Discovery never proves tools or replay work.
 func (b *Bridge) Catalog(ctx context.Context, providerID string) ([]Discovery, error) {
 	var provider domain.Provider
 	if err := b.Store.Get(ctx, "providers", providerID, &provider); err != nil {
 		return nil, err
 	}
+	headers, err := b.providerHeaders(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	catalog := integration.Catalog{HTTPClient: b.HTTPClient, Public: b.ModelCatalog}
+	key := ""
 	if preset := FindPreset(provider.PresetID); preset != nil && preset.Auth == "oauth" {
-		items, err := b.accountCatalog(ctx, provider)
+		catalog.HTTPClient = b.oauthClient(provider)
+	} else {
+		key, err = b.Store.Secret(ctx, provider.CredentialID)
 		if err != nil {
 			return nil, err
 		}
-		if len(items) > 0 {
-			public := b.publicCatalog(ctx)
-			for i := range items {
-				items[i] = enrichDiscovery(provider, public, items[i])
-			}
-		}
-		return items, nil
 	}
-	key, err := b.Store.Secret(ctx, provider.CredentialID)
-	if err != nil {
-		return nil, err
-	}
-	headerJSON, err := b.Store.Secret(ctx, provider.HeadersCredentialID)
-	if err != nil {
-		return nil, err
-	}
-	var headers map[string]string
-	if headerJSON != "" {
-		if err = json.Unmarshal([]byte(headerJSON), &headers); err != nil {
-			return nil, err
-		}
-	}
-	client := b.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-	result := []Discovery{}
-	seen := map[string]bool{}
-	cursor := ""
-	for page := 0; page < 20; page++ {
-		catalogURL := strings.TrimRight(provider.BaseURL, "/") + "/models"
-		if strings.HasPrefix(provider.PresetID, "opencode") {
-			catalogURL = strings.TrimRight(provider.BaseURL, "/") + "/v1/models"
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, catalogURL, nil)
-		if err != nil {
-			return nil, err
-		}
-		if cursor != "" {
-			query := req.URL.Query()
-			field := "after"
-			if provider.Protocol == "google-generative-ai" {
-				field = "pageToken"
-			}
-			if provider.Protocol == "anthropic-messages" {
-				field = "after_id"
-			}
-			query.Set(field, cursor)
-			req.URL.RawQuery = query.Encode()
-		}
-		if provider.PresetID == "codex" {
-			q := req.URL.Query()
-			q.Set("client_version", "0.1.0")
-			req.URL.RawQuery = q.Encode()
-		}
-		if key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-			if provider.Protocol == "anthropic-messages" {
-				req.Header.Set("X-Api-Key", key)
-			}
-			if provider.Protocol == "google-generative-ai" {
-				req.Header.Set("X-Goog-Api-Key", key)
-			}
-		}
-		if provider.Protocol == "anthropic-messages" {
-			req.Header.Set("Anthropic-Version", "2023-06-01")
-		}
-		req.Header.Set("User-Agent", "Astral/0.1.0")
-		for name, value := range headers {
-			req.Header.Set(name, value)
-		}
-		response, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("model catalog request failed: %w", err)
-		}
-		data, readErr := io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
-		_ = response.Body.Close()
-		if readErr != nil {
-			return nil, readErr
-		}
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			return nil, fmt.Errorf("provider model catalog returned HTTP %d", response.StatusCode)
-		}
-		if len(data) > 8<<20 {
-			return nil, domain.Invalid("model catalog exceeds 8 MiB")
-		}
-		var envelope struct {
-			Data          []json.RawMessage `json:"data"`
-			Models        []json.RawMessage `json:"models"`
-			NextPageToken string            `json:"nextPageToken"`
-			HasMore       bool              `json:"has_more"`
-			LastID        string            `json:"last_id"`
-		}
-		if err = json.Unmarshal(data, &envelope); err != nil {
-			return nil, fmt.Errorf("invalid model catalog JSON: %w", err)
-		}
-		if envelope.Data == nil && envelope.Models == nil {
-			return nil, domain.Invalid("model catalog response did not contain a model list")
-		}
-		if envelope.Data == nil {
-			envelope.Data = envelope.Models
-		}
-		if envelope.NextPageToken != "" {
-			envelope.HasMore = true
-			envelope.LastID = envelope.NextPageToken
-		}
-		for _, item := range envelope.Data {
-			var v struct {
-				ID               string   `json:"id"`
-				Name             string   `json:"name"`
-				DisplayName      string   `json:"displayName"`
-				DisplayNameSnake string   `json:"display_name"`
-				Slug             string   `json:"slug"`
-				Methods          []string `json:"supportedGenerationMethods"`
-				Endpoints        []string `json:"supported_endpoints"`
-				Kind             string   `json:"kind"`
-				Mode             string   `json:"mode"`
-			}
-			if err = json.Unmarshal(item, &v); err != nil {
-				return nil, err
-			}
-			if v.ID == "" && v.Slug != "" {
-				v.ID = v.Slug
-				v.Name = v.DisplayNameSnake
-			}
-			if isSelfHostedGateway(provider.PresetID) {
-				if v.Kind != "" && v.Kind != "chat" || v.Mode != "" && v.Mode != "chat" && v.Mode != "responses" {
-					continue
-				}
-				if v.DisplayNameSnake != "" {
-					v.Name = v.DisplayNameSnake
-				}
-			}
-			if provider.Protocol == "google-generative-ai" {
-				if !slices.Contains(v.Methods, "generateContent") {
-					continue
-				}
-				v.ID = strings.TrimPrefix(v.Name, "models/")
-				v.Name = v.DisplayName
-			}
-			if v.ID == "" || seen[v.ID] {
-				continue
-			}
-			seen[v.ID] = true
-			if v.Name == "" {
-				v.Name = v.ID
-			}
-			r, err := liveModelRecommendations(provider, item)
-			if err != nil {
-				return nil, fmt.Errorf("invalid model metadata for %s: %w", v.ID, err)
-			}
-			discovery := Discovery{ID: v.ID, Name: v.Name, Recommendations: r, Source: catalogURL}
-			if isSelfHostedGateway(provider.PresetID) {
-				// These gateways translate client protocols. Native endpoint
-				// metadata describes upstream routing, not a restriction on
-				// the API the user selected for this connection.
-				discovery.Protocol = provider.Protocol
-				discovery.Dialect = provider.Dialect
-			} else if slices.Contains(v.Endpoints, "/responses") {
-				discovery.Protocol = "openai-responses"
-				discovery.Dialect = "openai"
-			} else if slices.Contains(v.Endpoints, "/messages") {
-				discovery.Protocol = "anthropic-messages"
-				discovery.Dialect = "anthropic"
-			} else if slices.Contains(v.Endpoints, "/chat/completions") {
-				discovery.Protocol = "openai-completions"
-				discovery.Dialect = "compatible"
-			}
-			markRecommendationSources(&discovery, time.Now().UTC())
-			result = append(result, discovery)
-		}
-		if !envelope.HasMore {
-			result = enrichLiteLLMCatalog(ctx, provider, client, req, result)
-			if len(result) > 0 {
-				public := b.publicCatalog(ctx)
-				for i := range result {
-					result[i] = enrichDiscovery(provider, public, result[i])
-				}
-			}
-			return result, nil
-		}
-		if envelope.LastID == "" || envelope.LastID == cursor {
-			return nil, domain.Invalid("provider returned an invalid model catalog cursor")
-		}
-		cursor = envelope.LastID
-	}
-	return nil, domain.Invalid("provider model catalog exceeded 20 pages")
+	return catalog.List(ctx, sdkProvider(provider), key, headers)
 }
-
-func (b *Bridge) Refresh(ctx context.Context, id string) (domain.ModelProfile, error) {
-	var p domain.ModelProfile
-	if err := b.Store.Get(ctx, "models", id, &p); err != nil {
-		return p, err
+func (b *Bridge) ModelRecommendation(ctx context.Context, providerID, modelID string) (Discovery, error) {
+	var provider domain.Provider
+	if err := b.Store.Get(ctx, "providers", providerID, &provider); err != nil {
+		return Discovery{}, err
 	}
-	catalog, err := b.Catalog(ctx, p.ProviderID)
-	if err != nil {
-		return p, err
-	}
-	for _, item := range catalog {
-		if item.ID != p.ModelID {
-			continue
-		}
-		now := time.Now().UTC()
-		p.Recommendations, p.CatalogAt, p.CatalogSource = item.Recommendations, &now, item.Source
-		p.RecommendationSources = item.RecommendationSources
-		// Overrides are deliberately not merged into or replaced by discovery.
-		err = b.SaveProfile(ctx, &p)
-		return p, err
-	}
-	return p, domain.Missing("model in provider catalog", p.ModelID)
+	return (&integration.Catalog{Public: b.ModelCatalog}).Recommend(ctx, sdkProvider(provider), modelID)
+}
+func (b *Bridge) PresetCatalog(ctx context.Context, id string) ([]Discovery, error) {
+	return (&integration.Catalog{Public: b.ModelCatalog}).PresetCatalog(ctx, id)
 }

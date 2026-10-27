@@ -73,14 +73,11 @@ func (s *Service) bind(ctx context.Context, conversationID, sessionID string, fi
 		}
 		stop = append(stop, sessionID)
 	} else {
-		ref, options, selectionErr := s.Harness.Models.Selection(ctx, agent.DefaultModelID)
+		_, _, selectionErr := s.Harness.Models.Selection(ctx, agent.DefaultModelID)
 		if selectionErr != nil {
 			return domain.ConversationBinding{}, selectionErr
 		}
-		if agent.DefaultReasoning != nil {
-			options.Reasoning = *agent.DefaultReasoning
-		}
-		record = domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agent.ID, Source: "im", ProfileID: agent.DefaultModelID, ModelRef: ref, Options: options, Reasoning: agent.DefaultReasoning, ComputerID: agent.DefaultComputerID}
+		record = domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agent.ID, Source: "im", ComputerID: agent.DefaultComputerID}
 	}
 	binding := domain.ConversationBinding{Meta: domain.Meta{ID: domain.ID("binding")}, ConversationID: conversation.ID, AgentID: agent.ID, SessionID: record.ID, Enabled: true}
 	err = s.Harness.WithStoppedSessions(ctx, stop, func() error {

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	core "github.com/oines/astral-core"
-	models "github.com/oines/astral-models"
+	models "github.com/oines/astral-core/models"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
 )
@@ -90,7 +90,7 @@ func TestReasoningIntegrationFormatPrecedence(t *testing.T) {
 		{"provider override", "qwen", "qwen", models.ReasoningFormatThinkingType, "", models.ReasoningFormatThinkingType},
 		{"preset binding", "qwen", "compatible", "", "", models.ReasoningFormatQwen},
 		{"explicit protocol default", "qwen", "qwen", models.ReasoningFormatProtocolDefault, "", models.ReasoningFormatOpenAIChat},
-		{"legacy custom compatibility", "", "deepseek", "", "", models.ReasoningFormatThinkingType},
+		{"custom protocol default", "", "deepseek", "", "", models.ReasoningFormatOpenAIChat},
 		{"new custom standard protocol", "", "deepseek", models.ReasoningFormatProtocolDefault, "", models.ReasoningFormatOpenAIChat},
 	}
 	for _, test := range tests {
@@ -319,5 +319,106 @@ func TestReasoningIntegrationIgnoresClientSuppliedControls(t *testing.T) {
 	}
 	if err := bridge.ValidateOptions(ctx, ref, core.GenerationOptions{Reasoning: core.ReasoningOptions{Effort: "invented"}}); err == nil {
 		t.Fatal("client-supplied controls authorized an unsupported effort")
+	}
+}
+
+func TestDescribeProfileKeepsReasoningControlsWhenTokenLimitsAreUnknown(t *testing.T) {
+	for _, missing := range []string{"context_window", "max_output_tokens", "both"} {
+		t.Run(missing, func(t *testing.T) {
+			bridge, baseURL, requests := reasoningIntegrationBridge(t)
+			ctx := context.Background()
+			connection := domain.Provider{Name: "custom", Protocol: "openai-responses", Dialect: "openai", BaseURL: baseURL}
+			if err := bridge.SaveProvider(ctx, &connection, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			profile := reasoningIntegrationProfile(connection, "vendor/model", map[string]any{"supported": true, "efforts": []string{"high"}})
+			if missing == "both" {
+				profile.Recommendations["context_window"] = raw(0)
+				delete(profile.Recommendations, "max_output_tokens")
+			} else {
+				delete(profile.Recommendations, missing)
+			}
+			profile.ID = domain.ID("model")
+			// Catalog refresh may persist sparse metadata before the user fills
+			// its limits; describing it must not require constructing a request.
+			if err := bridge.Store.Save(ctx, "models", &profile.Meta, &profile); err != nil {
+				t.Fatal(err)
+			}
+			described := bridge.DescribeProfile(ctx, profile)
+			if described.ReasoningError != "" || described.ReasoningControls == nil {
+				t.Fatalf("unknown limits hid reasoning controls: %+v", described)
+			}
+			var ids []string
+			for _, option := range described.ReasoningControls.Options {
+				ids = append(ids, option.ID)
+			}
+			if !reflect.DeepEqual(ids, []string{"interface-default", "effort:high"}) {
+				t.Fatalf("reasoning choices = %v", ids)
+			}
+			if described.Available == nil || *described.Available || described.UnavailableReason != "token_limits_unknown" {
+				t.Fatalf("unknown limits were considered runnable: %+v", described)
+			}
+			if available, reason := bridge.Availability(ctx, profile.ID); available || reason != "token_limits_unknown" {
+				t.Fatalf("availability = %v, %q", available, reason)
+			}
+			select {
+			case <-requests:
+				t.Fatal("describing metadata called the model")
+			default:
+			}
+		})
+	}
+}
+
+func TestDescribeProfileFilteredReasoningCandidatesDoNotInvalidateAPIDefault(t *testing.T) {
+	bridge, baseURL, requests := reasoningIntegrationBridge(t)
+	ctx := context.Background()
+	connection := domain.Provider{Name: "gateway", PresetID: "commandcode", Protocol: "openai-responses", Dialect: "openai", BaseURL: baseURL}
+	if err := bridge.SaveProvider(ctx, &connection, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	profile := reasoningIntegrationProfile(connection, "vendor/model", map[string]any{
+		"supported": true, "toggle": true, "disable": true, "efforts": []string{"low", "high", "max"},
+	})
+	if err := bridge.SaveProfile(ctx, &profile); err != nil {
+		t.Fatal(err)
+	}
+	described := bridge.DescribeProfile(ctx, profile)
+	if described.ReasoningError != "" || described.Available == nil || !*described.Available || described.ReasoningControls == nil {
+		t.Fatalf("filtered candidates invalidated the API default: %+v", described)
+	}
+	var ids []string
+	for _, option := range described.ReasoningControls.Options {
+		ids = append(ids, option.ID)
+	}
+	if !reflect.DeepEqual(ids, []string{"interface-default", "effort:low", "effort:high", "effort:max"}) || len(described.ReasoningControls.Diagnostics) != 2 {
+		t.Fatalf("controls = %+v", described.ReasoningControls)
+	}
+	if _, err := bridge.ResolveSelection(ctx, core.ModelSelection{ID: profile.ID, Reasoning: &core.ReasoningOptions{}}); err != nil {
+		t.Fatalf("explicit API default is invalid: %v", err)
+	}
+	select {
+	case <-requests:
+		t.Fatal("describing or resolving metadata called the model")
+	default:
+	}
+}
+
+func TestSaveProfileStillRequiresAgentTokenLimits(t *testing.T) {
+	bridge, baseURL, _ := reasoningIntegrationBridge(t)
+	ctx := context.Background()
+	connection := domain.Provider{Name: "custom", Protocol: "openai-responses", Dialect: "openai", BaseURL: baseURL}
+	if err := bridge.SaveProvider(ctx, &connection, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, missing := range []string{"context_window", "max_output_tokens"} {
+		profile := reasoningIntegrationProfile(connection, "vendor/model", map[string]any{"supported": true, "efforts": []string{"high"}})
+		delete(profile.Recommendations, missing)
+		if err := bridge.SaveProfile(ctx, &profile); err == nil || !strings.Contains(err.Error(), "token limits must be positive") {
+			t.Fatalf("saving without %s returned %v", missing, err)
+		}
+	}
+	if records, err := bridge.Store.List(ctx, "models"); err != nil || len(records) != 0 {
+		t.Fatalf("rejected models were persisted: %v, %v", records, err)
 	}
 }

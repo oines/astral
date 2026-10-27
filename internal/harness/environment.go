@@ -36,25 +36,6 @@ type modelContextMetadata struct {
 
 type inspectContextKey struct{}
 
-func (r *runtime) validateModelSelection(ctx context.Context, ref string) error {
-	// Inspection describes the persisted configuration without advancing it.
-	if ctx.Value(inspectContextKey{}) == true {
-		return nil
-	}
-	var record domain.Session
-	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
-		return err
-	}
-	current, _, err := r.service.Models.Selection(ctx, record.ProfileID)
-	if err != nil {
-		return err
-	}
-	if current != ref || record.ModelRef != ref {
-		return domain.Conflict("model configuration changed; select its current revision before continuing")
-	}
-	return nil
-}
-
 // InitializeSession is an explicit creation/binding operation. Reopening or
 // inspecting history does not call it.
 func (s *Service) InitializeSession(ctx context.Context, id string) error {
@@ -228,27 +209,6 @@ func modelChange(previous, current modelbridge.ModelDescription) []core.Message 
 // During a run, CollectContext inserts the same notice at the first request
 // boundary using that request's model. A separate queued notice could race the
 // boundary and duplicate, or describe a selection already superseded there.
-func (r *runtime) refreshModelContext(ctx context.Context) error {
-	session := r.core.Load()
-	if snapshot := session.Snapshot(); snapshot.Running || snapshot.Maintenance {
-		return nil
-	}
-	view, err := session.InspectContext(context.WithValue(ctx, inspectContextKey{}, true))
-	if err != nil {
-		return err
-	}
-	current, err := r.service.Models.DescribeModel(ctx, view.Request.ModelID)
-	if err != nil {
-		return err
-	}
-	_, previous := environmentState(view.Request.Messages)
-	batch := modelChange(previous, current)
-	if len(batch) == 0 {
-		return nil
-	}
-	_, err = session.InjectContext(ctx, core.Input{ID: domain.ID("model-context"), Contexts: batch})
-	return err
-}
 
 func (r *runtime) refreshEnvironment(ctx context.Context) error {
 	view, err := r.core.Load().InspectContext(context.WithValue(ctx, inspectContextKey{}, true))

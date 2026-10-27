@@ -8,6 +8,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
+	"github.com/oines/astral-core/models/provider"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
@@ -109,10 +110,16 @@ func (r *runtime) maybeGenerateSessionTitle(userQuery string) {
 	s.notify(r.id)
 	r.titleCancel, r.titleDone = cancel, make(chan struct{})
 	done := r.titleDone
+	selected, resolveErr := r.service.Models.ResolveSelection(modelbridge.WithSessionID(ctx, r.id), r.core.Load().Configuration().Selection)
+	if resolveErr != nil {
+		finish()
+		close(done)
+		return
+	}
 	go func() {
 		defer finish()
 		defer close(done)
-		title := r.generateSessionTitle(ctx, claimed, userQuery)
+		title := r.generateSessionTitle(ctx, selected, userQuery)
 		if title == "" {
 			return
 		}
@@ -144,24 +151,21 @@ func (r *runtime) maybeGenerateSessionTitle(userQuery string) {
 	}()
 }
 
-func (r *runtime) generateSessionTitle(ctx context.Context, record domain.Session, userQuery string) string {
+func (r *runtime) generateSessionTitle(ctx context.Context, selected core.ResolvedModel, userQuery string) string {
 	ctx = modelbridge.WithSessionID(ctx, r.id)
-	model, err := r.service.Models.Resolve(ctx, record.ModelRef, nil)
-	if err != nil {
-		return ""
-	}
+	model := selected.Model
 	spec := model.Spec()
 	outputTokens := min(titleGenerateMaxTokens, spec.MaxOutputTokens)
 	input := boundTitleInput(userQuery, spec, outputTokens)
 	if input == "" || outputTokens <= 0 {
 		return ""
 	}
-	options := record.Options
+	options := selected.Options
 	options.ToolChoice = core.ToolChoice{Mode: "none"}
 	options.ResponseFormat, options.Stop = nil, nil
 	// A separate model call has no tools, environment, history or Core rollout.
 	// Use the exact model selected at acceptance, without Core's retry loop.
-	reply, err := model.Stream(ctx, core.Request{
+	reply, err := provider.Call(ctx, model, core.Request{
 		ModelID: spec.ID, ModelRevision: spec.Revision,
 		Messages:        []core.Message{core.User(titleGenerationPrompt + input)},
 		MaxOutputTokens: outputTokens, Options: options,

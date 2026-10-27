@@ -81,17 +81,3 @@ func TestPresetResponsesWireContract(t *testing.T) {
 		})
 	}
 }
-
-func TestNewModelProtocolRecommendationRespectsExplicitRoute(t *testing.T) {
-	p := domain.Provider{PresetID: "moonshot", Protocol: "openai-completions", Dialect: "compatible"}
-	if item := enrichDiscovery(p, nil, Discovery{ID: "kimi-k3"}); item.Protocol != "openai-responses" {
-		t.Fatalf("new K3 protocol = %s", item.Protocol)
-	}
-	if item := enrichDiscovery(p, nil, Discovery{ID: "kimi-k3", Protocol: "anthropic-messages"}); item.Protocol != "anthropic-messages" {
-		t.Fatalf("explicit protocol replaced: %s", item.Protocol)
-	}
-	p.Protocol = "anthropic-messages"
-	if item := enrichDiscovery(p, nil, Discovery{ID: "kimi-k3"}); item.Protocol != p.Protocol {
-		t.Fatalf("user connection protocol replaced: %s", item.Protocol)
-	}
-}

@@ -27,6 +27,8 @@ The default directory is not a filesystem sandbox. Access follows the permission
 
 Incoming chat attachments retain their source information and can be read or downloaded to a computer as needed. Sending a file also depends on platform permissions and format restrictions.
 
+Before a new IM image enters the Bot's passive context, Astral creates a proportional preview of at most 75,000 pixels and labels it as compressed. The original attachment reference remains available. If text or details are unclear, the Bot can download the original and read it with the existing file tools. The same stored preview is used by group participation decisions, ordinary requests and later context compaction. Existing history and images opened through file tools are unchanged.
+
 A file visible in Astral has not necessarily been sent to the external chat. Ask explicitly to send the result back and check the send outcome.
 
 Back up Server data, computer work files, and container data separately. See [Updates and backups](/docs/hosting/maintenance/).

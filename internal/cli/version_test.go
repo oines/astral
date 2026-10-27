@@ -36,7 +36,7 @@ func TestVersionCommandOutput(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					want = fmt.Sprintf("{\"version\":%s,\"data_formats\":{\"host\":%d,\"core\":%d},\"migration_status\":\"goose\",\"migration_baselines\":{\"host\":3,\"core\":10},\"migration_targets\":{\"host\":%d,\"core\":%d}}\n", versionJSON, persistence.FormatVersion, core.FormatVersion, persistence.FormatVersion, core.FormatVersion)
+					want = fmt.Sprintf("{\"version\":%s,\"data_formats\":{\"host\":%d,\"core\":%d},\"migration_status\":\"goose\",\"migration_baselines\":{\"host\":3,\"core\":11},\"migration_targets\":{\"host\":%d,\"core\":%d}}\n", versionJSON, persistence.FormatVersion, core.FormatVersion, persistence.FormatVersion, core.FormatVersion)
 				}
 				if out.String() != want {
 					t.Errorf("run(%q) output = %q, want %q", args, out.String(), want)

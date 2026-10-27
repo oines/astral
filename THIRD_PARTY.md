@@ -2,17 +2,17 @@
 
 Astral's own source is licensed under AGPL-3.0-only; see [LICENSE](LICENSE). The third-party licenses and copyright notices below remain in force for their respective components.
 
-Astral builds on [Astral Core](https://github.com/oines/astral-core) for the agent loop and [astral-models](https://github.com/oines/astral-models) for model protocols.
+Astral builds on the [Astral Core monorepo](https://github.com/oines/astral-core) for the agent loop and its Models packages for model protocols, authentication and catalog metadata.
 
-`astral-models` is a fork of [Twilight AI](https://github.com/felinics/twilight). Its HTTP/SSE support, provider errors, wire structures and reasoning replay build on the original [authors and contributors](https://github.com/felinics/twilight/graphs/contributors). The fork retains the upstream Apache License 2.0 and copyright notices unchanged. It does not claim authorship of that upstream work.
+The Models packages were moved from `astral-models`, a fork of [Twilight AI](https://github.com/felinics/twilight). Their HTTP/SSE support, provider errors, wire structures and reasoning replay build on the original [authors and contributors](https://github.com/felinics/twilight/graphs/contributors). The fork retains the upstream Apache License 2.0 and copyright notices unchanged. It does not claim authorship of that upstream work.
 
 The shared frontend follows the engineering baseline identified in the Astral specification and the Memoh reference project: Vue, TypeScript, Vite, Pinia/Colada, Tailwind, Markstream, and an Electron shell. Astral's domain, API, components and desktop process integration are maintained in this repository.
 
 Runtime dependencies also include coder/websocket, modernc SQLite, go-yaml v3, the Feishu OpenPlatform Server SDK, node-qrcode, Reka UI, Lucide, Inter, Monaco, xterm.js, Mermaid, KaTeX and their transitive dependencies. Their source packages retain their own licenses. Versions and provenance are recorded by `go.mod`, `go.sum`, `pnpm-lock.yaml` and the package manifests. Electron release bundles carry Electron and Chromium's license files.
 
-Distribution builds collect the installed Node and Go packages' license and notice files, together with the copied brand assets' notices and license texts, into `THIRD_PARTY_NOTICES.txt`, embedded with the Web app and copied beside the binaries. This includes the original `astral-models` license text.
+Distribution builds collect the installed Node and Go packages' license and notice files, together with the copied brand assets' notices and license texts, into `THIRD_PARTY_NOTICES.txt`, embedded with the Web app and copied beside the binaries. Core's module notices include the Models packages' Twilight attribution and Apache License 2.0 text.
 
-Provider brand icons come from [LobeHub Icons](https://github.com/lobehub/lobe-icons), distributed as `@lobehub/icons-static-svg`. Provider and model metadata incorporates a dated snapshot of [models.dev](https://github.com/anomalyco/models.dev); each model also retains its source URL. Command Code model identities and supported endpoints come from its public model catalog. Brand names and logos remain the property of their respective owners.
+Provider brand icons come from [LobeHub Icons](https://github.com/lobehub/lobe-icons), distributed as `@lobehub/icons-static-svg`. Model metadata is fetched and cached from [models.dev](https://github.com/anomalyco/models.dev), with source URLs retained for recommendations. Available model identities and supported endpoints come from the configured provider's catalog. Brand names and logos remain the property of their respective owners.
 
 Additional unmodified SVGs are copied from Floway and Magpie under their MIT licenses, and from Memoh under AGPL-3.0. The LiteLLM monogram is provided by its official brand kit for integration identification and remains subject to the published brand usage rules; it is not relicensed under Astral's source-code license. Exact source revisions, the LiteLLM asset URL and digest, and the corresponding license texts are recorded in [the brand asset notices](packages/icons/src/assets/NOTICE.md). These notices and license texts are also included in distribution notices.
 

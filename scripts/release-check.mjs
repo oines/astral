@@ -32,7 +32,7 @@ export async function checkReleaseTools() {
     assert.equal(desktopNames('0.1.0').length, 12)
     for (const name of packageNames) await writeFile(path.join(temporary, 'input', name), `Small fixture only: ${name}\n`)
     await writeFile(path.join(temporary, 'input', 'checksums.txt'), 'stale build checksum: must be recalculated\n')
-    const formats = { schema_version: 1, version: '0.1.0', source_sha: sourceSHA, host_schema: 3, core_format: 10, data_formats: { host: 3, core: 10 }, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 10 }, migration_targets: { host: 3, core: 10 } }
+    const formats = { schema_version: 1, version: '0.1.0', source_sha: sourceSHA, host_schema: 3, core_format: 11, data_formats: { host: 3, core: 11 }, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
     const writeFormats = async value => writeFile(path.join(temporary, 'input', 'release-formats.json'), JSON.stringify(value))
     await writeFormats(formats)
     const collectedNames = [...packageNames, 'release-formats.json', ...desktopUpdateFeeds('0.1.0').map(feed => feed.name)]
@@ -82,7 +82,7 @@ export async function checkReleaseTools() {
     rejects('release-assets.mjs', [...baseArgs, '--output', 'wrong-sha-output'], 'metadata does not match')
     await writeFormats({ ...formats, version: '0.1.1' })
     rejects('release-assets.mjs', [...baseArgs, '--output', 'wrong-version-output'], 'metadata does not match')
-    await writeFormats({ ...formats, data_formats: { host: 4, core: 10 } })
+    await writeFormats({ ...formats, data_formats: { host: 4, core: 11 } })
     rejects('release-assets.mjs', [...baseArgs, '--output', 'wrong-formats-output'], 'metadata does not match')
     await writeFormats(formats)
 
@@ -139,8 +139,8 @@ export async function checkReleaseTools() {
     assert.equal(publicManifest.candidate_run_url, 'https://github.com/oines/astral/actions/runs/1')
     assert.equal(publicManifest.ci_run_url, 'https://github.com/oines/astral/actions/runs/2')
     assert.equal(publicManifest.host_schema, 3)
-    assert.equal(publicManifest.core_format, 10)
-    assert.deepEqual(publicManifest.data_formats, { host: 3, core: 10 })
+    assert.equal(publicManifest.core_format, 11)
+    assert.deepEqual(publicManifest.data_formats, { host: 3, core: 11 })
     assert.equal(publicManifest.core_module_version, 'fixture')
     assert.equal(publicManifest.migration_status, 'goose')
     assert.equal(publicManifest.desktop_updater, 'electron-updater')
@@ -166,10 +166,11 @@ export async function checkReleaseTools() {
     for (const [name, value, message] of [
       ['wrong-source', { ...formats, source_sha: '2'.repeat(40) }, 'metadata does not match'],
       ['wrong-version', { ...formats, version: '0.1.1' }, 'metadata does not match'],
-      ['inconsistent-format', { ...formats, data_formats: { host: 4, core: 10 } }, 'metadata does not match'],
+      ['inconsistent-format', { ...formats, data_formats: { host: 4, core: 11 } }, 'metadata does not match'],
       ['invented-migrations', { ...formats, migration_status: 'implemented' }, 'metadata does not match'],
-      ['changed-host', { ...formats, host_schema: 4, data_formats: { host: 4, core: 10 } }, 'metadata does not match'],
-      ['changed-core', { ...formats, core_format: 11, data_formats: { host: 3, core: 11 } }, 'metadata does not match'],
+      ['changed-host', { ...formats, host_schema: 4, data_formats: { host: 4, core: 11 } }, 'metadata does not match'],
+      ['changed-core', { ...formats, core_format: 12, data_formats: { host: 3, core: 12 } }, 'metadata does not match'],
+      ['old-core-baseline', { ...formats, migration_baselines: { host: 3, core: 10 } }, 'metadata does not match'],
     ]) {
       await writeFormats(value)
       rejects('release-assets.mjs', [...publicArgs, '--output', `public-${name}`], message)

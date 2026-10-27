@@ -7,7 +7,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
-	github.com/oines/astral-core v0.0.0-20261026104715-d62783173ec2
+	github.com/oines/astral-core v0.0.0-20261027103920-027b81ca29b6
 	github.com/pquerna/otp v1.5.0
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/yuin/goldmark v1.8.6
@@ -43,7 +43,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
-	github.com/oines/astral-models v0.9.1-0.20261025013115-830fc9e1e350
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect

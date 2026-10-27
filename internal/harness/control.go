@@ -29,10 +29,30 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 	if agent.DefaultComputerID != "" && !slices.Contains(agent.AllowedComputers, agent.DefaultComputerID) {
 		return domain.Invalid("default Computer must be allowed for this Agent")
 	}
+	var previous domain.Agent
+	if agent.Revision > 0 {
+		if err := s.Store.Get(ctx, "agents", agent.ID, &previous); err != nil {
+			return err
+		}
+		if previous.Deletion {
+			return domain.Missing("Bot", agent.ID)
+		}
+	}
 	for _, selection := range []struct {
-		model     string
-		reasoning *core.ReasoningOptions
-	}{{agent.DefaultModelID, agent.DefaultReasoning}, {agent.ProbeModelID, agent.ProbeReasoning}} {
+		model             string
+		reasoning         *core.ReasoningOptions
+		previousModel     string
+		previousReasoning *core.ReasoningOptions
+	}{
+		{agent.DefaultModelID, agent.DefaultReasoning, previous.DefaultModelID, previous.DefaultReasoning},
+		{agent.ProbeModelID, agent.ProbeReasoning, previous.ProbeModelID, previous.ProbeReasoning},
+	} {
+		// Deleted or disabled models leave their saved references intact. An
+		// unrelated edit or repair of the other selection must still be possible;
+		// only a newly chosen model/reasoning pair needs current validation.
+		if agent.Revision > 0 && selection.model == selection.previousModel && jsonEqual(selection.reasoning, selection.previousReasoning) {
+			continue
+		}
 		if selection.model == "" {
 			if selection.reasoning != nil {
 				return domain.Invalid("a reasoning override requires an explicit model")
@@ -96,7 +116,7 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 	return err
 }
 
-func (r *runtime) syncSelection(ctx context.Context) error {
+func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 	var record domain.Session
 	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
 		return err
@@ -107,14 +127,7 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 	if err := r.service.agentAvailable(ctx, record.AgentID); err != nil {
 		return err
 	}
-	ref, options, err := r.service.Models.Selection(ctx, record.ProfileID)
-	if err != nil {
-		return err
-	}
-	if record.Reasoning != nil {
-		options.Reasoning = *record.Reasoning
-	}
-	if err = r.syncBindingConfig(ctx, record); err != nil {
+	if err := r.syncBindingConfig(ctx, record); err != nil {
 		return err
 	}
 	configuration := r.core.Load().Configuration()
@@ -128,18 +141,9 @@ func (r *runtime) syncSelection(ctx context.Context) error {
 	if configuration.SystemPrompt != hostPrompt || !jsonEqual(configuration.Tools, definitions) {
 		configuration.SystemPrompt = hostPrompt
 		configuration.Tools = definitions
-		if err = r.core.Load().Configure(ctx, configuration); err != nil {
+		if err := r.core.Load().Configure(ctx, configuration); err != nil {
 			return err
 		}
-	}
-	if ref != r.core.Load().Configuration().ModelID || !jsonEqual(options, r.core.Load().Configuration().Options) {
-		if err = r.core.Load().SelectModel(ctx, ref, options); err != nil {
-			return err
-		}
-	}
-	if record.ModelRef != ref || !jsonEqual(record.Options, options) {
-		record.ModelRef, record.Options = ref, options
-		return r.service.Store.Save(ctx, "sessions", &record.Meta, &record)
 	}
 	return nil
 }
@@ -152,36 +156,17 @@ func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoni
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.core.Load().Snapshot().Maintenance {
-		return core.ErrBusy
+	selection := core.ModelSelection{ID: profileID}
+	if len(reasoning) > 0 {
+		selection.Reasoning = reasoning[0]
 	}
-	ref, options, err := s.Models.Selection(ctx, profileID)
-	if err != nil {
+	if _, err = s.Models.ResolveSelection(ctx, selection); err != nil {
 		return err
 	}
-	var record domain.Session
-	if err = s.Store.Get(ctx, "sessions", id, &record); err != nil {
-		return err
-	}
-	record.Reasoning = nil
-	if len(reasoning) > 0 && reasoning[0] != nil {
-		copy := *reasoning[0]
-		record.Reasoning, options.Reasoning = &copy, copy
-	}
-	if err = s.Models.ValidateOptions(ctx, ref, options); err != nil {
-		return err
-	}
-	record.ProfileID, record.ModelRef, record.Options = profileID, ref, options
-	// Save the intended selection first. If Core acknowledgement fails, the next
-	// Continue reconciles it before dispatch; preparation blocks stale requests.
-	if err = s.Store.Save(ctx, "sessions", &record.Meta, &record); err != nil {
-		return err
-	}
-	err = r.core.Load().SelectModel(ctx, ref, options)
+	err = r.core.Load().SelectModel(ctx, selection)
 	if err == nil {
-		err = r.refreshModelContext(ctx)
+		s.notify(id)
 	}
-	s.notify(id)
 	return err
 }
 
@@ -227,7 +212,7 @@ func (r *runtime) continueLocked(ctx context.Context) error {
 	if err := r.finishInterruptedTools(ctx); err != nil {
 		return err
 	}
-	if err := r.syncSelection(ctx); err != nil {
+	if err := r.syncBusinessConfig(ctx); err != nil {
 		return err
 	}
 	_, err := r.core.Load().Continue(ctx)
@@ -259,7 +244,7 @@ func (s *Service) Compact(ctx context.Context, id, instructions string) error {
 		return err
 	}
 	r.mu.Lock()
-	err = r.syncSelection(ctx)
+	err = r.syncBusinessConfig(ctx)
 	r.mu.Unlock()
 	if err != nil {
 		return err
@@ -328,9 +313,6 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 		if existing.ParentSessionID != id || existing.ForkEntryID != head {
 			return existing, domain.Conflict("Fork target already belongs to another request")
 		}
-		if _, err = s.open(ctx, newID); err != nil {
-			return existing, err
-		}
 		return existing, nil
 	} else if !domain.IsMissing(found) {
 		return record, found
@@ -349,9 +331,6 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 	if err != nil {
 		return record, err
 	}
-	configuration := child.Configuration()
-	record.ModelRef, record.Options = configuration.ModelID, configuration.Options
-	record.ProfileID = strings.Split(configuration.ModelID, "~")[0]
 	if err = child.Close(ctx); err != nil {
 		return record, err
 	}
@@ -363,9 +342,8 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 	}); err != nil {
 		return record, err
 	}
-	err = s.InitializeSession(ctx, record.ID)
 	s.notify(record.ID)
-	return record, err
+	return record, nil
 }
 
 // SaveSessionPresentation changes only Owner presentation fields.
