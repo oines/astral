@@ -64,4 +64,6 @@ For Host JSON changes, consider both current documents and historical revisions.
 
 Released steps cannot be edited, deleted or reordered. Correct a released conversion with a new step. The execution wrapper advances format markers in the same transaction; scripts should not manually advance them. Include tests for skipped releases, SQL/Go ordering, reentry, a failing intermediate step, cold reopen, relevant historical semantics and coordinated recovery. Current synthetic future-format tests validate the executor; they do not invent support for unpublished historical formats.
 
+CI compares numbered migration sources with the latest published Astral tag, including both Host files and the Core module version pinned by that release. Changing or removing a released SQL or frozen Go migration fails the check; appending new steps is allowed. The comparison reads public module sources without executing dependency code and never relies on a local workspace or replacement.
+
 Actual release publication and a real N→N+1 update, including retained user state and failure recovery, require separate acceptance evidence. Passing migration fixtures or publishing update metadata is not that evidence.
