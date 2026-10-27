@@ -129,6 +129,20 @@ func authenticateTunnel(ctx context.Context, serverURL, pin string, request tunn
 	return conn, response, nil
 }
 
+// ProbeServer checks reachability and the pinned Server identity through the
+// existing inner TLS tunnel. It sends no Computer authentication frame,
+// enrollment token or identity, and performs no Server operation.
+func ProbeServer(ctx context.Context, serverURL, pin string) error {
+	client := NewHTTPClient()
+	defer client.CloseIdleConnections()
+	conn, err := dialTunnel(ctx, serverURL, pin, client)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return nil
+}
+
 func RegisterRemote(ctx context.Context, serverURL, pin, id, token string, hello Hello) (Credentials, error) {
 	client := NewHTTPClient()
 	defer client.CloseIdleConnections()

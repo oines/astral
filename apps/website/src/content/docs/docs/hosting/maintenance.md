@@ -32,7 +32,7 @@ You only download the latest application. It includes all supported data migrati
 
 When a data conversion is needed, startup first takes exclusive ownership and backs up the complete Server directory. It keeps recovery information while migrating and preparing its databases, then commits before accepting browser, API or chat work. Migration or preparation failure restores that snapshot, and an interrupted pre-commit attempt is recovered at the next startup. A later failure does not automatically restore old data after new work may have been accepted. The Linux installer separately restores this attempt's snapshot if its activation check fails; Desktop does not automatically revert the App for every startup failure. These snapshots are in `upgrade-backups/` beside the Server directory.
 
-The current supported data baseline is Host 3 / Core 11. This model and session refactor does not convert Core 10 or earlier data. Desktop starts with first-time setup in its new `schema-3-core-11/` directory and preserves older directories, including `schema-3/`, untouched. Older private development formats and unknown newer formats are rejected when explicitly selected. Installing an old executable is not a data downgrade: restoring older data requires a matching backup and program version. Keep independent backups, including Computer files, rather than relying only on upgrade snapshots.
+The first supported public data baseline is Host 3 / Core 11. Public versions using this format share the same `schema-3-core-11/` directory: upgrading from 0.1.0 preserves existing setup, history and computer identities. Earlier private Core 10 or older data is not imported; those directories, including `schema-3/`, remain untouched. Older private development formats and unknown newer formats are rejected when explicitly selected. Installing an old executable is not a data downgrade: restoring older data requires a matching backup and program version. Keep independent backups, including Computer files, rather than relying only on upgrade snapshots.
 
 ## Update remote computers and containers
 
@@ -44,6 +44,8 @@ You can also copy the displayed update command. Use this route for older Daemons
 - Container: run the command on its Docker host. It replaces the Daemon and restarts the same container, preserving its identity, installed tools, writable layer and data.
 
 Managed updates in new containers use their in-container supervisor and restart the Daemon without recreating the environment. Updating a container's Daemon does not change its base image. Failed updates attempt to restore the previous program; check the reported state and computer connection before resuming work.
+
+The prebuilt Ubuntu environment is versioned independently from the application. New containers pull the exact image digest selected by that Astral version and receive the Daemon separately. An application update neither rebuilds that image on your computer nor recreates existing containers. Their original image, writable layer, installed tools, data volume and pairing mount remain in place; use the separate Daemon action when its program needs updating. See [Use containers](/docs/computers/containers/) for preparation and persistence.
 
 ## What to back up
 

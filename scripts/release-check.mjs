@@ -4,6 +4,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { desktopUpdateFeeds } from './desktop-update-feeds.mjs'
+import { imageRepository, platforms, recipeHash } from './computer-image-contract.mjs'
 import { desktopNames, digest, distributionNames, macSigningReportName } from './release-assets.mjs'
 import { isDirectInvocation, repositoryRoot, validateTag, validateVersion } from './release-version.mjs'
 
@@ -13,8 +14,8 @@ export async function checkReleaseTools() {
   const temporary = await mkdtemp(path.join(tmpdir(), 'astral-release-fixture-'))
   const realManifests = await Promise.all(['package.json', 'apps/desktop/package.json'].map(name => readFile(path.join(repositoryRoot, name), 'utf8')))
   try {
-    for (const name of ['scripts', 'apps/desktop', 'input']) await mkdir(path.join(temporary, name), { recursive: true })
-    for (const name of ['release-version.mjs', 'release-assets.mjs', 'release-draft.mjs', 'desktop-update-feeds.mjs']) await copyFile(path.join(repositoryRoot, 'scripts', name), path.join(temporary, 'scripts', name))
+    for (const name of ['scripts', 'apps/desktop', 'input', 'internal/platform/computer-image']) await mkdir(path.join(temporary, name), { recursive: true })
+    for (const name of ['release-version.mjs', 'release-assets.mjs', 'release-draft.mjs', 'desktop-update-feeds.mjs', 'computer-image-contract.mjs']) await copyFile(path.join(repositoryRoot, 'scripts', name), path.join(temporary, 'scripts', name))
     for (const name of ['package.json', 'apps/desktop/package.json']) await writeFile(path.join(temporary, name), JSON.stringify({ name: 'fixture', version: '0.0.0' }))
     const invoke = (script, args = []) => execFileSync(process.execPath, [path.join(temporary, 'scripts', script), ...args], { cwd: temporary, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000, maxBuffer: 64 << 10 })
     const rejects = (script, args, message) => assert.throws(() => invoke(script, args), error => error.status !== 0 && error.stderr.toString().includes(message))
@@ -27,12 +28,33 @@ export async function checkReleaseTools() {
     rejects('release-version.mjs', ['check', '--tag'], 'Usage:')
 
     const sourceSHA = '1'.repeat(40)
+    // This isolated repository owns its complete synthetic recipe and lock; it
+    // must never read or replace the real published environment selection.
+    const recipe = Buffer.from('FROM ubuntu:24.04\nWORKDIR /workspace\n')
+    const recipeSHA = recipeHash(recipe)
+    const computerEnvironment = {
+      schema_version: 1, image: imageRepository, tag: `env-${recipeSHA.slice(0, 12)}-123-1`,
+      digest: `sha256:${'a'.repeat(64)}`, recipe_sha256: recipeSHA, platforms,
+      source_sha: 'b'.repeat(40), build_run_url: 'https://github.com/oines/astral/actions/runs/123', created_at: '2026-10-27T00:00:00.000Z',
+    }
+    await writeFile(path.join(temporary, 'internal/platform/computer-image/Dockerfile'), recipe)
+    await writeFile(path.join(temporary, 'internal/platform/computer-image/image-lock.json'), JSON.stringify(computerEnvironment))
+    await writeFile(path.join(temporary, 'go.mod'), 'module fixture\nrequire (\n  github.com/oines/astral-core v0.0.0-fixture\n)\n')
+    // Node itself stands in for the native executable and reads this tiny
+    // script when the producer invokes `version --json`; no Astral is built.
+    await writeFile(path.join(temporary, 'version'), `console.log(${JSON.stringify(JSON.stringify({ version: '0.1.0', data_formats: { host: 3, core: 11 }, migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }))})`)
+    const producedFormats = JSON.parse(invoke('release-version.mjs', ['formats', '--binary', process.execPath, '--sha', sourceSHA]))
+    assert.deepEqual(producedFormats.computer_environment, computerEnvironment)
+    assert.equal(producedFormats.core_module_version, 'v0.0.0-fixture')
+    await writeFile(path.join(temporary, 'internal/platform/computer-image/Dockerfile'), Buffer.concat([recipe, Buffer.from('\n')]))
+    rejects('release-version.mjs', ['formats', '--binary', process.execPath, '--sha', sourceSHA], 'does not match the current Dockerfile')
+    await writeFile(path.join(temporary, 'internal/platform/computer-image/Dockerfile'), recipe)
     const packageNames = [...distributionNames, ...desktopNames('0.1.0'), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1']
     assert.equal(distributionNames.length, 6)
     assert.equal(desktopNames('0.1.0').length, 12)
     for (const name of packageNames) await writeFile(path.join(temporary, 'input', name), `Small fixture only: ${name}\n`)
     await writeFile(path.join(temporary, 'input', 'checksums.txt'), 'stale build checksum: must be recalculated\n')
-    const formats = { schema_version: 1, version: '0.1.0', source_sha: sourceSHA, host_schema: 3, core_format: 11, data_formats: { host: 3, core: 11 }, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
+    const formats = { schema_version: 1, version: '0.1.0', source_sha: sourceSHA, computer_environment: computerEnvironment, host_schema: 3, core_format: 11, data_formats: { host: 3, core: 11 }, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
     const writeFormats = async value => writeFile(path.join(temporary, 'input', 'release-formats.json'), JSON.stringify(value))
     await writeFormats(formats)
     const collectedNames = [...packageNames, 'release-formats.json', ...desktopUpdateFeeds('0.1.0').map(feed => feed.name)]
@@ -42,6 +64,7 @@ export async function checkReleaseTools() {
     const manifest = JSON.parse(await readFile(path.join(temporary, 'complete-output', 'release-manifest.json'), 'utf8'))
     assert.equal(manifest.public_release_ready, false)
     assert.equal(manifest.purpose, 'unsigned-candidate')
+    assert.deepEqual(manifest.computer_environment, computerEnvironment)
     assert.deepEqual(manifest.assets.map(asset => asset.name).sort(), [...collectedNames, 'checksums.txt'].sort())
     for (const asset of manifest.assets) {
       assert.equal(await digest(path.join(temporary, 'complete-output', asset.name)), asset.sha256)
@@ -142,6 +165,7 @@ export async function checkReleaseTools() {
     assert.equal(publicManifest.core_format, 11)
     assert.deepEqual(publicManifest.data_formats, { host: 3, core: 11 })
     assert.equal(publicManifest.core_module_version, 'fixture')
+    assert.deepEqual(publicManifest.computer_environment, computerEnvironment)
     assert.equal(publicManifest.migration_status, 'goose')
     assert.equal(publicManifest.desktop_updater, 'electron-updater')
     assert.deepEqual(publicManifest.signing, signedManifest.signing)
@@ -171,6 +195,10 @@ export async function checkReleaseTools() {
       ['changed-host', { ...formats, host_schema: 4, data_formats: { host: 4, core: 11 } }, 'metadata does not match'],
       ['changed-core', { ...formats, core_format: 12, data_formats: { host: 3, core: 12 } }, 'metadata does not match'],
       ['old-core-baseline', { ...formats, migration_baselines: { host: 3, core: 10 } }, 'metadata does not match'],
+      ['missing-environment', { ...formats, computer_environment: undefined }, 'metadata does not match'],
+      ['mutable-environment', { ...formats, computer_environment: { ...computerEnvironment, digest: 'latest' } }, 'metadata does not match'],
+      ['stale-environment-recipe', { ...formats, computer_environment: { ...computerEnvironment, recipe_sha256: 'c'.repeat(64) } }, 'metadata does not match'],
+      ['missing-environment-arch', { ...formats, computer_environment: { ...computerEnvironment, platforms: ['linux/amd64'] } }, 'metadata does not match'],
     ]) {
       await writeFormats(value)
       rejects('release-assets.mjs', [...publicArgs, '--output', `public-${name}`], message)
@@ -222,7 +250,7 @@ export async function checkReleaseTools() {
     rejects('release-version.mjs', ['check'], 'versions differ')
     const afterManifests = await Promise.all(['package.json', 'apps/desktop/package.json'].map(name => readFile(path.join(repositoryRoot, name), 'utf8')))
     assert.deepEqual(afterManifests, realManifests, 'Real workspace manifests must not change')
-    console.log('Release tools: rolling versions, signed and unsigned inventories, Goose migration declarations, final-byte signing reports, architecture update feeds, hashes and rejection fixtures passed. Fixtures do not establish actual CI, Apple acceptance or native installation/updating.')
+    console.log('Release tools: rolling versions, signed and unsigned inventories, Goose migration declarations, immutable Computer environment binding, final-byte signing reports, architecture update feeds, hashes and rejection fixtures passed. Fixtures do not establish actual CI, Apple acceptance or native installation/updating.')
   } finally {
     await rm(temporary, { recursive: true, force: true })
   }

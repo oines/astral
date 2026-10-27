@@ -36,7 +36,7 @@ export const detailEn = {
   extraHeaders: 'Additional request headers', extraHeadersHint: 'Leave blank to retain stored headers. Enter an empty JSON object to clear them.',
   resourceDeleteHint: 'Review the resources using this configuration. Retained history and Computer work files are preserved.',
   maxInput: 'Maximum input tokens', imageBudget: 'Image token budget', imageSupport: 'Images',
-  containerPhase: { checking_runtime: 'Checking the container runtime', building_image: 'Building the Computer image', creating_volume: 'Creating the workspace', starting: 'Starting the container', waiting_for_daemon: 'Waiting for the Computer to connect', connected: 'Computer connected', failed: 'Creation failed' },
+  containerPhase: { checking_runtime: 'Checking the container runtime', pulling_image: 'Downloading the environment image', checking_network: 'Checking the Server connection', creating_volume: 'Creating the workspace', creating_container: 'Creating the container', injecting_daemon: 'Installing the Daemon', starting: 'Starting the container', waiting_for_daemon: 'Waiting for the Computer to connect', connected: 'Computer connected', failed: 'Creation failed' },
   savedBeforeVerify: 'Save changes before verification or catalog refresh.', realSearch: 'Run search',
   inputPrice: 'Input price / 1M tokens', outputPrice: 'Output price / 1M tokens', catalog: 'Catalog',
 }
@@ -78,7 +78,7 @@ export const detailZh: typeof detailEn = {
   extraHeaders: '额外请求头', extraHeadersHint: '留空可保留已保存的请求头，填写空 JSON 对象可清除。',
   resourceDeleteHint: '检查使用此配置的资源。已有历史与电脑上的工作文件会保留。',
   maxInput: '最大输入 Token', imageBudget: '图片 Token 预算', imageSupport: '图片',
-  containerPhase: { checking_runtime: '正在检查容器运行环境', building_image: '正在构建电脑镜像', creating_volume: '正在创建工作目录', starting: '正在启动容器', waiting_for_daemon: '正在等待电脑连接', connected: '电脑已连接', failed: '创建失败' },
+  containerPhase: { checking_runtime: '正在检查容器运行环境', pulling_image: '正在下载环境镜像', checking_network: '正在检查 Server 连接', creating_volume: '正在创建工作目录', creating_container: '正在创建容器', injecting_daemon: '正在安装 Daemon', starting: '正在启动容器', waiting_for_daemon: '正在等待电脑连接', connected: '电脑已连接', failed: '创建失败' },
   savedBeforeVerify: '请先保存更改，再验证或刷新模型目录。', realSearch: '执行搜索',
   inputPrice: '输入价格 / 百万 Token', outputPrice: '输出价格 / 百万 Token', catalog: '模型目录',
 }

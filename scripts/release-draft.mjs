@@ -54,8 +54,8 @@ export async function createDraft(directory, { publicRelease = false, environmen
   }
   const formats = JSON.parse(await readFile(path.join(directory, 'release-formats.json'), 'utf8'))
   validateDataFormats(formats, { version, sourceSHA: manifest.source_sha })
-  for (const key of ['data_formats', 'host_schema', 'core_format', 'core_module_version', 'migration_status', 'migration_baselines', 'migration_targets']) {
-    if (JSON.stringify(formats[key]) !== JSON.stringify(manifest[key])) throw new Error('Release format metadata and manifest must describe the same Goose migration contract.')
+  for (const key of ['data_formats', 'host_schema', 'core_format', 'core_module_version', 'migration_status', 'migration_baselines', 'migration_targets', 'computer_environment']) {
+    if (JSON.stringify(formats[key]) !== JSON.stringify(manifest[key])) throw new Error('Release format metadata and manifest must describe the same Goose migration contract and Computer environment lock.')
   }
   const manifestNames = requiredNames.filter(name => !['release-manifest.json', 'RELEASE_NOTES.md'].includes(name))
   if (!Array.isArray(manifest.assets) || manifest.assets.length !== manifestNames.length || new Set(manifest.assets.map(asset => asset?.name)).size !== manifestNames.length) throw new Error('Manifest asset inventory is incomplete or ambiguous.')

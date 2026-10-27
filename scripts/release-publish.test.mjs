@@ -9,6 +9,7 @@ import { desktopArtifactName, desktopUpdateFeeds, writeDesktopUpdateFeeds } from
 import { desktopNames, digest, distributionNames, macSigningReportName } from './release-assets.mjs'
 import { compareVersions, createDraft } from './release-draft.mjs'
 import { readReleaseVersion } from './release-version.mjs'
+import { imageRepository, platforms, recipeHash, recipePath } from './computer-image-contract.mjs'
 
 // Tiny fixtures and injected HTTP only: no GitHub calls, credentials or builds.
 const sourceSHA = 'a'.repeat(40)
@@ -86,7 +87,15 @@ async function fixture(t, { candidate = false, unsigned = false, published = fal
   }
   await writeDesktopUpdateFeeds(directory, version)
   names.push(...desktopUpdateFeeds(version).map(feed => feed.name))
-  const formats = { schema_version: 1, version, source_sha: sourceSHA, data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
+  // A structurally valid synthetic lock exercises metadata without depending
+  // on, changing or contacting the actual published image selection.
+  const recipeSHA = recipeHash(await readFile(recipePath))
+  const computerEnvironment = {
+    schema_version: 1, image: imageRepository, tag: `env-${recipeSHA.slice(0, 12)}-456-1`,
+    digest: `sha256:${'d'.repeat(64)}`, recipe_sha256: recipeSHA, platforms,
+    source_sha: 'c'.repeat(40), build_run_url: 'https://github.com/oines/astral/actions/runs/456', created_at: '2026-10-27T00:00:00.000Z',
+  }
+  const formats = { schema_version: 1, version, source_sha: sourceSHA, computer_environment: computerEnvironment, data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
   await writeFile(path.join(directory, 'release-formats.json'), JSON.stringify(formats))
   names.push('release-formats.json')
   const purpose = candidate ? (macSigned ? 'mac-signed-candidate' : 'unsigned-candidate') : 'release'
@@ -94,7 +103,7 @@ async function fixture(t, { candidate = false, unsigned = false, published = fal
   const manifest = {
     schema_version: 1, purpose, public_release_ready: !candidate, version, tag, source_sha: sourceSHA, repository,
     candidate_run_url: `https://github.com/${repository}/actions/runs/123`, ci_run_url: `https://github.com/${repository}/actions/runs/122`,
-    data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture',
+    data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture', computer_environment: clone(computerEnvironment),
     migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 }, desktop_updater: 'electron-updater',
     signing: { macos: macSigned ? 'signed-and-notarized' : 'not-signed-or-notarized', windows: 'not-signed', linux: 'not-signed' },
     distribution_names: distributionNames,
@@ -275,12 +284,36 @@ test('public mode requires GitHub Actions context, matching run metadata and Goo
     value => { value.manifest.data_formats.core = 12 },
     value => { value.manifest.migration_baselines.core = 10 },
     value => { value.manifest.migration_status = 'implemented' },
+    value => { value.manifest.computer_environment.digest = `sha256:${'e'.repeat(64)}` },
+    value => { delete value.manifest.computer_environment },
     value => { value.manifest.signing.macos = 'not-signed-or-notarized' },
   ]) {
     const value = await fixture(t)
     change(value)
     await value.updateManifest(() => {})
     await assert.rejects(createDraft(value.directory, value.options), /matching release manifest|matching release\/CI|data baseline|same Goose migration contract/)
+    assert.equal(value.remote.calls.length, 0)
+  }
+})
+
+test('invalid environment locks fail even when manifest and checksums consistently describe the changed metadata', async t => {
+  for (const change of [
+    formats => { delete formats.computer_environment },
+    formats => { formats.computer_environment.digest = 'latest' },
+    formats => { formats.computer_environment.recipe_sha256 = 'f'.repeat(64) },
+    formats => { formats.computer_environment.platforms = ['linux/amd64'] },
+    formats => { formats.computer_environment.build_run_url = 'https://github.com/oines/astral/actions/runs/999' },
+  ]) {
+    const value = await fixture(t)
+    const file = path.join(value.directory, 'release-formats.json')
+    const formats = JSON.parse(await readFile(file, 'utf8'))
+    change(formats)
+    await writeFile(file, JSON.stringify(formats))
+    const record = value.manifest.assets.find(asset => asset.name === 'release-formats.json')
+    record.size = (await readFile(file)).length
+    record.sha256 = await digest(file)
+    await value.updateManifest(manifest => { manifest.computer_environment = formats.computer_environment })
+    await assert.rejects(createDraft(value.directory, value.options), /metadata does not match the current Computer environment/)
     assert.equal(value.remote.calls.length, 0)
   }
 })

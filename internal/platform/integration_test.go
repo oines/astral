@@ -238,7 +238,11 @@ func checkContainerInfo(t *testing.T, computer domain.Computer, identity string)
 		t.Fatal(err)
 	}
 	info := computer.Container
-	if computer.Root != "/var/lib/astral" || info == nil || info.Name != "astral-"+identity || info.Host != host || info.Volume != "astral-"+identity+"-data" || info.MountPath != "/var/lib/astral" || !strings.HasPrefix(info.Image, "astral-computer:") {
+	image, err := computerImageReference()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if computer.Root != "/var/lib/astral" || info == nil || info.Name != "astral-"+identity || info.Host != host || info.Volume != "astral-"+identity+"-data" || info.MountPath != "/var/lib/astral" || info.Image != image {
 		t.Fatalf("container did not report its actual creator and storage: %+v, %+v", computer, info)
 	}
 }

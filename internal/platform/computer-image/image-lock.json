@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "image": "ghcr.io/oines/astral-computer",
+  "tag": "env-e88e6cb77fd6-40523320653-1",
+  "digest": "sha256:7914feae0e3fb289892c9847f424ea4f237a398d6a01a4ad315288707b98f1c3",
+  "recipe_sha256": "e88e6cb77fd618ac36a8aa777aafcabf24638d9c37c70ff4c0d3e41588cb2f3a",
+  "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "source_sha": "25606052e2579dfd1eff2d1bd33631f9d11b1a58",
+  "build_run_url": "https://github.com/oines/astral/actions/runs/40523320653",
+  "created_at": "2026-10-27T14:48:47.547Z"
+}

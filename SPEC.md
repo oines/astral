@@ -330,7 +330,9 @@ Desktop 三个平台均隐藏独立系统标题栏，使用 44px 的应用顶部
 
 电脑详情提供管理员“更新 Daemon”动作，通过现有已认证的内层 TLS 隧道发送独立管理 RPC，不属于 Agent 的 Computer API 或执行能力。Server 从固定官方 GitHub latest release 解析不可变版本、平台架构资产和 SHA-256；Daemon 再校验目标平台与下载字节，不接受用户或 Agent 提供的程序 URL。每次请求检查最新发行版，不受当前 Server 版本限制；目标不高于 Daemon 时不替换，不自动降级。Daemon 比 Server 新时提醒更新 Server，但不阻止继续更新 Daemon。下载阶段因断链取消，完成交接后的更新独立于旧连接：裸机通过原生服务管理器启动可见、当前用户权限的一次性更新任务，切换用户服务的程序并重启，任务结束清理注册；新容器由同一 Go 二进制的 supervisor 替换数据目录之外的 Daemon 程序并重启子 Daemon，不退出或重建容器。Server 观察同一电脑以新 Boot ID 和预期版本重连才确认成功；失败尝试恢复旧程序。保留电脑身份、凭据、Agent 文件、容器 ID、可写层与卷；重启会中断任务，界面和命令须说明后果。本机 Daemon 随 Server 更新，不独立替换。复制命令后在目标电脑或容器宿主机执行的更新方式保留；宿主机命令只替换原容器程序并重启同一容器，不迁移 Agent 环境。更新命令不接受 `--server` 或替换 pin，不预检 Server 当前首选地址；使用目标电脑既有 credentials 中的 URL/pin 查询状态并重连，支持通过第二个访问地址配对的电脑。`computer update` 只选择现有 `--root` 或 `--container`，网络地址的手动修改与更新分开。
 
-新建容器使用 Ubuntu 24.04 和完整开发、数据、文档、媒体、OCR、中文字体、浏览器测试环境。镜像工具层与最终 Daemon 程序层分离，程序不放在 AgentHome 数据中。Windows Docker Desktop 使用 Linux 容器即可，不要求用户进入 WSL 或额外开启 host networking；同机 Docker Desktop 容器通过 `http://host.docker.internal:4545`（实际端口随监听配置）连接 Server 主端口，不额外创建 TLS 桥接端口或证书。
+新建容器使用 Ubuntu 24.04 和完整开发、数据、文档、媒体、OCR、中文字体、浏览器测试环境。纯环境镜像由独立 CI 构建并发布 Linux amd64/arm64 多架构产物，仅 Dockerfile 或其他构建输入变化时生成新镜像；应用版本绑定不可变镜像摘要，不随每次应用发版重建环境。客户端只拉取固定摘要、创建数据卷与容器，再通过 Docker copy 将对应架构的统一 Astral 程序放到容器可写层的 `/usr/local/bin/astral`，之后启动已有 supervisor 协议。程序不放在 AgentHome 数据中，不新增宿主机程序目录挂载，保留数据卷与只读配对配置挂载。创建阶段分别反映拉取镜像、创建工作目录、创建容器、安装 Daemon、启动和等待连接；已缓存镜像可直接复用，失败和重试不虚报在线。
+
+更新应用或 Daemon 不重建已有容器，不替换其镜像、可写层、已安装软件或数据卷。环境镜像选择只作用于新容器；原有容器继续使用其原环境和监督协议。目标兼容范围包括 macOS 的 Docker Desktop、OrbStack、Colima、Docker 后端的 Rancher Desktop，Linux Docker Engine（含 rootless）与 Docker Desktop，以及 Windows Docker Desktop Linux 容器；实际验收须记录运行时、版本、系统和架构，不以兼容目标清单代替逐项实测。Windows 使用原生 Astral 和 PowerShell，不要求用户进入 WSL 或额外开启 host networking。同机 Docker Desktop 容器使用 `http://host.docker.internal:4545`（实际端口随监听配置）等经确认可达的主端口路径，不额外创建 TLS 桥接端口或证书。
 
 ### Server 监听、管理访问与接入地址
 

@@ -68,6 +68,8 @@ jobs:
           echo "version=$release_version" >> "$GITHUB_OUTPUT"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+      - name: Verify the pinned public multi-architecture Computer environment
+        run: node scripts/computer-image.mjs verify
       - name: Require successful ordinary CI for this exact source commit
         id: ci
         env:
@@ -477,6 +479,84 @@ jobs:
         run: |
           echo '### Published Astral release' >> "$GITHUB_STEP_SUMMARY"
           echo 'Mac Developer ID signatures, final package bytes and native startup/shutdown are verified. Apple notarization may be pending; see the attached signing report for exact status. Native Windows ZIP and installed Linux DEB passed process lifecycle checks. Windows/Linux packages are unsigned. Desktop update feeds use final-byte SHA-512 and separate architecture channels. Versioned Goose migrations are bundled with the binary.' >> "$GITHUB_STEP_SUMMARY"
+
+  published-desktop-update:
+    name: Published Desktop update (${{ matrix.platform }})
+    if: needs.validate.outputs.tag != ''
+    needs: [validate, publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: mac
+          - os: windows-2022
+            platform: win
+          - os: ubuntu-24.04
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+      - name: Select the preceding public release by numeric version
+        id: previous
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate --slurp > "$RUNNER_TEMP/astral-published-releases.json"
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs'
+          import path from 'node:path'
+          import { compareVersions } from './scripts/release-draft.mjs'
+          import { readReleaseVersion, validateVersion } from './scripts/release-version.mjs'
+          const current = await readReleaseVersion()
+          const releases = JSON.parse(readFileSync(path.join(process.env.RUNNER_TEMP, 'astral-published-releases.json'), 'utf8')).flat()
+          const versions = releases.filter(value => !value.draft && !value.prerelease).flatMap(value => {
+            try {
+              const version = validateVersion(value.tag_name?.replace(/^v/, ''))
+              return value.tag_name === `v${version}` && compareVersions(version, current) < 0 ? [version] : []
+            } catch { return [] }
+          }).sort(compareVersions)
+          appendFileSync(process.env.GITHUB_OUTPUT, `tag=${versions.length ? `v${versions.at(-1)}` : ''}\n`)
+          JS
+      - name: Prepare the disposable Linux desktop session
+        if: runner.os == 'Linux' && steps.previous.outputs.tag != ''
+        shell: bash
+        run: |
+          if sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Update the untouched previous official Mac or Windows installation
+        if: runner.os != 'Linux' && steps.previous.outputs.tag != ''
+        env:
+          PREVIOUS_RELEASE_TAG: ${{ steps.previous.outputs.tag }}
+        run: node scripts/check-desktop-update.mjs --published-from "$PREVIOUS_RELEASE_TAG"
+        shell: bash
+      - name: Update the untouched previous official Linux AppImage
+        if: runner.os == 'Linux' && steps.previous.outputs.tag != ''
+        env:
+          PREVIOUS_RELEASE_TAG: ${{ steps.previous.outputs.tag }}
+        run: xvfb-run -a node scripts/check-desktop-update.mjs --published-from "$PREVIOUS_RELEASE_TAG"
+      - name: Preserve actual published update evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: published-desktop-update-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/astral-published-desktop-update.json
+            ${{ runner.temp }}/astral-update-acceptance.log
+          if-no-files-found: ignore
+          retention-days: 14
 
   published-install:
     name: Verify public VPS installation

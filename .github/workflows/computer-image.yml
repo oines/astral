@@ -1,0 +1,156 @@
+name: Computer environment image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - internal/platform/computer-image/Dockerfile
+      - scripts/computer-image.mjs
+      - scripts/computer-image-build.mjs
+      - scripts/computer-image-contract.mjs
+      - .github/workflows/computer-image.yml
+  pull_request:
+    paths:
+      - internal/platform/computer-image/Dockerfile
+      - scripts/computer-image.mjs
+      - scripts/computer-image-build.mjs
+      - scripts/computer-image-contract.mjs
+      - .github/workflows/computer-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: computer-environment-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pull-request:
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 100
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+      - name: Reserve disposable runner space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker builder prune --force
+          df -h /
+      - name: Native build and real tools smoke without registry credentials
+        env:
+          IMAGE_ARCH: ${{ matrix.arch }}
+        run: node scripts/computer-image-build.mjs --arch "$IMAGE_ARCH"
+
+  publish-platform:
+    # The owner may explicitly publish a reviewed candidate ref, so its verified
+    # lock can join the recipe PR before the ordinary release gate runs.
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+      - name: Reserve disposable runner space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker builder prune --force
+          df -h /
+      - name: Authenticate this trusted publication job
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build, smoke, push and smoke the exact native published digest
+        env:
+          IMAGE_ARCH: ${{ matrix.arch }}
+        run: node scripts/computer-image-build.mjs --arch "$IMAGE_ARCH" --publish --output "platform-$IMAGE_ARCH.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: computer-environment-${{ matrix.arch }}
+          path: platform-${{ matrix.arch }}.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove registry login
+        if: always()
+        run: docker logout ghcr.io
+
+  manifest:
+    needs: publish-platform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: computer-environment-*
+          path: environment-records
+          merge-multiple: true
+      - name: Authenticate immutable manifest publication
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Publish or verify the immutable multi-architecture manifest
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: node scripts/computer-image.mjs publish --records environment-records --output image-lock.json
+      - name: Preserve the real candidate lock before the public visibility gate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: computer-image-lock-candidate
+          path: image-lock.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
+      - name: Require anonymous public access and both daemon-free architectures
+        run: node scripts/computer-image.mjs verify --lock image-lock.json
+      - name: Preserve the anonymously verified release lock
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: computer-image-lock
+          path: image-lock.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove registry login
+        if: always()
+        run: docker logout ghcr.io
