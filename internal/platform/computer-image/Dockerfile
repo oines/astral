@@ -49,9 +49,7 @@ RUN uv venv --python /usr/bin/python3 /opt/venv \
        pypdf==6.21.2 pdfplumber==0.11.10 reportlab==5.1.0 \
        requests==2.34.2 beautifulsoup4==4.15.0 pyyaml==6.0.3 playwright==1.64.1 \
     && python -m playwright install --with-deps chromium \
+    && printf '%s\n' 'export PATH="/opt/venv/bin:/usr/local/go/bin:/usr/local/cargo/bin:$PATH"' > /etc/profile.d/agent-environment.sh \
     && uv cache clean && rm -rf /var/lib/apt/lists/* /root/.cache
 
-WORKDIR /var/lib/astral
-# Keep this last: daemon releases reuse the expensive environment layers.
-COPY --chmod=755 astral /usr/local/bin/astral
-ENTRYPOINT ["/usr/local/bin/astral"]
+WORKDIR /workspace
