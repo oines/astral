@@ -2,5 +2,24 @@
   // Match this name to the Pages project when creating it in Cloudflare.
   "name": "astral-website",
   "pages_build_output_dir": "./apps/website/dist",
-  "compatibility_date": "2026-10-26"
+  "compatibility_date": "2026-10-26",
+  // Shared by local development and preview builds. Production overrides vars
+  // as a complete group, so repeat the common values below.
+  "vars": {
+    "HUSKY": "0",
+    "NODE_VERSION": "26.7.0",
+    "PNPM_VERSION": "10.31.0",
+    "SKIP_DEPENDENCY_INSTALL": "1"
+  },
+  "env": {
+    "production": {
+      "vars": {
+        "HUSKY": "0",
+        "NODE_VERSION": "26.7.0",
+        "PNPM_VERSION": "10.31.0",
+        "SKIP_DEPENDENCY_INSTALL": "1",
+        "SITE_URL": "https://astral.oines.dev"
+      }
+    }
+  }
 }
