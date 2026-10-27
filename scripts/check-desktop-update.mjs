@@ -13,7 +13,7 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
-import { evaluateRenderer } from './desktop-renderer-auth.mjs'
+import { evaluateRenderer, managedRendererEndpoint, rendererAuthentication } from './desktop-renderer-auth.mjs'
 import { desktopArtifactName, desktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { readReleaseVersion } from './release-version.mjs'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
@@ -52,6 +52,7 @@ let updatedAppPID
 let executable
 let installedRoot
 let retain = false
+let rendererDiagnostic = 'The managed renderer has not been discovered.'
 const command = (program, args, options = {}) => execute(program, args, { cwd: repository, encoding: 'utf8', timeout: 600_000, maxBuffer: 2 << 20, ...options })
 const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error } }
 const server = createServer((request, response) => {
@@ -74,20 +75,13 @@ async function waitFor(read, message, timeout = 120_000) {
     if (value) return value
     await delay(300)
   }
-  throw new Error(message)
+  throw new Error(typeof message === 'function' ? message() : message)
 }
 async function running() {
   const ready = await readFile(path.join(data, 'server/running.json'), 'utf8').then(JSON.parse).catch(() => undefined)
   if (!ready || !alive(ready.pid)) return undefined
   const health = await fetch(`${ready.url}/health`, { signal: AbortSignal.timeout(3000) }).then(response => response.json()).catch(() => undefined)
   return health?.status === 'ok' ? ready : undefined
-}
-async function renderer() {
-  const port = await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8').then(raw => Number(raw.split('\n')[0])).catch(() => undefined)
-  if (!port) return undefined
-  const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then(response => response.json()).catch(() => [])
-  const page = targets.find(item => item.type === 'page' && item.url.startsWith(oldServer.url))
-  return page?.webSocketDebuggerUrl
 }
 async function fingerprint(ready) {
   const cookie = await webFixtureCookie(path.join(data, 'server'), ready.url)
@@ -155,7 +149,14 @@ try {
   const before = await waitFor(() => fingerprint(oldServer), 'The fixture Local Computer did not connect.')
   const marker = path.join(data, 'server/update-acceptance-marker')
   await writeFile(marker, 'retained-data-0.0.0')
-  const endpoint = await waitFor(renderer, 'The old Desktop fixture did not expose its native renderer.')
+  const endpoint = await waitFor(
+    async () => {
+      const options = { diagnose: value => { rendererDiagnostic = value } }
+      if (!await rendererAuthentication(profile, oldServer.url, options)) return false
+      return managedRendererEndpoint(profile, oldServer.url, options)
+    },
+    () => `The old Desktop fixture did not load its native update bridge.\nLast renderer state: ${rendererDiagnostic}`,
+  )
   const oldState = await evaluateRenderer(endpoint, 'window.astralDesktop.updates.state()')
   assert.equal(oldState.currentVersion, '0.0.0')
   assert.notEqual(oldState.phase, 'unavailable', `The fixture does not support native updating: ${oldState.unavailable}`)
@@ -193,7 +194,7 @@ try {
   console.error(`Update acceptance failed; fixture retained at ${temporary}.`)
   // Logs can include private loopback addresses; keep them on the disposable runner.
   await writeFile(path.join(temporary, 'app-output.log'), logs.join('').slice(-20_000))
-  await writeFile(path.join(process.env.RUNNER_TEMP, 'astral-update-acceptance.log'), `Fixture: ${temporary}\n${logs.join('').slice(-20_000)}`)
+  await writeFile(path.join(process.env.RUNNER_TEMP, 'astral-update-acceptance.log'), `Fixture: ${temporary}\nLast renderer state: ${rendererDiagnostic}\n${logs.join('').slice(-20_000)}`)
   throw error
 } finally {
   const ready = await running().catch(() => undefined)

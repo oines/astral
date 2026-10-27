@@ -194,6 +194,7 @@ test('a diagnostic write failure stops before waiting and hides the underlying f
 test('stapling retries five times with increasing waits and validates the fetched ticket', async () => {
   const calls = []
   const pauses = []
+  const logs = []
   let attempts = 0
   await staple('/release/Astral.app', {
     run: async (program, args) => {
@@ -201,10 +202,12 @@ test('stapling retries five times with increasing waits and validates the fetche
       if (args[1] === 'staple' && ++attempts < 5) throw new Error('CloudKit temporarily unavailable')
     },
     pause: async milliseconds => { pauses.push(milliseconds) },
+    log: value => { logs.push(value) },
   })
   assert.equal(attempts, 5)
   assert.deepEqual(pauses, [20_000, 40_000, 60_000, 80_000])
   assert.deepEqual(calls.at(-1), { program: 'xcrun', args: ['stapler', 'validate', '/release/Astral.app'] })
+  assert.equal(logs.length, 6)
 })
 
 test('a fifth staple failure aborts without a final extra wait or validation', async () => {
@@ -218,9 +221,78 @@ test('a fifth staple failure aborts without a final extra wait or validation', a
       throw unavailable
     },
     pause: async milliseconds => { pauses.push(milliseconds) },
+    log: () => {},
   }), error => error === unavailable)
   assert.equal(attempts, 5)
   assert.deepEqual(pauses, [20_000, 40_000, 60_000, 80_000])
+})
+
+test('a first validation failure repeats staple and validate before succeeding', async () => {
+  const calls = []
+  const pauses = []
+  const logs = []
+  let validations = 0
+  await staple('/release/Astral.dmg', {
+    run: async (program, args) => {
+      assert.equal(program, 'xcrun')
+      assert.equal(args[0], 'stapler')
+      assert.equal(args[2], '/release/Astral.dmg')
+      calls.push(args[1])
+      if (args[1] === 'validate' && ++validations === 1) {
+        throw Object.assign(new Error('do not serialize this child error'), { code: 65, stdout: 'Ticket not yet usable', stderr: 'retry diagnostic' })
+      }
+      return { stdout: `${args[1]} succeeded`, stderr: '' }
+    },
+    pause: async milliseconds => { pauses.push(milliseconds) },
+    log: value => { logs.push(JSON.parse(value.slice('Stapler diagnostic: '.length))) },
+  })
+  assert.deepEqual(calls, ['staple', 'validate', 'staple', 'validate'])
+  assert.deepEqual(pauses, [20_000])
+  assert.deepEqual(logs, [
+    { target: '/release/Astral.dmg', attempt: 1, phase: 'staple', exit_code: 0, stdout: 'staple succeeded', stderr: '' },
+    { target: '/release/Astral.dmg', attempt: 1, phase: 'validate', exit_code: 65, stdout: 'Ticket not yet usable', stderr: 'retry diagnostic' },
+    { target: '/release/Astral.dmg', attempt: 2, phase: 'staple', exit_code: 0, stdout: 'staple succeeded', stderr: '' },
+    { target: '/release/Astral.dmg', attempt: 2, phase: 'validate', exit_code: 0, stdout: 'validate succeeded', stderr: '' },
+  ])
+})
+
+test('validation exhaustion still fails after five complete attempts without an extra wait', async () => {
+  const calls = []
+  const pauses = []
+  const invalid = Object.assign(new Error('ticket remains invalid'), { code: 65 })
+  await assert.rejects(staple('/release/Astral.app', {
+    run: async (_program, args) => {
+      calls.push(args[1])
+      if (args[1] === 'validate') throw invalid
+    },
+    pause: async milliseconds => { pauses.push(milliseconds) },
+    log: () => {},
+  }), error => error === invalid)
+  assert.deepEqual(calls, Array.from({ length: 5 }, () => ['staple', 'validate']).flat())
+  assert.deepEqual(pauses, [20_000, 40_000, 60_000, 80_000])
+})
+
+test('stapler diagnostics whitelist bounded command output and omit child error details', async () => {
+  const logs = []
+  const secret = 'DO-NOT-PRINT-CHILD-ERROR-OR-ENVIRONMENT'
+  const unavailable = Object.assign(new Error(secret), {
+    code: 'ENOENT', stdout: 's'.repeat(20_000), stderr: 'safe stapler error',
+    environment: { APPLE_PASSWORD: secret }, command: secret,
+  })
+  await assert.rejects(staple('/release/Astral.dmg', {
+    run: async () => { throw unavailable },
+    pause: async () => {},
+    log: value => { logs.push(value) },
+  }), error => error === unavailable)
+  assert.equal(logs.length, 5)
+  assert.ok(logs.every(value => !value.includes(secret)))
+  const diagnostic = JSON.parse(logs.at(-1).slice('Stapler diagnostic: '.length))
+  assert.deepEqual(Object.keys(diagnostic).sort(), ['target', 'attempt', 'phase', 'exit_code', 'stdout', 'stderr'].sort())
+  assert.equal(diagnostic.attempt, 5)
+  assert.equal(diagnostic.phase, 'staple')
+  assert.equal(diagnostic.exit_code, 'ENOENT')
+  assert.equal(diagnostic.stdout, `${'s'.repeat(16_384)}\n[truncated]`)
+  assert.equal(diagnostic.stderr, 'safe stapler error')
 })
 
 test('downloaded ZIP App requires its own stapled ticket while a DMG App still requires signature and Gatekeeper checks', async () => {
