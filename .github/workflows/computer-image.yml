@@ -2,15 +2,19 @@ name: Computer environment image
 
 on:
   push:
-    branches: [main]
+    # Owner feature-branch pushes bootstrap this workflow before it exists on
+    # main, and allow isolated environment validation before selecting a lock.
+    branches: [main, 'codex/**']
     paths:
       - internal/platform/computer-image/Dockerfile
-      - scripts/computer-image*.mjs
+      - scripts/computer-image.mjs
+      - scripts/computer-image-build.mjs
       - .github/workflows/computer-image.yml
   pull_request:
     paths:
       - internal/platform/computer-image/Dockerfile
-      - scripts/computer-image*.mjs
+      - scripts/computer-image.mjs
+      - scripts/computer-image-build.mjs
       - .github/workflows/computer-image.yml
   workflow_dispatch:
 
@@ -54,7 +58,7 @@ jobs:
         run: node scripts/computer-image-build.mjs --arch "$IMAGE_ARCH"
 
   publish-platform:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner)
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/heads/codex/') && github.actor == github.repository_owner))) || (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner)
     strategy:
       fail-fast: false
       matrix:
@@ -92,6 +96,7 @@ jobs:
         with:
           name: computer-environment-${{ matrix.arch }}
           path: platform-${{ matrix.arch }}.json
+          overwrite: true
           if-no-files-found: error
           retention-days: 14
       - name: Remove registry login
@@ -131,6 +136,7 @@ jobs:
         with:
           name: computer-image-lock-candidate
           path: image-lock.json
+          overwrite: true
           if-no-files-found: error
           retention-days: 14
       - name: Require anonymous public access and both daemon-free architectures
@@ -140,6 +146,7 @@ jobs:
         with:
           name: computer-image-lock
           path: image-lock.json
+          overwrite: true
           if-no-files-found: error
           retention-days: 14
       - name: Remove registry login

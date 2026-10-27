@@ -30,6 +30,7 @@ export function validateLock(lock, recipeSHA) {
       !new RegExp(`^env-${recipeSHA.slice(0, 12)}-[1-9][0-9]*-[1-9][0-9]*$`).test(lock.tag || '') ||
       !Array.isArray(lock.platforms) || lock.platforms.length !== 2 || [...lock.platforms].sort().join(',') !== platforms.join(',') ||
       !/^[a-f0-9]{40}$/.test(lock.source_sha || '') || !/^https:\/\/github\.com\/oines\/astral\/actions\/runs\/[1-9][0-9]*$/.test(lock.build_run_url || '') ||
+      lock.tag.split('-').at(-2) !== lock.build_run_url.split('/').at(-1) ||
       typeof lock.created_at !== 'string' || !Number.isFinite(Date.parse(lock.created_at)) || new Date(lock.created_at).toISOString() !== lock.created_at) {
     throw new Error('Computer environment lock is missing, malformed, or does not match the current Dockerfile. Publish and verify a new environment lock.')
   }
@@ -63,9 +64,19 @@ export async function registryReader({ authenticated = false, request = globalTh
   if (typeof token !== 'string' || !token) throw new Error('GHCR did not provide a pull token.')
   const read = async (kind, reference) => {
     if (kind === 'blobs' && !digestPattern.test(reference) || kind === 'manifests' && !digestPattern.test(reference) && !/^env-[a-f0-9]{12}-[1-9][0-9]*-[1-9][0-9]*$/.test(reference)) throw new Error('Invalid environment registry reference.')
-    const response = await request(`https://ghcr.io/v2/oines/astral-computer/${kind}/${reference}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: accept }, redirect: 'error', signal: AbortSignal.timeout(30_000),
+    let response = await request(`https://ghcr.io/v2/oines/astral-computer/${kind}/${reference}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: accept }, redirect: 'manual', signal: AbortSignal.timeout(30_000),
     })
+    // GHCR config blobs redirect to its signed GitHub CDN URL. Follow only this
+    // observed HTTPS host, never forwarding the GHCR bearer token or printing
+    // the signed URL. Manifests and token endpoints may not redirect.
+    for (let hop = 0; [301, 302, 303, 307, 308].includes(response.status); hop++) {
+      let target
+      try { target = new URL(response.headers.get('location')) }
+      catch { throw new Error('Invalid environment registry redirect.') }
+      if (kind !== 'blobs' || hop >= 2 || target.protocol !== 'https:' || target.hostname !== 'pkg-containers.githubusercontent.com' || target.username || target.password || target.port && target.port !== '443') throw new Error('Untrusted environment registry redirect.')
+      response = await request(target.href, { headers: { Accept: 'application/octet-stream' }, redirect: 'manual', signal: AbortSignal.timeout(30_000) })
+    }
     if (response.status === 404) throw Object.assign(new Error('Environment image reference does not exist.'), { code: 'NOT_FOUND' })
     if (!response.ok) throw new Error(`GHCR ${authenticated ? 'publication' : 'anonymous'} ${kind} lookup failed (HTTP ${response.status}).`)
     const bytes = Buffer.from(await response.arrayBuffer())
