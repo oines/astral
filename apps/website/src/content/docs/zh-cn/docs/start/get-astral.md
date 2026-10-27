@@ -13,23 +13,22 @@ Astral 的源码已公开。目前尚未提供公开发行的安装包；可先�
 git clone https://github.com/oines/astral.git
 cd astral
 pnpm install --frozen-lockfile
-git clone https://github.com/oines/astral-core.git ../agent-core
-cp go.work.example go.work
 ```
 
-当前源码重构需要配套的 Astral Core monorepo，其中包含 Models 包。两个仓库使用相互匹配的源码版本，并保留本地 Go 工作区；目录不同可修改 `go.work` 中的 Core 路径。接下来的命令都在 Astral 仓库根目录运行。
+Core 及其 Models 包的依赖版本已固定在 `go.mod`，无需另行下载 Core 源码。`GOWORK=off` 可避免本地 `go.work` 覆盖固定依赖。接下来的命令都在 Astral 仓库根目录运行。
 
 ## 构建 Server 和产品界面
 
 macOS 或 Linux：
 
 ```sh
-pnpm build:distribution
+GOWORK=off pnpm build:distribution
 ```
 
 Windows PowerShell：
 
 ```powershell
+$env:GOWORK = 'off'
 pnpm build:distribution
 ```
 

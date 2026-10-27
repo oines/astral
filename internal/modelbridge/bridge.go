@@ -33,6 +33,7 @@ type Bridge struct {
 	Store        *persistence.Store
 	HTTPClient   *http.Client
 	ModelCatalog *ModelCatalog
+	Version      string
 	authMu       sync.Mutex
 	authFlows    map[string]*authFlow
 	oauthSDK     *auth.Client
@@ -300,6 +301,26 @@ func sdkProvider(p domain.Provider) integration.ProviderConfig {
 func sdkModel(p domain.ModelProfile) integration.ModelConfig {
 	return integration.ModelConfig{ModelID: p.ModelID, Protocol: p.Protocol, Dialect: p.Dialect, Recommendations: p.Recommendations, RecommendationTarget: p.RecommendationTarget, Overrides: p.Overrides}
 }
+
+func (b *Bridge) userAgent() string {
+	version := b.Version
+	if version == "" {
+		version = "dev"
+	}
+	return "Astral/" + version
+}
+
+func hostHeaders(presetID, key string, headers map[string]string, userAgent string) map[string]string {
+	result := integration.Headers(integration.ProviderConfig{PresetID: presetID}, key, headers)
+	for name := range result {
+		if strings.EqualFold(name, "User-Agent") {
+			delete(result, name)
+		}
+	}
+	result["User-Agent"] = userAgent
+	return result
+}
+
 func (b *Bridge) adapterConfig(ctx context.Context, p domain.ModelProfile, connection domain.Provider) (models.Config, string, error) {
 	ref := Reference(p, connection)
 	resolved, err := integration.Resolve(sdkProvider(connection), sdkModel(p), core.ModelSpec{ID: ref, Revision: ref})
@@ -315,8 +336,7 @@ func (b *Bridge) adapterConfig(ctx context.Context, p domain.ModelProfile, conne
 		return models.Config{}, "", err
 	}
 	config := resolved.Config
-	config.APIKey, config.Headers, config.HTTPClient = key, integration.Headers(sdkProvider(connection), key, headers), b.HTTPClient
-	config.Headers["User-Agent"] = "Astral/0.1.0"
+	config.APIKey, config.Headers, config.HTTPClient = key, hostHeaders(connection.PresetID, key, headers, b.userAgent()), b.HTTPClient
 	config.ReplayScope = connection.ID + ":" + strconv.FormatInt(connection.ReplayRevision, 10)
 	if preset := integration.FindPreset(connection.PresetID); preset != nil && preset.Auth == "oauth" {
 		config.APIKey = ""
@@ -408,6 +428,7 @@ type frozenModel struct {
 	Target              core.ModelSnapshot `json:"target"`
 	ProviderID          string             `json:"provider_id"`
 	PresetID            string             `json:"preset_id,omitempty"`
+	UserAgent           string             `json:"user_agent"`
 	CredentialID        string             `json:"credential_id,omitempty"`
 	HeadersCredentialID string             `json:"headers_credential_id,omitempty"`
 }
@@ -454,7 +475,7 @@ func (b *Bridge) ResolveSelection(ctx context.Context, selection core.ModelSelec
 	if err != nil {
 		return core.ResolvedModel{}, err
 	}
-	snapshot, err := json.Marshal(frozenModel{Target: target, ProviderID: connection.ID, PresetID: connection.PresetID, CredentialID: connection.CredentialID, HeadersCredentialID: connection.HeadersCredentialID})
+	snapshot, err := json.Marshal(frozenModel{Target: target, ProviderID: connection.ID, PresetID: connection.PresetID, UserAgent: config.Headers["User-Agent"], CredentialID: connection.CredentialID, HeadersCredentialID: connection.HeadersCredentialID})
 	if err != nil {
 		return core.ResolvedModel{}, err
 	}
@@ -470,6 +491,9 @@ func (b *Bridge) RestoreModel(ctx context.Context, snapshot core.ModelSnapshot) 
 	if frozen.Target.Spec != snapshot.Spec {
 		return nil, domain.Invalid("frozen model specification mismatch")
 	}
+	if frozen.UserAgent == "" || strings.ContainsAny(frozen.UserAgent, "\r\n") {
+		return nil, domain.Invalid("invalid frozen model User-Agent")
+	}
 	key, err := b.Store.Secret(ctx, frozen.CredentialID)
 	if err != nil {
 		return nil, err
@@ -478,7 +502,7 @@ func (b *Bridge) RestoreModel(ctx context.Context, snapshot core.ModelSnapshot) 
 	if err != nil {
 		return nil, err
 	}
-	headers = integration.Headers(integration.ProviderConfig{PresetID: frozen.PresetID}, key, headers)
+	headers = hostHeaders(frozen.PresetID, key, headers, frozen.UserAgent)
 	client := b.HTTPClient
 	if preset := integration.FindPreset(frozen.PresetID); preset != nil && preset.Auth == "oauth" {
 		key = ""

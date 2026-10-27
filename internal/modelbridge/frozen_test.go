@@ -24,6 +24,61 @@ func frozenSelection(t *testing.T, b *Bridge, profileID string) (core.ResolvedMo
 	}
 	return resolved, core.ModelSnapshot{Spec: resolved.Model.Spec(), Data: resolved.Snapshot}
 }
+
+func TestFrozenTargetPreservesHostHeadersAcrossProgramUpgrade(t *testing.T) {
+	for _, headerName := range []string{"", "User-Agent", "user-agent"} {
+		t.Run("custom-header="+headerName, func(t *testing.T) {
+			ctx := context.Background()
+			bridge := testBridge(t)
+			bridge.Version = "0.1.7"
+			requests := make(chan http.Header, 2)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- r.Header.Clone()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"done"}}]}`))
+			}))
+			defer server.Close()
+			connection := domain.Provider{Name: "route", Protocol: "openai-completions", Dialect: "compatible", BaseURL: server.URL}
+			key := "original-key"
+			headers := map[string]string{"Custom-Credential": "original-header"}
+			if headerName != "" {
+				headers[headerName] = "custom-agent"
+			}
+			if err := bridge.SaveProvider(ctx, &connection, &key, &headers); err != nil {
+				t.Fatal(err)
+			}
+			profile := reasoningIntegrationProfile(connection, "model", nil)
+			if err := bridge.SaveProfile(ctx, &profile); err != nil {
+				t.Fatal(err)
+			}
+			resolved, snapshot := frozenSelection(t, bridge, profile.ID)
+			request := core.Request{Messages: []core.Message{core.User("same input")}, Options: resolved.Options}
+			if _, err := provider.Call(ctx, resolved.Model, request, nil); err != nil {
+				t.Fatal(err)
+			}
+			// A different Host process/version must restore the original request
+			// identity rather than applying its new default or saved custom UA.
+			next := &Bridge{Store: bridge.Store, HTTPClient: bridge.HTTPClient, Version: "0.2.0"}
+			restored, err := next.RestoreModel(ctx, snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := provider.Call(ctx, restored, request, nil); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				got := <-requests
+				if values := got.Values("User-Agent"); len(values) != 1 || values[0] != "Astral/0.1.7" {
+					t.Fatalf("frozen Host User-Agent changed: %q", values)
+				}
+				if got.Get("Authorization") != "Bearer original-key" || got.Get("Custom-Credential") != "original-header" {
+					t.Fatalf("provider credentials changed: %+v", got)
+				}
+			}
+		})
+	}
+}
+
 func TestFrozenTargetRestoresAfterResourceEditsAndDeletion(t *testing.T) {
 	ctx := context.Background()
 	bridge := testBridge(t)

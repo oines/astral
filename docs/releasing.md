@@ -64,7 +64,7 @@ astral-windows-arm64.exe
 
 All six are needed by a Server or Desktop that offers enrollment of other platforms. Other assets are:
 
-- Desktop DMG/ZIP, NSIS/ZIP and AppImage/DEB files named `Astral-${version}-${os}-${arch}.${ext}`, with `os` equal to `mac`, `win` or `linux`, and `arch` equal to `x64` or `arm64`.
+- Desktop DMG/ZIP, NSIS/ZIP and AppImage/DEB files named `Astral-${version}-${os}-${arch}.${ext}`. Mac and Windows use `x64` or `arm64`; Linux AppImages use `x86_64` or `arm64`, and Linux DEBs use `amd64` or `arm64`.
 - `checksums.txt`, covering exactly the six unified executables.
 - `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt` and the versioned Linux `install-server.sh`.
 - `release-manifest.json`, identifying the source, CI/build runs, runtime data formats, asset sizes/hashes and implemented update capabilities.
