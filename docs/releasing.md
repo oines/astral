@@ -80,7 +80,7 @@ The collector retains an explicit `candidate` command for review-only fixtures o
 
 ## Initial data baseline and updates
 
-The first supported public data baseline is **Host schema 3 / Core format 10**. Release metadata reports the actual current targets and those fixed baselines, rather than treating every later format change as unsupported. Earlier private development formats are outside the chain and are rejected; never relabel a database without converting its data. The application patch number is independent of the data version, and a release without a persisted-format change needs no empty migration.
+The first supported public data baseline is **Host schema 3 / Core format 11**. Release metadata reports the actual current targets and those fixed baselines, rather than treating every later format change as unsupported. Earlier private development formats are outside the chain and are rejected; never relabel a database without converting its data. The application patch number is independent of the data version, and a release without a persisted-format change needs no empty migration.
 
 **Versioned migrations.** Host and Core own separate Goose chains containing immutable SQL steps and self-contained Go transformations. The latest Go binary embeds every supported historical step; a user upgrading across several application releases downloads only the latest program, which applies all missing data steps in order. Normal runtime code accepts only its current format. See [the migration contract](migrations.md) for the maintenance CLI, frozen data definitions, per-step transactions and recovery acceptance.
 

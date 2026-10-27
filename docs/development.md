@@ -10,7 +10,8 @@ The pinned development tools are in [mise.toml](../mise.toml). Install those ver
 
 ```sh
 pnpm install --frozen-lockfile
-GOWORK=off pnpm build:distribution
+cp go.work.example go.work  # matching Core checkout at ../agent-core
+pnpm build:distribution
 ```
 
 The build generates OpenAPI and the TypeScript SDK, builds the shared Web app, and embeds it in six binaries:
@@ -47,7 +48,7 @@ Password and TOTP login work over HTTP or HTTPS. A confirmed TOTP or Passkey aut
 
 Daemon traffic always uses TLS 1.3 inside WS/WSS, with a persistent Server identity, a 100-year self-signed certificate and a public-key pin in the pairing command. Registration tokens are consumed once. VPN is optional; browser HTTPS can be supplied by your reverse proxy or Tailscale Serve. Installers and executable downloads come from the official HTTPS release assets, never this Server's HTTP port. See [deployment](deployment.md) for account recovery, configuration, trusted proxies and container networking.
 
-For a fresh source run, use an empty data directory and choose a persistent location instead of `/tmp` for regular use. The supported migration chain begins at Host schema 3 / Core format 10. Existing supported data is inspected and migrated offline during startup under the Server lock, with a complete Server-directory snapshot and recovery journal; normal runtime only reads its current format. The prepared stores are committed before local control, IM or HTTP begins accepting work; earlier private formats are rejected rather than guessed or relabelled. See [versioned migrations](migrations.md).
+For a fresh source run, use an empty data directory and choose a persistent location instead of `/tmp` for regular use. The supported migration chain begins at Host schema 3 / Core format 11. Existing supported data is inspected and migrated offline during startup under the Server lock, with a complete Server-directory snapshot and recovery journal; normal runtime only reads its current format. The prepared stores are committed before local control, IM or HTTP begins accepting work; earlier private formats are rejected rather than guessed or relabelled. See [versioned migrations](migrations.md).
 
 ## First-run setup
 
@@ -73,16 +74,20 @@ Official signed Mac Apps, current-user Windows NSIS installations and Linux AppI
 
 Electron manages the local Go server, local Daemon, window, menu, tray and login preference. Closing the window follows the General setting; quitting stops the managed service. A server also stops if its desktop parent dies. Renderer code receives neither the private Desktop credential nor a general native filesystem API. The startup credential travels through private stdin and is not a browser Cookie; Web logout, password resets and device removal do not affect it.
 
-Desktop stores current data under the OS user configuration directory in `astral/schema-3/`: `~/Library/Application Support/astral/schema-3/` on macOS, `%APPDATA%\astral\schema-3\` on Windows, and `$XDG_CONFIG_HOME/astral/schema-3/` (normally `~/.config/astral/schema-3/`) on Linux. Data from earlier formats stays in its original directory. `ASTRAL_DESKTOP_DATA_DIR` can select another directory; it must be empty or use a supported format from the published migration chain. Keep this directory across application upgrades so the new Server can migrate existing data.
+Desktop stores current data under the OS user configuration directory in `astral/schema-3-core-11/`: `~/Library/Application Support/astral/schema-3-core-11/` on macOS, `%APPDATA%\astral\schema-3-core-11\` on Windows, and `$XDG_CONFIG_HOME/astral/schema-3-core-11/` (normally `~/.config/astral/schema-3-core-11/`) on Linux. This directory identifies Host schema 3 / Core format 11. Earlier Desktop data, including the former `schema-3/` directory with Core format 10, stays untouched in its original directory; this refactor starts with first-time setup rather than importing or converting it. `ASTRAL_DESKTOP_DATA_DIR` can select another directory; it must be empty or use a supported format from the published migration chain. Keep this directory across application upgrades so the new Server can migrate existing data.
 
 Enrolling a native Windows Computer uses PowerShell and the `curl.exe` included with modern Windows; it does not require WSL. Local containers use Docker Desktop in Linux-container mode; on macOS use Docker Desktop or OrbStack, and on Linux use the local Docker Engine. Docker Desktop itself may use WSL 2 internally, but Astral does not ask the user to run enrollment commands there.
 
 ## Development and verification
 
+Model recommendations carry a `RecommendationTarget` containing the source model ID, protocol, dialect and an API contract identifier. The contract covers the provider preset, normalized endpoint, applicable provider reasoning format/mapping and a stable caller-supplied connection scope; it excludes credentials and display names. Core Models resolves this binding before merging explicit overrides: another model invalidates its old catalog facts, while a route or API contract change invalidates only API-specific facts. A newly fetched catalog result already bound to the new target remains intact. Host preview and save use the same SDK resolution; preview does not compare a new draft with an unrelated saved model revision. Catalog synchronization retains the existing transactional user-modification rules. See [model integration contracts](provider-reasoning.md).
+
+Public model metadata lookup first matches the complete slug after the final `/` exactly. Only when no exact slug exists does it retry ignoring letter case; dates, versions and suffixes must still match. This never changes the model ID persisted or sent to the service. Both paths retain source ranking and field-by-field merging across multiple records. Live connection data ranks above public metadata; public sources rank by the current provider, an explicit namespace, maker hints, then other agreeing sources. Conflicts at the same priority remain unknown.
+
 For separate frontend and backend development:
 
 ```sh
-GOWORK=off pnpm dev:server
+pnpm dev:server
 pnpm dev
 ```
 
@@ -90,10 +95,11 @@ The development Web app proxies the API to port 4545. For desktop development, b
 
 Brand artwork lives in `packages/icons/assets/`: the color mark and light/dark wordmarks are shared by the Web app, while the layered monochrome mark is used for the tray and favicon. Run `pnpm build:icons` to regenerate the desktop SVG/PNG/ICNS and favicon from these SVG sources. The app icon uses a white or graphite rounded tile with macOS sizing and padding; the Dock switches between them with the system appearance. Web and desktop development/build commands also regenerate their icons automatically; macOS tray resources include both 1× and 2× versions.
 
-The versions pinned in `go.mod` are publicly available and support standalone builds with `GOWORK=off`; sibling repositories are not required. Use that setting for verification and distribution builds so the result uses the committed dependencies. For coordinated development across Astral, Astral Core and astral-models, an ignored local Go workspace can select those checkouts. Build scripts honor an active workspace unless `GOWORK=off` is set, including when collecting dependency notices.
+The model SDK now lives in the Astral Core monorepo. This coordinated source change requires the matching Core checkout until its new revision is published and pinned in `go.mod`. Keep both repositories side by side and copy `go.work.example` to the ignored `go.work`, adjusting its Core path if necessary. The workspace contains Astral and Core only; the old astral-models repository is no longer a module dependency. Build scripts honor the workspace, including dependency notices. Do not use `GOWORK=off` against the pre-refactor published Core revision: it does not contain the Models packages.
+
+The Core monorepo can be verified independently with `GOWORK=off go test ./...`. Release preparation must publish and pin the matching Core revision before verifying Astral without a workspace; local absolute paths must never enter `go.mod`.
 
 ```sh
-export GOWORK=off
 go test -race ./...
 go vet ./...
 pnpm lint:go

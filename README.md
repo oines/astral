@@ -44,7 +44,9 @@ Install the development tools pinned in [mise.toml](mise.toml), then:
 git clone https://github.com/oines/astral.git
 cd astral
 pnpm install --frozen-lockfile
-GOWORK=off pnpm build:distribution
+git clone https://github.com/oines/astral-core.git ../agent-core
+cp go.work.example go.work
+pnpm build:distribution
 ```
 
 Choose how to run it:
@@ -78,7 +80,7 @@ Read the [website and user documentation](https://astral.oines.dev/). Their sour
 After installing dependencies, start the backend:
 
 ```sh
-GOWORK=off pnpm dev:server
+pnpm dev:server
 ```
 
 In another terminal, start the Web app:
@@ -89,7 +91,7 @@ pnpm dev
 
 See the [development guide](docs/development.md#development-and-verification) for desktop development, the local model fixture and verification commands. Contribution guidelines are in [CONTRIBUTING.md](CONTRIBUTING.md); UI work follows the [UI/UX specification](docs/ui-ux-spec.md). Report suspected vulnerabilities privately through [SECURITY.md](SECURITY.md).
 
-Astral uses [Astral Core](https://github.com/oines/astral-core) for its agent runtime and [astral-models](https://github.com/oines/astral-models) for model provider protocols.
+Astral uses the [Astral Core monorepo](https://github.com/oines/astral-core): its Core package owns persistent sessions and its Models packages own provider protocols, authentication and model metadata.
 
 ## License
 

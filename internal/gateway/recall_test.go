@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/harness"
@@ -46,22 +47,32 @@ func TestRecallThroughComputerGatewayWithoutUsableModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	selected, selectionErr := p.Harness.Core(p.Context, p.Session.ID)
+	if selectionErr != nil {
+		t.Fatal(selectionErr)
+	}
+	if selectionErr = selected.SelectModel(p.Context, core.ModelSelection{ID: "removed-model"}); selectionErr != nil {
+		t.Fatal(selectionErr)
+	}
 	if err = p.Harness.Close(p.Context); err != nil {
 		t.Fatal(err)
 	}
 	if err = p.Store.Get(p.Context, "sessions", p.Session.ID, &p.Session); err != nil {
 		t.Fatal(err)
 	}
-	p.Session.ModelRef = "removed-model~1"
 	if err = p.Store.Save(p.Context, "sessions", &p.Session.Meta, &p.Session); err != nil {
 		t.Fatal(err)
 	}
 	p.Harness = harness.New(p.Store, p.CoreStore, p.Harness.Models, p.Hub)
 	gateway := New(p.Harness, channels.New(p.Store, p.Harness))
 	p.Hub.Gateway = gateway.Handle
-	if _, err = p.Harness.Core(p.Context, p.Session.ID); err == nil {
-		t.Fatal("fixture model should be unusable")
+	if _, err = p.Harness.Core(p.Context, p.Session.ID); err != nil {
+		t.Fatalf("cold history should open: %v", err)
 	}
+	if _, err = p.Harness.InspectContext(p.Context, p.Session.ID); err == nil {
+		t.Fatal("fixture model should be unusable for requests")
+	}
+
 	before, err := p.CoreStore.LoadState(p.Context, p.Session.ID)
 	if err != nil {
 		t.Fatal(err)

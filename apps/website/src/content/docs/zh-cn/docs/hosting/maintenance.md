@@ -32,7 +32,7 @@ description: "更新 Desktop、Server 和连接的电脑，并完整保存历史
 
 需要转换数据时，启动流程会先取得独占运行权并备份完整 Server 目录，在迁移和准备数据库期间保留恢复信息，随后在接受网页、API 或聊天工作之前确认升级。迁移或准备阶段失败会恢复该次备份，确认前中断则在下次启动时先恢复。确认后可能已经接受新工作，后续故障不会自动恢复旧数据。Linux 安装脚本若在本次激活检查中失败，会另行恢复本次升级的快照；Desktop 不会在每次启动失败时自动回退 App。自动快照位于 Server 数据目录同级的 `upgrade-backups/`。
 
-首个支持的数据基线为 Host 3 / Core 10。更早的私有开发格式和未知的新格式会被拒绝。安装旧程序不等于数据降级：恢复旧数据需要匹配的备份和程序版本。请继续维护独立备份，包括电脑上的工作文件，不要只依赖升级快照。
+当前支持的数据基线为 Host 3 / Core 11。本次模型与会话重构不转换 Core 10 或更早的数据。Desktop 使用新的 `schema-3-core-11/` 目录，从首次设置开始；旧的 `schema-3/` 等目录完整保留，不会导入、转换或删除。显式指定更早的私有开发格式或未知的新格式时，启动会被拒绝。安装旧程序不等于数据降级：恢复旧数据需要匹配的备份和程序版本。请继续维护独立备份，包括电脑上的工作文件，不要只依赖升级快照。
 
 ## 更新远程电脑或容器
 
@@ -65,7 +65,7 @@ description: "更新 Desktop、Server 和连接的电脑，并完整保存历史
 - Windows：`%APPDATA%\astral`
 - Linux：`$XDG_CONFIG_HOME/astral`，通常为 `~/.config/astral`
 
-Server 数据通常在根目录的 `server/`，本机电脑数据在 `computers/`。Desktop 使用操作系统应用数据目录中的 `astral/schema-3/`：macOS 和 Windows 对应上面的 Astral 位置，Linux 通常为 `~/.config/astral/schema-3/`。Linux VPS 安装脚本则使用安装根目录下的 `data/`。自定义路径和环境变量优先。
+Server 数据通常在根目录的 `server/`，本机电脑数据在 `computers/`。Desktop 使用操作系统应用数据目录中的 `astral/schema-3-core-11/`：macOS 和 Windows 对应上面的 Astral 位置，Linux 通常为 `~/.config/astral/schema-3-core-11/`。Linux VPS 安装脚本则使用安装根目录下的 `data/`。自定义路径和环境变量优先。
 
 ## 恢复后检查
 

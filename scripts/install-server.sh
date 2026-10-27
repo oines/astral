@@ -250,7 +250,7 @@ if not re.fullmatch(r'[0-9a-f]{40}',m.get('source_sha','')): raise SystemExit('I
 host,core=m.get('host_schema'),m.get('core_format')
 if type(host) is not int or type(core) is not int or host<1 or core<1 or m.get('data_formats')!={'host':host,'core':core}: raise SystemExit('Invalid or inconsistent data-format metadata')
 baselines=m.get('migration_baselines',{})
-if m.get('migration_status')!='goose' or baselines!={'host':3,'core':10} or m.get('migration_targets')!={'host':host,'core':core} or host<3 or core<10: raise SystemExit('Invalid Goose migration ranges')
+if m.get('migration_status')!='goose' or baselines!={'host':3,'core':11} or m.get('migration_targets')!={'host':host,'core':core} or host<3 or core<11: raise SystemExit('Invalid Goose migration ranges')
 if sorted(m.get('distribution_names',[]))!=sorted(names): raise SystemExit('Manifest must describe all six distribution binaries')
 assets=m.get('assets',[])
 if not isinstance(assets,list) or any(not isinstance(a,dict) for a in assets): raise SystemExit('Invalid asset inventory')
@@ -303,7 +303,7 @@ if [[ -n $old_program ]]; then
   python3 - "$old_formats" "$new_formats" <<'PY'
 import sys
 old=list(map(int,sys.argv[1].split())); new=list(map(int,sys.argv[2].split()))
-if len(old)!=2 or len(new)!=2 or any(not baseline<=a<=b for baseline,a,b in zip((3,10),old,new)):
+if len(old)!=2 or len(new)!=2 or any(not baseline<=a<=b for baseline,a,b in zip((3,11),old,new)):
     raise SystemExit('Existing data is outside the supported forward migration chain; the old service is unchanged')
 PY
 elif [[ -d $root/data && -n $(find "$root/data" -mindepth 1 -print -quit) ]]; then

@@ -51,6 +51,11 @@ func TestDeleteProviderAPIAtomicallyRemovesItsCurrentModelInventory(t *testing.T
 	}
 	child := p.Profile
 	child.Meta, child.ModelID = domain.Meta{}, "second-child"
+	// This is a separate valid model in the provider's inventory, with explicit
+	// mock budgets rather than recommendations belonging to the original ID.
+	child.Overrides = map[string]json.RawMessage{
+		"context_window": testkit.JSON(128000), "max_output_tokens": testkit.JSON(4096),
+	}
 	if err := p.Harness.Models.SaveProfile(p.Context, &child); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +100,9 @@ func TestDeleteProviderAPIAtomicallyRemovesItsCurrentModelInventory(t *testing.T
 			t.Fatalf("API inventory still presented deleted Provider models: %+v", profiles)
 		}
 	}
-	if _, err := p.Harness.Models.Resolve(p.Context, p.Session.ModelRef, nil); err != nil {
+	var historicalConnection domain.Provider
+	_ = p.Store.Version(p.Context, "providers", p.Profile.ProviderID, 1, &historicalConnection)
+	if _, err := p.Harness.Models.Resolve(p.Context, modelbridge.Reference(p.Profile, historicalConnection), nil); err != nil {
 		t.Fatalf("resource deletion lost historical request configuration: %v", err)
 	}
 	if p.Requests.Load() != 0 {

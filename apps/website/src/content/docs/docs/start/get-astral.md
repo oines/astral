@@ -13,22 +13,23 @@ Use the repository's versions: Go **1.26.3**, Node.js **26.7.0**, and pnpm **10.
 git clone https://github.com/oines/astral.git
 cd astral
 pnpm install --frozen-lockfile
+git clone https://github.com/oines/astral-core.git ../agent-core
+cp go.work.example go.work
 ```
 
-Run the following commands from the repository root. `GOWORK=off` uses dependencies from `go.mod` if a local `go.work` points to neighboring repositories you do not have.
+This source refactor uses the matching Astral Core monorepo checkout, including its Models packages. Use matching revisions of both repositories and keep the local workspace enabled. Adjust the Core path in `go.work` when your checkouts are elsewhere. Run the following commands from the Astral repository root.
 
 ## Build the Server and product interface
 
 On macOS or Linux:
 
 ```sh
-GOWORK=off pnpm build:distribution
+pnpm build:distribution
 ```
 
 In Windows PowerShell:
 
 ```powershell
-$env:GOWORK = 'off'
 pnpm build:distribution
 ```
 

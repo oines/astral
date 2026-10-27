@@ -2,7 +2,7 @@
 import { computed, nextTick, onDeactivated, onUnmounted, ref, watch } from 'vue'
 import { useQuery } from '@pinia/colada'
 import { listModelsQuery, listModelsQueryKey, listProvidersQuery, listProvidersQueryKey } from '@astral/sdk/colada'
-import { authorizeProvider, deleteModel, deleteProvider, importModels, refreshProviderModels, listProviderPresets, presetModels, listProviders, listModels, providerAuthorization, saveModel, saveProvider, type AstralInternalModelbridgeAuthorization as Authorization, type AstralInternalModelbridgeDiscovery as Discovery, type AstralInternalModelbridgeProviderPreset as Preset } from '@astral/sdk'
+import { authorizeProvider, deleteModel, deleteProvider, refreshProviderModels, listProviderPresets, presetModels, listProviders, listModels, providerAuthorization, saveModel, saveProvider, type AstralInternalModelbridgeAuthorization as Authorization, type AstralCoreModelsIntegrationDiscovery as Discovery, type AstralCoreModelsIntegrationProviderPreset as Preset } from '@astral/sdk'
 import { Button, Modal, SettingsSection, Switch } from '@astral/ui'
 import { ArrowLeft, Brain, ChevronRight, Copy, Eye, Pencil, Plus, ProviderIcon, RefreshCw, Search, Trash2, Wrench } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
@@ -40,8 +40,7 @@ const provider = computed(() => providers.data.value?.find(p => p.id === provide
 const preset = computed(() => presets.data.value?.find(p => p.id === (provider.value?.preset_id || presetID.value)))
 const cards = computed(() => {
   const saved = (providers.data.value || []).map(p => ({ id: p.id, name: p.name, base_url: p.base_url, provider: p, preset: presets.data.value?.find(s => s.id === p.preset_id) }))
-  const templates = (presets.data.value || []).filter(s => !saved.some(p => p.provider.preset_id === s.id)).map(s => ({ id: s.id, name: s.name, base_url: s.base_url, provider: undefined, preset: s }))
-  return [...saved, ...templates].filter(p => `${p.name} ${p.base_url} ${p.preset?.id || ''}`.toLowerCase().includes(search.value.trim().toLowerCase()))
+  return saved.filter(p => `${p.name} ${p.base_url} ${p.preset?.id || ''}`.toLowerCase().includes(search.value.trim().toLowerCase()))
 })
 const addOpen = ref(false)
 const addPresetID = ref('openai')
@@ -82,19 +81,9 @@ async function savedProvider(saved: Provider, autoImport: boolean, origin: strin
   if (modal) addOpen.value = false
   if (modal || current) {
     if (providerID.value !== saved.id) openProvider(saved, presets.data.value?.find(p => p.id === saved.preset_id))
-    if (autoImport) await importCatalog()
+    if (autoImport) await refreshCatalog(saved.id)
   }
   await app.refresh().catch(() => undefined)
-}
-async function importCatalog() {
-  await action.run(async () => {
-    if (!provider.value) return
-    const result = await request(importModels({ path: { id: provider.value.id }, body: {} }))
-    await app.refresh()
-    action.success.value = t('modelsImported', { count: result.imported.length })
-    if (result.catalog_error) action.success.value += ` · ${t('usingBuiltInCatalog')}`
-    if (result.skipped.length && !result.imported.length && !localModels.value.length) action.success.value = t('catalogNeedsLimits')
-  })
 }
 async function refreshCatalog(id = provider.value?.id) {
   if (!id || refreshingCatalogs.value.has(id)) return
@@ -257,7 +246,7 @@ async function copyCode() { if (authorization.value?.user_code) await copy(autho
         v-if="!cards.length"
         class="muted"
       >
-        {{ presets.asyncStatus.value === 'loading' ? t('loading') : t('providerNoMatch') }}
+        {{ providers.asyncStatus.value === 'loading' ? t('loading') : t('providerNoMatch') }}
       </p>
     </template>
     <template v-else>
@@ -406,7 +395,7 @@ async function copyCode() { if (authorization.value?.user_code) await copy(autho
               :aria-label="t('toolCalling')"
             /></span>
             <span :title="Object.keys(object(row.values.reasoning)).length ? t('reasoning') : undefined"><Brain
-              v-if="Object.keys(object(row.values.reasoning)).length"
+              v-if="object(row.values.reasoning).supported !== false && Object.keys(object(row.values.reasoning)).length"
               :aria-label="t('reasoning')"
             /></span>
           </div>

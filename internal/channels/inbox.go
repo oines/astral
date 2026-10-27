@@ -63,7 +63,7 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 				if _, lookupErr := s.Harness.Receipt(ctx, b.SessionID, probeInputID(b.ID, window.Through)); lookupErr == nil {
 					_ = s.finishProbe(ctx, b, probeResult{through: window.Through, participate: true})
 				} else {
-					view, viewErr := s.Harness.InspectContext(ctx, b.SessionID)
+					view, viewErr := s.Harness.ReadContext(ctx, b.SessionID)
 					if viewErr == nil {
 						s.mu.Lock()
 						if s.deletingAgents[b.AgentID] {

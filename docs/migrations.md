@@ -1,6 +1,6 @@
 # Versioned data migrations
 
-Astral upgrades data when software is updated, rather than carrying historical readers in normal business code. Application versions and data versions are independent. The first supported public baseline is **Host schema 3 / Core format 10**; earlier private formats and unknown future formats are rejected, not relabelled.
+Astral upgrades data when software is updated, rather than carrying historical readers in normal business code. Application versions and data versions are independent. The first supported public baseline is **Host schema 3 / Core format 11**; Core format 10 and earlier formats are rejected without conversion by this destructive model/session refactor; unknown future formats are rejected as well. Existing histories are not rewritten or deleted by startup.
 
 The newest unified Go binary carries every supported historical SQL/Go migration. Upgrading from an old release downloads only the latest release, then applies the missing data steps in order. It does not install intermediate Apps or fetch migration scripts from the network. A software release with no persisted-format change needs no empty migration.
 

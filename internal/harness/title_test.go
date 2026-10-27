@@ -40,6 +40,7 @@ func TestSessionTitleUsesSelectedModelWithoutBlockingOrChangingHistory(t *testin
 		t.Fatal(err)
 	}
 	selected.Meta, selected.ModelID, selected.Name = domain.Meta{}, "selected-current-model", "Current model"
+	declareFixtureModelRecommendations(t, f, &selected)
 	if err := f.service.Models.SaveProfile(f.ctx, &selected); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +89,7 @@ func TestSessionTitleUsesSelectedModelWithoutBlockingOrChangingHistory(t *testin
 	eventually(t, f.ctx, func() bool {
 		return f.store.Get(f.ctx, "sessions", session.ID, &session) == nil && session.TitleSource == domain.TitleGenerated
 	})
-	if session.Title != "K8s滚动更新分析" || !session.Pinned || session.ProfileID != f.agent.DefaultModelID {
+	if session.Title != "K8s滚动更新分析" || !session.Pinned || sessionSelection(t, f, session.ID).ID != f.agent.DefaultModelID {
 		t.Fatalf("generated title lost unrelated edits: %+v", session)
 	}
 	contextView, err := f.service.InspectContext(f.ctx, session.ID)

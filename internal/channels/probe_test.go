@@ -198,6 +198,9 @@ func TestProbeFollowsSessionModelAndOverride(t *testing.T) {
 	other.Meta = domain.Meta{}
 	other.Name = "other"
 	other.ModelID = "second-model"
+	// This mock model has explicitly configured limits and transport. Changing
+	// its identity must invalidate the first model's catalog recommendations.
+	other.Overrides = p.Profile.Recommendations
 	if err := p.Harness.Models.SaveProfile(p.Context, &other); err != nil {
 		t.Fatal(err)
 	}

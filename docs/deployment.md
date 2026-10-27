@@ -214,7 +214,7 @@ Configure accounts in Settings → Bots → choose a Bot → Connect a platform 
 
 ## Desktop troubleshooting
 
-Desktop stores current data under the OS user configuration directory in `astral/schema-3/`. CLI `--data` and `--computers-dir` can open those same directories in headless mode, but never run two Servers against the same data concurrently. `ASTRAL_DESKTOP_DATA_DIR` selects an isolated Desktop data root. `ASTRAL_SERVER_LISTEN`, `ASTRAL_PUBLIC_URLS` and `ASTRAL_ALLOW_REMOTE_MANAGEMENT` configure its managed Server with environment priority; Desktop does not promote defaults or environment values into CLI overrides.
+Desktop stores current Host schema 3 / Core format 11 data under the OS user configuration directory in `astral/schema-3-core-11/`. Earlier Desktop directories remain untouched; the current baseline starts with first-time setup and does not import or convert Core format 10 data. CLI `--data` and `--computers-dir` can open those same directories in headless mode, but never run two Servers against the same data concurrently. `ASTRAL_DESKTOP_DATA_DIR` selects an isolated Desktop data root. `ASTRAL_SERVER_LISTEN`, `ASTRAL_PUBLIC_URLS` and `ASTRAL_ALLOW_REMOTE_MANAGEMENT` configure its managed Server with environment priority; Desktop does not promote defaults or environment values into CLI overrides.
 
 The main process owns the Go child. Quitting waits for shutdown; loss of the private stdin pipe or desktop parent ends the managed Server. Enrolled user-service and container Daemons have separate lifecycles. Restarting Desktop establishes a fresh private Desktop identity without requiring Web account credentials.
 

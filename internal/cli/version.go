@@ -42,7 +42,7 @@ func version(args []string, out io.Writer) error {
 		metadata.DataFormats.Host = persistence.FormatVersion
 		metadata.DataFormats.Core = core.FormatVersion
 		metadata.MigrationStatus = "goose"
-		metadata.MigrationBaselines = dataFormatVersions{Host: int(persistence.BaselineVersion), Core: 10}
+		metadata.MigrationBaselines = dataFormatVersions{Host: int(persistence.BaselineVersion), Core: 11}
 		metadata.MigrationTargets = metadata.DataFormats
 		return json.NewEncoder(out).Encode(metadata)
 	case "--data-formats":

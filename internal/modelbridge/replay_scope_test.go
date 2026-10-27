@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	core "github.com/oines/astral-core"
-	"github.com/oines/astral-models/provider/openai/responses"
+	"github.com/oines/astral-core/models/provider/openai/responses"
 	"github.com/oines/astral/internal/domain"
 )
 
-func TestMetadataChangesPreserveLegacyEncryptedReplayScope(t *testing.T) {
+func TestMetadataChangesPreserveReplayScopeAndCredentialChangesDropPrivateReplay(t *testing.T) {
 	ctx := context.Background()
 	b := testBridge(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -20,9 +21,9 @@ func TestMetadataChangesPreserveLegacyEncryptedReplayScope(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"reply","status":"completed","output":[{"id":"reason","type":"reasoning","encrypted_content":"opaque-state","summary":[]},{"id":"message","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"ready","annotations":[]}]}]}`))
 	}))
 	defer server.Close()
-	// Existing persisted providers have no explicit replay revision.
+	// Replay identity is owned by connection changes, not mutable display metadata.
 	provider := domain.Provider{Meta: domain.Meta{ID: domain.ID("provider")}, Name: "Before", Protocol: "openai-responses", Dialect: "openai", BaseURL: server.URL}
-	if err := b.Store.Save(ctx, "providers", &provider.Meta, &provider); err != nil {
+	if err := b.SaveProvider(ctx, &provider, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	profile := domain.ModelProfile{ProviderID: provider.ID, ModelID: "remote", Name: "Fixture", Recommendations: map[string]json.RawMessage{"context_window": raw(128000), "max_output_tokens": raw(8192), "streaming": raw(false)}}
@@ -62,7 +63,16 @@ func TestMetadataChangesPreserveLegacyEncryptedReplayScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := core.Request{ModelID: changed.Spec().ID, MaxOutputTokens: 1000, Messages: []core.Message{core.User("begin"), reply.Message, core.User("continue")}}
-	if _, err := changed.(*responses.Model).RequestBody(req); err == nil {
-		t.Fatal("credential change reused encrypted state from another connection")
+	prepared, err := core.PrepareRequest(ctx, changed, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := changed.(*responses.Model).RequestBody(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(body)
+	if strings.Contains(string(encoded), "opaque-state") || !strings.Contains(string(encoded), "ready") {
+		t.Fatalf("private replay leaked or ordinary text was discarded: %s", encoded)
 	}
 }

@@ -22,19 +22,20 @@ function selectionLabel(value: Reasoning, t: (key: string) => string) {
   return t('interfaceDefault')
 }
 
-export function modelReasoning(profile: Profile | undefined, reasoning: Reasoning | undefined, t: (key: string) => string) {
+export function modelReasoning(profile: Profile | undefined, reasoning: Reasoning | undefined, t: (key: string) => string, config: { inherit?: boolean } = {}) {
+  const inherit = config.inherit !== false
   const controls = profile?.reasoning_controls
   const defaults = object(object(({ ...profile?.recommendations, ...profile?.overrides }).defaults).reasoning) as Reasoning
   const defaultLabel = selectionLabel(defaults, t)
   const hasDefaults = defaults.enabled !== undefined || !!defaults.effort || defaults.budget_tokens !== undefined
-  const available = !!controls && (controls.options.some(option => option.id !== 'interface-default') || !!controls.budget || reasoning !== undefined || hasDefaults)
+  const available = !!controls && (!inherit || controls.options.some(option => option.id !== 'interface-default') || !!controls.budget || reasoning !== undefined || hasDefaults)
   const options = available ? [
-    { value: 'inherit', label: `${t('default')} · ${defaultLabel}` },
+    ...(inherit ? [{ value: 'inherit', label: `${t('default')} · ${defaultLabel}` }] : []),
     ...controls.options.map(option => ({ value: option.id, label: option.id.startsWith('effort:') ? option.id.slice(7) : option.id === 'interface-default' ? t('interfaceDefault') : t(option.id) })),
   ] : []
   const selected = reasoning ? controls?.options.find(option => sameSelection(option.value, reasoning)) : undefined
   const validBudget = !!controls?.budget && reasoning?.budget_tokens !== undefined && Number.isInteger(reasoning.budget_tokens) && (controls.budget.min === undefined || reasoning.budget_tokens >= controls.budget.min) && (controls.budget.max === undefined || reasoning.budget_tokens <= controls.budget.max) && reasoning.enabled === undefined && !reasoning.effort
-  const value = reasoning === undefined ? 'inherit' : selected?.id || (validBudget ? 'budget' : 'unavailable')
-  const label = reasoning === undefined ? defaultLabel : selected ? options.find(option => option.value === selected.id)?.label || selectionLabel(reasoning, t) : validBudget ? selectionLabel(reasoning, t) : `${selectionLabel(reasoning, t)} · ${t('reasoningUnavailable')}`
+  const value = reasoning === undefined ? inherit ? 'inherit' : 'interface-default' : selected?.id || (validBudget ? 'budget' : 'unavailable')
+  const label = reasoning === undefined ? inherit ? defaultLabel : t('interfaceDefault') : selected ? options.find(option => option.value === selected.id)?.label || selectionLabel(reasoning, t) : validBudget ? selectionLabel(reasoning, t) : `${selectionLabel(reasoning, t)} · ${t('reasoningUnavailable')}`
   return { value, label, options, budget: available ? controls?.budget : undefined }
 }

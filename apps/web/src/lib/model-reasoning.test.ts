@@ -40,3 +40,24 @@ describe('model reasoning selection', () => {
     expect(modelReasoning(profile, { effort: 'retired-tier' }, t)).toMatchObject({ value: 'unavailable', label: 'retired-tier · reasoningUnavailable' })
   })
 })
+
+
+describe('model default reasoning', () => {
+  it('uses the same backend choices without a self-referential inherit option', () => {
+    const state = modelReasoning(profile, { effort: 'vendor-max' }, t, { inherit: false })
+    expect(state.value).toBe('effort:vendor-max')
+    expect(state.options.map(option => option.value)).toEqual(['interface-default', 'off', 'effort:low', 'effort:vendor-max'])
+    expect(modelReasoning(profile, undefined, t, { inherit: false })).toMatchObject({ value: 'interface-default', label: 'interfaceDefault' })
+  })
+  it('keeps API default available when no reasoning control is declared', () => {
+    const onlyDefault = { ...profile, recommendations: {}, reasoning_controls: { format: 'openai-chat', options: [{ id: 'interface-default', value: {} }] } }
+    expect(modelReasoning(onlyDefault, {}, t, { inherit: false })).toMatchObject({ value: 'interface-default', options: [{ value: 'interface-default', label: 'interfaceDefault' }] })
+  })
+  it('exposes exact model-default budgets from the same controls', () => {
+    const budget = { ...profile, reasoning_controls: { format: 'gemini-budget', options: [{ id: 'interface-default', value: {} }], budget: { min: 0, max: 32000 } } }
+    expect(modelReasoning(budget, { budget_tokens: 0 }, t, { inherit: false })).toMatchObject({ value: 'budget', budget: { min: 0, max: 32000 }, options: [{ value: 'interface-default', label: 'interfaceDefault' }] })
+  })
+  it('preserves unsupported saved defaults instead of changing them', () => {
+    expect(modelReasoning(profile, { effort: 'removed' }, t, { inherit: false })).toMatchObject({ value: 'unavailable', label: 'removed · reasoningUnavailable' })
+  })
+})

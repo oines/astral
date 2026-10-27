@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	core "github.com/oines/astral-core"
+	"github.com/oines/astral-core/models/integration"
 	"github.com/oines/astral/internal/domain"
 )
 
@@ -37,14 +38,35 @@ func anotherModel(t *testing.T, f *fixture) domain.ModelProfile {
 	}
 	profile.Meta, profile.Name, profile.ModelID = domain.Meta{}, "Another model", "fixture-next"
 	profile.Overrides = map[string]json.RawMessage{"context_window": encode(64000), "images": encode("unsupported")}
+	declareFixtureModelRecommendations(t, f, &profile)
 	if err := f.service.Models.SaveProfile(f.ctx, &profile); err != nil {
 		t.Fatal(err)
 	}
 	return profile
 }
 
-func TestModelChangesInjectOnlyModelStateAndSurviveReopen(t *testing.T) {
-	f := newFixture(t, 1, func(context.Context, int, map[string]any) any { return textReply("unused") })
+// Each mock model declares its own catalog facts. Copying a profile as test
+// setup must not claim its recommendations were acquired for the old model or
+// connection: production correctly invalidates that stale provenance.
+func declareFixtureModelRecommendations(t *testing.T, f *fixture, profile *domain.ModelProfile) {
+	t.Helper()
+	var connection domain.Provider
+	if err := f.store.Get(f.ctx, "providers", profile.ProviderID, &connection); err != nil {
+		t.Fatal(err)
+	}
+	target, err := integration.RecommendationTargetFor(integration.ProviderConfig{
+		PresetID: connection.PresetID, ConnectionScope: connection.ID,
+		Protocol: connection.Protocol, Dialect: connection.Dialect, BaseURL: connection.BaseURL,
+		ReasoningFormat: connection.ReasoningFormat, ReasoningMapping: connection.ReasoningMapping,
+	}, integration.ModelConfig{ModelID: profile.ModelID, Protocol: profile.Protocol, Dialect: profile.Dialect})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.RecommendationTarget = &target
+}
+
+func TestModelChangesInjectOnlyModelStateAtNextRequestAndSurviveReopen(t *testing.T) {
+	f := newFixture(t, 1, func(context.Context, int, map[string]any) any { return textReply("done") })
 	initial := environmentEntries(t, f, f.session.ID)
 	var metadata environmentMetadata
 	if len(initial) != 1 || json.Unmarshal(initial[0].Message.Metadata, &metadata) != nil || metadata.Model.ID != "fixture" || metadata.Model.ContextWindow != 128000 || metadata.Model.Vision != "supported" {
@@ -57,29 +79,50 @@ func TestModelChangesInjectOnlyModelStateAndSurviveReopen(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	activate := func() {
+		t.Helper()
+		if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: domain.ID("input"), Text: "use the selected model"}); err != nil {
+			t.Fatal(err)
+		}
+		f.idle(t, f.session.ID)
+	}
 	selectModel(next.ID)
+	if len(modelEntries(t, f)) != 0 || len(environmentEntries(t, f, f.session.ID)) != 1 || f.count() != 0 {
+		t.Fatal("selection prepared context or dispatched a model call")
+	}
+	activate()
 	notices := modelEntries(t, f)
-	if len(notices) != 1 || len(environmentEntries(t, f, f.session.ID)) != 1 || f.count() != 0 {
-		t.Fatal("model selection repeated the environment, omitted the notice, or woke the model")
+	if len(notices) != 1 || len(environmentEntries(t, f, f.session.ID)) != 1 {
+		t.Fatal("next request omitted the model notice or repeated the environment")
 	}
 	text := notices[0].Message.Content[0].Text
 	if !strings.Contains(text, "test (fixture) to Another model (fixture-next)") || !strings.Contains(text, `"context_window":64000`) || !strings.Contains(text, `"vision":"unsupported"`) || strings.Contains(text, "current_computer") || strings.Contains(text, "discovery") {
 		t.Fatalf("model notice contains wrong or unrelated state: %s", text)
 	}
 	selectModel(next.ID)
+	activate()
 	if len(modelEntries(t, f)) != 1 {
-		t.Fatal("selecting unchanged state repeated the notice")
+		t.Fatal("using unchanged state repeated the notice")
 	}
 	next.Overrides["images"] = encode("unknown")
 	next.Overrides["context_window"] = encode(96000)
 	if err := f.service.Models.SaveProfile(f.ctx, &next); err != nil {
 		t.Fatal(err)
 	}
-	selectModel(next.ID)
+	// Unused intermediate choices produce no history. The request collects
+	// only the final selected model's current capabilities.
 	selectModel(f.agent.DefaultModelID)
 	selectModel(next.ID)
+	if len(modelEntries(t, f)) != 1 {
+		t.Fatal("unused intermediate selection entered context")
+	}
+	activate()
+	selectModel(f.agent.DefaultModelID)
+	activate()
+	selectModel(next.ID)
+	activate()
 	if len(modelEntries(t, f)) != 4 {
-		t.Fatal("model capability changes or returning selections were lost")
+		t.Fatal("executed model changes or fresh capabilities were lost")
 	}
 	if err := f.service.SelectModel(f.ctx, f.session.ID, "missing-model"); err == nil || len(modelEntries(t, f)) != 4 {
 		t.Fatal("failed selection announced a model change")

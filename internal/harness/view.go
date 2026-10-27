@@ -17,6 +17,9 @@ type PendingInput struct {
 }
 type View struct {
 	domain.Session
+	Selection              sessions.ModelSelection    `json:"selection"`
+	ProfileID              string                     `json:"profile_id,omitempty"`
+	Reasoning              *sessions.ReasoningOptions `json:"reasoning,omitempty"`
 	RolloutID              string                     `json:"rollout_id"`
 	HeadID                 string                     `json:"head_id"`
 	Status                 string                     `json:"status"`
@@ -62,8 +65,10 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	if err = s.Store.Get(ctx, "sessions", id, &view.Session); err != nil {
 		return view, err
 	}
+	view.Selection = r.core.Load().Configuration().Selection
+	view.ProfileID, view.Reasoning = view.Selection.ID, view.Selection.Reasoning
 	view.ModelAvailable, view.ModelUnavailableReason = s.Models.Availability(ctx, view.ProfileID)
-	if !view.ModelAvailable {
+	if !view.ModelAvailable && snapshot.State.CurrentAttemptID == "" {
 		view.CanContinue = false
 	}
 	state := snapshot.State
@@ -108,4 +113,31 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 		view.Pending = append(view.Pending, PendingInput{ID: input.ID, Kind: string(input.Kind), Metadata: metadata})
 	}
 	return view, nil
+}
+
+// ReadContext returns bounded active history without model resolution or preparation.
+func (s *Service) ReadContext(ctx context.Context, id string) (sessions.Context, error) {
+	r, err := s.open(ctx, id)
+	if err != nil {
+		return sessions.Context{}, err
+	}
+	return r.core.Load().ReadContext(ctx)
+}
+func (s *Service) ModelSelection(ctx context.Context, id string) (sessions.ModelSelection, error) {
+	s.mu.Lock()
+	r := s.runtimes[id]
+	s.mu.Unlock()
+	if r != nil {
+		select {
+		case <-ctx.Done():
+			return sessions.ModelSelection{}, ctx.Err()
+		case <-r.ready:
+		}
+		if r.openErr != nil {
+			return sessions.ModelSelection{}, r.openErr
+		}
+		return r.core.Load().Configuration().Selection, nil
+	}
+	configuration, err := sessions.ReadConfiguration(ctx, s.CoreStore, id)
+	return configuration.Selection, err
 }

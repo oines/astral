@@ -296,9 +296,17 @@ func TestEnvironmentInitializationDedupAndReadsAcrossRestart(t *testing.T) {
 	if err != nil || child.CWD != f.session.CWD {
 		t.Fatalf("fork lost the selected CWD: %+v, %v", child, err)
 	}
-	childContext, err := f.service.InspectContext(f.ctx, child.ID)
-	if err != nil || !strings.Contains(childContext.Request.Messages[len(childContext.Request.Messages)-1].Content[0].Text, child.ID) {
-		t.Fatalf("fork did not append its own full environment: %v", err)
+	childContext, err := f.service.ReadContext(f.ctx, child.ID)
+	if err != nil || childContext.HeadID != state.HeadID || len(environmentEntries(t, f, child.ID)) != 3 {
+		t.Fatalf("creating or reading fork appended environment before execution: %v", err)
+	}
+	if _, err = f.service.Submit(f.ctx, child.ID, InputRequest{ID: "first-child", Text: "continue cloned work"}); err != nil {
+		t.Fatal(err)
+	}
+	f.idle(t, child.ID)
+	childEnvironments := environmentEntries(t, f, child.ID)
+	if len(childEnvironments) != 4 || !strings.Contains(childEnvironments[len(childEnvironments)-1].Message.Content[0].Text, child.ID) {
+		t.Fatal("first fork execution did not append its own full environment")
 	}
 }
 

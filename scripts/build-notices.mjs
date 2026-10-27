@@ -35,6 +35,9 @@ export async function buildNotices(root, target) {
   }
   for (const entry of goPackages.sort((a, b) => a.Path.localeCompare(b.Path))) {
     sections.push(`${entry.Path} ${entry.Version}\nhttps://${entry.Path}\n\n${await notices(entry.Dir)}`)
+    if (entry.Path === 'github.com/oines/astral-core') {
+      sections.push(`Astral Core Models / Twilight AI\n\n${await notices(path.join(entry.Dir, 'models'))}`)
+    }
   }
   const goRoot = execFileSync('go', ['env', 'GOROOT'], commandOptions).trim()
   const goLicense = await readFile(path.join(goRoot, 'LICENSE'), 'utf8').catch(error => {

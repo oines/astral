@@ -11,12 +11,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	sessions "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/channels"
+	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/gateway"
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/testkit"
@@ -426,5 +428,74 @@ func TestRetrySnapshotSurvivesEventStreamReconnectWithoutResubmission(t *testing
 	page, err := coreSession.History().Scan(p.Context, sessions.Query{Kind: sessions.EntryInputQueued, MaxBytes: 1 << 20})
 	if err != nil || len(page.Entries) != 1 {
 		t.Fatalf("reconnect duplicated input: %d %v", len(page.Entries), err)
+	}
+}
+
+type contextSelectionStore struct {
+	sessions.Store
+	mu     sync.Mutex
+	onScan func()
+}
+
+func (s *contextSelectionStore) Scan(ctx context.Context, rolloutID string, query sessions.Query) (sessions.Page, error) {
+	s.mu.Lock()
+	hook := s.onScan
+	s.onScan = nil
+	s.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	return s.Store.Scan(ctx, rolloutID, query)
+}
+func TestContextStatsUseTheSelectionActuallyInspected(t *testing.T) {
+	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any {
+		t.Error("context inspection dispatched a model request")
+		return testkit.Text("unexpected")
+	})
+	next := p.Profile
+	next.Meta = domain.Meta{}
+	next.Name = "Next model"
+	next.ModelID = "next-model"
+	// A distinct mock model declares its own budgets; recommendations acquired
+	// for the original model ID must not supply the new target's output limit.
+	next.Overrides = map[string]json.RawMessage{
+		"context_window": testkit.JSON(64000), "max_output_tokens": testkit.JSON(4096),
+	}
+	if err := p.Harness.Models.SaveProfile(p.Context, &next); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Harness.Close(p.Context); err != nil {
+		t.Fatal(err)
+	}
+	wrapped := &contextSelectionStore{Store: p.CoreStore}
+	p.Harness = harness.New(p.Store, wrapped, p.Harness.Models, p.Hub)
+	session, err := p.Harness.Core(p.Context, p.Session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = p.Harness.View(p.Context, p.Session.ID); err != nil {
+		t.Fatal(err)
+	}
+	passive := sessions.User("A passive update advances history before inspection.")
+	passive.ContextKind = "test.context"
+	if _, err = session.InjectContext(p.Context, sessions.Input{ID: "context-stats-update", Contexts: []sessions.Message{passive}}); err != nil {
+		t.Fatal(err)
+	}
+	// View has captured A when its usage lookup runs. Switch the authoritative
+	// Core selection to B before InspectContext, deterministically reproducing
+	// an owner selection arriving between those two read operations.
+	wrapped.mu.Lock()
+	wrapped.onScan = func() {
+		if err := session.SelectModel(p.Context, sessions.ModelSelection{ID: next.ID}); err != nil {
+			t.Error(err)
+		}
+	}
+	wrapped.mu.Unlock()
+	_, server := apiFixture(t, p)
+	response := request(t, p.Context, server, "GET", "/api/v1/sessions/"+p.Session.ID+"/context", nil, true)
+	defer response.Body.Close()
+	var stats ContextStats
+	if err := json.NewDecoder(response.Body).Decode(&stats); err != nil || response.StatusCode != 200 || stats.ContextWindow != 64000 {
+		t.Fatalf("stats mixed the old selection with the inspected request: %+v HTTP%d %v", stats, response.StatusCode, err)
 	}
 }

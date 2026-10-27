@@ -142,9 +142,6 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	if agent.Deletion {
 		return domain.Missing("Bot", agent.ID)
 	}
-	if record.ModelRef == "" {
-		return domain.Conflict("select a model before opening this Session")
-	}
 	r.tools, err = standardtools.New(&trackedBackend{runtime: r, backend: &computers.Backend{Hub: s.Hub}})
 	if err != nil {
 		return err
@@ -159,11 +156,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 			_ = r.tools.Close(cleanup)
 		}
 	}()
-	model, err := r.resolveModel(ctx, record.ModelRef)
-	if err != nil {
-		return err
-	}
-	config := r.coreConfig(model, record)
+	config := r.coreConfig(record)
 	session, err := core.OpenSession(ctx, config, r.id)
 	created := errors.Is(err, core.ErrNotFound)
 	if errors.Is(err, core.ErrNotFound) {
@@ -181,6 +174,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 			}
 			session, err = core.OpenSession(ctx, config, r.id)
 		} else {
+			config.Selection = core.ModelSelection{ID: agent.DefaultModelID, Reasoning: agent.DefaultReasoning}
 			session, err = core.NewSession(ctx, config, core.SessionOptions{ID: r.id})
 		}
 	}
@@ -193,30 +187,39 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	// snapshot for inspection; execution reconciles the current selection in
 	// continueLocked/Compact. Only a newly created Session needs initial setup.
 	if err == nil && created {
-		err = r.syncSelection(ctx)
+		err = r.syncBusinessConfig(ctx)
 	}
 	return err
 }
 
-func (r *runtime) coreConfig(model core.Model, record domain.Session) core.Config {
+func (r *runtime) coreConfig(record domain.Session) core.Config {
 	s := r.service
 	return core.Config{
-		Model: model, Store: s.CoreStore, ResolveModel: r.resolveModel, EstimateTokens: modelbridge.EstimateTokens,
-		SystemPrompt: systemPromptFor(record), Options: record.Options, Tools: r.hostTools(),
-		Compaction:      core.CompactionPolicy{SystemPrompt: r.compactionPrompt},
-		CollectContext:  r.collectContext,
+		Store: s.CoreStore, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokens: modelbridge.EstimateTokens,
+		SystemPrompt: systemPromptFor(record), Tools: r.hostTools(),
+		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContext: r.collectContext,
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
 	}
 }
 
-func (r *runtime) resolveModel(ctx context.Context, ref string) (core.Model, error) {
+func (r *runtime) resolveModel(ctx context.Context, selection core.ModelSelection) (core.ResolvedModel, error) {
 	ctx = modelbridge.WithSessionID(ctx, r.id)
-	model, err := r.service.Models.Resolve(ctx, ref, func(ctx context.Context) error { return r.validateModelSelection(ctx, ref) })
+	resolved, err := r.service.Models.ResolveSelection(ctx, selection)
+	if err != nil {
+		return core.ResolvedModel{}, err
+	}
+	resolved.Model = sessionModel{Model: resolved.Model, runtime: r}
+	return resolved, nil
+}
+
+func (r *runtime) restoreModel(ctx context.Context, snapshot core.ModelSnapshot) (core.Model, error) {
+	model, err := r.service.Models.RestoreModel(modelbridge.WithSessionID(ctx, r.id), snapshot)
 	if err != nil {
 		return nil, err
 	}
 	return sessionModel{Model: model, runtime: r}, nil
 }
+
 func (r *runtime) currentBinding(ctx context.Context) (domain.ExecutionBinding, error) {
 	var record domain.Session
 	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
@@ -249,15 +252,12 @@ func (s *Service) CreateSession(ctx context.Context, agentID, title string) (dom
 	if err := s.Store.Get(ctx, "agents", agentID, &agent); err != nil {
 		return domain.Session{}, err
 	}
-	ref, options, err := s.Models.Selection(ctx, agent.DefaultModelID)
+	_, _, err = s.Models.Selection(ctx, agent.DefaultModelID)
 	if err != nil {
 		return domain.Session{}, err
 	}
-	if agent.DefaultReasoning != nil {
-		options.Reasoning = *agent.DefaultReasoning
-	}
 	record := domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agentID, Title: strings.TrimSpace(title), TitleSource: domain.TitleManual, Source: "web",
-		ProfileID: agent.DefaultModelID, ModelRef: ref, Options: options, Reasoning: agent.DefaultReasoning, ComputerID: agent.DefaultComputerID}
+		ComputerID: agent.DefaultComputerID}
 	if defaultSessionTitle(record.Title) {
 		record.Title = "New session"
 		record.TitleSource = domain.TitleDefault

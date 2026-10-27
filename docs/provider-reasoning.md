@@ -1,107 +1,57 @@
-# 预置服务商的推理请求契约
+# 模型接入与推理契约
 
-核对日期：2026-10-23。本表覆盖 `ProviderPresets` 的全部 38 个预设。代码绑定位于 `internal/modelbridge/preset_reasoning.go`、`preset_protocols.go` 与 `preset_responses.go`（Responses 可选字段差异）；这份资料记录公开接口契约，不表示已使用用户账号逐个完成付费调用验证。
+更新：2026-10-27。
 
-## 使用规则
+## 所有权
 
-推理请求格式决定字段位置，模型路由能力决定可以显示哪些选项。表中的格式名称**不是**整个平台全部模型的能力声明。`reasoning: true` 只表明模型可以推理，不能据此补出开关、预算或 `low / medium / high`。
+模型适配位于 Astral Core monorepo 的 `models/`。Models 负责 Provider API、OAuth、目录、models.dev、配置解析、reasoning、流式响应、原生内容和错误。Core 根包仅管理通用会话与请求生命周期；Astral Host 负责配置和凭据保存、界面、库存事务及业务上下文。
 
-运行时以当前连接、当前协议和完整模型 ID 为边界。模型显式覆盖、连接显式配置优先于本表；连接返回的能力资料优先于公共目录推荐值。原厂模型在不同网关上可采用不同控制方式。改变协议后重新选择对应协议的格式，不把 Chat 的扩展字段带入 Responses。
+Provider 预置描述服务商或中转站的认证、地址、协议和请求字段。生产适配代码不以具体模型型号字符串决定协议、能力、档位或流式模式。模型ID来自当前连接目录或用户明确输入，完整保留。厂商前缀、别名和命名空间只用于排列公开资料来源，不选择请求字段或回放行为，不构成模型库存。
 
-没有控制能力资料时允许使用接口默认；用户保存的显式选择无法编码时应返回具体错误。接口默认、Profile 默认、隐藏推理内容和关闭推理分别处理。下面提到的默认值只描述接口行为，不自动保存为 Profile 主动设置。
+## 模型资料与用户配置
 
-## 全量预设绑定
+账号库存只来自当前连接完整目录；models.dev 在运行时获取和缓存，只补充已经列出或用户明确输入的模型资料。Models先提取完整ID最后一个斜杠后的slug，优先查找大小写完全一致的记录；没有命中时，再忽略字母大小写查找。日期、版本、后缀与分隔符保持精确，不做别名猜测。资料逐字段合并，当前接口明确返回的资料优先，其次是当前服务商的公开记录、明确命名空间和厂商来源提示，最后才采用其他来源一致的字段。忽略大小写的候选仍遵守同一来源排序；同一优先级的冲突保持未知，不任取一条。来源提示不能编造不存在的型号或档位。裸slug和带任意中转前缀的完整ID均可补充资料，向服务商发送的ID始终保持原值。
 
-“标准兼容”表示使用该协议规定的字段且仍需该模型的能力资料；“端点扩展”表示已经核对该服务的专属字段。两者均不允许通过模型名称推导未经声明的档位。
+用户明确覆盖独立保存并参与有效配置解析。缺失、null、false、空列表保留各自意义；低优先级来源不能补回上层明确清除或否定的能力。厂商资料可以补窗口、输出限制和推理能力，但它的API字段不能直接套给当前中转接口。
 
-| 预设 ID | 默认协议 / 格式 | 可选客户端协议 | 加密 reasoning / 自动 include | 已核对的控制与限制 | 官方依据 |
-| --- | --- | --- | --- | --- | --- |
-| `anthropic` | Messages / `anthropic` | Messages | 不适用：本表未声明 Responses | 根据能力选择旧预算或 adaptive；新模型可能强制推理，不能统一提供关闭。签名和完整 thinking block 保留重放。 | [Thinking](https://platform.claude.com/docs/en/build-with-claude/thinking) |
-| `azure-openai` | Responses / `openai-responses` | Responses、Chat | 已证实；include 兼容接受，stateless 默认返回 | `reasoning.effort`；部署名不是原厂模型名，档位和关闭能力按部署路由确定。 | [Azure reasoning](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/reasoning) |
-| `cerebras` | Chat / `openai-chat` | Chat | 不适用：本表未声明 Responses | 使用 `reasoning_effort`；GLM 4.7 的旧 `disable_reasoning` 已弃用，不能照搬 Z.AI 的 thinking 开关。 | [GLM 4.7 migration](https://inference-docs.cerebras.ai/resources/glm-47-migration) |
-| `cloudflare` | Chat / `openai-chat` | Responses、Chat | 未获字段级证据；省略自动 encrypted include | 连接默认 Chat，仅两个 GPT-OSS 精确 ID 推荐 Responses；其他模型不可据供应商支持 Responses 就改协议。GLM 5.3 Flash 的 none 不能解释为关闭。 | [兼容路由](https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/)、[GLM 5.3 Flash](https://developers.cloudflare.com/workers-ai/models/glm-5.3-flash/) |
-| `codex` | Responses / `openai-responses` | Responses | 已证实；官方客户端订阅契约 | 使用订阅端点的模型资料与 Responses effort；不能把公共 API 模型列表当作该账号授权清单。 | [Codex configuration](https://developers.openai.com/codex/config-reference) |
-| `deepseek` | Responses / `openai-responses` | Responses、Chat、Messages | 明确无加密支持；省略 include | Responses 使用 `reasoning.effort`；不发送不支持的 `include/store`，原生明文 reasoning content 完整回放。Chat 才用 `thinking.type` 与 `reasoning_effort`。 | [Responses 契约](https://api-docs.deepseek.com/guides/responses_api/)、[Thinking](https://api-docs.deepseek.com/guides/thinking_mode/) |
-| `fireworks` | Responses / `openai-responses` | Responses、Chat、Messages | include 未声明；保守省略 | Responses 使用标准 `reasoning`，保留 `store:false`；公开 schema 没有 `include`，不主动发送。Chat 才使用 `fireworks` 格式；Messages 将预算转换为 effort，不能宣称按精确预算执行。 | [Responses](https://docs.fireworks.ai/api-reference/post-responses)、[Messages](https://docs.fireworks.ai/tools-sdks/anthropic-compatibility)、[Reasoning](https://docs.fireworks.ai/guides/reasoning) |
-| `github-copilot` | Chat / `openai-chat` | Responses、Chat | 未获字段级证据；省略自动 encrypted include | 连接默认 Chat，账号目录的 supported_endpoints 决定模型真实路由并优先 Responses；CLI OAuth token 直传，与 VSCode 内部 token 兑换分开。仅导入该账号权限内的库存。 | [CLI OAuth](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli)、[GitHub adapter](https://github.com/github/gh-aw-firewall/blob/main/containers/api-proxy/providers/copilot.js) |
-| `google` | Generate Content / `gemini` | Google | 不适用：本表未声明 Responses | `generationConfig.thinkingConfig`；2.5 预算与 3/4 系列 level 分开。`minimal` 不等于关闭；只有明确支持的模型才使用预算 0。 | [Generate Content thinking](https://ai.google.dev/gemini-api/docs/generate-content/thinking) |
-| `groq` | Responses / `openai-responses` | Responses、Chat | include 明确不支持；省略 | Responses 使用 `reasoning.effort`，`include` 明确不支持；API reference 允许 `store:false/null`，不支持服务端续写。Chat 的 `reasoning_format/include_reasoning` 只控制呈现。 | [Responses](https://console.groq.com/docs/responses-api)、[API reference](https://console.groq.com/docs/api-reference)、[Reasoning](https://console.groq.com/docs/reasoning) |
-| `huggingface` | Responses / `openai-responses` | Responses、Chat | 未获字段级证据；省略自动 encrypted include | 默认 Responses beta 已有官方路由；使用标准 `reasoning.effort`，实际能力依选中的上游和模型。完整 `repo:provider` ID 保留，不照搬原厂开关。 | [Responses beta](https://huggingface.co/docs/inference-providers/guides/responses-api)、[Chat](https://huggingface.co/docs/inference-providers/tasks/chat-completion) |
-| `lmstudio` | Responses / `openai-responses` | Responses、Chat、Messages | 未获字段级证据；省略自动 encrypted include | Responses 自 0.3.29 提供，官方示例声明 `reasoning.effort`；Messages 自 0.4.1 提供。模型、模板与运行版本决定实际控制能力，不能把原生 `/api/v1` 参数套到兼容端点。 | [API changelog](https://lmstudio.ai/docs/developer/api-changelog)、[Responses](https://lmstudio.ai/docs/developer/openai-compat/responses)、[Messages](https://lmstudio.ai/docs/developer/anthropic-compat/messages) |
-| `minimax` | Messages / `anthropic-adaptive` | Chat、Messages | 不适用：本表未声明 Responses | M3 使用 `adaptive`；M3.1 Flash 强制推理并接受 `output_config.effort`；旧 M2.x 关闭参数被忽略。不能给整个预设补 Anthropic 预算能力。 | [Anthropic compatibility](https://platform.minimax.io/docs/api-reference/text-anthropic-api) |
-| `mistral` | Chat / `openai-chat` | Chat | 不适用：本表未声明 Responses | 原生 `reasoning_effort`；`none` 表示极少推理并省略思考输出，不能保证关闭。内容可能为 thinking/text 混合块，完整块需重放。 | [Reasoning](https://docs.mistral.ai/studio/conversations/reasoning) |
-| `moonshot` | Chat / `thinking-type` | Responses、Chat、Messages | 密文固定 null；仅禁 encrypted include | 连接默认 Chat；精确 `kimi-k3` 新模型推荐 Responses，并使用 `reasoning.effort`；Chat K3 用顶层 effort，拒绝旧 thinking。Responses 的 include 只接受搜索来源/结果，不能请求 encrypted reasoning。 | [Responses schema](https://platform.kimi.com/docs/api/responses.md)、[Messages](https://platform.kimi.com/docs/api/messages)、[Thinking models](https://platform.kimi.com/docs/guide/use-thinking-models) |
-| `newapi` | Responses / `openai-responses` | Responses、Chat、Messages、Google | 未获字段级证据；省略自动 encrypted include | 实例配置与上游转换决定能力；默认仅标准 Responses，不因 slug 自动选择原厂扩展。特殊实例可显式配置格式或有限映射。 | [Responses](https://docs.newapi.pro/en/api/openai-responses/) |
-| `ollama` | Responses / `openai-responses` | Responses、Chat、Messages | 未获字段级证据；省略自动 encrypted include | Responses 为无状态兼容接口；Chat 的 `reasoning_effort` 与原生 `/api/chat` 的 `think` 分开。Messages 本地忽略密钥，云端必须 Bearer，不能仅发 `x-api-key`。 | [OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)、[Anthropic compatibility](https://docs.ollama.com/api/anthropic-compatibility) |
-| `openai` | Responses / `openai-responses` | Responses、Chat | 已证实；include 兼容接受，stateless 默认返回 | `reasoning.effort`；档位与默认值随模型不同。某些新模型拒绝 `none`，不能将所有推理模型统一显示关闭。 | [Reasoning models](https://developers.openai.com/api/docs/guides/reasoning) |
-| `openrouter` | Responses / `openai-responses` | Responses、Chat | 已证实；官方 SDK include enum | 默认 Responses 已证实 `reasoning.effort`。显式使用 Chat 时采用 `openrouter`，支持 `reasoning.enabled / effort / max_tokens`；以网关 `/models` 的 reasoning 能力为准。 | [Responses reasoning](https://openrouter.ai/docs/api_reference/responses/reasoning)、[Chat reasoning](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens) |
-| `perplexity` | Responses / `openai-responses` | Responses、Chat（旧 Sonar） | 未获字段级证据；省略自动 encrypted include | 新连接使用 `/v1/responses`；`reasoning.effort` 与平台顶层任务 `effort` 不同。旧 Sonar 连接保留其已存协议，迁移要求见下文。 | [OpenAI compatibility](https://docs.perplexity.ai/docs/agent-api/openai-compatibility)、[Migration](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/how-to) |
-| `qwen` | Responses / `openai-responses` | Responses、Chat、Messages | 未获字段级证据；省略自动 encrypted include | Responses 使用 `reasoning.effort` 等该接口声明字段；Chat 使用 `enable_thinking/thinking_budget`；Responses 旧 `enable_thinking` 将弃用，优先使用 effort。区域、模型、工作空间分别限制可用能力；旧域名仍可用。 | [Responses](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses)、[Deep thinking](https://www.alibabacloud.com/help/en/model-studio/deep-thinking)、[地域端点](https://help.aliyun.com/en/model-studio/beijing-access-information) |
-| `together` | Chat / `together` | Chat | 不适用：本表未声明 Responses | 开关为 `reasoning.enabled`，effort 为顶层 `reasoning_effort`；不是 OpenRouter 的 effort 路径。强制推理、混合推理和可调 effort 模型分别声明能力。 | [Reasoning](https://docs.together.ai/docs/inference/chat/reasoning) |
-| `xai` | Responses / `openai-responses` | Responses、Chat | 已证实；include 与原生加密回放 | `reasoning.effort`；当前 Grok 推理不能关闭，原生档位随模型不同。保留加密 reasoning item。 Anthropic 兼容已正式弃用，不列为新连接可选协议。 | [Reasoning](https://docs.x.ai/developers/model-capabilities/text/reasoning)、[Deprecated interfaces](https://docs.x.ai/developers/rest-api-reference/inference/legacy) |
-| `zai` | Chat / `thinking-type` | Chat、Messages | 不适用：本表未声明 Responses | `thinking.type`，部分模型同时有 effort；GLM 5.3 系列强制推理。`clear_thinking` 是历史保留策略，不是开关。 | [Thinking mode](https://docs.z.ai/guides/capabilities/thinking-mode) |
-| `zhipu` | Responses / `openai-responses` | Responses、Chat、Messages | 未获字段级证据；省略自动 encrypted include | Responses 基址 `/api/v1`，与 Chat 的 `/api/paas/v4`（Coding Plan 为 `/api/coding/paas/v4`）分开；原生 thinking 与历史回放分别处理，不能从 Responses 地址猜测模型目录。 | [Responses](https://docs.bigmodel.cn/cn/guide/develop/responses/introduction)、[Thinking](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode)、[Coding Plan](https://docs.bigmodel.cn/cn/coding-plan/usage-notes) |
-| `commandcode` | Responses / `openai-responses` | Responses、Chat、Messages | 未获字段级证据；省略自动 encrypted include | 标准 Responses；实时模型列表提供 `supported_endpoints`，Claude 路由要求 Messages，不能仅用 slug 给 Responses 添加 Anthropic 参数。 | [Provider API](https://commandcode.ai/docs/provider) |
-| `opencode` | Chat / `openai-chat` | Responses、Chat、Messages、Google | 未获字段级证据；省略自动 encrypted include | 标准 Chat；不同模型分别有 Chat、Responses、Messages、Google 原生路由。应使用当前路由的契约，原厂能力不能改变已选协议。 | [Models and endpoints](https://opencode.ai/v2/docs/console/models/) |
-| `opencode-go` | Chat / `openai-chat` | Responses、Chat、Messages、Google | 未获字段级证据；省略自动 encrypted include | 与 Console 分开的订阅入口；仅导入该入口能提供的模型，控制按实际路由能力确定。 | [OpenCode Go](https://opencode.ai/v2/docs/console/go/) |
-| `mimo` | Responses / `openai-responses` | Responses、Chat、Messages | 未获字段级证据；省略自动 encrypted include | `none` 为关闭，其余接受值实际均为相同的开启行为，不能伪装成不同强度。Chat 才使用 `thinking.type`。 | [Responses compatibility](https://mimo.mi.com/docs/en-US/api/chat/responses) |
-| `mimo-token-plan` | Responses / `openai-responses` | Responses、Chat、Messages | 未获字段级证据；省略自动 encrypted include | 使用 Token Plan 区域地址与相同协议字段；推理显示开关不能当作模型推理开关。 | [Token Plan](https://mimo.mi.com/docs/zh-CN/tokenplan/Token%20Plan/quick-access)、[Responses](https://mimo.mi.com/docs/zh-CN/api/chat/responses) |
-| `minimax-token-plan` | Messages / `anthropic-adaptive` | Chat、Messages | 不适用：本表未声明 Responses | 与 MiniMax Messages 共用格式，不共用账号授权；M3、M3.1、M2.x 的能力差异仍逐模型处理。 | [Anthropic compatibility](https://platform.minimax.io/docs/api-reference/text-anthropic-api) |
-| `zai-coding-plan` | Chat / `thinking-type` | Chat、Messages | 不适用：本表未声明 Responses | Coding Plan 为独立地址；Preserved Thinking 默认可与通用 API 不同，不把此差异当推理开关。 | [Thinking mode](https://docs.z.ai/guides/capabilities/thinking-mode) |
-| `zhipu-coding-plan` | Responses / `openai-responses` | Responses、Chat、Messages | 未获字段级证据；省略自动 encrypted include | Responses 基址 `/api/v1`，与 Chat 的 `/api/paas/v4`（Coding Plan 为 `/api/coding/paas/v4`）分开；原生 thinking 与历史回放分别处理，不能从 Responses 地址猜测模型目录。 | [Responses](https://docs.bigmodel.cn/cn/guide/develop/responses/introduction)、[Thinking](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode)、[Coding Plan](https://docs.bigmodel.cn/cn/coding-plan/usage-notes) |
-| `bailian-coding-plan` | Chat / `qwen` | Chat、Messages | 不适用：本表未声明 Responses | 使用 coding.dashscope 路由与百炼控制；模型列表、预算与 effort 能力依当前套餐模型确定。 | [Coding Plan FAQ](https://www.alibabacloud.com/help/en/model-studio/coding-plan-faq)、[Deep thinking](https://www.alibabacloud.com/help/en/model-studio/deep-thinking) |
-| `kimi-code` | Responses / `openai-responses` | Responses、Messages | 未获字段级证据；省略自动 encrypted include | 使用 Coding API 的模型 ID；`k3 / k3-256k / kimi-for-coding` 与开放平台 ID 不同。关闭可能路由到另一无思考模型，不能从 K3 原厂资料推导透明关闭。 | [Model configuration](https://www.kimi.com/code/docs/kimi-code/models.html)、[Codex integration](https://www.kimi.com/code/docs/third-party-tools/codex.html) |
+首次获取、授权后的获取和手动刷新使用同一个Provider级同步操作。仍列出的用户修改模型保留整份配置；消失的移除；用户删除过但再次列出的重新加入；目录失败或不完整不修改库存。
 
-| `floway` | Responses / `openai-responses` | Responses、Chat、Messages、Google | 网关源码已证实；实际密文取决于上游 | 独立本地网关，默认 `127.0.0.1:8788/v1`；模型声明与转换链决定能力。Gemini 客户端从同源 `/v1beta` 进入，不能发送到 `/v1/models/...`。 | [官方路由源码](https://github.com/Menci/Floway/blob/3919a92f90b2a00b54cc0e78b90fd614cf6f14f5/packages/protocols/src/common/data-plane-routes.ts) |
-| `litellm` | Responses / `openai-responses` | Responses、Chat、Messages、Google | 未获字段级证据；省略自动 encrypted include | 独立网关，默认 `127.0.0.1:4000/v1`；保留部署模型别名，原生透传与协议翻译能力由网关配置决定。Gemini 客户端基址为同源 `/v1beta`。 | [Responses](https://docs.litellm.ai/docs/response_api)、[Messages](https://docs.litellm.ai/docs/anthropic_unified)、[Gemini 路由源码](https://github.com/BerriAI/litellm/blob/main/litellm/proxy/google_endpoints/endpoints.py) |
-| `magpie` | Responses / `openai-responses` | Responses、Chat、Messages、Google | 未获字段级证据；省略自动 encrypted include | 独立网关，默认 `127.0.0.1:3425/v1`；本地 key 可标识 Astral，远程必须使用授权网关 key。Gemini 用同源 `/v1beta`，列表只描述用户启用的模型。 | [官方集成契约](https://usemagpie.ai/docs/integrate) |
+推荐资料携带取得时的模型身份、协议、dialect和API契约指纹。指纹包含Provider预置、实际路由地址、宿主提供的连接身份及推理格式／映射，不包含密钥、token或显示名称。修改模型身份时，Models清除旧模型的推荐资料；同一模型切换连接、路由或API契约时，只清除旧接口的派生reasoning/格式/回放/流式/默认参数资料及其来源，保留通用模型限制。普通OAuth token刷新不改变指纹。已经取得并绑定新目标的资料完整保留，不能在预览或保存时再次当成旧资料清除。用户覆盖保留，不兼容时明确校验失败。界面预览、保存校验和调用均使用同一个有效配置解析结果。预览不写数据库，不调用真实模型。
 
-## Responses 可选字段和历史回放
+## 推理控制
 
-提供 Responses 路由，并不等于支持 OpenAI 的所有可选字段。SDK 的 `ResponsesCompatibility` 只约束自动附加字段；不能借此丢弃响应中已经返回的原生 reasoning item，也不能跨连接重用另一账号的回放身份。
+`ReasoningCapabilities`描述当前API路由的真实能力，`ReasoningFormat`描述请求字段编码，`ReasoningOptions`描述一次调用的选择。原生effort字符串不统一成预设枚举，也不近似换算成token预算。
 
-| 端点 | 自动 include | store | reasoning 回放依据 |
-| --- | --- | --- | --- |
-| DeepSeek | 省略：官方明确不支持，未知参数静默忽略 | 省略：官方明确不支持，响应恒 false | 明文 `content` 归并 assistant；`summary/encrypted_content` 不支持。[兼容表](https://api-docs.deepseek.com/guides/responses_api/) |
-| Groq | 省略：官方明确不支持 | 保留 false：具体 API reference 允许 false/null；指南的“不支持 store”指不提供状态存储 | 返回的 `reasoning.content` 原样回放，不假设存在密文。[Responses guide](https://console.groq.com/docs/responses-api)、[具体字段](https://console.groq.com/docs/api-reference) |
-| Fireworks | 省略：公开 Create Response schema 未声明 include；这是保守客户端策略，不代表实测服务端拒绝 | 必须明确 false：官方默认 true，会保存响应 | 原生返回内容完整回放；未证明能够请求 OpenAI encrypted include。[官方 OpenAPI](https://docs.fireworks.ai/responses.openapi.yaml) |
-| 百炼 Qwen | 省略：当前参数表没有 include；不宣称已验证服务端拒绝 | 必须明确 false：官方默认 true | 以实际返回的 reasoning item 回放，不推导原厂加密能力。[官方参数表](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses) |
-| Moonshot 开放平台 K3 | 保留 include 功能，只禁 `reasoning.encrypted_content`；enum 仅允许搜索结果/来源 | 本地完整历史；响应固定 false，不能用 previous_response_id 续写 | 官方 schema 的 reasoning.encrypted_content 固定 null，不能宣称自动返回密文；与 Kimi Code 订阅契约分开。[原始 schema](https://platform.kimi.com/docs/api/responses.md) |
+Models的`ResolveReasoningControls`使用与请求发送相同的编码器派生选项。开关、effort和token预算分别表达；不合法组合在发送前拒绝。自定义接口保留有限JSON字段映射，不能替换模型、消息、工具、认证和请求控制。
 
-自动 `reasoning.encrypted_content` 的已证实名单为 OpenAI、Azure OpenAI、Codex、OpenRouter、xAI；Floway 另有网关源码证据，但其当前模型能否生成密文仍由上游决定。[OpenAI stateless reasoning](https://developers.openai.com/api/docs/guides/reasoning)、[Azure](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/reasoning)、[Codex 官方客户端](https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs)、[OpenRouter 官方 SDK enum](https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/models/responseincludesenum.ts)、[xAI](https://docs.x.ai/developers/model-capabilities/text/reasoning)、[Floway 原生协议与 include](https://github.com/Menci/Floway/blob/3919a92f90b2a00b54cc0e78b90fd614cf6f14f5/packages/protocols/src/openai-responses/index.ts)
+每个模型的控制由其动态能力资料和当前Provider／协议的API语义共同解析。同一连接的模型可以分别支持原生level、布尔或type开关、预算、强制推理或它们的合法组合，不能统一套一份Provider控件。API稳定规则预先适配在Models；模型级差异从当前目录和公开资料取得，不恢复随代码发布的具体型号例外表。当前目录明确声明的`reasoning_format`可以作为该模型的格式资料；没有声明时采用所选接口的默认格式，不按厂商名称猜测。原生`none`等档位名只有在该API明确绑定关闭语义时才代表关闭。
 
-MiMo（包括 Token Plan）的 Responses 页没有声明 include/encrypted，且警告未定义参数可能被过滤或报错；Kimi Code 的 Codex 集成文档证明 Responses/reasoning 支持，却没有字段级加密保证，因此两者不能仅因“Codex 可接入”就视为已证实 encrypted include。其他网关能转发 reasoning，同样不自动证明每个上游都接受该 include。省略请求该字段与保留实际返回的 opaque item 是两个独立行为。[MiMo 参数](https://mimo.mi.com/docs/en-US/api/chat/responses)、[Kimi Code](https://www.kimi.com/code/docs/third-party-tools/codex.html)
+资料中的toggle只证明模型具有某种开关，不能单独说明当前接口如何编码。开关的on/off值、自动预算哨兵及协议限制必须来自该接口的明确元数据或已核对的API约定；用户选择接口默认时不主动发送这些参数。缺少信息的模型级特例仍是明确的接入缺口，不能靠过滤所有控件来宣称已经恢复支持。
 
-其他端点若未找到字段级证据，应保留“未知”，默认省略自动 encrypted include，不能把“兼容 OpenAI”推导为全部字段已经验证。原生推理明文、摘要与加密内容是三种不同的服务端输出形式。
+目录声明的能力不保证当前请求格式具备对应控制字段。Models过滤无法编码的候选选项，其诊断不代表接口默认或其他可用选项有错，普通编辑界面不将这类诊断显示为配置错误。缺少上下文或最大输出限制时，仍可查看有效推理选项，但模型单独标记为预算资料待补全；Host保存供Bot使用的模型时仍要求正数限制，Loop不以未知预算执行。
 
-## 模型目录和导入边界
+会话reasoning未设置表示继承模型默认；显式空对象表示接口默认；关闭表示发送该路由已声明支持的关闭指令。模型默认值元数据不等于主动注入请求参数，界面展示thought不等于关闭或开启reasoning。
 
-表格中的协议集合是官方声明的客户端接口集合，不表示所有账号、所有模型、所有版本均支持这些接口，也不表示已逐家登录、调用或成功发现模型。Fireworks 的 Messages 与三家网关的 Google 是本次官方资料审查确认的接口，应与代码声明同步。
+## 会话与冻结
 
-模型发现和推理基址是两个契约。已知网关的标准根路径可以按协议转换：Responses/Chat/Messages 使用 `/v1`，Google 使用 `/v1beta`；自定义子路径和反向代理地址不能擅自改写。LiteLLM 还兼容不带版本的 `/models/:model:generateContent`，Astral 统一选择正式 `/v1beta` 路由。
+Core的`Configuration.Selection`是当前模型选择的唯一持久来源。Host不保存另一份可写镜像。新请求fresh解析，得到最终协议、模型、能力、格式、兼容参数和选项；冻结保存无密钥目标及输入。普通重试与崩溃恢复只恢复冻结目标，不重新读取当前目录或套用最新默认值。
 
-- Codex 与 GitHub Copilot 必须使用当前账号授权的目录。公共目录只能补充元数据，不能补出该账号未返回的库存；401 与订阅/组织策略导致的 403 分开处理。
-- DeepSeek、Groq、Fireworks、Hugging Face、OpenAI/OpenRouter、Google、LM Studio/Ollama 及自建网关有各自模型列表接口，但返回形态、限制字段、权限与本地安装状态各异。提供列表端点不保证列表包含足够上下文和输出限制，不能因此杜撰参数或声称通过了连通性验证。
-- Azure 的部署名与公共模型 ID 不同；不能把公共 OpenAI 模型表作为该 Azure 资源已部署模型。使用用户的部署名与相应资源权限。
-- 智谱官方 Responses 文档只声明 `/api/v1/responses` 及响应检索、删除接口，没有在该基址声明 `/models`。不能把 HTTP 200 的错误对象解释成空库存，也不能无依据把 `/api/paas/v4/models` 认作官方保证；缺少可靠目录时，通过公共资料推荐并由用户明确选择模型。
-- MiniMax 及 Token/Coding Plan 等订阅入口不能因为存在 Chat/Messages 推理路由，就假定同一路径提供 `/models`。这不是断言所有此类入口永远没有模型列表，而是当前没有足够契约保证统一发现。当前账号模型发现不可用时，保留明确错误，允许按官方公开模型资料手工输入/导入；不要虚构“已发现”状态。
-- Floway、LiteLLM、Magpie 的库存属于各自独立网关连接。模型完整 ID 和网关别名保留，不能用公共目录覆盖网关返回的限制、价格或明确关闭的能力。
+已冻结请求运行期间可以改变后续选择。准备至冻结和compact期间固定目标；工具批次保留产生它的绑定与执行事实。窗口不足沿用通用预算行为。
 
-本次审查没有以真实账号逐一验证 38 家 `/models`；“官方提供列表”“本地无密钥请求得到错误”“当前凭据真实发现成功”必须在验收记录里分别表述。
+API Key、授权token、敏感请求头和HTTP transport均由Host注入，不进入Core历史；冻结目标只保留不可变凭据引用。OAuth刷新更新同一引用的token内容，不改变连接回放身份；重新授权建立新凭据身份。Codex与Copilot的授权、目录和推理API规格都由Models处理。
 
-## Perplexity 新连接与旧连接
+## 原生内容与跨模型调用
 
-官方声明 Sonar Chat Completions 的支持于 2026-09-27 结束，但同步和流式请求仍继续工作，由服务端逐步转换为 Agent API 请求；停止支持不等于旧请求立即全部失效。[官方迁移说明](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview)
+Models保存响应的原生reasoning、签名、密文、普通文本/工具块的原始包装及来源。Core随消息原样持久化。目标适配器在统一`PrepareRequest`边界只处理本次请求副本：兼容则回传；不兼容包装剥离后保留通用文本和工具调用/结果；纯私有内容本次省略。原历史不修改，新返回内容正常继续保存。
 
-新连接的标准入口为 `https://api.perplexity.ai/v1`，使用 Responses，`/v1/responses` 是 `/v1/agent` 的正式别名。`GET /v1/models` 给出 Agent API 的模型列表。可直接指定完整模型 ID，例如 `openai/gpt-5.6-sol`，沿用 Responses 的请求和流式响应处理。[兼容接口](https://docs.perplexity.ai/docs/agent-api/openai-compatibility)
+工具调用与结果必须配对。跨目标需要调整不可移植工具ID时，在当前请求中稳定、成对调整；冻结后的重试不重新生成ID。去掉私有内容后的空消息按目标协议正确处理。
 
-旧连接不能自动改协议或模型 ID：旧 `sonar*` 模型、内置搜索及参数与新 Agent API 不完全等价。用户迁移时新建连接或显式修改连接，重新发现模型；不要把 Sonar 名称静默映射到某个新模型。平台顶层 `effort` 选择任务配置，`reasoning.effort` 调节模型推理，两者不能合并成一个选项。[迁移参数表](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/how-to)
+## 直接调用与有界内存
 
-## 回归约束
+`models/provider.Call`提供prepare、validate、stream的单次调用，无需Session、Store或Agent Loop。需要自动工具执行和持久会话时才使用Core。
 
-1. 全部预设必须有显式审计绑定；新增或删除预设时覆盖测试要求同步更新。
-2. 同一远端模型经过原厂、百炼、Together、Fireworks、OpenRouter 时，字段跟随当前连接契约，不跟随模型 slug。
-3. 预设更换调用协议后必须重新解析格式；用户显式覆盖仍按既定优先级生效。
-4. 显式不支持、空档位集合和强制推理不能被低优先级目录补成可控。`none` 的语义必须逐端点确认。
-5. 请求参数与回传参数分别验证：`reasoning_content`、`reasoning`、`reasoning_details`、Messages thinking/signature、Responses reasoning item、Google thought signature 不能互相猜测替代。
-6. 固定能力规则只描述已经证实的控制契约；模型名称、价格、上下文限制和可用清单仍由运行时目录/连接发现维护，不新增完整静态模型快照。
+Core按活动窗口分页读取上下文，历史分页查询，detached Clone分页复制；请求准备只复制活动请求，冻结继续保存引用和差异，不将整个rollout载入内存。
+
+## 验证
+
+离线HTTP样本覆盖编码、授权与刷新、目录解析、资料合并、跨协议原生内容准备、冻结恢复和工具续接。目录回归以原始接口响应和公开资料为输入，依次验证来源合并、完整控件列表、预算范围、默认选择以及实际请求字段；不能只给编码器手填正确能力，也不能仅遍历剩余选项验证可编码。无Preset的自定义连接、同一Provider的不同控制模式、明确false／null／空列表、换型号并换协议以及未知预算均纳入验收。真实服务商调用为明确启用的独立验证；本次重构没有发送真实账户请求。具体型号可出现在测试样本中，但不构成生产型号表。

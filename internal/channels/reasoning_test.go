@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	core "github.com/oines/astral-core"
-	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/testkit"
 )
 
@@ -32,19 +31,12 @@ func TestNewIMSessionsInheritAgentReasoningWithoutChangingExistingSessions(t *te
 	}
 	second := createBinding(t, p, s, connection, "-200", "")
 	for _, expected := range []struct{ id, effort string }{{first.SessionID, "high"}, {second.SessionID, "low"}} {
-		var record domain.Session
-		if err := p.Store.Get(p.Context, "sessions", expected.id, &record); err != nil {
-			t.Fatal(err)
-		}
-		if record.Reasoning == nil || record.Reasoning.Effort != expected.effort || record.Options.Reasoning.Effort != expected.effort {
-			t.Fatalf("incorrect IM Session default: %+v", record)
-		}
-		selected, err := p.Harness.Core(p.Context, expected.id)
+		selection, err := p.Harness.ModelSelection(p.Context, expected.id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if selected.Configuration().Options.Reasoning.Effort != expected.effort {
-			t.Fatal("Core did not retain the IM Session reasoning")
+		if selection.Reasoning == nil || selection.Reasoning.Effort != expected.effort {
+			t.Fatalf("incorrect IM Session default: %+v", selection)
 		}
 	}
 }

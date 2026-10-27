@@ -135,6 +135,7 @@ func (b *Bridge) RefreshProvider(ctx context.Context, id string) (RefreshResult,
 			next := profile
 			next.Name, next.Protocol, next.Dialect = item.Name, item.Protocol, item.Dialect
 			next.Recommendations = item.Recommendations
+			next.RecommendationTarget = item.RecommendationTarget
 			if sameCatalogConfiguration(profile, next) {
 				result.Unchanged++
 				continue
@@ -157,7 +158,7 @@ func (b *Bridge) RefreshProvider(ctx context.Context, id string) (RefreshResult,
 			profile := domain.ModelProfile{
 				Meta: domain.Meta{ID: domain.ID("model")}, ProviderID: id,
 				ModelID: item.ID, Name: item.Name, Protocol: item.Protocol, Dialect: item.Dialect,
-				Recommendations: item.Recommendations, Overrides: map[string]json.RawMessage{},
+				Recommendations: item.Recommendations, RecommendationTarget: item.RecommendationTarget, Overrides: map[string]json.RawMessage{},
 				CatalogAt: &now, CatalogSource: item.Source, RecommendationSources: item.RecommendationSources,
 			}
 			if err := tx.Save(ctx, "models", &profile.Meta, &profile); err != nil {
@@ -179,7 +180,7 @@ func clearProfilePresentation(profile *domain.ModelProfile) {
 }
 
 func sameCatalogConfiguration(a, b domain.ModelProfile) bool {
-	left, _ := json.Marshal([]any{a.Name, a.Protocol, a.Dialect, a.Recommendations})
-	right, _ := json.Marshal([]any{b.Name, b.Protocol, b.Dialect, b.Recommendations})
+	left, _ := json.Marshal([]any{a.Name, a.Protocol, a.Dialect, a.Recommendations, a.RecommendationTarget})
+	right, _ := json.Marshal([]any{b.Name, b.Protocol, b.Dialect, b.Recommendations, b.RecommendationTarget})
 	return string(left) == string(right)
 }

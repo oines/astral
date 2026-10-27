@@ -1,5 +1,5 @@
 export const reasoningEn = {
-  reasoningUnavailable: 'Unavailable',
+  reasoningUnavailable: 'Unavailable', defaultReasoning: 'Default reasoning', capabilityAutomatic: 'Automatic',
   interfaceDefault: 'API default', reasoningBudget: 'Token budget', useReasoningBudget: 'Use budget',
   reasoningRequestFormat: 'Reasoning request format', reasoningParameterMapping: 'Reasoning parameter mapping',
   presetReasoningDefault: 'Preset compatibility rules', legacyReasoningDefault: 'Existing compatibility rules',
@@ -25,7 +25,7 @@ export const reasoningEn = {
   'reasoningFormat_custom': 'Custom mapping',
 }
 export const reasoningZh: typeof reasoningEn = {
-  reasoningUnavailable: '不可用',
+  reasoningUnavailable: '不可用', defaultReasoning: '默认推理', capabilityAutomatic: '自动',
   interfaceDefault: '接口默认', reasoningBudget: 'Token 预算', useReasoningBudget: '使用预算',
   reasoningRequestFormat: '推理请求格式', reasoningParameterMapping: '推理参数映射',
   presetReasoningDefault: '预置兼容规则', legacyReasoningDefault: '已有兼容规则',

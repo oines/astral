@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oines/astral-core/models/auth"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
 )
@@ -74,17 +75,17 @@ func TestCopilotAuthorizationThrottlesPollingAndBoundsCredentials(t *testing.T) 
 	if _, err := b.PollAuthorization(ctx, flow.ID); err != nil || polls != 1 {
 		t.Fatalf("poll interval ignored: %d %v", polls, err)
 	}
-	b.authFlows[flow.ID].lastPoll = time.Time{}
+	b.authFlows[flow.ID].state.LastPoll = time.Time{}
 	slow, err := b.PollAuthorization(ctx, flow.ID)
 	if err != nil || slow.Interval != 10 {
 		t.Fatalf("slow_down: %+v %v", slow, err)
 	}
-	b.authFlows[flow.ID].lastPoll = time.Time{}
+	b.authFlows[flow.ID].state.LastPoll = time.Time{}
 	connected, err := b.PollAuthorization(ctx, flow.ID)
 	if err != nil || connected.Status != "connected" || connected.Provider == nil || connected.Provider.CredentialID == "" {
 		t.Fatalf("connect: %+v %v", connected, err)
 	}
-	if b.authFlows[flow.ID].deviceCode != "" {
+	if b.authFlows[flow.ID].state.DeviceCode != "" {
 		t.Fatal("device code retained after success")
 	}
 	public, _ = json.Marshal(connected)
@@ -181,7 +182,7 @@ func TestAuthorizationRejectsRedirectsAndExpiresWithoutPolling(t *testing.T) {
 	if _, err := b.StartAuthorization(ctx, provider.ID); err == nil || calls != 1 {
 		t.Fatal("authorization followed a redirect")
 	}
-	b.authFlows = map[string]*authFlow{"expired": {public: Authorization{ID: "expired", Status: "pending", ExpiresAt: time.Now().Add(-time.Second)}}}
+	b.authFlows = map[string]*authFlow{"expired": {public: Authorization{ID: "expired", Status: "pending"}, state: auth.Flow{Status: "pending", PresetID: "github-copilot", ExpiresAt: time.Now().Add(-time.Second)}}}
 	flow, err := b.PollAuthorization(ctx, "expired")
 	if err != nil || flow.Status != "expired" || calls != 1 {
 		t.Fatal("expired flow contacted upstream")

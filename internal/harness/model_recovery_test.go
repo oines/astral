@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
@@ -38,7 +39,12 @@ func TestUnavailableModelDoesNotBlockColdSessionInspectionOrRepair(t *testing.T)
 		}},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("done") })
+			f := newFixture(t, 0, func(_ context.Context, _ int, request map[string]any) any {
+				if request["stream"] != false {
+					t.Errorf("mock model must retain its independently declared non-streaming API: %v", request["stream"])
+				}
+				return textReply("done")
+			})
 			if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: "original", Text: "original conversation"}); err != nil {
 				t.Fatal(err)
 			}
@@ -61,6 +67,7 @@ func TestUnavailableModelDoesNotBlockColdSessionInspectionOrRepair(t *testing.T)
 			}
 			replacement := profile
 			replacement.Meta, replacement.ProviderID = domain.Meta{}, replacementProvider.ID
+			declareFixtureModelRecommendations(t, f, &replacement)
 			if err := f.service.Models.SaveProfile(f.ctx, &replacement); err != nil {
 				t.Fatal(err)
 			}
@@ -83,11 +90,11 @@ func TestUnavailableModelDoesNotBlockColdSessionInspectionOrRepair(t *testing.T)
 			if view.ModelAvailable || view.ModelUnavailableReason != scenario.reason || view.Status != "needs_attention" || view.CanContinue {
 				t.Fatalf("unavailable model was not described separately: %+v", view)
 			}
-			if view.ModelRef != before.ModelRef || view.ProfileID != profile.ID || view.HeadID != before.HeadID || view.Revision != before.Revision {
+			if !jsonEqual(view.Selection, before.Selection) || view.ProfileID != profile.ID || view.HeadID != before.HeadID || view.Revision != before.Revision {
 				t.Fatal("inspection changed the historical configuration or rebound to the Bot default")
 			}
-			inspected, err := f.service.InspectContext(f.ctx, f.session.ID)
-			if err != nil || inspected.Request.ModelID != before.ModelRef {
+			inspected, err := f.service.ReadContext(f.ctx, f.session.ID)
+			if err != nil || inspected.Selection.ID != before.Selection.ID {
 				t.Fatalf("context inspection lost unavailable model snapshot: %v", err)
 			}
 			session, err := f.service.Core(f.ctx, f.session.ID)
@@ -99,7 +106,7 @@ func TestUnavailableModelDoesNotBlockColdSessionInspectionOrRepair(t *testing.T)
 				t.Fatalf("unavailable model blocked attempt history: %v", err)
 			}
 			frozen, err := session.Attempts().Request(f.ctx, attempts.Attempts[0].ID)
-			if err != nil || frozen.ModelID != before.ModelRef {
+			if err != nil || frozen.ModelID != attempts.Attempts[0].Input.Model.ID {
 				t.Fatalf("unavailable model blocked frozen request reconstruction: %v", err)
 			}
 			if err = f.service.Continue(f.ctx, f.session.ID); err == nil {
@@ -204,8 +211,8 @@ func TestModelUpdatesPreserveFrozenNetworkRetryAndApplyAtNextActivation(t *testi
 	}
 }
 
-func TestDisablingProviderBlocksFrozenRetryBeforeNetworkDispatch(t *testing.T) {
-	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("unexpected") })
+func TestDisablingProviderDoesNotChangeFrozenRetryAndBlocksNextRequest(t *testing.T) {
+	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("completed frozen request") })
 	var profile domain.ModelProfile
 	var provider domain.Provider
 	if err := f.store.Get(f.ctx, "models", f.agent.DefaultModelID, &profile); err != nil {
@@ -214,15 +221,21 @@ func TestDisablingProviderBlocksFrozenRetryBeforeNetworkDispatch(t *testing.T) {
 	if err := f.store.Get(f.ctx, "providers", profile.ProviderID, &provider); err != nil {
 		t.Fatal(err)
 	}
+	original := f.service.Models.HTTPClient.Transport
+	if original == nil {
+		original = http.DefaultTransport
+	}
 	var dispatches atomic.Int64
-	f.service.Models.HTTPClient.Transport = modelRecoveryTransport(func(*http.Request) (*http.Response, error) {
-		dispatches.Add(1)
-		enabled := false
-		provider.Enabled = &enabled
-		if err := f.service.Models.SaveProvider(f.ctx, &provider, nil, nil); err != nil {
-			t.Error(err)
+	f.service.Models.HTTPClient.Transport = modelRecoveryTransport(func(request *http.Request) (*http.Response, error) {
+		if dispatches.Add(1) == 1 {
+			enabled := false
+			provider.Enabled = &enabled
+			if err := f.service.Models.SaveProvider(f.ctx, &provider, nil, nil); err != nil {
+				t.Error(err)
+			}
+			return nil, io.ErrUnexpectedEOF
 		}
-		return nil, io.ErrUnexpectedEOF
+		return original.RoundTrip(request)
 	})
 	if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: "disabled-before-retry", Text: "try a request"}); err != nil {
 		t.Fatal(err)
@@ -235,16 +248,30 @@ func TestDisablingProviderBlocksFrozenRetryBeforeNetworkDispatch(t *testing.T) {
 			t.Error(err)
 			return false
 		}
-		return view.Status == "needs_attention"
+		return view.LastRun != nil && view.LastRun.Status == "completed"
 	})
-	if dispatches.Load() != 1 || view.ModelAvailable || view.ModelUnavailableReason != "provider_disabled" {
-		t.Fatalf("retry dispatched through a disabled Provider or lost its reason: dispatches=%d view=%+v", dispatches.Load(), view)
+	if dispatches.Load() != 2 || view.ModelAvailable || view.ModelUnavailableReason != "provider_disabled" {
+		t.Fatalf("frozen retry changed target or availability was lost: dispatches=%d view=%+v", dispatches.Load(), view)
+	}
+	if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: "next-disabled", Text: "new request"}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, f.ctx, func() bool {
+		view, err := f.service.View(f.ctx, f.session.ID)
+		return err == nil && view.LastRun != nil && view.LastRun.Status == "failed"
+	})
+	if dispatches.Load() != 2 {
+		t.Fatal("new request dispatched through a disabled Provider")
 	}
 }
 
 func TestColdInspectionDoesNotAdvanceModelRevision(t *testing.T) {
 	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("done") })
 	before, err := f.service.View(f.ctx, f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRef, _, err := f.service.Models.Selection(f.ctx, before.Selection.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +285,7 @@ func TestColdInspectionDoesNotAdvanceModelRevision(t *testing.T) {
 	}
 	f.restart(t)
 	view, err := f.service.View(f.ctx, f.session.ID)
-	if err != nil || view.HeadID != before.HeadID || view.ModelRef != before.ModelRef || view.Revision != before.Revision {
+	if err != nil || view.HeadID != before.HeadID || !jsonEqual(view.Selection, before.Selection) || view.Revision != before.Revision {
 		t.Fatalf("cold inspection advanced the Session configuration: %+v %v", view, err)
 	}
 	if _, err = f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: "next", Text: "use the updated configuration"}); err != nil {
@@ -266,8 +293,16 @@ func TestColdInspectionDoesNotAdvanceModelRevision(t *testing.T) {
 	}
 	f.idle(t, f.session.ID)
 	view, err = f.service.View(f.ctx, f.session.ID)
-	if err != nil || view.ModelRef == before.ModelRef {
-		t.Fatalf("execution did not advance to the latest model revision: %+v %v", view, err)
+	if err != nil || !jsonEqual(view.Selection, before.Selection) {
+		t.Fatalf("fresh execution changed the persistent choice: %+v %v", view, err)
+	}
+	session, err := f.service.Core(f.ctx, f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempts, err := session.Attempts().Scan(f.ctx, core.AttemptQuery{Purpose: "generation", Limit: 20})
+	if err != nil || len(attempts.Attempts) != 1 || attempts.Attempts[0].Input.Model.ID == oldRef {
+		t.Fatalf("execution did not freeze the latest model revision: %+v %v", attempts, err)
 	}
 	context, err := f.service.InspectContext(f.ctx, f.session.ID)
 	if err != nil {
@@ -276,5 +311,121 @@ func TestColdInspectionDoesNotAdvanceModelRevision(t *testing.T) {
 	_, model := environmentState(context.Request.Messages)
 	if model.ContextWindow != 96000 {
 		t.Fatalf("execution used stale model capabilities: %+v", model)
+	}
+}
+
+func TestFrozenCrashCanContinueAfterLiveProviderRemovalButTerminalRunCannot(t *testing.T) {
+	for _, terminal := range []string{"", "failed", "cancelled"} {
+		name := terminal
+		if name == "" {
+			name = "unacknowledged crash"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("recovered frozen target") })
+			resolved, err := f.service.Models.ResolveSelection(f.ctx, core.ModelSelection{ID: f.agent.DefaultModelID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = f.service.Close(f.ctx); err != nil {
+				t.Fatal(err)
+			}
+			state, err := f.coreStore.LoadState(f.ctx, f.session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commitEntries := func(commitID string, entries ...core.Entry) {
+				t.Helper()
+				current, readErr := f.coreStore.LoadState(f.ctx, f.session.ID)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				head := current.Branch.HeadID
+				for i := range entries {
+					entry := &entries[i]
+					if entry.ID == "" {
+						entry.ID = domain.ID("entry")
+					}
+					entry.SessionID = f.session.ID
+					entry.Time = time.Now().UTC()
+					entry.Version = current.Version + 1
+					if entry.IsHistory() {
+						entry.ParentID = head
+						head = entry.ID
+					}
+				}
+				if _, commitErr := f.coreStore.Commit(f.ctx, f.session.ID, core.Commit{ID: commitID, ExpectedVersion: current.Version, Entries: entries}); commitErr != nil {
+					t.Fatal(commitErr)
+				}
+			}
+			user := core.User("accepted before the process disappeared")
+			commitEntries("crash-input", core.Entry{ID: "crash-user", Kind: core.EntryMessage, Message: &user}, core.Entry{ID: "crash-run-entry", Kind: core.EntryRun, RunID: "crash-run", Run: &core.RunRecord{ID: "crash-run", Status: "started"}})
+			state, err = f.coreStore.LoadState(f.ctx, f.session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			base, err := core.ReadContext(f.ctx, f.coreStore, state.RolloutID, state.Branch.HeadID, 64<<20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := base.Request
+			request.ModelID, request.ModelRevision = resolved.Model.Spec().ID, resolved.Model.Spec().Revision
+			request.MaxOutputTokens = 1024
+			request.Options = resolved.Options
+			request, err = core.PrepareRequest(f.ctx, resolved.Model, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input, err := core.FreezeRequest(state.RolloutID, base, request, resolved.Model.Spec())
+			if err != nil {
+				t.Fatal(err)
+			}
+			input.Snapshot = resolved.Snapshot
+			attempt := core.ModelAttempt{ID: "crash-attempt", SessionID: f.session.ID, RunID: "crash-run", TurnID: "crash-turn", Purpose: "generation", Number: 1, Version: state.Version + 1, StartedAt: time.Now().UTC(), Input: input}
+			if _, err = f.coreStore.Commit(f.ctx, f.session.ID, core.Commit{ID: "crash-frozen", ExpectedVersion: state.Version, Attempts: []core.AttemptMutation{{ID: attempt.ID, Create: &attempt}}}); err != nil {
+				t.Fatal(err)
+			}
+			if terminal != "" {
+				state, err = f.coreStore.LoadState(f.ctx, f.session.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				commitEntries("acknowledged-terminal", core.Entry{Kind: core.EntryRun, RunID: "crash-run", Run: &core.RunRecord{ID: "crash-run", Status: terminal, Error: "acknowledged stop or failure"}})
+			}
+			var profile domain.ModelProfile
+			var connection domain.Provider
+			if err = f.store.Get(f.ctx, "models", f.agent.DefaultModelID, &profile); err != nil {
+				t.Fatal(err)
+			}
+			if err = f.store.Get(f.ctx, "providers", profile.ProviderID, &connection); err != nil {
+				t.Fatal(err)
+			}
+			if err = f.service.Models.DeleteProvider(f.ctx, connection.ID, connection.Revision); err != nil {
+				t.Fatal(err)
+			}
+			f.service = New(f.store, f.coreStore, f.service.Models, f.hub)
+			view, err := f.service.View(f.ctx, f.session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if view.ModelAvailable || view.CanContinue != (terminal == "") {
+				t.Fatalf("frozen continuation availability is wrong: terminal=%q view=%+v", terminal, view)
+			}
+			if terminal != "" {
+				if f.count() != 0 {
+					t.Fatal("inspection dispatched terminal work")
+				}
+				return
+			}
+			if err = f.service.Continue(f.ctx, f.session.ID); err != nil {
+				t.Fatal(err)
+			}
+			eventually(t, f.ctx, func() bool {
+				view, err := f.service.View(f.ctx, f.session.ID)
+				return err == nil && view.LastRun != nil && view.LastRun.Status == "completed"
+			})
+			if f.count() != 1 {
+				t.Fatal("frozen target was not restored exactly once")
+			}
+		})
 	}
 }

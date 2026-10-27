@@ -48,6 +48,7 @@ const selectedProfile = computed(() => app.models.find(model => model.id === vie
 const modelAvailable = computed(() => !!selectedProfile.value?.available && (!props.view.id || view.value.model_available))
 const unavailableReason = computed(() => selectedProfile.value?.unavailable_reason || view.value.model_unavailable_reason || 'model_missing')
 const canContinue = computed(() => view.value.can_continue)
+const continuing = computed(() => !editing.value && !composerText.value.trim() && !attachments.value.length && canContinue.value)
 const agent = computed(() => app.agents.find(a => a.id === view.value.agent_id))
 const computers = computed(() => app.computers.filter(c => agent.value?.allowed_computers.includes(c.id) && !c.revoked))
 const contextUsage = computed(() => view.value.context_usage)
@@ -63,7 +64,7 @@ async function ensureSession() {
   const desired = { ...view.value }
   if (!draft.session) {
     const created = await request(createSession({ body: { agent_id: desired.agent_id, title: '' } }))
-    draft.session = { ...created, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', can_continue: false, model_available: app.availableModels.some(model => model.id === created.profile_id), approvals: [], pending: [], unresolved: [] }
+    draft.session = created
   }
   const session = draft.session
   if (desired.computer_id && desired.computer_id !== session.computer_id) {
@@ -89,7 +90,7 @@ async function send(overrideMode?: string) {
     })
     return
   }
-  if (!props.live || busy.value || uploading.value || !modelAvailable.value) return
+  if (!props.live || busy.value || uploading.value) return
   if (!text.value.trim() && !files.value.length) {
     if (canContinue.value) {
       busy.value = true
@@ -98,6 +99,7 @@ async function send(overrideMode?: string) {
     }
     return
   }
+  if (!modelAvailable.value) return
   busy.value = true
   error.value = ''
   try {
@@ -495,7 +497,7 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
               :aria-label="sendLabel"
               :title="sendLabel"
               :busy="busy || queueBusy"
-              :disabled="uploading || (!editing && !modelAvailable) || (!composerText.trim() && !attachments.length && (Boolean(editing) || !canContinue)) || !live"
+              :disabled="uploading || (!editing && !modelAvailable && !continuing) || (!composerText.trim() && !attachments.length && (Boolean(editing) || !canContinue)) || !live"
             >
               <Check v-if="editing" /><ListEnd v-else-if="running && mode === 'follow_up'" /><ArrowUp v-else />
             </Button>

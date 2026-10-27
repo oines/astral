@@ -18,10 +18,10 @@ const signingChecks = ['signatures', 'hardened_runtime', 'secure_timestamps', 'e
 export function validateDataFormats(formats, { version, sourceSHA }) {
   if (formats?.schema_version !== 1 || formats.version !== version || formats.source_sha !== sourceSHA ||
       !Number.isSafeInteger(formats.host_schema) || !Number.isSafeInteger(formats.core_format) ||
-      formats.host_schema < 3 || formats.core_format < 10 ||
+      formats.host_schema < 3 || formats.core_format < 11 ||
       formats.data_formats?.host !== formats.host_schema || formats.data_formats?.core !== formats.core_format || Object.keys(formats.data_formats).length !== 2 ||
       formats.migration_status !== 'goose' || typeof formats.core_module_version !== 'string' || !formats.core_module_version ||
-      formats.migration_baselines?.host !== 3 || formats.migration_baselines?.core !== 10 || Object.keys(formats.migration_baselines).length !== 2 ||
+      formats.migration_baselines?.host !== 3 || formats.migration_baselines?.core !== 11 || Object.keys(formats.migration_baselines).length !== 2 ||
       formats.migration_targets?.host !== formats.host_schema || formats.migration_targets?.core !== formats.core_format || Object.keys(formats.migration_targets).length !== 2) throw new Error('Release format metadata does not match the candidate source/version and Goose migration contract.')
 }
 
@@ -144,7 +144,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
 
 Desktop checks for updates and downloads in the background. Use Settings → About & diagnostics → Restart and update to install; running tasks will be interrupted. Ordinary exit does not install updates. Remote Daemons can be updated from Computer settings or with the displayed update command; container updates retain the existing environment.
 
-Versioned migrations are bundled with the latest binary. Upgrades apply missing migrations in order without downloading intermediate releases. Before a migration, the Server snapshots its data; migration failure stops startup and restores that snapshot. The current target is Host ${formats.host_schema} / Core ${formats.core_format}, starting from the supported Host 3 / Core 10 baseline. Older private data formats and downgrades are not supported. Desktop installation errors can be retried; a release which cannot start may require manually reinstalling a previous version after restoring its matching data backup.
+Versioned migrations are bundled with the latest binary. Upgrades apply missing migrations in order without downloading intermediate releases. Before a migration, the Server snapshots its data; migration failure stops startup and restores that snapshot. The current target is Host ${formats.host_schema} / Core ${formats.core_format}, starting from the supported Host 3 / Core 11 baseline. Older private data formats and downgrades are not supported. Desktop installation errors can be retried; a release which cannot start may require manually reinstalling a previous version after restoring its matching data backup.
 
 - Source: ${sourceSHA}
 - Required CI: ${ciRunURL}

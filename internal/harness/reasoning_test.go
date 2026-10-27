@@ -27,14 +27,14 @@ func TestAgentReasoningDefaultsAreCopiedIntoNewSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Reasoning == nil || first.Reasoning.Effort != "high" || first.Options.Reasoning.Effort != "high" {
-		t.Fatalf("new Session did not inherit reasoning: %+v", first)
+	if choice := sessionSelection(t, f, first.ID); choice.Reasoning == nil || choice.Reasoning.Effort != "high" {
+		t.Fatalf("new Session did not inherit reasoning: %+v", choice)
 	}
 	selected, err := f.service.Core(f.ctx, first.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if selected.Configuration().Options.Reasoning.Effort != "high" {
+	if selected.Configuration().Selection.Reasoning.Effort != "high" {
 		t.Fatal("Core did not use inherited reasoning")
 	}
 	f.agent.DefaultReasoning = &core.ReasoningOptions{Effort: "low"}
@@ -45,13 +45,13 @@ func TestAgentReasoningDefaultsAreCopiedIntoNewSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.Reasoning == nil || second.Reasoning.Effort != "low" {
+	if choice := sessionSelection(t, f, second.ID); choice.Reasoning == nil || choice.Reasoning.Effort != "low" {
 		t.Fatal("later Session did not use updated default")
 	}
 	if err = f.store.Get(f.ctx, "sessions", first.ID, &first); err != nil {
 		t.Fatal(err)
 	}
-	if first.Reasoning.Effort != "high" {
+	if choice := sessionSelection(t, f, first.ID); choice.Reasoning == nil || choice.Reasoning.Effort != "high" {
 		t.Fatal("changing Bot defaults rewrote an existing Session")
 	}
 	if err = f.service.SelectModel(f.ctx, first.ID, profile.ID, nil); err != nil {
@@ -61,7 +61,7 @@ func TestAgentReasoningDefaultsAreCopiedIntoNewSessions(t *testing.T) {
 	if err = f.store.Get(f.ctx, "sessions", first.ID, &first); err != nil {
 		t.Fatal(err)
 	}
-	if first.Reasoning != nil || first.Options.Reasoning.Effort != "" {
+	if choice := sessionSelection(t, f, first.ID); choice.Reasoning != nil || choice.Options.Reasoning.Effort != "" {
 		t.Fatal("returning to model defaults retained the Bot override")
 	}
 	var agent domain.Agent
@@ -76,7 +76,7 @@ func TestAgentReasoningDefaultsAreCopiedIntoNewSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if selected.Configuration().Options.Reasoning.Effort != "low" {
+	if selected.Configuration().Selection.Reasoning.Effort != "low" {
 		t.Fatal("inherited reasoning was lost after restart")
 	}
 }
@@ -136,10 +136,7 @@ func TestExplicitInterfaceDefaultBypassesProfileDefaultsAcrossRestart(t *testing
 		if step.restart {
 			f.restart(t)
 		}
-		var saved domain.Session
-		if err := f.store.Get(f.ctx, "sessions", f.session.ID, &saved); err != nil {
-			t.Fatal(err)
-		}
+		saved := sessionSelection(t, f, f.session.ID)
 		if (saved.Reasoning == nil) != (step.selection == nil) {
 			t.Fatalf("%s: empty override and inheritance were conflated", step.id)
 		}
@@ -159,4 +156,13 @@ func TestExplicitInterfaceDefaultBypassesProfileDefaultsAcrossRestart(t *testing
 			t.Fatalf("%s: actual reasoning_effort=%v (present=%v), want %q", step.id, got, exists, step.want)
 		}
 	}
+}
+
+func sessionSelection(t *testing.T, f *fixture, id string) core.ModelSelection {
+	t.Helper()
+	selection, err := f.service.ModelSelection(f.ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return selection
 }

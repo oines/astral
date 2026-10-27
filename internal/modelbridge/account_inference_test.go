@@ -81,7 +81,7 @@ func TestAccountOAuthCatalogInferenceAndEncryptedReasoningReplay(t *testing.T) {
 				t.Fatal(err)
 			}
 			p = *done.Provider
-			catalog, err := b.accountCatalog(ctx, p)
+			catalog, err := b.Catalog(ctx, p.ID)
 			if err != nil || len(catalog) != 1 {
 				t.Fatalf("catalog %+v %v", catalog, err)
 			}

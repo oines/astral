@@ -60,16 +60,12 @@ func (r *runtime) syncBindingConfig(ctx context.Context, record domain.Session) 
 	if err != nil || jsonEqual(definition, r.messageTool) && prompt == r.compactionPrompt {
 		return err
 	}
-	model, err := r.resolveModel(ctx, record.ModelRef)
-	if err != nil {
-		return err
-	}
 	if err = r.core.Load().Close(ctx); err != nil {
 		return err
 	}
 	previousTool, previousPrompt := r.messageTool, r.compactionPrompt
 	r.messageTool, r.compactionPrompt = definition, prompt
-	next, err := core.OpenSession(ctx, r.coreConfig(model, record), r.id)
+	next, err := core.OpenSession(ctx, r.coreConfig(record), r.id)
 	if err != nil {
 		r.messageTool, r.compactionPrompt = previousTool, previousPrompt
 		return err

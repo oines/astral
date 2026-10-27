@@ -3,8 +3,6 @@ package modelbridge
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -45,64 +43,5 @@ func TestProviderPresetsConstructNativeAdapters(t *testing.T) {
 		if !seen[id] {
 			t.Errorf("missing requested provider %s", id)
 		}
-	}
-}
-
-func TestModelRoutesAndSessionHeaders(t *testing.T) {
-	for _, tc := range []struct{ protocol, suffix, dialect string }{
-		{"anthropic-messages", "/anthropic/v1", "anthropic"},
-		{"google-generative-ai", "/google/v1beta", "google"},
-		{"openai-responses", "/openai/v1", "openai"},
-		{"openai-completions", "/openai/v1", "compatible"},
-	} {
-		p := FindPreset("opencode-go")
-		protocol, dialect, base, err := modelRoute(domain.ModelProfile{Protocol: tc.protocol}, domain.Provider{PresetID: p.ID, Protocol: p.Protocol, Dialect: p.Dialect, BaseURL: p.BaseURL})
-		if err != nil || protocol != tc.protocol || dialect != tc.dialect || base != p.BaseURL+tc.suffix {
-			t.Fatalf("route %s: %s %s %s %v", tc.protocol, protocol, dialect, base, err)
-		}
-	}
-	if sessionHeaders("opencode-go", "s1")["X-Opencode-Session"] != "s1" || sessionHeaders("github-copilot", "s2")["X-Interaction-Id"] != "s2" || sessionHeaders("openai", "s3") != nil {
-		t.Fatal("session metadata escaped its provider")
-	}
-}
-
-func TestCatalogImportKeepsEditsAndSkipsUnknownLimits(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"known","context_window":128000,"max_output_tokens":16000,"supported_endpoints":["/chat/completions","/responses"]},{"id":"unknown"},{"id":"missing-output","context_window":64000}]}`))
-	}))
-	defer server.Close()
-	b := testBridge(t)
-	ctx := context.Background()
-	provider := domain.Provider{Name: "fixture", Protocol: "openai-completions", Dialect: "compatible", BaseURL: server.URL}
-	if err := b.SaveProvider(ctx, &provider, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	first, err := b.ImportModels(ctx, provider.ID, ImportModelsInput{})
-	if err != nil || len(first.Imported) != 1 || len(first.Skipped) != 2 || first.Skipped[0] != "unknown" || first.Skipped[1] != "missing-output" {
-		t.Fatalf("first import: %+v %v", first, err)
-	}
-	profile := first.Imported[0]
-	if profile.Protocol != "openai-responses" || profile.Verification != nil {
-		t.Fatal("preferred protocol or unverified status lost")
-	}
-	profile.Name = "My model"
-	profile.Description = "Keep this description"
-	profile.Overrides["max_output_tokens"] = raw(1024)
-	if err := b.SaveProfile(ctx, &profile); err != nil {
-		t.Fatal(err)
-	}
-	second, err := b.ImportModels(ctx, provider.ID, ImportModelsInput{})
-	if err != nil || len(second.Imported) != 0 || len(second.Skipped) != 3 {
-		t.Fatalf("second import: %+v %v", second, err)
-	}
-	var saved domain.ModelProfile
-	if err := b.Store.Get(ctx, "models", profile.ID, &saved); err != nil {
-		t.Fatal(err)
-	}
-	before, _ := json.Marshal(profile)
-	after, _ := json.Marshal(saved)
-	if string(before) != string(after) {
-		t.Fatal("catalog import changed an existing profile")
 	}
 }

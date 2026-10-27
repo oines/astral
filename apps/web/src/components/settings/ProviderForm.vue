@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { listProviders, saveProvider, type AstralInternalModelbridgeProviderPreset as Preset } from '@astral/sdk'
+import { listProviders, saveProvider, type AstralCoreModelsIntegrationProviderPreset as Preset } from '@astral/sdk'
 import { listProvidersQueryKey } from '@astral/sdk/colada'
 import { Button, Select, SettingsRow, SettingsSection } from '@astral/ui'
 import { ExternalLink } from '@astral/icons'
