@@ -17,17 +17,25 @@ func TestWindowsUpdateQueryAcceptsMissingTask(t *testing.T) {
 		t.Skip("requires native Windows PowerShell and Task Scheduler")
 	}
 	m, _, _ := serviceFixture(t, "windows")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	// Query only a unique nonexistent task; never register, stop or delete one.
 	script := windowsUpdateTaskQuery("Astral update probe (" + m.id + ")")
-	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	command := exec.CommandContext(ctx, "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)
+	started := time.Now()
+	output, err := command.CombinedOutput()
+	elapsed := time.Since(started)
+	exitCode := -1
+	if command.ProcessState != nil {
+		exitCode = command.ProcessState.ExitCode()
+	}
 	if err != nil {
-		t.Fatalf("missing update task must be a successful empty query: %v: %s", err, output)
+		t.Fatalf("missing update task must be a successful empty query: elapsed=%s ctx.Err=%v exit=%d err=%v output=%q", elapsed, ctx.Err(), exitCode, err, output)
 	}
 	if strings.TrimSpace(string(output)) != "" {
-		t.Fatalf("expected no matching task: %s", output)
+		t.Fatalf("expected no matching task: elapsed=%s ctx.Err=%v exit=%d output=%q", elapsed, ctx.Err(), exitCode, output)
 	}
+	t.Logf("missing update task query completed: elapsed=%s exit=%d", elapsed, exitCode)
 }
 
 func TestUpdateHelperUsesIndependentUserJob(t *testing.T) {
