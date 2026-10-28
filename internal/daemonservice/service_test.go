@@ -322,7 +322,8 @@ func TestLinuxConfigurationDirectoryFollowsXDGAbsolutePathSemantics(t *testing.T
 			}
 		})
 	}
-	for _, bad := range []string{"/tmp/config\n[Service]", "/tmp/config\rvalue", "/tmp/config\x00value"} {
+	config := filepath.Join(t.TempDir(), "config")
+	for _, bad := range []string{config + "\n[Service]", config + "\rvalue", config + "\x00value"} {
 		if strings.ContainsRune(bad, 0) {
 			// os.Setenv itself refuses NUL; New also validates every directory
 			// after fallback, so exercise this through the supplied home.
