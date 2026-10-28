@@ -354,6 +354,7 @@ func (s *Service) archiveTelegramResult(ctx context.Context, t *telegram, target
 			message.Chat.Type = target.Kind
 			message.Chat.Title = target.Title
 			message.ThreadID, _ = strconv.ParseInt(target.TopicID, 10, 64)
+			message.IsTopicMessage = target.TopicID != ""
 			message.Date = time.Now().Unix()
 			message.Text, _ = parameters["text"].(string)
 		}

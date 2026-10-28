@@ -2743,11 +2743,20 @@
             "format": "date-time",
             "type": "string"
           },
+          "reply_attachments": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_Attachment"
+            },
+            "type": "array"
+          },
           "reply_id": {
             "type": "string"
           },
           "reply_preview": {
             "type": "string"
+          },
+          "reply_quote": {
+            "$ref": "#/components/schemas/astral_internal_domain_TextQuote"
           },
           "reply_sender": {
             "type": "string"
@@ -3214,6 +3223,26 @@
           "format",
           "width",
           "height"
+        ],
+        "type": "object"
+      },
+      "astral_internal_domain_TextQuote": {
+        "properties": {
+          "manual": {
+            "type": "boolean"
+          },
+          "position": {
+            "description": "Approximate sender-specified offset in UTF-16 code units of the original source message; text is authoritative.",
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "position",
+          "manual"
         ],
         "type": "object"
       },
@@ -5345,6 +5374,73 @@
           "title",
           "url",
           "summary"
+        ],
+        "type": "object"
+      },
+      "astral_internal_serverupdate_State": {
+        "properties": {
+          "current_version": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "manager": {
+            "enum": [
+              "desktop",
+              "systemd-user",
+              "manual"
+            ],
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "operation_state": {
+            "enum": [
+              "running",
+              "complete",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "operation_version": {
+            "type": "string"
+          },
+          "percent": {
+            "type": "number"
+          },
+          "phase": {
+            "enum": [
+              "idle",
+              "checking",
+              "current",
+              "available",
+              "downloading",
+              "installing",
+              "error",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "retry": {
+            "enum": [
+              "check",
+              "update"
+            ],
+            "type": "string"
+          },
+          "unavailable": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase",
+          "current_version",
+          "manager"
         ],
         "type": "object"
       }
@@ -10803,6 +10899,129 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_httpapi_StorageInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/v1/updates": {
+      "get": {
+        "operationId": "getServerUpdate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_serverupdate_State"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/v1/updates/apply": {
+      "post": {
+        "operationId": "applyServerUpdate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_serverupdate_State"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/v1/updates/check": {
+      "post": {
+        "operationId": "checkServerUpdate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_serverupdate_State"
                 }
               }
             },

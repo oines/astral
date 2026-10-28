@@ -1,6 +1,6 @@
 # Astral 系统规格
 
-版本：1.18
+版本：1.19
 
 日期：2026-10-28，Asia/Singapore
 
@@ -358,6 +358,8 @@ Web 管理维护一个管理员账户，用户名和密码可修改，不增加�
 
 无人值守首次启动可使用 `ASTRAL_ADMIN_USERNAME` 配合 `ASTRAL_ADMIN_PASSWORD` 或 `ASTRAL_ADMIN_PASSWORD_FILE`，后两者不能同时设置；CLI 对应 `--initial-admin-username` 和 `--initial-admin-password-file`。仅在账户不存在时初始化，重启不得重置已有密码、2FA 或会话。数据等运行参数对应 `ASTRAL_SERVER_DATA_DIR`、`ASTRAL_COMPUTER_DATA_DIR`、`ASTRAL_WEB_DIR`、`ASTRAL_DISTRIBUTION_DIR`、`ASTRAL_NO_LOCAL`，显式 CLI 参数优先。浏览器会话期限可通过 `--web-session-ttl` / `ASTRAL_WEB_SESSION_TTL` 配置正 Go duration，默认 `720h`。
 
+Linux 官方安装根对应 `--installation-root` / `ASTRAL_INSTALLATION_ROOT`，显式 CLI 优先，安装器自动传入该参数。它只标识既有安装根，不绕过更新前的当前 UID、目录归属、官方用户服务定义、运行 PID、启动参数和数据目录验证；仅设置环境变量不能为手动或自定义部署开启网页更新。
+
 登录成功签发每个浏览器独立的随机会话 Token，Server 持久化摘要、登录时间、最近活动和过期时间。Cookie 使用 HttpOnly、SameSite Strict，HTTPS 下加 Secure；过期由 Server 强制执行。默认有效期 30 天，重启不延长或清除已持久的有效会话。退出撤销当前会话，设备列表删除立即撤销指定凭据并结束其绑定的 SSE 等请求，离线客户端下次请求拒绝。改密码、重置账户和退出所有设备撤销 Web 会话，不影响 Desktop 或 Daemon。设备列表包含未过期浏览器/CLI 会话并标记当前设备，不是在线连接列表或物理硬件指纹；Desktop 不进入该存储，也不提供网页撤销入口。删除登录会话不删除 Passkey。
 
 公开认证请求体上限 128 KiB、读取期限 10 秒；同一实际 TCP 来源最多同时读取 8 个认证请求，全局最多 64 个，凭据尝试另行限频。提前拒绝、超限或超时的未读请求体关闭连接，不在处理结束后无限制排空。这些限制不作用于普通文件流或长任务。完整重新验证后轮换当前会话 Token；旧凭据不能发起新请求或继承新的近期认证权限。保留会话 ID、已有流和原绝对到期时间；未完成第二步或持久化失败不提升权限。
@@ -514,7 +516,7 @@ Host 内置 System Prompt 由共同运行约定与当前绑定状态对应的输
 
 Host 不声明“你是 Agent／Bot／AI”等身份，不规定人格、说话方式或默认人设。内置提示词不提 Probe 或假定主动模式开启，也不向主模型解释唤醒机制；调度细节由 Host 管理。接口路径、参数、幂等规则、分页与文件操作细节由工具描述和 API 文档提供。
 
-Bot 的 `persona` 是一个可选文本字段。普通模型请求的 `system_prompt` 由与本次工具定义同时选定的 Host 文本与当前 Bot 人格直接拼接；空白人格完全省略，不补默认内容。每次新请求在预算计算与冻结前读取当前人格，保存成功后该 Bot 的所有 Session（包括运行中的 Web 与 IM Session）从各自下一个请求立刻生效。不复制人格为 Session 配置，不注入人格变更消息，不重建上下文，不重开或中断 Session。已冻结的请求、网络重试及恢复继续使用原提示词，Attempt 可重建当时实际发送的内容。人格不替换摘要或 Probe 的专用提示词。
+Bot 的 `persona` 是一个可选文本字段。普通模型请求的 `system_prompt` 由与本次工具定义同时选定的 Host 文本与当前 Bot 人格直接拼接；空白人格完全省略，不补默认内容。每次新请求在预算计算与冻结前读取当前人格，保存成功后该 Bot 的所有 Session（包括运行中的 Web 与 IM Session）从各自下一个请求立刻生效。不复制人格为 Session 配置，不注入人格变更消息，不重建上下文，不重开或中断 Session。已冻结的请求、网络重试及恢复继续使用原提示词，Attempt 可重建当时实际发送的内容。人格不替换摘要提示词；Probe 将其作为理解被评估 Bot 的参考资料，不作为 Probe 自身的人格或执行指令。
 
 环境快照由 Host 的同步 `CollectContext` 接口返回为 `RoleUser`、`ContextKind=astral.environment` 的普通 Context。接口接收只读边界信息，Host 负责发现、内容和去重，Core 负责预算与提交；动态环境不放入 System Prompt 或 Developer Role，不改写旧消息。当前状态由最近完整快照及其后的局部状态通知共同确定；通知只覆盖明确涉及的字段，旧状态仅作为历史。
 
@@ -696,7 +698,13 @@ Astral 补充 `sender-id` 等稳定身份信息；Cahciua 当前 `<message>` 的
 
 普通正文和属性由 Renderer 统一转义。富文本使用受支持的内容节点表达，不把用户提交的任意标签当成平台生成的消息元数据。消息所属群和发送者不能只藏在 SDK Metadata 中，必须让模型可见。
 
-编辑和撤回沿用紧凑表达，例如：
+Telegram 普通群回复中的 `message_thread_id` 不构成独立 Topic；只有 `is_topic_message=true` 且 thread ID 非零才按 Topic 路由，同样适用于 Bot 私聊 Topic 入站消息，不额外依赖 `chat.is_forum`。普通回复和正文 @ 继续进入原群绑定的 Session，真正 Topic 的授权与绑定继续独立。已有错误归档不原地修正或重播。
+
+Telegram `reply_to_message` 的原消息 ID、发送者和最多 500 个 Unicode 字符的预览继续使用 `<in-reply-to>`；正文缺失时可从 Rich Message 展开原文作为预览。用户选中的 `quote` 独立存入可选 `Observation.reply_quote`，包含 `text`、`position` 和 `manual`，并以转义的 `<quote position-utf16="…" manual="…">…</quote>` 传给模型；合法 1,024 字符片段不按预览的 500 字限制截断。位置只是发送方提供的近似 UTF-16 偏移，片段文本为准，不据此重新裁切原文。无本群 ReplyID 的外部引用仍可呈现片段，不将外部消息 ID 伪造成本群回复、不扩大跨群权限。片段内的 @ 不作为当前消息的 mention 触发。
+
+引用图片、文件等附件独立存入 `Observation.reply_attachments`，在 `<in-reply-to>` 内标出原消息 ID、附件标识、类型、名称与下载路径，不混入本消息 `attachments`、不自动下载或生成预览。Telegram 仅使用同聊天 `reply_to_message` 自带的原媒体信息，可在原消息未单独归档时提供经当前聊天授权的下载，但不伪造原消息事件；外部引用不扩大权限。NapCat 只查当前聊天已有归档，缺失时明确不可用，不自动 `get_msg`。
+
+编辑和撤回均追加新的观察，例如：
 
 ```xml
 <message id="501" sender="小王 (@wang)" sender-id="123"
@@ -705,11 +713,15 @@ Astral 补充 `sender-id` 等稳定身份信息；Cahciua 当前 `<message>` 的
 改成明天下午两点发版。
 </message>
 
-<message id="502" sender="小李" sender-id="456"
-         t="2026-10-20T16:04:00+08:00" deleted="true"/>
+<event id="recall-event" kind="message.deleted" source="im"
+       sender="小李" sender-id="456" message-id="502"
+       t="2026-10-20T16:04:00+08:00">QQ user 789 recalled message 502 originally sent by QQ user 456.</event>
+
+<event id="poke-event" kind="notice.poke" source="im"
+       sender-id="456" t="2026-10-20T16:05:00+08:00">QQ user 456 拍了拍 QQ user 9000 的尾巴</event>
 ```
 
-这些是新的观察记录。IM Store 可以更新消息的当前状态，已经进入 Core 历史的旧观察不原地改写。这里只复用 Cahciua 的渲染表达，不采用每次调用重新构建整段群历史的执行方式。
+这些是新的观察记录。IM Store 保留追加事件，消息查询可返回最新状态；已经进入 Core 历史的旧观察与投递回执不原地改写。NapCat 戳一戳保留 `raw_info` 提供的可读动作、自定义后缀及参与者身份，不把图片或跳转 URL、内部 UID 塞入模型；平台没有可读内容时才用普通动作描述。私聊 `sender_id` 是操作者、`user_id` 是会话对方。仅其他人戳当前 Bot 产生 `poke` 触发，仍受原聊天权限和绑定约束；戳其他人和自身动作被动追加。没有原生 `event_id` 的通知按实际收到的每帧分配本地事件 ID，pending 批次重试沿用，不承诺跨断线回放的精确去重。这里只复用 Cahciua 的消息表达，不采用每次调用重新构建整段群历史的执行方式。
 
 ### 三类投递
 
@@ -770,6 +782,8 @@ Connection 增加 `agent_id` 与 `access_mode: all | specified`。默认指定�
 `Conversation.proactive_enabled` 默认关闭，属于聊天，平台资料更新、换绑或切换范围均保留。普通群消息持续进入 Core 并正常 compact；开启主动模式后，10 秒安静或首条未处理消息累计 60 秒可运行一次 Probe。每聊天最多一个 Probe，消息先应用再读取快照。自身发送记录只同步上下文，不触发 Probe。
 
 Probe 模型默认跟随 Session 当前模型，Agent 可在默认模型下方单独选择 `probe_model_id`，并设置该模型的 `probe_reasoning`；跟随 Session 时同时使用 Session 的推理设置。Agent 的 `default_reasoning` 与默认模型一起保存，新建 Web 与 IM Session 时复制为 Session 自己的推理设置，之后修改 Agent 默认值不改变既有 Session。空推理配置使用对应 Model Profile 的默认值；切换模型时清除旧模型的推理覆盖值。旁观视图保留摘要、IM 消息及有界工具活动，去除 assistant 正文、reasoning 和 Probe 记录；按 Probe 模型窗口裁剪，支持视觉时携带原生图片。首版只有一次 LLM 判断请求，唯一工具 `decide({participate:boolean})`，按返回顺序取首个有效调用。无工具、错误工具、非法参数或请求失败均覆盖本次快照并等待新消息，不纠错重试，不执行其他工具。
+
+每次新 Probe 独立读取当前绑定 Bot 的最新人格，用于判断该 Bot 是否适合参与。`system_prompt` 先放固定判断指令，其中一句说明 `The Bot persona below describes the Bot you are evaluating, not you.`；非空白人格随后以 `\n\nBot persona:\n` 加原始人格文本追加，空白人格省略整段。动态观察仍在 Messages，当前时间和 Bot 名称留在最后一条 User Message。不复制主 Agent 的 Host 指令、环境快照或工具，工具仍只有强制选择的 `decide`。人格保存后下次新 Probe 生效，已经准备好的请求不改写。固定规则与 Bot 人格位于动态内容之前，不因旁观历史裁剪而被丢弃。
 
 正向结果只提交中性 Host 唤起，不含 reason、分析或行动指令。主 Agent 独立决定后续行为，可保持沉默。直接 @/回复覆盖当时待 Probe 的消息；关闭主动模式或换绑使旧结果失效。新消息留待下一轮，稳定输入 ID 与 Core 回执防止重复唤起。
 
@@ -1223,7 +1237,13 @@ Host 不能假设业务数据库写入、Core 接收输入和平台外部发送�
 
 ### 重开与进程生命周期
 
-Desktop 自动及手动检查只获取官方固定更新源的版本信息，不下载程序包；可用版本仍允许后续检查，不锁定第一次发现的目标。用户明确点击“更新并重启”后重新解析官方最新版，下载并校验匹配平台和架构的完整程序包，确认下载完成后才停止托管 Server、等待进程与管道退出，再安装重启。下载期间继续提供当前服务，普通退出不隐式安装。失败保留真实错误与检查或更新的重试意图，重试检查不得下载或安装；重试更新须重新检查最新版。普通 Web 页面不能调用 Desktop 原生更新能力，远程 Daemon 维护仍是独立操作。
+软件更新行只有一个动作按钮：未发现新版时“检查更新”，有新版时“更新并重启”，失败后按原意图“重试检查”或“重试更新”。Desktop 自动及手动检查只获取官方固定更新源的版本信息，不下载程序包；可用版本仍允许后续检查，不锁定第一次发现的目标。用户明确点击更新后重新解析官方最新版，下载并校验匹配平台和架构的完整程序包，确认下载完成后才停止托管 Server、等待进程与管道退出，再安装重启。下载期间继续提供当前服务，普通退出不隐式安装。重试检查不得下载或安装，重试更新须重新检查最新版。
+
+软件更新同时通过认证 Owner API 提供状态、空请求体的检查及更新意图，不向 Agent Gateway 提供，也不接受浏览器指定程序 URL、路径或安装参数。Desktop 托管的 Server 经私有父子通道将 Owner 操作转交 Electron 主进程，复用原生更新器；每次进程的回环地址和随机密钥只经私有 stdin 传递，不进入网页、环境变量或持久配置，Go Server 不直接替换 App。
+
+官方 Linux `systemd --user` 安装通过元数据、UID、安装根、官方服务及当前进程归属验证后，才支持网页触发更新。Server 创建安装根 `updates/` 下的持久操作记录，由独立可见的一次性用户服务运行更新 helper，不作为将被停止 Server 的普通子进程。每次用户更新重新解析官方 Latest，再固定目标 Tag 与校验和；独立任务下载并校验该 Tag 的官方安装器和完整发行文件后才停止原服务，复用既有安装器的互斥锁、程序切换、新 Server 启动迁移、激活验证及失败恢复。操作记录位于 Server 迁移快照范围外，安装器及回退流程全部结束后才写入终态。手动 `serve`、自定义服务及 Docker 部署保留手动更新方式，不自动安装。
+
+网页重启期间断线属于待确认，不直接认定失败或重发动作；重连后核对同一 `operation_id`、`operation_version`、实际 `current_version` 与 `operation_state`，匹配的成功终态才表示完成，回退原版本不能报成功。Desktop 的操作记录同样由主进程在 Server 数据快照范围外持有。远程 Daemon 维护仍是独立操作，不因 Server 或 Desktop 更新而自动更新。
 
 重启后必须能够重新打开 Session，恢复已持久化的历史、Pending、摘要、分支和已知执行事实。网页断线不取消 Server 上的工作；Desktop 窗口关闭不直接决定 Run 生命周期。
 

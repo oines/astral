@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { createReadStream, constants } from 'node:fs'
-import { access, copyFile, link, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { access, copyFile, link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { validateVersion } from './release-version.mjs'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
+import { headlessUpdateTransport } from './headless-update-transport.mjs'
 
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../', import.meta.url))
@@ -25,7 +26,7 @@ const enabledUnit = path.join(unitDirectory, 'default.target.wants', service)
 const nativeName = `astral-linux-${process.arch === 'x64' ? 'amd64' : process.arch}`
 const nativeBinary = path.join(distribution, nativeName)
 const names = ['darwin', 'linux', 'windows'].flatMap(system => ['amd64', 'arm64'].map(arch => `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`))
-const files = [...names, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'checksums.txt']
+const files = [...names, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'checksums.txt', 'install-server.sh']
 let temporary
 let installRoot
 let environment
@@ -34,6 +35,8 @@ let metadata
 let tag
 let version
 let sourceSHA
+let fixtureTransport
+let updateJob
 
 async function command(executable, args, options = {}) {
   try {
@@ -103,6 +106,7 @@ async function prepareFixture() {
   await mkdir(payload)
   await mkdir(wrappers)
   for (const name of [...names, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt']) await sharedCopy(path.join(distribution, name), path.join(payload, name))
+  await sharedCopy(installer, path.join(payload, 'install-server.sh'))
   await publishFixture()
   // This executable only exists on the installer's temporary PATH. Production
   // still accepts exactly the fixed GitHub repository and HTTPS asset URLs.
@@ -112,7 +116,7 @@ const path = require('node:path');
 const args = process.argv.slice(2);
 const url = args.find(arg => arg.startsWith('https://'));
 const output = args.indexOf('-o');
-const tag = process.env.ASTRAL_INSTALL_FIXTURE_TAG;
+const tag = JSON.parse(fs.readFileSync(path.join(process.env.ASTRAL_INSTALL_FIXTURE_DIRECTORY, 'release.json'), 'utf8')).tag_name;
 let name;
 if (url === 'https://api.github.com/repos/oines/astral/releases/latest' || url === 'https://api.github.com/repos/oines/astral/releases/tags/' + tag) name = 'release.json';
 else {
@@ -165,7 +169,7 @@ async function snapshot() {
       const bootstrap = await response.json()
       const local = bootstrap.computers.find(computer => computer.kind === 'local')
       if (!local?.id || !local.online) { await delay(150); continue }
-      return { pid, identity, master, computerID: local.id }
+      return { pid, identity, master, computerID: local.id, url: ready.url }
     } catch { /* Startup/reconnection may still be in progress; do not log secrets. */ }
     await delay(150)
   }
@@ -176,6 +180,96 @@ function sameIdentity(before, after) {
   assert.ok(before.master.equals(after.master), 'Credential encryption key changed')
   assert.ok(before.computerID === after.computerID, 'Local Computer identity changed')
 }
+async function owner(ready, method, route, body) {
+  const cookie = await webFixtureCookie(path.join(installRoot, 'data/server'), ready.url)
+  const response = await fetch(`${ready.url}/api/v1/${route}`, {
+    method, headers: { Cookie: cookie, Origin: ready.url, 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(15_000),
+  })
+  assert.ok(response.ok, `Headless update Owner API ${route} failed (HTTP ${response.status}).`)
+  return response.json()
+}
+async function retainedUpdateSession(ready, previous) {
+  if (previous) {
+    const session = await owner(ready, 'GET', `sessions/${previous.id}`)
+    return Object.fromEntries(Object.keys(previous).map(key => [key, session[key]]))
+  }
+  const provider = await owner(ready, 'POST', 'providers', { name: 'Headless update fixture', protocol: 'openai-completions', dialect: 'openai', base_url: 'http://127.0.0.1:9' })
+  const model = await owner(ready, 'POST', 'models', { name: 'Headless update model', provider_id: provider.id, model_id: 'ci-update', recommendations: { context_window: 128000, max_output_tokens: 1024 }, overrides: {} })
+  const computer = (await owner(ready, 'GET', 'bootstrap')).computers.find(item => item.local && item.online)
+  assert.ok(computer, 'Headless update fixture needs an online Local Computer.')
+  const bot = await owner(ready, 'POST', 'onboarding/complete', { model_id: model.id, computer_id: computer.id })
+  const session = await owner(ready, 'POST', 'sessions', { agent_id: bot.id, title: 'Retained headless update Session' })
+  assert.equal(session.status, 'idle')
+  return Object.fromEntries(['id', 'title', 'agent_id', 'computer_id', 'profile_id', 'rollout_id'].map(key => [key, session[key]]))
+}
+async function managedWebUpdate() {
+  const targetVersion = version
+  const targetTag = tag
+  const oldBinary = path.join(temporary, 'old-version-astral')
+  // One cached native build changes only the version string; it is not a
+  // fabricated historical schema or a cross-platform distribution build.
+  await command('go', ['build', '-trimpath', '-ldflags', '-X github.com/oines/astral/internal/cli.Version=0.0.0', '-o', oldBinary, './cmd/astral'], { env: { ...process.env, GOWORK: 'off' }, timeout: 300_000 })
+  await copyFile(oldBinary, path.join(payload, `${nativeName}.pending`))
+  await rename(path.join(payload, `${nativeName}.pending`), path.join(payload, nativeName))
+  version = '0.0.0'; tag = 'v0.0.0'; environment.ASTRAL_INSTALL_FIXTURE_TAG = tag
+  await publishFixture()
+  fixtureTransport = await headlessUpdateTransport({ temporary, payload, tag: () => tag, environment, command })
+  await install()
+  const before = await snapshot()
+  const marker = path.join(installRoot, 'data/server/managed-update-marker')
+  await writeFile(marker, 'Retain live Server data across detached updates.\n', { mode: 0o600 })
+  const session = await retainedUpdateSession(before)
+  version = targetVersion; tag = targetTag; environment.ASTRAL_INSTALL_FIXTURE_TAG = tag
+  await copyFile(nativeBinary, path.join(payload, `${nativeName}.pending`))
+  await rename(path.join(payload, `${nativeName}.pending`), path.join(payload, nativeName))
+  await publishFixture()
+  const requestsBeforeState = fixtureTransport.requests.length
+  const initial = await owner(before, 'GET', 'updates')
+  assert.equal(initial.manager, 'systemd-user', 'The actual installed service was not recognized as managed.')
+  assert.equal(initial.current_version, '0.0.0')
+  assert.equal(fixtureTransport.requests.length, requestsBeforeState, 'Reading update state contacted a release server.')
+  const checked = await owner(before, 'POST', 'updates/check')
+  assert.equal(checked.phase, 'available')
+  assert.equal(checked.version, version)
+  assert.equal(fixtureTransport.requests.filter(url => url.endsWith('/install-server.sh') || names.some(name => url.endsWith(`/${name}`))).length, 0, 'Checking metadata downloaded executable bytes.')
+  assert.equal((await command('systemctl', ['--user', 'show', service, '--property=MainPID', '--value'])).stdout.trim(), String(before.pid), 'Checking metadata stopped the old Server.')
+  const applied = await owner(before, 'POST', 'updates/apply')
+  assert.match(applied.operation_id, /^[a-f0-9]{32}$/)
+  assert.equal(applied.operation_state, 'running')
+  updateJob = `astral-server-update-${applied.operation_id}.service`
+  let completion
+  const deadline = Date.now() + 150_000
+  while (Date.now() < deadline) {
+    try {
+      const ready = JSON.parse(await readFile(path.join(installRoot, 'run/ready.json'), 'utf8'))
+      const health = await fetch(`${ready.url}/health`, { signal: AbortSignal.timeout(3000) }).then(response => response.json())
+      // The test cookie helper opens the live store. Never use it while an old
+      // ready file remains during offline migration or service replacement.
+      if (ready.pid === before.pid || health.version !== version || health.status !== 'ok') { await delay(150); continue }
+      const status = await owner(ready, 'GET', 'updates')
+      if (status.operation_id === applied.operation_id && status.operation_state === 'failed') throw new Error(`Independent headless update failed: ${status.error}`)
+      if (status.operation_id === applied.operation_id && status.operation_state === 'complete') { completion = status; break }
+    } catch (error) {
+      if (error.message.startsWith('Independent headless update failed:')) throw error
+      // A stopped HTTP listener is neither failure nor completion.
+    }
+    await delay(150)
+  }
+  assert.ok(completion, 'The actual detached update did not report its terminal result after Server restart.')
+  assert.equal(completion.current_version, version)
+  assert.equal(completion.operation_version, version)
+  assert.equal(completion.phase, 'current')
+  const after = await snapshot()
+  assert.notEqual(after.pid, before.pid, 'The web update did not replace the actual Server process.')
+  sameIdentity(before, after)
+  assert.equal(await readFile(marker, 'utf8'), 'Retain live Server data across detached updates.\n')
+  assert.deepEqual(await retainedUpdateSession(after, session), session, 'The detached update changed the persisted Session/model selection.')
+  assert.equal((await readdir(path.join(installRoot, 'updates'))).filter(name => /^[a-f0-9]{32}$/.test(name)).length, 0, 'Terminal state appeared before update staging cleanup.')
+  assert.ok(fixtureTransport.requests.some(url => url.endsWith('/install-server.sh')), 'The independent runner did not download the checksum-verified official installer.')
+  console.log('Headless Owner API: metadata-only check, independent systemd update, new Server PID, durable completion, retained Session and identities passed.')
+}
+
 async function reportServiceState() {
   // Do not dump journals or bootstrap bodies, which may contain private data.
   try {
@@ -185,6 +279,7 @@ async function reportServiceState() {
 }
 async function cleanup() {
   if (!temporary) return
+  if (updateJob) await command('systemctl', ['--user', 'stop', updateJob], { timeout: 210_000 }).catch(() => {})
   if (await exists(unit)) {
     const definition = await readFile(unit, 'utf8')
     if (!definition.split('\n').includes(`# Astral Server installer root: ${installRoot}`)) {
@@ -211,6 +306,7 @@ async function cleanup() {
 }
 
 async function main() {
+  if (process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true' || !process.env.RUNNER_TEMP) throw new Error('Headless update acceptance requires a disposable GitHub Actions user; never run it on a developer account.')
   if (process.platform !== 'linux') throw new Error('Headless service verification requires native Linux; do not run it on another platform.')
   assert.ok(['x64', 'arm64'].includes(process.arch), 'Unsupported Linux architecture')
   await command('systemctl', ['--user', 'show-environment'])
@@ -231,6 +327,7 @@ async function main() {
   installRoot = path.join(temporary, 'Server 中文 space $%')
   try {
     await prepareFixture()
+    await managedWebUpdate()
     await install()
     const first = await snapshot()
     console.log('Headless fresh installation and authenticated Local Computer readiness passed.')
@@ -318,7 +415,8 @@ for name in ('astral.db','core.db'):
     await reportServiceState()
     throw error
   } finally {
-    await cleanup()
+    try { await cleanup() }
+    finally { await fixtureTransport?.close() }
   }
 }
 

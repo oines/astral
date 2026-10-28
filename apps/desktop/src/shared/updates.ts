@@ -6,6 +6,9 @@ export interface DesktopUpdateState {
   percent?: number
   error?: string
   retry?: 'check' | 'update'
+  operationId?: string
+  operationVersion?: string
+  operationState?: 'running' | 'complete' | 'failed'
   unavailable?: 'development' | 'package' | 'windows-zip' | 'signature'
 }
 export interface DesktopUpdateBridge {

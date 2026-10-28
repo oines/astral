@@ -287,26 +287,37 @@ type StickerMetadata struct {
 	ThumbnailRef  string `json:"thumbnail_ref,omitempty"`
 }
 
+// TextQuote retains the selected source fragment separately from a reply's
+// preview. Position is the sender's approximate UTF-16 offset in the source;
+// Text is authoritative and must not be reconstructed by slicing that source.
+type TextQuote struct {
+	Text     string `json:"text"`
+	Position int    `json:"position" description:"Approximate sender-specified offset in UTF-16 code units of the original source message; text is authoritative."`
+	Manual   bool   `json:"manual"`
+}
+
 type Observation struct {
-	SchemaVersion   int          `json:"schema_version"`
-	ID              string       `json:"id"`
-	ConnectionID    string       `json:"connection_id"`
-	ConversationID  string       `json:"conversation_id"`
-	ExternalEventID string       `json:"external_event_id"`
-	Kind            string       `json:"kind"`
-	MessageID       string       `json:"message_id"`
-	Sender          Sender       `json:"sender"`
-	Text            string       `json:"text"`
-	Format          string       `json:"format,omitempty"`
-	SentAt          time.Time    `json:"sent_at"`
-	EditedAt        *time.Time   `json:"edited_at,omitempty"`
-	ReceivedAt      time.Time    `json:"received_at"`
-	ReplyID         string       `json:"reply_id,omitempty"`
-	ReplySender     string       `json:"reply_sender,omitempty"`
-	ReplyPreview    string       `json:"reply_preview,omitempty"`
-	Attachments     []Attachment `json:"attachments,omitempty"`
-	Trigger         string       `json:"trigger,omitempty"`
-	Self            bool         `json:"self"`
+	SchemaVersion    int          `json:"schema_version"`
+	ID               string       `json:"id"`
+	ConnectionID     string       `json:"connection_id"`
+	ConversationID   string       `json:"conversation_id"`
+	ExternalEventID  string       `json:"external_event_id"`
+	Kind             string       `json:"kind"`
+	MessageID        string       `json:"message_id"`
+	Sender           Sender       `json:"sender"`
+	Text             string       `json:"text"`
+	Format           string       `json:"format,omitempty"`
+	SentAt           time.Time    `json:"sent_at"`
+	EditedAt         *time.Time   `json:"edited_at,omitempty"`
+	ReceivedAt       time.Time    `json:"received_at"`
+	ReplyID          string       `json:"reply_id,omitempty"`
+	ReplySender      string       `json:"reply_sender,omitempty"`
+	ReplyPreview     string       `json:"reply_preview,omitempty"`
+	ReplyQuote       *TextQuote   `json:"reply_quote,omitempty"`
+	ReplyAttachments []Attachment `json:"reply_attachments,omitempty"`
+	Attachments      []Attachment `json:"attachments,omitempty"`
+	Trigger          string       `json:"trigger,omitempty"`
+	Self             bool         `json:"self"`
 }
 
 type Outbox struct {

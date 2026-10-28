@@ -27,6 +27,7 @@ import (
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/securetransport"
+	"github.com/oines/astral/internal/serverupdate"
 )
 
 // The release build copies the shared Vite output into web/. A source checkout
@@ -48,6 +49,9 @@ type Config struct {
 	NetworkCLI            NetworkValues
 	NetworkEnvironment    NetworkValues
 	DesktopToken          string
+	DesktopUpdateURL      string
+	DesktopUpdateToken    string
+	InstallationRoot      string
 	InitialAdminUsername  string
 	InitialAdminPassword  string
 	SessionLifetime       time.Duration
@@ -89,6 +93,7 @@ type Server struct {
 	network          *networkState
 	loopbackListener net.Listener
 	upgrade          *datamigrate.Upgrade
+	updates          serverupdate.Controller
 }
 
 func New(config Config) (server *Server, err error) {
@@ -228,9 +233,19 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	}
 	agentGateway := gateway.New(s.Harness, s.Channels)
 	s.Hub.Gateway = agentGateway.Handle
+	if config.DesktopUpdateURL != "" || config.DesktopUpdateToken != "" {
+		s.updates, err = serverupdate.NewDesktop(config.DesktopUpdateURL, config.DesktopUpdateToken)
+		if err != nil {
+			return nil, err
+		}
+	} else if config.InstallationRoot != "" {
+		s.updates = serverupdate.NewManaged(config.InstallationRoot, config.DataDirectory, config.Executable, config.Version)
+	} else {
+		s.updates = serverupdate.Unmanaged{Version: config.Version}
+	}
 	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, Auth: s.Auth, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
 		HostInfo: s.HostInfo, UseLocal: s.UseLocal, CreateContainer: s.CreateContainer,
-		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings, ValidateAccessAddresses: s.ValidateAccessAddresses})
+		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings, ValidateAccessAddresses: s.ValidateAccessAddresses, Updates: s.updates})
 	mux := http.NewServeMux()
 	mux.Handle("/api/", s.Owner)
 	mux.Handle("/auth/", s.Owner.AuthHandler())
@@ -283,6 +298,7 @@ func (s *Server) Start() error {
 			s.mu.Unlock()
 		}
 	}
+	s.startUpdateChecks()
 	return nil
 }
 func (s *Server) Close(ctx context.Context) error {

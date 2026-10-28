@@ -18,6 +18,14 @@ The default installation is `${XDG_DATA_HOME:-$HOME/.local/share}/astral-server`
 
 To upgrade later, run the installation command again using the same account and root. Use `bash -s -- --tag v0.1.0` in place of `bash` to select a published version explicitly. Omitted network settings are preserved.
 
+Current installer-managed services also support the software update button in the signed-in Web UI once their installation metadata is verified. Older installations may need one run of the current installer to prepare that metadata and service definition. See [Updates and backups](/docs/hosting/maintenance/) for the interruption, reconnection and recovery behavior.
+
+| Startup option | Environment variable | Purpose |
+| --- | --- | --- |
+| `--installation-root PATH` | `ASTRAL_INSTALLATION_ROOT` | Identify the official current-user installation root for managed updates |
+
+The installer passes this option automatically. The CLI option takes precedence over the environment variable. Setting it manually does not adopt a custom service: ownership, data paths, the installed user-service definition and its running process must still match.
+
 ## Create web sign-in
 
 Run the command printed by the installer. For the default installation:

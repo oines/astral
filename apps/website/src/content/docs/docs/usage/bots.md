@@ -11,6 +11,8 @@ Open it from the **Bot list in Settings**. These settings belong to the selected
 
 Change the name, avatar, default model, and search service here. Use the optional persona for identity, speaking style, or working preferences, then choose Apply persona. It takes effect on subsequent model requests for this Bot.
 
+When proactive group participation is enabled, the next participation check also includes the current Bot's persona to help judge whether it should join the conversation.
+
 Leave it empty if no custom persona is needed. Model and search connections are maintained globally; the Bot chooses which ones to use.
 
 ## Computer access

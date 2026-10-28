@@ -342,7 +342,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
               </p>
             </div>
           </SettingsSection>
-          <DesktopUpdates v-if="desktop" />
+          <DesktopUpdates />
           <SettingsSection :title="t('diagnostics')">
             <SettingsRow
               :label="t('copyDiagnostics')"

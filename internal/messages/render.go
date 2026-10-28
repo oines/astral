@@ -74,17 +74,35 @@ func Observation(event domain.Observation, connection domain.Connection, convers
 	if event.Sender.Username != "" {
 		sender += " (@" + event.Sender.Username + ")"
 	}
-	fmt.Fprintf(&body, "<message id=\"%s\" event-id=\"%s\" source=\"im\" sender=\"%s\" sender-id=\"%s\" t=\"%s\"",
-		Escape(event.MessageID), Escape(event.ID), Escape(sender), Escape(event.Sender.ID), event.SentAt.Format(time.RFC3339Nano))
-	if event.EditedAt != nil {
-		fmt.Fprintf(&body, " edited=\"%s\"", event.EditedAt.Format(time.RFC3339Nano))
-	}
-	if event.Kind == "message.deleted" {
-		body.WriteString(" deleted=\"true\"/>\n")
+	if event.Kind == "message.deleted" || event.Kind == "notice.poke" {
+		fmt.Fprintf(&body, "<event id=\"%s\" kind=\"%s\" source=\"im\" sender=\"%s\" sender-id=\"%s\" t=\"%s\"",
+			Escape(event.ID), Escape(event.Kind), Escape(sender), Escape(event.Sender.ID), event.SentAt.Format(time.RFC3339Nano))
+		if event.MessageID != "" {
+			fmt.Fprintf(&body, " message-id=\"%s\"", Escape(event.MessageID))
+		}
+		text := event.Text
+		if text == "" && event.Kind == "message.deleted" {
+			text = "The platform reported that this message was deleted."
+		}
+		fmt.Fprintf(&body, ">%s</event>\n", Escape(text))
 	} else {
+		fmt.Fprintf(&body, "<message id=\"%s\" event-id=\"%s\" source=\"im\" sender=\"%s\" sender-id=\"%s\" t=\"%s\"",
+			Escape(event.MessageID), Escape(event.ID), Escape(sender), Escape(event.Sender.ID), event.SentAt.Format(time.RFC3339Nano))
+		if event.EditedAt != nil {
+			fmt.Fprintf(&body, " edited=\"%s\"", event.EditedAt.Format(time.RFC3339Nano))
+		}
 		body.WriteString(">\n")
 		if event.ReplyID != "" {
-			fmt.Fprintf(&body, "<in-reply-to id=\"%s\" sender=\"%s\">%s</in-reply-to>\n", Escape(event.ReplyID), Escape(event.ReplySender), Escape(event.ReplyPreview))
+			fmt.Fprintf(&body, "<in-reply-to id=\"%s\" sender=\"%s\">%s", Escape(event.ReplyID), Escape(event.ReplySender), Escape(event.ReplyPreview))
+			for _, attachment := range event.ReplyAttachments {
+				fmt.Fprintf(&body, "\n<attachment type=\"%s\" name=\"%s\" mime=\"%s\" message-id=\"%s\" file-id=\"%s\" size=\"%d\" download-url=\"%s\"/>",
+					Escape(attachment.Kind), Escape(attachment.Name), Escape(attachment.MediaType), Escape(event.ReplyID), Escape(attachment.Ref), attachment.Size,
+					Escape(AttachmentDownloadPath(conversation.ID, event.ReplyID, attachment.Ref)))
+			}
+			body.WriteString("</in-reply-to>\n")
+		}
+		if quote := event.ReplyQuote; quote != nil {
+			fmt.Fprintf(&body, "<quote position-utf16=\"%d\" manual=\"%t\">%s</quote>\n", quote.Position, quote.Manual, Escape(quote.Text))
 		}
 		body.WriteString(Escape(event.Text))
 		for _, a := range event.Attachments {
@@ -141,7 +159,11 @@ func observationDisplayText(event domain.Observation) string {
 }
 
 func Trigger(event domain.Observation) core.Message {
-	body := fmt.Sprintf("<im_trigger message-id=\"%s\" event-id=\"%s\" reason=\"%s\"/>\nProcess the referenced observation.", Escape(event.MessageID), Escape(event.ID), Escape(event.Trigger))
+	messageRef := ""
+	if event.MessageID != "" {
+		messageRef = fmt.Sprintf(" message-id=\"%s\"", Escape(event.MessageID))
+	}
+	body := fmt.Sprintf("<im_trigger%s event-id=\"%s\" reason=\"%s\"/>\nProcess the referenced observation.", messageRef, Escape(event.ID), Escape(event.Trigger))
 	metadata, _ := json.Marshal(Metadata{Source: "im.trigger", DeliveryID: event.ID + ":trigger", EventID: event.ID, ConversationID: event.ConversationID, Sender: event.Sender})
 	return core.Message{Role: core.RoleUser, Content: core.Text(body), Metadata: metadata}
 }

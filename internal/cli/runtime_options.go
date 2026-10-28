@@ -24,6 +24,7 @@ func serveRuntimeOptions(config *platform.Config, f *flag.FlagSet, proxies []str
 		{"computers-dir", "ASTRAL_COMPUTER_DATA_DIR", &config.ComputerDirectory},
 		{"web-dir", "ASTRAL_WEB_DIR", &config.WebDirectory},
 		{"distribution-dir", "ASTRAL_DISTRIBUTION_DIR", &config.DistributionDirectory},
+		{"installation-root", "ASTRAL_INSTALLATION_ROOT", &config.InstallationRoot},
 	} {
 		if !explicit[item.flag] {
 			if value, set := lookup(item.env); set {

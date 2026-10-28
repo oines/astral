@@ -11,6 +11,7 @@ import { setLinuxLoginStart } from './login'
 import { networkArguments } from './network-arguments'
 import { DesktopUpdates, updateChannel, updateFeed } from './updates'
 import { DesktopShutdown } from './shutdown'
+import { DesktopUpdateControl, startDesktopUpdateBridge } from './update-control'
 import { nativeWindowAppearance, titleBarAppearance } from './window-appearance'
 import type { DesktopUpdateState } from '../shared/updates'
 
@@ -21,6 +22,8 @@ if (!single) app.quit()
 const service = new LocalService()
 const shutdown = new DesktopShutdown(() => service.stop())
 let updates: DesktopUpdates | undefined
+let updateControl: DesktopUpdateControl | undefined
+let updateBridge: Awaited<ReturnType<typeof startDesktopUpdateBridge>> | undefined
 let updateTimer: ReturnType<typeof setTimeout> | undefined
 let updateInterval: ReturnType<typeof setInterval> | undefined
 let window: BrowserWindow | undefined
@@ -67,6 +70,7 @@ async function prepareShutdown() {
   traceLifecycle('Server stop requested')
   try {
     await shutdown.prepare()
+    await updateBridge?.close()
     tray?.destroy()
     clearTimeout(updateTimer)
     clearInterval(updateInterval)
@@ -98,27 +102,31 @@ async function configureUpdates() {
   // Fixed public feed. No Renderer URL, credentials, or environment token is consulted.
   autoUpdater.setFeedURL({ provider: 'generic', url: updateFeed, channel: updateChannel(process.arch), useMultipleRangeRequest: false })
   updates = new DesktopUpdates(autoUpdater, app.getVersion(), async () => {
+    await updateControl!.beforeInstall()
     await prepareShutdown()
     // AppImageUpdater can launch the replacement before quitting this process.
     // Release only after confirmed Server exit so the new app can take the lock.
     app.releaseSingleInstanceLock()
   }, unavailable)
-  updates.onState = state => {
+  updateControl = new DesktopUpdateControl(updates, join(app.getPath('userData'), 'update-operation.json'))
+  await updateControl.initialize()
+  updateBridge = await startDesktopUpdateBridge(updateControl)
+  updateControl.onState = state => {
     if (window && !window.isDestroyed()) window.webContents.send('astral:update-state', state)
   }
-  updates.onInstallError = error => {
+  updateControl.onInstallError = error => {
     // The service is already stopped; restart the current installation on installer failure.
     dialog.showErrorBox('Astral update failed', `${error.message}\n\nAstral will reopen the current version.`)
     app.relaunch()
     app.quit()
   }
-  ipcMain.handle('astral:update-state', event => { assertSender(event); return updates!.state() })
-  ipcMain.handle('astral:update-check', event => { assertSender(event); return updates!.check() })
-  ipcMain.handle('astral:update', event => { assertSender(event); return updates!.update() })
+  ipcMain.handle('astral:update-state', event => { assertSender(event); return updateControl!.state() })
+  ipcMain.handle('astral:update-check', event => { assertSender(event); return updateControl!.check() })
+  ipcMain.handle('astral:update', event => { assertSender(event); return updateControl!.update() })
   if (!unavailable) {
     // Metadata checks never download. Keep a failed user update visible until they act.
-    updateTimer = setTimeout(() => { void updates?.check(true) }, 30_000)
-    updateInterval = setInterval(() => { void updates?.check(true) }, 6 * 60 * 60 * 1000)
+    updateTimer = setTimeout(() => { void updateControl?.check(true) }, 30_000)
+    updateInterval = setInterval(() => { void updateControl?.check(true) }, 6 * 60 * 60 * 1000)
     updateTimer.unref()
     updateInterval.unref()
   }
@@ -175,7 +183,8 @@ async function start() {
   const architecture = process.arch === 'x64' ? 'amd64' : process.arch
   const system = process.platform === 'win32' ? 'windows' : process.platform
   const binary = join(bins, `astral-${system}-${architecture}${system === 'windows' ? '.exe' : ''}`)
-  const token = await service.start(binary, root, bins, networkArguments(process.argv.slice(1)))
+  await configureUpdates()
+  const token = await service.start(binary, root, bins, networkArguments(process.argv.slice(1)), updateBridge)
   serverURL = service.url
   // Only this Electron session may attach the process-local Desktop identity,
   // and only to the exact Server origin. Renderer JS never receives the secret.
@@ -204,7 +213,6 @@ async function start() {
     const appearance = titleBarAppearance(dark)
     if (process.platform === 'win32' || process.platform === 'linux') window?.setTitleBarOverlay(appearance)
   })
-  await configureUpdates()
   const settings: MenuItemConstructorOptions = { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => { show(); window?.webContents.send('astral:open-settings') } }
   const applicationMenu: MenuItemConstructorOptions = process.platform === 'darwin'
     ? { label: 'Astral', submenu: [{ role: 'about' }, settings, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }
@@ -259,5 +267,6 @@ app.on('quit', (_event, exitCode) => traceLifecycle(`quit: exitCode=${exitCode}`
 if (single) void app.whenReady().then(start).catch(async error => {
   dialog.showErrorBox('Astral could not start', `${error instanceof Error ? error.message : String(error)}\n\nIf another Astral server already uses this data directory, stop it before opening the desktop application.`)
   await service.stop()
+  await updateBridge?.close()
   app.quit()
 })

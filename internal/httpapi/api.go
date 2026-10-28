@@ -26,6 +26,7 @@ import (
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/search"
+	"github.com/oines/astral/internal/serverupdate"
 )
 
 type Config struct {
@@ -41,6 +42,7 @@ type Config struct {
 	NetworkSettings         func(context.Context) NetworkSettings
 	SaveNetworkSettings     func(context.Context, NetworkPatch) (NetworkSettings, error)
 	ValidateAccessAddresses func(*http.Request, []string) error
+	Updates                 serverupdate.Controller
 }
 type API struct {
 	Config       Config
@@ -171,6 +173,7 @@ func New(config Config) *API {
 	a.attemptRoutes()
 	a.systemRoutes()
 	a.networkRoutes()
+	a.updateRoutes()
 	a.streamRoutes()
 	a.authRoutes()
 	a.handler = a.authenticate(a.mux)

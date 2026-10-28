@@ -507,7 +507,14 @@ func (s *Store) Message(ctx context.Context, conversation, messageID string) (do
 func (s *Store) MessageAttachment(ctx context.Context, conversation, messageID, ref string) (domain.Attachment, error) {
 	var raw []byte
 	var attachment domain.Attachment
-	err := s.db.QueryRowContext(ctx, `SELECT a.value FROM observations o, json_each(o.payload,'$.attachments') a WHERE o.conversation_id=? AND json_extract(o.payload,'$.message_id')=? AND json_extract(a.value,'$.ref')=? ORDER BY o.sequence DESC LIMIT 1`, conversation, messageID, ref).Scan(&raw)
+	// A received same-chat reply can carry source attachment metadata even if
+	// the original message predates our archive. It remains a quoted reference,
+	// never a fabricated message or an attachment owned by the reply itself.
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM (
+SELECT o.sequence,a.value FROM observations o,json_each(o.payload,'$.attachments') a WHERE o.conversation_id=? AND json_extract(o.payload,'$.message_id')=? AND json_extract(a.value,'$.ref')=?
+UNION ALL
+SELECT o.sequence,a.value FROM observations o,json_each(o.payload,'$.reply_attachments') a WHERE o.conversation_id=? AND json_extract(o.payload,'$.reply_id')=? AND json_extract(a.value,'$.ref')=?
+) ORDER BY sequence DESC LIMIT 1`, conversation, messageID, ref, conversation, messageID, ref).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return attachment, domain.Missing("attachment", ref)
 	}

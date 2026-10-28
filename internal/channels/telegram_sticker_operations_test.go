@@ -109,7 +109,7 @@ func newStickerOperationBot(t *testing.T, format string) *stickerOperationBot {
 			chatID, _ := strconv.ParseInt(telegramID(request.parameters["chat_id"]), 10, 64)
 			threadID, _ := strconv.ParseInt(telegramID(request.parameters["message_thread_id"]), 10, 64)
 			reply(map[string]any{
-				"message_id": messageID, "message_thread_id": threadID, "date": 1760000000,
+				"message_id": messageID, "message_thread_id": threadID, "is_topic_message": threadID != 0, "date": 1760000000,
 				"chat": map[string]any{"id": chatID, "type": "supergroup", "title": "Sticker test", "is_forum": true},
 				"from": map[string]any{"id": 999, "is_bot": true, "username": "astral_bot", "first_name": "Astral"},
 				"sticker": map[string]any{

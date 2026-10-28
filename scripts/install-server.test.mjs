@@ -177,3 +177,36 @@ test('download-only can obtain the new maintenance program before migrating an o
   assert.match(download.stdout, /Download and verify only/)
   assert.equal(await readFile(path.join(root, 'install-config.json'), 'utf8'), old)
 })
+
+function labelledPythonBlock(marker, label) {
+  const at = source.indexOf(marker)
+  const token = `<<'${label}'\n`
+  const start = source.indexOf(token, at)
+  const end = source.indexOf(`\n${label}\n`, start)
+  assert.ok(at >= 0 && start >= 0 && end > start, `Missing installer block ${label}`)
+  return source.slice(start + token.length, end)
+}
+
+test('managed installation records the exact user/root/unit outside Server migrations and starts with an explicit root flag', supported, async t => {
+  const directory = await fixture(t)
+  const root = path.join(directory, 'Server 中文 space $%')
+  await mkdir(root)
+  const unit = path.join(directory, 'astral-server.service')
+  const generated = await run('python3', ['-c', pythonBlock('python3 - "$unit_temp" "$root"'), unit, root])
+  assert.equal(generated.code, 0, generated.stderr)
+  const definition = await readFile(unit, 'utf8')
+  const quotedRoot = `"${root.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('%', '%%')}"`
+  assert.ok(definition.includes(`"--installation-root" ${quotedRoot} "--data"`), 'The actual service does not carry its installation root')
+  const metadata = labelledPythonBlock('python3 - "$stage/installation.json"', 'PYINSTALL')
+  const temporary = path.join(directory, 'installation.pending')
+  const result = await run('bash', ['-c', 'umask 077; exec python3 "$@"', 'fixture', '-c', metadata, temporary, root, unit])
+  assert.equal(result.code, 0, result.stderr)
+  const marker = JSON.parse(await readFile(path.join(root, 'installation.json'), 'utf8'))
+  assert.deepEqual(marker, { schema: 1, root, data_directory: `${root}/data/server`, uid: process.getuid(), service: 'astral-server.service', unit_path: unit })
+})
+
+test('installer version preflight refuses application downgrade even when data formats match', supported, async () => {
+  const validator = labelledPythonBlock('python3 - "$old_version" "$version"', 'PYVERSION')
+  for (const [old, next] of [['0.1.0', '0.1.0'], ['0.1.0', '0.1.3'], ['0.1.9', '0.1.10']]) assert.equal((await run('python3', ['-c', validator, old, next])).code, 0)
+  for (const [old, next] of [['0.1.3', '0.1.0'], ['0.2.0', '0.1.999'], ['dev', '0.1.0']]) assert.notEqual((await run('python3', ['-c', validator, old, next])).code, 0)
+})
