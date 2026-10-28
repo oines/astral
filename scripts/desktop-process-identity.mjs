@@ -127,14 +127,20 @@ try {
 }
 
 async function run(request, command) {
+  const timeout = 30_000
   let stdout
   try {
-    ;({ stdout } = await command('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script(request), 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: request.action === 'stop' ? 30_000 : 10_000, maxBuffer: 64 << 10 }))
+    ;({ stdout } = await command('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script(request), 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout, maxBuffer: 64 << 10 }))
   } catch (error) {
     const codes = ['ENOENT', 'EACCES', 'EPERM', 'ETIMEDOUT', 'ENOBUFS', 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER']
     const code = Number.isSafeInteger(error?.code) && error.code >= 0 && error.code <= 0xffffffff || codes.includes(error?.code) ? error.code : 'unknown'
     const boundedOutput = value => typeof value === 'string' ? value.slice(-2000) : ''
-    const diagnostic = { action: request.action, pid: request.pid, exit_code: code, stdout: boundedOutput(error?.stdout), stderr: boundedOutput(error?.stderr) }
+    const diagnostic = {
+      action: request.action, pid: request.pid, timeout_ms: timeout, exit_code: code,
+      ...(typeof error?.killed === 'boolean' ? { killed: error.killed } : {}),
+      ...(['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGBREAK'].includes(error?.signal) ? { signal: error.signal } : {}),
+      stdout: boundedOutput(error?.stdout), stderr: boundedOutput(error?.stderr),
+    }
     // eslint-disable-next-line preserve-caught-error -- Exec errors retain private arguments/environment; expose only the bounded allowlist.
     throw new Error(`Windows process identity query or handle-based cleanup failed: ${JSON.stringify(diagnostic)}`)
   }
