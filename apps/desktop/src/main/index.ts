@@ -114,11 +114,11 @@ async function configureUpdates() {
   }
   ipcMain.handle('astral:update-state', event => { assertSender(event); return updates!.state() })
   ipcMain.handle('astral:update-check', event => { assertSender(event); return updates!.check() })
-  ipcMain.handle('astral:update-install', event => { assertSender(event); return updates!.install() })
+  ipcMain.handle('astral:update', event => { assertSender(event); return updates!.update() })
   if (!unavailable) {
-    // Checking is independent of opening Settings. Installation always needs an explicit action.
-    updateTimer = setTimeout(() => { void updates?.check() }, 30_000)
-    updateInterval = setInterval(() => { void updates?.check() }, 6 * 60 * 60 * 1000)
+    // Metadata checks never download. Keep a failed user update visible until they act.
+    updateTimer = setTimeout(() => { void updates?.check(true) }, 30_000)
+    updateInterval = setInterval(() => { void updates?.check(true) }, 6 * 60 * 60 * 1000)
     updateTimer.unref()
     updateInterval.unref()
   }

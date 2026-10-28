@@ -7,16 +7,16 @@ Keep your existing data directories when replacing a program. Download availabil
 
 ## Update Desktop
 
-Open **Settings → About & diagnostics**. Supported Desktop installations check for new versions after launch and periodically while running, then download in the background. You can also select **Check for updates**. When the download finishes, select **Restart and update**.
+Open **Settings → About & diagnostics**. Supported Desktop installations check for new versions after launch and periodically while running. You can also select **Check for updates**; checking does not download an installer. When an update is available, you can check again or select **Update and restart**. Astral checks for the latest release again, downloads and verifies the update, then installs it and restarts.
 
 | Installation | Update method |
 | --- | --- |
-| Official signed macOS App | In-App download, then restart and update |
-| Windows EXE installer for the current user | In-App download, then restart and update |
-| Linux AppImage | In-App download, then restart and update |
+| Official signed macOS App | Select **Update and restart** in the App |
+| Windows EXE installer for the current user | Select **Update and restart** in the App |
+| Linux AppImage | Select **Update and restart** in the App |
 | Linux DEB, Windows ZIP, unsigned Mac or development build | Download and install the newer package manually |
 
-Downloading does not stop your work. Installing stops the local Server and interrupts its running tasks and computer commands. Ordinary quit does not install a downloaded update. The local computer service updates with Desktop; remote computers have their own update action.
+You can keep using Astral while the update downloads. When the download finishes, installation stops the local Server and interrupts its running tasks and computer commands. Choose **Update and restart** when you are ready for that interruption. Ordinary quit does not install an update. If a check fails, retry the check; if an update fails, retry the update. Checking never starts a download or installation. The local computer service updates with Desktop; remote computers have their own update action.
 
 If a Mac release says Apple notarization is pending, its Developer ID signature is verified but Gatekeeper may still block the first launch. After trying to open the trusted official download, follow [Apple's instructions](https://support.apple.com/en-us/102445) to allow it under **System Settings → Privacy & Security → Open Anyway**. This is separate from Astral's update controls.
 
@@ -43,7 +43,7 @@ You can also copy the displayed update command. Use this route for older Daemons
 - Native computer: run the shell or PowerShell command on that machine to update its current-user service.
 - Container: run the command on its Docker host. It replaces the Daemon and restarts the same container, preserving its identity, installed tools, writable layer and data.
 
-Managed updates in new containers use their in-container supervisor and restart the Daemon without recreating the environment. Updating a container's Daemon does not change its base image. Failed updates attempt to restore the previous program; check the reported state and computer connection before resuming work.
+Managed updates in new containers use their in-container supervisor and restart the Daemon without recreating the environment. Updating a container's Daemon does not change its base image. Failed updates attempt to restore the previous program and may restart that version; check the reported state and computer connection before resuming work. When a release changes the supervisor itself, restart the same container once after updating to load those changes; you do not need to recreate the environment.
 
 The prebuilt Ubuntu environment is versioned independently from the application. New containers pull the exact image digest selected by that Astral version and receive the Daemon separately. An application update neither rebuilds that image on your computer nor recreates existing containers. Their original image, writable layer, installed tools, data volume and pairing mount remain in place; use the separate Daemon action when its program needs updating. See [Use containers](/docs/computers/containers/) for preparation and persistence.
 

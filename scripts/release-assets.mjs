@@ -149,7 +149,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
 - Linux Desktop: AppImage supports in-app updating; install newer DEB packages manually. Linux packages are not code-signed.
 - Linux VPS: run install-server.sh for a current-user headless Server and systemd user service.
 
-Desktop checks for updates and downloads in the background. Use Settings → About & diagnostics → Restart and update to install; running tasks will be interrupted. Ordinary exit does not install updates. Remote Daemons can be updated from Computer settings or with the displayed update command; container updates retain the existing environment.
+Desktop checks for new versions without downloading packages. Use Settings → About & diagnostics → Update and restart to check Latest again, download and verify the package, then install and restart. You can keep using Astral during download; installation interrupts running tasks. Ordinary exit does not install updates. Remote Daemons can be updated from Computer settings or with the displayed update command; container updates retain the existing environment.
 
 Versioned migrations are bundled with the latest binary. Upgrades apply missing migrations in order without downloading intermediate releases. Before a migration, the Server snapshots its data; migration failure stops startup and restores that snapshot. The current target is Host ${formats.host_schema} / Core ${formats.core_format}, starting from the supported Host 3 / Core 11 baseline. Older private data formats and downgrades are not supported. Desktop installation errors can be retried; a release which cannot start may require manually reinstalling a previous version after restoring its matching data backup.
 

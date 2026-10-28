@@ -13,7 +13,7 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
-import { evaluateRenderer, managedRendererEndpoint, rendererAuthentication } from './desktop-renderer-auth.mjs'
+import { evaluateRenderer, managedRendererEndpoint, RendererConnectionError, RendererNavigationError, rendererAuthentication, rendererUpdateMethod, rendererUpdateProgress, startRendererUpdate } from './desktop-renderer-auth.mjs'
 import { desktopArtifactName, desktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { readReleaseVersion } from './release-version.mjs'
 import { publishedUpdateInputs } from './published-desktop-update.mjs'
@@ -61,14 +61,20 @@ let fromVersion = '0.0.0'
 let expectedAsar
 let retain = false
 let rendererDiagnostic = 'The managed renderer has not been discovered.'
+let feedRequests = 0
+let packageRequests = 0
+let completedPackages = 0
 const command = (program, args, options = {}) => execute(program, args, { cwd: repository, encoding: 'utf8', timeout: 600_000, maxBuffer: 2 << 20, ...options })
 const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error } }
 const server = publishedFrom ? undefined : createServer((request, response) => {
   const name = new URL(request.url, 'http://127.0.0.1').pathname.slice(1)
   if (name === feedName) {
+    feedRequests++
     response.writeHead(200, { 'Content-Type': 'application/json' })
     response.end(JSON.stringify({ version, files: [{ url: `http://127.0.0.1:${server.address().port}/${targetName}`, sha512: checksum, size: targetBytes.length }] }))
   } else if (name === targetName) {
+    packageRequests++
+    response.on('finish', () => { completedPackages++ })
     response.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': targetBytes.length })
     createReadStream(target).pipe(response)
   } else { response.writeHead(404); response.end() }
@@ -224,7 +230,7 @@ try {
   await writeFile(marker, `retained-data-${fromVersion}`)
   const endpoint = await waitFor(
     async () => {
-      const options = { diagnose: value => { rendererDiagnostic = value } }
+      const options = { diagnose: value => { rendererDiagnostic = value }, allowLegacyUpdates: Boolean(publishedFrom) }
       if (!await rendererAuthentication(profile, oldServer.url, options)) return false
       return managedRendererEndpoint(profile, oldServer.url, options)
     },
@@ -234,19 +240,51 @@ try {
   assert.equal(oldState.currentVersion, fromVersion)
   assert.notEqual(oldState.phase, 'unavailable', `The fixture does not support native updating: ${oldState.unavailable}`)
   const session = published ? await retainedSession(oldServer) : undefined
-  await evaluateRenderer(endpoint, 'window.astralDesktop.updates.check()')
-  await waitFor(async () => {
-    const state = await evaluateRenderer(endpoint, 'window.astralDesktop.updates.state()')
-    if (state.phase === 'error') throw new Error(`Real updater download failed: ${state.error}`)
-    if (state.version) assert.equal(state.version, version, 'Official Latest changed during the update; refusing a different release.')
-    return state.phase === 'ready'
-  }, 'The real updater did not finish downloading the final release.', published ? 10 * 60_000 : 120_000)
-  // The native IPC closes when Electron exits; that close is expected here.
-  await evaluateRenderer(endpoint, 'window.astralDesktop.updates.install().then(() => true)').catch(() => undefined)
+  const updateMethod = await rendererUpdateMethod(endpoint, { allowLegacy: Boolean(publishedFrom) })
+  const checkOnly = updateMethod === 'update'
+  const expectTarget = state => {
+    rendererDiagnostic = JSON.stringify(state)
+    if (state.phase === 'error') throw new Error(`Real updater failed: ${state.error}`)
+    if (state.version) assert.equal(state.version, version, 'Latest changed during the update; refusing a different release.')
+    return state
+  }
+  const checked = expectTarget(await evaluateRenderer(endpoint, 'window.astralDesktop.updates.check()'))
+  if (checkOnly) {
+    assert.equal(checked.phase, 'available', 'Checking metadata must finish with an available update, without downloading it.')
+    assert.equal(checked.version, version)
+    if (server) {
+      assert.ok(feedRequests > 0, 'The real updater did not request candidate metadata.')
+      assert.equal(packageRequests, 0, 'The candidate downloaded its installer before the explicit update action.')
+    }
+    const previousChecks = feedRequests
+    const rechecked = expectTarget(await evaluateRenderer(endpoint, 'window.astralDesktop.updates.check()'))
+    assert.equal(rechecked.phase, 'available', 'An available update must permit another metadata check.')
+    if (server) {
+      assert.ok(feedRequests > previousChecks, 'An available update did not request fresh metadata when checked again.')
+      assert.equal(packageRequests, 0, 'Repeated checks downloaded the installer before the explicit update action.')
+    }
+    assert.ok(alive(oldServer.pid) && (await running())?.pid === oldServer.pid, 'A metadata-only check stopped or replaced the managed Server.')
+  } else {
+    await waitFor(async () => expectTarget(await evaluateRenderer(endpoint, 'window.astralDesktop.updates.state()')).phase === 'ready',
+      'The untouched old updater did not finish automatically downloading the final release.', published ? 10 * 60_000 : 120_000)
+  }
+  const checksBeforeUpdate = feedRequests
+  await startRendererUpdate(endpoint, updateMethod, { diagnose: value => { rendererDiagnostic = value } })
   newServer = await waitFor(async () => {
     const ready = await running()
-    return ready && ready.pid !== oldServer.pid ? ready : undefined
-  }, 'The updated Desktop did not relaunch its Server.', 180_000)
+    if (ready && ready.pid !== oldServer.pid) return ready
+    try { expectTarget(await rendererUpdateProgress(endpoint)) }
+    catch (error) {
+      // Only transport/context closure is expected after update dispatch when
+      // the native installer exits. IPC rejection and script errors stay fatal.
+      if (!(error instanceof RendererConnectionError) && !(error instanceof RendererNavigationError)) throw error
+    }
+    return undefined
+  }, 'The updated Desktop did not download, install and relaunch its Server.', (checkOnly ? (published ? 10 * 60_000 : 120_000) : 0) + 180_000)
+  if (server && checkOnly) {
+    assert.ok(feedRequests > checksBeforeUpdate, 'The explicit update did not recheck Latest before downloading.')
+    assert.ok(packageRequests > 0 && completedPackages > 0, 'The explicit update did not finish serving the final installer bytes.')
+  }
   assert.equal(newServer.healthVersion, version, 'The replacement did not launch the target Server version.')
   updatedAppPID = await parentPID(newServer.pid)
   assert.notEqual(updatedAppPID, app.pid, 'The original Desktop process survived the replacement')

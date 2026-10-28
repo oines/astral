@@ -94,9 +94,31 @@ func superviseContainer(ctx context.Context, root, enrollment string, out, stder
 		return err
 	}
 	defer func() { _ = stopSupervisedDaemon(child) }()
+	rejectUpdate := func(reason error) error {
+		// The old Daemon has already handed off this request and keeps its update
+		// guard until exit. Restart the unchanged program on rejection as well, so
+		// the next explicit update can run without changing the handoff protocol.
+		// Remove the request first: the new child must not inherit rejected work.
+		if err := os.Remove(paths.request); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove rejected container update: %w", err)
+		}
+		fmt.Fprintln(stderr, "Container update rejected; restarting current Daemon:", reason)
+		if err := stopSupervisedDaemon(child); err != nil {
+			return err
+		}
+		child = nil
+		if ctx.Err() != nil {
+			return nil
+		}
+		child, err = startSupervisedDaemon(binary, root, enrollment, out, stderr)
+		return err
+	}
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		if ctx.Err() != nil {
+			return nil
+		}
 		select {
 		case <-ctx.Done():
 			return nil
@@ -116,8 +138,9 @@ func superviseContainer(ctx context.Context, root, enrollment string, out, stder
 			return fmt.Errorf("read staged container update: %w", err)
 		}
 		if err = validateContainerStage(update, filepath.Dir(binary)); err != nil {
-			_ = os.Remove(paths.request)
-			fmt.Fprintln(stderr, "Container update rejected:", err)
+			if err = rejectUpdate(err); err != nil {
+				return err
+			}
 			continue
 		}
 		var credentials computers.Credentials
@@ -126,13 +149,15 @@ func superviseContainer(ctx context.Context, root, enrollment string, out, stder
 		}
 		before, e := computerStatus(ctx, credentials)
 		if e != nil || before.BootID != update.PreviousBoot {
-			_ = os.Remove(paths.request)
-			fmt.Fprintln(stderr, "Container update rejected: original Daemon is no longer connected")
+			if err = rejectUpdate(errors.New("original Daemon is no longer connected")); err != nil {
+				return err
+			}
 			continue
 		}
 		if comparison, e := releasefeed.Compare(update.Binary.Version, before.DaemonVersion); e == nil && comparison <= 0 {
-			_ = os.Remove(paths.request)
-			fmt.Fprintln(stderr, "Container update rejected: target is not newer than the current Daemon")
+			if err = rejectUpdate(errors.New("target is not newer than the current Daemon")); err != nil {
+				return err
+			}
 			continue
 		}
 		verify := paths.verify
@@ -140,8 +165,9 @@ func superviseContainer(ctx context.Context, root, enrollment string, out, stder
 			verify = func(ctx context.Context, b releasefeed.Binary) error { return b.Verify(ctx) }
 		}
 		if err = verify(ctx, update.Binary); err != nil {
-			_ = os.Remove(paths.request)
-			fmt.Fprintln(stderr, "Container update rejected:", err)
+			if err = rejectUpdate(err); err != nil {
+				return err
+			}
 			continue
 		}
 		if err = stopSupervisedDaemon(child); err != nil {
