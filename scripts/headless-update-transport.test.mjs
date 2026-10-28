@@ -7,6 +7,7 @@ import test from 'node:test'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { headlessUpdateTransport } from './headless-update-transport.mjs'
+import { retainedFixtureCookie } from './check-headless-install.mjs'
 
 const execute = promisify(execFile)
 test('the CI-only trusted HTTPS transport serves fixed official URLs and restores selected manager variables', { skip: process.platform === 'win32' }, async t => {
@@ -45,4 +46,30 @@ test('real headless acceptance refuses a developer account before commands, writ
   const environment = { ...process.env }
   for (const name of ['CI', 'GITHUB_ACTIONS', 'RUNNER_TEMP']) delete environment[name]
   await assert.rejects(execute(process.execPath, [fileURLToPath(new URL('./check-headless-install.mjs', import.meta.url))], { env: environment, encoding: 'utf8', timeout: 10_000 }), error => error.code === 1 && /requires a disposable GitHub Actions user/.test(error.stderr))
+})
+
+test('native Owner requests and restart polling retain the authenticated browser session without repeated logins', async () => {
+  let logins = 0
+  const cookie = retainedFixtureCookie(async origin => {
+    assert.equal(origin, 'http://127.0.0.1:4545')
+    assert.ok(++logins <= 12, 'The real per-minute login budget was exhausted')
+    return 'astral_session=temporary-authenticated-browser'
+  })
+  const beforeRestart = await cookie('http://127.0.0.1:4545')
+  const requests = await Promise.all(Array.from({ length: 40 }, () => cookie('http://127.0.0.1:4545/')))
+  assert.ok(requests.every(value => value === beforeRestart))
+  assert.equal(await cookie('http://127.0.0.1:4545'), beforeRestart, 'A replacement Server must validate the persisted original session')
+  assert.equal(logins, 1)
+})
+
+test('a failed initial login can retry, and distinct Server origins have separate sessions', async () => {
+  let logins = 0
+  const cookie = retainedFixtureCookie(async origin => {
+    if (++logins === 1) throw new Error('Server is not ready')
+    return `authenticated:${origin}`
+  })
+  await assert.rejects(cookie('http://127.0.0.1:4545'), /Server is not ready/)
+  assert.equal(await cookie('http://127.0.0.1:4545'), 'authenticated:http://127.0.0.1:4545')
+  assert.equal(await cookie('http://127.0.0.1:4546'), 'authenticated:http://127.0.0.1:4546')
+  assert.equal(logins, 3)
 })

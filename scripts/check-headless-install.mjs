@@ -38,6 +38,23 @@ let sourceSHA
 let fixtureTransport
 let updateJob
 
+// A browser retains its login across requests and Server restarts. The native
+// acceptance must do the same, rather than exhausting the real login limiter.
+export function retainedFixtureCookie(login) {
+  const sessions = new Map()
+  return serverURL => {
+    const origin = new URL(serverURL).origin
+    if (!sessions.has(origin)) {
+      sessions.set(origin, Promise.resolve().then(() => login(origin)).catch(error => {
+        sessions.delete(origin)
+        throw error
+      }))
+    }
+    return sessions.get(origin)
+  }
+}
+const authenticatedCookie = retainedFixtureCookie(serverURL => webFixtureCookie(path.join(installRoot, 'data/server'), serverURL))
+
 async function command(executable, args, options = {}) {
   try {
     return await execute(executable, args, { cwd: repository, encoding: 'utf8', timeout: 20_000, maxBuffer: 2 << 20, ...options })
@@ -162,7 +179,7 @@ async function snapshot() {
       const status = await health.json()
       if (status.status !== 'ok' || status.version !== version) { await delay(150); continue }
       const identity = await readFile(path.join(installRoot, 'data/server/computer-identity/identity.pem'))
-      const cookie = await webFixtureCookie(path.join(installRoot,'data/server'),ready.url)
+      const cookie = await authenticatedCookie(ready.url)
       const master = await readFile(path.join(installRoot, 'data/server/master.key'))
       const response = await fetch(`${ready.url}/api/v1/bootstrap`, { headers: { Cookie: cookie }, signal: AbortSignal.timeout(3000) })
       if (!response.ok) { await delay(150); continue }
@@ -181,7 +198,7 @@ function sameIdentity(before, after) {
   assert.ok(before.computerID === after.computerID, 'Local Computer identity changed')
 }
 async function owner(ready, method, route, body) {
-  const cookie = await webFixtureCookie(path.join(installRoot, 'data/server'), ready.url)
+  const cookie = await authenticatedCookie(ready.url)
   const response = await fetch(`${ready.url}/api/v1/${route}`, {
     method, headers: { Cookie: cookie, Origin: ready.url, 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(15_000),
@@ -420,4 +437,6 @@ for name in ('astral.db','core.db'):
   }
 }
 
-main().catch(error => { console.error(error.message); process.exitCode = 1 })
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(error => { console.error(error.message); process.exitCode = 1 })
+}
