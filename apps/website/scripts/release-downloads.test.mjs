@@ -70,8 +70,8 @@ test('both languages retain eight usable versioned downloads without JavaScript'
     const page = await readFile(new URL(`../src/content/docs/${language}/start/get-astral.md`, import.meta.url), 'utf8')
     const links = [...page.matchAll(/data-astral-download="([^"]+)" href="([^"]+)"/g)]
     assert.equal(links.length, 8)
-    for (const target of targets) assert.deepEqual(links.filter(match => match[1] === target[0]).map(match => match[2]), [urlFor('0.1.0', target)])
-    assert.match(page, /data-fallback-version="0\.1\.0"/)
+    for (const target of targets) assert.deepEqual(links.filter(match => match[1] === target[0]).map(match => match[2]), [urlFor('0.1.2', target)])
+    assert.match(page, /data-fallback-version="0\.1\.2"/)
     assert.match(page, /schema-3-core-11/)
     assert.match(page, /Host 3 \/ Core 11/)
     assert.match(page, /releases\/latest\/download\/install-server\.sh/)
