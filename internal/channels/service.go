@@ -34,6 +34,7 @@ type Service struct {
 	weixinLogins   map[string]*weixinLogin
 	probeQuiet     time.Duration
 	probeMaxWait   time.Duration
+	handoffs       map[string]int64
 	agentWorkers   map[string]*agentWorkers
 	deletingAgents map[string]bool
 }

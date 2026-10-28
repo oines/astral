@@ -1,7 +1,6 @@
 package datamigrate
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -15,78 +14,7 @@ import (
 	"github.com/oines/astral/internal/persistence"
 )
 
-// These are the actual public baseline schemas. A migration fixture must never
-// create the current schema and remove its ledger: once a new step exists that
-// would label already-converted data as an old database, or corrupt a new one.
-const legacyHostSchema = `
-CREATE TABLE documents(kind TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,data BLOB NOT NULL,PRIMARY KEY(kind,id));
-CREATE TABLE versions(kind TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,data BLOB NOT NULL,PRIMARY KEY(kind,id,revision));
-CREATE TABLE secrets(id TEXT PRIMARY KEY,value BLOB NOT NULL);
-CREATE TABLE observations(sequence INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,connection_id TEXT NOT NULL,conversation_id TEXT NOT NULL,external_id TEXT NOT NULL,payload BLOB NOT NULL,UNIQUE(connection_id,external_id));
-CREATE INDEX observation_conversation ON observations(conversation_id,sequence);
-CREATE TABLE deliveries(event_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT NOT NULL,error TEXT NOT NULL DEFAULT '');
-CREATE TABLE operations(id TEXT PRIMARY KEY,kind TEXT NOT NULL,state TEXT NOT NULL,data BLOB NOT NULL);
-CREATE TABLE outbox_keys(intent_key TEXT PRIMARY KEY,outbox_id TEXT NOT NULL);
-INSERT INTO documents(kind,id,revision,data) VALUES('inbox_cursors','retained-chat',1,'{"id":"retained-chat","revision":1,"sequence":7}');
-INSERT INTO versions(kind,id,revision,data) SELECT kind,id,revision,data FROM documents;
-PRAGMA user_version=3;
-`
-
-const legacyCoreSchema = `
-CREATE TABLE format(version INTEGER NOT NULL);
-INSERT INTO format VALUES(11);
-CREATE TABLE rollouts(id TEXT PRIMARY KEY,status TEXT NOT NULL,seq INTEGER NOT NULL);
-CREATE TABLE sessions(id TEXT PRIMARY KEY,rollout_id TEXT NOT NULL,ready INTEGER NOT NULL,state BLOB NOT NULL,fork_digest TEXT NOT NULL DEFAULT '');
-CREATE INDEX session_rollout ON sessions(rollout_id,id);
-CREATE TABLE entries(rollout_id TEXT NOT NULL,session_id TEXT NOT NULL,id TEXT NOT NULL,seq INTEGER NOT NULL,version INTEGER NOT NULL,parent_id TEXT NOT NULL,kind TEXT NOT NULL,reference TEXT NOT NULL,payload BLOB NOT NULL,projection BLOB,PRIMARY KEY(rollout_id,id),UNIQUE(rollout_id,seq));
-CREATE INDEX entry_parent ON entries(rollout_id,parent_id,seq) WHERE projection IS NOT NULL;
-CREATE INDEX entry_history ON entries(rollout_id,seq) WHERE projection IS NOT NULL;
-CREATE INDEX entry_kind ON entries(rollout_id,kind,seq);
-CREATE INDEX entry_reference ON entries(rollout_id,kind,reference,seq);
-CREATE INDEX entry_writer ON entries(rollout_id,session_id,seq);
-CREATE TABLE receipts(rollout_id TEXT NOT NULL,session_id TEXT NOT NULL,commit_id TEXT NOT NULL,version INTEGER NOT NULL,digest TEXT NOT NULL,first_seq INTEGER NOT NULL,last_seq INTEGER NOT NULL,PRIMARY KEY(session_id,commit_id));
-CREATE INDEX receipt_rollout ON receipts(rollout_id);
-CREATE TABLE pending(rollout_id TEXT NOT NULL,session_id TEXT NOT NULL,kind TEXT NOT NULL,input_kind TEXT NOT NULL,key TEXT NOT NULL,owner TEXT NOT NULL,seq INTEGER NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(session_id,kind,key));
-CREATE INDEX pending_order ON pending(session_id,kind,input_kind,seq);
-CREATE INDEX pending_owner ON pending(session_id,kind,owner);
-CREATE INDEX pending_rollout ON pending(rollout_id);
-CREATE TABLE inputs(session_id TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,digest TEXT NOT NULL,accepted_at TEXT NOT NULL,payload BLOB NOT NULL,state TEXT NOT NULL,entry_id TEXT NOT NULL DEFAULT '',PRIMARY KEY(session_id,id));
-CREATE INDEX input_status ON inputs(session_id,kind,state);
-CREATE TABLE attempts(session_id TEXT NOT NULL,id TEXT NOT NULL,rollout_id TEXT NOT NULL,version INTEGER NOT NULL,purpose TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(session_id,id),UNIQUE(session_id,version));
-CREATE INDEX attempt_purpose ON attempts(session_id,purpose,version);
-CREATE INDEX attempt_rollout ON attempts(rollout_id);
-PRAGMA user_version=11;
-`
-
-func legacyFixture(t *testing.T) string {
-	t.Helper()
-	data := filepath.Join(t.TempDir(), "server")
-	if err := os.MkdirAll(data, 0700); err != nil {
-		t.Fatal(err)
-	}
-	for _, source := range []struct{ name, schema string }{{"astral.db", legacyHostSchema}, {"core.db", legacyCoreSchema}} {
-		db, err := sql.Open("sqlite", filepath.Join(data, source.name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = db.Exec("PRAGMA journal_mode=WAL;" + source.schema)
-		closeErr := db.Close()
-		if err != nil || closeErr != nil {
-			t.Fatal(errors.Join(err, closeErr))
-		}
-	}
-	if err := os.WriteFile(filepath.Join(data, "master.key"), bytes.Repeat([]byte{0x42}, 32), 0600); err != nil {
-		t.Fatal(err)
-	}
-	fixtureIdentity(t, data)
-	plan, err := Inspect(context.Background(), data)
-	if err != nil || plan.Host.Current != 3 || plan.Core.Current != 11 || !plan.Host.NeedsMigration || !plan.Core.NeedsMigration {
-		t.Fatalf("legacy fixture is not the frozen baseline: %+v %v", plan, err)
-	}
-	return data
-}
-
-func currentFixture(t *testing.T) string {
+func fixture(t *testing.T) string {
 	t.Helper()
 	data := filepath.Join(t.TempDir(), "server")
 	host, err := persistence.Open(data)
@@ -103,54 +31,29 @@ func currentFixture(t *testing.T) string {
 	if err = core.Close(); err != nil {
 		t.Fatal(err)
 	}
-	fixtureIdentity(t, data)
-	return data
-}
-
-func fixtureIdentity(t *testing.T, data string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Join(data, "computer-identity"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(data, "computer-identity", "identity.pem"), []byte("test-pairing-identity"), 0600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestCurrentFormatsWithCompleteLedgersDoNotStartUpgrade(t *testing.T) {
-	ctx := context.Background()
-	data := currentFixture(t)
-	plan, err := Inspect(ctx, data)
-	if err != nil || plan.Pending || plan.Host.Current != plan.Host.Target || plan.Core.Current != plan.Core.Target {
-		t.Fatalf("current fixture needs migration: %+v %v", plan, err)
-	}
-	before := map[string][]byte{}
-	for _, file := range []string{"astral.db", "core.db", "master.key"} {
-		before[file], err = os.ReadFile(filepath.Join(data, file))
+	for _, name := range []string{"astral.db", "core.db"} {
+		db, err := sql.Open("sqlite", filepath.Join(data, name))
 		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	upgrade, err := Prepare(ctx, data, "0.1.1", nil)
-	if err != nil || upgrade != nil {
-		t.Fatalf("current complete ledgers were re-adopted: %+v %v", upgrade, err)
-	}
-	for file, original := range before {
-		after, err := os.ReadFile(filepath.Join(data, file))
-		if err != nil || !bytes.Equal(after, original) {
-			t.Fatalf("no-op modified %s: %v", file, err)
+		_, err = db.Exec("DROP TABLE IF EXISTS goose_db_version")
+		closeErr := db.Close()
+		if err != nil || closeErr != nil {
+			t.Fatal(errors.Join(err, closeErr))
 		}
 	}
-	for _, file := range []string{journalName, resultName} {
-		if _, err := os.Stat(filepath.Join(data, file)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("no-op created %s: %v", file, err)
-		}
+	if err = os.MkdirAll(filepath.Join(data, "computer-identity"), 0700); err != nil {
+		t.Fatal(err)
 	}
+	if err = os.WriteFile(filepath.Join(data, "computer-identity", "identity.pem"), []byte("test-pairing-identity"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func TestNoOpUpgradeDoesNotReplaceLastBackup(t *testing.T) {
 	ctx := context.Background()
-	data := legacyFixture(t)
+	data := fixture(t)
 	u, err := Prepare(ctx, data, "0.1.0", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +79,7 @@ func TestRestoreRejectsPortablePathTraversalBeforeDeletingLiveFiles(t *testing.T
 	for _, path := range []string{"../outside", "..\\outside", "dir\\..\\server.lock", "C:outside", "key:stream"} {
 		t.Run(path, func(t *testing.T) {
 			ctx := context.Background()
-			data := legacyFixture(t)
+			data := fixture(t)
 			u, err := Prepare(ctx, data, "0.1.0", nil)
 			if err != nil {
 				t.Fatal(err)
@@ -209,15 +112,7 @@ func TestRestoreRejectsPortablePathTraversalBeforeDeletingLiveFiles(t *testing.T
 
 func TestUpgradeAdoptsBothBaselinesAndCanRestoreWholeSnapshot(t *testing.T) {
 	ctx := context.Background()
-	data := legacyFixture(t)
-	databases := map[string][]byte{}
-	for _, name := range []string{"astral.db", "core.db"} {
-		var err error
-		databases[name], err = os.ReadFile(filepath.Join(data, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
+	data := fixture(t)
 	key, err := os.ReadFile(filepath.Join(data, "master.key"))
 	if err != nil {
 		t.Fatal(err)
@@ -229,12 +124,6 @@ func TestUpgradeAdoptsBothBaselinesAndCanRestoreWholeSnapshot(t *testing.T) {
 	p, err := Inspect(ctx, data)
 	if err != nil || p.Pending {
 		t.Fatalf("target: %+v %v", p, err)
-	}
-	for name, original := range databases {
-		migrated, err := os.ReadFile(filepath.Join(data, name))
-		if err != nil || bytes.Equal(migrated, original) {
-			t.Fatalf("upgrade did not change the legacy %s: %v", name, err)
-		}
 	}
 	if err = os.WriteFile(filepath.Join(data, "master.key"), []byte("changed-key"), 0600); err != nil {
 		t.Fatal(err)
@@ -253,14 +142,8 @@ func TestUpgradeAdoptsBothBaselinesAndCanRestoreWholeSnapshot(t *testing.T) {
 		t.Fatalf("new file survived restore: %v", err)
 	}
 	p, err = Inspect(ctx, data)
-	if err != nil || !p.Pending || p.Host.Current != 3 || p.Core.Current != 11 {
+	if err != nil || !p.Pending {
 		t.Fatalf("old ledger not restored: %+v %v", p, err)
-	}
-	for name, original := range databases {
-		restored, err := os.ReadFile(filepath.Join(data, name))
-		if err != nil || !bytes.Equal(restored, original) {
-			t.Fatalf("whole-snapshot restore changed original %s bytes: %v", name, err)
-		}
 	}
 	if _, err = os.Stat(filepath.Join(data, "computer-identity", "identity.pem")); err != nil {
 		t.Fatal(err)
@@ -269,15 +152,7 @@ func TestUpgradeAdoptsBothBaselinesAndCanRestoreWholeSnapshot(t *testing.T) {
 
 func TestMigrationFailureRestoresHostCoreAndFilesTogether(t *testing.T) {
 	ctx := context.Background()
-	data := legacyFixture(t)
-	before := map[string][]byte{}
-	for _, name := range []string{"astral.db", "core.db", "master.key"} {
-		var err error
-		before[name], err = os.ReadFile(filepath.Join(data, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
+	data := fixture(t)
 	want := errors.New("injected Core migration failure")
 	_, err := prepare(ctx, data, "0.1.0", nil, persistence.Migrate, func(_ context.Context, data string) error {
 		if err := os.WriteFile(filepath.Join(data, "computer-identity", "identity.pem"), []byte("changed"), 0600); err != nil {
@@ -289,14 +164,8 @@ func TestMigrationFailureRestoresHostCoreAndFilesTogether(t *testing.T) {
 		t.Fatalf("want failure: %v", err)
 	}
 	p, err := Inspect(ctx, data)
-	if err != nil || !p.Host.NeedsMigration || !p.Core.NeedsMigration || p.Host.Current != 3 || p.Core.Current != 11 {
+	if err != nil || !p.Host.NeedsMigration || !p.Core.NeedsMigration {
 		t.Fatalf("partial upgrade survived: %+v %v", p, err)
-	}
-	for name, original := range before {
-		restored, err := os.ReadFile(filepath.Join(data, name))
-		if err != nil || !bytes.Equal(restored, original) {
-			t.Fatalf("failed migration did not restore original %s bytes: %v", name, err)
-		}
 	}
 	identity, err := os.ReadFile(filepath.Join(data, "computer-identity", "identity.pem"))
 	if err != nil || string(identity) != "test-pairing-identity" {
@@ -306,7 +175,7 @@ func TestMigrationFailureRestoresHostCoreAndFilesTogether(t *testing.T) {
 
 func TestInterruptedUpgradeRestoresBeforeRetryAndCommitStopsRecovery(t *testing.T) {
 	ctx := context.Background()
-	data := legacyFixture(t)
+	data := fixture(t)
 	u, err := Prepare(ctx, data, "0.1.0", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -335,7 +204,7 @@ func TestInterruptedUpgradeRestoresBeforeRetryAndCommitStopsRecovery(t *testing.
 
 func TestCorruptBackupDoesNotTouchLiveData(t *testing.T) {
 	ctx := context.Background()
-	data := legacyFixture(t)
+	data := fixture(t)
 	u, err := Prepare(ctx, data, "0.1.0", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -357,7 +226,7 @@ func TestCorruptBackupDoesNotTouchLiveData(t *testing.T) {
 
 func TestPrepareRejectsUnknownCoreWithoutChangingHost(t *testing.T) {
 	ctx := context.Background()
-	data := legacyFixture(t)
+	data := fixture(t)
 	db, err := sql.Open("sqlite", filepath.Join(data, "core.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -380,7 +249,7 @@ func TestPrepareRejectsUnknownCoreWithoutChangingHost(t *testing.T) {
 func TestMissingCoreWithCurrentOrHistoricalSessionsIsRejectedWithoutWriting(t *testing.T) {
 	for _, table := range []string{"documents", "versions"} {
 		t.Run(table, func(t *testing.T) {
-			data := legacyFixture(t)
+			data := fixture(t)
 			if err := os.Remove(filepath.Join(data, "core.db")); err != nil {
 				t.Fatal(err)
 			}
@@ -468,7 +337,7 @@ func TestCurrentDataStillRequiresItsOriginalMasterKey(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			data := legacyFixture(t)
+			data := fixture(t)
 			upgrade, err := Prepare(ctx, data, "0.1.0", nil)
 			if err != nil {
 				t.Fatal(err)

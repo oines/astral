@@ -41,7 +41,7 @@ func probeInputID(bindingID string, through int64) string {
 	return fmt.Sprintf("probe:%s:%d", bindingID, through)
 }
 
-// resumeAcceptedProbe closes the crash window between durable conditional
+// resumeAcceptedProbe closes the crash window between durable wakeup
 // admission and Continue. It resumes only this binding's accepted IM wakeup,
 // never arbitrary queued owner work or a stopped/failed activation.
 func (s *Service) resumeAcceptedProbe(ctx context.Context, b domain.ConversationBinding) error {
@@ -49,7 +49,7 @@ func (s *Service) resumeAcceptedProbe(ctx context.Context, b domain.Conversation
 	if err != nil {
 		return err
 	}
-	if snapshot := current.Snapshot(); snapshot.Running || snapshot.Maintenance || snapshot.State.PendingInputs[core.InputSteer] == 0 {
+	if current.State().PendingInputs[core.InputSteer] == 0 {
 		return nil
 	}
 	return s.Harness.WithSession(ctx, b.SessionID, func(session *core.Session) error {
@@ -72,7 +72,7 @@ func (s *Service) resumeAcceptedProbe(ctx context.Context, b domain.Conversation
 				if json.Unmarshal(input.Message.Metadata, &metadata) != nil || metadata.Source != "im.wakeup" || metadata.ConversationID != b.ConversationID {
 					continue
 				}
-				suspended, err := harness.WakeupSuspended(ctx, session, s.Harness.CoreStore, input.ID)
+				suspended, err := harness.IMInputStopped(ctx, session, s.Harness.CoreStore, input.ID)
 				if err != nil {
 					return err
 				}
@@ -175,15 +175,25 @@ func (s *Service) pendingProbe(ctx context.Context, b domain.ConversationBinding
 	if !conversation.ProactiveEnabled || conversation.Kind == "private" {
 		return probeWindow{}, nil
 	}
-	session, err := s.Harness.Core(ctx, b.SessionID)
-	if err != nil || !session.IsIdle() {
-		return probeWindow{}, err
-	}
+	var window probeWindow
+	err := s.Harness.WithSession(ctx, b.SessionID, func(session *core.Session) error {
+		if !harness.IMCanProbe(session) {
+			return nil
+		}
+		var err error
+		window, err = s.probeWindow(ctx, b, delivered, now, session)
+		return err
+	})
+	return window, err
+}
+
+func (s *Service) probeWindow(ctx context.Context, b domain.ConversationBinding, delivered int64, now time.Time, session *core.Session) (probeWindow, error) {
 	position, err := s.probeCursor(ctx, b)
 	if err != nil {
 		return probeWindow{}, err
 	}
 	window := probeWindow{}
+	inspector := harness.NewIMInspector(session, s.Harness.CoreStore)
 	covered := position.Sequence
 	ready := true
 	after := position.Sequence
@@ -211,7 +221,11 @@ func (s *Service) pendingProbe(ctx context.Context, b domain.ConversationBinding
 			if err != nil {
 				return probeWindow{}, err
 			}
-			if receipt.Generation != nil || harness.ObservationSuspended(session, receipt.AcceptedRunID) {
+			handled, err := inspector.Handled(ctx, event.ID)
+			if err != nil {
+				return probeWindow{}, err
+			}
+			if handled {
 				if window.Through == 0 {
 					covered = item.Sequence
 				}
@@ -407,12 +421,13 @@ func (s *Service) completeProbe(ctx context.Context, b domain.ConversationBindin
 			}
 		}
 		var unseen []string
+		inspector := harness.NewIMInspector(session, s.Harness.CoreStore)
 		for _, id := range inputs {
-			receipt, err := session.LookupInput(ctx, id)
+			handled, err := inspector.Handled(ctx, id)
 			if err != nil {
 				return err
 			}
-			if receipt.Generation == nil && !harness.ObservationSuspended(session, receipt.AcceptedRunID) {
+			if !handled {
 				unseen = append(unseen, id)
 			}
 		}
@@ -425,29 +440,25 @@ func (s *Service) completeProbe(ctx context.Context, b domain.ConversationBindin
 			// run. Re-evaluate only the remaining messages at the next idle window.
 			return nil
 		}
-		if !session.IsIdle() {
+		if !harness.IMCanProbe(session) {
 			settled = false
 			return nil
 		}
 		id := probeInputID(b.ID, result.through)
 		message := core.User("<im_wakeup conversation-id=\"" + messages.Escape(b.ConversationID) + "\" event-ids=\"" + messages.Escape(strings.Join(unseen, " ")) + "\"/>\nConsider the referenced chat observations in your context.\n" + messages.IMReplyReminder)
 		message.Metadata = encoded(messages.Metadata{Source: "im.wakeup", DeliveryID: id, ConversationID: b.ConversationID})
-		admission, err := session.SteerIfIdle(ctx, core.Input{ID: id, Message: message}, unseen)
+		status, err := harness.AdmitIMWakeup(ctx, session, s.Harness.CoreStore, core.Input{ID: id, Message: message}, unseen, false)
 		if err != nil {
 			return err
 		}
-		switch admission.Status {
-		case core.InputBusy:
+		switch status {
+		case harness.IMWakeBusy:
 			settled = false
 			return nil
-		case core.InputCovered:
+		case harness.IMWakeCovered:
 			// A generation won the race after the receipt check. Do not cover
 			// a mixed batch: pendingProbe will filter the newly owned messages.
 			return nil
-		}
-		if admission.Status == core.InputExisting && admission.Receipt.State != core.InputPending {
-			position.Sequence = result.through
-			return s.Store.Save(ctx, "probe_cursors", &position.Meta, &position)
 		}
 		persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		_, err = session.Continue(persist)

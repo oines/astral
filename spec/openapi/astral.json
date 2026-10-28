@@ -472,23 +472,6 @@
         ],
         "type": "object"
       },
-      "astral_core_InputGeneration": {
-        "properties": {
-          "attempt_id": {
-            "type": "string"
-          },
-          "run_id": {
-            "type": "string"
-          },
-          "turn_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "attempt_id"
-        ],
-        "type": "object"
-      },
       "astral_core_Invocation": {
         "properties": {
           "assistant_id": {
@@ -870,13 +853,7 @@
             },
             "type": "array"
           },
-          "snapshot": {},
-          "sources": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
+          "snapshot": {}
         },
         "required": [
           "rollout_id",
@@ -3636,9 +3613,6 @@
             "format": "date-time",
             "type": "string"
           },
-          "accepted_run_id": {
-            "type": "string"
-          },
           "digest": {
             "type": "string"
           },
@@ -3647,9 +3621,6 @@
           },
           "error": {
             "type": "string"
-          },
-          "generation": {
-            "$ref": "#/components/schemas/astral_core_InputGeneration"
           },
           "input_id": {
             "type": "string"

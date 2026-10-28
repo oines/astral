@@ -12,6 +12,7 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/persistence"
 )
@@ -27,6 +28,11 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	results := make(chan probeResult, 1)
 	probing := false
 	var pendingResult *probeResult
+	defer func() {
+		s.mu.Lock()
+		delete(s.handoffs, b.ID)
+		s.mu.Unlock()
+	}()
 	for ctx.Err() == nil {
 		events, err := s.Store.Observations(ctx, b.ConversationID, position.Sequence, 100)
 		if err != nil {
@@ -113,24 +119,25 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	}
 }
 
-// handoffDirectObservations tracks only the wakeup policy, never model history.
-// The authoritative generation acknowledgement remains on each Core receipt.
-// Ordinary group traffic has its own Probe cursor and cannot block this cursor.
+// This scan position is only an in-memory optimization. On restart, existing
+// input receipts and request audits reconstruct whether a direct input needs a
+// handoff; no new database record or storage format is introduced.
 func (s *Service) handoffDirectObservations(ctx context.Context, b domain.ConversationBinding, delivered int64) error {
-	position := cursor{Meta: domain.Meta{ID: b.ID}, Sequence: b.StartSequence}
-	if err := s.Store.Get(ctx, "im_activation_cursors", b.ID, &position); err != nil && !domain.IsMissing(err) {
-		return err
+	s.mu.Lock()
+	after, exists := s.handoffs[b.ID]
+	s.mu.Unlock()
+	if !exists {
+		after = b.StartSequence
 	}
-	initial := position.Sequence
-	for position.Sequence < delivered {
-		page, err := s.Store.Observations(ctx, b.ConversationID, position.Sequence, 100)
+	blocked := false
+	for after < delivered && !blocked {
+		page, err := s.Store.Observations(ctx, b.ConversationID, after, 100)
 		if err != nil {
 			return err
 		}
 		if len(page) == 0 {
 			break
 		}
-		blocked := false
 		for _, item := range page {
 			if item.Sequence > delivered {
 				break
@@ -141,22 +148,21 @@ func (s *Service) handoffDirectObservations(ctx context.Context, b domain.Conver
 				if err != nil {
 					return err
 				}
-				if status == core.InputBusy {
+				if status == harness.IMWakeBusy {
 					blocked = true
 					break
 				}
 			}
-			position.Sequence = item.Sequence
-		}
-		if blocked {
-			break
+			after = item.Sequence
 		}
 	}
-	if position.Sequence == initial {
-		return nil
+	s.mu.Lock()
+	if s.handoffs == nil {
+		s.handoffs = map[string]int64{}
 	}
-	// Stable conditional wakeup IDs make a failed cursor write safe to replay.
-	return s.Store.Save(ctx, "im_activation_cursors", &position.Meta, &position)
+	s.handoffs[b.ID] = max(s.handoffs[b.ID], after)
+	s.mu.Unlock()
+	return nil
 }
 func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, event domain.Observation) (err error) {
 	defer func() {

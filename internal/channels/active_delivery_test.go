@@ -169,9 +169,8 @@ func activeDeliveryAcceptWakeup(t *testing.T, p *testkit.Platform, binding domai
 		wakeup = core.User("<im_wakeup conversation-id=\"" + messages.Escape(binding.ConversationID) + "\" event-ids=\"" + messages.Escape(event.ID) + "\"/>\nConsider the referenced chat observations in your context.\n" + messages.IMReplyReminder)
 		wakeup.Metadata = encoded(messages.Metadata{Source: "im.wakeup", DeliveryID: wakeupID, ConversationID: binding.ConversationID})
 	}
-	admission, err := coreSession.SteerIfIdle(p.Context, core.Input{ID: wakeupID, Message: wakeup}, []string{inputID})
-	if err != nil || admission.Status != core.InputAccepted {
-		t.Fatalf("failed to establish the accepted-but-not-started crash boundary: %+v %v", admission, err)
+	if _, err := coreSession.Steer(p.Context, core.Input{ID: wakeupID, Message: wakeup}); err != nil {
+		t.Fatalf("failed to establish the accepted-but-not-started crash boundary: %v", err)
 	}
 	return wakeupID
 }
@@ -413,8 +412,10 @@ func TestIdleProbeResultCannotWakeObservationAlreadyConsumedByMain(t *testing.T)
 func TestBusyProbeCompletionDoesNotCoverAnUnseenObservation(t *testing.T) {
 	entered := make(chan struct{})
 	gate, release := activeDeliveryGate(t)
+	requests := make(chan map[string]any, 4)
 	var mains atomic.Int64
-	p := testkit.New(t, 0, func(ctx context.Context, _ int, _ map[string]any) any {
+	p := testkit.New(t, 0, func(ctx context.Context, _ int, request map[string]any) any {
+		requests <- request
 		if mains.Add(1) == 1 {
 			close(entered)
 			select {
@@ -438,11 +439,14 @@ func TestBusyProbeCompletionDoesNotCoverAnUnseenObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	activeDeliveryWait(t, p.Context, entered, "frozen main request")
-	claimed, claimErr := p.Harness.Receipt(p.Context, binding.SessionID, earlier.ID)
-	if claimErr != nil || claimed.Generation == nil {
-		t.Fatalf("the earlier batch prefix was not owned by the frozen main request: %+v %v", claimed, claimErr)
+	firstRequest := activeDeliveryText(<-requests)
+	if strings.Count(firstRequest, earlier.Text) != 1 {
+		t.Fatalf("the earlier batch prefix was not in the actual main request: %s", firstRequest)
 	}
 	event, through := activeDeliveryArchive(t, p, binding, "probe-result-while-main-has-not-seen", "")
+	if strings.Contains(firstRequest, event.Text) {
+		t.Fatal("the frozen earlier request already contained the later observation")
+	}
 	if err := s.deliver(p.Context, binding, event); err != nil {
 		t.Fatal(err)
 	}
@@ -492,13 +496,16 @@ func TestBusyProbeCompletionDoesNotCoverAnUnseenObservation(t *testing.T) {
 	if mains.Load() != 2 {
 		t.Fatalf("retrying the same accepted wakeup duplicated activation: %d", mains.Load())
 	}
+	if text := activeDeliveryText(<-requests); strings.Count(text, event.Text) != 1 {
+		t.Fatalf("the final actual main request omitted or duplicated the observation: %s", text)
+	}
 	coreSession, err := p.Harness.Core(p.Context, binding.SessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	receipt, err := coreSession.LookupInput(p.Context, event.ID)
-	if err != nil || receipt.Generation == nil {
-		t.Fatalf("the final actual main request did not claim its observation: %v %v", receipt.Generation, err)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if receipt.State != core.InputApplied {
 		t.Fatalf("the claimed observation lost its ordinary history receipt: %s", receipt.State)
@@ -577,8 +584,10 @@ func TestStoppedOrFailedWorkDoesNotAutomaticallyWakeItsUnseenIM(t *testing.T) {
 			t.Run(terminal+"/trigger="+trigger, func(t *testing.T) {
 				entered := make(chan struct{})
 				gate, release := activeDeliveryGate(t)
+				requests := make(chan map[string]any, 4)
 				var mains atomic.Int64
-				p := testkit.New(t, 0, func(ctx context.Context, _ int, _ map[string]any) any {
+				p := testkit.New(t, 0, func(ctx context.Context, _ int, request map[string]any) any {
+					requests <- request
 					if mains.Add(1) == 1 {
 						close(entered)
 						select {
@@ -599,6 +608,9 @@ func TestStoppedOrFailedWorkDoesNotAutomaticallyWakeItsUnseenIM(t *testing.T) {
 				}
 				activeDeliveryWait(t, p.Context, entered, "in-flight main request")
 				event, through := activeDeliveryArchive(t, p, binding, "unseen-before-terminal-work", trigger)
+				if strings.Contains(activeDeliveryText(<-requests), event.Text) {
+					t.Fatal("the frozen earlier request already contained the later observation")
+				}
 				if err := s.deliver(p.Context, binding, event); err != nil {
 					t.Fatal(err)
 				}
@@ -618,8 +630,8 @@ func TestStoppedOrFailedWorkDoesNotAutomaticallyWakeItsUnseenIM(t *testing.T) {
 					return err == nil && view.RunID == "" && view.LastRun != nil && view.LastRun.Status == terminal
 				})
 				receipt, err := p.Harness.Receipt(p.Context, binding.SessionID, inputID)
-				if err != nil || receipt.Generation != nil || receipt.AcceptedRunID == "" {
-					t.Fatalf("terminal fixture did not retain an unseen input owned by the interrupted run: %+v %v", receipt, err)
+				if err != nil || receipt.InputID != inputID {
+					t.Fatalf("terminal fixture did not retain its accepted observation: %+v %v", receipt, err)
 				}
 				// Recovery must preserve the owner's stop and terminal failures;
 				// opening the inbox again is not an explicit request to retry work.
@@ -821,8 +833,8 @@ func TestNewDirectIMAfterStopCanResumePreservedOwnerQueue(t *testing.T) {
 				t.Fatal(err)
 			}
 			receipt, err := p.Harness.Receipt(p.Context, binding.SessionID, event.ID+":trigger")
-			if err != nil || receipt.AcceptedRunID != "" {
-				t.Fatalf("the new post-stop message was incorrectly owned by the cancelled run: %+v %v", receipt, err)
+			if err != nil || receipt.InputID != event.ID+":trigger" {
+				t.Fatalf("the new post-stop message was not accepted: %+v %v", receipt, err)
 			}
 			if err := s.handoffDirectObservations(p.Context, binding, through); err != nil {
 				t.Fatal(err)
@@ -875,9 +887,11 @@ func TestExistingDirectDriverWithLaggingHostCursorIsNotDrivenAgain(t *testing.T)
 	if err := s.handoffDirectObservations(p.Context, binding, through); err != nil {
 		t.Fatal(err)
 	}
-	var position cursor
-	if err := p.Store.Get(p.Context, "im_activation_cursors", binding.ID, &position); err != nil || position.Sequence != through {
-		t.Fatalf("the already accepted direct driver blocked Host cursor recovery: %+v %v", position, err)
+	s.mu.Lock()
+	position := s.handoffs[binding.ID]
+	s.mu.Unlock()
+	if position != through {
+		t.Fatalf("the already accepted direct driver blocked Host handoff recovery: %d want %d", position, through)
 	}
 	view, err := p.Harness.View(p.Context, binding.SessionID)
 	if err != nil || view.RunID != "" || len(view.Pending) != 1 || view.Pending[0].ID != inputID || view.Pending[0].Kind != string(core.InputSteer) || p.Requests.Load() != 0 {
@@ -890,8 +904,10 @@ func TestExistingDirectDriverWithLaggingHostCursorIsNotDrivenAgain(t *testing.T)
 
 func TestAppliedDirectWakeupReplayDoesNotResumeStoppedRun(t *testing.T) {
 	entered := make(chan struct{})
+	requests := make(chan map[string]any, 4)
 	var mains atomic.Int64
-	p := testkit.New(t, 0, func(ctx context.Context, _ int, _ map[string]any) any {
+	p := testkit.New(t, 0, func(ctx context.Context, _ int, request map[string]any) any {
+		requests <- request
 		if mains.Add(1) == 1 {
 			close(entered)
 			<-ctx.Done()
@@ -907,12 +923,14 @@ func TestAppliedDirectWakeupReplayDoesNotResumeStoppedRun(t *testing.T) {
 	}
 	activeDeliveryWait(t, p.Context, entered, "idle direct activation")
 	observation, err := p.Harness.Receipt(p.Context, binding.SessionID, event.ID+":trigger")
-	if err != nil || observation.AcceptedRunID != "" || observation.Generation == nil {
-		t.Fatalf("idle observation did not establish the intended admission/consumption boundary: %+v %v", observation, err)
+	if err != nil || observation.InputID != event.ID+":trigger" {
+		t.Fatalf("idle observation was not accepted: %+v %v", observation, err)
 	}
-	wakeup, err := p.Harness.Receipt(p.Context, binding.SessionID, event.ID+":trigger:wakeup")
-	if err != nil || wakeup.State != string(core.InputApplied) {
-		t.Fatalf("the direct wakeup was not consumed before Stop: %+v %v", wakeup, err)
+	if text := activeDeliveryText(<-requests); strings.Count(text, event.Text) != 1 {
+		t.Fatalf("the actual main request did not include the idle observation once: %s", text)
+	}
+	if observation.State != string(core.InputApplied) {
+		t.Fatalf("the atomic direct observation/driver was not consumed before Stop: %+v", observation)
 	}
 	if err := p.Harness.Stop(p.Context, binding.SessionID); err != nil {
 		t.Fatal(err)
@@ -932,5 +950,147 @@ func TestAppliedDirectWakeupReplayDoesNotResumeStoppedRun(t *testing.T) {
 	after, err := p.Harness.View(p.Context, binding.SessionID)
 	if err != nil || after.RunID != "" || after.LastRun == nil || after.LastRun.ID != before.LastRun.ID || after.LastRun.Status != "cancelled" || mains.Load() != 1 {
 		t.Fatalf("replaying an applied wakeup resumed stopped work: %+v calls=%d err=%v", after, mains.Load(), err)
+	}
+}
+
+func TestFreshDirectIMResumesFrozenGenerationAfterReopen(t *testing.T) {
+	for _, trigger := range []string{"mention", "private"} {
+		t.Run(trigger, func(t *testing.T) {
+			requests := make(chan map[string]any, 4)
+			var mains atomic.Int64
+			p := testkit.New(t, 0, func(_ context.Context, _ int, request map[string]any) any {
+				if strings.Contains(string(encoded(request["tools"])), `"name":"decide"`) {
+					t.Error("a fresh direct message used Probe during frozen-work recovery")
+				}
+				mains.Add(1)
+				requests <- request
+				return testkit.Text("Finished the frozen request or handled the fresh direct input.")
+			})
+			s := New(p.Store, p.Harness)
+			binding := activeDeliveryChat(t, p, s, false, trigger == "private")
+			resolved, err := p.Harness.Models.ResolveSelection(p.Context, core.ModelSelection{ID: p.Agent.DefaultModelID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := p.Harness.Close(p.Context); err != nil {
+				t.Fatal(err)
+			}
+			state, err := p.CoreStore.LoadState(p.Context, binding.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const oldText = "The unfinished task whose generation was frozen before the crash."
+			message := core.User(oldText)
+			entries := []core.Entry{
+				{ID: "crash-user", Kind: core.EntryMessage, ParentID: state.Branch.HeadID, Message: &message},
+				{ID: "crash-start", Kind: core.EntryRun, RunID: "crash-run", Run: &core.RunRecord{ID: "crash-run", Status: "started"}},
+			}
+			for i := range entries {
+				entries[i].SessionID = binding.SessionID
+				entries[i].Version = state.Version + 1
+				entries[i].Time = time.Now().UTC()
+			}
+			if _, err := p.CoreStore.Commit(p.Context, binding.SessionID, core.Commit{ID: "crash-input", ExpectedVersion: state.Version, Entries: entries}); err != nil {
+				t.Fatal(err)
+			}
+			state, err = p.CoreStore.LoadState(p.Context, binding.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			base, err := core.ReadContext(p.Context, p.CoreStore, state.RolloutID, state.Branch.HeadID, 64<<20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := base.Request
+			request.ModelID, request.ModelRevision = resolved.Model.Spec().ID, resolved.Model.Spec().Revision
+			request.MaxOutputTokens, request.Options = 1024, resolved.Options
+			request, err = core.PrepareRequest(p.Context, resolved.Model, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			frozen, err := core.FreezeRequest(state.RolloutID, base, request, resolved.Model.Spec())
+			if err != nil {
+				t.Fatal(err)
+			}
+			frozen.Snapshot = resolved.Snapshot
+			attempt := core.ModelAttempt{ID: "crash-attempt", SessionID: binding.SessionID, RunID: "crash-run", TurnID: "crash-turn", Purpose: "generation", Number: 1, Version: state.Version + 1, StartedAt: time.Now().UTC(), Input: frozen}
+			if _, err := p.CoreStore.Commit(p.Context, binding.SessionID, core.Commit{ID: "crash-frozen", ExpectedVersion: state.Version, Attempts: []core.AttemptMutation{{ID: attempt.ID, Create: &attempt}}}); err != nil {
+				t.Fatal(err)
+			}
+			activeDeliveryReopen(t, p)
+			restarted := New(p.Store, p.Harness)
+			session, err := p.Harness.Core(p.Context, binding.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := session.Snapshot()
+			if before.Running || before.Maintenance || before.State.CurrentAttemptID != attempt.ID || mains.Load() != 0 {
+				t.Fatalf("fixture did not reopen an unstarted frozen generation: %+v calls=%d", before, mains.Load())
+			}
+			startChannels(t, restarted, p.Context)
+			event, _ := activeDeliveryArchive(t, p, binding, "fresh-direct-after-frozen-crash", trigger)
+			deadline, cancel := context.WithTimeout(p.Context, 8*time.Second)
+			defer cancel()
+			testkit.Await(t, deadline, func() bool { return mains.Load() >= 2 })
+			p.Idle(t, binding.SessionID)
+			first, second := activeDeliveryText(<-requests), activeDeliveryText(<-requests)
+			if !strings.Contains(first, oldText) || strings.Contains(first, event.Text) {
+				t.Fatalf("recovery changed the already frozen request: %s", first)
+			}
+			if strings.Count(second, event.Text) != 1 || mains.Load() != 2 {
+				t.Fatalf("the fresh direct message was lost or duplicated after recovery: %s calls=%d", second, mains.Load())
+			}
+		})
+	}
+}
+
+func TestDeferredDirectIMHandoffResumesExistingOwnerDriverOnly(t *testing.T) {
+	requests := make(chan map[string]any, 4)
+	var mains atomic.Int64
+	p := testkit.New(t, 0, func(_ context.Context, _ int, request map[string]any) any {
+		mains.Add(1)
+		requests <- request
+		return testkit.Text("Handled the pending Owner task with the newly received IM context.")
+	})
+	s := New(p.Store, p.Harness)
+	binding := activeDeliveryChat(t, p, s, false, false)
+	event, through := activeDeliveryArchive(t, p, binding, "direct-deferred-during-maintenance", "mention")
+	var conversation domain.Conversation
+	if err := p.Store.Get(p.Context, "conversations", binding.ConversationID, &conversation); err != nil {
+		t.Fatal(err)
+	}
+	var connection domain.Connection
+	if err := p.Store.Get(p.Context, "connections", conversation.ConnectionID, &connection); err != nil {
+		t.Fatal(err)
+	}
+	session, err := p.Harness.Core(p.Context, binding.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const ownerText = "Unique Owner task queued while maintenance was pending."
+	if _, err := session.Steer(p.Context, core.Input{ID: "pending-owner-driver", Message: messages.Web("pending-owner-driver", ownerText, "Owner", time.Now().UTC(), nil)}); err != nil {
+		t.Fatal(err)
+	}
+	// Establish maintenance's completed state: its IM delivery was passive,
+	// and the pre-existing Owner driver has not been continued yet.
+	if _, err := session.InjectContext(p.Context, core.Input{ID: event.ID + ":trigger", Contexts: []core.Message{messages.Observation(event, connection, conversation, nil, "")}}); err != nil {
+		t.Fatal(err)
+	}
+	if p.Requests.Load() != 0 {
+		t.Fatal("preparing the deferred handoff unexpectedly started a model request")
+	}
+	if err := s.handoffDirectObservations(p.Context, binding, through); err != nil {
+		t.Fatal(err)
+	}
+	testkit.Await(t, p.Context, func() bool { return mains.Load() >= 1 })
+	p.Idle(t, binding.SessionID)
+	if text := activeDeliveryText(<-requests); strings.Count(text, event.Text) != 1 || strings.Count(text, ownerText) != 1 {
+		t.Fatalf("the resumed Owner request lost or duplicated its new context: %s", text)
+	}
+	if mains.Load() != 1 {
+		t.Fatalf("the deferred handoff created another driver after resuming Owner work: %d", mains.Load())
+	}
+	if _, err := session.LookupInput(p.Context, event.ID+":trigger:wakeup"); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("the deferred handoff appended an unnecessary IM driver: %v", err)
 	}
 }
