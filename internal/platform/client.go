@@ -74,7 +74,18 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 		if credentials.ServerURL != options.ServerURL || credentials.ServerPin != options.ServerPin {
 			return domain.Conflict("this Daemon directory belongs to a different Server")
 		}
-	} else {
+	}
+	var manager *daemonservice.Manager
+	if !options.Foreground {
+		manager, err = daemonservice.New(root)
+		if err != nil {
+			return err
+		}
+		if err = manager.Prepare(ctx, report); err != nil {
+			return fmt.Errorf("prepare current-user Daemon service before pairing: %w", err)
+		}
+	}
+	if credentials.ComputerID == "" {
 		d, createErr := computers.NewDaemon(root, computers.Credentials{ServerURL: options.ServerURL, ServerPin: options.ServerPin})
 		if createErr != nil {
 			return createErr
@@ -105,10 +116,6 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 		return RunDaemon(ctx, root, credentialsPath, report)
 	}
 	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	manager, err := daemonservice.New(root)
 	if err != nil {
 		return err
 	}

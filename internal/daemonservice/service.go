@@ -59,7 +59,7 @@ func New(root string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newManager(root, home, runtime.GOOS, current.Uid, execute)
+	return newManager(root, home, runtime.GOOS, current.Uid, nativeRunner(current.Uid))
 }
 
 func newManager(root, home, platform, uid string, run commandRunner) (*Manager, error) {
@@ -116,8 +116,10 @@ func validSID(value string) bool {
 	return true
 }
 
-func execute(ctx context.Context, name string, args ...string) (commandResult, error) {
-	raw, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+func executeEnvironment(ctx context.Context, environment []string, name string, args ...string) (commandResult, error) {
+	command := exec.CommandContext(ctx, name, args...)
+	command.Env = environment
+	raw, err := command.CombinedOutput()
 	result := commandResult{output: strings.TrimSpace(string(raw))}
 	if len(result.output) > 4096 {
 		result.output = result.output[len(result.output)-4096:]

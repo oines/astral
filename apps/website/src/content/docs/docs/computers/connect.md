@@ -38,4 +38,8 @@ An online computer is not automatically available to every Bot. If it is absent 
 
 Remote enrollment installs a service for the current user: a LaunchAgent on macOS, user systemd on Linux, or a scheduled task on Windows. File access follows that operating-system account's permissions.
 
+On Linux, native background enrollment checks user-service availability before pairing. For root (UID 0), Astral reports its preparation actions, enables root's lingering so its user services can run without a login session, and starts root's user manager. If the manager cannot be made available, enrollment stops before pairing. Ordinary accounts are not elevated or automatically given lingering. Foreground and container enrollment skip this preparation.
+
+To connect as root, log in directly as root or run `sudo -i`, then paste the complete connection command. Avoid retaining another account's `HOME` or XDG session environment. Agent commands will have root's permissions. Lingering applies to the account, so uninstalling one Astral Daemon does not disable it or stop the whole user manager.
+
 Revoking Bot access, removing a connection, and deleting files are different operations. See [Updates and backups](/docs/hosting/maintenance/) for service maintenance.
