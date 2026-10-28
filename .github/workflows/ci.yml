@@ -118,7 +118,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Check native enrollment installer preflight
-        run: node --test scripts/enrollment-installers.test.mjs
+        run: node --test scripts/enrollment-installers.test.mjs scripts/desktop-process-identity.test.mjs
       - run: go test -race ./...
       - run: go test -v github.com/oines/astral-core/standardtools/... -timeout 4m
       - run: pnpm lint
