@@ -23,7 +23,7 @@ func (m *Manager) StartUpdate(ctx context.Context, executable string) error {
 	log := filepath.Join(m.root, "update.log")
 	switch m.platform {
 	case "linux":
-		_, err := m.command(ctx, "systemd-run", append([]string{"--user", "--collect", "--unit=astral-daemon-update-" + m.id, "--description=Astral Daemon update (" + m.id + ")", "--property=Type=exec", "--property=RuntimeMaxSec=180", "--", executable}, args...)...)
+		_, err := m.command(ctx, "systemd-run", append([]string{"--user", "--collect", "--unit=astral-daemon-update-" + m.id, "--description=Astral Daemon update (" + m.id + ")", "--property=Type=exec", "--property=RuntimeMaxSec=180", "--setenv=XDG_CONFIG_HOME=" + m.configHome, "--", executable}, args...)...)
 		return err
 	case "darwin":
 		label := "app.astral.daemon.update." + m.id

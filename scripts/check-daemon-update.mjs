@@ -214,6 +214,8 @@ func run()error{var c config;raw,e:=os.ReadFile(os.Args[1]);if e!=nil{return e};
   serviceID = service.id
   assert.equal(service.state, 'running')
   if (rootUser) {
+    const definition = await readFile(path.join('/root/.config/systemd/user', `astral-daemon-${serviceID}.service`), 'utf8')
+    assert.ok(definition.includes('Environment="XDG_CONFIG_HOME=/root/.config"\n'), 'Root Daemon must pin its resolved absolute configuration directory instead of inheriting the user manager environment')
     const withoutSession = { ...process.env }
     delete withoutSession.XDG_RUNTIME_DIR
     delete withoutSession.DBUS_SESSION_BUS_ADDRESS

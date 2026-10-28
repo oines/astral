@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -293,5 +294,110 @@ func TestInterruptedRegistrationReinstallsActualPreviousDefinition(t *testing.T)
 	}
 	if !registered {
 		t.Fatal("forced reinstall skipped native definition registration")
+	}
+}
+
+func TestLinuxConfigurationDirectoryFollowsXDGAbsolutePathSemantics(t *testing.T) {
+	for _, choice := range []string{"absent", "relative", "literal-home", "absolute"} {
+		t.Run(choice, func(t *testing.T) {
+			home := t.TempDir()
+			expected := filepath.Join(home, ".config")
+			value := ""
+			switch choice {
+			case "relative":
+				value = "relative-config"
+			case "literal-home":
+				value = "$HOME/.config"
+			case "absolute":
+				expected = filepath.Join(t.TempDir(), "custom config % '$ directory")
+				value = expected
+			}
+			t.Setenv("XDG_CONFIG_HOME", value)
+			manager, err := newManager(t.TempDir(), home, "linux", "0", (&fakeService{}).run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if manager.configHome != expected || !filepath.IsAbs(manager.definition) || manager.definition != filepath.Join(expected, "systemd", "user", manager.target) {
+				t.Fatalf("XDG configuration directory was not resolved correctly for %s", choice)
+			}
+		})
+	}
+	for _, bad := range []string{"/tmp/config\n[Service]", "/tmp/config\rvalue", "/tmp/config\x00value"} {
+		if strings.ContainsRune(bad, 0) {
+			// os.Setenv itself refuses NUL; New also validates every directory
+			// after fallback, so exercise this through the supplied home.
+			t.Setenv("XDG_CONFIG_HOME", "")
+			if _, err := newManager(t.TempDir(), bad, "linux", "0", (&fakeService{}).run); err == nil {
+				t.Fatal("control character in fallback directory was accepted")
+			}
+			continue
+		}
+		t.Setenv("XDG_CONFIG_HOME", bad)
+		if _, err := newManager(t.TempDir(), t.TempDir(), "linux", "0", (&fakeService{}).run); err == nil {
+			t.Fatal("control character in resolved configuration directory was accepted")
+		}
+	}
+}
+
+func TestLinuxDaemonAndUpdateHelperRetainResolvedConfigurationAcrossManagerEnvironments(t *testing.T) {
+	original, spec, fake := serviceFixture(t, "linux")
+	chosen := filepath.Join(t.TempDir(), "custom config % '$ directory")
+	t.Setenv("XDG_CONFIG_HOME", chosen)
+	manager, err := newManager(original.root, original.home, "linux", original.uid, fake.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Install(context.Background(), spec); err != nil {
+		t.Fatal(err)
+	}
+	definition, err := os.ReadFile(manager.definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unitConfig string
+	for _, line := range strings.Split(string(definition), "\n") {
+		if encoded, ok := strings.CutPrefix(line, "Environment="); ok {
+			variable, err := strconv.Unquote(encoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if value, ok := strings.CutPrefix(variable, "XDG_CONFIG_HOME="); ok {
+				unitConfig = strings.ReplaceAll(value, "%%", "%")
+			}
+		}
+	}
+	if unitConfig != chosen {
+		t.Fatal("Daemon unit did not pin the chosen configuration directory")
+	}
+	// The manager can have a different inherited HOME/XDG environment. Only
+	// the explicitly pinned unit/helper setting may select the registration.
+	t.Setenv("XDG_CONFIG_HOME", unitConfig)
+	daemonManager, err := newManager(manager.root, t.TempDir(), "linux", manager.uid, fake.run)
+	if err != nil || daemonManager.definition != manager.definition {
+		t.Fatalf("Daemon selected a different registration: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", "$HOME/.config")
+	var helperConfig string
+	daemonManager.run = func(_ context.Context, name string, args ...string) (commandResult, error) {
+		if name != "systemd-run" {
+			t.Fatalf("unexpected update launcher %s", name)
+		}
+		for _, arg := range args {
+			if value, ok := strings.CutPrefix(arg, "--setenv=XDG_CONFIG_HOME="); ok {
+				helperConfig = value
+			}
+		}
+		return commandResult{}, nil
+	}
+	if err := daemonManager.StartUpdate(context.Background(), spec.Executable); err != nil {
+		t.Fatal(err)
+	}
+	if helperConfig != chosen {
+		t.Fatal("independent update job inherited the manager's unrelated configuration directory")
+	}
+	t.Setenv("XDG_CONFIG_HOME", helperConfig)
+	helperManager, err := newManager(manager.root, t.TempDir(), "linux", manager.uid, fake.run)
+	if err != nil || helperManager.definition != manager.definition {
+		t.Fatalf("update helper selected a different registration: %v", err)
 	}
 }
