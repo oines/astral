@@ -52,6 +52,8 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return version(args[1:], out)
 	case "serve":
 		return serve(ctx, args[1:], out, stderr)
+	case "server":
+		return serverMaintenance(ctx, args[1:], out, stderr)
 	case "computer":
 		return computer(ctx, args[1:], out, stderr)
 	case "maintenance":
@@ -90,6 +92,7 @@ func usage(out io.Writer) {
   astral computer service status|logs|start|stop|restart|uninstall --root DIRECTORY
   astral computer update --root DIRECTORY
   astral computer update --container CONTAINER_NAME
+  astral server update --root DIRECTORY --operation ID --managed-helper
   astral connect --server URL --username USER
   astral resources agents|models|providers|computers|connections|sessions
   astral sessions new --agent ID [--title TITLE]
@@ -124,6 +127,7 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 	f.StringVar(&config.ComputerDirectory, "computers-dir", "", "local Daemon data directory (separate from Server data)")
 	f.StringVar(&config.WebDirectory, "web-dir", "", "shared Web UI build directory")
 	f.StringVar(&config.DistributionDirectory, "distribution-dir", "", "release binaries directory")
+	f.StringVar(&config.InstallationRoot, "installation-root", "", "official current-user Server installation root for managed updates")
 	f.BoolVar(&config.NoLocal, "no-local", false, "do not start the local Daemon automatically")
 	var trustedProxies repeatedStrings
 	f.Var(&trustedProxies, "trusted-proxy", "trusted reverse proxy IP/CIDR; repeat, empty disables proxy trust")
@@ -152,14 +156,18 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 		}
 		reader := bufio.NewReaderSize(os.Stdin, 4096)
 		type handshakeResult struct {
-			token string
-			err   error
+			token       string
+			updateURL   string
+			updateToken string
+			err         error
 		}
 		result := make(chan handshakeResult, 1)
 		go func() {
 			raw, err := reader.ReadSlice('\n')
 			var hello struct {
 				DesktopToken string `json:"desktop_token"`
+				UpdateURL    string `json:"desktop_update_url"`
+				UpdateToken  string `json:"desktop_update_token"`
 			}
 			if err == nil {
 				err = json.Unmarshal(raw, &hello)
@@ -167,7 +175,7 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 			if err == nil && len(hello.DesktopToken) != 64 {
 				err = fmt.Errorf("invalid private desktop handshake")
 			}
-			result <- handshakeResult{hello.DesktopToken, err}
+			result <- handshakeResult{hello.DesktopToken, hello.UpdateURL, hello.UpdateToken, err}
 		}()
 		select {
 		case value := <-result:
@@ -175,6 +183,8 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 				return value.err
 			}
 			config.DesktopToken = value.token
+			config.DesktopUpdateURL = value.updateURL
+			config.DesktopUpdateToken = value.updateToken
 		case <-time.After(5 * time.Second):
 			return fmt.Errorf("private desktop handshake timed out")
 		case <-ctx.Done():

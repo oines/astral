@@ -30,6 +30,14 @@ Add these identifiers in Connected chats and choose a session. Forum topics use 
 
 Authorize the chat in Astral, then mention the Bot or reply to it. To receive ordinary group messages as context, configure privacy mode or administrator permissions according to [Telegram's privacy rules](https://core.telegram.org/bots/features#privacy-mode).
 
+Ordinary replies stay in the group's existing session, including replies to another member that also mention the Bot. Actual Topics keep their own authorization and session; a reply's thread ID alone does not create a Topic. This applies to new incoming messages, without moving or replaying older archived messages.
+
+## Replies and selected quotes
+
+The Bot receives a preview of the original message as well as the exact fragment you selected when Telegram supplies a quote. Quoting text that mentions the Bot does not itself notify it; mention the Bot in your new message or reply to a message it sent.
+
+Referenced images, files and stickers retain their original message identity and download reference. They are kept separate from attachments on your new message and are not automatically downloaded or shown as image previews. The Agent can download the original when needed. This also works when Telegram includes the original media in a reply but Astral did not receive that original message separately. An external quote does not grant access to another chat or its files.
+
 ## Files and troubleshooting
 
 Text, images, and files are supported. Request an image as an original document when needed. Telegram's own size and format limits still apply.

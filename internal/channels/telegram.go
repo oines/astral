@@ -213,6 +213,7 @@ func (s telegramSticker) preview() string {
 type telegramMessage struct {
 	ID              int64                `json:"message_id"`
 	ThreadID        int64                `json:"message_thread_id"`
+	IsTopicMessage  bool                 `json:"is_topic_message"`
 	Date            int64                `json:"date"`
 	EditDate        int64                `json:"edit_date"`
 	From            *telegramUser        `json:"from"`
@@ -224,6 +225,7 @@ type telegramMessage struct {
 	Entities        []telegramEntity     `json:"entities"`
 	CaptionEntities []telegramEntity     `json:"caption_entities"`
 	Reply           *telegramMessage     `json:"reply_to_message"`
+	Quote           *telegramTextQuote   `json:"quote"`
 	Photo           []telegramFile       `json:"photo"`
 	Document        *telegramFile        `json:"document"`
 	Audio           *telegramFile        `json:"audio"`
@@ -231,6 +233,12 @@ type telegramMessage struct {
 	Video           *telegramFile        `json:"video"`
 	Animation       *telegramFile        `json:"animation"`
 	Sticker         *telegramSticker     `json:"sticker"`
+}
+
+type telegramTextQuote struct {
+	Text     string `json:"text"`
+	Position int    `json:"position"`
+	IsManual bool   `json:"is_manual"`
 }
 type telegramUpdate struct {
 	ID                int64            `json:"update_id"`
@@ -298,7 +306,7 @@ func conversationFromChat(chat telegramChat, topic string) domain.Conversation {
 }
 func (t *telegram) normalize(updateID int64, message telegramMessage, edited bool) Event {
 	topic := ""
-	if message.ThreadID != 0 {
+	if message.IsTopicMessage && message.ThreadID != 0 {
 		topic = strconv.FormatInt(message.ThreadID, 10)
 	}
 	conversation := conversationFromChat(message.Chat, topic)
@@ -330,7 +338,13 @@ func (t *telegram) normalize(updateID int64, message telegramMessage, edited boo
 	observation.Self = observation.Sender.ID == t.connection.AccountID
 	if message.Reply != nil {
 		observation.ReplyID = strconv.FormatInt(message.Reply.ID, 10)
+		if message.Reply.Chat.ID == 0 || message.Reply.Chat.ID == message.Chat.ID {
+			observation.ReplyAttachments = telegramAttachments(*message.Reply)
+		}
 		observation.ReplyPreview = message.Reply.Text
+		if observation.ReplyPreview == "" && message.Reply.RichMessage != nil {
+			observation.ReplyPreview = telegramRichBlocks(message.Reply.RichMessage.Blocks)
+		}
 		if observation.ReplyPreview == "" {
 			observation.ReplyPreview = message.Reply.Caption
 		}
@@ -347,6 +361,9 @@ func (t *telegram) normalize(updateID int64, message telegramMessage, edited boo
 			}
 		}
 	}
+	if message.Quote != nil {
+		observation.ReplyQuote = &domain.TextQuote{Text: message.Quote.Text, Position: message.Quote.Position, Manual: message.Quote.IsManual}
+	}
 	for _, entity := range entities {
 		if entity.Type == "mention" && t.connection.Username != "" && strings.EqualFold(utf16Substring(observation.Text, entity.Offset, entity.Length), "@"+t.connection.Username) {
 			observation.Trigger = "mention"
@@ -361,6 +378,25 @@ func (t *telegram) normalize(updateID int64, message telegramMessage, edited boo
 	if observation.Self {
 		observation.Trigger = ""
 	}
+	observation.Attachments = telegramAttachments(message)
+	event := Event{Conversation: conversation, Observation: observation}
+	command, username, addressed := strings.Cut(strings.TrimSpace(message.Text), "@")
+	if command == "/chat_id" && (!addressed || t.connection.Username != "" && strings.EqualFold(username, t.connection.Username)) {
+		event.Command = &Command{Name: "chat_id"}
+		// Anonymous administrators can have Telegram's synthetic bot sender;
+		// their sender_chat still identifies the human-operated chat identity.
+		sentByBot := message.From != nil && (strconv.FormatInt(message.From.ID, 10) == t.connection.AccountID || message.From.IsBot && message.SenderChat == nil)
+		if !edited && !observation.Self && !sentByBot {
+			event.Command.Text = "Chat ID: " + conversation.ExternalID
+			if topic != "" {
+				event.Command.Text += "\nTopic ID: " + topic
+			}
+		}
+	}
+	return event
+}
+func telegramAttachments(message telegramMessage) []domain.Attachment {
+	observation := domain.Observation{MessageID: strconv.FormatInt(message.ID, 10)}
 	add := func(file telegramFile, kind, name, mimeType string) {
 		if file.ID == "" {
 			return
@@ -419,22 +455,9 @@ func (t *telegram) normalize(updateID int64, message telegramMessage, edited boo
 			})
 		}
 	}
-	event := Event{Conversation: conversation, Observation: observation}
-	command, username, addressed := strings.Cut(strings.TrimSpace(message.Text), "@")
-	if command == "/chat_id" && (!addressed || t.connection.Username != "" && strings.EqualFold(username, t.connection.Username)) {
-		event.Command = &Command{Name: "chat_id"}
-		// Anonymous administrators can have Telegram's synthetic bot sender;
-		// their sender_chat still identifies the human-operated chat identity.
-		sentByBot := message.From != nil && (strconv.FormatInt(message.From.ID, 10) == t.connection.AccountID || message.From.IsBot && message.SenderChat == nil)
-		if !edited && !observation.Self && !sentByBot {
-			event.Command.Text = "Chat ID: " + conversation.ExternalID
-			if topic != "" {
-				event.Command.Text += "\nTopic ID: " + topic
-			}
-		}
-	}
-	return event
+	return observation.Attachments
 }
+
 func utf16Substring(text string, offset, length int) string {
 	units := utf16.Encode([]rune(text))
 	if offset < 0 || length < 0 || offset > len(units) || length > len(units)-offset {

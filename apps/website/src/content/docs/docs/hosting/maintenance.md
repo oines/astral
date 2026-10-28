@@ -7,24 +7,32 @@ Keep your existing data directories when replacing a program. Download availabil
 
 ## Update Desktop
 
-Open **Settings → About & diagnostics**. Supported Desktop installations check for new versions after launch and periodically while running, then download in the background. You can also select **Check for updates**. When the download finishes, select **Restart and update**.
+Open **Settings → About & diagnostics** in the App or when signed in to its Server in a browser. The software update row has one button: **Check for updates**, **Update and restart** when a newer version is available, or the appropriate retry action after an error. Supported Desktop installations also check for version metadata after launch and periodically while running. Checking never downloads an installer.
+
+Selecting **Update and restart** checks the latest release again, downloads and verifies the complete update, then installs it and restarts. A browser request goes to the running Desktop App's update manager; it does not install a separate Server over the App.
 
 | Installation | Update method |
 | --- | --- |
-| Official signed macOS App | In-App download, then restart and update |
-| Windows EXE installer for the current user | In-App download, then restart and update |
-| Linux AppImage | In-App download, then restart and update |
+| Official signed macOS App | Select **Update and restart** in the App or its signed-in Web UI |
+| Windows EXE installer for the current user | Select **Update and restart** in the App or its signed-in Web UI |
+| Linux AppImage | Select **Update and restart** in the App or its signed-in Web UI |
 | Linux DEB, Windows ZIP, unsigned Mac or development build | Download and install the newer package manually |
 
-Downloading does not stop your work. Installing stops the local Server and interrupts its running tasks and computer commands. Ordinary quit does not install a downloaded update. The local computer service updates with Desktop; remote computers have their own update action.
+You can keep using Astral while the update downloads. When the download finishes, installation stops the local Server and interrupts its running tasks and computer commands. Choose **Update and restart** when you are ready for that interruption. Ordinary quit does not install an update. If a check fails, retry the check; if an update fails, retry the update. Checking never starts a download or installation. The local computer service updates with Desktop; remote computers have their own update action.
+
+The Web UI may disconnect during the restart. It waits for the Server to return and verifies the result of that update operation against the running version. A lost connection alone is not an update failure or a reason to submit it again. A failed update or a return to the previous version remains an error rather than a successful upgrade.
 
 If a Mac release says Apple notarization is pending, its Developer ID signature is verified but Gatekeeper may still block the first launch. After trying to open the trusted official download, follow [Apple's instructions](https://support.apple.com/en-us/102445) to allow it under **System Settings → Privacy & Security → Open Anyway**. This is separate from Astral's update controls.
 
 ## Update a headless Server
 
-For a Linux Server installed with the official current-user installer, run the [installation command](/docs/hosting/server/) again, optionally selecting a published version tag. Keep the existing installation root and network configuration. The installer validates the download, stops the user service and starts the new program against the existing data.
+An official Linux current-user service with verified installation metadata supports the same update row in **Settings → About & diagnostics**. Check for a new version, then select **Update and restart** when you are ready to interrupt current tasks. The browser does not need access to a shell.
 
-For a Server you manage directly, stop it, replace the program and restart with the same `--data` directory and startup options. Updating the standalone Server also updates its local computer service. Do not point the replacement program at an empty directory by accident.
+An independent, visible systemd user job downloads the selected official release and verifies it before stopping the Server service. It keeps the same installation root, data and network settings, starts the new Server and lets its startup migration run. If activation fails, the installer finishes restoring the previous program, service and this attempt's data snapshot before the job records failure. Its operation record lives under the installation root's `updates/`, outside the Server data backup, so a rollback does not erase the update result. Reconnect to confirm the result before resuming work.
+
+If an older official installation offers only manual downloads, rerun the [installation command](/docs/hosting/server/) once as the same user with the same root to prepare the current installation metadata and service definition. This remains the command-line update alternative; a published tag can be selected explicitly. An installation-root setting alone cannot authorize updates for a custom service.
+
+For a foreground `serve` process, custom service or container deployment you manage directly, update through that deployment's own process: stop it, replace the program and restart with the same `--data` directory and startup options. These installations do not promise Web-triggered replacement. Updating the standalone Server also updates its local computer service. Do not point the replacement program at an empty directory by accident.
 
 ## Skipping versions and data changes
 
@@ -43,7 +51,7 @@ You can also copy the displayed update command. Use this route for older Daemons
 - Native computer: run the shell or PowerShell command on that machine to update its current-user service.
 - Container: run the command on its Docker host. It replaces the Daemon and restarts the same container, preserving its identity, installed tools, writable layer and data.
 
-Managed updates in new containers use their in-container supervisor and restart the Daemon without recreating the environment. Updating a container's Daemon does not change its base image. Failed updates attempt to restore the previous program; check the reported state and computer connection before resuming work.
+Managed updates in new containers use their in-container supervisor and restart the Daemon without recreating the environment. Updating a container's Daemon does not change its base image. Failed updates attempt to restore the previous program and may restart that version; check the reported state and computer connection before resuming work. When a release changes the supervisor itself, restart the same container once after updating to load those changes; you do not need to recreate the environment.
 
 The prebuilt Ubuntu environment is versioned independently from the application. New containers pull the exact image digest selected by that Astral version and receive the Daemon separately. An application update neither rebuilds that image on your computer nor recreates existing containers. Their original image, writable layer, installed tools, data volume and pairing mount remain in place; use the separate Daemon action when its program needs updating. See [Use containers](/docs/computers/containers/) for preparation and persistence.
 

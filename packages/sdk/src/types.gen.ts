@@ -871,8 +871,10 @@ export type AstralInternalDomainObservation = {
     kind: string;
     message_id: string;
     received_at: string;
+    reply_attachments?: Array<AstralInternalDomainAttachment>;
     reply_id?: string;
     reply_preview?: string;
+    reply_quote?: AstralInternalDomainTextQuote;
     reply_sender?: string;
     schema_version: number;
     self: boolean;
@@ -1004,6 +1006,15 @@ export type AstralInternalDomainStickerMetadata = {
     type: string;
     unique_id?: string;
     width: number;
+};
+
+export type AstralInternalDomainTextQuote = {
+    manual: boolean;
+    /**
+     * Approximate sender-specified offset in UTF-16 code units of the original source message; text is authoritative.
+     */
+    position: number;
+    text: string;
 };
 
 export type AstralInternalGatewayCapabilities = {
@@ -1662,6 +1673,20 @@ export type AstralInternalSearchResult = {
     summary: string;
     title: string;
     url: string;
+};
+
+export type AstralInternalServerupdateState = {
+    current_version: string;
+    error?: string;
+    manager: 'desktop' | 'systemd-user' | 'manual';
+    operation_id?: string;
+    operation_state?: 'running' | 'complete' | 'failed';
+    operation_version?: string;
+    percent?: number;
+    phase: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'installing' | 'error' | 'unavailable';
+    retry?: 'check' | 'update';
+    unavailable?: string;
+    version?: string;
 };
 
 export type ListAgentsData = {
@@ -4386,6 +4411,81 @@ export type StorageInfoResponses = {
 };
 
 export type StorageInfoResponse = StorageInfoResponses[keyof StorageInfoResponses];
+
+export type GetServerUpdateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/updates';
+};
+
+export type GetServerUpdateErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type GetServerUpdateError = GetServerUpdateErrors[keyof GetServerUpdateErrors];
+
+export type GetServerUpdateResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalServerupdateState;
+};
+
+export type GetServerUpdateResponse = GetServerUpdateResponses[keyof GetServerUpdateResponses];
+
+export type ApplyServerUpdateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/updates/apply';
+};
+
+export type ApplyServerUpdateErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ApplyServerUpdateError = ApplyServerUpdateErrors[keyof ApplyServerUpdateErrors];
+
+export type ApplyServerUpdateResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalServerupdateState;
+};
+
+export type ApplyServerUpdateResponse = ApplyServerUpdateResponses[keyof ApplyServerUpdateResponses];
+
+export type CheckServerUpdateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/updates/check';
+};
+
+export type CheckServerUpdateErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type CheckServerUpdateError = CheckServerUpdateErrors[keyof CheckServerUpdateErrors];
+
+export type CheckServerUpdateResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalServerupdateState;
+};
+
+export type CheckServerUpdateResponse = CheckServerUpdateResponses[keyof CheckServerUpdateResponses];
 
 export type PollWeixinLoginData = {
     body: AstralInternalChannelsWeixinLoginPoll;

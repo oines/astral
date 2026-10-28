@@ -7,6 +7,10 @@ import { randomBytes } from 'node:crypto'
 
 interface Ready { url: string; pid: number }
 interface StartupMaintenance { pid: number; phase: string }
+export interface DesktopUpdateConnection { url: string; token: string }
+export function managedHandshake(credential: string, updates?: DesktopUpdateConnection): string {
+  return `${JSON.stringify({ desktop_token: credential, ...(updates ? { desktop_update_url: updates.url, desktop_update_token: updates.token } : {}) })}\n`
+}
 export function maintenanceDeadline(startedAt: number, childPID: number | undefined, marker: StartupMaintenance | undefined): number | undefined {
   return childPID !== undefined && marker?.pid === childPID && marker.phase === 'preparing-data' ? startedAt + 20 * 60_000 : undefined
 }
@@ -19,7 +23,7 @@ export class LocalService {
   private closed?: Promise<void>
   onUnexpectedExit?: (detail: string) => void
 
-  async start(binary: string, root: string, distribution: string, networkArguments: string[] = []): Promise<string> {
+  async start(binary: string, root: string, distribution: string, networkArguments: string[] = [], updates?: DesktopUpdateConnection): Promise<string> {
     await mkdir(root, { recursive: true, mode: 0o700 })
     this.temporary = await mkdtemp(join(root, '.desktop-'))
     const readyFile = join(this.temporary, 'ready.json')
@@ -28,7 +32,7 @@ export class LocalService {
     const args = ['serve', ...networkArguments, '--data', join(root, 'server'), '--computers-dir', join(root, 'computers'), '--distribution-dir', distribution, '--ready-file', readyFile, '--parent-pid', String(process.pid), '--managed-stdin']
     this.child = spawn(binary, args, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
     const credential = randomBytes(32).toString('hex')
-    this.child.stdin!.write(`${JSON.stringify({ desktop_token: credential })}\n`)
+    this.child.stdin!.write(managedHandshake(credential, updates))
     this.closed = new Promise(resolve => this.child!.once('close', () => resolve()))
     // A startup failure can close the pipe before stop() requests shutdown.
     this.child.stdin?.on('error', () => {})

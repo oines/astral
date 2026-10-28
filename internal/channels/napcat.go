@@ -234,9 +234,12 @@ func (n *napcat) Poll(ctx context.Context, cursor string) (Batch, error) {
 			if reply, err := n.store.Message(ctx, event.Conversation.ID, event.Observation.ReplyID); err == nil {
 				event.Observation.ReplySender = reply.Sender.Name
 				event.Observation.ReplyPreview = string([]rune(reply.Text)[:min(len([]rune(reply.Text)), 500)])
+				event.Observation.ReplyAttachments = reply.Attachments
 				if reply.Self && !event.Observation.Self {
 					event.Observation.Trigger = "reply"
 				}
+			} else {
+				event.Observation.ReplyPreview = "[Referenced message text and attachments are unavailable in this chat's archive.]"
 			}
 		}
 		batch := Batch{Events: []Event{*event}, NextCursor: event.Observation.ID}
@@ -275,10 +278,15 @@ func (n *napcat) normalize(raw json.RawMessage) (*Event, error) {
 		PostType    string          `json:"post_type"`
 		MessageType string          `json:"message_type"`
 		NoticeType  string          `json:"notice_type"`
+		SubType     string          `json:"sub_type"`
+		EventID     qqValue         `json:"event_id"`
+		OperatorID  qqValue         `json:"operator_id"`
 		SelfID      qqValue         `json:"self_id"`
 		MessageID   qqValue         `json:"message_id"`
 		UserID      qqValue         `json:"user_id"`
+		SenderID    qqValue         `json:"sender_id"`
 		TargetID    qqValue         `json:"target_id"`
+		RawInfo     json.RawMessage `json:"raw_info"`
 		GroupID     qqValue         `json:"group_id"`
 		GroupName   string          `json:"group_name"`
 		Time        int64           `json:"time"`
@@ -298,17 +306,27 @@ func (n *napcat) normalize(raw json.RawMessage) (*Event, error) {
 	if message.PostType != "message" && message.PostType != "message_sent" && message.PostType != "notice" {
 		return nil, nil
 	}
-	if message.PostType == "notice" && message.NoticeType != "group_recall" && message.NoticeType != "friend_recall" {
+	poke := message.PostType == "notice" && message.NoticeType == "notify" && message.SubType == "poke"
+	actor := message.UserID
+	if poke && message.SenderID != "" {
+		// NapCat private pokes use user_id for the peer and sender_id for
+		// the actual actor; group pokes use user_id for the actor.
+		actor = message.SenderID
+	}
+	if message.PostType == "notice" && message.NoticeType != "group_recall" && message.NoticeType != "friend_recall" && !poke {
 		return nil, nil
 	}
 	kind, id := "private", string(message.UserID)
 	if message.PostType == "message_sent" && message.TargetID != "" {
 		id = string(message.TargetID)
 	}
-	if message.MessageType == "group" || message.NoticeType == "group_recall" {
+	if poke && string(message.UserID) == n.connection.AccountID {
+		id = string(message.TargetID)
+	}
+	if message.MessageType == "group" || message.NoticeType == "group_recall" || poke && message.GroupID != "" {
 		kind, id = "group", string(message.GroupID)
 	}
-	if !napcatID.MatchString(id) || message.MessageID == "" {
+	if !napcatID.MatchString(id) || !poke && message.MessageID == "" || poke && (!napcatID.MatchString(string(actor)) || !napcatID.MatchString(string(message.TargetID))) {
 		return nil, domain.Invalid("NapCat message did not identify its chat or message")
 	}
 	conversation := domain.Conversation{ConnectionID: n.connection.ID, ExternalID: kind + ":" + id, Kind: kind, Title: id}
@@ -322,16 +340,40 @@ func (n *napcat) normalize(raw json.RawMessage) (*Event, error) {
 	eventKind := "message.created"
 	if message.PostType == "notice" {
 		eventKind = "message.deleted"
+		if poke {
+			eventKind = "notice.poke"
+		}
 	}
 	externalEvent := eventKind + ":" + conversation.ExternalID + ":" + string(message.MessageID)
+	if message.PostType == "notice" {
+		// OneBot notices do not have a message ID or a replayable stream cursor.
+		// Allocate once per received frame; pending Batch retries retain this ID.
+		externalEvent = domain.ID("notice")
+		if message.EventID != "" {
+			externalEvent = eventKind + ":" + conversation.ExternalID + ":" + string(message.EventID)
+		}
+	}
 	name := message.Sender.Card
 	if name == "" {
 		name = message.Sender.Nickname
 	}
 	observation := domain.Observation{SchemaVersion: 1, ID: stableID("event", n.connection.ID, externalEvent), ConnectionID: n.connection.ID,
 		ConversationID: conversation.ID, ExternalEventID: externalEvent, Kind: eventKind, MessageID: string(message.MessageID),
-		Sender: domain.Sender{ID: string(message.UserID), Name: name}, SentAt: time.Unix(message.Time, 0).UTC(), ReceivedAt: time.Now().UTC(),
-		Self: string(message.UserID) == n.connection.AccountID || message.PostType == "message_sent"}
+		Sender: domain.Sender{ID: string(actor), Name: name}, SentAt: time.Unix(message.Time, 0).UTC(), ReceivedAt: time.Now().UTC(),
+		Self: string(actor) == n.connection.AccountID || message.PostType == "message_sent"}
+	if poke {
+		observation.MessageID = "" // A poke is a notice, not a fabricated QQ message.
+		observation.Text = napcatPokeText(message.RawInfo, string(actor), string(message.TargetID))
+		if string(message.TargetID) == n.connection.AccountID && !observation.Self {
+			observation.Trigger = "poke"
+		}
+	} else if eventKind == "message.deleted" {
+		operator := message.OperatorID
+		if operator == "" {
+			operator = message.UserID
+		}
+		observation.Text = fmt.Sprintf("QQ user %s recalled message %s originally sent by QQ user %s.", operator, message.MessageID, message.UserID)
+	}
 	if eventKind == "message.created" {
 		var segments []napcatSegment
 		if len(message.Message) == 0 || message.Message[0] != '[' || json.Unmarshal(message.Message, &segments) != nil {
@@ -401,6 +443,49 @@ func (n *napcat) normalize(raw json.RawMessage) (*Event, error) {
 		}
 	}
 	return event, nil
+}
+
+// NapCat forwards the QQ gray-tip json.items as raw_info for both group and
+// private pokes. Preserve readable wording and participant identities, never
+// image src/jp URLs or opaque QQ UIDs. The two uid items are actor then target
+// in NapCat's own parser; malformed/unknown payloads retain an honest fallback.
+func napcatPokeText(raw json.RawMessage, actor, target string) string {
+	fallback := fmt.Sprintf("QQ user %s poked QQ user %s.", actor, target)
+	var items []struct {
+		Type string `json:"type"`
+		Text string `json:"txt"`
+		Name string `json:"nm"`
+		UID  string `json:"uid"`
+	}
+	if json.Unmarshal(raw, &items) != nil {
+		return fallback
+	}
+	participants, wording := 0, false
+	var text strings.Builder
+	for _, item := range items {
+		if item.UID != "" {
+			if participants >= 2 {
+				return fallback
+			}
+			id := actor
+			if participants == 1 {
+				id = target
+			}
+			if item.Name != "" {
+				fmt.Fprintf(&text, " %s (QQ user %s) ", item.Name, id)
+			} else {
+				fmt.Fprintf(&text, " QQ user %s ", id)
+			}
+			participants++
+		} else if item.Type == "nor" {
+			text.WriteString(item.Text)
+			wording = wording || strings.TrimSpace(item.Text) != ""
+		}
+	}
+	if participants != 2 || !wording {
+		return fallback
+	}
+	return strings.TrimSpace(text.String())
 }
 
 func (n *napcat) ResolveConversation(ctx context.Context, id, topic string) (domain.Conversation, error) {

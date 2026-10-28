@@ -89,11 +89,14 @@ Explicit CLI arguments take priority over their corresponding environment values
 | `--computers-dir` | `ASTRAL_COMPUTER_DATA_DIR` | Local Daemon/provisioning data directory |
 | `--web-dir` | `ASTRAL_WEB_DIR` | External shared Web build, when not using the embedded UI |
 | `--distribution-dir` | `ASTRAL_DISTRIBUTION_DIR` | Local release binaries used for creating local Computer containers |
+| `--installation-root` | `ASTRAL_INSTALLATION_ROOT` | Official Linux user-service installation root; enables managed updates only after ownership and running-service validation |
 | `--no-local` | `ASTRAL_NO_LOCAL` | Do not start the local Daemon automatically |
 | repeated `--trusted-proxy` | `ASTRAL_TRUSTED_PROXIES` | Trusted reverse-proxy IPs/CIDRs; environment is a JSON array |
 | `--web-session-ttl` | `ASTRAL_WEB_SESSION_TTL` | Positive Go duration; default `720h` |
 | `--initial-admin-username` | `ASTRAL_ADMIN_USERNAME` | First administrator username |
 | `--initial-admin-password-file` | `ASTRAL_ADMIN_PASSWORD_FILE` or `ASTRAL_ADMIN_PASSWORD` | First administrator password; direct environment and file forms are mutually exclusive |
+
+The official Linux installer passes `--installation-root` automatically and writes matching installation metadata. `ASTRAL_INSTALLATION_ROOT` identifies that same root when no CLI value is supplied; it does not turn an arbitrary Server into a managed installation. Web updates also verify the current UID, owned root and data paths, exact official user unit, loaded unit and running PID/process arguments. Custom services and units with overrides remain manual. Re-run the official installer with the same user and root to prepare an older official installation that lacks this metadata.
 
 Initial administrator inputs apply only when no Web account exists; they never reset an existing password, factors or sessions on restart. For unattended deployment, supply the username and a private password file, for example:
 

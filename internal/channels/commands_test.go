@@ -74,6 +74,7 @@ func TestChatIDCommandsReplyBeforeAuthorizationWithoutActivatingSessions(t *test
 			private, group, topic, channel := update(1, "/chat_id"), update(2, "/chat_id@astral_bot"), update(3, "/chat_id"), update(4, "/chat_id")
 			private.Message.Chat = telegramChat{ID: 42, Type: "private", FirstName: "Ada"}
 			topic.Message.ThreadID = 77
+			topic.Message.IsTopicMessage = true
 			topic.Message.Chat.IsForum = true
 			channel.Message.Chat = telegramChat{ID: -10099, Type: "channel", Title: "News"}
 			channel.Message.From = nil

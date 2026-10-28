@@ -16,7 +16,7 @@ func TestRuntimeEnvironmentAndExplicitCLIHaveIndependentPrecedence(t *testing.T)
 	if err := os.WriteFile(file, []byte("fixture-password-with-newline\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	env := map[string]string{"ASTRAL_SERVER_DATA_DIR": "/env/server", "ASTRAL_COMPUTER_DATA_DIR": "/env/computers", "ASTRAL_NO_LOCAL": "true", "ASTRAL_TRUSTED_PROXIES": `["10.0.0.0/24"]`, "ASTRAL_WEB_SESSION_TTL": "24h", "ASTRAL_ADMIN_USERNAME": "fixture-admin", "ASTRAL_ADMIN_PASSWORD_FILE": file}
+	env := map[string]string{"ASTRAL_SERVER_DATA_DIR": "/env/server", "ASTRAL_COMPUTER_DATA_DIR": "/env/computers", "ASTRAL_INSTALLATION_ROOT": "/env/installation", "ASTRAL_NO_LOCAL": "true", "ASTRAL_TRUSTED_PROXIES": `["10.0.0.0/24"]`, "ASTRAL_WEB_SESSION_TTL": "24h", "ASTRAL_ADMIN_USERNAME": "fixture-admin", "ASTRAL_ADMIN_PASSWORD_FILE": file}
 	lookup := func(key string) (string, bool) { v, ok := env[key]; return v, ok }
 	var config platform.Config
 	f := flags("serve", io.Discard)
@@ -27,7 +27,7 @@ func TestRuntimeEnvironmentAndExplicitCLIHaveIndependentPrecedence(t *testing.T)
 	if err := serveRuntimeOptions(&config, f, nil, "", "", lookup); err != nil {
 		t.Fatal(err)
 	}
-	if config.DataDirectory != "/explicit/server" || config.ComputerDirectory != "/env/computers" || !config.NoLocal || config.SessionLifetime != 24*time.Hour || !reflect.DeepEqual(config.TrustedProxies, []string{"10.0.0.0/24"}) || config.InitialAdminUsername != "fixture-admin" || config.InitialAdminPassword != "fixture-password-with-newline" {
+	if config.DataDirectory != "/explicit/server" || config.ComputerDirectory != "/env/computers" || config.InstallationRoot != "/env/installation" || !config.NoLocal || config.SessionLifetime != 24*time.Hour || !reflect.DeepEqual(config.TrustedProxies, []string{"10.0.0.0/24"}) || config.InitialAdminUsername != "fixture-admin" || config.InitialAdminPassword != "fixture-password-with-newline" {
 		t.Fatalf("runtime configuration lost precedence or secret-file handling: %+v", config)
 	}
 }

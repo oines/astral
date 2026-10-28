@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('astralDesktop', {
   updates: {
     state: () => ipcRenderer.invoke('astral:update-state'),
     check: () => ipcRenderer.invoke('astral:update-check'),
-    install: () => ipcRenderer.invoke('astral:update-install'),
+    update: () => ipcRenderer.invoke('astral:update'),
     onState: (callback: (state: DesktopUpdateState) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: DesktopUpdateState) => callback(state)
       ipcRenderer.on('astral:update-state', listener)

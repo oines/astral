@@ -183,7 +183,7 @@ export async function checkReleaseTools() {
       assert.equal(await digest(path.join(temporary, 'public-output', name)), expected)
     }
     const publicNotes = await readFile(path.join(temporary, 'public-output', 'RELEASE_NOTES.md'), 'utf8')
-    for (const text of ['macOS:', 'Windows:', 'Linux Desktop:', 'Linux VPS:', 'Apple notarization is accepted', 'Windows packages are not code-signed', 'Linux packages are not code-signed', 'Desktop checks for updates', 'Versioned migrations are bundled', 'without downloading intermediate releases', `<!-- astral-release:${sourceSHA} -->`]) assert(publicNotes.includes(text), `Missing public release note: ${text}`)
+    for (const text of ['macOS:', 'Windows:', 'Linux Desktop:', 'Linux VPS:', 'Apple notarization is accepted', 'Windows packages are not code-signed', 'Linux packages are not code-signed', 'Desktop checks for new versions without downloading packages', 'Versioned migrations are bundled', 'without downloading intermediate releases', `<!-- astral-release:${sourceSHA} -->`]) assert(publicNotes.includes(text), `Missing public release note: ${text}`)
     for (const text of ['review-only', 'Draft Release', 'not approved for public distribution', 'public-release gate remains pending', 'Do not publish']) assert(!publicNotes.includes(text), `Draft-only language in public release notes: ${text}`)
     rejects('release-assets.mjs', [...publicArgs, '--output', 'public-output'], 'must be empty')
 

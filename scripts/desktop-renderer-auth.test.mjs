@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { runInNewContext } from 'node:vm'
-import { evaluateRenderer, managedRendererEndpoint, rendererAuthentication } from './desktop-renderer-auth.mjs'
+import { evaluateRenderer, managedRendererEndpoint, RendererConnectionError, rendererAuthentication, rendererUpdateMethod, rendererUpdateProgress, startRendererUpdate } from './desktop-renderer-auth.mjs'
 
 const origin = 'http://127.0.0.1:4545'
 
@@ -132,6 +132,129 @@ test('a packaged renderer without a working typed update bridge cannot pass acce
   for (const updates of [undefined, { currentVersion: 'not-a-version', phase: 'idle' }, { currentVersion: '0.1.0', phase: 'invented' }]) {
     await assert.rejects(rendererAuthentication(profile, origin, { evaluate: async () => ({ ready: true, origin, readyState: 'complete', mounted: true, onboardingVisible: true, status: 200, auth: { authenticated: true, desktop: true }, updates }) }), /update bridge/)
   }
+})
+
+test('current update lifecycle accepts available and typed retries, while ready is limited to an explicit old-package probe', async t => {
+  const profile = await fixture(t)
+  const probe = updates => async () => ({ ready: true, origin, readyState: 'complete', mounted: true, onboardingVisible: true, status: 200, auth: { authenticated: true, desktop: true }, updates })
+  for (const updates of [
+    { currentVersion: '0.1.2', phase: 'available', version: '0.1.3' },
+    { currentVersion: '0.1.2', phase: 'error', retry: 'check' },
+    { currentVersion: '0.1.2', phase: 'error', retry: 'update' },
+  ]) assert.equal(await rendererAuthentication(profile, origin, { evaluate: probe(updates) }), true)
+  const old = { currentVersion: '0.1.0', phase: 'ready', version: '0.1.1' }
+  await assert.rejects(rendererAuthentication(profile, origin, { evaluate: probe(old) }), /invalid lifecycle state/)
+  assert.equal(await rendererAuthentication(profile, origin, { evaluate: probe(old), allowLegacyUpdates: true }), true)
+  await assert.rejects(rendererAuthentication(profile, origin, { evaluate: probe({ ...old, phase: 'error', retry: 'install' }) }), /invalid retry action/)
+})
+
+test('the update driver prefers on-demand capability and requires explicit permission for an untouched install-only package', async () => {
+  for (const [updates, allowLegacy, expected] of [
+    [{ check() {}, update() {} }, false, 'update'],
+    [{ check() {}, update() {}, install() {} }, true, 'update'],
+    [{ check() {}, install() {} }, true, 'install'],
+  ]) {
+    const evaluate = (_endpoint, expression) => runInNewContext(expression, { window: { astralDesktop: { updates } } })
+    assert.equal(await rendererUpdateMethod('unused', { evaluate, allowLegacy }), expected)
+  }
+  for (const updates of [{ check() {}, install() {} }, { update() {} }, { check() {} }]) {
+    const evaluate = (_endpoint, expression) => runInNewContext(expression, { window: { astralDesktop: { updates } } })
+    await assert.rejects(rendererUpdateMethod('unused', { evaluate }), /on-demand update|support checking/)
+  }
+})
+
+test('an explicit update returns before its download and preserves asynchronous rejection for the replacement wait', async () => {
+  let rejectDownload
+  let calls = 0
+  const download = new Promise((_resolve, reject) => { rejectDownload = reject })
+  const window = { astralDesktop: { updates: { update: () => { calls++; return download }, state: async () => ({ phase: 'downloading', version: '0.1.3' }) } } }
+  const evaluate = (_endpoint, expression) => runInNewContext(expression, { window })
+  await startRendererUpdate('unused', 'update', { evaluate })
+  assert.equal(calls, 1)
+  assert.equal(window.__astralUpdateAcceptance.complete, false)
+  assert.equal((await rendererUpdateProgress('unused', { evaluate })).phase, 'downloading')
+  await assert.rejects(startRendererUpdate('unused', 'update', { evaluate }), /already started/)
+  rejectDownload(new Error('Installer checksum failed'))
+  await new Promise(resolve => setTimeout(resolve, 0))
+  await assert.rejects(rendererUpdateProgress('unused', { evaluate }), /Installer checksum failed/)
+})
+
+test('synchronous IPC failures and engine errors stay visible instead of being treated as an expected exit', async () => {
+  for (const engineError of [false, true]) {
+    const window = { astralDesktop: { updates: {
+      update: () => { if (!engineError) throw new Error('Native update denied') },
+      state: async () => ({ phase: engineError ? 'error' : 'available', error: 'Native installer failed' }),
+    } } }
+    const evaluate = (_endpoint, expression) => runInNewContext(expression, { window })
+    await startRendererUpdate('unused', 'update', { evaluate })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await assert.rejects(rendererUpdateProgress('unused', { evaluate }), /Native update denied|Native installer failed/)
+  }
+})
+
+test('the frozen official install action is invoked without changing its bridge or swallowing its result', async () => {
+  let calls = 0
+  const updates = { check() {}, install: async () => { calls++ }, state: async () => ({ phase: 'installing' }) }
+  const window = { astralDesktop: { updates } }
+  const evaluate = (_endpoint, expression) => runInNewContext(expression, { window })
+  const method = await rendererUpdateMethod('unused', { evaluate, allowLegacy: true })
+  await startRendererUpdate('unused', method, { evaluate })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(calls, 1)
+  assert.equal(updates.update, undefined, 'The driver must not polyfill or patch the old official bridge')
+  assert.equal((await rendererUpdateProgress('unused', { evaluate })).phase, 'installing')
+})
+
+test('an update that closes CDP before its acknowledgement is dispatched once and still requires replacement evidence', async () => {
+  for (const closure of ['transport', 'context']) {
+    let calls = 0
+    let diagnostic
+    const WebSocket = class extends globalThis.EventTarget {
+      constructor() {
+        super()
+        globalThis.queueMicrotask(() => this.dispatchEvent(new globalThis.Event('open')))
+      }
+      send(raw) {
+        const command = JSON.parse(raw)
+        const window = { astralDesktop: { updates: { install: () => {
+          calls++
+          if (closure === 'transport') this.dispatchEvent(new globalThis.Event('close'))
+          else this.dispatchEvent(new globalThis.MessageEvent('message', { data: JSON.stringify({ id: 1, error: { code: -32000, message: 'Execution context was destroyed.' } }) }))
+          return Promise.resolve()
+        } } } }
+        const value = runInNewContext(command.params.expression, { window })
+        // The update's microtask can run before CDP sends the evaluation reply.
+        globalThis.queueMicrotask(() => this.dispatchEvent(new globalThis.MessageEvent('message', { data: JSON.stringify({ id: 1, result: { result: { value } } }) })))
+      }
+      close() {}
+    }
+    const evaluate = (endpoint, expression) => evaluateRenderer(endpoint, expression, { WebSocket })
+    assert.equal(await startRendererUpdate('unused', 'install', { evaluate, diagnose: value => { diagnostic = value } }), false)
+    assert.equal(calls, 1, 'A missing acknowledgement must never retry the native update')
+    assert.match(diagnostic, /not acknowledged.*closed/)
+  }
+  let diagnostics = 0
+  for (const message of [
+    { result: { exceptionDetails: { text: 'Native update method is unavailable' } } },
+    { error: { code: -32601, message: 'Runtime.evaluate denied' } },
+  ]) {
+    const evaluate = (endpoint, expression) => evaluateRenderer(endpoint, expression, { WebSocket: cdpMessage(message) })
+    await assert.rejects(startRendererUpdate('unused', 'update', { evaluate, diagnose: () => { diagnostics++ } }), /unavailable|denied/)
+  }
+  assert.equal(diagnostics, 0, 'Script and protocol failures must stay fatal')
+})
+
+test('CDP transport closure is distinguishable from script and protocol failures after update dispatch', async () => {
+  const WebSocket = class extends globalThis.EventTarget {
+    constructor() {
+      super()
+      globalThis.queueMicrotask(() => this.dispatchEvent(new globalThis.Event('open')))
+    }
+    send() { this.dispatchEvent(new globalThis.Event('close')) }
+    close() {}
+  }
+  await assert.rejects(evaluateRenderer('unused', 'true', { WebSocket }), error => error instanceof RendererConnectionError)
+  await assert.rejects(evaluateRenderer('unused', 'true', { WebSocket: cdpMessage({ result: { exceptionDetails: { text: 'Update rejected' } } }) }), error => !(error instanceof RendererConnectionError) && /Update rejected/.test(error.message))
 })
 
 test('a successful probe cannot hide an App still showing its own login or initialization error', async t => {

@@ -298,6 +298,15 @@ elif [[ -L $root/data-program ]]; then old_program=$root/data-program/bin/astral
 if [[ -n $old_program ]]; then
   resolved=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$old_program")
   [[ $resolved == "$root/releases/"* && -x $old_program ]] || die 'existing program is not an installer-managed executable'
+  old_version=$("$old_program" version) || die 'existing program lacks version metadata'
+  python3 - "$old_version" "$version" <<'PYVERSION'
+import re,sys
+versions=[]
+for value in sys.argv[1:]:
+    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)',value): raise SystemExit('Invalid installed or target Server version')
+    versions.append(tuple(map(int,value.split('.'))))
+if versions[1]<versions[0]: raise SystemExit('Server downgrades are not supported; the current service is unchanged')
+PYVERSION
   old_formats=$("$old_program" version --data-formats) || die 'existing program lacks data-format metadata; use a separate empty root or follow explicit migration instructions'
   [[ $old_formats =~ ^[0-9]+\ [0-9]+$ ]] || die 'existing program lacks machine-readable data formats; use a separate empty root or follow explicit migration instructions'
   python3 - "$old_formats" "$new_formats" <<'PY'
@@ -358,7 +367,7 @@ target,root=sys.argv[1:]
 # executable paths do not undergo the same '$$' expansion as ordinary arguments.
 # Keep dollars literal in both places; percent specifiers still need escaping.
 def quote(value): return '"'+value.replace('\\','\\\\').replace('"','\\"').replace('%','%%')+'"'
-args=[root+'/current/bin/astral','serve','--data',root+'/data/server','--computers-dir',root+'/data/computers','--distribution-dir',root+'/current/distribution','--ready-file',root+'/run/ready.json']
+args=[root+'/current/bin/astral','serve','--installation-root',root,'--data',root+'/data/server','--computers-dir',root+'/data/computers','--distribution-dir',root+'/current/distribution','--ready-file',root+'/run/ready.json']
 with open(target,'w',encoding='utf-8') as f:
     f.write('# Astral Server installer root: '+root+'\n[Unit]\nDescription=Astral Server\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=/\nExecStart=:'+ ' '.join(map(quote,args))+'\nRestart=on-failure\nRestartSec=3\nTimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n')
 PY
@@ -410,6 +419,19 @@ if [[ -z $server_url ]]; then
   die "Server did not become ready; inspect journalctl --user -u $service"
 fi
 systemctl --user is-active --quiet "$service" || die 'Server exited during startup'
+# Capability is explicit and belongs to this user's exact root/unit, never a
+# guessed service name. The marker is outside migrated Server data snapshots.
+python3 - "$stage/installation.json" "$root" "$unit" <<'PYINSTALL'
+import json,os,sys
+temporary,root,unit=sys.argv[1:]
+value={'schema':1,'root':root,'data_directory':root+'/data/server','uid':os.getuid(),'service':'astral-server.service','unit_path':unit}
+with open(temporary,'x',encoding='utf-8') as f:
+    json.dump(value,f,indent=2)
+    f.write('\n')
+    f.flush()
+    os.fsync(f.fileno())
+os.replace(temporary,root+'/installation.json')
+PYINSTALL
 complete=1
 printf '\nAstral Server %s is running: %s\n' "$version" "$server_url"
 printf 'Service: systemctl --user status %s\nLogs: journalctl --user -u %s\n' "$service" "$service"

@@ -37,3 +37,11 @@ Choose QQ NapCat in Astral and enter both URLs and the token. Both endpoints mus
 Authorize the private chat or group and select a session. Mention the Bot in a group, verify a text reply, then try sending a file.
 
 NapCat sends plain text; Markdown syntax is not rendered. It does not replay messages missed while disconnected. If a send outcome is uncertain, inspect the chat before sending again.
+
+## NapCat replies, pokes and recalls
+
+Replies carry the original text and media references when that message is already in the same chat's Astral archive. Referenced files remain separate from new attachments and are not downloaded automatically. If the original is missing, the context says so; Astral does not search another chat or fetch the message automatically.
+
+Pokes appear as independent events with the actor, recipient, platform action text and custom suffix when NapCat supplies them. Another person poking the Bot can wake it in an authorized, bound chat. Pokes between other people, and actions performed by the Bot itself, remain passive context.
+
+A recall appends an event identifying the operator and original message. It does not erase or rewrite context the Agent already received. These events follow the same chat permissions as messages and do not authorize a new chat. NapCat has no missed-message replay; separate delivered notices are recorded separately even when their visible contents match.
