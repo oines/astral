@@ -158,6 +158,12 @@ export type AstralCoreInputClear = {
     kinds: Array<string>;
 };
 
+export type AstralCoreInputGeneration = {
+    attempt_id: string;
+    run_id?: string;
+    turn_id?: string;
+};
+
 export type AstralCoreInvocation = {
     assistant_id: string;
     binding?: unknown;
@@ -285,6 +291,7 @@ export type AstralCoreRequestInput = {
     rollout_id: string;
     selection?: Array<number>;
     snapshot?: unknown;
+    sources?: Array<string>;
 };
 
 export type AstralCoreResponseFormat = {
@@ -1135,9 +1142,11 @@ export type AstralInternalHarnessContextUsage = {
 
 export type AstralInternalHarnessInputReceipt = {
     accepted_at: string;
+    accepted_run_id?: string;
     digest: string;
     entry_id?: string;
     error?: string;
+    generation?: AstralCoreInputGeneration;
     input_id: string;
     session_id: string;
     state: string;

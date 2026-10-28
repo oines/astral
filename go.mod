@@ -7,7 +7,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
-	github.com/oines/astral-core v0.0.0-20261027103920-027b81ca29b6
+	github.com/oines/astral-core v0.0.0-20261028161611-6c1c15695c4a
 	github.com/pquerna/otp v1.5.0
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/yuin/goldmark v1.8.6

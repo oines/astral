@@ -105,18 +105,20 @@ func (s *Service) MovePending(ctx context.Context, id, inputID, beforeID string)
 // InputReceipt is a presentation of Core's authoritative receipt. There is no
 // Host admission journal or history scan to reconstruct input state.
 type InputReceipt struct {
-	InputID    string    `json:"input_id"`
-	SessionID  string    `json:"session_id"`
-	Digest     string    `json:"digest"`
-	AcceptedAt time.Time `json:"accepted_at"`
-	EntryID    string    `json:"entry_id,omitempty"`
-	State      string    `json:"state"`
-	Error      string    `json:"error,omitempty"`
+	InputID       string                `json:"input_id"`
+	SessionID     string                `json:"session_id"`
+	Digest        string                `json:"digest"`
+	AcceptedAt    time.Time             `json:"accepted_at"`
+	EntryID       string                `json:"entry_id,omitempty"`
+	State         string                `json:"state"`
+	Error         string                `json:"error,omitempty"`
+	Generation    *core.InputGeneration `json:"generation,omitempty"`
+	AcceptedRunID string                `json:"accepted_run_id,omitempty"`
 }
 
 func digest(value any) string { sum := sha256.Sum256(encode(value)); return hex.EncodeToString(sum[:]) }
 func (r *runtime) receiptView(receipt core.InputReceipt) InputReceipt {
-	return InputReceipt{InputID: receipt.ID, SessionID: r.id, Digest: receipt.Digest, AcceptedAt: receipt.AcceptedAt, EntryID: receipt.EntryID, State: string(receipt.State)}
+	return InputReceipt{InputID: receipt.ID, SessionID: r.id, Digest: receipt.Digest, AcceptedAt: receipt.AcceptedAt, EntryID: receipt.EntryID, State: string(receipt.State), Generation: receipt.Generation, AcceptedRunID: receipt.AcceptedRunID}
 }
 func (r *runtime) existingReceipt(ctx context.Context, id, hash string) (InputReceipt, bool, error) {
 	receipt, err := r.core.Load().LookupInput(ctx, id)
@@ -181,8 +183,8 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 	return receipt, err
 }
 
-// Deliver admits each observation/trigger group atomically. Observations alone
-// remain passive, including when the session has no driving conversation yet.
+// Deliver admits each observation once. A working Session reads it at its next
+// generation boundary; only an idle Session receives a separate direct wakeup.
 func (s *Service) Deliver(ctx context.Context, id string, observation core.Message, trigger *core.Message, bindingID ...string) (InputReceipt, error) {
 	r, err := s.open(ctx, id)
 	if err != nil {
@@ -204,48 +206,164 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 	if err = json.Unmarshal(observation.Metadata, &metadata); err != nil || metadata.EventID == "" {
 		return InputReceipt{}, domain.Invalid("observation needs an event identity")
 	}
-	inputID, kind := metadata.EventID, core.InputContext
+	inputID := metadata.EventID
 	if trigger != nil {
 		inputID += ":trigger"
-		kind = core.InputSteer
 	}
 	hash := digest(struct {
 		Observation core.Message
 		Trigger     *core.Message
 	}{observation, trigger})
 	if receipt, exists, err := r.existingReceipt(ctx, inputID, hash); err != nil || exists {
+		if err == nil && trigger != nil {
+			_, err = r.wakeObservation(ctx, inputID, *trigger)
+		}
 		return receipt, err
 	}
 	input := core.Input{ID: inputID, Digest: hash, Contexts: []core.Message{observation}}
-	if trigger != nil {
-		input.Message = *trigger
-		prior, err := r.core.Load().LookupInput(ctx, metadata.EventID)
-		if err == nil {
-			passiveHash := digest(struct {
-				Observation core.Message
-				Trigger     *core.Message
-			}{Observation: observation})
-			if prior.Digest != passiveHash {
-				return InputReceipt{}, domain.Conflict("referenced observation has different content")
-			}
-			if prior.State != core.InputApplied {
-				return InputReceipt{}, domain.Conflict("referenced observation has not been applied yet")
-			}
-			input.Contexts = nil
-		} else if !errors.Is(err, core.ErrNotFound) {
-			return InputReceipt{}, err
-		}
-	}
 	for i := range input.Contexts {
 		if err = s.Files.FreezeImages(ctx, r.agentID, id, &input.Contexts[i]); err != nil {
 			return InputReceipt{}, err
 		}
 	}
-	receipt, err := r.accept(ctx, input, kind)
+	receipt, err := r.accept(ctx, input, core.InputContext)
 	if err == nil && trigger != nil {
-		r.maybeGenerateSessionTitle(metadata.DisplayText)
+		var status core.InputAdmissionStatus
+		status, err = r.wakeObservation(ctx, inputID, *trigger)
+		if err == nil && status == core.InputAccepted {
+			r.maybeGenerateSessionTitle(metadata.DisplayText)
+		}
 	}
 	return receipt, err
+}
+
+// WakeObservation completes the idle handoff of a direct IM input. Core checks
+// request ownership and idle state in the same lock as conditional admission.
+func (s *Service) WakeObservation(ctx context.Context, id, inputID string, trigger core.Message, bindingID string) (core.InputAdmissionStatus, error) {
+	r, err := s.open(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var record domain.Session
+	if err = s.Store.Get(ctx, "sessions", id, &record); err != nil {
+		return "", err
+	}
+	if record.BindingID != bindingID {
+		return "", domain.Conflict("the inbound binding is no longer active")
+	}
+	return r.wakeObservation(ctx, inputID, trigger)
+}
+
+func (r *runtime) wakeObservation(ctx context.Context, inputID string, trigger core.Message) (core.InputAdmissionStatus, error) {
+	session := r.core.Load()
+	receipt, err := session.LookupInput(ctx, inputID)
+	if err != nil {
+		return "", err
+	}
+	if receipt.Kind != core.InputContext {
+		// An input that already owns a driving role must not acquire another
+		// driver. Pending owner work retains its normal Stop/Continue policy.
+		return core.InputCovered, nil
+	}
+	if ObservationSuspended(session, receipt.AcceptedRunID) {
+		return core.InputCovered, nil
+	}
+	wakeupID := inputID + ":wakeup"
+	suspended, err := WakeupSuspended(ctx, session, r.service.CoreStore, wakeupID)
+	if err != nil {
+		return "", err
+	}
+	if suspended {
+		return core.InputCovered, nil
+	}
+	var metadata messages.Metadata
+	if err = json.Unmarshal(trigger.Metadata, &metadata); err != nil {
+		return "", err
+	}
+	metadata.DeliveryID = wakeupID
+	trigger.Metadata = encode(metadata)
+	admission, err := session.SteerIfIdle(ctx, core.Input{ID: wakeupID, Message: trigger}, []string{inputID})
+	if err != nil {
+		return "", err
+	}
+	if admission.Status == core.InputBusy {
+		// A fresh explicit IM request may resume a queue preserved by Stop.
+		// Existing work already supplies the driver; retain this observation's
+		// handoff until a generation actually claims it.
+		if err = r.resumeQueueForNewObservation(ctx, inputID, receipt); err != nil {
+			return "", err
+		}
+	}
+	if admission.Status == core.InputExisting && admission.Receipt.State != core.InputPending {
+		return core.InputCovered, nil
+	}
+	if admission.Status == core.InputAccepted || admission.Status == core.InputExisting {
+		persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		err = r.continueLocked(persist)
+		cancel()
+		if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
+			err = nil
+		}
+	}
+	return admission.Status, err
+}
+
+func (r *runtime) resumeQueueForNewObservation(ctx context.Context, inputID string, receipt core.InputReceipt) error {
+	session := r.core.Load()
+	snapshot := session.Snapshot()
+	state := snapshot.State
+	if receipt.Generation != nil || receipt.AcceptedRunID != "" || snapshot.Running || snapshot.Maintenance || state.CurrentAttemptID != "" || !state.Branch.Complete() || state.PendingInputs[core.InputSteer]+state.PendingInputs[core.InputFollowUp] == 0 {
+		return nil
+	}
+	queued, err := r.service.CoreStore.Scan(ctx, state.RolloutID, core.Query{SessionID: r.id, Kind: core.EntryInputQueued, Reference: inputID, Limit: 1, MaxBytes: 4 << 20})
+	if err != nil || len(queued.Records) == 0 {
+		return err
+	}
+	last, err := r.service.CoreStore.Scan(ctx, state.RolloutID, core.Query{SessionID: r.id, Kind: core.EntryRun, Reverse: true, Limit: 1, MaxBytes: 1 << 20})
+	if err != nil {
+		return err
+	}
+	if len(last.Records) != 0 {
+		terminal := last.Records[0].Entry
+		if terminal.Sequence > queued.Records[0].Entry.Sequence && (terminal.Run.Status == "cancelled" || terminal.Run.Status == "failed") {
+			return nil
+		}
+	}
+	persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	err = r.continueLocked(persist)
+	if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
+		return nil
+	}
+	return err
+}
+
+// ObservationSuspended keeps Stop and failed runs from becoming implicit
+// retries. A subsequent explicit input may still consume their passive context.
+func ObservationSuspended(session *core.Session, acceptedRunID string) bool {
+	last := session.Snapshot().State.LastRun
+	return acceptedRunID != "" && last != nil && last.ID == acceptedRunID && (last.Status == "cancelled" || last.Status == "failed")
+}
+
+// WakeupSuspended distinguishes a crash before Continue from an explicit stop
+// or failure after this accepted wakeup began. Both can leave it in the queue.
+func WakeupSuspended(ctx context.Context, session *core.Session, store core.Store, inputID string) (bool, error) {
+	state := session.State()
+	if state.LastRun == nil || state.LastRun.Status != "cancelled" && state.LastRun.Status != "failed" {
+		return false, nil
+	}
+	pending, err := store.Pending(ctx, session.ID(), core.PendingQuery{Kind: core.EntryInputQueued, InputKind: core.InputSteer, InputID: inputID, Limit: 1, MaxBytes: 4 << 20})
+	if err != nil || len(pending.Records) == 0 {
+		return false, err
+	}
+	last, err := store.Scan(ctx, state.RolloutID, core.Query{SessionID: session.ID(), Kind: core.EntryRun, Reverse: true, Limit: 1, MaxBytes: 1 << 20})
+	if err != nil || len(last.Records) == 0 {
+		return false, err
+	}
+	terminal := last.Records[0].Entry
+	return terminal.Sequence > pending.Records[0].Entry.Sequence && (terminal.Run.Status == "cancelled" || terminal.Run.Status == "failed"), nil
 }
 func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputKind) (InputReceipt, error) {
 	var record domain.Session

@@ -20,7 +20,7 @@ Ordinary sessions support two modes:
 
 Pending queued messages can be edited, removed, or reordered. A new instruction does not undo an operation that has already run.
 
-Sessions bound to a chat platform use steering: direct mentions, replies, and Web input enter the same session.
+In a session bound to a chat platform, messages received from that chat join the Bot's following model steps while it is working, without a separate wakeup. When idle, private messages, direct mentions, replies to the Bot, and supported pokes wake it directly; ordinary group messages follow the [proactive participation setting](/docs/chat/groups/). Web input in a bound session uses Steer.
 
 ## Stop and continue
 

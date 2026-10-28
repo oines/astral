@@ -48,6 +48,7 @@ func TestPurgeAgentDataErasesHistoryReceiptsAndPrivateCredentials(t *testing.T) 
 			{"channel_cursors", "deleted-account", "", "", "", "", ""},
 			{"inbox_cursors", "owned-binding", "", "", "", "", ""},
 			{"probe_cursors", "owned-binding", "", "", "", "", ""},
+			{"im_activation_cursors", "owned-binding", "", "", "", "", ""},
 			{"weixin_wire", "owned-wire", "", "deleted-account", "", "", privateWire},
 			{"files", "owned-file", "deleted-bot", "", "", "", ""},
 			{"connections", "other-account", "other-bot", "", "", "", shared},
@@ -76,7 +77,7 @@ func TestPurgeAgentDataErasesHistoryReceiptsAndPrivateCredentials(t *testing.T) 
 	if err = store.Update(ctx, func(tx *Tx) error { return tx.PurgeAgentData(ctx, "deleted-bot") }); err != nil {
 		t.Fatal(err)
 	}
-	for _, kind := range []string{"connections", "conversations", "bindings", "outbox", "channel_commands", "channel_cursors", "inbox_cursors", "probe_cursors", "weixin_wire", "files"} {
+	for _, kind := range []string{"connections", "conversations", "bindings", "outbox", "channel_commands", "channel_cursors", "inbox_cursors", "probe_cursors", "im_activation_cursors", "weixin_wire", "files"} {
 		records, err := store.Retained(ctx, kind)
 		if err != nil {
 			t.Fatal(err)

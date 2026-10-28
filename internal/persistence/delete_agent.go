@@ -60,7 +60,7 @@ func (tx *Tx) PurgeAgentData(ctx context.Context, agentID string) error {
 				continue
 			}
 			matches := value(d, "agent_id") == agentID || connections[value(d, "connection_id")] || conversations[value(d, "conversation_id")] || bindings[value(d, "binding_id")]
-			matches = matches || d.kind == "channel_cursors" && connections[d.id] || (d.kind == "inbox_cursors" || d.kind == "probe_cursors") && bindings[d.id]
+			matches = matches || d.kind == "channel_cursors" && connections[d.id] || (d.kind == "inbox_cursors" || d.kind == "probe_cursors" || d.kind == "im_activation_cursors") && bindings[d.id]
 			if !matches || owned[key(d.kind, d.id)] {
 				continue
 			}

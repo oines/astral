@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -36,6 +37,25 @@ func migrationFixture(t *testing.T) (string, *sql.DB) {
 	return directory, db
 }
 
+func baselineMigrationFixture(t *testing.T) (string, *sql.DB) {
+	t.Helper()
+	directory := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(directory, "astral.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+	fixture, err := os.ReadFile("testdata/format3.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec("PRAGMA journal_mode=WAL;" + string(fixture)); err != nil {
+		t.Fatal(err)
+	}
+	return directory, db
+}
+
 func execMigrationSQL(t *testing.T, db *sql.DB, query string) {
 	t.Helper()
 	if _, err := db.Exec(query); err != nil {
@@ -59,7 +79,7 @@ func TestMigrationNewDatabaseAndReadOnlyInspection(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := InspectMigration(ctx, directory)
-	if err != nil || status != (MigrationStatus{Current: 3, Target: 3}) {
+	if err != nil || status != (MigrationStatus{Current: FormatVersion, Target: FormatVersion}) {
 		t.Fatalf("new database: %+v %v", status, err)
 	}
 	after, err := os.ReadFile(path)
@@ -75,7 +95,7 @@ func TestMigrationNewDatabaseAndReadOnlyInspection(t *testing.T) {
 	}
 	missing := filepath.Join(t.TempDir(), "uncreated")
 	status, err = InspectMigration(ctx, missing)
-	if err != nil || status != (MigrationStatus{Target: 3, Missing: true}) {
+	if err != nil || status != (MigrationStatus{Target: FormatVersion, Missing: true}) {
 		t.Fatalf("missing database: %+v %v", status, err)
 	}
 	if err = Migrate(ctx, missing); err != nil {
@@ -109,7 +129,7 @@ func TestMigrationAdoptsOnlySupportedBaselineAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	execMigrationSQL(t, db, "DROP TABLE goose_db_version")
+	execMigrationSQL(t, db, "DROP TABLE goose_db_version; PRAGMA user_version=3;")
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +138,7 @@ func TestMigrationAdoptsOnlySupportedBaselineAndIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := InspectMigration(ctx, directory)
-	if err != nil || status != (MigrationStatus{Current: 3, Target: 3, NeedsMigration: true}) {
+	if err != nil || status != (MigrationStatus{Current: 3, Target: FormatVersion, NeedsMigration: true}) {
 		t.Fatalf("baseline inspection: %+v %v", status, err)
 	}
 	after, err := os.ReadFile(path)
@@ -131,7 +151,7 @@ func TestMigrationAdoptsOnlySupportedBaselineAndIsIdempotent(t *testing.T) {
 		}
 	}
 	status, err = InspectMigration(ctx, directory)
-	if err != nil || status.NeedsMigration || status.Current != 3 {
+	if err != nil || status.NeedsMigration || status.Current != FormatVersion {
 		t.Fatalf("adopted baseline: %+v %v", status, err)
 	}
 	st, err := Open(directory)
@@ -148,13 +168,13 @@ func TestMigrationAdoptsOnlySupportedBaselineAndIsIdempotent(t *testing.T) {
 		t.Fatalf("baseline replaced master.key: %v", err)
 	}
 	var count int
-	if err = st.db.QueryRow("SELECT count(*) FROM goose_db_version").Scan(&count); err != nil || count != 2 {
+	if err = st.db.QueryRow("SELECT count(*) FROM goose_db_version").Scan(&count); err != nil || int64(count) != FormatVersion-BaselineVersion+2 {
 		t.Fatalf("baseline applied more than once: %d %v", count, err)
 	}
 }
 
 func TestMigrationResumesAfterLedgerInitializationWithoutRelabellingData(t *testing.T) {
-	directory, db := migrationFixture(t)
+	directory, db := baselineMigrationFixture(t)
 	execMigrationSQL(t, db, "DELETE FROM goose_db_version WHERE version_id=3")
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
@@ -167,7 +187,7 @@ func TestMigrationResumesAfterLedgerInitializationWithoutRelabellingData(t *test
 		t.Fatal(err)
 	}
 	status, err = InspectMigration(context.Background(), directory)
-	if err != nil || status.Current != 3 || status.NeedsMigration {
+	if err != nil || status.Current != FormatVersion || status.NeedsMigration {
 		t.Fatalf("baseline resume: %+v %v", status, err)
 	}
 }
@@ -251,7 +271,7 @@ func migrationSteps(t *testing.T, db *sql.DB) []int {
 
 func TestMigrationRunsAllMissingSQLAndGoStepsInOrder(t *testing.T) {
 	ctx := context.Background()
-	directory, db := migrationFixture(t)
+	directory, db := baselineMigrationFixture(t)
 	plan := testMigrationPlan(false)
 	status, err := inspectMigration(ctx, db, plan)
 	if err != nil || status.Current != 3 || status.Target != 5 || !status.NeedsMigration {
@@ -336,7 +356,7 @@ func convertFrozenV4JSON(ctx context.Context, tx *sql.Tx) error {
 
 func TestMigrationFrozenJSONConvertsCurrentAndHistoricalRevisions(t *testing.T) {
 	ctx := context.Background()
-	_, db := migrationFixture(t)
+	_, db := baselineMigrationFixture(t)
 	const current = `{"legacy_name":"current","counter":9007199254740993123,"extra":{"keep":true}}`
 	const historical = `{"legacy_name":"previous","counter":9007199254740993124,"extra":{"keep":true}}`
 	if _, err := db.Exec("INSERT INTO documents(kind,id,revision,data) VALUES('migration_fixture','sample',2,?);", current); err != nil {
@@ -380,7 +400,7 @@ func TestMigrationFrozenJSONConvertsCurrentAndHistoricalRevisions(t *testing.T) 
 
 func TestMigrationFailureRollsBackDataMarkersAndLedgerThenResumes(t *testing.T) {
 	ctx := context.Background()
-	_, db := migrationFixture(t)
+	_, db := baselineMigrationFixture(t)
 	plan := testMigrationPlan(true)
 	if err := migrateDatabase(ctx, db, plan); err == nil || !strings.Contains(err.Error(), "injected conversion failure") {
 		t.Fatalf("expected injected failure, got %v", err)
@@ -403,7 +423,7 @@ func TestMigrationFailureRollsBackDataMarkersAndLedgerThenResumes(t *testing.T) 
 func TestMigrationRejectsUnknownAndInconsistentFormatsBeforeWriting(t *testing.T) {
 	for _, mutation := range []string{
 		"PRAGMA user_version=2;",
-		"PRAGMA user_version=4;",
+		fmt.Sprintf("PRAGMA user_version=%d;", FormatVersion+1),
 		"PRAGMA user_version=0;",
 		"PRAGMA user_version=1;",
 	} {
@@ -441,7 +461,7 @@ func TestMigrationRejectsUnknownAndInconsistentFormatsBeforeWriting(t *testing.T
 func TestMigrationRejectsLedgerGapsAndUnregisteredSteps(t *testing.T) {
 	ctx := context.Background()
 	for _, mutation := range []string{
-		"INSERT INTO goose_db_version(version_id,is_applied) VALUES(4,1);",
+		fmt.Sprintf("INSERT INTO goose_db_version(version_id,is_applied) VALUES(%d,1);", FormatVersion+1),
 		"DELETE FROM goose_db_version WHERE version_id=0;",
 		"UPDATE goose_db_version SET is_applied=0 WHERE version_id=3;",
 		"DELETE FROM goose_db_version;",
@@ -481,7 +501,7 @@ func TestMigrationRejectsNonDatabaseAndHonorsCancellation(t *testing.T) {
 func TestMigrationInspectionSeesUncheckpointedWAL(t *testing.T) {
 	directory, db := migrationFixture(t)
 	path := filepath.Join(directory, "astral.db")
-	execMigrationSQL(t, db, "PRAGMA wal_autocheckpoint=0; PRAGMA user_version=4;")
+	execMigrationSQL(t, db, fmt.Sprintf("PRAGMA wal_autocheckpoint=0; PRAGMA user_version=%d;", FormatVersion+1))
 	if info, err := os.Stat(path + "-wal"); err != nil || info.Size() == 0 {
 		t.Fatalf("fixture did not retain a WAL: %v", err)
 	}
@@ -494,7 +514,7 @@ func TestMigrationInspectionSeesUncheckpointedWAL(t *testing.T) {
 		before[suffix] = data
 	}
 	status, err := InspectMigration(context.Background(), directory)
-	if !errors.Is(err, errMigrationFormat) || status.Current != 4 {
+	if !errors.Is(err, errMigrationFormat) || status.Current != FormatVersion+1 {
 		t.Fatalf("inspection ignored the WAL: %+v %v", status, err)
 	}
 	for suffix, data := range before {

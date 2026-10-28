@@ -128,7 +128,7 @@ func TestProbeWakeupModelRequestIncludesReplyReminderButProbeRequestDoesNot(t *t
 	}
 	testkit.Await(t, p.Context, func() bool { return p.Requests.Load() == 2 })
 	p.Idle(t, binding.SessionID)
-	assertDriverReplyReminder(t, <-requests, `<im_wakeup conversation-id="`+binding.ConversationID+`"/>`)
+	assertDriverReplyReminder(t, <-requests, `<im_wakeup conversation-id="`+binding.ConversationID+`" event-ids="`+event.ID+`"/>`)
 	// A later Probe observes the main Session after that wakeup. Its projection
 	// must still exclude the driver's reminder rather than adopt reply duties.
 	view, err = p.Harness.ReadContext(p.Context, binding.SessionID)

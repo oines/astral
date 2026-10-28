@@ -83,6 +83,9 @@ func Observation(event domain.Observation, connection domain.Connection, convers
 		if event.MessageID != "" {
 			fmt.Fprintf(&body, " message-id=\"%s\"", Escape(event.MessageID))
 		}
+		if event.Trigger != "" && !event.Self {
+			fmt.Fprintf(&body, " trigger=\"%s\"", Escape(event.Trigger))
+		}
 		text := event.Text
 		if text == "" && event.Kind == "message.deleted" {
 			text = "The platform reported that this message was deleted."
@@ -93,6 +96,9 @@ func Observation(event domain.Observation, connection domain.Connection, convers
 			Escape(event.MessageID), Escape(event.ID), Escape(sender), Escape(event.Sender.ID), event.SentAt.Format(time.RFC3339Nano))
 		if event.EditedAt != nil {
 			fmt.Fprintf(&body, " edited=\"%s\"", event.EditedAt.Format(time.RFC3339Nano))
+		}
+		if event.Trigger != "" && !event.Self {
+			fmt.Fprintf(&body, " trigger=\"%s\"", Escape(event.Trigger))
 		}
 		body.WriteString(">\n")
 		if event.ReplyID != "" {

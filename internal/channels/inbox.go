@@ -26,6 +26,7 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	}
 	results := make(chan probeResult, 1)
 	probing := false
+	var pendingResult *probeResult
 	for ctx.Err() == nil {
 		events, err := s.Store.Observations(ctx, b.ConversationID, position.Sequence, 100)
 		if err != nil {
@@ -49,15 +50,28 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 				break
 			}
 		}
+		if err == nil {
+			err = s.handoffDirectObservations(ctx, b, position.Sequence)
+		}
+		if err == nil {
+			err = s.resumeAcceptedProbe(ctx, b)
+		}
 		select {
 		case result := <-results:
 			probing = false
-			if probeErr := s.finishProbe(ctx, b, result); probeErr != nil && ctx.Err() == nil {
-				slog.WarnContext(ctx, "IM Probe completion failed", "conversation_id", b.ConversationID, "error", probeErr)
-			}
+			pendingResult = &result
 		default:
 		}
-		if !probing && err == nil {
+		if pendingResult != nil {
+			settled, probeErr := s.completeProbe(ctx, b, *pendingResult)
+			if settled {
+				pendingResult = nil
+			}
+			if probeErr != nil && ctx.Err() == nil {
+				slog.WarnContext(ctx, "IM Probe completion failed", "conversation_id", b.ConversationID, "error", probeErr)
+			}
+		}
+		if !probing && pendingResult == nil && err == nil {
 			window, probeErr := s.pendingProbe(ctx, b, position.Sequence, time.Now())
 			if probeErr == nil && window.Through != 0 {
 				if _, lookupErr := s.Harness.Receipt(ctx, b.SessionID, probeInputID(b.ID, window.Through)); lookupErr == nil {
@@ -81,7 +95,7 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 							request, cancel := context.WithTimeout(ctx, time.Minute)
 							defer cancel()
 							participate, requestErr := s.shouldParticipate(request, b, view)
-							results <- probeResult{through: window.Through, participate: participate, err: requestErr}
+							results <- probeResult{through: window.Through, inputs: window.Inputs, participate: participate, err: requestErr}
 						}()
 					} else if !errors.Is(viewErr, core.ErrIncompleteBatch) {
 						_ = s.finishProbe(ctx, b, probeResult{through: window.Through, err: viewErr})
@@ -97,6 +111,52 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 			return
 		}
 	}
+}
+
+// handoffDirectObservations tracks only the wakeup policy, never model history.
+// The authoritative generation acknowledgement remains on each Core receipt.
+// Ordinary group traffic has its own Probe cursor and cannot block this cursor.
+func (s *Service) handoffDirectObservations(ctx context.Context, b domain.ConversationBinding, delivered int64) error {
+	position := cursor{Meta: domain.Meta{ID: b.ID}, Sequence: b.StartSequence}
+	if err := s.Store.Get(ctx, "im_activation_cursors", b.ID, &position); err != nil && !domain.IsMissing(err) {
+		return err
+	}
+	initial := position.Sequence
+	for position.Sequence < delivered {
+		page, err := s.Store.Observations(ctx, b.ConversationID, position.Sequence, 100)
+		if err != nil {
+			return err
+		}
+		if len(page) == 0 {
+			break
+		}
+		blocked := false
+		for _, item := range page {
+			if item.Sequence > delivered {
+				break
+			}
+			event := item.Observation
+			if event.Trigger != "" && !event.Self {
+				status, err := s.Harness.WakeObservation(ctx, b.SessionID, event.ID+":trigger", messages.Trigger(event), b.ID)
+				if err != nil {
+					return err
+				}
+				if status == core.InputBusy {
+					blocked = true
+					break
+				}
+			}
+			position.Sequence = item.Sequence
+		}
+		if blocked {
+			break
+		}
+	}
+	if position.Sequence == initial {
+		return nil
+	}
+	// Stable conditional wakeup IDs make a failed cursor write safe to replay.
+	return s.Store.Save(ctx, "im_activation_cursors", &position.Meta, &position)
 }
 func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, event domain.Observation) (err error) {
 	defer func() {
