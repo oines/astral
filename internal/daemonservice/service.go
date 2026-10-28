@@ -46,8 +46,8 @@ type commandResult struct {
 type commandRunner func(context.Context, string, ...string) (commandResult, error)
 
 type Manager struct {
-	root, home, platform, uid, id, name, definition, target string
-	run                                                     commandRunner
+	root, home, platform, uid, id, name, definition, target, configHome string
+	run                                                                 commandRunner
 }
 
 func New(root string) (*Manager, error) {
@@ -59,7 +59,7 @@ func New(root string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newManager(root, home, runtime.GOOS, current.Uid, execute)
+	return newManager(root, home, runtime.GOOS, current.Uid, nativeRunner(current.Uid))
 }
 
 func newManager(root, home, platform, uid string, run commandRunner) (*Manager, error) {
@@ -82,10 +82,16 @@ func newManager(root, home, platform, uid string, run commandRunner) (*Manager, 
 	case "linux":
 		m.target = "astral-daemon-" + id + ".service"
 		config := os.Getenv("XDG_CONFIG_HOME")
-		if config == "" {
+		// XDG base-directory values must be absolute. A manager may inherit a
+		// literal $HOME/.config from PAM; that is not shell-expanded here.
+		if !filepath.IsAbs(config) {
 			config = filepath.Join(home, ".config")
 		}
-		m.definition = filepath.Join(config, "systemd", "user", m.target)
+		if !filepath.IsAbs(config) || strings.ContainsAny(config, "\x00\r\n") {
+			return nil, errors.New("linux user-service configuration directory must be an absolute path without control characters")
+		}
+		m.configHome = filepath.Clean(config)
+		m.definition = filepath.Join(m.configHome, "systemd", "user", m.target)
 	case "windows":
 		if !validSID(uid) {
 			return nil, errors.New("cannot install a user task without a Windows user SID")
@@ -116,8 +122,10 @@ func validSID(value string) bool {
 	return true
 }
 
-func execute(ctx context.Context, name string, args ...string) (commandResult, error) {
-	raw, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+func executeEnvironment(ctx context.Context, environment []string, name string, args ...string) (commandResult, error) {
+	command := exec.CommandContext(ctx, name, args...)
+	command.Env = environment
+	raw, err := command.CombinedOutput()
 	result := commandResult{output: strings.TrimSpace(string(raw))}
 	if len(result.output) > 4096 {
 		result.output = result.output[len(result.output)-4096:]
@@ -528,7 +536,7 @@ func (m *Manager) systemd(spec Spec) string {
 	for _, arg := range m.args(spec) {
 		argv = append(argv, systemdQuote(arg, true))
 	}
-	return "[Unit]\nDescription=" + m.name + "\n\n[Service]\nType=simple\nEnvironment=" + systemdQuote("PATH="+spec.EnvironmentPATH, false) + "\nExecStart=" + strings.Join(argv, " ") + "\nUMask=0077\nRestart=always\nRestartSec=5\nTimeoutStopSec=30\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n"
+	return "[Unit]\nDescription=" + m.name + "\n\n[Service]\nType=simple\nEnvironment=" + systemdQuote("PATH="+spec.EnvironmentPATH, false) + "\nEnvironment=" + systemdQuote("XDG_CONFIG_HOME="+m.configHome, false) + "\nExecStart=" + strings.Join(argv, " ") + "\nUMask=0077\nRestart=always\nRestartSec=5\nTimeoutStopSec=30\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n"
 }
 func (m *Manager) launchd(spec Spec, launcher string) string {
 	args := "<string>" + xmlQuote(launcher) + "</string>"

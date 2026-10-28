@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { execFile, spawn } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { chmod, copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:https'
 import path from 'node:path'
 import { userInfo } from 'node:os'
@@ -16,6 +16,8 @@ import { promisify } from 'node:util'
 
 if (process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true' || !process.env.RUNNER_TEMP) throw new Error('Real Daemon update acceptance requires a disposable GitHub Actions user; never run on a developer account.')
 if (!['darwin', 'win32', 'linux'].includes(process.platform)) throw new Error('Unsupported native Daemon update platform.')
+const rootUser = process.argv.includes('--root-user')
+if (rootUser && (process.platform !== 'linux' || process.getuid?.() !== 0 || process.geteuid?.() !== 0)) throw new Error('Root Daemon acceptance requires an explicit disposable Linux CI root account.')
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../', import.meta.url))
 const system = process.platform === 'win32' ? 'windows' : process.platform
@@ -47,8 +49,23 @@ let uninstalled = false
 let retain = false
 let checksum
 let fixtureOutput = ''
+let rootPrepared = false
+const rootLingerWasEnabled = rootUser && await lstat('/var/lib/systemd/linger/root').then(info => {
+  assert.ok(info.isFile() && !info.isSymbolicLink(), 'Root lingering marker must be a regular file before this fixture changes anything')
+  return true
+}).catch(error => { if (error.code === 'ENOENT') return false; throw error })
 
-const command = (executable, args, options = {}) => execute(executable, args, { cwd: repository, windowsHide: true, timeout: 120_000, maxBuffer: 2 << 20, ...options })
+async function command(executable, args, options = {}) {
+  let environment
+  if (rootUser && ['systemctl', 'journalctl'].includes(executable)) {
+    // Fixture introspection uses the root manager. The actual product binaries
+    // below keep the deliberately missing/cross-user environment from CI.
+    environment = { ...process.env, XDG_RUNTIME_DIR: '/run/user/0' }
+    delete environment.DBUS_SESSION_BUS_ADDRESS
+    if (await lstat('/run/user/0/bus').then(info => info.isSocket()).catch(error => { if (error.code === 'ENOENT') return false; throw error })) environment.DBUS_SESSION_BUS_ADDRESS = 'unix:path=/run/user/0/bus'
+  }
+  return execute(executable, args, { cwd: repository, windowsHide: true, timeout: 120_000, maxBuffer: 2 << 20, ...(environment ? { env: environment } : {}), ...options })
+}
 const run = async (executable, ...args) => (await command(executable, args)).stdout.trim()
 const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error } }
 const shellQuote = text => system === 'windows' ? `'${text.replaceAll("'", "''")}'` : `'${text.replaceAll("'", "'\\''")}'`
@@ -100,7 +117,7 @@ async function diagnostics() {
 }
 
 try {
-  if (system === 'linux') await command('systemctl', ['--user', 'show-environment'])
+  if (system === 'linux' && !rootUser) await command('systemctl', ['--user', '--no-pager', 'show', '--property=Version', '--value'])
   // Generate an ephemeral CA/leaf with Go, avoiding OS trust-store mutation.
   const certificateProgram = path.join(temporary, 'certificate.go')
   await writeFile(certificateProgram, `package main
@@ -183,13 +200,29 @@ func run()error{var c config;raw,e:=os.ReadFile(os.Args[1]);if e!=nil{return e};
   const enrollmentFile = path.join(temporary, 'enrollment.json')
   await writeFile(enrollmentFile, JSON.stringify({ server_url: serverURL, server_pin: enrollment.server_pin, enrollment_id: enrollment.enrollment.id, token: enrollment.token }), { mode: 0o600 })
   created = true
-  await run(oldBinary, 'computer', 'connect', '--enrollment-file', enrollmentFile, '--root', daemonRoot)
+  rootPrepared = rootUser
+  const connectionOutput = await run(oldBinary, 'computer', 'connect', '--enrollment-file', enrollmentFile, '--root', daemonRoot)
+  if (rootUser) {
+    assert.match(connectionOutput, /Preparing root's systemd user service:.*lingering.*user@0\.service/)
+    assert.equal(await run('loginctl', 'show-user', '0', '--property=Linger', '--value'), 'yes')
+    console.log('Explicit root enrollment prepared its user manager despite missing/cross-user session variables; root account lingering is enabled.')
+  }
   const credentials = await readFile(credentialFile, 'utf8')
   const identity = JSON.parse(credentials).computer_id
   const before = await waitFor(async () => { const value = await status(); return value.online && value.daemon_version === oldVersion ? value : undefined }, 'Old native Daemon did not connect')
   const service = await state()
   serviceID = service.id
   assert.equal(service.state, 'running')
+  if (rootUser) {
+    const definition = await readFile(path.join('/root/.config/systemd/user', `astral-daemon-${serviceID}.service`), 'utf8')
+    assert.ok(definition.includes('Environment="XDG_CONFIG_HOME=/root/.config"\n'), 'Root Daemon must pin its resolved absolute configuration directory instead of inheriting the user manager environment')
+    const withoutSession = { ...process.env }
+    delete withoutSession.XDG_RUNTIME_DIR
+    delete withoutSession.DBUS_SESSION_BUS_ADDRESS
+    const withoutEnvironment = JSON.parse((await command(oldBinary, ['computer', 'service', 'status', '--root', daemonRoot], { env: withoutSession })).stdout)
+    assert.equal(withoutEnvironment.state, 'running', 'Root service management must also work with no session environment')
+    assert.equal(withoutEnvironment.id, serviceID)
+  }
   const oldPID = await daemonPID()
   const commands = await waitFor(() => readFile(processFile, 'utf8').then(JSON.parse).catch(() => undefined), 'Bound command and descendant did not start')
   assert.ok(alive(oldPID) && alive(commands.parent) && alive(commands.child), 'Initial Daemon and bound command tree must be alive')
@@ -229,9 +262,22 @@ func run()error{var c config;raw,e:=os.ReadFile(os.Args[1]);if e!=nil{return e};
   assert.equal(feedRequests.filter(url => url === `/releases/download/v${newVersion}/${assetName}`).length, 1, 'Duplicate or current-version request downloaded a second executable')
   assert.ok(feedRequests.includes(`/releases/download/v${newVersion}/checksums.txt`))
   assert.equal(await readFile(path.join(repository, 'internal/releasefeed/releases.go'), 'utf8'), original, 'Acceptance fixture modified production release routing')
+  if (rootUser) {
+    await run(oldBinary, 'computer', 'service', 'restart', '--root', daemonRoot)
+    const restarted = await waitFor(async () => { const value = await status(); return value.online && value.boot_id !== after.boot_id ? value : undefined }, 'Root user service restart did not reconnect')
+    await run(oldBinary, 'computer', 'service', 'stop', '--root', daemonRoot)
+    await waitFor(async () => !(await status()).online, 'Root user service did not stop')
+    await run(oldBinary, 'computer', 'service', 'start', '--root', daemonRoot)
+    await waitFor(async () => { const value = await status(); return value.online && value.boot_id !== restarted.boot_id }, 'Root user service did not start')
+    const unit = `astral-daemon-${serviceID}.service`
+    const definition = await readFile(path.join('/root/.config/systemd/user', unit), 'utf8')
+    assert.match(definition, /WantedBy=default\.target/)
+    await assert.rejects(lstat(path.join('/etc/systemd/system', unit)), error => error.code === 'ENOENT')
+  }
   await run(oldBinary, 'computer', 'service', 'uninstall', '--root', daemonRoot)
   uninstalled = true
   assert.equal((await state()).state, 'not-installed')
+  if (rootUser) assert.equal(await run('loginctl', 'show-user', '0', '--property=Linger', '--value'), 'yes', 'Uninstalling one Daemon must not disable account-level lingering')
   console.log(`Native ${system} Owner update RPC → official-release fixture TLS/hash → independent user update job → new boot/version → command-tree cleanup and identity preservation passed.`)
 } catch (error) {
   await diagnostics()
@@ -252,6 +298,7 @@ func run()error{var c config;raw,e:=os.ReadFile(os.Args[1]);if e!=nil{return e};
     if (fixture.exitCode === null && fixture.signalCode === null) { fixture.kill('SIGKILL'); await fixtureClosed }
   }
   if (release) await new Promise(resolve => release.close(resolve))
+  if (rootPrepared && !rootLingerWasEnabled && !retain) await command('loginctl', ['--no-ask-password', 'disable-linger', '0'])
   if (retain) console.error(`Test installation retained at ${temporary}; remove only its user service after inspecting the logs.`)
   else await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }

@@ -1,40 +1,47 @@
 # Releases
 
-Astral uses one rolling release line with three-part versions: `MAJOR.MINOR.PATCH`, starting at `0.1.0`. During the current development series, each release increases the patch number: `0.1.0`, `0.1.1`, `0.1.2`, including multiple releases on the same day. The counter does not reset with a date. Each component is a nonnegative safe integer without leading zeroes; prerelease and build suffixes are not used. Git tags use `vMAJOR.MINOR.PATCH`. Application versions and data format versions are independent.
+Astral uses one rolling release line with three-part versions: `MAJOR.MINOR.PATCH`, starting at `0.1.0`. During the current development series, each **published Release** increases the patch number: `0.1.0`, `0.1.1`, `0.1.2`, including multiple releases on the same day. Choose the next version from the latest public Release, not from CI attempts or unpublished tags. A failed or cancelled candidate does not consume a version: while `0.1.1` remains the latest public version, fixes and repeated candidates continue to use the pending `0.1.2`. The counter does not reset with a date. Each component is a nonnegative safe integer without leading zeroes; prerelease and build suffixes are not used. Git tags use `vMAJOR.MINOR.PATCH`. Application versions and data format versions are independent.
 
 ## Preparing a version
 
-As in Magpie, the maintainer chooses a version and pushes its tag after review and CI. Ordinary source pushes do not choose a version, create a tag or publish a Release.
+The maintainer chooses the next public version, verifies a complete no-tag candidate, then pushes a signed tag for that exact source. Ordinary source pushes do not choose a version, create a tag or publish a Release.
 
 1. Work on a branch and open a pull request. Keep existing authorship and signatures.
 2. For a release, update both manifests together:
 
    ```sh
-   node scripts/release-version.mjs set 0.1.1
-   node scripts/release-version.mjs check --tag v0.1.1
+   node scripts/release-version.mjs set 0.1.2
+   node scripts/release-version.mjs check --tag v0.1.2
    ```
 
    `set` edits only the root and Desktop `package.json` versions. It does not commit, tag, install dependencies or build. The lockfile does not store these workspace versions. Go builds embed the root version; Electron reads the Desktop version.
 3. Merge the reviewed change and wait for all ordinary `main` CI jobs to pass on that exact merge commit. This includes native Windows/macOS/Linux checks, user-mode services, headless installation/recovery and persistent container updates.
-4. From that checked `main` commit, create and push a signed tag:
+4. Run the complete candidate workflow from `main`, leaving `tag` empty:
 
    ```sh
-   git tag -s v0.1.1 -m 'Astral 0.1.1'
-   git push origin v0.1.1
+   gh workflow run release.yml --repo oines/astral --ref main
+   ```
+
+   Verify the run's source SHA matches the intended checked commit; `main` may advance after review. Wait for all platform build/signing, native installation/update and preview inventory/feed jobs to succeed. `Verify complete preview inventory and update feeds` must succeed and `publish` must be skipped. Record the successful run URL and its exact source SHA. If a fix changes the source, keep the pending version and repeat ordinary CI and this candidate on the new commit.
+5. Only after that candidate succeeds, create and push a signed tag for the **same source SHA**. Replace `CANDIDATE_SHA` with the full commit from the successful candidate, rather than tagging whichever commit `main` happens to contain later:
+
+   ```sh
+   git tag -s v0.1.2 CANDIDATE_SHA -m 'Astral 0.1.2'
+   git push origin v0.1.2
    ```
 
    These are maintainer actions, not commands run by the workflow. The example does not claim the tag already exists.
 
-Keep published tags fixed. If a code change is needed, choose the next patch version; do not move a tag to conceal a different source revision. A tag pushed before ordinary CI finishes will fail validation; rerun its release workflow after the exact-source CI succeeds.
+Keep published tags fixed. Once a version is public, a code change needs the next patch version; do not move its tag or overwrite its assets. Before publication, failed or cancelled attempts can be fixed and verified again under the same pending version. A tag without successful ordinary CI and a successful no-tag candidate for the exact source fails validation. The workflow only reads this evidence; it never creates, deletes or moves a tag.
 
 ## Release workflow
 
-`.github/workflows/release.yml` follows the same broad flow as Magpie: tag, build, sign, submit for notarization, verify, publish. It also supports a manual run from `main` with an existing tag. The source must be in trusted `main` history, both manifests must match the tag, and ordinary `main`/push CI must have succeeded for that exact commit.
+`.github/workflows/release.yml` first verifies a no-tag candidate, then repeats the build, signing, Apple submission and acceptance stages for the signed version tag before publication. It also supports a manual run from `main` with an existing tag. The source must be in trusted `main` history, both manifests must match the tag, and ordinary `main`/push CI must have succeeded for that exact commit. Tagged validation additionally requires a successful `release.yml` run for the same source with event `workflow_dispatch` and branch `main`, a successful preview inventory/feed job and a skipped publication job. A successful tagged manual run is not candidate evidence.
 
-A manual run with an empty tag rehearses the full platform pipeline: six binaries, Mac signing/Apple submissions, Windows/Linux packaging, native Desktop installation/update acceptance and the final inventory/feed checks. It retains CI artifacts and verified preview metadata without creating a tag or GitHub Release:
+A manual run with an empty tag is the required candidate stage: six binaries, Mac signing/Apple submissions, Windows/Linux packaging, native Desktop installation/update acceptance and the final inventory/feed checks. It retains CI artifacts and verified preview metadata without creating a tag or GitHub Release. Empty-tag runs skip the candidate-evidence requirement itself, so there is no circular dependency:
 
 ```sh
-gh workflow run release.yml --ref main
+gh workflow run release.yml --repo oines/astral --ref main
 ```
 
 Both tagged releases and empty-tag previews run the following build and acceptance stages:
@@ -46,6 +53,8 @@ Both tagged releases and empty-tag previews run the following build and acceptan
 5. For an empty tag, retain the complete signed preview inventory and feed validation without publishing. For a version tag, create or reuse a matching draft, upload every asset, and verify GitHub's returned name, size, SHA256 digest and upload state. Only then publish it. A failure before publication leaves a draft. An existing published Release is never overwritten; an exact matching retry is read-only.
 
 Different tags can build concurrently. The final publication job is serialized; numeric version comparison prevents an older version finishing late from replacing a newer version as Latest. A partial draft can reuse only byte-identical attachments. If a rebuilt attachment differs, remove the affected unpublished draft or asset deliberately before retrying; the workflow will not silently replace it.
+
+Candidate packages are retained for seven days as `candidate-distribution` and `candidate-desktop-mac`, `candidate-desktop-win` and `candidate-desktop-linux`. `release-preview-validation` contains the verified manifest, data formats, Mac signing report, six feeds, checksums and release notes. This proves the selected source passed the candidate pipeline; it does not promote those artifacts into a public Release. The tagged run rebuilds, signs and tests its own final bytes. After publication, the separate official-old-package update and public VPS installation jobs verify the actual GitHub downloads; those post-publication checks cannot run against an unpublished candidate or retract an already public Release.
 
 Only the Mac job receives signing secrets, through the protected `mac-signing` Environment restricted to `main` and version tags. It uses a temporary keychain with unconditional cleanup; missing credentials fail the job. Only the final publication job has `contents: write`. It uses the job-scoped `GITHUB_TOKEN`, not a personal access token. Actions in the release workflow are pinned to commits. Pull-request CI receives no signing credentials.
 

@@ -38,4 +38,8 @@ description: "把服务所在电脑或远程机器接入 Astral，并授予 Bot 
 
 远程接入以当前用户安装后台服务：macOS 使用用户 LaunchAgent，Linux 使用用户 systemd，Windows 使用当前用户的计划任务。能访问哪些文件，取决于运行服务的账号权限。
 
+Linux 裸机后台接入会在配对前检查用户服务是否可用。使用 root（UID 0）时，Astral 会显示准备动作，为 root 启用 linger，使用户服务无需登录会话也能运行，并启动 root 的用户管理器。如果用户管理器无法就绪，接入会在配对前停止。普通账户不会自动提权或启用 linger；前台运行和容器接入不执行这项准备。
+
+要以 root 接入，请直接登录 root，或先运行 `sudo -i`，再粘贴完整接入命令，避免保留其他账户的 `HOME` 或 XDG 会话环境。Agent 执行的命令将拥有 root 权限。linger 作用于整个账户，因此卸载某个 Astral Daemon 不会自动撤销 linger 或停止整个用户管理器。
+
 撤销 Bot 权限会停止它使用该电脑；移除连接和删除电脑上的实际文件是不同操作。服务管理与升级见[升级与备份](/zh-cn/docs/hosting/maintenance/)。

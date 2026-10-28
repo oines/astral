@@ -42,7 +42,7 @@ jobs:
           node scripts/computer-image.mjs verify
           node scripts/check-migrations.mjs
           node scripts/release-check.mjs
-          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs scripts/check-migrations.test.mjs scripts/computer-image.test.mjs scripts/published-desktop-update.test.mjs
+          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs scripts/check-release-candidate.test.mjs scripts/check-migrations.test.mjs scripts/computer-image.test.mjs scripts/published-desktop-update.test.mjs
       - name: Check headless installer without installing
         run: |
           bash -n scripts/install-server.sh
@@ -177,6 +177,20 @@ jobs:
       - name: Real native Daemon management update and process cleanup
         timeout-minutes: 12
         run: node scripts/check-daemon-update.mjs
+      - name: Root Linux Computer user service and management update
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          astral_go=$(command -v go)
+          astral_node=$(command -v node)
+          astral_root_cache="$RUNNER_TEMP/astral-root-daemon-go-cache"
+          trap 'sudo rm -rf -- "$astral_root_cache"' EXIT
+          sudo env -i HOME=/root CI=true GITHUB_ACTIONS=true RUNNER_TEMP="$RUNNER_TEMP" \
+            PATH="$(dirname "$astral_go"):$(dirname "$astral_node"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            GOWORK=off GOCACHE="$astral_root_cache" GOMODCACHE="$(go env GOMODCACHE)" \
+            XDG_RUNTIME_DIR="/run/user/$(id -u)" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus" \
+            "$astral_node" scripts/check-daemon-update.mjs --root-user
       - name: Native headless Server install and recovery
         if: runner.os == 'Linux'
         run: node scripts/check-headless-install.mjs

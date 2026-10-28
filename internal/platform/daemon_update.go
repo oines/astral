@@ -67,7 +67,7 @@ func configureDaemonUpdate(d *computers.Daemon) {
 			return err
 		}
 		if state.State != "running" {
-			return fmt.Errorf("managed Daemon service is not running; use the update command")
+			return fmt.Errorf("managed Daemon service is not running (state=%s, id=%s, backend=%s); use the update command", state.State, state.ID, state.Backend)
 		}
 		return manager.StartUpdate(ctx, target)
 	}

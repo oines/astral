@@ -10,6 +10,14 @@ import { createHash } from 'node:crypto'
 
 const exec = promisify(execFile)
 
+test('real root Daemon acceptance refuses a developer account before commands or installation', async () => {
+  const environment = { ...process.env, CI: '', GITHUB_ACTIONS: '', RUNNER_TEMP: '' }
+  await assert.rejects(exec(process.execPath, ['scripts/check-daemon-update.mjs', '--root-user'], { env: environment, timeout: 10_000 }), error => {
+    assert.match(error.stderr, /requires a disposable GitHub Actions user; never run on a developer account/)
+    return true
+  })
+})
+
 test('Windows PowerShell hashes installer assets without module discovery or Get-FileHash', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'astral-powershell-hash-test-'))
   t.after(() => fs.rm(root, { recursive: true, force: true }))
