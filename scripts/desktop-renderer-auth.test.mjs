@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { runInNewContext } from 'node:vm'
-import { evaluateRenderer, managedRendererEndpoint, RendererConnectionError, rendererAuthentication, rendererUpdateMethod, rendererUpdateProgress, startRendererUpdate } from './desktop-renderer-auth.mjs'
+import { evaluateRenderer, managedRendererEndpoint, RendererConnectionError, RendererNavigationError, RendererTimeoutError, rendererAuthentication, rendererUpdateMethod, rendererUpdateProgress, startRendererUpdate } from './desktop-renderer-auth.mjs'
 
 const origin = 'http://127.0.0.1:4545'
 
@@ -255,6 +255,50 @@ test('CDP transport closure is distinguishable from script and protocol failures
   }
   await assert.rejects(evaluateRenderer('unused', 'true', { WebSocket }), error => error instanceof RendererConnectionError)
   await assert.rejects(evaluateRenderer('unused', 'true', { WebSocket: cdpMessage({ result: { exceptionDetails: { text: 'Update rejected' } } }) }), error => !(error instanceof RendererConnectionError) && /Update rejected/.test(error.message))
+})
+
+test('only progress after explicit update dispatch can wait through CDP loss or timeout, without reporting success or redispatching', async () => {
+  let updates = 0
+  const window = { astralDesktop: { updates: { update: async () => { updates++ } } } }
+  await startRendererUpdate('unused', 'update', { evaluate: (_endpoint, expression) => runInNewContext(expression, { window }) })
+  for (const ErrorType of [RendererConnectionError, RendererNavigationError, RendererTimeoutError]) {
+    const error = new ErrorType('The old renderer no longer answers')
+    const evaluate = async () => { throw error }
+    await assert.rejects(rendererUpdateProgress('unused', { evaluate }), value => value === error)
+    let diagnostic
+    assert.equal(await rendererUpdateProgress('unused', { evaluate, afterUpdateDispatch: true, diagnose: value => { diagnostic = value } }), undefined)
+    assert.match(diagnostic, /Waiting for actual Desktop replacement/)
+    assert.equal(updates, 1, 'Missing progress must never dispatch another update')
+  }
+  for (const error of [new Error('Native installer failed'), new Error('Runtime.evaluate was denied'), new Error('A script threw: timed out')]) {
+    await assert.rejects(rendererUpdateProgress('unused', { evaluate: async () => { throw error }, afterUpdateDispatch: true }), value => value === error)
+  }
+})
+
+test('a successful progress query must return a valid lifecycle state, even after update dispatch', async () => {
+  const progress = state => ({ evaluate: async () => ({ request: { started: true }, state }), afterUpdateDispatch: true })
+  for (const state of [undefined, null, false, 'downloading', [], {}, { phase: 'invented' }, { phase: 'ready' }]) {
+    await assert.rejects(rendererUpdateProgress('unused', progress(state)), /no valid native update state|invalid native update phase/)
+  }
+  for (const phase of ['idle', 'checking', 'current', 'available', 'downloading', 'installing', 'unavailable']) {
+    assert.equal((await rendererUpdateProgress('unused', progress({ phase }))).phase, phase)
+  }
+  await assert.rejects(rendererUpdateProgress('unused', progress({ phase: 'error', error: 'Native installer rejected the update' })), /Real native update failed: Native installer rejected/)
+  assert.equal((await rendererUpdateProgress('unused', { ...progress({ phase: 'ready' }), allowLegacyUpdates: true })).phase, 'ready', 'Only the frozen official install contract may report ready')
+})
+
+test('a nonresponsive CDP command has a typed timeout that stays fatal before update dispatch', async t => {
+  const WebSocket = class extends globalThis.EventTarget {
+    constructor() {
+      super()
+      globalThis.queueMicrotask(() => this.dispatchEvent(new globalThis.Event('open')))
+    }
+    send() {}
+    close() {}
+  }
+  const profile = await fixture(t)
+  const evaluate = (endpoint, expression) => evaluateRenderer(endpoint, expression, { WebSocket })
+  await assert.rejects(rendererAuthentication(profile, origin, { evaluate }), error => error instanceof RendererTimeoutError)
 })
 
 test('a successful probe cannot hide an App still showing its own login or initialization error', async t => {

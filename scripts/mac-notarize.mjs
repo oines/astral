@@ -114,7 +114,7 @@ export async function submit(file, configuration, { run = command, record = writ
   return acceptedSubmission({ id, status: response.status })
 }
 
-export async function staple(target, { run = command, pause = delay, log = console.log } = {}) {
+async function runStapler(target, phases, { run = command, pause = delay, log = console.log } = {}) {
   const output = value => typeof value === 'string' ? value.slice(0, 16_384) + (value.length > 16_384 ? '\n[truncated]' : '') : ''
   const record = (attempt, phase, result, failed = false) => {
     const code = failed ? result?.code : 0
@@ -126,11 +126,11 @@ export async function staple(target, { run = command, pause = delay, log = conso
       stdout: output(result?.stdout), stderr: output(result?.stderr),
     })}`)
   }
-  // An Accepted ticket may not yet be usable. Each attempt must both attach
-  // and validate it; a successful staple alone never approves the artifact.
+  // Validation also contacts Apple's ticketing service. Bound retries without
+  // changing which checks must pass or modifying final extracted ZIP bytes.
   for (let attempt = 0; ; attempt++) {
     try {
-      for (const phase of ['staple', 'validate']) {
+      for (const phase of phases) {
         let result
         try { result = await run('xcrun', ['stapler', phase, target]) }
         catch (error) { record(attempt + 1, phase, error, true); throw error }
@@ -145,11 +145,17 @@ export async function staple(target, { run = command, pause = delay, log = conso
   }
 }
 
-export async function verifyNotarizedApp(app, arch, { stapled = true, notarized = true, run = command, inspect = verifyApp } = {}) {
+export async function staple(target, options) {
+  // A successful staple alone never approves the artifact: each attempt must
+  // both attach and validate its ticket.
+  await runStapler(target, ['staple', 'validate'], options)
+}
+
+export async function verifyNotarizedApp(app, arch, { stapled = true, notarized = true, run = command, inspect = verifyApp, pause = delay, log = console.log } = {}) {
   await inspect(app)
   const architecture = await run('/usr/bin/lipo', ['-archs', path.join(app, 'Contents/MacOS/Astral')])
   if (architecture.stdout.trim() !== (arch === 'x64' ? 'x86_64' : 'arm64')) throw new Error(`Unexpected packaged App architecture: ${arch}`)
-  if (stapled && notarized) await run('xcrun', ['stapler', 'validate', app])
+  if (stapled && notarized) await runStapler(app, ['validate'], { run, pause, log })
   if (notarized) await run('/usr/sbin/spctl', ['--assess', '--type', 'execute', '--verbose=2', app])
 }
 

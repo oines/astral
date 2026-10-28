@@ -313,6 +313,96 @@ test('downloaded ZIP App requires its own stapled ticket while a DMG App still r
   }
 })
 
+test('an extracted ZIP retries ticket validation read-only before requiring Gatekeeper acceptance', async () => {
+  const app = '/extracted/Astral.app'
+  const calls = []
+  const pauses = []
+  const diagnostics = []
+  let validations = 0
+  await verifyNotarizedApp(app, 'x64', {
+    inspect: async target => { calls.push({ program: 'verifyApp', args: [target] }) },
+    run: async (program, args) => {
+      calls.push({ program, args })
+      if (program.endsWith('/lipo')) return { stdout: 'x86_64\n' }
+      if (args[0] === 'stapler' && ++validations === 1) {
+        throw Object.assign(new Error('private child error details'), {
+          code: 68, stdout: 'Ticketing service temporarily unavailable', stderr: 'validation diagnostic',
+          environment: { APPLE_PASSWORD: 'private credential' },
+        })
+      }
+      return { stdout: 'The validate action worked!\n', stderr: '' }
+    },
+    pause: async milliseconds => { pauses.push(milliseconds) },
+    log: value => { diagnostics.push(JSON.parse(value.slice('Stapler diagnostic: '.length))) },
+  })
+  assert.deepEqual(calls, [
+    { program: 'verifyApp', args: [app] },
+    { program: '/usr/bin/lipo', args: ['-archs', `${app}/Contents/MacOS/Astral`] },
+    { program: 'xcrun', args: ['stapler', 'validate', app] },
+    { program: 'xcrun', args: ['stapler', 'validate', app] },
+    { program: '/usr/sbin/spctl', args: ['--assess', '--type', 'execute', '--verbose=2', app] },
+  ])
+  assert.deepEqual(pauses, [20_000])
+  assert.deepEqual(diagnostics, [
+    { target: app, attempt: 1, phase: 'validate', exit_code: 68, stdout: 'Ticketing service temporarily unavailable', stderr: 'validation diagnostic' },
+    { target: app, attempt: 2, phase: 'validate', exit_code: 0, stdout: 'The validate action worked!\n', stderr: '' },
+  ])
+  assert.doesNotMatch(JSON.stringify(diagnostics), /private|credential|APPLE_PASSWORD/)
+})
+
+test('a missing extracted ZIP ticket fails after five read-only attempts without restapling or approving Gatekeeper', async () => {
+  const app = '/extracted/Astral.app'
+  const calls = []
+  const pauses = []
+  const diagnostics = []
+  const missing = Object.assign(new Error('The stapled ticket is missing or invalid'), {
+    code: 66, stdout: 'Ticket validation failed', stderr: '',
+  })
+  await assert.rejects(verifyNotarizedApp(app, 'arm64', {
+    inspect: async () => {},
+    run: async (program, args) => {
+      calls.push({ program, args })
+      if (program.endsWith('/lipo')) return { stdout: 'arm64\n' }
+      assert.equal(program, 'xcrun')
+      assert.deepEqual(args, ['stapler', 'validate', app])
+      throw missing
+    },
+    pause: async milliseconds => { pauses.push(milliseconds) },
+    log: value => { diagnostics.push(JSON.parse(value.slice('Stapler diagnostic: '.length))) },
+  }), error => error === missing)
+  assert.equal(calls.length, 6)
+  assert.deepEqual(pauses, [20_000, 40_000, 60_000, 80_000])
+  assert.equal(diagnostics.length, 5)
+  assert.ok(diagnostics.every(value => value.phase === 'validate' && value.exit_code === 66))
+  assert.equal(diagnostics.at(-1).attempt, 5)
+})
+
+test('extracted ZIP validation retries do not bypass signature, architecture or Gatekeeper rejection', async () => {
+  const signatureFailure = new Error('Invalid App signature')
+  await assert.rejects(verifyNotarizedApp('/extracted/Astral.app', 'arm64', {
+    inspect: async () => { throw signatureFailure },
+    run: async () => { assert.fail('signature rejection must stop before any other command') },
+  }), error => error === signatureFailure)
+
+  await assert.rejects(verifyNotarizedApp('/extracted/Astral.app', 'x64', {
+    inspect: async () => {},
+    run: async (program) => {
+      assert.equal(program, '/usr/bin/lipo')
+      return { stdout: 'arm64\n' }
+    },
+  }), /Unexpected packaged App architecture/)
+
+  const gatekeeperFailure = new Error('Gatekeeper rejected the App')
+  await assert.rejects(verifyNotarizedApp('/extracted/Astral.app', 'arm64', {
+    inspect: async () => {},
+    run: async (program) => {
+      if (program.endsWith('/spctl')) throw gatekeeperFailure
+      return { stdout: 'arm64\n' }
+    },
+    log: () => {},
+  }), error => error === gatekeeperFailure)
+})
+
 test('outer DMG coverage does not exempt the enclosed App from architecture or Gatekeeper rejection', async () => {
   await assert.rejects(verifyNotarizedApp('/mounted/Astral.app', 'x64', {
     stapled: false, inspect: async () => {}, run: async () => ({ stdout: 'arm64\n' }),
