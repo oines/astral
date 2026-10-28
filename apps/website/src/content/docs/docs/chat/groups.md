@@ -20,6 +20,8 @@ Proactive participation is off by default. Ordinary messages delivered for a con
 
 Enable proactive participation per group to let Astral assess whether to respond after a pause in messages. It may decide to remain silent. Direct mentions and replies do not wait for this decision.
 
+Whenever an IM trigger or proactive decision wakes the Agent, it is reminded that ordinary assistant text does not go to IM: replying to the chat requires `send_message`. It can still decide that no reply is needed; this does not change the bound destination or chat permissions.
+
 ## Available context and permissions
 
 Astral only sees messages the platform delivers. Telegram privacy mode, QQ permissions, and Feishu application permissions can limit ordinary group messages. Proactive mode neither expands those permissions nor imports all history from before the Bot joined.

@@ -733,14 +733,15 @@ Telegram `reply_to_message` 的原消息 ID、发送者和最多 500 个 Unicode
 
 静默表示不因该观察单独创建一次模型执行。若 Session 已经运行，观察可能在安全边界进入正在使用的上下文，参与后续推理。
 
-触发输入只需表达本次要处理的消息，例如：
+触发输入关联本次要处理的消息，并提醒主 Agent 的 IM 发送规则，例如：
 
 ```xml
 <im_trigger message-id="502" reason="mention"/>
 请处理本次观察中的消息 502。
+Direct assistant text is not sent to IM. To reply to this chat, you must call send_message.
 ```
 
-Host 用内部事件和投递组标识精确关联此提示与对应版本的消息。模型正文不重复附上同一请求全文。
+Host 用内部事件和投递组标识精确关联此提示与对应版本的消息。每次直接 IM 触发与 Probe 正向唤起都带上这条发送提醒；普通旁观观察不重复添加。提醒只说明普通 assistant 文本不会发送到 IM、回复当前聊天必须调用 `send_message`，不要求必须回复，也不改变工具目的地或投递语义。模型正文不重复附上同一请求全文。
 
 Web 输入采用相同消息风格：
 
@@ -785,7 +786,7 @@ Probe 模型默认跟随 Session 当前模型，Agent 可在默认模型下方�
 
 每次新 Probe 独立读取当前绑定 Bot 的最新人格，用于判断该 Bot 是否适合参与。`system_prompt` 先放固定判断指令，其中一句说明 `The Bot persona below describes the Bot you are evaluating, not you.`；非空白人格随后以 `\n\nBot persona:\n` 加原始人格文本追加，空白人格省略整段。动态观察仍在 Messages，当前时间和 Bot 名称留在最后一条 User Message。不复制主 Agent 的 Host 指令、环境快照或工具，工具仍只有强制选择的 `decide`。人格保存后下次新 Probe 生效，已经准备好的请求不改写。固定规则与 Bot 人格位于动态内容之前，不因旁观历史裁剪而被丢弃。
 
-正向结果只提交中性 Host 唤起，不含 reason、分析或行动指令。主 Agent 独立决定后续行为，可保持沉默。直接 @/回复覆盖当时待 Probe 的消息；关闭主动模式或换绑使旧结果失效。新消息留待下一轮，稳定输入 ID 与 Core 回执防止重复唤起。
+正向结果只提交中性 Host 唤起，不含 reason、分析或任务行动指令，并附上与直接 IM 触发相同的 `send_message` 发送提醒。主 Agent 独立决定后续行为，可保持沉默。直接 @/回复覆盖当时待 Probe 的消息；关闭主动模式或换绑使旧结果失效。新消息留待下一轮，稳定输入 ID 与 Core 回执防止重复唤起。
 
 IMStore 默认无限期保留收到的消息、已接受的发送及平台实际提供的编辑/撤回事实。出站消息与自身平台回显按身份去重，同步一份观察；未收到的平台删除通知不伪造。
 

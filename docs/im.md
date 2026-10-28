@@ -56,6 +56,8 @@ The only decision is `decide({"participate":true|false})`. The first valid decis
 
 Bound Sessions remain normal Web Sessions with full tool use and history. Their title follows the chat and the sidebar shows its platform. Web input and direct IM triggers use Steer. Assistant text remains in Web. Only `send_message` or an explicit API call sends to IM. The tool supplies the current bound destination automatically. Its description and parameters reflect the selected adapter, and change with the binding without losing Session history. Attachments are Computer paths or `astral-file://` references; text may be empty for attachment-only sends.
 
+Every direct IM trigger and positive Probe wakeup reminds the main Agent: `Direct assistant text is not sent to IM. To reply to this chat, you must call send_message.` Passive observations do not repeat this reminder. It does not require a response: the Agent may remain silent, and the reminder changes neither the tool's bound destination nor delivery semantics.
+
 | Adapter | Body formats and extra parameters |
 | --- | --- |
 | Telegram | `text` (default), `markdown`, `html`; `disable_notification`, `as_document` |

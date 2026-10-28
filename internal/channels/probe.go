@@ -309,7 +309,7 @@ func (s *Service) finishProbe(ctx context.Context, b domain.ConversationBinding,
 		}
 		if result.participate && result.err == nil {
 			id := probeInputID(b.ID, result.through)
-			message := core.User("<im_wakeup conversation-id=\"" + messages.Escape(b.ConversationID) + "\"/>\nConsider the recent chat in your context.")
+			message := core.User("<im_wakeup conversation-id=\"" + messages.Escape(b.ConversationID) + "\"/>\nConsider the recent chat in your context.\n" + messages.IMReplyReminder)
 			message.Metadata = encoded(messages.Metadata{Source: "im.wakeup", DeliveryID: id, ConversationID: b.ConversationID})
 			if _, err = session.Steer(ctx, core.Input{ID: id, Message: message}); err != nil {
 				return err

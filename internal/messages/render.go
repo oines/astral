@@ -15,6 +15,9 @@ import (
 	"github.com/oines/astral/internal/filestream"
 )
 
+// IMReplyReminder accompanies each direct trigger and proactive wakeup.
+const IMReplyReminder = "Direct assistant text is not sent to IM. To reply to this chat, you must call send_message."
+
 func Escape(value string) string {
 	var b bytes.Buffer
 	_ = xml.EscapeText(&b, []byte(value))
@@ -163,7 +166,7 @@ func Trigger(event domain.Observation) core.Message {
 	if event.MessageID != "" {
 		messageRef = fmt.Sprintf(" message-id=\"%s\"", Escape(event.MessageID))
 	}
-	body := fmt.Sprintf("<im_trigger%s event-id=\"%s\" reason=\"%s\"/>\nProcess the referenced observation.", messageRef, Escape(event.ID), Escape(event.Trigger))
+	body := fmt.Sprintf("<im_trigger%s event-id=\"%s\" reason=\"%s\"/>\nProcess the referenced observation.\n%s", messageRef, Escape(event.ID), Escape(event.Trigger), IMReplyReminder)
 	metadata, _ := json.Marshal(Metadata{Source: "im.trigger", DeliveryID: event.ID + ":trigger", EventID: event.ID, ConversationID: event.ConversationID, Sender: event.Sender})
 	return core.Message{Role: core.RoleUser, Content: core.Text(body), Metadata: metadata}
 }
