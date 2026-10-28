@@ -4,6 +4,8 @@ import path from 'node:path'
 
 export class RendererNavigationError extends Error {}
 export class RendererConnectionError extends Error {}
+export class RendererTimeoutError extends Error {}
+const updatePhases = ['idle', 'checking', 'current', 'available', 'downloading', 'installing', 'error', 'unavailable']
 
 function evaluationError(message, method) {
   const exception = message.result?.exceptionDetails
@@ -21,7 +23,7 @@ export async function rendererCommand(endpoint, method, params, { WebSocket = gl
   let timer
   try {
     return await new Promise((resolve, reject) => {
-      timer = setTimeout(() => reject(new Error('The Desktop renderer authentication check timed out.')), 10_000)
+      timer = setTimeout(() => reject(new RendererTimeoutError(`The Desktop renderer ${method} command timed out.`)), 10_000)
       socket.addEventListener('error', () => reject(new RendererConnectionError('The temporary Electron CDP connection failed.')), { once: true })
       socket.addEventListener('close', () => reject(new RendererConnectionError('The temporary Electron CDP connection closed before its command completed.')), { once: true })
       socket.addEventListener('open', () => {
@@ -91,11 +93,23 @@ export async function startRendererUpdate(endpoint, method, { evaluate = evaluat
   return true
 }
 
-export async function rendererUpdateProgress(endpoint, { evaluate = evaluateRenderer } = {}) {
-  const progress = await evaluate(endpoint, `(async () => ({ request: window.__astralUpdateAcceptance, state: await window.astralDesktop.updates.state() }))()`)
+export async function rendererUpdateProgress(endpoint, { evaluate = evaluateRenderer, afterUpdateDispatch = false, allowLegacyUpdates = false, diagnose = () => {} } = {}) {
+  let progress
+  try {
+    progress = await evaluate(endpoint, `(async () => ({ request: window.__astralUpdateAcceptance, state: await window.astralDesktop.updates.state() }))()`)
+  } catch (error) {
+    // A pending IPC state query can outlive the App that accepted update(). CDP
+    // does not always deliver close before its timer. Only the post-dispatch
+    // replacement wait may continue; no unavailable progress is success.
+    if (!afterUpdateDispatch || !(error instanceof RendererConnectionError || error instanceof RendererNavigationError || error instanceof RendererTimeoutError)) throw error
+    diagnose(`Waiting for actual Desktop replacement after progress became unavailable: ${error.message}`)
+    return undefined
+  }
   assert.equal(progress?.request?.started, true, 'The explicit native update has not been invoked')
   assert.ok(!progress.request.error, `Real native update failed: ${progress.request.error}`)
-  assert.notEqual(progress.state?.phase, 'error', `Real native update failed: ${progress.state?.error}`)
+  assert.ok(progress.state && typeof progress.state === 'object' && !Array.isArray(progress.state), 'The renderer returned no valid native update state')
+  assert.ok(updatePhases.includes(progress.state.phase) || allowLegacyUpdates && progress.state.phase === 'ready', 'The renderer returned an invalid native update phase')
+  assert.notEqual(progress.state.phase, 'error', `Real native update failed: ${progress.state.error}`)
   return progress.state
 }
 
@@ -172,7 +186,7 @@ export async function rendererAuthentication(profile, serverURL, { diagnose = ()
   // Recheck its actual visible application root after the awaited auth request.
   if (result.readyState !== 'complete' || !result.mounted || !result.onboardingVisible || result.loginScreen) return false
   assert.ok(result.updates && /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(result.updates.currentVersion), 'The packaged Desktop update bridge must report its installed version')
-  const phases = ['idle', 'checking', 'current', 'available', 'downloading', 'installing', 'error', 'unavailable', ...(allowLegacyUpdates ? ['ready'] : [])]
+  const phases = [...updatePhases, ...(allowLegacyUpdates ? ['ready'] : [])]
   assert.ok(phases.includes(result.updates.phase), 'The packaged Desktop update bridge returned an invalid lifecycle state')
   assert.ok(result.updates.retry === undefined || ['check', 'update'].includes(result.updates.retry), 'The packaged Desktop update bridge returned an invalid retry action')
   return true

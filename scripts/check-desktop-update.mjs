@@ -13,7 +13,7 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
-import { evaluateRenderer, managedRendererEndpoint, RendererConnectionError, RendererNavigationError, rendererAuthentication, rendererUpdateMethod, rendererUpdateProgress, startRendererUpdate } from './desktop-renderer-auth.mjs'
+import { evaluateRenderer, managedRendererEndpoint, rendererAuthentication, rendererUpdateMethod, rendererUpdateProgress, startRendererUpdate } from './desktop-renderer-auth.mjs'
 import { desktopArtifactName, desktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { readReleaseVersion } from './release-version.mjs'
 import { publishedUpdateInputs } from './published-desktop-update.mjs'
@@ -273,12 +273,8 @@ try {
   newServer = await waitFor(async () => {
     const ready = await running()
     if (ready && ready.pid !== oldServer.pid) return ready
-    try { expectTarget(await rendererUpdateProgress(endpoint)) }
-    catch (error) {
-      // Only transport/context closure is expected after update dispatch when
-      // the native installer exits. IPC rejection and script errors stay fatal.
-      if (!(error instanceof RendererConnectionError) && !(error instanceof RendererNavigationError)) throw error
-    }
+    const progress = await rendererUpdateProgress(endpoint, { afterUpdateDispatch: true, allowLegacyUpdates: updateMethod === 'install', diagnose: value => { rendererDiagnostic = value } })
+    if (progress) expectTarget(progress)
     return undefined
   }, 'The updated Desktop did not download, install and relaunch its Server.', (checkOnly ? (published ? 10 * 60_000 : 120_000) : 0) + 180_000)
   if (server && checkOnly) {
