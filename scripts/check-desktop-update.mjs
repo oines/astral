@@ -18,6 +18,7 @@ import { desktopArtifactName, desktopUpdateFeeds } from './desktop-update-feeds.
 import { readReleaseVersion } from './release-version.mjs'
 import { publishedUpdateInputs } from './published-desktop-update.mjs'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
+import { assertWindowsProcessOwner, sameWindowsProcess, stopWindowsProcessTree, windowsManagedProcessIdentity, windowsProcessIdentity } from './desktop-process-identity.mjs'
 
 if (process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true' || !process.env.RUNNER_TEMP) throw new Error('Real Desktop update acceptance requires a disposable GitHub Actions user; never run on a developer account.')
 if (!['darwin', 'win32', 'linux'].includes(process.platform) || !['arm64', 'x64'].includes(process.arch)) throw new Error('Unsupported native update platform.')
@@ -54,6 +55,10 @@ let app
 let oldServer
 let newServer
 let updatedAppPID
+let oldWindowsApp
+let oldWindowsServer
+let newWindowsApp
+let newWindowsServer
 let executable
 let installedRoot
 let published
@@ -113,6 +118,36 @@ async function parentPID(pid) {
   const parent = Number(result.stdout.trim())
   assert.ok(Number.isSafeInteger(parent) && parent > 1 && parent !== process.pid, 'The managed Server has no safe Desktop parent identity')
   return parent
+}
+function windowsIdentityDiagnostic(label, expected, observed) {
+  const message = `Windows update process identity ${label}: ${JSON.stringify({ expected, observed })}`
+  logs.push(`${message}\n`)
+  console.log(message)
+}
+function windowsServerExecutable() {
+  return path.join(installedRoot, 'resources/bin', `astral-windows-${architecture === 'x64' ? 'amd64' : 'arm64'}.exe`)
+}
+async function windowsManagedProcesses(ready, options) {
+  return windowsManagedProcessIdentity(ready.pid, windowsServerExecutable(), executable, options)
+}
+async function windowsProcessExited(expected) {
+  const observed = await windowsProcessIdentity(expected.pid)
+  if (sameWindowsProcess(expected, observed)) return false
+  windowsIdentityDiagnostic(observed ? 'PID reused; original process exited' : 'original process exited', expected, observed)
+  return true
+}
+async function cleanupWindowsProcesses(ready) {
+  let current
+  if (ready) current = await windowsManagedProcesses(ready)
+  const identities = [current?.managedApp, newWindowsApp, oldWindowsApp, current?.managedServer, newWindowsServer, oldWindowsServer].filter(Boolean)
+  const unique = new Map(identities.map(value => [`${value.pid}:${value.birth}`, value]))
+  if (app && unique.size === 0) throw new Error('No verified Windows identity is available for cleanup; retaining the fixture')
+  for (const expected of unique.values()) {
+    const result = await stopWindowsProcessTree(expected)
+    windowsIdentityDiagnostic(result.stopped ? 'cleanup held process tree' : 'cleanup skipped absent/recycled identity', expected, result.current)
+  }
+  if (current) await waitFor(() => windowsProcessExited(current.managedServer), 'The recorded Windows update fixture Server did not stop during cleanup.', 30_000)
+  if (installedRoot) await command(path.join(installedRoot, 'Uninstall Astral.exe'), ['/S']).catch(() => {})
 }
 async function expandZIP(archive, directory) {
   await mkdir(directory, { recursive: true })
@@ -223,7 +258,12 @@ try {
   app.stdout.on('data', chunk => logs.push(String(chunk)))
   app.stderr.on('data', chunk => logs.push(String(chunk)))
   app.on('error', error => logs.push(error.message))
+  if (process.platform === 'win32') oldWindowsApp = assertWindowsProcessOwner(await windowsProcessIdentity(app.pid), executable, process.pid)
   oldServer = await waitFor(running, 'The old Desktop fixture did not start its real Server.')
+  if (process.platform === 'win32') {
+    oldWindowsServer = assertWindowsProcessOwner(await windowsProcessIdentity(oldServer.pid), windowsServerExecutable(), oldWindowsApp.pid)
+    windowsIdentityDiagnostic('before update', oldWindowsApp, oldWindowsServer)
+  }
   if (published) assert.equal(oldServer.healthVersion, fromVersion, 'The old official package did not run its matching Server version.')
   const before = await waitFor(() => fingerprint(oldServer), 'The fixture Local Computer did not connect.')
   const marker = path.join(data, 'server/update-acceptance-marker')
@@ -272,7 +312,17 @@ try {
   await startRendererUpdate(endpoint, updateMethod, { diagnose: value => { rendererDiagnostic = value } })
   newServer = await waitFor(async () => {
     const ready = await running()
-    if (ready && ready.pid !== oldServer.pid) return ready
+    if (ready && process.platform === 'win32' && ready.healthVersion === version) {
+      const candidate = await windowsManagedProcesses(ready, { allowMissing: true })
+      if (candidate && !sameWindowsProcess(oldWindowsServer, candidate.managedServer)) {
+        const { managedServer, managedApp } = candidate
+        assert.equal(sameWindowsProcess(oldWindowsApp, managedApp), false, 'The original Desktop identity survived the replacement')
+        newWindowsServer = managedServer
+        newWindowsApp = managedApp
+        windowsIdentityDiagnostic('replacement', newWindowsApp, newWindowsServer)
+        return ready
+      }
+    } else if (ready && process.platform !== 'win32' && ready.pid !== oldServer.pid) return ready
     const progress = await rendererUpdateProgress(endpoint, { afterUpdateDispatch: true, allowLegacyUpdates: updateMethod === 'install', diagnose: value => { rendererDiagnostic = value } })
     if (progress) expectTarget(progress)
     return undefined
@@ -282,10 +332,11 @@ try {
     assert.ok(packageRequests > 0 && completedPackages > 0, 'The explicit update did not finish serving the final installer bytes.')
   }
   assert.equal(newServer.healthVersion, version, 'The replacement did not launch the target Server version.')
-  updatedAppPID = await parentPID(newServer.pid)
-  assert.notEqual(updatedAppPID, app.pid, 'The original Desktop process survived the replacement')
+  updatedAppPID = process.platform === 'win32' ? newWindowsApp.pid : await parentPID(newServer.pid)
+  if (process.platform !== 'win32') assert.notEqual(updatedAppPID, app.pid, 'The original Desktop process survived the replacement')
   await waitFor(() => app.exitCode !== null || app.signalCode !== null, 'The original Desktop process did not exit after installation.')
-  assert.equal(alive(oldServer.pid), false, 'The old Server survived automatic replacement')
+  if (process.platform === 'win32') await waitFor(() => windowsProcessExited(oldWindowsServer), () => `The original Windows Server identity survived automatic replacement: ${JSON.stringify(oldWindowsServer)}`, 30_000)
+  else assert.equal(alive(oldServer.pid), false, 'The old Server survived automatic replacement')
   const after = await waitFor(() => fingerprint(newServer), 'The updated Local Computer did not reconnect.')
   assert.equal(before.local, after.local)
   assert.ok(before.master.equals(after.master), 'The update changed the encryption key')
@@ -335,17 +386,21 @@ try {
   throw error
 } finally {
   const ready = await running().catch(() => undefined)
-  const cleanupAppPID = updatedAppPID || (ready ? await parentPID(ready.pid).catch(() => undefined) : undefined)
   if (process.platform === 'win32') {
-    if (cleanupAppPID && alive(cleanupAppPID)) await command('taskkill.exe', ['/PID', String(cleanupAppPID), '/T', '/F']).catch(() => {})
-    if (app?.pid && alive(app.pid)) await command('taskkill.exe', ['/PID', String(app.pid), '/T', '/F']).catch(() => {})
-    if (installedRoot) await command(path.join(installedRoot, 'Uninstall Astral.exe'), ['/S']).catch(() => {})
+    try {
+      await cleanupWindowsProcesses(ready)
+    } catch (error) {
+      retain = true
+      console.error(`Windows identity-preserving cleanup failed: ${error.message}`)
+      process.exitCode = 1
+    }
   } else {
+    const cleanupAppPID = updatedAppPID || (ready ? await parentPID(ready.pid).catch(() => undefined) : undefined)
     // Every program belongs to this initially-empty disposable CI data root.
     if (cleanupAppPID && alive(cleanupAppPID)) process.kill(cleanupAppPID, 'SIGTERM')
     if (app?.pid && alive(app.pid)) app.kill('SIGTERM')
   }
-  if (ready && alive(ready.pid)) {
+  if (process.platform !== 'win32' && ready && alive(ready.pid)) {
     const alreadyFailed = retain
     try { await waitFor(() => !alive(ready.pid), 'The update fixture Server did not stop during cleanup.', 30_000) }
     catch (error) {
