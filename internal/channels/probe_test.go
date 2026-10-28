@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -76,14 +77,26 @@ func TestProactiveModeUsesLLMOnlyAndDoesNotRepeatCoveredInputs(t *testing.T) {
 	var probes, mains atomic.Int64
 	p := testkit.New(t, 0, func(_ context.Context, _ int, request map[string]any) any {
 		if strings.Contains(string(encoded(request["tools"])), `"name":"decide"`) {
+			if request["tool_choice"] != "auto" {
+				t.Error("Probe inherited or forced a tool choice instead of auto")
+			}
 			n := probes.Add(1)
-			if n == 1 {
+			switch n {
+			case 1:
 				return testkit.Tool("decide", map[string]any{"participate": false})
-			}
-			if n == 2 {
+			case 2:
 				return testkit.Tool("decide", map[string]any{"participate": true})
+			case 3:
+				return testkit.Text("invalid decision")
+			case 4:
+				return testkit.Tool("send_message", map[string]any{"text": "must not be sent"})
+			case 5:
+				return testkit.Tool("decide", map[string]any{"participate": "yes"})
+			default:
+				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, "fixture request rejected", http.StatusBadRequest)
+				})
 			}
-			return testkit.Text("invalid decision")
 		}
 		mains.Add(1)
 		if strings.Contains(string(encoded(request["messages"])), "invalid decision") {
@@ -118,12 +131,15 @@ func TestProactiveModeUsesLLMOnlyAndDoesNotRepeatCoveredInputs(t *testing.T) {
 	if _, err := s.SetProactive(p.Context, chat.ID, chat.Revision, true); err != nil {
 		t.Fatal(err)
 	}
-	for i := int64(2); i <= 4; i++ {
+	for i := int64(2); i <= 7; i++ {
 		seq := deliver(i, "new relevant group message")
 		testkit.Await(t, p.Context, func() bool { pos, e := s.probeCursor(p.Context, b); return e == nil && pos.Sequence >= seq })
 		p.Idle(t, b.SessionID)
+		if window, err := s.pendingProbe(p.Context, b, seq, time.Now().Add(time.Minute)); err != nil || window.Through != 0 {
+			t.Fatalf("completed Probe window remained eligible for retry: %+v %v", window, err)
+		}
 	}
-	if probes.Load() != 3 || mains.Load() != 1 || bot.sends.Load() != 0 {
+	if probes.Load() != 6 || mains.Load() != 1 || bot.sends.Load() != 0 {
 		t.Fatalf("calls: Probe=%d main=%d sends=%d", probes.Load(), mains.Load(), bot.sends.Load())
 	}
 	// Inspect the exact persisted request: the wakeup contains only Host metadata.

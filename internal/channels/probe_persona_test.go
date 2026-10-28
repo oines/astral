@@ -86,9 +86,8 @@ func TestProbeRequestUsesLatestBotPersonaWithoutMainAgentInstructionsOrTools(t *
 		if function["name"] != "decide" || len(properties) != 1 || properties["participate"] == nil || parameters["additionalProperties"] != false {
 			t.Fatalf("Probe decision schema changed: %s", encoded(function))
 		}
-		choice := request["tool_choice"].(map[string]any)
-		if choice["type"] != "function" || choice["function"].(map[string]any)["name"] != "decide" {
-			t.Fatalf("Probe did not force its sole decide tool: %s", encoded(choice))
+		if request["tool_choice"] != "auto" {
+			t.Fatalf("Probe did not select auto for its sole decide tool: %s", encoded(request["tool_choice"]))
 		}
 		if strings.Contains(string(encoded(request)), "stale main-Agent") || strings.Contains(string(encoded(request)), "private main-Agent input") || strings.Contains(string(encoded(tools)), "exec_command") {
 			t.Fatal("Probe inherited main-Agent instructions, inputs or tools")

@@ -782,9 +782,9 @@ Connection 增加 `agent_id` 与 `access_mode: all | specified`。默认指定�
 
 `Conversation.proactive_enabled` 默认关闭，属于聊天，平台资料更新、换绑或切换范围均保留。普通群消息持续进入 Core 并正常 compact；开启主动模式后，10 秒安静或首条未处理消息累计 60 秒可运行一次 Probe。每聊天最多一个 Probe，消息先应用再读取快照。自身发送记录只同步上下文，不触发 Probe。
 
-Probe 模型默认跟随 Session 当前模型，Agent 可在默认模型下方单独选择 `probe_model_id`，并设置该模型的 `probe_reasoning`；跟随 Session 时同时使用 Session 的推理设置。Agent 的 `default_reasoning` 与默认模型一起保存，新建 Web 与 IM Session 时复制为 Session 自己的推理设置，之后修改 Agent 默认值不改变既有 Session。空推理配置使用对应 Model Profile 的默认值；切换模型时清除旧模型的推理覆盖值。旁观视图保留摘要、IM 消息及有界工具活动，去除 assistant 正文、reasoning 和 Probe 记录；按 Probe 模型窗口裁剪，支持视觉时携带原生图片。首版只有一次 LLM 判断请求，唯一工具 `decide({participate:boolean})`，按返回顺序取首个有效调用。无工具、错误工具、非法参数或请求失败均覆盖本次快照并等待新消息，不纠错重试，不执行其他工具。
+Probe 模型默认跟随 Session 当前模型，Agent 可在默认模型下方单独选择 `probe_model_id`，并设置该模型的 `probe_reasoning`；跟随 Session 时同时使用 Session 的推理设置。Agent 的 `default_reasoning` 与默认模型一起保存，新建 Web 与 IM Session 时复制为 Session 自己的推理设置，之后修改 Agent 默认值不改变既有 Session。空推理配置使用对应 Model Profile 的默认值；切换模型时清除旧模型的推理覆盖值。旁观视图保留摘要、IM 消息及有界工具活动，去除 assistant 正文、reasoning 和 Probe 记录；按 Probe 模型窗口裁剪，支持视觉时携带原生图片。首版只有一次 LLM 判断请求，工具选择为 `auto`，只提供 `decide({participate:boolean})`。按返回顺序只采纳首个合法 `decide` 布尔值；没有合法决定（包括只返回文本、错误工具或非法参数）或请求失败时，覆盖本次快照并等待新消息，不纠错、不重试本次 Probe，也不执行其他工具。
 
-每次新 Probe 独立读取当前绑定 Bot 的最新人格，用于判断该 Bot 是否适合参与。`system_prompt` 先放固定判断指令，其中一句说明 `The Bot persona below describes the Bot you are evaluating, not you.`；非空白人格随后以 `\n\nBot persona:\n` 加原始人格文本追加，空白人格省略整段。动态观察仍在 Messages，当前时间和 Bot 名称留在最后一条 User Message。不复制主 Agent 的 Host 指令、环境快照或工具，工具仍只有强制选择的 `decide`。人格保存后下次新 Probe 生效，已经准备好的请求不改写。固定规则与 Bot 人格位于动态内容之前，不因旁观历史裁剪而被丢弃。
+每次新 Probe 独立读取当前绑定 Bot 的最新人格，用于判断该 Bot 是否适合参与。`system_prompt` 先放固定判断指令，其中一句说明 `The Bot persona below describes the Bot you are evaluating, not you.`；非空白人格随后以 `\n\nBot persona:\n` 加原始人格文本追加，空白人格省略整段。动态观察仍在 Messages，当前时间和 Bot 名称留在最后一条 User Message。不复制主 Agent 的 Host 指令、环境快照或工具；Probe 仍只提供 `decide`，工具选择保持 `auto`。人格保存后下次新 Probe 生效，已经准备好的请求不改写。固定规则与 Bot 人格位于动态内容之前，不因旁观历史裁剪而被丢弃。
 
 正向结果只提交中性 Host 唤起，不含 reason、分析或任务行动指令，并附上与直接 IM 触发相同的 `send_message` 发送提醒。主 Agent 独立决定后续行为，可保持沉默。直接 @/回复覆盖当时待 Probe 的消息；关闭主动模式或换绑使旧结果失效。新消息留待下一轮，稳定输入 ID 与 Core 回执防止重复唤起。
 
@@ -1331,7 +1331,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A23 | 主动发送与回显 | Gateway 可向视图内目标发送；保留回执，超时不盲重发，自身回显不再次激活或重复上下文 |
 | A24 | 正常沉默 | 正常结束无显式发送，不生成 IM 占位消息或强制回复 |
 | A25 | 主动模式 | 默认关闭；10 秒安静/60 秒窗口，Bot 自身消息不触发 Probe |
-| A26 | Probe 决策 | 首个合法 decide 布尔值；无工具、错误工具、非法参数及请求失败覆盖快照，不循环重试 |
+| A26 | Probe 决策 | `auto` 且只提供 `decide`，按返回顺序采纳首个合法布尔决定；没有合法决定（纯文本、错误工具、非法参数）或请求失败时覆盖快照，不纠错、不重试本次 Probe、不执行其他工具 |
 | A27 | Probe 竞争 | @/回复、关闭主动模式、换绑使旧结果失效；后到新消息保留，不传理由或指令 |
 | A28 | Web 文件交付 | assistant text 的 FileRef 可预览或下载；来源固定，文件字节不落 Server 磁盘 |
 | A29 | IM 文件交付 | Agent 显式调用 API，从来源 Computer 流式上传并获得回执；普通文件链接不冒充附件已发送 |

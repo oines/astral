@@ -182,7 +182,7 @@ func (s *Service) shouldParticipate(ctx context.Context, b domain.ConversationBi
 		return false, err
 	}
 	model, options := selected.Model, selected.Options
-	options.ToolChoice = core.ToolChoice{Mode: "tool", Name: "decide"}
+	options.ToolChoice = core.ToolChoice{Mode: "auto"}
 	options.ResponseFormat, options.Stop = nil, nil
 	spec := model.Spec()
 	prompt := probePrompt
