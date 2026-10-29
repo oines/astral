@@ -50,4 +50,4 @@ The test query does not change Bot configuration. Tests use the saved connection
 
 ## Group participation model
 
-With [proactive group participation](/docs/chat/groups/) enabled, Astral first decides whether an ordinary message calls for a response. This follows the session model by default, or a separately selected Bot model. It decides whether to participate; the main model performs the task.
+With [proactive group participation](/docs/chat/groups/) enabled, Astral uses a participation check to decide whether ordinary group messages should wake an idle Bot. This follows the session model by default, or a separately selected Bot model. While the Bot is working, the main model reads new chat context directly, without this separate check. The participation model decides whether to wake the Bot; the main model performs the task.

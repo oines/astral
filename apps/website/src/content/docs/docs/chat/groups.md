@@ -9,16 +9,20 @@ Telegram, QQ, and Feishu support group chats. Weixin currently supports private 
 
 1. Add the platform Bot to the group and [authorize the chat](/docs/chat/overview/).
 2. Mention the Bot or reply to one of its messages with a task.
-3. Other members can add information. Mention or reply again when the addition needs immediate handling.
+3. Other members can add information. While the Bot is working, newly received messages join its following model steps. Mention or reply to wake it when it is idle.
 4. Ask for the result or file to be sent back, then check the actual send outcome.
 
 For example, one member requests a weekly report from a computer, another adds completed work, and the Bot creates and sends the report in the same session.
 
 ## Ordinary messages and proactive participation
 
-Proactive participation is off by default. Ordinary messages delivered for a connected group can still enter its context, but do not immediately start a task by themselves.
+Proactive participation is off by default. Ordinary messages delivered for a connected group still enter its context, but do not start a task by themselves while the Bot is idle.
 
-Enable proactive participation per group to let Astral assess whether to respond after a pause in messages. It may decide to remain silent. Direct mentions and replies do not wait for this decision.
+While the Bot is working, it reads new messages in its following model steps and decides how they relate to the current task. Astral does not run a separate participation check or add another wakeup for those messages. This also applies to private chats.
+
+Enable proactive participation per group to let Astral decide whether to wake an idle Bot after 10 seconds without a new message, or 60 seconds from the first pending message. It may decide to remain silent. Direct mentions, replies to the Bot, and supported pokes addressed to it wake it without waiting for this check; private messages also wake an idle Bot directly.
+
+If the Bot finishes before a newly received message reaches its next model step, Astral applies the idle rules to that message. Messages already read by the ongoing task do not trigger another wakeup, and a late participation result cannot wake it again for the same batch.
 
 Whenever an IM trigger or proactive decision wakes the Agent, it is reminded that ordinary assistant text does not go to IM: replying to the chat requires `send_message`. It can still decide that no reply is needed; this does not change the bound destination or chat permissions.
 

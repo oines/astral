@@ -181,8 +181,8 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 	return receipt, err
 }
 
-// Deliver admits each observation/trigger group atomically. Observations alone
-// remain passive, including when the session has no driving conversation yet.
+// Deliver keeps idle direct triggers atomic. During a running turn, all IM
+// messages are observations for its next request rather than another driver.
 func (s *Service) Deliver(ctx context.Context, id string, observation core.Message, trigger *core.Message, bindingID ...string) (InputReceipt, error) {
 	r, err := s.open(ctx, id)
 	if err != nil {
@@ -207,7 +207,9 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 	inputID, kind := metadata.EventID, core.InputContext
 	if trigger != nil {
 		inputID += ":trigger"
-		kind = core.InputSteer
+		if IMCanProbe(r.core.Load()) {
+			kind = core.InputSteer
+		}
 	}
 	hash := digest(struct {
 		Observation core.Message
@@ -217,7 +219,7 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 		return receipt, err
 	}
 	input := core.Input{ID: inputID, Digest: hash, Contexts: []core.Message{observation}}
-	if trigger != nil {
+	if kind == core.InputSteer {
 		input.Message = *trigger
 		prior, err := r.core.Load().LookupInput(ctx, metadata.EventID)
 		if err == nil {
@@ -242,10 +244,71 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 		}
 	}
 	receipt, err := r.accept(ctx, input, kind)
-	if err == nil && trigger != nil {
+	if err == nil && kind == core.InputSteer {
 		r.maybeGenerateSessionTitle(metadata.DisplayText)
 	}
+	if err == nil && trigger != nil && kind == core.InputContext {
+		// A new explicit message can resume a stopped queue or an attempt left
+		// by a crash. Passive delivery makes it available to the resumed run.
+		snapshot := r.core.Load().Snapshot()
+		if snapshot.Running || snapshot.Maintenance || snapshot.Stopping {
+			return receipt, nil
+		}
+		stopped, checkErr := IMInputStopped(ctx, r.core.Load(), s.CoreStore, inputID)
+		if checkErr != nil {
+			return receipt, checkErr
+		}
+		if !stopped {
+			err = r.continueLocked(ctx)
+			if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
+				err = nil
+			}
+		}
+	}
 	return receipt, err
+}
+
+// WakeObservation only hands off a direct observation missed by the main run.
+// It uses the same Host lock as Web/IM input and normal Continue operations.
+func (s *Service) WakeObservation(ctx context.Context, id, inputID string, trigger core.Message, bindingID string) (IMWakeStatus, error) {
+	r, err := s.open(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var record domain.Session
+	if err = s.Store.Get(ctx, "sessions", id, &record); err != nil {
+		return "", err
+	}
+	if record.BindingID != bindingID {
+		return "", domain.Conflict("the inbound binding is no longer active")
+	}
+	inspector := NewIMInspector(r.core.Load(), s.CoreStore)
+	handled, err := inspector.Handled(ctx, inputID)
+	if err != nil || handled {
+		return IMWakeCovered, err
+	}
+	wakeupID := inputID + ":wakeup"
+	var metadata messages.Metadata
+	if err = json.Unmarshal(trigger.Metadata, &metadata); err != nil {
+		return "", err
+	}
+	metadata.DeliveryID = wakeupID
+	trigger.Metadata = encode(metadata)
+	status, err := AdmitIMWakeup(ctx, r.core.Load(), s.CoreStore, core.Input{ID: wakeupID, Message: trigger}, []string{inputID}, true)
+	if err != nil {
+		return "", err
+	}
+	if status == IMWakeAccepted || status == IMWakeExisting {
+		persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		err = r.continueLocked(persist)
+		cancel()
+		if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
+			err = nil
+		}
+	}
+	return status, err
 }
 func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputKind) (InputReceipt, error) {
 	var record domain.Session

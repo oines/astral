@@ -12,6 +12,7 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/persistence"
 )
@@ -26,6 +27,12 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	}
 	results := make(chan probeResult, 1)
 	probing := false
+	var pendingResult *probeResult
+	defer func() {
+		s.mu.Lock()
+		delete(s.handoffs, b.ID)
+		s.mu.Unlock()
+	}()
 	for ctx.Err() == nil {
 		events, err := s.Store.Observations(ctx, b.ConversationID, position.Sequence, 100)
 		if err != nil {
@@ -49,15 +56,28 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 				break
 			}
 		}
+		if err == nil {
+			err = s.handoffDirectObservations(ctx, b, position.Sequence)
+		}
+		if err == nil {
+			err = s.resumeAcceptedProbe(ctx, b)
+		}
 		select {
 		case result := <-results:
 			probing = false
-			if probeErr := s.finishProbe(ctx, b, result); probeErr != nil && ctx.Err() == nil {
-				slog.WarnContext(ctx, "IM Probe completion failed", "conversation_id", b.ConversationID, "error", probeErr)
-			}
+			pendingResult = &result
 		default:
 		}
-		if !probing && err == nil {
+		if pendingResult != nil {
+			settled, probeErr := s.completeProbe(ctx, b, *pendingResult)
+			if settled {
+				pendingResult = nil
+			}
+			if probeErr != nil && ctx.Err() == nil {
+				slog.WarnContext(ctx, "IM Probe completion failed", "conversation_id", b.ConversationID, "error", probeErr)
+			}
+		}
+		if !probing && pendingResult == nil && err == nil {
 			window, probeErr := s.pendingProbe(ctx, b, position.Sequence, time.Now())
 			if probeErr == nil && window.Through != 0 {
 				if _, lookupErr := s.Harness.Receipt(ctx, b.SessionID, probeInputID(b.ID, window.Through)); lookupErr == nil {
@@ -81,7 +101,7 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 							request, cancel := context.WithTimeout(ctx, time.Minute)
 							defer cancel()
 							participate, requestErr := s.shouldParticipate(request, b, view)
-							results <- probeResult{through: window.Through, participate: participate, err: requestErr}
+							results <- probeResult{through: window.Through, inputs: window.Inputs, participate: participate, err: requestErr}
 						}()
 					} else if !errors.Is(viewErr, core.ErrIncompleteBatch) {
 						_ = s.finishProbe(ctx, b, probeResult{through: window.Through, err: viewErr})
@@ -97,6 +117,52 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 			return
 		}
 	}
+}
+
+// This scan position is only an in-memory optimization. On restart, existing
+// input receipts and request audits reconstruct whether a direct input needs a
+// handoff; no new database record or storage format is introduced.
+func (s *Service) handoffDirectObservations(ctx context.Context, b domain.ConversationBinding, delivered int64) error {
+	s.mu.Lock()
+	after, exists := s.handoffs[b.ID]
+	s.mu.Unlock()
+	if !exists {
+		after = b.StartSequence
+	}
+	blocked := false
+	for after < delivered && !blocked {
+		page, err := s.Store.Observations(ctx, b.ConversationID, after, 100)
+		if err != nil {
+			return err
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, item := range page {
+			if item.Sequence > delivered {
+				break
+			}
+			event := item.Observation
+			if event.Trigger != "" && !event.Self {
+				status, err := s.Harness.WakeObservation(ctx, b.SessionID, event.ID+":trigger", messages.Trigger(event), b.ID)
+				if err != nil {
+					return err
+				}
+				if status == harness.IMWakeBusy {
+					blocked = true
+					break
+				}
+			}
+			after = item.Sequence
+		}
+	}
+	s.mu.Lock()
+	if s.handoffs == nil {
+		s.handoffs = map[string]int64{}
+	}
+	s.handoffs[b.ID] = max(s.handoffs[b.ID], after)
+	s.mu.Unlock()
+	return nil
 }
 func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, event domain.Observation) (err error) {
 	defer func() {

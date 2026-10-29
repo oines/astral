@@ -87,10 +87,10 @@ IM 复用同一套 IMStore、Conversation、Session 绑定、持续上下文、P
 | D05 | 首版单 Owner、多 Agent、多 Session；全局资源、Agent 选择、Session 当前状态分层。 |
 | D06 | 每个接入聊天稳定绑定一个持久 Session；一个 Session 最多绑定一个聊天。Topic 独立识别。 |
 | D07 | IM 账号属于 Agent，范围为全部聊天或指定聊天；默认指定且为空，不使用绑定码或群成员权限名单。 |
-| D08 | 普通群消息持续 InjectContext 并按预算 compact；私聊、@、回复 Bot 和已绑定 Session 的 Web 输入直接 Steer。 |
+| D08 | 工作中的主 Agent 通过持续观察接收群聊和私聊新消息，不额外 Probe 或 IM Steer；空闲时私聊、@、回复 Bot、戳 Bot 直接唤醒，普通群消息按主动模式判断。绑定 Session 的 Web 输入仍使用 Steer。 |
 | D09 | 模型可见消息沿用 Cahciua 的紧凑 XML，并补充 Astral 的来源与稳定身份信息。 |
 | D10 | assistant text 在 Web 正常显示；IM 只由 send_message 或显式 Computer API 调用发送。 |
-| D11 | 聊天主动模式默认关闭；开启时 LLM Probe 只返回参与布尔值，Host 中性唤起，主 Agent 独立决定行为。 |
+| D11 | 聊天主动模式默认关闭；开启时 LLM Probe 只为普通群消息判断是否唤醒空闲的主 Agent，只返回参与布尔值；Host 中性唤起，主 Agent 独立决定行为。 |
 | D12 | 基础文件和命令工具使用 Session 当前 Computer/CWD；Agent 可调用 `switch_computer`。 |
 | D13 | 已派发调用、已有进程和文件引用绑定原 Computer，不随之后的切换漂移。 |
 | D14 | AgentHome 属于 Agent 与 Computer 的组合，同一 Agent 的多个 Session 可以共享它。 |
@@ -723,15 +723,16 @@ Telegram `reply_to_message` 的原消息 ID、发送者和最多 500 个 Unicode
 
 这些是新的观察记录。IM Store 保留追加事件，消息查询可返回最新状态；已经进入 Core 历史的旧观察与投递回执不原地改写。NapCat 戳一戳保留 `raw_info` 提供的可读动作、自定义后缀及参与者身份，不把图片或跳转 URL、内部 UID 塞入模型；平台没有可读内容时才用普通动作描述。私聊 `sender_id` 是操作者、`user_id` 是会话对方。仅其他人戳当前 Bot 产生 `poke` 触发，仍受原聊天权限和绑定约束；戳其他人和自身动作被动追加。没有原生 `event_id` 的通知按实际收到的每帧分配本地事件 ID，pending 批次重试沿用，不承诺跨断线回放的精确去重。这里只复用 Cahciua 的消息表达，不采用每次调用重新构建整段群历史的执行方式。
 
-### 三类投递
+### 按运行状态投递
 
 | 类型 | 模型内容 | 执行行为 |
 | --- | --- | --- |
-| IM 普通群消息 | 消息 XML，`RoleUser`，`ContextKind=im.observation` | `InjectContext`，不单独激活模型 |
-| IM @、回复 Agent、私聊等触发 | 同样的观察内容与一条引用目标消息的驱动输入 | 观察与触发一次提交为 Steer；空闲 Continue，忙碌在安全边界应用 |
+| 工作中的 IM 消息，含私聊、@、回复 Bot、戳 Bot 和普通群消息 | 消息 XML，`RoleUser`，`ContextKind=im.observation` | `InjectContext`，在后续主模型请求的安全边界读取；不另启动 Probe，不追加独立 IM Steer |
+| 空闲时的普通群消息 | 同样的观察内容 | 不单独激活主模型；开启该聊天主动模式时，经防抖由 Probe 判断是否唤醒 |
+| 空闲时的 @、回复 Bot、私聊、戳 Bot 等直接触发 | 同样的观察内容与一条引用目标事件的驱动输入 | 沿用现有直接触发流程，提交关联观察与 Steer，再 Continue |
 | Web UI prompt | 带 Web 来源的 User Message | 始终是驱动输入；绑定 Session 使用 Steer，没有 Probe 分支 |
 
-静默表示不因该观察单独创建一次模型执行。若 Session 已经运行，观察可能在安全边界进入正在使用的上下文，参与后续推理。
+静默表示不因该观察单独创建一次模型执行。若 Session 已经运行，观察在安全边界进入后续主模型请求，由主 Agent 结合当前工作处理。群聊和私聊共用此机制；不同之处在空闲时是否需要直接唤醒或判断参与。记录已进入历史、主模型确实已经读取、模型选择回复是三种不同事实。
 
 触发输入关联本次要处理的消息，并提醒主 Agent 的 IM 发送规则，例如：
 
@@ -741,7 +742,7 @@ Telegram `reply_to_message` 的原消息 ID、发送者和最多 500 个 Unicode
 Direct assistant text is not sent to IM. To reply to this chat, you must call send_message.
 ```
 
-Host 用内部事件和投递组标识精确关联此提示与对应版本的消息。每次直接 IM 触发与 Probe 正向唤起都带上这条发送提醒；普通旁观观察不重复添加。提醒只说明普通 assistant 文本不会发送到 IM、回复当前聊天必须调用 `send_message`，不要求必须回复，也不改变工具目的地或投递语义。模型正文不重复附上同一请求全文。
+Host 用内部事件和投递组标识精确关联此提示与对应版本的消息。每次空闲直接 IM 唤醒与 Probe 正向唤起都带上这条发送提醒；工作期间接收的观察和其他普通旁观观察不重复添加。保持已有 Host system prompt 原文，不把调度状态交给模型决定。提醒只说明普通 assistant 文本不会发送到 IM、回复当前聊天必须调用 `send_message`，不要求必须回复，也不改变工具目的地或投递语义。模型正文不重复附上同一请求全文。
 
 Web 输入采用相同消息风格：
 
@@ -767,12 +768,16 @@ Web 输入采用相同消息风格：
 
 实现必须满足：
 
-1. 新触发事件尚未独立投递时，使用 `InputOptions.Contexts` 将观察与驱动输入作为一个关联组提交；Core 在同次应用中保证 Context 在 Prompt 前。
-2. 事件已经独立投递时，确认对应 Context 已应用后，再提交只引用它的驱动输入；不得为了赶上唤醒重复注入正文。
+1. 工作中接收 IM 观察，保留来源与明确触发原因，不为同一事件额外提交驱动输入。空闲时新直接触发沿用现有关联投递：观察与引用它的驱动输入一起接收，正文只出现一次。
+2. 工作期间已经独立投递的事件，若主运行正常结束前未被后续请求采用，Host 按空闲规则交接。需要唤醒时，确认已有 Context 已应用，再提交只引用它的驱动输入；不得重复注入正文。已经进入主请求的事件不再独立触发。
 3. 独立 Context 可能因为预算或单次处理上限仍留在 Pending，不能把一次成功的 `InjectContext` 当作全部已应用。
 4. Host 维护事件到 Core 接收 ID、应用 Entry ID 的映射。调用超时后先核查，不盲目重新注入。
 5. Context 按实际安全边界加入；不得插进尚未完整的工具调用与结果批次中。
 6. 外部消息使用 User Role。`ContextKind` 只是来源标签，不能自动把群消息提升为 System/Developer 指令。
+7. 边界判断留在 Host：使用已有 Snapshot、Run 记录、输入回执与冻结请求审计，核对观察是否已进入普通主请求，不以单个 `Running` 快照或 `InputApplied` 代替此事实。单独旁观应用或摘要请求不代表主请求已经采用消息。主运行正常结束后的未读直接触发不得因旧运行状态而丢失，普通群消息按原主动模式规则交接。
+8. Probe 仅在主 Agent 空闲时启动和应用正向结果。Host 在准备判断、提交结果及运行交接时重新核对已有运行与请求边界；已经由主运行接管的快照不再补 wakeup，后来的消息不被旧结果覆盖。用户 Stop 和执行失败沿用既有不自动重启契约。
+
+本轮只重构 Host 调度，使用现有 Core 接口与请求审计，不修改 Core、不新增数据格式或迁移，也不改写旧 IM 上下文、既有投递身份或历史记录。
 
 ### 账号范围、激活与主动模式
 
@@ -780,13 +785,13 @@ Connection 增加 `agent_id` 与 `access_mode: all | specified`。默认指定�
 
 一个聊天绑定一个 Session，Topic 独立。全部与指定互切保留所有已激活绑定和聊天设置；全部模式不能单独移除聊天。换绑先校验同 Agent 且未占用的目标，停止原 Session 和目标 Session，再原子提交。旧历史和已经接受的出站目标不会转投。
 
-`Conversation.proactive_enabled` 默认关闭，属于聊天，平台资料更新、换绑或切换范围均保留。普通群消息持续进入 Core 并正常 compact；开启主动模式后，10 秒安静或首条未处理消息累计 60 秒可运行一次 Probe。每聊天最多一个 Probe，消息先应用再读取快照。自身发送记录只同步上下文，不触发 Probe。
+`Conversation.proactive_enabled` 默认关闭，属于聊天，平台资料更新、换绑或切换范围均保留。IM 消息持续进入 Core 并正常 compact；主 Agent 工作中直接通过后续请求读取新观察，不启动 Probe，也不为直接触发补独立 IM Steer。仅当主 Agent 空闲且群聊开启主动模式时，普通群消息在 10 秒安静或首条未处理消息累计 60 秒后可运行一次 Probe。每聊天最多一个 Probe，消息先应用再读取快照。私聊与 @、回复 Bot、戳 Bot 等直接触发在空闲时直接唤醒，不等待 Probe。自身发送记录只同步上下文，不触发 Probe。
 
 Probe 模型默认跟随 Session 当前模型，Agent 可在默认模型下方单独选择 `probe_model_id`，并设置该模型的 `probe_reasoning`；跟随 Session 时同时使用 Session 的推理设置。Agent 的 `default_reasoning` 与默认模型一起保存，新建 Web 与 IM Session 时复制为 Session 自己的推理设置，之后修改 Agent 默认值不改变既有 Session。空推理配置使用对应 Model Profile 的默认值；切换模型时清除旧模型的推理覆盖值。旁观视图保留摘要、IM 消息及有界工具活动，去除 assistant 正文、reasoning 和 Probe 记录；按 Probe 模型窗口裁剪，支持视觉时携带原生图片。首版只有一次 LLM 判断请求，工具选择为 `auto`，只提供 `decide({participate:boolean})`。按返回顺序只采纳首个合法 `decide` 布尔值；没有合法决定（包括只返回文本、错误工具或非法参数）或请求失败时，覆盖本次快照并等待新消息，不纠错、不重试本次 Probe，也不执行其他工具。
 
 每次新 Probe 独立读取当前绑定 Bot 的最新人格，用于判断该 Bot 是否适合参与。`system_prompt` 先放固定判断指令，其中一句说明 `The Bot persona below describes the Bot you are evaluating, not you.`；非空白人格随后以 `\n\nBot persona:\n` 加原始人格文本追加，空白人格省略整段。动态观察仍在 Messages，当前时间和 Bot 名称留在最后一条 User Message。不复制主 Agent 的 Host 指令、环境快照或工具；Probe 仍只提供 `decide`，工具选择保持 `auto`。人格保存后下次新 Probe 生效，已经准备好的请求不改写。固定规则与 Bot 人格位于动态内容之前，不因旁观历史裁剪而被丢弃。
 
-正向结果只提交中性 Host 唤起，不含 reason、分析或任务行动指令，并附上与直接 IM 触发相同的 `send_message` 发送提醒。主 Agent 独立决定后续行为，可保持沉默。直接 @/回复覆盖当时待 Probe 的消息；关闭主动模式或换绑使旧结果失效。新消息留待下一轮，稳定输入 ID 与 Core 回执防止重复唤起。
+正向结果仅在主 Agent 仍空闲、对应快照仍未被主运行接管时，提交中性 Host 唤起，不含 reason、分析或任务行动指令，并附上与直接 IM 唤醒相同的 `send_message` 发送提醒。主 Agent 独立决定后续行为，可保持沉默。直接唤醒覆盖当时待 Probe 的消息；主运行接管快照、关闭主动模式或换绑使旧结果失效。主运行正常结束时尚未进入主模型请求的事件返回空闲分流，不因之前忙碌而漏掉。后到新消息保留，Host 结合稳定输入 ID、既有 Core 回执、Run 记录与请求审计防止重复唤起。
 
 IMStore 默认无限期保留收到的消息、已接受的发送及平台实际提供的编辑/撤回事实。出站消息与自身平台回显按身份去重，同步一份观察；未收到的平台删除通知不伪造。
 
@@ -1322,17 +1327,17 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A14 | Telegram Conversation 唯一性 | 同一启用 Conversation 仅一个 Binding；不同群/私聊/Topic 的 Session 和历史独立 |
 | A15 | 账号范围与触发 | 账号归属 Agent；全部模式首个直接触发激活，指定模式手动选择 Session；任何群成员都可请求 |
 | A16 | 持续被动上下文 | Idle 持续应用并在需要时 compact，不启动主 Agent；超过一个内部批次的积压持续处理 |
-| A17 | 触发输入完整性 | 新事件的观察与 Prompt 关联提交，正文只出现一次且观察先于驱动输入 |
-| A18 | 已接收但未应用 | Pending Context 未应用时不把接收成功当作模型已读；引用式触发等待应用确认 |
+| A17 | 触发输入完整性 | 正文只出现一次，空闲直接触发沿用观察与驱动的关联投递；工作期间只交观察，不追加同事件的独立 IM Steer |
+| A18 | 请求边界与结束交接 | Host 用已有 Snapshot、Run 记录、回执与请求审计区分应用和主请求采用；正常结束后未读消息按空闲规则交接，已采用事件不再次唤醒；不新增 Core API 或迁移 |
 | A19 | 消息表达 | 模型能识别平台、群、发送者稳定身份、时间、回复和附件；用户正文正确转义，Role 为 User |
 | A20 | 编辑、撤回与重试 | 平台实际提供的编辑、撤回等新事件追加观察，旧 Core 历史不改写；相同事件重试不重复投递，合法编辑不被误去重，不伪造未提供的事件 |
 | A21 | Web prompt | 每个 prompt 都是驱动输入，无静默分支；在 IM Session 输入不暗改该 Session 绑定 |
 | A22 | 显式 IM 回复 | assistant text 正常显示在 Web 且不外发；send_message 自动采用绑定目标并返回回执 |
 | A23 | 主动发送与回显 | Gateway 可向视图内目标发送；保留回执，超时不盲重发，自身回显不再次激活或重复上下文 |
 | A24 | 正常沉默 | 正常结束无显式发送，不生成 IM 占位消息或强制回复 |
-| A25 | 主动模式 | 默认关闭；10 秒安静/60 秒窗口，Bot 自身消息不触发 Probe |
+| A25 | 主动模式 | 默认关闭；只在主 Agent 空闲时对普通群消息按 10 秒安静/60 秒窗口 Probe，工作中与 Bot 自身消息不触发 Probe |
 | A26 | Probe 决策 | `auto` 且只提供 `decide`，按返回顺序采纳首个合法布尔决定；没有合法决定（纯文本、错误工具、非法参数）或请求失败时覆盖快照，不纠错、不重试本次 Probe、不执行其他工具 |
-| A27 | Probe 竞争 | @/回复、关闭主动模式、换绑使旧结果失效；后到新消息保留，不传理由或指令 |
+| A27 | Probe 竞争 | 直接唤醒、主运行接管快照、关闭主动模式、换绑使旧结果失效；工作期间不能被晚到结果追加唤醒；后到新消息保留，不传理由或指令 |
 | A28 | Web 文件交付 | assistant text 的 FileRef 可预览或下载；来源固定，文件字节不落 Server 磁盘 |
 | A29 | IM 文件交付 | Agent 显式调用 API，从来源 Computer 流式上传并获得回执；普通文件链接不冒充附件已发送 |
 | A30 | 图片与原始附件 | IM 接收不写 Computer；共享压缩保留透明度、方向与尺寸，载荷持久可重放，原件通过 Gateway 字节流按需获取 |
