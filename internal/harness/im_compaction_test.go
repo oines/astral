@@ -15,9 +15,9 @@ func TestCompactionPromptFollowsCurrentIMBinding(t *testing.T) {
 	f := newFixture(t, 0, func(context.Context, int, map[string]any) any {
 		return textReply("confirmed context")
 	})
-	// Seven large-history compactions exceed the shared fixture's 35 second
-	// deadline under the race detector. Keep the assertions and request sizes.
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	// Seven large-history compactions share this deadline. Leave enough room
+	// for macOS CI under the race detector without reducing coverage or history.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	t.Cleanup(cancel)
 	f.ctx = ctx
 	compactPrompt := func(id string) string {

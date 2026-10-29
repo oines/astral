@@ -144,7 +144,9 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   await writeFile(path.join(output, 'release-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
   const label = macSigned ? 'Mac signed candidate' : 'unsigned candidate'
   const macStatus = macSigned ? (notarized ? 'verified signed and notarized' : 'verified signed; Apple notarization is pending') + '; final-byte evidence is in mac-signing-report.json' : 'not performed'
-  const capabilities = `- macOS: install the DMG matching your Mac architecture. Developer ID signatures are verified. ${notarized ? 'Apple notarization is accepted.' : 'Apple notarization is pending; Gatekeeper may require manually allowing the app in System Settings → Privacy & Security.'} See mac-signing-report.json for exact final-byte evidence.
+  const capabilities = `Automatic compaction now uses validated model usage for the history being summarized, then counts all later messages, images, tool results and summary instructions. This fixes false context-limit failures caused by estimating encrypted reasoning as ordinary text, while still checking silently accumulated IM messages and pending input. Data formats remain Host ${formats.host_schema} / Core ${formats.core_format}; this fix requires no migration.
+
+- macOS: install the DMG matching your Mac architecture. Developer ID signatures are verified. ${notarized ? 'Apple notarization is accepted.' : 'Apple notarization is pending; Gatekeeper may require manually allowing the app in System Settings → Privacy & Security.'} See mac-signing-report.json for exact final-byte evidence.
 - Windows: use the EXE installer for a current-user installation. Windows packages are not code-signed and may show SmartScreen warnings; ZIP builds are for manual installation.
 - Linux Desktop: AppImage supports in-app updating; install newer DEB packages manually. Linux packages are not code-signed.
 - Linux VPS: run install-server.sh for a current-user headless Server and systemd user service.

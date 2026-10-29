@@ -28,6 +28,12 @@ After stopping, wait for the state to confirm. Stopping does not roll back files
 
 When Continue is available, resume from the existing context or send updated instructions first. Restore an offline computer or failed model connection before resuming dependent work.
 
+## Long conversations
+
+As a conversation grows, Astral summarizes older context and keeps recent messages for the next model request. Received chat messages and images count toward the context budget even while the Bot stays silent. The budget uses the model's reported usage where it still applies, plus estimates for everything added afterward.
+
+Automatic summarization can call the model without starting an ordinary task or sending an IM reply. Original history is preserved. If summarization or the final context check fails, existing context and pending messages remain available; address the reported error before continuing.
+
 ## Separate unrelated work
 
 Keep related tasks together and use a new session for unrelated work. A copied or forked session is independent; later messages do not synchronize.
