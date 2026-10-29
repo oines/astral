@@ -63,6 +63,8 @@ func chatOperations(adapter Adapter) []ChatOperation {
 			{Name: "get_chat", Parameters: []string{}},
 			{Name: "get_message", Parameters: []string{"message_id"}, MessageScoped: true},
 			{Name: "delete_message", Parameters: []string{"message_id"}, MessageScoped: true},
+			{Name: "set_reaction", Parameters: []string{"message_id", "emoji_id", "set"}, MessageScoped: true},
+			{Name: "poke", Parameters: []string{"user_id"}},
 			{Name: "get_members", Parameters: []string{}},
 			{Name: "get_member", Parameters: []string{"user_id"}},
 			{Name: "set_group_ban", Parameters: []string{"user_id", "duration"}},
@@ -162,7 +164,27 @@ func napcatOperation(ctx context.Context, n *napcat, name string, chat domain.Co
 	case "get_message":
 		method = "get_msg"
 		payload["message_id"] = params["message_id"]
-	case "delete_message":
+	case "delete_message", "set_reaction":
+		if name == "set_reaction" {
+			emojiID, ok := params["emoji_id"].(string)
+			if !ok || emojiID == "" || len(emojiID) > 20 {
+				return nil, domain.Invalid("emoji_id must be a QQ emoji ID string")
+			}
+			for _, r := range emojiID {
+				if r < '0' || r > '9' {
+					return nil, domain.Invalid("emoji_id must be a QQ emoji ID string")
+				}
+			}
+			set := true
+			if value, exists := params["set"]; exists {
+				var valid bool
+				set, valid = value.(bool)
+				if !valid {
+					return nil, domain.Invalid("set must be a boolean")
+				}
+			}
+			payload["emoji_id"], payload["set"] = emojiID, set
+		}
 		// NapCat's globally addressed short message IDs can outlive a mapping
 		// reset. Verify the current platform mapping as well as the archived
 		// authorization before a destructive request.
@@ -174,7 +196,44 @@ func napcatOperation(ctx context.Context, n *napcat, name string, chat domain.Co
 			return nil, err
 		}
 		method = "delete_msg"
+		if name == "set_reaction" {
+			method = "set_msg_emoji_like"
+		}
 		payload["message_id"] = params["message_id"]
+	case "poke":
+		method = "send_poke"
+		if !napcatNumericID(id) {
+			return nil, domain.Invalid("poke requires a numeric QQ chat ID")
+		}
+		userID := id
+		if value, exists := params["user_id"]; exists {
+			if number, ok := value.(float64); ok && (number > 1<<53 || number < 1) {
+				return nil, domain.Invalid("user_id must be a positive QQ number")
+			}
+			userID = telegramID(value)
+			if !napcatNumericID(userID) {
+				return nil, domain.Invalid("user_id must be a positive QQ number")
+			}
+		} else if kind == "group" {
+			return nil, domain.Invalid("user_id is required to poke a group member")
+		}
+		if kind == "private" && userID != id {
+			return nil, domain.Forbidden("poke target must be the selected private chat's peer")
+		}
+		payload["user_id"] = userID
+		if kind == "group" {
+			payload["group_id"] = id
+			var member struct {
+				GroupID qqValue `json:"group_id"`
+				UserID  qqValue `json:"user_id"`
+			}
+			if err := n.call(ctx, "get_group_member_info", map[string]any{"group_id": id, "user_id": userID, "no_cache": true}, &member); err != nil {
+				return nil, err
+			}
+			if string(member.GroupID) != id || string(member.UserID) != userID {
+				return nil, domain.Forbidden("NapCat could not prove that the poke target belongs to the selected group")
+			}
+		}
 	case "get_members":
 		method = "get_group_member_list"
 		payload["group_id"] = id
@@ -211,7 +270,7 @@ func napcatOperation(ctx context.Context, n *napcat, name string, chat domain.Co
 	}
 	var result json.RawMessage
 	if err = n.call(ctx, method, payload, &result); err != nil {
-		if name == "delete_message" || name == "set_group_ban" {
+		if name == "delete_message" || name == "set_group_ban" || name == "set_reaction" || name == "poke" {
 			var api *napcatAPIError
 			if errors.As(err, &api) {
 				return nil, api.sendError()

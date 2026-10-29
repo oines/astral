@@ -9,7 +9,7 @@ Use a **custom enterprise application with Bot capability**. A group's custom we
 
 Create the application on the [Feishu Open Platform](https://open.feishu.cn/document/client-docs/bot-v3/bot-overview), enable Bot capability, and obtain its App ID and App Secret.
 
-Choose long-connection event delivery and subscribe to `im.message.receive_v1`. Astral establishes the connection; no public webhook is required.
+Choose long-connection event delivery and subscribe to `im.message.receive_v1`. To receive reactions, also subscribe to `im.message.reaction.created_v1` and `im.message.reaction.deleted_v1`. Astral establishes the connection; no public webhook is required.
 
 Grant and publish permissions for the features you need:
 
@@ -21,6 +21,8 @@ Grant and publish permissions for the features you need:
 | Send as the Bot | `im:message:send_as_bot` |
 | Upload and read attachments | `im:resource` |
 | Read chat information | `im:chat:readonly` |
+| Receive and read message reactions | `im:message.reactions:read` |
+| Add or remove the Bot's own reactions | `im:message.reactions:write_only` |
 
 Publish the app, include the intended users in its availability scope, and add the Bot to the group. Permission changes must also complete the platform's publication process.
 
@@ -38,6 +40,12 @@ Feishu Chat IDs use `oc_…`. Threads currently belong to the parent chat rather
 Private messages, mentions, and replies to the Bot can trigger tasks directly. Receiving ordinary group context requires the corresponding permission.
 
 Text, images, files, and supported message resources are available. File and explanatory text sends are separate; successful text does not prove successful file delivery.
+
+## Message reactions
+
+Reaction additions and removals enter context as separate events retaining the original message ID, the supplied user or app operator, and Feishu's emoji type. They do not rewrite the original message. Astral resolves the chat from its archive first, consulting the platform when needed. An unknown original that can no longer be read is not fabricated or allowed to block later events.
+
+The Agent can use the existing Computer API's `list_reactions`, `add_reaction` and `delete_reaction` operations in an authorized chat with the corresponding permissions. Known self actions do not wake the Bot again. Reactions missing an actor identity are passive context only, without starting a participation check; a working Bot can still read them. Group reactions from a known external actor follow optional proactive rules; private-chat reactions do not directly wake it.
 
 ## If no messages arrive
 

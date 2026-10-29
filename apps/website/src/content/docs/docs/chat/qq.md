@@ -19,7 +19,7 @@ Choose the connection type when creating a QQ account. The two methods use diffe
 
 Normally keep the default API and token endpoints. Astral connects to the platform gateway; no public webhook is required.
 
-Official Bot openids are **not QQ user or group numbers** and cannot be reused across applications. This integration supports private chats and permitted groups, not QQ channels. Ordinary group messages, reply windows, and file sending depend on platform permissions.
+Official Bot openids are **not QQ user or group numbers** and cannot be reused across applications. This integration supports private chats and permitted groups, not QQ channels. Ordinary group messages, reply windows, and file sending depend on platform permissions. Message reactions are not supported by the current group/C2C integration; QQ channel features do not imply that support.
 
 ## NapCat
 
@@ -45,3 +45,11 @@ Replies carry the original text and media references when that message is alread
 Pokes appear as independent events with the actor, recipient, platform action text and custom suffix when NapCat supplies them. Another person poking the Bot can wake it in an authorized, bound chat. Pokes between other people, and actions performed by the Bot itself, remain passive context.
 
 A recall appends an event identifying the operator and original message. It does not erase or rewrite context the Agent already received. These events follow the same chat permissions as messages and do not authorize a new chat. NapCat has no missed-message replay; separate delivered notices are recorded separately even when their visible contents match.
+
+## NapCat reactions and outgoing pokes
+
+NapCat provides partial group-reaction notifications, mainly for the logged-in account's own messages. Astral appends events preserving QQ emoji IDs and the actor when supplied; absent identities are explicitly unknown. Native counts remain reported values rather than reliable totals, and missing notifications are not invented. Known self actions do not wake the Bot. Reactions with an unknown actor are passive context only, without starting a participation check; a working Bot can still read them. Group reactions from a known external actor follow optional proactive rules.
+
+The Agent can use the existing Computer API's `set_reaction` to add or remove a reaction on an archived message whose chat membership is verified, and `poke` to poke someone. Group targets must be specified and verified as group members; private targets can only be that chat's peer. These actions retain account and chat permissions without changing `send_message`.
+
+A private window shake is separate from a poke. An incoming shake appears as `[QQ private window shake]` in context. The current NapCat API has no supported outbound window-shake operation, so Astral cannot send one and does not substitute a poke.

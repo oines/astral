@@ -2739,6 +2739,9 @@
           "message_id": {
             "type": "string"
           },
+          "reaction": {
+            "$ref": "#/components/schemas/astral_internal_domain_ReactionEvent"
+          },
           "received_at": {
             "format": "date-time",
             "type": "string"
@@ -3033,6 +3036,47 @@
           "state",
           "phase",
           "log"
+        ],
+        "type": "object"
+      },
+      "astral_internal_domain_Reaction": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "emoji": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "reported_count": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "astral_internal_domain_ReactionEvent": {
+        "properties": {
+          "actor_type": {
+            "type": "string"
+          },
+          "reactions": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_Reaction"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "actor_type",
+          "reactions"
         ],
         "type": "object"
       },

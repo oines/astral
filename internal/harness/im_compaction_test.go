@@ -49,6 +49,11 @@ func TestCompactionPromptFollowsCurrentIMBinding(t *testing.T) {
 		for id := range bindings {
 			ids = append(ids, id)
 		}
+		for _, binding := range bindings {
+			if binding != "" {
+				promptFixtureChat(t, f, "conversation-"+binding)
+			}
+		}
 		// Keep the message-tool definition identical across binding states so
 		// changing the compaction prompt alone must refresh an open runtime.
 		if err := f.service.WithStoppedSessions(f.ctx, ids, func() error {

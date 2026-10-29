@@ -494,7 +494,7 @@ func (s *Store) ObservationSequence(ctx context.Context, id string) (int64, erro
 func (s *Store) Message(ctx context.Context, conversation, messageID string) (domain.Observation, error) {
 	var raw []byte
 	var event domain.Observation
-	err := s.db.QueryRowContext(ctx, "SELECT payload FROM observations WHERE conversation_id=? AND json_extract(payload,'$.message_id')=? ORDER BY sequence DESC LIMIT 1", conversation, messageID).Scan(&raw)
+	err := s.db.QueryRowContext(ctx, "SELECT payload FROM observations WHERE conversation_id=? AND json_extract(payload,'$.message_id')=? AND json_extract(payload,'$.kind') IN ('message.created','message.edited','message.deleted') ORDER BY sequence DESC LIMIT 1", conversation, messageID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return event, domain.Missing("message", messageID)
 	}

@@ -9,7 +9,27 @@ import (
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/messages"
 )
+
+func promptFixtureChat(t *testing.T, f *fixture, id string) domain.Conversation {
+	t.Helper()
+	var conversation domain.Conversation
+	if err := f.store.Get(f.ctx, "conversations", id, &conversation); err == nil {
+		return conversation
+	} else if !domain.IsMissing(err) {
+		t.Fatal(err)
+	}
+	connection := domain.Connection{Meta: domain.Meta{ID: "account-" + id}, AgentID: f.agent.ID, Platform: "telegram"}
+	if err := f.store.Save(f.ctx, "connections", &connection.Meta, &connection); err != nil {
+		t.Fatal(err)
+	}
+	conversation = domain.Conversation{Meta: domain.Meta{ID: id}, ConnectionID: connection.ID, Kind: "group", Title: "Chat " + id, ExternalID: "-100" + id}
+	if err := f.store.Save(f.ctx, "conversations", &conversation.Meta, &conversation); err != nil {
+		t.Fatal(err)
+	}
+	return conversation
+}
 
 func wireSystemPrompt(request map[string]any) string {
 	for _, raw := range request["messages"].([]any) {
@@ -60,6 +80,9 @@ func TestSystemPromptMatchesCurrentBindingAndExposedTools(t *testing.T) {
 		if hasSend != bound || strings.Contains(prompt, "send_message") != bound || strings.Contains(prompt, "IM observations") != bound {
 			t.Fatalf("%s: prompt and tool availability disagree with binding: %s", label, prompt)
 		}
+		if strings.Contains(prompt, messages.ChatContextHeading) != bound {
+			t.Fatalf("%s: current IM chat did not follow the actual binding: %s", label, prompt)
+		}
 		if !strings.HasSuffix(prompt, personaSeparator+persona) || strings.Contains(prompt, "Probe") || strings.Contains(prompt, "wake") || strings.Contains(prompt, "Host context") {
 			t.Fatalf("%s: prompt lost persona or included irrelevant runtime instructions: %s", label, prompt)
 		}
@@ -69,6 +92,9 @@ func TestSystemPromptMatchesCurrentBindingAndExposedTools(t *testing.T) {
 	}
 	setBinding := func(binding, source string) {
 		t.Helper()
+		if binding != "" {
+			promptFixtureChat(t, f, "conversation-"+binding)
+		}
 		if err := f.service.WithStoppedSessions(f.ctx, []string{f.session.ID}, func() error {
 			var record domain.Session
 			if err := f.store.Get(f.ctx, "sessions", f.session.ID, &record); err != nil {

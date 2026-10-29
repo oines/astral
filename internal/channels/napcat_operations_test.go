@@ -28,25 +28,25 @@ func TestNapCatMessageOperationsVerifyCurrentPlatformScope(t *testing.T) {
 		{"outgoing private wrong target", "private:123", `{"message_id":-42,"message_type":"private","user_id":999,"target_id":789}`, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			for _, operation := range []string{"get_message", "delete_message"} {
+			for _, operation := range []string{"get_message", "delete_message", "set_reaction"} {
 				var deletes atomic.Int64
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if r.URL.Path == "/get_msg" {
 						fmt.Fprint(w, `{"status":"ok","retcode":0,"data":`+test.platformMessage+`}`)
 						return
 					}
-					if r.URL.Path != "/delete_msg" {
+					if r.URL.Path != "/delete_msg" && r.URL.Path != "/set_msg_emoji_like" {
 						t.Errorf("unexpected operation: %s", r.URL.Path)
 					}
 					deletes.Add(1)
 					fmt.Fprint(w, `{"status":"ok","retcode":0,"data":null}`)
 				}))
 				n := napcatTestAdapter(t, server)
-				_, err := napcatOperation(context.Background(), n, operation, domain.Conversation{ExternalID: test.chat}, map[string]any{"message_id": "-42"})
+				_, err := napcatOperation(context.Background(), n, operation, domain.Conversation{ExternalID: test.chat}, map[string]any{"message_id": "-42", "emoji_id": "76"})
 				if (err == nil) != test.allowed {
 					t.Errorf("%s scope result: %v", operation, err)
 				}
-				if operation == "delete_message" && !test.allowed && deletes.Load() != 0 {
+				if operation != "get_message" && !test.allowed && deletes.Load() != 0 {
 					t.Fatal("unauthorized destructive request reached NapCat")
 				}
 				server.Close()

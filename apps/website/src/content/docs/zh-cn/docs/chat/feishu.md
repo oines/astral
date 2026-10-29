@@ -9,7 +9,7 @@ description: "使用企业自建应用 Bot 接收消息和发送任务结果。"
 
 在[飞书开放平台](https://open.feishu.cn/document/client-docs/bot-v3/bot-overview)创建应用，开启 Bot 能力并取得 App ID、App Secret。
 
-事件订阅选择“使用长连接接收事件”，订阅 `im.message.receive_v1`。Astral 主动建立长连接，不需要公开 webhook。
+事件订阅选择“使用长连接接收事件”，订阅 `im.message.receive_v1`。需要接收表情回应时，还要订阅 `im.message.reaction.created_v1` 和 `im.message.reaction.deleted_v1`。Astral 主动建立长连接，不需要公开 webhook。
 
 按实际用途配置并发布应用权限：
 
@@ -21,6 +21,8 @@ description: "使用企业自建应用 Bot 接收消息和发送任务结果。"
 | 发送消息 | `im:message:send_as_bot` |
 | 上传、读取附件 | `im:resource` |
 | 读取聊天资料 | `im:chat:readonly` |
+| 接收、查询消息表情回应 | `im:message.reactions:read` |
+| 添加、移除 Bot 自己的表情回应 | `im:message.reactions:write_only` |
 
 确认应用已发布、可用范围包含目标用户，并把 Bot 加入目标群。修改权限后也要完成平台要求的发布流程。
 
@@ -38,6 +40,12 @@ description: "使用企业自建应用 Bot 接收消息和发送任务结果。"
 私聊、群内提及和对 Bot 消息的回复可以直接触发任务。希望让 Bot 使用普通群消息时，还需获得对应权限。
 
 支持文本、图片和文件等消息资源。文件与说明文字分别发送；文件发送失败时，文字成功不能替代附件成功。
+
+## 消息表情回应
+
+表情回应的添加和移除会作为独立事件进入上下文，保留原消息 ID、实际用户或应用操作者，以及飞书表情类型，不改写原消息。Astral 先根据归档确定聊天，必要时查询平台；未知且已无法读取的原消息不会被伪造成新消息，也不会阻塞后续事件。
+
+Agent 可通过现有 Computer API 的 `list_reactions`、`add_reaction` 和 `delete_reaction` 查询或管理获准聊天内消息的回应，仍需对应权限。已知自身动作不再次唤醒 Bot；缺少操作者身份的回应只作为旁观上下文，不单独启动参与判断，工作中的 Bot 仍能读到。已知其他参与者的群回应沿用可选主动参与规则，私聊回应不会单独直接唤醒。
 
 ## 常见连接问题
 

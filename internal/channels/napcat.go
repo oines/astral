@@ -303,6 +303,9 @@ func (n *napcat) normalize(raw json.RawMessage) (*Event, error) {
 	if message.SelfID != "" && n.connection.AccountID != "" && string(message.SelfID) != n.connection.AccountID {
 		return nil, domain.Conflict("NapCat event belongs to a different QQ account")
 	}
+	if message.PostType == "notice" && message.NoticeType == "group_msg_emoji_like" {
+		return n.normalizeReaction(raw)
+	}
 	if message.PostType != "message" && message.PostType != "message_sent" && message.PostType != "notice" {
 		return nil, nil
 	}
@@ -394,6 +397,8 @@ func (n *napcat) normalize(raw json.RawMessage) (*Event, error) {
 				}
 			case "reply":
 				observation.ReplyID = string(data["id"])
+			case "shake":
+				observation.Text += "[QQ private window shake]"
 			case "image", "record", "video", "file":
 				mediaKind := segment.Type
 				if mediaKind == "record" {
