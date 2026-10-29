@@ -8,6 +8,7 @@ import (
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/testkit"
 )
 
@@ -67,14 +68,36 @@ func TestProbeReadContextPreservesRealDeliveredObservationInModelRequest(t *test
 	if !found {
 		t.Fatal("ReadContext omitted the actual applied IM observation")
 	}
-	if participate, err := s.shouldParticipate(p.Context, binding, view); err != nil || participate {
-		t.Fatalf("unexpected local Probe result: %v %v", participate, err)
+	for _, title := range []string{"项目群", "改名后的项目群"} {
+		if err := p.Store.Get(p.Context, "conversations", binding.ConversationID, &chat); err != nil {
+			t.Fatal(err)
+		}
+		chat.Title = title
+		if err := p.Store.Save(p.Context, "conversations", &chat.Meta, &chat); err != nil {
+			t.Fatal(err)
+		}
+		// Reuse the same real observation: only the next request's current chat
+		// metadata should change when the platform reports a new group name.
+		if participate, err := s.shouldParticipate(p.Context, binding, view); err != nil || participate {
+			t.Fatalf("unexpected local Probe result: %v %v", participate, err)
+		}
+		request := <-requests
+		wireMessages := request["messages"].([]any)
+		system := wireMessages[0].(map[string]any)
+		if system["role"] != "system" || !strings.Contains(system["content"].(string), messages.ChatContext(connection, chat)) {
+			t.Fatalf("Probe omitted the latest bound chat metadata: %s", encoded(system))
+		}
+		observations := string(encoded(wireMessages[1:]))
+		if !strings.Contains(observations, text) || !strings.Contains(observations, "conversation-id=\\\""+chat.ID+"\\\"") {
+			t.Fatal("the actual Probe wire request lost its real observation or compact conversation reference")
+		}
+		for _, field := range []string{"current-channel:", "connection-id:", "conversation-id:", "chat-type:", "chat-title:", "chat-id:"} {
+			if strings.Contains(observations, field) {
+				t.Fatalf("Probe observations repeated chat metadata %q: %s", field, observations)
+			}
+		}
 	}
-	request := <-requests
-	if !strings.Contains(string(encoded(request["messages"])), text) {
-		t.Fatal("the actual Probe wire request filtered out its real delivered observation")
-	}
-	if p.Requests.Load() != 1 || bot.sends.Load() != 0 {
+	if p.Requests.Load() != 2 || bot.sends.Load() != 0 {
 		t.Fatal("the observation check started extra model requests or sent an IM message")
 	}
 }

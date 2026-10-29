@@ -436,6 +436,16 @@ func (s *Service) poll(ctx context.Context, c domain.Connection) {
 		batch, pollErr := adapter.Poll(ctx, offset.Value)
 		if pollErr == nil {
 			for _, event := range batch.Events {
+				if event.Observation.Reaction != nil {
+					var allowed bool
+					event, allowed, pollErr = s.routeReaction(ctx, c.ID, event)
+					if pollErr != nil {
+						break
+					}
+					if !allowed {
+						continue
+					}
+				}
 				if pollErr = s.saveConversation(ctx, &event.Conversation); pollErr != nil {
 					break
 				}

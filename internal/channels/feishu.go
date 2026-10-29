@@ -23,6 +23,7 @@ import (
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/modelbridge"
+	"github.com/oines/astral/internal/persistence"
 )
 
 // FeishuConfig is for a tenant's self-built application Bot, with event delivery
@@ -44,6 +45,7 @@ type feishu struct {
 	stream     *feishuStream
 	chatMu     sync.Mutex
 	chatNames  map[string]string
+	store      *persistence.Store
 }
 
 type feishuAPIError struct {
@@ -230,7 +232,7 @@ func (f *feishu) Validate(ctx context.Context) (Identity, error) {
 		return Identity{}, domain.Invalid("Feishu did not provide a long-connection endpoint")
 	}
 	return Identity{ID: result.Bot.OpenID, Name: result.Bot.Name, Diagnostics: []string{
-		"Use a self-built application Bot with long connection events and subscribe to im.message.receive_v1. Enable im:message.p2p_msg:readonly and im:message.group_at_msg:readonly (or im:message.group_msg to observe ordinary group messages), im:message:send_as_bot, im:resource, and im:chat:readonly as needed. Publish permission changes and add the Bot to each group.",
+		"Use a self-built application Bot with long connection events and subscribe to im.message.receive_v1, im.message.reaction.created_v1 and im.message.reaction.deleted_v1. Enable im:message.p2p_msg:readonly and im:message.group_at_msg:readonly (or im:message.group_msg to observe ordinary group messages), im:message:send_as_bot, im:resource, and im:chat:readonly as needed. Reaction events and reads need im:message.reactions:read; adding or removing the Bot's own reactions needs im:message.reactions:write_only. Publish permission changes and add the Bot to each group.",
 		"Feishu files are sent as separate file messages without captions. Astral currently groups thread messages under their parent chat; thread-specific grants, edit events and read receipts are not exposed.",
 	}}, nil
 }
@@ -261,6 +263,20 @@ func (f *feishu) openStream(ctx context.Context) *feishuStream {
 			f.enrichReply(callbackCtx, &event)
 		}
 		return stream.deliver(callbackCtx, event)
+	}).OnP2MessageReactionCreatedV1(func(callbackCtx context.Context, reaction *larkim.P2MessageReactionCreatedV1) error {
+		if reaction == nil {
+			return domain.Invalid("Feishu delivered an incomplete reaction event")
+		}
+		return f.receiveReaction(callbackCtx, stream, reaction.EventV2Base, reaction.Event, false)
+	}).OnP2MessageReactionDeletedV1(func(callbackCtx context.Context, reaction *larkim.P2MessageReactionDeletedV1) error {
+		if reaction == nil || reaction.Event == nil {
+			return domain.Invalid("Feishu delivered an incomplete reaction event")
+		}
+		data := reaction.Event
+		return f.receiveReaction(callbackCtx, stream, reaction.EventV2Base, &larkim.P2MessageReactionCreatedV1Data{
+			MessageId: data.MessageId, ReactionType: data.ReactionType, OperatorType: data.OperatorType,
+			UserId: data.UserId, AppId: data.AppId, ActionTime: data.ActionTime,
+		}, true)
 	})
 	handler.Config.Logger = feishuSDKLogger{}
 	client := larkws.NewClient(f.config.AppID, f.secret, larkws.WithDomain(f.config.BaseURL), larkws.WithHttpClient(f.client),

@@ -514,6 +514,8 @@ UI tokens、共享组件和状态文案集中维护。依赖补丁按 pnpm patch
 
 Host 内置 System Prompt 由共同运行约定与当前绑定状态对应的输出规则组成。共同部分包括环境状态的解释、执行来源与工作目录、技能与工作区指导，以及平台能力发现入口；直接使用实际快照标题 `Current Astral environment snapshot:` 指代环境，不另造名称。未绑定 IM 的 Session 说明通过 Web assistant 文本回复，不包含 `send_message` 或 IM 触发规则；绑定 IM 的 Session 才包含绑定聊天的发送、观察和触发语义。选择依据为当前 Binding，与 `send_message` 的暴露保持一致，不依赖 Session 最初的 Web／IM 来源或用户当前使用的入口。绑定、解绑、换绑和重开同步相应提示词，Fork 按子 Session 的实际绑定选择。
 
+当前绑定 IM 时，System Prompt 统一包含 `Current IM chat:` 元数据段：`platform`、`connection-id`、`conversation-id`、`chat-type`、`chat-title`、`chat-id`，以及存在时的 `topic-id`。字段值使用 JSON 双引号字符串编码。同一绑定的信息不变时，这一段的内容和字段顺序保持稳定；名称等平台资料变化在下一次新请求准备时更新。该段明确属于聊天元数据，外部名称不作为运行指令解释。解绑或换绑更新当前段，未绑定的 Web Session 与 Fork 不包含该段；历史观察中的来源标识仍保留。每次新请求读取当前绑定与资料，已冻结请求、网络重试和恢复不改写，旧历史也不重新渲染或迁移。
+
 Host 不声明“你是 Agent／Bot／AI”等身份，不规定人格、说话方式或默认人设。内置提示词不提 Probe 或假定主动模式开启，也不向主模型解释唤醒机制；调度细节由 Host 管理。接口路径、参数、幂等规则、分页与文件操作细节由工具描述和 API 文档提供。
 
 Bot 的 `persona` 是一个可选文本字段。普通模型请求的 `system_prompt` 由与本次工具定义同时选定的 Host 文本与当前 Bot 人格直接拼接；空白人格完全省略，不补默认内容。每次新请求在预算计算与冻结前读取当前人格，保存成功后该 Bot 的所有 Session（包括运行中的 Web 与 IM Session）从各自下一个请求立刻生效。不复制人格为 Session 配置，不注入人格变更消息，不重建上下文，不重开或中断 Session。已冻结的请求、网络重试及恢复继续使用原提示词，Attempt 可重建当时实际发送的内容。人格不替换摘要提示词；Probe 将其作为理解被评估 Bot 的参考资料，不作为 Probe 自身的人格或执行指令。
@@ -667,36 +669,41 @@ QQ 官方与飞书的普通群消息推送取决于平台授予的权限；未�
 
 ### 模型可见格式
 
-会话说明参考 Cahciua 的 session-level chatroom information：
+会话说明参考 Cahciua 的 session-level chatroom information，仅在当前绑定 IM 的主模型 System 中集中说明，不在每条观察前重复：
 
 ```text
-current-channel: telegram
-connection-id: tg_main
-conversation-id: conv_42
-chat-type: group
-chat-title: Astral 开发群
-chat-id: -100123
+Current IM chat:
+platform: "telegram"
+connection-id: "tg_main"
+conversation-id: "conv_42"
+chat-type: "group"
+chat-title: "Astral 开发群"
+chat-id: "-100123"
 ```
 
-消息参考 Cahciua 的 `<message>`、`<in-reply-to>`、`<mention>`、`<attachment>` 表达：
+Topic 绑定额外包含 `topic-id`。普通 Web Session 沿用原有提示词、输入和环境快照。共享聊天信息不取代电脑、技能、`AGENTS.md` 与本地 API 的独立环境快照。
+
+消息参考 Cahciua 的 `<message>`、`<in-reply-to>`、`<attachment>` 表达：
 
 ```xml
-<message id="501" sender="小王 (@wang)" sender-id="123"
+<message conversation-id="conv_42" id="501" event-id="evt_501" source="im"
+         sender="小王 (@wang)" sender-id="123"
          t="2026-10-20T16:00:00+08:00">
 明天上午十点发版。
 </message>
 
-<message id="502" sender="小李" sender-id="456"
+<message conversation-id="conv_42" id="502" event-id="evt_502" source="im"
+         sender="小李" sender-id="456"
          t="2026-10-20T16:01:00+08:00">
 <in-reply-to id="501" sender="小王 (@wang)">明天上午十点发版。</in-reply-to>
-<mention uid="9000">@Astral</mention> 帮我们整理一下检查清单。
+@Astral 帮我们整理一下检查清单。
 <attachment type="document" name="release.md" mime="text/markdown" file-id="502:0"/>
 </message>
 ```
 
-Astral 补充 `sender-id` 等稳定身份信息；Cahciua 当前 `<message>` 的 `sender` 主要是可读名称和用户名。连续消息可以在一个 User Message 中作为多个片段承载，但不能跨过中间的 Assistant/Tool 边界重新聚合。
+Astral 保留 `conversation-id`、事件与消息 ID、`source`、发送者、时间等每条观察的来源和身份信息；`conversation-id` 使解绑、换绑或 Fork 保留的旧历史与当前绑定可区分，不改变 `send_message` 由 Host 选择的发送目的地。当前仍是一条观察对应一条 `RoleUser` Context，不在 Host 中合并相邻观察；提供商适配层可按协议合并相邻 User，但不能跨过中间的 Assistant/Tool 边界重新聚合。
 
-普通正文和属性由 Renderer 统一转义。富文本使用受支持的内容节点表达，不把用户提交的任意标签当成平台生成的消息元数据。消息所属群和发送者不能只藏在 SDK Metadata 中，必须让模型可见。
+普通正文和属性由 Renderer 统一转义，正文中的任意标签不作为平台生成的消息元数据。消息所属聊天和发送者不能只藏在 SDK Metadata 中，必须让模型可见。引用、选定片段、附件、编辑和通知保留原有表达；聊天信息去重仅改变新观察的渲染及新请求的 System，不改变存储结构，不新增迁移，不改写旧历史或冻结请求。
 
 Telegram 普通群回复中的 `message_thread_id` 不构成独立 Topic；只有 `is_topic_message=true` 且 thread ID 非零才按 Topic 路由，同样适用于 Bot 私聊 Topic 入站消息，不额外依赖 `chat.is_forum`。普通回复和正文 @ 继续进入原群绑定的 Session，真正 Topic 的授权与绑定继续独立。已有错误归档不原地修正或重播。
 
@@ -707,21 +714,34 @@ Telegram `reply_to_message` 的原消息 ID、发送者和最多 500 个 Unicode
 编辑和撤回均追加新的观察，例如：
 
 ```xml
-<message id="501" sender="小王 (@wang)" sender-id="123"
+<message conversation-id="conv_42" id="501" event-id="evt_501_edit" source="im"
+         sender="小王 (@wang)" sender-id="123"
          t="2026-10-20T16:00:00+08:00"
          edited="2026-10-20T16:03:00+08:00">
 改成明天下午两点发版。
 </message>
 
-<event id="recall-event" kind="message.deleted" source="im"
+<event conversation-id="conv_42" id="recall-event" kind="message.deleted" source="im"
        sender="小李" sender-id="456" message-id="502"
        t="2026-10-20T16:04:00+08:00">QQ user 789 recalled message 502 originally sent by QQ user 456.</event>
 
-<event id="poke-event" kind="notice.poke" source="im"
+<event conversation-id="conv_42" id="poke-event" kind="notice.poke" source="im"
        sender-id="456" t="2026-10-20T16:05:00+08:00">QQ user 456 拍了拍 QQ user 9000 的尾巴</event>
 ```
 
 这些是新的观察记录。IM Store 保留追加事件，消息查询可返回最新状态；已经进入 Core 历史的旧观察与投递回执不原地改写。NapCat 戳一戳保留 `raw_info` 提供的可读动作、自定义后缀及参与者身份，不把图片或跳转 URL、内部 UID 塞入模型；平台没有可读内容时才用普通动作描述。私聊 `sender_id` 是操作者、`user_id` 是会话对方。仅其他人戳当前 Bot 产生 `poke` 触发，仍受原聊天权限和绑定约束；戳其他人和自身动作被动追加。没有原生 `event_id` 的通知按实际收到的每帧分配本地事件 ID，pending 批次重试沿用，不承诺跨断线回放的精确去重。这里只复用 Cahciua 的消息表达，不采用每次调用重新构建整段群历史的执行方式。
+
+### 消息表情回应与 NapCat 动作
+
+表情回应以新的观察事件追加，不更新原消息或重写历史。`message.reaction.added`、`message.reaction.removed` 表示平台提供的添加和移除；Telegram 匿名汇总使用 `message.reaction.counts_updated`。Telegram `setMessageReaction` 成功后仅记录 `message.reaction.set`，表示 Bot 本次已接受的选择，不推测此前选择或伪造移除事件。按消息 ID 查询原消息时忽略这些指向它的 reaction 事件，继续返回原消息及实际编辑/撤回状态。
+
+可选 `Observation.reaction` 包含 `actor_type: user | chat | app | unknown` 与 `reactions` 列表。每项 `Reaction` 包含 `type: emoji | custom_emoji | paid | qq | feishu`、可选 `emoji` 或平台 `id`；`count` 仅表示绝对总数，目前来自 Telegram 匿名汇总；NapCat 原始数值另存 `reported_count`，不解释为总数。缺失的操作者和数量不补造，原消息作者不等于回应操作者。模型收到 `<event>`，根属性保留 `conversation-id`、`message-id`、`actor-type` 与实际发送者；未知时标记 `actor-known="false"` 且不伪造 sender，自身动作标记 `self="true"`。结构化子节点为 `<reactions><reaction type="…" emoji="…" id="…" count="…" reported-count="…"/></reactions>`，仅输出实际存在的属性。
+
+Telegram 显式订阅 `message_reaction`、`message_reaction_count`，接收需要 Bot 为聊天管理员；不保证私聊通知，Bot 自行设置的回应不会被平台回显，匿名汇总可能延迟且没有操作者。更新不含 Topic ID，按已归档原消息的 Conversation 归属路由；未知目标不广播到 Topic。飞书长连接订阅 `im.message.reaction.created_v1`、`im.message.reaction.deleted_v1`，接收与查询需要 `im:message.reactions:read`，修改自身回应需要 `im:message.reactions:write_only`。优先用归档确认原聊天；未知来源可由受控平台查询确认归属，不导入原正文；原消息已永久消失时 ACK 忽略，不伪造原消息，不堵塞后续事件。
+
+NapCat `group_msg_emoji_like` 仅提供部分群回应通知，主要针对登录账号自己发出的消息；保留 QQ emoji ID，未知操作者和数量如实缺省。QQ 官方当前群聊/C2C 接入不支持 reaction，不从频道能力推导支持；微信暂未接入 reaction。所有动作仍受账号、聊天和 Topic 授权约束。已知自身动作不触发 Probe；`ActorType=unknown`、操作者 ID 缺失的回应及匿名数量更新也只追加旁观，不单独成为 Probe 候选，不为避重而伪标 `Self`。这些事件仍完整投递给工作中的 Agent 并保留在后续上下文。操作者已知且属于外部参与者的群回应沿用普通群消息的可选空闲 Probe，私聊回应不增加直接触发。
+
+NapCat 通过既有 Computer API 操作目录增加 `set_reaction` 与 `poke`，不增加模型工具、不修改 `send_message`。`set_reaction` 接受字符串 `message_id`、字符串 QQ `emoji_id` 和可选布尔 `set`（默认 `true`，`false` 取消）；消息既须已归档在当前聊天，也须由 NapCat 当前消息映射再次证明归属。`poke` 群聊必须指定 `user_id` 并核对群成员，私聊可省略，指定时也只能是当前聊天对方。沿用 `ASTRAL_API_TOKEN` 的命令级鉴权与单次调用规则。私聊窗口抖动与戳一戳分开：收到 `shake` 消息段时以 `[QQ private window shake]` 可读文字进入上下文，当前 NapCat 没有可用的发送接口，不伪造发送支持。这些可选事件字段不需要数据库迁移，不修改 Core 或原触发机制。
 
 ### 按运行状态投递
 
@@ -742,7 +762,7 @@ Telegram `reply_to_message` 的原消息 ID、发送者和最多 500 个 Unicode
 Direct assistant text is not sent to IM. To reply to this chat, you must call send_message.
 ```
 
-Host 用内部事件和投递组标识精确关联此提示与对应版本的消息。每次空闲直接 IM 唤醒与 Probe 正向唤起都带上这条发送提醒；工作期间接收的观察和其他普通旁观观察不重复添加。保持已有 Host system prompt 原文，不把调度状态交给模型决定。提醒只说明普通 assistant 文本不会发送到 IM、回复当前聊天必须调用 `send_message`，不要求必须回复，也不改变工具目的地或投递语义。模型正文不重复附上同一请求全文。
+Host 用内部事件和投递组标识精确关联此提示与对应版本的消息。每次空闲直接 IM 唤醒与 Probe 正向唤起都带上这条发送提醒；工作期间接收的观察和其他普通旁观观察不重复添加。System 中继续保留 IM 输出规则，不把调度状态交给模型决定。提醒只说明普通 assistant 文本不会发送到 IM、回复当前聊天必须调用 `send_message`，不要求必须回复，也不改变工具目的地或投递语义。模型正文不重复附上同一请求全文。
 
 Web 输入采用相同消息风格：
 
@@ -789,7 +809,7 @@ Connection 增加 `agent_id` 与 `access_mode: all | specified`。默认指定�
 
 Probe 模型默认跟随 Session 当前模型，Agent 可在默认模型下方单独选择 `probe_model_id`，并设置该模型的 `probe_reasoning`；跟随 Session 时同时使用 Session 的推理设置。Agent 的 `default_reasoning` 与默认模型一起保存，新建 Web 与 IM Session 时复制为 Session 自己的推理设置，之后修改 Agent 默认值不改变既有 Session。空推理配置使用对应 Model Profile 的默认值；切换模型时清除旧模型的推理覆盖值。旁观视图保留摘要、IM 消息及有界工具活动，去除 assistant 正文、reasoning 和 Probe 记录；按 Probe 模型窗口裁剪，支持视觉时携带原生图片。首版只有一次 LLM 判断请求，工具选择为 `auto`，只提供 `decide({participate:boolean})`。按返回顺序只采纳首个合法 `decide` 布尔值；没有合法决定（包括只返回文本、错误工具或非法参数）或请求失败时，覆盖本次快照并等待新消息，不纠错、不重试本次 Probe，也不执行其他工具。
 
-每次新 Probe 独立读取当前绑定 Bot 的最新人格，用于判断该 Bot 是否适合参与。`system_prompt` 先放固定判断指令，其中一句说明 `The Bot persona below describes the Bot you are evaluating, not you.`；非空白人格随后以 `\n\nBot persona:\n` 加原始人格文本追加，空白人格省略整段。动态观察仍在 Messages，当前时间和 Bot 名称留在最后一条 User Message。不复制主 Agent 的 Host 指令、环境快照或工具；Probe 仍只提供 `decide`，工具选择保持 `auto`。人格保存后下次新 Probe 生效，已经准备好的请求不改写。固定规则与 Bot 人格位于动态内容之前，不因旁观历史裁剪而被丢弃。
+每次新 Probe 独立读取当前绑定 Bot 的最新人格，用于判断该 Bot 是否适合参与。`system_prompt` 先放固定判断指令，其中一句说明 `The Bot persona below describes the Bot you are evaluating, not you.`；非空白人格以 `\n\nBot persona:\n` 加原始人格文本追加，空白人格省略整段。Probe 的独立 System 还使用与主模型相同的聊天元数据渲染，在 `Current IM chat:` 中统一说明本次被评估的聊天，观察不重复聊天前缀。动态观察仍在 Messages，当前时间和 Bot 名称留在最后一条 User Message。不复制主 Agent 的 Host 指令、环境快照或工具；Probe 仍只提供 `decide`，工具选择保持 `auto`。人格与聊天资料从下次新 Probe 生效，已经准备好的请求不改写。固定规则、可选人格与聊天元数据位于动态内容之前，不因旁观历史裁剪而被丢弃。
 
 正向结果仅在主 Agent 仍空闲、对应快照仍未被主运行接管时，提交中性 Host 唤起，不含 reason、分析或任务行动指令，并附上与直接 IM 唤醒相同的 `send_message` 发送提醒。主 Agent 独立决定后续行为，可保持沉默。直接唤醒覆盖当时待 Probe 的消息；主运行接管快照、关闭主动模式或换绑使旧结果失效。主运行正常结束时尚未进入主模型请求的事件返回空闲分流，不因之前忙碌而漏掉。后到新消息保留，Host 结合稳定输入 ID、既有 Core 回执、Run 记录与请求审计防止重复唤起。
 

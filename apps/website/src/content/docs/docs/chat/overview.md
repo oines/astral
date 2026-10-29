@@ -36,6 +36,12 @@ Create a new session or select an unbound session belonging to the same Bot. Sen
 
 Open the session in Astral to inspect messages, executions, and files. Results reach the external chat through explicit sends; every Web reply is not automatically forwarded.
 
+## How the Bot understands its chat
+
+For a bound chat, Astral describes the current platform, account connection, chat identity, type, title and optional topic once in the model's System prompt. This section stays identical while the chat data is unchanged; a renamed chat appears in the next new model request. Individual observations retain their own source, identity, sender, time, replies, attachments and notices without repeating the full chat information.
+
+Ordinary unbound Web sessions have no current-chat section. Unbinding, replacing a binding or forking a session preserves the source of existing history, so old messages do not become messages from a new chat. Already prepared requests remain unchanged. Wakeups and delivery of new messages still follow the existing [group-chat rules](/docs/chat/groups/).
+
 ## Replace a binding or pause
 
 Replacing the session binding stops work in both the original and target sessions while keeping their histories. Already accepted sends keep their original destination.

@@ -38,6 +38,12 @@ The Bot receives a preview of the original message as well as the exact fragment
 
 Referenced images, files and stickers retain their original message identity and download reference. They are kept separate from attachments on your new message and are not automatically downloaded or shown as image previews. The Agent can download the original when needed. This also works when Telegram includes the original media in a reply but Astral did not receive that original message separately. An external quote does not grant access to another chat or its files.
 
+## Message reactions
+
+Astral subscribes to Telegram reaction updates. Receiving them requires the Bot to be a chat administrator; private-chat notifications are not guaranteed. Additions, removals and anonymous count changes enter context as separate events targeting the original message, with only the actor or counts actually supplied. They do not rewrite that message. Anonymous totals may arrive late and do not identify an actor. Topic routing uses the original message's archive; unknown targets are never broadcast to all topics.
+
+The Agent can use the existing Computer API's `setMessageReaction` operation in an authorized chat. Telegram does not echo reactions set by bots, so Astral records the accepted selection itself without waking the Bot again. Anonymous totals and reactions with an unknown actor are passive context only, without starting a participation check; a working Bot can still read them. Group reactions from a known external actor follow optional proactive rules; private-chat reactions do not directly wake the Bot as new private messages.
+
 ## Files and troubleshooting
 
 Text, images, and files are supported. Request an image as an original document when needed. Telegram's own size and format limits still apply.

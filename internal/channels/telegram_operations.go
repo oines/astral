@@ -338,6 +338,9 @@ func (t *telegram) operation(ctx context.Context, method string, parameters map[
 	return nil
 }
 func (s *Service) archiveTelegramResult(ctx context.Context, t *telegram, target domain.Conversation, method string, parameters map[string]any, raw json.RawMessage) error {
+	if method == "setMessageReaction" && bytes.Equal(bytes.TrimSpace(raw), []byte("true")) {
+		return s.archiveTelegramReaction(ctx, t, target, parameters)
+	}
 	var values []json.RawMessage
 	if len(raw) > 0 && raw[0] == '[' {
 		_ = json.Unmarshal(raw, &values)

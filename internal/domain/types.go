@@ -296,28 +296,48 @@ type TextQuote struct {
 	Manual   bool   `json:"manual"`
 }
 
+// Reaction identifies a platform reaction without assuming every platform uses
+// Unicode emoji. Count is an absolute total; ReportedCount preserves a native
+// value whose aggregation semantics are not guaranteed by the platform.
+type Reaction struct {
+	Type          string `json:"type"`
+	Emoji         string `json:"emoji,omitempty"`
+	ID            string `json:"id,omitempty"`
+	Count         *int64 `json:"count,omitempty"`
+	ReportedCount *int64 `json:"reported_count,omitempty"`
+}
+
+// ReactionEvent is an append-only fact about the target Observation.MessageID.
+// ActorType distinguishes users, apps, anonymous chat identities and unknown
+// actors; it never substitutes the target message's author for the operator.
+type ReactionEvent struct {
+	ActorType string     `json:"actor_type"`
+	Reactions []Reaction `json:"reactions"`
+}
+
 type Observation struct {
-	SchemaVersion    int          `json:"schema_version"`
-	ID               string       `json:"id"`
-	ConnectionID     string       `json:"connection_id"`
-	ConversationID   string       `json:"conversation_id"`
-	ExternalEventID  string       `json:"external_event_id"`
-	Kind             string       `json:"kind"`
-	MessageID        string       `json:"message_id"`
-	Sender           Sender       `json:"sender"`
-	Text             string       `json:"text"`
-	Format           string       `json:"format,omitempty"`
-	SentAt           time.Time    `json:"sent_at"`
-	EditedAt         *time.Time   `json:"edited_at,omitempty"`
-	ReceivedAt       time.Time    `json:"received_at"`
-	ReplyID          string       `json:"reply_id,omitempty"`
-	ReplySender      string       `json:"reply_sender,omitempty"`
-	ReplyPreview     string       `json:"reply_preview,omitempty"`
-	ReplyQuote       *TextQuote   `json:"reply_quote,omitempty"`
-	ReplyAttachments []Attachment `json:"reply_attachments,omitempty"`
-	Attachments      []Attachment `json:"attachments,omitempty"`
-	Trigger          string       `json:"trigger,omitempty"`
-	Self             bool         `json:"self"`
+	SchemaVersion    int            `json:"schema_version"`
+	ID               string         `json:"id"`
+	ConnectionID     string         `json:"connection_id"`
+	ConversationID   string         `json:"conversation_id"`
+	ExternalEventID  string         `json:"external_event_id"`
+	Kind             string         `json:"kind"`
+	MessageID        string         `json:"message_id"`
+	Sender           Sender         `json:"sender"`
+	Text             string         `json:"text"`
+	Format           string         `json:"format,omitempty"`
+	SentAt           time.Time      `json:"sent_at"`
+	EditedAt         *time.Time     `json:"edited_at,omitempty"`
+	ReceivedAt       time.Time      `json:"received_at"`
+	ReplyID          string         `json:"reply_id,omitempty"`
+	ReplySender      string         `json:"reply_sender,omitempty"`
+	ReplyPreview     string         `json:"reply_preview,omitempty"`
+	ReplyQuote       *TextQuote     `json:"reply_quote,omitempty"`
+	ReplyAttachments []Attachment   `json:"reply_attachments,omitempty"`
+	Attachments      []Attachment   `json:"attachments,omitempty"`
+	Trigger          string         `json:"trigger,omitempty"`
+	Self             bool           `json:"self"`
+	Reaction         *ReactionEvent `json:"reaction,omitempty"`
 }
 
 type Outbox struct {

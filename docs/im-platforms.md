@@ -144,7 +144,7 @@ iLink 成功响应允许省略 `ret` 和服务端消息 ID。有非零平台错�
 使用开启 Bot 能力的**企业自建应用**。群自定义 webhook Bot 只能推送通知，不满足接收消息的要求；应用需要在租户内启用、发布，并授予实际用户可见范围。平台背景见 [飞书 Bot 概述](https://open.feishu.cn/document/client-docs/bot-v3/bot-overview)。
 
 1. 创建应用、开启 Bot 能力，取得 **App ID** 与 **App Secret**。
-2. 事件订阅选择**使用长连接接收事件**，订阅 `im.message.receive_v1`。Astral 主动建立官方 SDK WebSocket，不需要公开 webhook。
+2. 事件订阅选择**使用长连接接收事件**，订阅 `im.message.receive_v1`；接收表情回应还需 `im.message.reaction.created_v1`、`im.message.reaction.deleted_v1`。Astral 主动建立官方 SDK WebSocket，不需要公开 webhook。
 3. 按需要开通以下应用权限，并发布权限变更：
 
 | 目的 | 权限 |
@@ -155,6 +155,8 @@ iLink 成功响应允许省略 `ret` 和服务端消息 ID。有非零平台错�
 | 以 Bot 身份发送消息 | `im:message:send_as_bot` |
 | 上传和读取消息资源 | `im:resource` |
 | 读取聊天资料/显示群名 | `im:chat:readonly` |
+| 接收、查询消息表情回应 | `im:message.reactions:read` |
+| 添加、移除 Bot 自己的表情回应 | `im:message.reactions:write_only` |
 
 回复对象核对、远端历史、反应和删除等操作还需要飞书对应 API 要求的消息权限。应根据实际需要选择平台可授予的只读或读写范围；连接成功不代表所有操作都已授权。
 
@@ -196,7 +198,7 @@ iLink 成功响应允许省略 `ret` 和服务端消息 ID。有非零平台错�
 
 ## Computer HTTP API：先读目录，再调用明确操作
 
-从当前环境快照读取 `local_api.base_url`，再追加路径；它由当前电脑的本地监听器提供 Bot、Session 和来源电脑身份。不要把这些路径与服务器 Owner API 的 `/api/v1` 路径混用。
+从当前环境快照读取 `local_api.base_url`，再追加路径；它由当前电脑的本地监听器提供 Bot、Session 和来源电脑身份。调用时从当前 `exec_command` 环境的 `ASTRAL_API_TOKEN` 传入 Bearer 鉴权，令牌按原命令生命周期生效。不要把这些路径与服务器 Owner API 的 `/api/v1` 路径混用。
 
 | 路径 | 用途 |
 | --- | --- |
@@ -230,7 +232,7 @@ Content-Type: application/json
 
 **QQ 官方 Bot** 当前为空。发送文本、媒体和文件使用既有 `send_message` 或 `/v1/im/messages`、`/v1/im/files`。
 
-**NapCat** 只开放以下 6 项，不开放 OneBot 任意 action：
+**NapCat** 只开放以下 8 项，不开放 OneBot 任意 action：
 
 | 操作 | `parameters` | 限制 |
 | --- | --- | --- |
@@ -240,8 +242,12 @@ Content-Type: application/json
 | `get_members` | `{}` | 仅群聊 |
 | `get_member` | `user_id` | 仅群聊；QQ 号建议用字符串 |
 | `set_group_ban` | `user_id`、可选 `duration` | 仅群聊；秒数 0–2,592,000，0 解除禁言，省略为 1,800；需要平台群管理权限 |
+| `set_reaction` | 字符串 `message_id`、字符串 `emoji_id`、可选布尔 `set` | 默认 `true` 添加，`false` 取消；要求归档与当前 NapCat 消息映射都证明聊天归属 |
+| `poke` | `user_id` | 群聊必填并核对群成员；私聊可省略，指定时必须为当前对方 |
 
 NapCat 对自己发出的私聊消息可能不返回 `target_id`；此时仅在该用户最近 100 条平台历史能证明消息归属时允许消息操作。证明失败会拒绝，不靠猜测选择聊天。
+
+`set_reaction`、`poke` 分别调用 NapCat 的 `set_msg_emoji_like`、`send_poke`，不修改 `send_message`。群回应的入站通知仅部分可用，主要是登录账号自己发出的消息；缺失操作者明确为未知，数量仅保留原始报告值，不推测总数。私聊窗口抖动与戳一戳分开：接收的 `shake` 消息段可读呈现为 `[QQ private window shake]`，当前没有支持的主动发送接口，不开放伪造的 window-shake 操作。
 
 **微信 iLink** 只开放 `set_typing`，参数必须且只能是 `{"active":true}` 或 `{"active":false}`。要求已授权私聊已有入站上下文；typing ticket 和 context token 不出现在返回值中。
 
@@ -277,6 +283,7 @@ NapCat 对自己发出的私聊消息可能不返回 `target_id`；此时仅在�
 | 微信授权失效或返回 `-14` | 在现有账号中重新扫码；二维码过期或验证码被限制时先获取新二维码 |
 | 微信用户无法解析、回复或显示输入状态 | 先让该用户向 Bot 发私聊，再确认聊天已授权；不能手工制造 `context_token` |
 | 飞书 App Secret 验证通过但没有消息 | 检查 Bot 是否激活、事件模式是否为长连接、是否订阅 `im.message.receive_v1`、权限变更是否已发布、Bot 是否在群内 |
+| 飞书收不到表情回应 | 订阅 `im.message.reaction.created_v1`、`im.message.reaction.deleted_v1`，发布 `im:message.reactions:read` 权限；主动添加/移除另需 `im:message.reactions:write_only` |
 | 飞书回复/反应/删除被拒绝 | 核对相应消息权限、本地归档和选定聊天归属；不能用别的聊天中取得的 `message_id` |
 | 发送请求中断 | 本次工具或 API 调用返回错误，内部保留请求记录用于防止重复发送 |
 

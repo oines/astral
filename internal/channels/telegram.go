@@ -241,11 +241,13 @@ type telegramTextQuote struct {
 	IsManual bool   `json:"is_manual"`
 }
 type telegramUpdate struct {
-	ID                int64            `json:"update_id"`
-	Message           *telegramMessage `json:"message"`
-	EditedMessage     *telegramMessage `json:"edited_message"`
-	ChannelPost       *telegramMessage `json:"channel_post"`
-	EditedChannelPost *telegramMessage `json:"edited_channel_post"`
+	ID                   int64                         `json:"update_id"`
+	Message              *telegramMessage              `json:"message"`
+	EditedMessage        *telegramMessage              `json:"edited_message"`
+	ChannelPost          *telegramMessage              `json:"channel_post"`
+	EditedChannelPost    *telegramMessage              `json:"edited_channel_post"`
+	MessageReaction      *telegramMessageReaction      `json:"message_reaction"`
+	MessageReactionCount *telegramMessageReactionCount `json:"message_reaction_count"`
 }
 
 func (t *telegram) Poll(ctx context.Context, cursor string) (Batch, error) {
@@ -260,7 +262,7 @@ func (t *telegram) Poll(ctx context.Context, cursor string) (Batch, error) {
 	var updates []telegramUpdate
 	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
-	if err = t.call(ctx, "getUpdates", map[string]any{"offset": offset, "limit": 100, "timeout": 25, "allowed_updates": []string{"message", "edited_message", "channel_post", "edited_channel_post"}}, &updates); err != nil {
+	if err = t.call(ctx, "getUpdates", map[string]any{"offset": offset, "limit": 100, "timeout": 25, "allowed_updates": []string{"message", "edited_message", "channel_post", "edited_channel_post", "message_reaction", "message_reaction_count"}}, &updates); err != nil {
 		return Batch{}, err
 	}
 	batch := Batch{NextCursor: cursor}
@@ -283,6 +285,12 @@ func (t *telegram) Poll(ctx context.Context, cursor string) (Batch, error) {
 		}
 		if message != nil {
 			batch.Events = append(batch.Events, t.normalize(update.ID, *message, edited))
+		}
+		if update.MessageReaction != nil {
+			batch.Events = append(batch.Events, t.normalizeReaction(update.ID, *update.MessageReaction)...)
+		}
+		if update.MessageReactionCount != nil {
+			batch.Events = append(batch.Events, t.normalizeReactionCount(update.ID, *update.MessageReactionCount))
 		}
 	}
 	return batch, nil

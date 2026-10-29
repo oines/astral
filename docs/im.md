@@ -20,6 +20,14 @@ astral maintenance weixin-wire-ownership --data /path/to/server
 
 It attributes entries only when retained account, chat or attachment identities prove their owner, and prints counts without credentials. Remaining anonymous entries produce a nonzero exit. The optional `--purge-unowned` flag explicitly clears the remaining anonymous Weixin protocol caches across all accounts and their unreferenced credentials. Other Weixin accounts may need a new incoming message before sending again. Attributed caches, conversation history and external platform messages are preserved. This command requires the Server process lock and refuses to create a new database or run alongside Desktop or Server.
 
+## Model-visible chat context
+
+Only a currently IM-bound Session includes a shared `Current IM chat:` section in its main System prompt. It contains `platform`, `connection-id`, `conversation-id`, `chat-type`, `chat-title`, `chat-id`, and an optional `topic-id`. Values use JSON-quoted strings. The rendered metadata and field order remain identical while the binding and chat data are unchanged. Newly prepared requests read the current binding and chat data, so a renamed chat appears in the next new request. External titles are encoded as metadata, not runtime instructions. Unbound Web Sessions retain their existing prompts and context; unbinding or an unbound fork has no current-chat System section. Computer, skills, `AGENTS.md` and local API information remain in the independent environment snapshot.
+
+New IM observations no longer repeat the complete chat header. Each still uses one `RoleUser` Context with a compact XML message or event containing `conversation-id`, its own event/message identity, source, sender and timestamp. Reply previews, selected quotes, attachments and notice descriptions keep their existing representation. The conversation identity distinguishes retained messages from a previous binding or a fork's source history; it cannot change the Host-selected `send_message` destination. Host does not merge adjacent observations into a single User message as part of this change.
+
+Probe uses the same chat-metadata renderer in its own System prompt, alongside its independent participation rules and optional Bot-persona reference. It does not inherit the main Agent's runtime instructions, environment snapshot or tools. Active/idle delivery, direct triggers, debouncing and late-Probe handling remain unchanged. Existing history and frozen requests are not rewritten; retries and recovery preserve the prepared request. This is a rendering and request-preparation change with no stored-format change or data migration.
+
 ## Find a Telegram Chat ID
 
 Send `/chat_id` or `/chat_id@bot_username` in a private chat, group, forum Topic or channel the connected bot can receive and reply to. Astral replies in that chat with `Chat ID: …`; a Topic also includes `Topic ID: …` and the reply stays in that Topic. Use the addressed form in groups with privacy mode enabled.
@@ -46,6 +54,46 @@ Recalls remain independent `message.deleted` observations describing the operato
 
 NapCat notices without an upstream `event_id` receive a local identity once per received WebSocket frame. Pending-batch retries retain that identity; separately received identical pokes remain distinct. An explicit upstream event ID provides scoped deduplication. NapCat does not offer missed-history replay, and local identities do not promise exact deduplication across disconnection and upstream replay.
 
+## Message reactions
+
+Reactions are append-only observations targeting `message_id`, not edits to the original message. `message.reaction.added` and `message.reaction.removed` describe supplied changes; Telegram anonymous totals use `message.reaction.counts_updated`. A successful explicit Telegram `setMessageReaction` archives `message.reaction.set`, the Bot's accepted selection, without inventing its previous selection or removed reactions. Message lookup continues to return the original message or its actual edit/deletion state, never a reaction event that happens to target the same ID.
+
+Optional `Observation.reaction` contains `actor_type` (`user`, `chat`, `app` or `unknown`) and a `reactions` list. Each item has `type` (`emoji`, `custom_emoji`, `paid`, `qq` or `feishu`), optional Unicode `emoji`, platform `id`, and optional counts. `count` is an absolute total, currently supplied only by Telegram's anonymous-count updates. NapCat's native number is `reported_count`; its meaning is not reliable enough to treat as a total. Missing identities and counts stay missing. The original message's author is never substituted for the reaction's operator.
+
+The model receives an `<event>` with the conversation, target message, action, timestamp and `actor-type`, followed by structured `<reactions>` children. An unknown actor has `actor-known="false"` and no fabricated sender. `self="true"` marks a known action by this account. For example:
+
+```xml
+<event id="reaction_1" kind="message.reaction.added" conversation-id="conv_42"
+       source="im" sender-id="123" t="2026-10-29T14:00:00+08:00"
+       actor-type="user" message-id="501">
+<reactions><reaction type="emoji" emoji="👍"/></reactions>
+</event>
+
+<event id="reaction_2" kind="message.reaction.counts_updated" conversation-id="conv_42"
+       source="im" t="2026-10-29T14:01:00+08:00" actor-type="unknown"
+       actor-known="false" message-id="501">
+<reactions><reaction type="emoji" emoji="👍" count="3"/></reactions>
+</event>
+```
+
+- **Telegram:** explicitly subscribes to `message_reaction` and `message_reaction_count`; the Bot must be a chat administrator to receive them. Telegram does not echo reactions set by bots, which is why a successful explicit operation is archived locally. Anonymous counts may arrive late and contain no operator. Do not assume private-chat reaction notifications are available. Reaction updates have no Topic ID: route through the original message's archived Conversation when known, and never broadcast an unknown target to Topic Sessions.
+- **Feishu:** long-connection subscriptions include `im.message.reaction.created_v1` and `im.message.reaction.deleted_v1`. Events and reaction reads require `im:message.reactions:read`; setting or removing the Bot's own reactions requires `im:message.reactions:write_only`. Preserve the supplied user/app operator and Feishu emoji type. Resolve the target from its archive first, including a subsequently deleted original; otherwise a scoped platform lookup may establish its chat without importing its message body. A permanently unavailable unknown original is acknowledged and ignored, without a fabricated source message or a blocked event stream.
+- **NapCat:** `group_msg_emoji_like` supplies partial group-reaction notifications, mainly for the logged-in account's own messages. Preserve available QQ emoji IDs and actor information; an absent actor remains unknown. Counts remain `reported_count`, and missed or unsupported notifications are not synthesized.
+- **QQ official Bot:** the current group/C2C integration does not expose reactions. QQ channel capabilities do not imply group/C2C support. Weixin currently has no reaction integration.
+
+All observations remain scoped to the authorized account, chat and Topic. Known self reactions never start Probe. Reactions with `actor_type: "unknown"` or no actor ID, including anonymous count updates, are passive observations only and do not independently become Probe candidates; unknown actors are not relabeled as self. These events still reach a working Agent in full and remain available in later context. Group reactions with a known external actor follow the existing optional idle Probe rules; private-chat reaction events do not become direct message triggers. These optional observation fields need no database migration and do not change Core or `send_message`.
+
+## NapCat reaction and poke operations
+
+Use the existing Computer API's authenticated account-operation gateway, not new model tools. Read the base URL from the current environment snapshot and send `Authorization: Bearer $ASTRAL_API_TOKEN` from an active `exec_command`. Both operations require `conversation_id` and retain the account's `all | specified` scope.
+
+| Operation | `parameters` | Scope |
+| --- | --- | --- |
+| `set_reaction` | String `message_id`, string numeric QQ `emoji_id`, optional boolean `set` (default `true`; `false` removes) | Target message must be archived in the selected chat and its current NapCat message mapping must prove that chat |
+| `poke` | `user_id` required for a group; optional for a private chat | Group membership is verified; a private target defaults to, and must equal, that chat's peer |
+
+These map to NapCat's `set_msg_emoji_like` and `send_poke`. They do not change `send_message` or imply that NapCat will deliver an event echo for every accepted action. A private **window shake** is a separate feature from a poke: an incoming `shake` message segment appears as `[QQ private window shake]`, but the current NapCat API has no supported outbound window-shake operation. Astral does not invent one or replace it with a poke. Named operations make one attempt; an uncertain result is not automatically retried.
+
 ## Proactive mode and output
 
 Probe only decides whether to wake an idle main Agent. While it is working, new IM observations belong to the current run and do not independently steer it. When idle, private messages and direct mentions, replies or supported pokes addressed to the Bot wake it directly. Ordinary group messages do not wake it unless proactive mode is enabled for that chat.
@@ -64,7 +112,7 @@ Probe makes exactly one decision request, providing only `decide({"participate":
 
 Bound Sessions remain normal Web Sessions with full tool use and history. Their title follows the chat and the sidebar shows its platform. Web input uses Steer. Idle direct IM triggers retain the existing associated observation and wakeup delivery. During an active main run, only the observation joins its context. A later idle handoff references that existing observation without reinjecting its body, after Host reconciles the run and request audit. Assistant text remains in Web. Only `send_message` or an explicit API call sends to IM. The tool supplies the current bound destination automatically. Its description and parameters reflect the selected adapter, and change with the binding without losing Session history. Attachments are Computer paths or `astral-file://` references; text may be empty for attachment-only sends.
 
-Every direct IM wakeup and positive Probe wakeup reminds the main Agent: `Direct assistant text is not sent to IM. To reply to this chat, you must call send_message.` Observations received during work and other passive observations do not repeat this reminder. The existing Host system prompt remains unchanged. The reminder does not require a response: the Agent may remain silent, and it changes neither the tool's bound destination nor delivery semantics.
+Every direct IM wakeup and positive Probe wakeup reminds the main Agent: `Direct assistant text is not sent to IM. To reply to this chat, you must call send_message.` Observations received during work and other passive observations do not repeat this reminder. The Host System retains the IM output rules. The reminder does not require a response: the Agent may remain silent, and it changes neither the tool's bound destination nor delivery semantics.
 
 | Adapter | Body formats and extra parameters |
 | --- | --- |
@@ -171,7 +219,7 @@ Metadata is not image pixels: use the thumbnail's `file_id` to inspect a small p
 
 ## Additional platform operations
 
-The account operation catalog uses the same Computer HTTP API and Agent view. No additional model tools are registered. Telegram's existing named-operation paths remain available. NapCat exposes chat/message lookup, deletion and selected group member operations; Feishu exposes chat/history/message lookup, deletion and reactions; Weixin exposes `set_typing`. QQ official Bot currently has no extra named operations; use the shared send and archive endpoints.
+The account operation catalog uses the same Computer HTTP API and Agent view. No additional model tools are registered. Telegram's existing named-operation paths remain available. NapCat exposes chat/message lookup, deletion, selected group member operations, `set_reaction` and `poke`; Feishu exposes chat/history/message lookup, deletion and `list_reactions`, `add_reaction`, `delete_reaction`; Weixin exposes `set_typing`. QQ official Bot currently has no extra named operations; use the shared send and archive endpoints.
 
 Chat operations supply `conversation_id` and an allowlisted `parameters` object; only the explicitly marked Telegram account-resource reads above may omit a chat. Every chat target belongs to the selected account and must pass its `all | specified` scope. Globally addressed messages must already be archived in that chat, and adapters also verify remote chat membership where needed. Parameters cannot supply a URL or override the destination. A successful delete appends the deletion fact to IMStore. Reading platform history does not backfill Core or activate a Session.
 

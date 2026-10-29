@@ -870,6 +870,7 @@ export type AstralInternalDomainObservation = {
     id: string;
     kind: string;
     message_id: string;
+    reaction?: AstralInternalDomainReactionEvent;
     received_at: string;
     reply_attachments?: Array<AstralInternalDomainAttachment>;
     reply_id?: string;
@@ -948,6 +949,19 @@ export type AstralInternalDomainProvisioning = {
     revision: number;
     state: string;
     updated_at: string;
+};
+
+export type AstralInternalDomainReaction = {
+    count?: number;
+    emoji?: string;
+    id?: string;
+    reported_count?: number;
+    type: string;
+};
+
+export type AstralInternalDomainReactionEvent = {
+    actor_type: string;
+    reactions: Array<AstralInternalDomainReaction>;
 };
 
 export type AstralInternalDomainSearchProvider = {
