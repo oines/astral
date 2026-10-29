@@ -34,7 +34,7 @@ func systemEnvironmentLocation(value string) (string, *time.Location, error) {
 	}
 	location, err := time.LoadLocation(value)
 	if err != nil || value == "Local" {
-		return "", nil, fmt.Errorf("Server TZ must name an IANA timezone or timezone file")
+		return "", nil, fmt.Errorf("server TZ must name an IANA timezone or timezone file")
 	}
 	return value, location, nil
 }

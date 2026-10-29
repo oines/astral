@@ -6,15 +6,20 @@ import (
 	"archive/zip"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
 
 func timezoneData(t *testing.T, name string) []byte {
 	t.Helper()
-	archive, err := zip.OpenReader(filepath.Join(runtime.GOROOT(), "lib", "time", "zoneinfo.zip"))
+	goRoot, err := exec.Command("go", "env", "GOROOT").Output()
+	if err != nil {
+		t.Fatalf("locate Go timezone test data: %v", err)
+	}
+	archive, err := zip.OpenReader(filepath.Join(strings.TrimSpace(string(goRoot)), "lib", "time", "zoneinfo.zip"))
 	if err != nil {
 		t.Fatal(err)
 	}

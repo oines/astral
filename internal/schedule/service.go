@@ -593,7 +593,7 @@ loop:
 				defer pending.Done()
 				defer func() { <-slots }()
 				if err := s.dispatch(ctx, id, now); err != nil {
-					addError(fmt.Errorf("Schedule %s: %w", id, err))
+					addError(fmt.Errorf("schedule %s: %w", id, err))
 				}
 			}(plan.ID)
 		}

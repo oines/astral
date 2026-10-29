@@ -99,8 +99,16 @@ func TestOnceDeliveryIsConsumedOnceAndBroadcastToAllSubscribers(t *testing.T) {
 	if err != nil || got.Enabled || got.NextRunAt != nil || got.LastStatus != "delivered" || !got.LastRunAt.Equal(at) {
 		t.Fatalf("incorrect completed state: %+v, %v", got, err)
 	}
-	if deliveries[0].InputID() != deliveries[0].InputID() {
-		t.Fatal("occurrence identity is unstable")
+	persisted, err := json.Marshal(deliveries[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var replay Occurrence
+	if err := json.Unmarshal(persisted, &replay); err != nil {
+		t.Fatal(err)
+	}
+	if deliveries[0].InputID() != replay.InputID() {
+		t.Fatal("occurrence identity changed across persistence")
 	}
 	other := deliveries[0]
 	other.ScheduledAt = other.ScheduledAt.Add(time.Second)
