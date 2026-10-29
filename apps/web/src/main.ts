@@ -19,6 +19,7 @@ const router = createRouter({
   routes: [
     { path: '/', component: () => import('./pages/ChatPage.vue') },
     { path: '/sessions/:id', component: () => import('./pages/ChatPage.vue') },
+    { path: '/schedules', component: () => import('./pages/ChatPage.vue') },
     { path: '/settings/:section?', component: () => import('./pages/SettingsPage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

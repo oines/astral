@@ -42,6 +42,32 @@ func wireSystemPrompt(request map[string]any) string {
 	return ""
 }
 
+func withoutPromptIdentity(prompt string) string {
+	before, rest, found := strings.Cut(prompt, personaSeparator+identityHeading)
+	if !found {
+		return prompt
+	}
+	_, after, hasPersona := strings.Cut(rest, personaSeparator)
+	if hasPersona {
+		return before + personaSeparator + after
+	}
+	return before
+}
+
+func readPromptIdentity(t *testing.T, prompt string) promptIdentity {
+	t.Helper()
+	_, rest, found := strings.Cut(prompt, personaSeparator+identityHeading)
+	if !found {
+		t.Fatal("missing System identity")
+	}
+	block, _, _ := strings.Cut(rest, personaSeparator)
+	var identity promptIdentity
+	if err := json.Unmarshal([]byte(block), &identity); err != nil {
+		t.Fatal(err)
+	}
+	return identity
+}
+
 func savePersona(t *testing.T, f *fixture, persona string) {
 	t.Helper()
 	var agent domain.Agent
@@ -144,7 +170,7 @@ func TestPersonaAppliesToNextRequestInEverySessionWithoutContextChanges(t *testi
 	expected.Store(original)
 	entered, release := make(chan struct{}), make(chan struct{})
 	f := newFixture(t, 1, func(ctx context.Context, n int, request map[string]any) any {
-		if got, want := wireSystemPrompt(request), composeSystemPrompt(webSystemPrompt, expected.Load().(string)); got != want {
+		if got, want := withoutPromptIdentity(wireSystemPrompt(request)), composeSystemPrompt(webSystemPrompt, expected.Load().(string)); got != want {
 			t.Errorf("request %d did not use current persona: %q", n, got)
 		}
 		if n == 1 {
@@ -213,7 +239,7 @@ func TestPersonaAppliesToNextRequestInEverySessionWithoutContextChanges(t *testi
 		if err != nil {
 			t.Fatal(err)
 		}
-		seen[request.SystemPrompt] = true
+		seen[withoutPromptIdentity(request.SystemPrompt)] = true
 	}
 	for _, persona := range []string{original, updated, ""} {
 		if !seen[composeSystemPrompt(webSystemPrompt, persona)] {
@@ -245,7 +271,7 @@ func TestPersonaDoesNotReplaceCompactionPromptOrLeakAcrossBots(t *testing.T) {
 		t.Fatalf("persona replaced the summary instruction: %v", err)
 	}
 	view, err := f.service.InspectContext(f.ctx, f.session.ID)
-	if err != nil || view.Request.SystemPrompt != composeSystemPrompt(webSystemPrompt, persona) {
+	if err != nil || withoutPromptIdentity(view.Request.SystemPrompt) != composeSystemPrompt(webSystemPrompt, persona) {
 		t.Fatalf("compaction lost current persona: %v", err)
 	}
 	other := f.agent
@@ -258,7 +284,81 @@ func TestPersonaDoesNotReplaceCompactionPromptOrLeakAcrossBots(t *testing.T) {
 		t.Fatal(err)
 	}
 	view, err = f.service.InspectContext(f.ctx, otherSession.ID)
-	if err != nil || view.Request.SystemPrompt != webSystemPrompt {
+	if err != nil || withoutPromptIdentity(view.Request.SystemPrompt) != webSystemPrompt {
 		t.Fatalf("persona leaked into another Bot: %v", err)
+	}
+}
+
+func TestSystemIdentityRefreshesWithoutEnvironmentAndForkUsesOwnID(t *testing.T) {
+	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("done") })
+	submit := func(id, input string) core.Request {
+		t.Helper()
+		if _, err := f.service.Submit(f.ctx, id, InputRequest{ID: input, Text: "continue"}); err != nil {
+			t.Fatal(err)
+		}
+		f.idle(t, id)
+		session, err := f.service.Core(f.ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, err := session.Attempts().Scan(f.ctx, core.AttemptQuery{Purpose: "generation", Reverse: true, Limit: 1})
+		if err != nil || len(page.Attempts) != 1 {
+			t.Fatalf("missing attempt: %v", err)
+		}
+		request, err := session.Attempts().Request(f.ctx, page.Attempts[0].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return request
+	}
+	original := submit(f.session.ID, "identity-before")
+	identity := readPromptIdentity(t, original.SystemPrompt)
+	if identity.Agent.ID != f.agent.ID || identity.Agent.Name != f.agent.Name || identity.Session.ID != f.session.ID || identity.Session.ConversationID != "" {
+		t.Fatalf("wrong identity: %+v", identity)
+	}
+	before := environmentEntries(t, f, f.session.ID)
+	var agent domain.Agent
+	if err := f.store.Get(f.ctx, "agents", f.agent.ID, &agent); err != nil {
+		t.Fatal(err)
+	}
+	agent.Name = "Renamed Bot with \"quotes\"\nand a newline"
+	if err := f.service.SaveAgent(f.ctx, &agent); err != nil {
+		t.Fatal(err)
+	}
+	updated := submit(f.session.ID, "identity-after")
+	if got := readPromptIdentity(t, updated.SystemPrompt); got.Agent.Name != agent.Name {
+		t.Fatalf("stale Bot name: %+v", got)
+	}
+	if len(environmentEntries(t, f, f.session.ID)) != len(before) {
+		t.Fatal("Bot rename appended an environment snapshot")
+	}
+	parent, err := f.service.Core(f.ctx, f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.service.Fork(f.ctx, f.session.ID, parent.Head(), "copy", domain.ID("session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	forked := submit(child.ID, "identity-fork")
+	if got := readPromptIdentity(t, forked.SystemPrompt); got.Session.ID != child.ID || got.Agent.ID != f.agent.ID {
+		t.Fatalf("Fork retained parent identity: %+v", got)
+	}
+	page, err := parent.Attempts().Scan(f.ctx, core.AttemptQuery{Purpose: "generation", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, attempt := range page.Attempts {
+		request, err := parent.Attempts().Request(f.ctx, attempt.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if request.SystemPrompt == original.SystemPrompt {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("original frozen request disappeared")
 	}
 }

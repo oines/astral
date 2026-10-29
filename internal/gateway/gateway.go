@@ -21,6 +21,7 @@ import (
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/httpcontract"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/timezone"
 )
 
 type Service struct {
@@ -43,6 +44,7 @@ type Context struct {
 	AgentHome             string         `json:"agent_home"`
 	DefaultConversationID string         `json:"default_conversation_id,omitempty"`
 	CapabilitiesURL       string         `json:"capabilities_url"`
+	Timezone              timezone.View  `json:"timezone"`
 }
 type MessagePage struct {
 	Items        []persistence.StoredObservation `json:"items"`
@@ -88,6 +90,7 @@ type DownloadRequest struct {
 
 func New(h *harness.Service, c *channels.Service) *Service {
 	s := &Service{Harness: h, Channels: c, Contract: httpcontract.New(), mux: http.NewServeMux()}
+	s.scheduleRoutes()
 	register[httpcontract.Empty, Context](s, "GET", "/v1/context", "agentContext", func(r *http.Request, _ httpcontract.Empty) (Context, error) {
 		b := binding(r)
 		value := Context{SourceComputerID: b.ComputerID, CWD: b.CWD, AgentHome: b.AgentHome, CapabilitiesURL: "/v1/capabilities"}
@@ -95,6 +98,10 @@ func New(h *harness.Service, c *channels.Service) *Service {
 			return value, err
 		}
 		if err := h.Store.Get(r.Context(), "sessions", b.SessionID, &value.Session); err != nil {
+			return value, err
+		}
+		var err error
+		if value.Timezone, err = h.Timezone.View(r.Context()); err != nil {
 			return value, err
 		}
 		if value.Session.BindingID != "" {

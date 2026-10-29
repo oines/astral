@@ -114,7 +114,7 @@ func TestIMChatMetadataUpdatesDuringRunAndKeepsFrozenRequestsAndHistory(t *testi
 	}
 	f.idle(t, child.ID)
 	view, err := f.service.InspectContext(f.ctx, child.ID)
-	if err != nil || view.Request.SystemPrompt != webSystemPrompt {
+	if err != nil || withoutPromptIdentity(view.Request.SystemPrompt) != webSystemPrompt {
 		t.Fatalf("Fork inherited a live IM context: %v", err)
 	}
 	found := false
@@ -170,8 +170,11 @@ func TestIMSystemPreparationUsesRequestChatAndIgnoresPersonaReferences(t *testin
 	if err := f.store.Get(f.ctx, "connections", chatA.ConnectionID, &connection); err != nil {
 		t.Fatal(err)
 	}
+	if got := readPromptIdentity(t, prepared.SystemPrompt); got.Session.ID != f.session.ID || got.Session.ConversationID != chatA.ID {
+		t.Fatalf("identity did not retain request chat: %+v", got)
+	}
 	want := composeSystemPrompt(imSystemPrompt+personaSeparator+messages.ChatContext(connection, chatA), persona)
-	if prepared.SystemPrompt != want || string(encode(prepared.Tools)) != string(encode(request.Tools)) {
+	if withoutPromptIdentity(prepared.SystemPrompt) != want || string(encode(prepared.Tools)) != string(encode(request.Tools)) {
 		t.Fatal("preparation used the Session's new binding or changed its selected tools")
 	}
 	again, err := core.PrepareRequest(f.ctx, resolved.Model, prepared)

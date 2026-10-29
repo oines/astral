@@ -365,6 +365,7 @@ type Outbox struct {
 }
 
 type Preferences struct {
+	Timezone     string `json:"timezone,omitempty"`
 	Theme        string `json:"theme"`
 	Language     string `json:"language"`
 	KeepRunning  bool   `json:"keep_running"`

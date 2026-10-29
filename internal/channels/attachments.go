@@ -2,8 +2,16 @@ package channels
 
 import (
 	"context"
+
 	"github.com/oines/astral/internal/domain"
 )
+
+// An attachment prerequisite failure is local authorization, persistence or
+// credential access, rather than optional remote preview acquisition.
+type attachmentPrerequisiteError struct{ cause error }
+
+func (e *attachmentPrerequisiteError) Error() string { return e.cause.Error() }
+func (e *attachmentPrerequisiteError) Unwrap() error { return e.cause }
 
 func (s *Service) downloadSource(ctx context.Context, agentID, sessionID string, attachment domain.Attachment, connection domain.Connection) (Download, error) {
 	if attachment.FileURI != "" {

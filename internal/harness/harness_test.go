@@ -239,7 +239,7 @@ func TestSessionImagesRemainSelfContainedAcrossDeletionReopenAndFork(t *testing.
 				t.Errorf("environment snapshot was moved into a %v message", message["role"])
 			}
 			var snapshot map[string]json.RawMessage
-			if err := json.Unmarshal([]byte(content[start+len(heading):]), &snapshot); err != nil || snapshot["session"] == nil {
+			if err := json.Unmarshal([]byte(content[start+len(heading):]), &snapshot); err != nil || snapshot["current_computer"] == nil {
 				t.Errorf("environment snapshot is not a valid Session environment: %v", err)
 			}
 			snapshots++

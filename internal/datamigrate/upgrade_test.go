@@ -37,6 +37,9 @@ func fixture(t *testing.T) string {
 			t.Fatal(err)
 		}
 		_, err = db.Exec("DROP TABLE IF EXISTS goose_db_version")
+		if err == nil && name == "astral.db" {
+			_, err = db.Exec("PRAGMA user_version=3")
+		}
 		closeErr := db.Close()
 		if err != nil || closeErr != nil {
 			t.Fatal(errors.Join(err, closeErr))

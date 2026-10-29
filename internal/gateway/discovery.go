@@ -68,6 +68,43 @@ var capabilitySpecs = []capabilitySpec{
 		},
 	},
 	{
+		id: "sessions", description: "Rename or archive this Bot's Sessions.",
+		notes: []string{
+			"Use the history capability's Session catalog to obtain exact IDs. Only this Bot's Sessions can be changed; execution identity is supplied by the Host.",
+			"PATCH accepts title and/or archived. Titles cannot be blank and are treated as manual titles. A Session currently bound to IM cannot be renamed or archived. Unbound Sessions can be archived and restored with archived=false.",
+		},
+		examples: []CapabilityExample{
+			{Description: "Give an unbound Session a manual title.", Method: "PATCH", Path: "/v1/sessions/{id}", Body: map[string]any{"title": "Daily research"}},
+			{Description: "Archive an unbound Session.", Method: "PATCH", Path: "/v1/sessions/{id}", Body: map[string]any{"archived": true}},
+		},
+		routes: []capabilityRoute{{"PATCH", "/v1/sessions/{id}", "Rename, archive or restore one unbound Session belonging to this Bot."}},
+	},
+	{
+		id: "schedules", description: "Manage visible, persistent prompt schedules targeting this Bot's Sessions.",
+		notes: []string{
+			"Schedules created here are visible and editable in the WebUI's Schedules page. You can also manage schedules created by the user. Scope is this Bot. session_mode=existing (the default) targets session_id of this Bot; omit session_id on creation to use the calling Session. session_mode=new creates an independent Session for every occurrence and must omit session_id. It uses the Bot's current default model and Computer and copies no prior context or IM binding.",
+			"A schedule has title, prompt, enabled, session_mode and timing. Use timing.kind=once with an absolute RFC3339 at, or timing.kind=cron with a five-field expression (minute hour day-of-month month day-of-week). All plans use Astral's global timezone, configured in General Settings and defaulting to the Server's system timezone. GET /v1/context returns timezone.name. Per-task timezone fields are not accepted. Read the live schema before creation.",
+			"For daily work at 09:00 in the global timezone, use cron '0 9 * * *'. For weekdays at 09:00 use '0 9 * * 1-5'. No @every aliases or inline timezone prefixes are accepted. Changing the global timezone recalculates future recurring times; one-time at remains the same absolute instant.",
+			"The Server must be running at the scheduled time. Missed times while it is stopped are skipped, never caught up. A one-time plan becomes missed; repeating plans resume at their next future occurrence. Paused plans have no next_run_at.",
+			"Each occurrence delivers the prompt as a scheduled User input. An idle target Session starts; a busy existing Session receives Steer. Existing targets use their current model, Computer, context and permissions. last_session_id links the most recent created delivery Session. Direct assistant text is not sent to IM; use send_message when replying in a bound chat.",
+			"Read the latest revision before updates or deletion. PATCH replaces the full editable configuration; provide revision, session_mode, session_id (existing mode only), title, prompt, enabled and timing. Set enabled=false to pause. DELETE requires the revision query parameter. A conflict means reload before applying the intended edit.",
+			"last_status=delivered means the Session durably accepted that prompt, not that the Agent completed the task or sent an IM reply. Deleting or pausing prevents future deliveries; it does not retract an input already accepted by a Session. No command credentials are saved in a plan.",
+		},
+		examples: []CapabilityExample{
+			{Description: "List all schedules belonging to this Bot.", Method: "GET", Path: "/v1/schedules"},
+			{Description: "Create a repeating schedule in a chosen Session.", Method: "POST", Path: "/v1/schedules", Body: map[string]any{"session_id": "<session-id>", "title": "Daily research", "prompt": "Review today's project updates.", "enabled": true, "timing": map[string]any{"kind": "cron", "cron": "0 9 * * *"}}},
+			{Description: "Run each occurrence in its own new Session.", Method: "POST", Path: "/v1/schedules", Body: map[string]any{"session_mode": "new", "title": "Daily independent review", "prompt": "Review today's project updates.", "enabled": true, "timing": map[string]any{"kind": "cron", "cron": "0 9 * * *"}}},
+			{Description: "Schedule a single future prompt at an explicit time; substitute a future date.", Method: "POST", Path: "/v1/schedules", Body: map[string]any{"title": "Reminder", "prompt": "Check the deployment result.", "enabled": true, "timing": map[string]any{"kind": "once", "at": "2030-01-01T09:00:00+08:00"}}},
+		},
+		routes: []capabilityRoute{
+			{"GET", "/v1/schedules", "List this Bot's schedules."},
+			{"POST", "/v1/schedules", "Create a visible one-time or recurring prompt schedule."},
+			{"GET", "/v1/schedules/{id}", "Read a schedule and its current revision."},
+			{"PATCH", "/v1/schedules/{id}", "Replace the editable configuration with its expected revision."},
+			{"DELETE", "/v1/schedules/{id}", "Delete a schedule using its current revision."},
+		},
+	},
+	{
 		id: "chats", description: "Find authorized accounts and chats, read archived messages, send to other chats, and discover platform-specific operations.",
 		notes: []string{
 			"For the currently bound chat, use send_message for text and attachments supported by its schema. The Host supplies its destination and execution identity; that tool has no Idempotency-Key argument.",

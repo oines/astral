@@ -16,6 +16,7 @@ import Composer from '../components/Composer.vue'
 import Transcript from '../components/Transcript.vue'
 import ChatLoading from '../components/ChatLoading.vue'
 import ContextSurface from '../components/ContextSurface.vue'
+import SchedulesPage from './SchedulesPage.vue'
 const route = useRoute()
 const router = useRouter()
 const app = useAppStore()
@@ -117,7 +118,10 @@ watch(id, () => { surface.close(); error.value = '' })
       />
     </Transition>
     <main class="chat-main">
-      <template v-if="!id">
+      <KeepAlive>
+        <SchedulesPage v-if="route.path === '/schedules'" />
+      </KeepAlive>
+      <template v-if="route.path !== '/schedules' && !id">
         <div class="welcome">
           <AstralLogo class="welcome-logo" />
           <template v-if="readyToStart">
@@ -160,7 +164,7 @@ watch(id, () => { surface.close(); error.value = '' })
           </div>
         </div>
       </template>
-      <template v-else-if="view">
+      <template v-else-if="route.path !== '/schedules' && view">
         <div
           v-if="error || live.error.value"
           class="chat-error error-box"
@@ -181,7 +185,7 @@ watch(id, () => { surface.close(); error.value = '' })
         />
       </template>
       <div
-        v-else-if="live.error.value"
+        v-else-if="route.path !== '/schedules' && live.error.value"
         class="chat-load-error"
         role="alert"
       >
@@ -195,7 +199,7 @@ watch(id, () => { surface.close(); error.value = '' })
         </Button>
       </div>
       <ChatLoading
-        v-else-if="showChatLoading"
+        v-else-if="route.path !== '/schedules' && showChatLoading"
         :reconnecting="live.connection.value === 'reconnecting'"
       />
     </main>

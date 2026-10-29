@@ -22,6 +22,7 @@ import SettingsFeedback from '../components/settings/SettingsFeedback.vue'
 import NetworkSettings from '../components/settings/NetworkSettings.vue'
 import AuthSettings from '../components/settings/AuthSettings.vue'
 import DesktopUpdates from '../components/settings/DesktopUpdates.vue'
+import TimezonePicker from '../components/settings/TimezonePicker.vue'
 const app = useAppStore()
 const route = useRoute()
 const { t } = useI18n()
@@ -79,7 +80,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
     reconcile: async () => {
       const current = await request(getPreferences())
       await app.refresh().catch(() => undefined)
-      return Object.entries(patch).every(([key, value]) => current[key as keyof typeof current] === value) ? 'applied' : 'not-applied'
+      return Object.entries(patch).every(([key, value]) => (key === 'timezone' ? current.timezone || '' : current[key as keyof typeof current]) === value) ? 'applied' : 'not-applied'
     },
   }, Object.values(patch)[0])
 }
@@ -156,6 +157,19 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           v-if="section === 'general'"
           class="settings-sections"
         >
+          <SettingsSection :title="t('dateAndTime')">
+            <SettingsRow
+              :label="t('timezone')"
+              :description="t('timezoneHint')"
+            >
+              <TimezonePicker
+                :model-value="saves.value('preferences/timezone', app.data?.preferences.timezone || '')"
+                :system="app.data?.timezone.system || 'UTC'"
+                @update:model-value="setPreference({ timezone: $event })"
+              />
+            </SettingsRow>
+            <SettingsFeedback scope="preferences/timezone" />
+          </SettingsSection>
           <SettingsSection
             v-if="desktop"
             :title="t('application')"

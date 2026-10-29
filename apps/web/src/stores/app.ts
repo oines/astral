@@ -1,14 +1,17 @@
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useQuery, useQueryCache } from '@pinia/colada'
 import { bootstrapQuery, bootstrapQueryKey, listComputersQuery, listSessionsQuery, listSessionsQueryKey } from '@astral/sdk/colada'
 import { getNetworkSettings, getPreferences, saveNetworkSettings, savePreferences, updateSession } from '@astral/sdk'
 import { useIntervalFn, usePreferredDark } from '@vueuse/core'
 import { i18n } from '../i18n'
-import { request } from '../lib/api'
+import { errorText, request } from '../lib/api'
 import type { AstralInternalHarnessInputRequest } from '@astral/sdk'
 import { useAuthStore } from './auth'
 import type { FileRef, SessionView } from '../lib/types'
+import { scheduleAPI, type Schedule, type ScheduleInput } from '../lib/schedules'
+import { sessionWithMetadata } from '../lib/session-presentation'
+import { timezoneSupported } from '../lib/timezone'
 
 export const useAppStore = defineStore('app', () => {
   const auth = useAuthStore()
@@ -20,6 +23,9 @@ export const useAppStore = defineStore('app', () => {
   const computerQuery = useQuery({ ...listComputersQuery(), enabled: () => authorized.value, staleTime: 5000 })
   const cache = useQueryCache()
   const data = computed(() => query.data.value)
+  const timezone = computed(() => data.value?.timezone.name || 'UTC')
+  const timezoneCompatible = computed(() => !!data.value?.timezone.browser_compatible && timezoneSupported(timezone.value))
+  const displayTimezone = computed(() => data.value?.timezone.browser_compatible === false ? '__astral_unknown_server_timezone__' : timezone.value)
   const sessionViews = ref<Record<string, SessionView>>({})
   const sidebar = ref(window.matchMedia('(min-width: 760px)').matches && localStorage.getItem('astral:sidebar') !== 'closed')
   const prefersDark = usePreferredDark()
@@ -34,12 +40,64 @@ export const useAppStore = defineStore('app', () => {
   const computers = computed(() => computerQuery.data.value ?? data.value?.computers ?? [])
   const models = computed(() => data.value?.models ?? [])
   const availableModels = computed(() => models.value.filter(model => model.available))
-  const sessions = computed(() => (sessionQuery.data.value ?? data.value?.sessions ?? []).map(s => sessionViews.value[s.id] ?? s))
+  const sessions = computed(() => (sessionQuery.data.value ?? data.value?.sessions ?? []).map(s => sessionWithMetadata(s, sessionViews.value[s.id])))
+  const schedules = ref<Schedule[]>([])
+  const schedulesReady = ref(false)
+  const schedulesError = ref('')
+  let scheduleRequest = 0
+  async function refreshSchedules() {
+    const generation = ++scheduleRequest
+    try {
+      const items = await scheduleAPI.list()
+      if (generation === scheduleRequest && authorized.value) { schedules.value = items; schedulesReady.value = true; schedulesError.value = '' }
+    } catch (error) {
+      if (generation === scheduleRequest) schedulesError.value = errorText(error)
+      throw error
+    }
+  }
+  async function saveSchedule(input: ScheduleInput, current?: Schedule, agentID = activeAgentID.value) {
+    const saved = current ? await scheduleAPI.update(current, input) : await scheduleAPI.create(agentID, input)
+    schedules.value = [...schedules.value.filter(item => item.id !== saved.id), saved]
+    await refreshSchedules().catch(() => undefined)
+    return saved
+  }
+  async function deleteSchedule(current: Schedule) {
+    await scheduleAPI.remove(current)
+    schedules.value = schedules.value.filter(item => item.id !== current.id)
+  }
+  let scheduleEvents: EventSource | undefined
+  let scheduleReconnect: ReturnType<typeof setTimeout> | undefined
+  function closeScheduleEvents() { scheduleEvents?.close(); scheduleEvents = undefined; clearTimeout(scheduleReconnect) }
+  function connectScheduleEvents() {
+    closeScheduleEvents()
+    if (!authorized.value) return
+    const stream = new EventSource('/api/v1/schedules/events')
+    scheduleEvents = stream
+    stream.addEventListener('schedules', event => {
+      if (scheduleEvents !== stream) return
+      try { scheduleRequest++; schedules.value = JSON.parse((event as MessageEvent<string>).data) as Schedule[]; schedulesReady.value = true; schedulesError.value = '' }
+      catch { void refreshSchedules().catch(() => undefined) }
+    })
+    stream.onerror = () => {
+      if (scheduleEvents !== stream) return
+      closeScheduleEvents()
+      void auth.refresh()
+      void refreshSchedules().catch(() => undefined)
+      scheduleReconnect = setTimeout(connectScheduleEvents, 3000)
+    }
+  }
+  watch(authorized, value => {
+    closeScheduleEvents()
+    if (!value) { scheduleRequest++; schedules.value = []; schedulesReady.value = false; schedulesError.value = ''; return }
+    void refreshSchedules().catch(() => undefined)
+    connectScheduleEvents()
+  }, { immediate: true })
+  onScopeDispose(closeScheduleEvents)
   let refreshing = false
   useIntervalFn(async () => {
     if (!authorized.value || refreshing || document.visibilityState === 'hidden') return
     refreshing = true
-    try { await Promise.allSettled([sessionQuery.refetch(), computerQuery.refetch()]) }
+    try { await Promise.allSettled([sessionQuery.refetch(), computerQuery.refetch(), refreshSchedules()]) }
     finally { refreshing = false }
   }, 5000)
   watch(sidebar, value => localStorage.setItem('astral:sidebar', value ? 'open' : 'closed'))
@@ -66,6 +124,7 @@ export const useAppStore = defineStore('app', () => {
       if (!(error instanceof Error && error.name === 'AbortError')) throw error
     }
     await query.refetch()
+    await refreshSchedules().catch(() => undefined)
   }
   async function preferences(patch: Partial<NonNullable<typeof data.value>['preferences']>) {
     if (!data.value) return
@@ -98,18 +157,20 @@ export const useAppStore = defineStore('app', () => {
   function forgetSession(id: string) {
     delete sessionViews.value[id]
     delete drafts.value[id]
+    schedules.value = schedules.value.filter(schedule => schedule.session_id !== id)
     if (lastChatPath.value === `/sessions/${id}`) lastChatPath.value = '/'
     cache.setQueryData(listSessionsQueryKey(), (sessionQuery.data.value ?? []).filter(session => session.id !== id))
     if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, sessions: data.value.sessions.filter(session => session.id !== id) })
   }
   function forgetAgent(id: string) {
+    schedules.value = schedules.value.filter(schedule => schedule.agent_id !== id)
     const owned = [...sessions.value, ...Object.values(sessionViews.value), ...Object.values(drafts.value).flatMap(draft => draft.session ? [draft.session] : [])]
     for (const session of owned) if (session.agent_id === id) forgetSession(session.id)
     delete drafts.value[`new:${id}`]
     if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, agents: data.value.agents.filter(agent => agent.id !== id) })
   }
-  const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).map(s => [s.id, sessionViews.value[s.id] ?? s])))
-  return { authorized, lastChatPath, drafts, data, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, refreshNetwork, networkSettings, presentation, forgetSession, forgetAgent }
+  const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).map(s => [s.id, sessionWithMetadata(s, sessionViews.value[s.id])])))
+  return { authorized, lastChatPath, drafts, data, timezone, timezoneCompatible, displayTimezone, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, refreshNetwork, networkSettings, presentation, forgetSession, forgetAgent, schedules, schedulesReady, schedulesError, refreshSchedules, saveSchedule, deleteSchedule }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAppStore, import.meta.hot))

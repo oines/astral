@@ -378,8 +378,9 @@ async function main() {
 
     // Leave the old service stopped while preparing a genuine interrupted
     // migration: starting it here would consume the journal before installation.
-    // Dropping only the ledgers makes the real migration CLI adopt each current
-    // baseline again, with verified full snapshots rather than invented backups.
+    // Recreate the published Host-3/Core-11 baseline without ledgers. The
+    // current invariant already holds, so Host step 4 is an identity-preserving
+    // no-op here; the migration CLI still makes a verified full snapshot.
     await command('systemctl', ['--user', 'stop', service], { timeout: 45_000 })
     const data = path.join(installRoot, 'data/server')
     const resultFile = path.join(data, 'last-upgrade.json')
@@ -390,6 +391,8 @@ async function main() {
 for name in ('astral.db','core.db'):
     with sqlite3.connect(pathlib.Path(sys.argv[1])/name) as db:
         db.execute('DROP TABLE goose_db_version')
+        if name == 'astral.db':
+            db.execute('PRAGMA user_version=3')
 `, data])
       await command(nativeBinary, ['migrate', '--data', data], { timeout: 120_000 })
       const record = JSON.parse(await readFile(resultFile, 'utf8'))

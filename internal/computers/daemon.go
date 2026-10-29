@@ -371,7 +371,7 @@ func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (domain.ExecutionBindi
 			http.Error(w, "invalid local gateway origin", http.StatusForbidden)
 			return
 		}
-		if !strings.HasPrefix(r.URL.Path, "/v1/") || (r.Method != http.MethodGet && r.Method != http.MethodPost) {
+		if !strings.HasPrefix(r.URL.Path, "/v1/") || (r.Method != http.MethodGet && r.Method != http.MethodPost && r.Method != http.MethodPatch && r.Method != http.MethodDelete) {
 			http.Error(w, "unsupported gateway operation", http.StatusNotFound)
 			return
 		}

@@ -3080,6 +3080,107 @@
         ],
         "type": "object"
       },
+      "astral_internal_domain_Schedule": {
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "last_run_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_session_id": {
+            "type": "string"
+          },
+          "last_status": {
+            "enum": [
+              "dispatching",
+              "delivered",
+              "missed",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "next_run_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "session_mode": {
+            "enum": [
+              "existing",
+              "new"
+            ],
+            "type": "string"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/astral_internal_domain_ScheduleTiming"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "created_at",
+          "updated_at",
+          "agent_id",
+          "session_mode",
+          "title",
+          "prompt",
+          "enabled",
+          "timing"
+        ],
+        "type": "object"
+      },
+      "astral_internal_domain_ScheduleTiming": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cron": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "once",
+              "cron"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_SearchProvider": {
         "properties": {
           "adapter": {
@@ -3425,6 +3526,9 @@
           },
           "source_computer_id": {
             "type": "string"
+          },
+          "timezone": {
+            "$ref": "#/components/schemas/astral_internal_timezone_View"
           }
         },
         "required": [
@@ -3433,7 +3537,8 @@
           "source_computer_id",
           "cwd",
           "agent_home",
-          "capabilities_url"
+          "capabilities_url",
+          "timezone"
         ],
         "type": "object"
       },
@@ -3542,6 +3647,43 @@
         ],
         "type": "object"
       },
+      "astral_internal_gateway_ScheduleUpdate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "session_mode": {
+            "enum": [
+              "existing",
+              "new"
+            ],
+            "type": "string"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/astral_internal_domain_ScheduleTiming"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "title",
+          "prompt",
+          "enabled",
+          "timing"
+        ],
+        "type": "object"
+      },
       "astral_internal_gateway_SendFile": {
         "properties": {
           "as_document": {
@@ -3607,6 +3749,17 @@
         "required": [
           "text"
         ],
+        "type": "object"
+      },
+      "astral_internal_gateway_SessionPresentation": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "astral_internal_gateway_TelegramStickerDownloadRequest": {
@@ -3994,11 +4147,20 @@
           "public_url": {
             "type": "string"
           },
+          "schedules": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_Schedule"
+            },
+            "type": "array"
+          },
           "sessions": {
             "items": {
               "$ref": "#/components/schemas/astral_internal_domain_Session"
             },
             "type": "array"
+          },
+          "timezone": {
+            "$ref": "#/components/schemas/astral_internal_timezone_View"
           },
           "version": {
             "type": "string"
@@ -4011,9 +4173,11 @@
           "network",
           "host",
           "preferences",
+          "timezone",
           "onboarding",
           "agents",
           "sessions",
+          "schedules",
           "computers",
           "models"
         ],
@@ -4517,6 +4681,9 @@
           "theme": {
             "type": "string"
           },
+          "timezone": {
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"
@@ -4624,6 +4791,80 @@
           "protocol",
           "dialect",
           "base_url"
+        ],
+        "type": "object"
+      },
+      "astral_internal_httpapi_ScheduleCreate": {
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "session_mode": {
+            "enum": [
+              "existing",
+              "new"
+            ],
+            "type": "string"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/astral_internal_domain_ScheduleTiming"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "title",
+          "prompt",
+          "enabled",
+          "timing"
+        ],
+        "type": "object"
+      },
+      "astral_internal_httpapi_ScheduleUpdate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "session_mode": {
+            "enum": [
+              "existing",
+              "new"
+            ],
+            "type": "string"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/astral_internal_domain_ScheduleTiming"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "title",
+          "prompt",
+          "enabled",
+          "timing"
         ],
         "type": "object"
       },
@@ -4857,6 +5098,10 @@
       },
       "astral_internal_messages_Metadata": {
         "properties": {
+          "accepted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "attachments": {
             "items": {
               "$ref": "#/components/schemas/astral_internal_domain_Attachment"
@@ -4881,6 +5126,9 @@
             },
             "type": "array"
           },
+          "schedule": {
+            "$ref": "#/components/schemas/astral_internal_messages_ScheduleMetadata"
+          },
           "sender": {
             "$ref": "#/components/schemas/astral_internal_domain_Sender"
           },
@@ -4893,6 +5141,26 @@
           "delivery_id",
           "display_text",
           "sender"
+        ],
+        "type": "object"
+      },
+      "astral_internal_messages_ScheduleMetadata": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scheduled_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "scheduled_at"
         ],
         "type": "object"
       },
@@ -5285,6 +5553,39 @@
         ],
         "type": "object"
       },
+      "astral_internal_schedule_Input": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "session_mode": {
+            "enum": [
+              "existing",
+              "new"
+            ],
+            "type": "string"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/astral_internal_domain_ScheduleTiming"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "prompt",
+          "enabled",
+          "timing"
+        ],
+        "type": "object"
+      },
       "astral_internal_search_Adapter": {
         "properties": {
           "base_url": {
@@ -5485,6 +5786,29 @@
           "phase",
           "current_version",
           "manager"
+        ],
+        "type": "object"
+      },
+      "astral_internal_timezone_View": {
+        "properties": {
+          "browser_compatible": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "system": {
+            "type": "string"
+          },
+          "using_system": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "system",
+          "using_system",
+          "browser_compatible"
         ],
         "type": "object"
       }
@@ -8807,6 +9131,328 @@
         ],
         "tags": [
           "System"
+        ]
+      }
+    },
+    "/api/v1/schedules": {
+      "get": {
+        "operationId": "listSchedules",
+        "parameters": [
+          {
+            "description": "Omit to list schedules for all Bots.",
+            "in": "query",
+            "name": "agent_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/astral_internal_domain_Schedule"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Schedules"
+        ]
+      },
+      "post": {
+        "operationId": "createSchedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_httpapi_ScheduleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_Schedule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Schedules"
+        ]
+      }
+    },
+    "/api/v1/schedules/events": {
+      "get": {
+        "operationId": "scheduleEvents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Schedules"
+        ]
+      }
+    },
+    "/api/v1/schedules/{id}": {
+      "delete": {
+        "operationId": "deleteSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Schedules"
+        ]
+      },
+      "get": {
+        "operationId": "getSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_Schedule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Schedules"
+        ]
+      },
+      "patch": {
+        "operationId": "updateSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_httpapi_ScheduleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_Schedule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Schedules"
         ]
       }
     },
@@ -12552,6 +13198,241 @@
         ]
       }
     },
+    "/v1/schedules": {
+      "get": {
+        "description": "List this Bot's schedules.",
+        "operationId": "agentSchedules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/astral_internal_domain_Schedule"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      },
+      "post": {
+        "description": "Create a visible one-time or recurring prompt schedule.",
+        "operationId": "agentCreateSchedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_schedule_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_Schedule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/schedules/{id}": {
+      "delete": {
+        "description": "Delete a schedule using its current revision.",
+        "operationId": "agentDeleteSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      },
+      "get": {
+        "description": "Read a schedule and its current revision.",
+        "operationId": "agentGetSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_Schedule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      },
+      "patch": {
+        "description": "Replace the editable configuration with its expected revision.",
+        "operationId": "agentUpdateSchedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_gateway_ScheduleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_Schedule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
     "/v1/sessions": {
       "get": {
         "description": "List this Agent's Sessions across Computers, newest activity first. Returns lightweight metadata, includes archived Sessions by default, and never opens execution runtimes. Follow next_cursor to enumerate the fixed snapshot.",
@@ -12664,6 +13545,62 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_recall_SearchPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/sessions/{id}": {
+      "patch": {
+        "description": "Rename, archive or restore one unbound Session belonging to this Bot.",
+        "operationId": "agentUpdateSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_gateway_SessionPresentation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
                 }
               }
             },

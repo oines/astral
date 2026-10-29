@@ -36,6 +36,11 @@ func TestStartupFailureRestoresBothStoresBeforeReleasingLock(t *testing.T) {
 		if _, err = db.Exec("DROP TABLE goose_db_version"); err != nil {
 			t.Fatal(err)
 		}
+		if name == "astral.db" {
+			if _, err = db.Exec("PRAGMA user_version=3"); err != nil {
+				t.Fatal(err)
+			}
+		}
 		if err = db.Close(); err != nil {
 			t.Fatal(err)
 		}

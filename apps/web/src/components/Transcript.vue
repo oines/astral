@@ -4,25 +4,28 @@ import { useNow } from '@vueuse/core'
 import { useClipboard } from '../composables/useClipboard'
 import { useI18n } from 'vue-i18n'
 import { Button, Popover } from '@astral/ui'
-import { ArrowDown, Check, Copy, Ellipsis, File, GitBranch } from '@astral/icons'
+import { ArrowDown, Check, Clock3, Copy, Ellipsis, File, GitBranch } from '@astral/icons'
 import type { Entry, FileRef } from '../lib/types'
 import { errorText, imageURL, object } from '../lib/api'
-import { messageText, transcriptGroups, type SessionState, type TranscriptGroup } from '../lib/session-state'
+import { messageText, scheduledMessage, transcriptGroups, type SessionState, type TranscriptGroup } from '../lib/session-state'
 import { useSurfaceStore } from '../stores/surface'
 import Markdown from './Markdown.vue'
 import ActivityLine from './ActivityLine.vue'
 import { useTranscriptScroll } from '../composables/useTranscriptScroll'
 import { createMessageTimeFormatter } from '../lib/message-time'
+import { formatDateTime } from '../lib/timezone'
+import { useAppStore } from '../stores/app'
 const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean> }>()
 const emit = defineEmits<{ fork: [entryID: string] }>()
 const { t, locale } = useI18n()
 const surface = useSurfaceStore()
+const app = useAppStore()
 const scroller = ref<HTMLElement>()
 const content = ref<HTMLElement>()
 const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor), loadOlder: () => props.loadOlder() })
 const groups = computed(() => transcriptGroups(props.state))
 const now = useNow({ interval: 60_000 })
-const formatTimestamp = computed(() => createMessageTimeFormatter(locale.value))
+const formatTimestamp = computed(() => createMessageTimeFormatter(locale.value, app.displayTimezone))
 const timestamps = computed(() => Object.fromEntries(groups.value.filter(group => group.role === 'assistant' && !group.active).map(group => [group.key, formatTimestamp.value(group.entries.findLast(entry => messageText(entry))?.time, now.value)])))
 const { copy, copied } = useClipboard()
 const copiedGroup = ref('')
@@ -30,7 +33,7 @@ const copyError = ref('')
 function groupText(group: TranscriptGroup) { return group.entries.map(messageText).filter(Boolean).join('\n\n') }
 function statusText(group: TranscriptGroup) {
   const params = { ...group.statusParams }
-  if (params.time) params.time = new Date(String(params.time)).toLocaleTimeString(locale.value)
+  if (params.time) params.time = formatDateTime(String(params.time), locale.value, app.displayTimezone, { timeStyle: 'medium' })
   return t(group.status ?? '', params)
 }
 async function copyGroup(group: TranscriptGroup) {
@@ -51,6 +54,7 @@ function sender(entry: Entry) {
   return meta.source === 'im' ? String(object(meta.sender).name ?? '') : ''
 }
 function images(entry: Entry) { return (entry.message?.content ?? []).filter(p => p.type === 'image') }
+function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMessage(entry)?.deliveredAt, now.value) }
 </script>
 <template>
   <div class="transcript-viewport">
@@ -118,7 +122,19 @@ function images(entry: Entry) { return (entry.message?.content ?? []).filter(p =
             :class="['message', group.role === 'user' ? 'message-user' : 'message-attachments']"
           >
             <div
-              v-if="sender(entry)"
+              v-if="scheduledMessage(entry)"
+              class="message-sender scheduled-message-source"
+            >
+              <Clock3 aria-hidden="true" />
+              <span>{{ t('scheduleTask') }}<template v-if="scheduledMessage(entry)?.title"> · {{ scheduledMessage(entry)?.title }}</template></span>
+              <time
+                v-if="scheduledTime(entry)"
+                :datetime="scheduledTime(entry)?.dateTime"
+                :title="scheduledTime(entry)?.full"
+              >{{ scheduledTime(entry)?.label }}</time>
+            </div>
+            <div
+              v-else-if="sender(entry)"
               class="message-sender"
             >
               {{ sender(entry) }} · Telegram

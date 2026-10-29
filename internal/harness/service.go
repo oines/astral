@@ -19,7 +19,9 @@ import (
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/recall"
+	"github.com/oines/astral/internal/schedule"
 	"github.com/oines/astral/internal/search"
+	"github.com/oines/astral/internal/timezone"
 )
 
 type Service struct {
@@ -30,6 +32,8 @@ type Service struct {
 	Files     *filestream.Service
 	Search    *search.Service
 	Recall    *recall.Service
+	Schedules *schedule.Service
+	Timezone  *timezone.Service
 	RuntimeID string
 	IM        Messenger
 	ctx       context.Context
@@ -65,10 +69,13 @@ type runtime struct {
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Service{Store: store, CoreStore: coreStore, Models: models, Hub: hub,
+	s := &Service{Store: store, CoreStore: coreStore, Models: models, Hub: hub,
 		Files: &filestream.Service{Store: store, Hub: hub}, Search: &search.Service{Store: store},
 		Recall:    recall.New(store, coreStore),
 		RuntimeID: domain.ID("server"), ctx: ctx, cancel: cancel, runtimes: map[string]*runtime{}, changes: make(chan string, 256)}
+	s.Timezone = timezone.New(store)
+	s.Schedules = schedule.New(store, s.deliverSchedule, s.scheduleAccepted, func() { s.notify("") }, s.Timezone)
+	return s
 }
 func (s *Service) Changes() <-chan string { return s.changes }
 func (s *Service) notify(id string) {
@@ -243,11 +250,29 @@ func (s *Service) Core(ctx context.Context, id string) (*core.Session, error) {
 	return r.core.Load(), nil
 }
 func (s *Service) CreateSession(ctx context.Context, agentID, title string) (domain.Session, error) {
+	return s.createSession(ctx, agentID, title, domain.ID("session"), "web", false)
+}
+
+// createSession also serves scheduled new conversations. Their deterministic
+// occurrence ID permits reopening an already created Host record without
+// creating a second conversation or copying another Session's history.
+func (s *Service) createSession(ctx context.Context, agentID, title, id, source string, reuse bool) (domain.Session, error) {
 	release, err := s.LockAgent(ctx, agentID)
 	if err != nil {
 		return domain.Session{}, err
 	}
 	defer release()
+	if reuse {
+		var existing domain.Session
+		if err := s.Store.Get(ctx, "sessions", id, &existing); err == nil {
+			if existing.AgentID != agentID || existing.Source != source || existing.Deletion != nil {
+				return domain.Session{}, domain.Conflict("scheduled Session identity is unavailable")
+			}
+			return existing, nil
+		} else if !domain.IsMissing(err) {
+			return domain.Session{}, err
+		}
+	}
 	var agent domain.Agent
 	if err := s.Store.Get(ctx, "agents", agentID, &agent); err != nil {
 		return domain.Session{}, err
@@ -256,7 +281,7 @@ func (s *Service) CreateSession(ctx context.Context, agentID, title string) (dom
 	if err != nil {
 		return domain.Session{}, err
 	}
-	record := domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agentID, Title: strings.TrimSpace(title), TitleSource: domain.TitleManual, Source: "web",
+	record := domain.Session{Meta: domain.Meta{ID: id}, AgentID: agentID, Title: strings.TrimSpace(title), TitleSource: domain.TitleManual, Source: source,
 		ComputerID: agent.DefaultComputerID}
 	if defaultSessionTitle(record.Title) {
 		record.Title = "New session"
@@ -265,6 +290,18 @@ func (s *Service) CreateSession(ctx context.Context, agentID, title string) (dom
 	if err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
 		if err := availableAgent(ctx, tx, agentID); err != nil {
 			return err
+		}
+		if reuse {
+			var existing domain.Session
+			if err := tx.Get(ctx, "sessions", id, &existing); err == nil {
+				if existing.AgentID != agentID || existing.Source != source || existing.Deletion != nil {
+					return domain.Conflict("scheduled Session identity is unavailable")
+				}
+				record = existing
+				return nil
+			} else if !domain.IsMissing(err) {
+				return err
+			}
 		}
 		return tx.Save(ctx, "sessions", &record.Meta, &record)
 	}); err != nil {
@@ -288,6 +325,9 @@ func (s *Service) Close(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 	var errs []error
+	if s.Schedules != nil {
+		errs = append(errs, s.Schedules.Close(ctx))
+	}
 	for _, r := range all {
 		select {
 		case <-r.ready:

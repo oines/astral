@@ -9,6 +9,7 @@ import { useAuthStore } from '../../stores/auth'
 import { useAppStore } from '../../stores/app'
 import { useAction } from '../../composables/useAction'
 import { useClipboard } from '../../composables/useClipboard'
+import { formatDateTime } from '../../lib/timezone'
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
@@ -51,8 +52,7 @@ const httpsAddress = computed(() => app.data?.network.public_urls.value.find(url
   return address.protocol === 'https:' && !address.hostname.includes(':') && !/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(address.hostname)
 }))
 function date(value?: string) {
-  if (!value || !Number.isFinite(Date.parse(value)) || value.startsWith('0001-')) return '—'
-  return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+  return formatDateTime(value, locale.value, app.displayTimezone)
 }
 async function refresh() {
   const current = lifecycle

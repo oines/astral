@@ -27,6 +27,7 @@ import (
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/search"
 	"github.com/oines/astral/internal/serverupdate"
+	"github.com/oines/astral/internal/timezone"
 )
 
 type Config struct {
@@ -63,9 +64,11 @@ type Bootstrap struct {
 	Network     NetworkSettings         `json:"network"`
 	Host        domain.HostInfo         `json:"host"`
 	Preferences Preferences             `json:"preferences"`
+	Timezone    timezone.View           `json:"timezone"`
 	Onboarding  harness.Onboarding      `json:"onboarding"`
 	Agents      []domain.Agent          `json:"agents"`
 	Sessions    []domain.Session        `json:"sessions"`
+	Schedules   []domain.Schedule       `json:"schedules"`
 	Computers   []domain.ComputerStatus `json:"computers"`
 	Models      []domain.ModelProfile   `json:"models"`
 }
@@ -170,6 +173,7 @@ func New(config Config) *API {
 	a := &API{Config: config, Contract: httpcontract.New(), mux: http.NewServeMux()}
 	a.resources()
 	a.sessionRoutes()
+	a.scheduleRoutes()
 	a.attemptRoutes()
 	a.systemRoutes()
 	a.networkRoutes()
@@ -240,6 +244,9 @@ func (a *API) systemRoutes() {
 		if v.Preferences, err = a.preferences(r.Context()); err != nil {
 			return v, err
 		}
+		if v.Timezone, err = h.Timezone.View(r.Context()); err != nil {
+			return v, err
+		}
 		if v.Agents, err = readAll[domain.Agent](r.Context(), h.Store, "agents"); err != nil {
 			return v, err
 		}
@@ -253,6 +260,9 @@ func (a *API) systemRoutes() {
 			}
 		}
 		v.Sessions = visibleSessions
+		if v.Schedules, err = h.Schedules.List(r.Context(), ""); err != nil {
+			return v, err
+		}
 		if v.Computers, err = a.computers(r.Context()); err != nil {
 			return v, err
 		}
@@ -275,6 +285,9 @@ func (a *API) systemRoutes() {
 		}
 		if p.RunningInput != "follow_up" && p.RunningInput != "steer" {
 			return p, domain.Invalid("unknown running input preference")
+		}
+		if err := timezone.Validate(p.Timezone); err != nil {
+			return p, err
 		}
 		p.ID = "owner"
 		err := h.Store.Save(r.Context(), "preferences", &p.Meta, &p)

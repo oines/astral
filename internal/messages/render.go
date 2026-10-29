@@ -34,9 +34,11 @@ type Metadata struct {
 	EventID        string              `json:"event_id,omitempty"`
 	ConversationID string              `json:"conversation_id,omitempty"`
 	DisplayText    string              `json:"display_text"`
+	AcceptedAt     *time.Time          `json:"accepted_at,omitempty"`
 	Sender         domain.Sender       `json:"sender"`
 	Files          []domain.FileRef    `json:"files,omitempty"`
 	Attachments    []domain.Attachment `json:"attachments,omitempty"`
+	Schedule       *ScheduleMetadata   `json:"schedule,omitempty"`
 }
 
 func AttachmentDownloadPath(conversationID, messageID, ref string) string {

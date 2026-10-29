@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentCapabilityData, AgentCapabilityErrors, AgentCapabilityResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentDownloadAttachmentData, AgentDownloadAttachmentErrors, AgentDownloadAttachmentResponses, AgentDownloadTelegramStickerData, AgentDownloadTelegramStickerErrors, AgentDownloadTelegramStickerResponses, AgentFileReferenceData, AgentFileReferenceErrors, AgentFileReferenceResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentMessageData, AgentMessageErrors, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendFileData, AgentSendFileErrors, AgentSendFileResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramOperationData, AgentTelegramOperationErrors, AgentTelegramOperationResponses, AgentTelegramOperationsData, AgentTelegramOperationsErrors, AgentTelegramOperationsResponses, AgentTelegramStickerContentData, AgentTelegramStickerContentErrors, AgentTelegramStickerContentResponses, ApplyServerUpdateData, ApplyServerUpdateErrors, ApplyServerUpdateResponses, AuthAccountData, AuthAccountErrors, AuthAccountResponses, AuthEventsData, AuthEventsErrors, AuthEventsResponse, AuthEventsResponses, AuthLoginData, AuthLoginErrors, AuthLoginRecoveryData, AuthLoginRecoveryErrors, AuthLoginRecoveryResponses, AuthLoginResponses, AuthLoginTotpData, AuthLoginTotpErrors, AuthLoginTotpResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginErrors, AuthPasskeyLoginBeginResponses, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishErrors, AuthPasskeyLoginFinishResponses, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginErrors, AuthPasskeyRegisterBeginResponses, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishErrors, AuthPasskeyRegisterFinishResponses, AuthPasskeyRemoveData, AuthPasskeyRemoveErrors, AuthPasskeyRemoveResponses, AuthPasswordlessData, AuthPasswordlessErrors, AuthPasswordlessResponses, AuthReauthenticateData, AuthReauthenticateErrors, AuthReauthenticateResponses, AuthRecoveryCodesData, AuthRecoveryCodesErrors, AuthRecoveryCodesResponses, AuthSessionRevokeData, AuthSessionRevokeErrors, AuthSessionRevokeResponses, AuthSessionsRevokeData, AuthSessionsRevokeErrors, AuthSessionsRevokeResponses, AuthSettingsData, AuthSettingsErrors, AuthSettingsResponses, AuthStatusData, AuthStatusErrors, AuthStatusResponses, AuthTotpBeginData, AuthTotpBeginErrors, AuthTotpBeginResponses, AuthTotpConfirmData, AuthTotpConfirmErrors, AuthTotpConfirmResponses, AuthTotpRemoveData, AuthTotpRemoveErrors, AuthTotpRemoveResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, CheckServerUpdateData, CheckServerUpdateErrors, CheckServerUpdateResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteComputerData, DeleteComputerErrors, DeleteComputerResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DescribeModelData, DescribeModelErrors, DescribeModelResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetNetworkSettingsData, GetNetworkSettingsErrors, GetNetworkSettingsResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetServerUpdateData, GetServerUpdateErrors, GetServerUpdateResponses, GetSessionData, GetSessionErrors, GetSessionResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, RefreshProviderModelsData, RefreshProviderModelsErrors, RefreshProviderModelsResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SaveNetworkSettingsData, SaveNetworkSettingsErrors, SaveNetworkSettingsResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionAttemptData, SessionAttemptErrors, SessionAttemptRequestData, SessionAttemptRequestErrors, SessionAttemptRequestResponses, SessionAttemptResponses, SessionAttemptsData, SessionAttemptsErrors, SessionAttemptsResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerDaemonData, UpdateComputerDaemonErrors, UpdateComputerDaemonResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses } from './types.gen';
+import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentCapabilityData, AgentCapabilityErrors, AgentCapabilityResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentCreateScheduleData, AgentCreateScheduleErrors, AgentCreateScheduleResponses, AgentDeleteScheduleData, AgentDeleteScheduleErrors, AgentDeleteScheduleResponses, AgentDownloadAttachmentData, AgentDownloadAttachmentErrors, AgentDownloadAttachmentResponses, AgentDownloadTelegramStickerData, AgentDownloadTelegramStickerErrors, AgentDownloadTelegramStickerResponses, AgentFileReferenceData, AgentFileReferenceErrors, AgentFileReferenceResponses, AgentGetScheduleData, AgentGetScheduleErrors, AgentGetScheduleResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentMessageData, AgentMessageErrors, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentSchedulesData, AgentSchedulesErrors, AgentSchedulesResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendFileData, AgentSendFileErrors, AgentSendFileResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramOperationData, AgentTelegramOperationErrors, AgentTelegramOperationResponses, AgentTelegramOperationsData, AgentTelegramOperationsErrors, AgentTelegramOperationsResponses, AgentTelegramStickerContentData, AgentTelegramStickerContentErrors, AgentTelegramStickerContentResponses, AgentUpdateScheduleData, AgentUpdateScheduleErrors, AgentUpdateScheduleResponses, AgentUpdateSessionData, AgentUpdateSessionErrors, AgentUpdateSessionResponses, ApplyServerUpdateData, ApplyServerUpdateErrors, ApplyServerUpdateResponses, AuthAccountData, AuthAccountErrors, AuthAccountResponses, AuthEventsData, AuthEventsErrors, AuthEventsResponse, AuthEventsResponses, AuthLoginData, AuthLoginErrors, AuthLoginRecoveryData, AuthLoginRecoveryErrors, AuthLoginRecoveryResponses, AuthLoginResponses, AuthLoginTotpData, AuthLoginTotpErrors, AuthLoginTotpResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginErrors, AuthPasskeyLoginBeginResponses, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishErrors, AuthPasskeyLoginFinishResponses, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginErrors, AuthPasskeyRegisterBeginResponses, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishErrors, AuthPasskeyRegisterFinishResponses, AuthPasskeyRemoveData, AuthPasskeyRemoveErrors, AuthPasskeyRemoveResponses, AuthPasswordlessData, AuthPasswordlessErrors, AuthPasswordlessResponses, AuthReauthenticateData, AuthReauthenticateErrors, AuthReauthenticateResponses, AuthRecoveryCodesData, AuthRecoveryCodesErrors, AuthRecoveryCodesResponses, AuthSessionRevokeData, AuthSessionRevokeErrors, AuthSessionRevokeResponses, AuthSessionsRevokeData, AuthSessionsRevokeErrors, AuthSessionsRevokeResponses, AuthSettingsData, AuthSettingsErrors, AuthSettingsResponses, AuthStatusData, AuthStatusErrors, AuthStatusResponses, AuthTotpBeginData, AuthTotpBeginErrors, AuthTotpBeginResponses, AuthTotpConfirmData, AuthTotpConfirmErrors, AuthTotpConfirmResponses, AuthTotpRemoveData, AuthTotpRemoveErrors, AuthTotpRemoveResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, CheckServerUpdateData, CheckServerUpdateErrors, CheckServerUpdateResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateScheduleData, CreateScheduleErrors, CreateScheduleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteComputerData, DeleteComputerErrors, DeleteComputerResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteScheduleData, DeleteScheduleErrors, DeleteScheduleResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DescribeModelData, DescribeModelErrors, DescribeModelResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetNetworkSettingsData, GetNetworkSettingsErrors, GetNetworkSettingsResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetServerUpdateData, GetServerUpdateErrors, GetServerUpdateResponses, GetSessionData, GetSessionErrors, GetSessionResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSchedulesData, ListSchedulesErrors, ListSchedulesResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, RefreshProviderModelsData, RefreshProviderModelsErrors, RefreshProviderModelsResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SaveNetworkSettingsData, SaveNetworkSettingsErrors, SaveNetworkSettingsResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, ScheduleEventsData, ScheduleEventsErrors, ScheduleEventsResponse, ScheduleEventsResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionAttemptData, SessionAttemptErrors, SessionAttemptRequestData, SessionAttemptRequestErrors, SessionAttemptRequestResponses, SessionAttemptResponses, SessionAttemptsData, SessionAttemptsErrors, SessionAttemptsResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerDaemonData, UpdateComputerDaemonErrors, UpdateComputerDaemonResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateScheduleData, UpdateScheduleErrors, UpdateScheduleResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -1268,6 +1268,122 @@ export const resourceUsage = <ThrowOnError extends boolean = false>(options: Opt
     ...options
 });
 
+export const listSchedules = <ThrowOnError extends boolean = false>(options?: Options<ListSchedulesData, ThrowOnError>): RequestResult<ListSchedulesResponses, ListSchedulesErrors, ThrowOnError> => (options?.client ?? client).get<ListSchedulesResponses, ListSchedulesErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/schedules',
+    ...options
+});
+
+export const createSchedule = <ThrowOnError extends boolean = false>(options: Options<CreateScheduleData, ThrowOnError>): RequestResult<CreateScheduleResponses, CreateScheduleErrors, ThrowOnError> => (options.client ?? client).post<CreateScheduleResponses, CreateScheduleErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/schedules',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const scheduleEvents = <ThrowOnError extends boolean = false>(options?: Options<ScheduleEventsData, ThrowOnError, ScheduleEventsResponse>): Promise<ServerSentEventsResult<ScheduleEventsResponses>> => (options?.client ?? client).sse.get<ScheduleEventsResponses, ScheduleEventsErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/schedules/events',
+    ...options
+});
+
+export const deleteSchedule = <ThrowOnError extends boolean = false>(options: Options<DeleteScheduleData, ThrowOnError>): RequestResult<DeleteScheduleResponses, DeleteScheduleErrors, ThrowOnError> => (options.client ?? client).delete<DeleteScheduleResponses, DeleteScheduleErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/schedules/{id}',
+    ...options
+});
+
+export const getSchedule = <ThrowOnError extends boolean = false>(options: Options<GetScheduleData, ThrowOnError>): RequestResult<GetScheduleResponses, GetScheduleErrors, ThrowOnError> => (options.client ?? client).get<GetScheduleResponses, GetScheduleErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/schedules/{id}',
+    ...options
+});
+
+export const updateSchedule = <ThrowOnError extends boolean = false>(options: Options<UpdateScheduleData, ThrowOnError>): RequestResult<UpdateScheduleResponses, UpdateScheduleErrors, ThrowOnError> => (options.client ?? client).patch<UpdateScheduleResponses, UpdateScheduleErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/schedules/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
 export const listSearchAdapters = <ThrowOnError extends boolean = false>(options?: Options<ListSearchAdaptersData, ThrowOnError>): RequestResult<ListSearchAdaptersResponses, ListSearchAdaptersErrors, ThrowOnError> => (options?.client ?? client).get<ListSearchAdaptersResponses, ListSearchAdaptersErrors, ThrowOnError>({
     security: [
         { name: 'Authorization', type: 'apiKey' },
@@ -2433,6 +2549,79 @@ export const agentSendReceipt = <ThrowOnError extends boolean = false>(options: 
 });
 
 /**
+ * List this Bot's schedules.
+ */
+export const agentSchedules = <ThrowOnError extends boolean = false>(options?: Options<AgentSchedulesData, ThrowOnError>): RequestResult<AgentSchedulesResponses, AgentSchedulesErrors, ThrowOnError> => (options?.client ?? client).get<AgentSchedulesResponses, AgentSchedulesErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/schedules',
+    ...options
+});
+
+/**
+ * Create a visible one-time or recurring prompt schedule.
+ */
+export const agentCreateSchedule = <ThrowOnError extends boolean = false>(options: Options<AgentCreateScheduleData, ThrowOnError>): RequestResult<AgentCreateScheduleResponses, AgentCreateScheduleErrors, ThrowOnError> => (options.client ?? client).post<AgentCreateScheduleResponses, AgentCreateScheduleErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/schedules',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete a schedule using its current revision.
+ */
+export const agentDeleteSchedule = <ThrowOnError extends boolean = false>(options: Options<AgentDeleteScheduleData, ThrowOnError>): RequestResult<AgentDeleteScheduleResponses, AgentDeleteScheduleErrors, ThrowOnError> => (options.client ?? client).delete<AgentDeleteScheduleResponses, AgentDeleteScheduleErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/schedules/{id}',
+    ...options
+});
+
+/**
+ * Read a schedule and its current revision.
+ */
+export const agentGetSchedule = <ThrowOnError extends boolean = false>(options: Options<AgentGetScheduleData, ThrowOnError>): RequestResult<AgentGetScheduleResponses, AgentGetScheduleErrors, ThrowOnError> => (options.client ?? client).get<AgentGetScheduleResponses, AgentGetScheduleErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/schedules/{id}',
+    ...options
+});
+
+/**
+ * Replace the editable configuration with its expected revision.
+ */
+export const agentUpdateSchedule = <ThrowOnError extends boolean = false>(options: Options<AgentUpdateScheduleData, ThrowOnError>): RequestResult<AgentUpdateScheduleResponses, AgentUpdateScheduleErrors, ThrowOnError> => (options.client ?? client).patch<AgentUpdateScheduleResponses, AgentUpdateScheduleErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/schedules/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * List this Agent's Sessions across Computers, newest activity first. Returns lightweight metadata, includes archived Sessions by default, and never opens execution runtimes. Follow next_cursor to enumerate the fixed snapshot.
  */
 export const agentSessions = <ThrowOnError extends boolean = false>(options?: Options<AgentSessionsData, ThrowOnError>): RequestResult<AgentSessionsResponses, AgentSessionsErrors, ThrowOnError> => (options?.client ?? client).get<AgentSessionsResponses, AgentSessionsErrors, ThrowOnError>({
@@ -2455,6 +2644,23 @@ export const agentSearchSessions = <ThrowOnError extends boolean = false>(option
             type: 'http'
         }],
     url: '/v1/sessions/search',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Rename, archive or restore one unbound Session belonging to this Bot.
+ */
+export const agentUpdateSession = <ThrowOnError extends boolean = false>(options: Options<AgentUpdateSessionData, ThrowOnError>): RequestResult<AgentUpdateSessionResponses, AgentUpdateSessionErrors, ThrowOnError> => (options.client ?? client).patch<AgentUpdateSessionResponses, AgentUpdateSessionErrors, ThrowOnError>({
+    security: [{
+            key: 'command',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/sessions/{id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',

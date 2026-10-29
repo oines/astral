@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addEntry, applyEvent, emptyState, fromSnapshot, messageText, transcriptGroups, transcriptRows, visibleEntry } from './session-state'
+import { addEntry, applyEvent, emptyState, fromSnapshot, messageText, scheduledMessage, transcriptGroups, transcriptRows, visibleEntry } from './session-state'
 import type { CoreEvent, Entry, SessionView, Snapshot } from './types'
 
 function entry(id: string, sequence: number, rest: Partial<Entry>): Entry {
@@ -92,6 +92,16 @@ describe('reconciling live previews with durable history', () => {
 })
 
 describe('transcript facts', () => {
+  it('shows scheduled prompts as right-side inputs with explicit task provenance and their original text', () => {
+    const scheduled = entry('schedule-input', 1, { message: { role: 'user', metadata: { source: 'schedule', display_text: 'Inspect <project>', schedule: { id: 'task', title: 'Daily check', scheduled_at: '2026-10-20T00:00:00Z' } }, content: [{ type: 'text', text: '<message source="schedule">Inspect &lt;project&gt;</message>' }] } })
+    expect(visibleEntry(scheduled)).toBe(true)
+    expect(messageText(scheduled)).toBe('Inspect <project>')
+    expect(scheduledMessage(scheduled)).toEqual({ title: 'Daily check', deliveredAt: scheduled.time })
+    const state = emptyState()
+    addEntry(state, scheduled)
+    expect(transcriptGroups(state)[0]).toMatchObject({ role: 'user', entries: [scheduled] })
+    expect(scheduledMessage(entry('manual', 2, { message: { role: 'user', metadata: { source: 'web', display_text: 'Scheduled task' }, content: [] } }))).toBeUndefined()
+  })
   it('shows the current result after an interrupted tool call is completed', () => {
     const invocation = { session_id: 'session', execution_id: 'send', run_id: 'run', turn_id: 'turn', assistant_id: 'assistant', call: { id: 'call', name: 'send_message', arguments: { text: 'hello' } } }
     const state = fromSnapshot(snapshot([], [

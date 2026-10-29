@@ -253,7 +253,7 @@ func weixinDecrypt(ciphertext, key []byte) ([]byte, error) {
 func (w *weixinAdapter) Download(ctx context.Context, attachment domain.Attachment) (Download, error) {
 	value, err := w.getWire(ctx, "media", attachment.ExternalID)
 	if err != nil {
-		return Download{}, err
+		return Download{}, &attachmentPrerequisiteError{err}
 	}
 	var stored weixinStoredMedia
 	if value == "" || json.Unmarshal([]byte(value), &stored) != nil {

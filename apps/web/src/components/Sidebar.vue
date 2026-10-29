@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Plus, Search, Settings2, FolderOpen, Pin } from '@astral/icons'
+import { Plus, Search, Settings2, FolderOpen, Pin, Clock3 } from '@astral/icons'
 import { Button, Modal, Select } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { errorText } from '../lib/api'
@@ -10,13 +10,15 @@ import type { Session } from '../lib/types'
 import ChannelIcon from './ChannelIcon.vue'
 import SessionMenu from './SessionMenu.vue'
 import { useSessionTitles } from '../composables/useSessionTitles'
+import { sidebarGroups, visibleSidebarSessions } from '../lib/sidebar-groups'
+import { hasScheduledSession } from '../lib/schedules'
 const app = useAppStore()
 const { titles, typing } = useSessionTitles(() => app.data ? app.sessions : undefined)
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const search = ref('')
-const filtered = computed(() => app.sessions.filter(s => (!s.archived || s.id === route.params.id) && s.agent_id === app.activeAgentID && s.title.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => b.updated_at.localeCompare(a.updated_at)))
+const filtered = computed(() => visibleSidebarSessions(app.sessions, app.schedules, isActive, String(route.params.id || '')).filter(s => s.agent_id === app.activeAgentID && s.title.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => b.updated_at.localeCompare(a.updated_at)))
 const rename = ref(false)
 const renameTarget = ref<Session>()
 const title = ref('')
@@ -24,18 +26,15 @@ const renameError = ref('')
 const pendingID = ref('')
 const actionError = ref('')
 function isActive(session: Session) { return ['running', 'stopping', 'compacting'].includes(app.statuses[session.id]?.status ?? '') }
-const groups = computed(() => [
-  { title: 'now', items: filtered.value.filter(isActive) },
-  { title: 'pinned', items: filtered.value.filter(s => s.pinned && !isActive(s)) },
-  { title: 'recent', items: filtered.value.filter(s => !s.pinned && !isActive(s)) },
-])
+const groups = computed(() => sidebarGroups(filtered.value, app.schedules, isActive))
+const planned = computed(() => new Set(app.schedules.filter(hasScheduledSession).map(schedule => schedule.session_id)))
 function agentName(id: string) { return app.agents.find(a => a.id === id)?.name || t('missing') }
 function navigate() { if (window.innerWidth < 760) app.sidebar = false }
 function selectAgent(id: string) {
   if (id === app.activeAgentID) return
   app.activeAgentID = id
   search.value = ''
-  void router.push('/')
+  void router.push(route.path === '/schedules' ? '/schedules' : '/')
 }
 function beginRename(session: Session) {
   renameTarget.value = session
@@ -90,6 +89,15 @@ async function presentation(session: Session, patch: { title?: string; pinned?: 
     >
       <Plus />{{ t('newSession') }}<kbd>⌘ N</kbd>
     </RouterLink>
+    <RouterLink
+      to="/schedules"
+      class="button button-ghost new-session"
+      :class="{ selected: route.path === '/schedules' }"
+      :aria-current="route.path === '/schedules' ? 'page' : undefined"
+      @click="navigate"
+    >
+      <Clock3 />{{ t('schedules') }}
+    </RouterLink>
     <div class="search-input">
       <Search /><input
         v-model="search"
@@ -99,7 +107,7 @@ async function presentation(session: Session, patch: { title?: string; pinned?: 
     </div>
     <nav class="session-list">
       <section
-        v-for="group in groups.filter(g => g.items.length)"
+        v-for="group in groups"
         :key="group.title"
       >
         <h2 class="sidebar-section">
@@ -133,7 +141,10 @@ async function presentation(session: Session, patch: { title?: string; pinned?: 
               v-if="app.statuses[s.id]?.status === 'running'"
               class="running-dot"
               :aria-label="t('running')"
-            /><FolderOpen v-else-if="s.archived" /><Pin v-else-if="s.pinned" />
+            /><FolderOpen v-else-if="s.archived" /><Clock3
+              v-else-if="planned.has(s.id)"
+              :aria-label="t('planned')"
+            /><Pin v-else-if="s.pinned" />
           </RouterLink>
           <SessionMenu
             :session="s"

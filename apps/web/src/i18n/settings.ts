@@ -1,4 +1,5 @@
 export const settingsEn = {
+  dateAndTime: 'Date and time', timezone: 'Time zone', timezoneHint: 'Used for all time displays and scheduled tasks.', timezoneSystem: 'Server system default ({timezone})', timezoneSearch: 'Search time zones…', timezoneNoMatch: 'No matching time zones.',
   runningInputScope: 'For regular conversations. IM conversations always apply new messages to the current work.',
   followUpHint: 'Queue the message and start it when the current work finishes.',
   steerHint: 'Let the Bot incorporate the message at its next opportunity.',
@@ -63,6 +64,7 @@ export const settingsEn = {
   newChatConversationHint: 'A separate conversation will be created for new messages from this chat.',
 }
 export const settingsZh: typeof settingsEn = {
+  dateAndTime: '日期与时间', timezone: '时区', timezoneHint: '统一用于时间显示与计划任务。', timezoneSystem: '服务器系统默认（{timezone}）', timezoneSearch: '搜索时区…', timezoneNoMatch: '没有匹配的时区。',
   runningInputScope: '适用于普通会话。IM 会话的新消息始终应用到当前工作。',
   followUpHint: '先将消息排队，等当前工作完成后再开始处理。',
   steerHint: '让 Bot 在下一个可处理新消息的时机调整当前工作。',

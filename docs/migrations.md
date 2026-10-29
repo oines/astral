@@ -4,6 +4,8 @@ Astral upgrades data when software is updated, rather than carrying historical r
 
 The newest unified Go binary carries every supported historical SQL/Go migration. Upgrading from an old release downloads only the latest release, then applies the missing data steps in order. It does not install intermediate Apps or fetch migration scripts from the network. A software release with no persisted-format change needs no empty migration.
 
+The current target is **Host schema 4 / Core format 11**. Host step 4 restores visibility of Sessions that were already archived while still bound to IM: it appends an unarchived current revision and preserves every earlier revision, IM event and Core history entry. Ordinary archived Sessions are unchanged. Binding an existing Session now clears its archive state in the same transaction.
+
 ## Ownership and version chains
 
 Host owns `astral.db`, its current `documents`, historical `versions`, encrypted credentials and other business state. Its embedded SQL files live in `internal/persistence/migrations/`; `hostGoMigrations` explicitly registers frozen Go transformations. Host's `PRAGMA user_version` is its format marker.

@@ -512,6 +512,8 @@ UI tokens、共享组件和状态文案集中维护。依赖补丁按 pnpm patch
 - 当前 Session 的有效历史、摘要、已应用观察、驱动输入及工具结果。
 - 本次允许调用的工具定义和各工具自己的用法。
 
+Host 在现有请求准备路径（预算检查与冻结之前）向 System Prompt 注入 `Current Astral identity:`，包含 `agent.id/name` 和 `session.id/source`；绑定 IM 时的 `session.conversation_id` 与本次已选择的聊天及工具保持一致。Bot 名称在下一次新请求准备时更新，Fork 使用子 Session 自身 ID。新环境快照不再包含 agent/session 身份；既有环境、历史及冻结请求不改写，复制历史中的身份不能覆盖当前 System 身份。此注入仅用于主 Agent，不替换 Probe 或压缩的独立提示词。
+
 Host 内置 System Prompt 由共同运行约定与当前绑定状态对应的输出规则组成。共同部分包括环境状态的解释、执行来源与工作目录、技能与工作区指导，以及平台能力发现入口；直接使用实际快照标题 `Current Astral environment snapshot:` 指代环境，不另造名称。未绑定 IM 的 Session 说明通过 Web assistant 文本回复，不包含 `send_message` 或 IM 触发规则；绑定 IM 的 Session 才包含绑定聊天的发送、观察和触发语义。选择依据为当前 Binding，与 `send_message` 的暴露保持一致，不依赖 Session 最初的 Web／IM 来源或用户当前使用的入口。绑定、解绑、换绑和重开同步相应提示词，Fork 按子 Session 的实际绑定选择。
 
 当前绑定 IM 时，System Prompt 统一包含 `Current IM chat:` 元数据段：`platform`、`connection-id`、`conversation-id`、`chat-type`、`chat-title`、`chat-id`，以及存在时的 `topic-id`。字段值使用 JSON 双引号字符串编码。同一绑定的信息不变时，这一段的内容和字段顺序保持稳定；名称等平台资料变化在下一次新请求准备时更新。该段明确属于聊天元数据，外部名称不作为运行指令解释。解绑或换绑更新当前段，未绑定的 Web Session 与 Fork 不包含该段；历史观察中的来源标识仍保留。每次新请求读取当前绑定与资料，已冻结请求、网络重试和恢复不改写，旧历史也不重新渲染或迁移。
@@ -522,7 +524,7 @@ Bot 的 `persona` 是一个可选文本字段。普通模型请求的 `system_pr
 
 环境快照由 Host 的同步 `CollectContext` 接口返回为 `RoleUser`、`ContextKind=astral.environment` 的普通 Context。接口接收只读边界信息，Host 负责发现、内容和去重，Core 负责预算与提交；动态环境不放入 System Prompt 或 Developer Role，不改写旧消息。当前状态由最近完整快照及其后的局部状态通知共同确定；通知只覆盖明确涉及的字段，旧状态仅作为历史。
 
-模型正文使用独立展示投影，不直接序列化内部扫描结果。保留当前 Agent、Session、绑定 Conversation、当前及可选 Computer 的 ID，以及 API base URL 和发现入口，便于定位对象与调用接口。当前电脑保留操作系统、架构、Shell、CWD、AgentHome 和可用状态；可选电脑列表省略重复的类型及架构细节。Skill／`AGENTS.md` 的 SHA256、Daemon boot ID、重复的 discovery Computer/CWD 和搜索服务内部 ID 不进入正文；搜索仅说明是否已配置。成功扫描的根目录和重复成功状态省略，缺失、失败、不完整及其必要路径仍明确说明。完整原始数据继续用于 Host 的绑定校验与去重，API／RPC 数据结构保持不变。Skill 正文变化通过具体路径及重新读取提示表达，电脑重启通过状态说明表达，不要求模型比较哈希或启动标识。
+模型正文使用独立展示投影，不直接序列化内部扫描结果。当前 Agent、Session 和绑定 Conversation 的身份由 System 提供；环境保留当前及可选 Computer 的 ID，以及 API base URL 和发现入口，便于定位对象与调用接口。当前电脑保留操作系统、架构、Shell、CWD、AgentHome 和可用状态；可选电脑列表省略重复的类型及架构细节。Skill／`AGENTS.md` 的 SHA256、Daemon boot ID、重复的 discovery Computer/CWD 和搜索服务内部 ID 不进入正文；搜索仅说明是否已配置。成功扫描的根目录和重复成功状态省略，缺失、失败、不完整及其必要路径仍明确说明。完整原始数据继续用于 Host 的绑定校验与去重，API／RPC 数据结构保持不变。Skill 正文变化通过具体路径及重新读取提示表达，电脑重启通过状态说明表达，不要求模型比较哈希或启动标识。
 
 初始完整快照含 `current_model`：`name`、`id`、`context_window` 和 `vision`。信息来自请求实际采用的版本化 Model Profile 及生效 override，不能按名字猜测能力；缺失视觉声明使用 `unknown`，窗口大小不是剩余 token 数。模型状态独立于电脑环境指纹。单独切换模型或修改其有效窗口／视觉能力时，只追加 `ContextKind=astral.model` 的简短 Host 通知，说明前后模型及当前能力，不重复电脑、技能、工作区指导和 API 地址。
 
@@ -657,7 +659,7 @@ Telegram 的 `/chat_id`（或 `/chat_id@Bot用户名`）是 Host 直接处理的
 }
 ```
 
-所有平台身份 ID 使用字符串。`event_id` 标识一次事件，平台 `message.id` 标识消息；编辑和撤回产生新的事件，不能用消息 ID 把合法修订一起去重。顺序依据 Host 接收入档顺序与持久序号，显示时间保留平台发送时间及时区。
+所有平台身份 ID 使用字符串。`event_id` 标识一次事件，平台 `message.id` 标识消息；编辑和撤回产生新的事件，不能用消息 ID 把合法修订一起去重。顺序依据 Host 接收入档顺序与持久序号，IMStore 保留平台发送与编辑的原始时刻。仅在新模型观察构造时，将时间转换到 Astral 全局时区后渲染；不修改原事件，也不重写此前的观察、环境快照、摘要或冻结请求。
 
 跨 Connection、跨群、跨 Topic 的标识必须可区分。平台未提供的用户名、引用正文或群标题可以为空，不虚构。
 
@@ -857,7 +859,7 @@ Server 在派发每条 `exec_command` 前生成独立的高熵随机凭据，仅
 
 凭据跟随真实进程，而非一次工具调用：返回异步 `session_id` 后继续有效，`write_stdin` 发送输入或读取输出不另签发。启动失败、进程退出、主动终止、原连接失效或 Server 重启后失效，退出时不等待输出读取完才撤销。每次请求仍检查当前 Bot、Session 和电脑授权；权限撤销立即阻止调用。撤销同时取消该凭据尚在执行的请求，但不能回滚已经接受的发送或其他已发生的副作用。
 
-`GET /v1/capabilities` 是统一发现入口，返回调用与身份范围说明、按用途组织的能力及其 `read_url`，并链接完整 OpenAPI。`GET /v1/capabilities/{id}` 按需提供历史、聊天、文件或环境能力的用途、作用范围、行为与错误规则、请求示例及该能力的 OpenAPI 子集。子集直接取实际注册的路由、请求／响应 schema 及其传递引用，不能另维护一份参数定义；完整契约与每个能力子集均声明独立的 command Bearer 安全方案，并包含其定义。平台能力按账号继续发现，不将某个平台的能力泛化到所有账号。
+`GET /v1/capabilities` 是统一发现入口，返回调用与身份范围说明、按用途组织的能力及其 `read_url`，并链接完整 OpenAPI。`GET /v1/capabilities/{id}` 按需提供历史、会话管理、计划任务、聊天、文件或环境能力的用途、作用范围、行为与错误规则、请求示例及该能力的 OpenAPI 子集。子集直接取实际注册的路由、请求／响应 schema 及其传递引用，不能另维护一份参数定义；完整契约与每个能力子集均声明独立的 command Bearer 安全方案，并包含其定义。平台能力按账号继续发现，不将某个平台的能力泛化到所有账号。
 
 发送规则明确区分直接工具和 HTTP：绑定聊天优先使用当前 `send_message` schema 支持的文字与附件；其执行标识由 Host 提供。`Idempotency-Key` 仅是 HTTP 发送接口的必需请求头，在发现文档及 OpenAPI 中声明。文件文档同时说明 Web 文件引用、IM 原件下载及图片预览省略的区别。
 
@@ -894,6 +896,8 @@ Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用�
 | 可见会话 | `GET /v1/conversations` | 当前 Agent 可见的 Conversation |
 | IM 查询 | `GET /v1/conversations/{id}/messages` | 先按 q 过滤，再按 after/limit 分页，保留消息与附件元数据 |
 | Session 目录 | `GET /v1/sessions` | 当前 Agent 的全部 Session，按最近活动排序，可过滤并完整分页 |
+| Session 管理 | `PATCH /v1/sessions/{id}` | 同 Bot 的会话重命名、归档或恢复；绑定 IM 的会话拒绝改名和归档变更 |
+| 计划任务 | `GET/POST /v1/schedules`、`GET/PATCH/DELETE /v1/schedules/{id}` | 同 Bot 的持久计划任务，与 Owner UI 共用数据和业务校验 |
 | 历史搜索 | `POST /v1/sessions/search` | 跨 Session 或限定 Session 的关键词命中片段，每个命中可直接展开 |
 | 历史读取 | `GET /v1/sessions/{id}/history` | 分页读取文本，或围绕搜索位置展开前后文与长文本范围 |
 | 可用 Computer | `GET /v1/computers` | 当前 Agent 的允许集合和状态 |
@@ -1078,6 +1082,22 @@ Astral Core monorepo 使用一个 Go module，Core 根包管理通用会话，Mo
 
 Agent 选择 Default Model；Session 临时选模不改变 Agent 默认值，也不修改已经开始的 Attempt。全局凭据由 Server 管理，不注入 Computer 的命令环境。
 
+### 全局时区
+
+`Preferences.timezone` 是当前 Astral 部署共享的 IANA 时区；空值表示使用这台安装主机的系统环境时区，包括进程显式设置的 `TZ`，不是浏览器设备或所选 Computer 的时区。系统探测保留真实时区与完整夏令时规则，时区资料随程序提供。通用设置直接选择并自动保存，网页、Desktop、模型新消息和计划调度共享这一个设置，不提供每个任务独立的时区字段。
+
+消息与回复的界面日期、今天／昨天分界及完整时间按全局时区显示；修改设置只重新呈现绝对时刻，不改变原始记录。新 Web 输入、IM 观察、计划输入与 Probe 当前时间按新设置构造；历史模型上下文、环境快照、摘要与已冻结请求保持原字节，网络重试复用原冻结载荷。环境快照只包含稳定的当前时区名称，不增加每轮变化的当前时间。
+
+### 计划任务
+
+计划任务属于一个 Bot，可向指定 Session 投递 prompt，或选择每次新建独立会话。`session_mode=existing`（默认）使用同 Bot 的 `session_id`；Gateway 创建时省略 ID 使用当前 Session。`session_mode=new` 不传 `session_id`，每次到点按稳定 occurrence 身份幂等创建一个新 Session，使用 Bot 当时默认模型及电脑，不复制旧历史、Fork 来源或 IM 绑定；`last_session_id` 指向最近一次实际创建的会话。Gateway 的 Bot 身份只来自执行绑定；Owner UI 与 Gateway 管理同一份任务，双方都能创建、查询、修改、暂停、恢复和删除。任务配置包括标题、执行方式、目标、prompt、启用状态及 timing；`once` 使用含偏移或 `Z` 的绝对 RFC3339 时间，UI 的日期时间输入按全局时区解释后转换为绝对时刻；`cron` 使用五字段表达式，始终按全局时区计算，没有 `timing.timezone`。更改全局时区后，重复任务重新计算下一个未来时刻；已经保存的一次性任务保留原绝对执行时刻，仅显示方式随时区改变。
+
+调度器随 Server 运行，Desktop 完全退出后也停止。Server 启动时跳过全部已经错过的时刻：一次性任务标记已错过并结束；重复任务计算下一个未来时刻，不补投、不积压。暂停清空下一次时间，恢复时重新计算；过期的一次任务需要先改为未来时间。普通会话归档不隐式暂停计划；永久删除会话或 Bot 时清理所属任务，Fork 不复制计划。
+
+到点后使用现有 Core Steer 接口，空闲时启动，忙碌时在下一个可处理边界接收补充。每次投递冻结名称、正文、计划时间与目标，使用稳定 occurrence/input 身份；先持久化领取，再投递，重启后仅核对持久回执，不重发未确认接受的旧时刻。`delivered` 只表示会话已持久接收，不表示 Agent 已完成工作或向 IM 发信。停用或删除阻止后续投递，不撤回已接受输入。临时 Gateway Token 不保存在任务中，执行沿用目标会话当前模型、电脑与权限。
+
+计划输入保留 `source=schedule`、任务 ID、标题、计划时间与实际接收时间，正文是 prompt；IM 绑定目标附显式发送提醒。UI 在右侧显示来源标记和任务标题；普通 Owner 消息保持原呈现。调度使用 Host `documents` 的新 kind，不改变既有 Host/Core 格式，不改写历史，也无需数据转换。
+
 ### Web Search
 
 Settings 维护全局搜索实例，支持 Tavily、Exa、DeepSeek Search、Brave、Google Custom Search、Sogou／腾讯云、Serper、SearXNG、Jina、Bocha、DuckDuckGo 和 Yandex。Bing 不提供入口。配置字段由后端适配器目录定义；API Key、腾讯云 SecretId / SecretKey 均存入加密凭据库，普通配置文档只保存凭据引用与已配置的字段名。旧版 Tavily / Exa 单密钥记录继续有效。
@@ -1094,7 +1114,7 @@ Settings 维护全局搜索实例，支持 Tavily、Exa、DeepSeek Search、Brav
 
 ### 主界面
 
-Transcript 是主工作区。Sidebar 包含 New Session、Search、NOW、PINNED、RECENT 和 Settings；Agent 作为 Session 的身份或筛选信息，不默认展开为 Agent → Session 的多层后台导航。
+Transcript 是主工作区。Sidebar 包含新会话、计划任务、搜索和设置。会话按“正在进行 → 已计划 → Telegram → QQ → 微信 → 飞书 → 固定 → 最近”优先级只出现一次；只按当前 IM 绑定分平台，QQ 官方与 NapCat 同组。空组不显示，切换 Bot 与搜索使用过滤后的可见结果。有启用且下一次时间存在、使用固定 Session 的任务才计入已计划；每次新建模式在任务页管理，新建的会话按运行状态进入正在进行或最近。所有任务及其暂停、结束和错误状态仍可在独立计划任务页面管理。Agent 作为 Session 的身份或筛选信息，不默认展开为 Agent → Session 的多层后台导航。
 
 Sidebar 可以完全折叠，不保留固定 icon rail。主界面没有额外产品级 Top Bar、永久第三栏或常驻 Inspector。点击文件或附件时，才开启可调整大小、可关闭的 Contextual Surface。执行详情、命令输出、Diff 和搜索来源在 Transcript 原地展开，不挤出常驻侧栏。会话标题和分支信息不作为占用纵向空间的 Transcript banner。
 
@@ -1277,7 +1297,7 @@ Host 不能假设业务数据库写入、Core 接收输入和平台外部发送�
 
 重新打开只恢复已提交事实，不自动继续，不恢复半截流或退避计时。需要执行时显式 Continue。输入、环境、队列消费和首个 Attempt 输入引用在同一事务提交；提交前中断重新准备，提交后而回复未确认时用新 Attempt 重建原冻结输入，新到达的输入继续排队。成功消息与 Attempt 完成原子提交，已经确认的回复不会重新请求。模型远端结果未知时不承诺恰好一次；效果未知的工具仍要求先核查。
 
-当前基线为 Host schema 3 / Core format 11。本次模型与会话重构不提供 Core format 10 或更早格式的转换与兼容读取；用户历史不批量清洗或删除。Host 与 Core 分别维护 Goose 顺序迁移链；最新统一 Go 二进制携带全部已发布 SQL 与冻结 Go 转换，按数据库账本顺序补齐缺失步骤，不下载或安装中间应用版本。已发布迁移不可修改、删除或乱序，早于基线的未公开格式与未知未来格式直接拒绝；正常业务读取只处理当前格式，不保留历史兼容分支。
+当前基线为 Host schema 3 / Core format 11，目标为 Host schema 4 / Core format 11。Host 4 为旧版仍绑定 IM 但已归档的会话追加解除归档版本，保留全部历史版本与聊天上下文；普通归档会话不变。绑定已有会话时同事务解除归档，避免再产生不可见的绑定会话。本次模型与会话重构不提供 Core format 10 或更早格式的转换与兼容读取；用户历史不批量清洗或删除。Host 与 Core 分别维护 Goose 顺序迁移链；最新统一 Go 二进制携带全部已发布 SQL 与冻结 Go 转换，按数据库账本顺序补齐缺失步骤，不下载或安装中间应用版本。已发布迁移不可修改、删除或乱序，早于基线的未公开格式与未知未来格式直接拒绝；正常业务读取只处理当前格式，不保留历史兼容分支。
 
 Desktop 管理的 Server 与独立 Server 在启动业务前取得数据目录独占锁，恢复中断的升级并检查两个数据库；需要迁移时先一致备份 Server 数据库、密钥和必要配置，再写恢复日志并转换。单步数据、格式标记及账本在同一事务提交；跨库和文件的整体恢复由统一升级入口协调。数据库打开和持久状态准备成功后，在任何本地控制、IM 或 HTTP 开始接受工作之前确认升级并移除恢复日志。确认前失败先关闭数据库使用者并恢复整套备份，确认前进程崩溃由下次启动根据日志恢复；确认后不再通过旧恢复日志覆盖可能已经接受的新工作。Linux 安装脚本的后续激活检查失败时，只根据本次新增升级记录恢复对应快照，不恢复无关历史备份，也不宣称 Desktop 任意失败都会自动回退程序。新建数据库直接创建当前结构与完整账本，不重放历史转换；持久运行使用 SQLite，临时会话可使用 Memory，JSONL 仅用于历史导出。迁移与恢复的维护命令见[迁移契约](docs/migrations.md)。
 
@@ -1445,6 +1465,6 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | 业务专用静默结束工具 | 正常结束且未显式发送即保持沉默；Core 通用结束能力保留 |
 | 每轮重建全部群历史 | Astral 持续注入并 compact；Probe 只读取旁观快照，不改写主 Session 历史 |
 | Memoh 的全部后端与产品界面 | 参考前端技术和工程组织；Astral 按自己的 Go/Computer 架构与 Transcript UI 实现 |
-| 新增独立 Instructions、定时任务或复杂规则后台的讨论建议 | 未采纳为当前需求，不因此扩张本规格范围 |
+| 新增独立 Instructions 或复杂规则后台的讨论建议 | 未采纳为当前需求，不因此扩张本规格范围；计划任务按第 10 节单独实现 |
 
 本规格与 UI UX 规范共同构成 Astral 当前实现与验收的基线：本文负责业务和执行契约，UI UX 规范负责界面组织与交互。后续更改应同步更新相关决策、接口行为与验收场景，避免留下互相冲突的规则。

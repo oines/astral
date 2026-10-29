@@ -8,6 +8,7 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/schedule"
 )
 
 // LockAgent keeps creation, including Core Fork creation, on one side of the
@@ -116,6 +117,9 @@ func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) er
 			return domain.Conflict("Bot deletion intent is missing")
 		}
 		if err := tx.PurgeAgentData(ctx, id); err != nil {
+			return err
+		}
+		if err := schedule.PurgeAgent(ctx, tx, id); err != nil {
 			return err
 		}
 		if err := tx.Purge(ctx, "agents", id, current.Revision); err != nil {

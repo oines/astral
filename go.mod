@@ -10,6 +10,7 @@ require (
 	github.com/oines/astral-core v0.0.0-20261029093209-79316a328810
 	github.com/pquerna/otp v1.5.0
 	github.com/pressly/goose/v3 v3.26.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.58.0

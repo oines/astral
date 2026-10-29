@@ -346,8 +346,30 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 	return record, nil
 }
 
-// SaveSessionPresentation changes only Owner presentation fields.
+// SaveSessionPresentation changes presentation fields for the Owner.
 func (s *Service) SaveSessionPresentation(ctx context.Context, id string, title *string, pinned, archived *bool) error {
+	return s.saveSessionPresentation(ctx, "", id, title, pinned, archived)
+}
+
+// SaveAgentSessionPresentation exposes title and archive actions within one Bot.
+// Check ownership before opening a runtime so foreign Sessions stay untouched.
+func (s *Service) SaveAgentSessionPresentation(ctx context.Context, agentID, id string, title *string, archived *bool) error {
+	if agentID == "" {
+		return domain.Invalid("Bot identity is required")
+	}
+	return s.saveSessionPresentation(ctx, agentID, id, title, nil, archived)
+}
+
+func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id string, title *string, pinned, archived *bool) error {
+	if agentID != "" {
+		var record domain.Session
+		if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
+			return err
+		}
+		if record.AgentID != agentID {
+			return domain.Forbidden("Session belongs to another Bot")
+		}
+	}
 	r, err := s.open(ctx, id)
 	if err != nil {
 		return err
@@ -360,6 +382,9 @@ func (s *Service) SaveSessionPresentation(ctx context.Context, id string, title 
 	}
 	if record.Deletion != nil {
 		return domain.Missing("Session", id)
+	}
+	if record.BindingID != "" && archived != nil {
+		return domain.Conflict("a bound Session cannot be archived")
 	}
 	if title != nil {
 		if record.BindingID != "" {
