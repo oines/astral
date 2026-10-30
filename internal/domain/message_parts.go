@@ -31,9 +31,9 @@ type MessageForward struct {
 	Messages   []ForwardedMessage `json:"messages,omitempty"`
 	// Raw retains inline nodes omitted from the bounded normalized preview.
 	// It belongs to the adapter; model rendering never emits this payload.
-	Raw        json.RawMessage `json:"raw,omitempty"`
-	Status     string          `json:"status" enum:"inline,unexpanded,truncated,unavailable"`
-	Total      int             `json:"total,omitempty"`
+	Raw    json.RawMessage `json:"raw,omitempty"`
+	Status string          `json:"status" enum:"inline,unexpanded,truncated,unavailable"`
+	Total  int             `json:"total,omitempty"`
 }
 
 type ForwardedMessage struct {
