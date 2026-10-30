@@ -9,6 +9,7 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/messages"
+	"github.com/oines/astral/internal/persistence"
 )
 
 func activityTime(e core.Entry) int64 {
@@ -86,6 +87,11 @@ func (s *Service) catalog(ctx context.Context, agentID string, ids []string) ([]
 			return nil, err
 		}
 		if session.AgentID == agentID && session.Deletion == nil {
+			if err := persistence.CheckSessionAccess(ctx, session); domain.IsMissing(err) {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
 			sessions = append(sessions, session)
 		}
 	}

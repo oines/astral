@@ -94,6 +94,7 @@ type SessionPresentation struct {
 	Title    *string `json:"title,omitempty"`
 	Pinned   *bool   `json:"pinned,omitempty"`
 	Archived *bool   `json:"archived,omitempty"`
+	Private  *bool   `json:"private,omitempty"`
 }
 type SelectModel struct {
 	ProfileID string                 `json:"profile_id"`
@@ -625,7 +626,7 @@ func (a *API) sessionRoutes() {
 		return h.View(r.Context(), r.PathValue("id"))
 	})
 	route[SessionPresentation, httpcontract.OK](a, "PATCH", "/sessions/{id}", "updateSession", "Sessions", func(r *http.Request, input SessionPresentation) (httpcontract.OK, error) {
-		return httpcontract.OK{OK: true}, h.SaveSessionPresentation(r.Context(), r.PathValue("id"), input.Title, input.Pinned, input.Archived)
+		return httpcontract.OK{OK: true}, h.SaveSessionPresentation(r.Context(), r.PathValue("id"), input.Title, input.Pinned, input.Archived, input.Private)
 	})
 	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/sessions/{id}", "deleteSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.DeleteSession(r.Context(), r.PathValue("id"), revision(r))

@@ -81,6 +81,17 @@ async function transcript(options: { height?: number; hasMore?: boolean; reduced
 }
 
 describe('transcript history scroll anchoring', () => {
+  it('fills a short initial tail without requiring an impossible upward scroll', async () => {
+    const t = await transcript({ height: 600 })
+    expect(t.loadOlder).toHaveBeenCalledTimes(1)
+    t.prepend(1000)
+    t.finishLoad()
+    await nextTick()
+    t.frame()
+    expect(t.el.scrollTop).toBe(1000)
+    expect(t.loadOlder).toHaveBeenCalledTimes(1)
+  })
+
   it('finds the same process item when prepending reuses its old group key and DOM for an earlier block', async () => {
     const t = await transcript()
     const process = t.nodes[0]!

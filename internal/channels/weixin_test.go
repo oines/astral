@@ -396,10 +396,14 @@ func TestWeixinUploadEncryptsBeforeSingleMessageSend(t *testing.T) {
 		mime      string
 		mediaType int
 		itemType  int
+		partType  string
+		mediaKind string
 	}{
-		{"text/plain", 3, 4}, {"image/png", 1, 2}, {"video/mp4", 2, 5}, {"audio/mpeg", 3, 4},
+		{"text/plain", 3, 4, "", ""}, {"image/png", 1, 2, "", ""}, {"video/mp4", 2, 5, "", ""}, {"audio/mpeg", 3, 4, "", ""},
+		{"image/png", 3, 4, "file", ""}, {"image/png", 1, 2, "image", ""},
+		{"video/mp4", 3, 4, "file", ""}, {"video/mp4", 2, 5, "file", "video"},
 	} {
-		t.Run(test.mime, func(t *testing.T) {
+		t.Run(test.mime+"/"+test.partType+"/"+test.mediaKind, func(t *testing.T) {
 			plain := []byte("file bytes needing PKCS7 padding")
 			var key []byte
 			var sends, uploads atomic.Int64
@@ -466,7 +470,20 @@ func TestWeixinUploadEncryptsBeforeSingleMessageSend(t *testing.T) {
 			defer server.Close()
 			w := weixinTestAdapter(t, server.URL, nil)
 			_ = w.putWire(t.Context(), "context", "peer", "context-for-peer")
-			receipt, err := w.Send(t.Context(), Send{Target: w.conversation("peer"), File: io.NopCloser(bytes.NewReader(plain)), OpenFile: func(context.Context) (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(plain)), nil }, FileName: "../../report.txt", MediaType: test.mime, Size: int64(len(plain))})
+			var opens atomic.Int64
+			openFile := func(context.Context) (io.ReadCloser, error) {
+				opens.Add(1)
+				return io.NopCloser(bytes.NewReader(plain)), nil
+			}
+			send := Send{Target: w.conversation("peer"), File: io.NopCloser(bytes.NewReader(plain)), OpenFile: openFile, FileName: "../../report.txt", MediaType: test.mime, Size: int64(len(plain))}
+			if test.partType != "" {
+				send.File = nil
+				send.Parts = []SendPart{{Type: test.partType, MediaKind: test.mediaKind, FileName: send.FileName, MediaType: send.MediaType, Size: send.Size, OpenFile: openFile}}
+			}
+			receipt, err := w.Send(t.Context(), send)
+			if test.partType != "" && opens.Load() != 2 {
+				t.Errorf("immutable source was not opened once for checksum and once for upload: %d", opens.Load())
+			}
 			if err != nil || len(receipt.MessageIDs) != 1 || receipt.MessageIDs[0] != "42" || sends.Load() != 1 || uploads.Load() != 1 {
 				t.Fatalf("media receipt = %#v, %v, sends=%d uploads=%d", receipt, err, sends.Load(), uploads.Load())
 			}

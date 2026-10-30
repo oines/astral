@@ -23,6 +23,10 @@ func TestForkClonesSelectedHistoryIntoIndependentRollout(t *testing.T) {
 	}
 	boundary := submit(f.session.ID, "copied-boundary")
 	parent := submit(f.session.ID, "parent-later")
+	private := true
+	if err := f.service.SaveSessionPresentation(f.ctx, f.session.ID, nil, nil, nil, &private); err != nil {
+		t.Fatal(err)
+	}
 	childID := domain.ID("session")
 	child, err := f.service.Fork(f.ctx, f.session.ID, boundary.HeadID, "copy", childID)
 	if err != nil {
@@ -37,6 +41,9 @@ func TestForkClonesSelectedHistoryIntoIndependentRollout(t *testing.T) {
 	}
 	if child.Source != "web" || child.BindingID != "" || child.ConversationID != "" {
 		t.Fatal("Fork retained inbound binding")
+	}
+	if !child.Private {
+		t.Fatal("Fork of a private Session was made public")
 	}
 	check := func(id, query string, want int) {
 		t.Helper()

@@ -69,6 +69,17 @@ type Send struct {
 	MediaType string
 	Size      int64
 	OpenFile  func(context.Context) (io.ReadCloser, error)
+	Parts     []SendPart
+}
+
+// SendPart contains a frozen, authorized source. Adapters open each source only
+// when preparing its platform request and must close it on every outcome.
+type SendPart struct {
+	Type, Text, UserID, Name string
+	MediaKind                string
+	FileName, MediaType      string
+	Size                     int64
+	OpenFile                 func(context.Context) (io.ReadCloser, error)
 }
 type Receipt struct{ MessageIDs []string }
 type SendError struct {

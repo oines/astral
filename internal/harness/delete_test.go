@@ -28,7 +28,7 @@ func (s *deleteFaultStore) DeleteSession(ctx context.Context, id string) error {
 func archiveForDeletion(t *testing.T, f *fixture, id string) domain.Session {
 	t.Helper()
 	archived := true
-	if err := f.service.SaveSessionPresentation(f.ctx, id, nil, nil, &archived); err != nil {
+	if err := f.service.SaveSessionPresentation(f.ctx, id, nil, nil, &archived, nil); err != nil {
 		t.Fatal(err)
 	}
 	var record domain.Session

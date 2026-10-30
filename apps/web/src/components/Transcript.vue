@@ -5,9 +5,9 @@ import { useClipboard } from '../composables/useClipboard'
 import { useI18n } from 'vue-i18n'
 import { Button, Popover } from '@astral/ui'
 import { ArrowDown, Check, Clock3, Copy, Ellipsis, File, GitBranch } from '@astral/icons'
-import type { Entry, FileRef } from '../lib/types'
+import type { Content, Entry, FileRef } from '../lib/types'
 import { errorText, imageURL, object } from '../lib/api'
-import { messageText, scheduledMessage, transcriptGroups, type SessionState, type TranscriptGroup } from '../lib/session-state'
+import { durableTranscriptGroups, liveTranscriptGroups, messageText, scheduledMessage, type SessionState, type TranscriptGroup } from '../lib/session-state'
 import { useSurfaceStore } from '../stores/surface'
 import Markdown from './Markdown.vue'
 import ActivityLine from './ActivityLine.vue'
@@ -23,7 +23,12 @@ const app = useAppStore()
 const scroller = ref<HTMLElement>()
 const content = ref<HTMLElement>()
 const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor), loadOlder: () => props.loadOlder() })
-const groups = computed(() => transcriptGroups(props.state))
+const durable = computed(() => {
+  // Live deltas touch previews/tools, not this revision or the durable entries.
+  void props.state.historyRevision
+  return durableTranscriptGroups(props.state)
+})
+const groups = computed(() => liveTranscriptGroups(props.state, durable.value))
 const now = useNow({ interval: 60_000 })
 const formatTimestamp = computed(() => createMessageTimeFormatter(locale.value, app.displayTimezone))
 const timestamps = computed(() => Object.fromEntries(groups.value.filter(group => group.role === 'assistant' && !group.active).map(group => [group.key, formatTimestamp.value(group.entries.findLast(entry => messageText(entry))?.time, now.value)])))
@@ -54,6 +59,12 @@ function sender(entry: Entry) {
   return meta.source === 'im' ? String(object(meta.sender).name ?? '') : ''
 }
 function images(entry: Entry) { return (entry.message?.content ?? []).filter(p => p.type === 'image') }
+function imageDimensions(image: Content) {
+  const metadata = object(image.metadata)
+  const width = Number(metadata.width)
+  const height = Number(metadata.height)
+  return { width: width > 0 ? width : undefined, height: height > 0 ? height : undefined }
+}
 function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMessage(entry)?.deliveredAt, now.value) }
 </script>
 <template>
@@ -79,6 +90,7 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
         <section
           v-for="(group, groupIndex) in groups"
           :key="group.key"
+          v-memo="[group, now, locale, app.displayTimezone, copiedGroup, copied, copyError]"
           class="transcript-turn"
           :class="`turn-${group.role}`"
         >
@@ -150,7 +162,7 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
               class="message-images"
             >
               <a
-                v-for="(_, index) in images(entry)"
+                v-for="(image, index) in images(entry)"
                 :key="index"
                 :href="imageURL(sessionID, entry.id, index)"
                 target="_blank"
@@ -159,6 +171,9 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
                 <img
                   :src="imageURL(sessionID, entry.id, index)"
                   :alt="t('historicalImage')"
+                  :width="imageDimensions(image).width"
+                  :height="imageDimensions(image).height"
+                  decoding="async"
                   loading="lazy"
                 >
               </a>

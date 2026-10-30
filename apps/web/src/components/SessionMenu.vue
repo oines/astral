@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { Button, Menu, MenuItem } from '@astral/ui'
-import { Download, Ellipsis, FolderOpen, GitBranch, Pencil, Pin } from '@astral/icons'
+import { Download, Ellipsis, FolderOpen, GitBranch, Lock, Pencil, Pin } from '@astral/icons'
 import type { Session } from '../lib/types'
 
 defineProps<{ session: Session; busy: boolean }>()
-const emit = defineEmits<{ rename: []; presentation: [patch: { pinned?: boolean; archived?: boolean }] }>()
+const emit = defineEmits<{ rename: []; presentation: [patch: { pinned?: boolean; archived?: boolean; private?: boolean }] }>()
 const { t } = useI18n()
 </script>
 <template>
@@ -35,6 +35,13 @@ const { t } = useI18n()
       @select="emit('rename')"
     >
       <Pencil />{{ t('rename') }}
+    </MenuItem>
+    <MenuItem
+      class="menu-item"
+      :disabled="busy"
+      @select="emit('presentation', { private: !session.private })"
+    >
+      <Lock />{{ t(session.private ? 'makeSessionNonPrivate' : 'makeSessionPrivate') }}
     </MenuItem>
     <MenuItem
       class="menu-item"

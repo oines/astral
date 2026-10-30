@@ -14,6 +14,7 @@ import (
 
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/filestream"
+	"github.com/oines/astral/internal/persistence"
 )
 
 // Parameters follow the linked Bot API method. Astral supplies chat_id and the
@@ -159,6 +160,11 @@ func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBindi
 			return TelegramResult{}, domain.Forbidden("this operation requires access to the parent chat")
 		}
 	}
+	for _, key := range []string{"message_id", "message_ids"} {
+		if err := s.telegramMessagePrivacy(ctx, b.AgentID, connection, source, parameters[key]); err != nil {
+			return TelegramResult{}, err
+		}
+	}
 	if err := s.telegramNestedScope(ctx, b.AgentID, connection, target, parameters, true); err != nil {
 		return TelegramResult{}, err
 	}
@@ -240,6 +246,30 @@ func (s *Service) telegramMessageScope(ctx context.Context, chat domain.Conversa
 	}
 	return nil
 }
+
+// Parent-chat grants do not override the privacy of an archived Topic. Telegram
+// addresses messages by their parent chat even when they belong to a Topic.
+func (s *Service) telegramMessagePrivacy(ctx context.Context, agentID string, account domain.Connection, chat domain.Conversation, value any) error {
+	if _, scoped := persistence.CurrentSessionScope(ctx); !scoped || value == nil {
+		return nil
+	}
+	if ids, ok := value.([]any); ok {
+		for _, id := range ids {
+			if err := s.telegramMessagePrivacy(ctx, agentID, account, chat, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	actual, err := s.Store.MessageConversation(ctx, account.ID, chat.ExternalID, telegramID(value))
+	if domain.IsMissing(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.AuthorizeConversation(ctx, agentID, actual.ID)
+}
 func (s *Service) telegramNestedScope(ctx context.Context, agentID string, account domain.Connection, target domain.Conversation, value any, root bool) error {
 	switch v := value.(type) {
 	case map[string]any:
@@ -265,6 +295,11 @@ func (s *Service) telegramNestedScope(ctx context.Context, agentID string, accou
 		}
 		if !root && chat.TopicID != "" {
 			if err := s.telegramMessageScope(ctx, chat, v["message_id"]); err != nil {
+				return err
+			}
+		}
+		if !root {
+			if err := s.telegramMessagePrivacy(ctx, agentID, account, chat, v["message_id"]); err != nil {
 				return err
 			}
 		}

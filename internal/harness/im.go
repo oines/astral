@@ -11,9 +11,10 @@ import (
 
 type MessageArgs struct {
 	domain.MessageOptions
-	Text        string   `json:"text"`
-	ReplyTo     string   `json:"reply_to,omitempty"`
-	Attachments []string `json:"attachments,omitempty"`
+	Text        string                `json:"text"`
+	ReplyTo     string                `json:"reply_to,omitempty"`
+	Attachments []string              `json:"attachments,omitempty"`
+	Parts       []domain.OutboundPart `json:"parts,omitempty"`
 }
 
 type MessageTarget struct {
@@ -39,7 +40,7 @@ func (t sendMessageTool) Definition() core.ToolDefinition {
 // DefaultMessageTool is registered while a Session has no IM binding; it is
 // omitted from model requests until a destination has been selected.
 func DefaultMessageTool() core.ToolDefinition {
-	return core.ToolDefinition{Name: "send_message", Version: "astral-3", Sequential: true,
+	return core.ToolDefinition{Name: "send_message", Version: "astral-4", Sequential: true,
 		Description: "Send to this Session's bound chat using the Host-selected account, chat and Topic. Text may be empty when sending attachments. Attachments are Computer paths or astral-file:// references. Returns sent (true, false, or null when unconfirmed), optional message_ids and an error on failure. Assistant text alone stays in Web.",
 		Parameters:  json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"},"reply_to":{"type":"string"},"attachments":{"type":"array","items":{"type":"string","minLength":1}}},"required":["text"],"additionalProperties":false}`)}
 }
@@ -90,6 +91,16 @@ func (t sendMessageTool) Bind(ctx context.Context, inv core.Invocation) (json.Ra
 	target := MessageTarget{BindingID: record.BindingID, ConversationID: record.ConversationID}
 	for _, attachment := range args.Attachments {
 		if !strings.HasPrefix(attachment, "astral-file://") {
+			source, err := r.currentBinding(ctx)
+			if err != nil {
+				return nil, notExecuted("computer_unavailable", err)
+			}
+			target.Source = &source
+			break
+		}
+	}
+	for _, part := range args.Parts {
+		if part.Path != "" {
 			source, err := r.currentBinding(ctx)
 			if err != nil {
 				return nil, notExecuted("computer_unavailable", err)

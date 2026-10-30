@@ -35,6 +35,18 @@ func (*sendAdapter) Poll(ctx context.Context, _ string) (channels.Batch, error) 
 func (*sendAdapter) SplitText(text string) ([]string, error) { return []string{text}, nil }
 func (a *sendAdapter) Send(_ context.Context, send channels.Send) (channels.Receipt, error) {
 	a.calls.Add(1)
+	for _, part := range send.Parts {
+		if part.Type == "text" {
+			send.Text += part.Text
+		} else if part.OpenFile != nil {
+			file, err := part.OpenFile(context.Background())
+			if err != nil {
+				return channels.Receipt{}, err
+			}
+			defer file.Close()
+			send.File = file
+		}
+	}
 	if send.File != nil {
 		if _, err := io.Copy(io.Discard, send.File); err != nil {
 			return channels.Receipt{}, err
@@ -110,5 +122,20 @@ func TestSendAPIsReturnPlatformFailureAndIndependentSuccess(t *testing.T) {
 	var receipts []domain.Outbox
 	if accepted.Status != http.StatusOK || json.Unmarshal(accepted.Body, &receipts) != nil || len(receipts) != 1 || receipts[0].Status != "accepted" {
 		t.Fatalf("independent send blocked or returned pending: %+v", accepted)
+	}
+	partsBody, _ := json.Marshal(SendText{ConversationID: chat.ID, Parts: []domain.OutboundPart{{Type: "text", Text: "ordered\n"}, {Type: "file", Path: file.Path}, {Type: "text", Text: "must not follow a failed file"}}})
+	partsReply := call("/v1/im/messages", "ordered-parts", string(partsBody))
+	if partsReply.Status != http.StatusBadRequest || !strings.Contains(string(partsReply.Body), "platform rejected document") {
+		t.Fatalf("parts did not use the authenticated Computer source and shared Outbox: %+v", partsReply)
+	}
+	before := adapter.calls.Load()
+	_ = call("/v1/im/messages", "ordered-parts", string(partsBody))
+	if adapter.calls.Load() != before {
+		t.Fatal("replaying ordered parts duplicated platform sends")
+	}
+	unsupported, _ := json.Marshal(SendText{ConversationID: chat.ID, Parts: []domain.OutboundPart{{Type: "text", Text: "must never send"}, {Type: "mention", UserID: "123"}}})
+	refused := call("/v1/im/messages", "unsupported-native-mention", string(unsupported))
+	if refused.Status != http.StatusBadRequest || adapter.calls.Load() != before {
+		t.Fatalf("unsupported mention partially sent: %+v", refused)
 	}
 }

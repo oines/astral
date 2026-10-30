@@ -306,7 +306,7 @@ func (w *weixinAdapter) Download(ctx context.Context, attachment domain.Attachme
 	return Download{Body: body, Size: size, Name: attachment.Name}, nil
 }
 
-func (w *weixinAdapter) upload(ctx context.Context, send Send) (weixinItem, error) {
+func (w *weixinAdapter) upload(ctx context.Context, send Send, mediaKind string) (weixinItem, error) {
 	// iLink requires the plaintext checksum before providing an upload URL.
 	// Hash once, then reopen the same immutable Computer snapshot for encryption.
 	stopClose := context.AfterFunc(ctx, func() { _ = send.File.Close() })
@@ -323,9 +323,9 @@ func (w *weixinAdapter) upload(ctx context.Context, send Send) (weixinItem, erro
 	}
 	encryptedSize := (size/aes.BlockSize + 1) * aes.BlockSize
 	mediaType := 3
-	if strings.HasPrefix(send.MediaType, "image/") {
+	if mediaKind == "image" {
 		mediaType = 1
-	} else if strings.HasPrefix(send.MediaType, "video/") {
+	} else if mediaKind == "video" {
 		mediaType = 2
 	}
 	fileKey := domain.ID("astral_weixin_file")

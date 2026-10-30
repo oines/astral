@@ -2816,6 +2816,44 @@
         ],
         "type": "object"
       },
+      "astral_internal_domain_OutboundPart": {
+        "properties": {
+          "file_uri": {
+            "description": "For image/file only. An astral-file:// reference; mutually exclusive with path.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Optional display label for a native mention.",
+            "type": "string"
+          },
+          "path": {
+            "description": "For image/file only. Source path on the authenticated calling Computer; mutually exclusive with file_uri.",
+            "type": "string"
+          },
+          "text": {
+            "description": "For text only. Spaces and newlines are preserved; no separator is inserted between adjacent parts.",
+            "type": "string"
+          },
+          "type": {
+            "description": "Ordered content kind. Mention support depends on the selected platform.",
+            "enum": [
+              "text",
+              "mention",
+              "image",
+              "file"
+            ],
+            "type": "string"
+          },
+          "user_id": {
+            "description": "For mention only. Native platform user ID: Telegram numeric ID, NapCat QQ number, or Feishu application open_id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_Outbox": {
         "properties": {
           "agent_id": {
@@ -2852,9 +2890,6 @@
           "external_id": {
             "type": "string"
           },
-          "file_ref_id": {
-            "type": "string"
-          },
           "format": {
             "type": "string"
           },
@@ -2872,6 +2907,12 @@
           },
           "markdown_template": {
             "$ref": "#/components/schemas/astral_internal_domain_MarkdownTemplate"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_OutboxPart"
+            },
+            "type": "array"
           },
           "platform_message_ids": {
             "items": {
@@ -2892,9 +2933,6 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
-          },
-          "text": {
             "type": "string"
           },
           "title": {
@@ -2924,6 +2962,42 @@
           "connection_account_id",
           "external_id",
           "fragment"
+        ],
+        "type": "object"
+      },
+      "astral_internal_domain_OutboxPart": {
+        "properties": {
+          "file_ref_id": {
+            "type": "string"
+          },
+          "media_kind": {
+            "enum": [
+              "video",
+              "audio"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "text",
+              "mention",
+              "image",
+              "file"
+            ],
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
         ],
         "type": "object"
       },
@@ -3150,6 +3224,9 @@
             ],
             "type": "string"
           },
+          "source_session_id": {
+            "type": "string"
+          },
           "timing": {
             "$ref": "#/components/schemas/astral_internal_domain_ScheduleTiming"
           },
@@ -3306,6 +3383,9 @@
             "type": "string"
           },
           "pinned": {
+            "type": "boolean"
+          },
+          "private": {
             "type": "boolean"
           },
           "revision": {
@@ -4047,6 +4127,12 @@
           "markdown_template": {
             "$ref": "#/components/schemas/astral_internal_domain_MarkdownTemplate"
           },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_OutboundPart"
+            },
+            "type": "array"
+          },
           "reply_to": {
             "type": "string"
           },
@@ -4057,9 +4143,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "text"
-        ],
         "type": "object"
       },
       "astral_internal_gateway_SessionPresentation": {
@@ -4344,6 +4427,9 @@
             "type": "array"
           },
           "pinned": {
+            "type": "boolean"
+          },
+          "private": {
             "type": "boolean"
           },
           "profile_id": {
@@ -5303,6 +5389,9 @@
             "type": "boolean"
           },
           "pinned": {
+            "type": "boolean"
+          },
+          "private": {
             "type": "boolean"
           },
           "title": {
@@ -11769,6 +11858,81 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{id}/timeline": {
+      "get": {
+        "operationId": "sessionTimeline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trace",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_gateway_HistoryPage"
                 }
               }
             },

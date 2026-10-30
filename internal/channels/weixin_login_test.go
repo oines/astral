@@ -290,7 +290,7 @@ func TestWeixinServicePollingScopedResolutionAndDurableFileReceipts(t *testing.T
 	}
 	request := SendRequest{IntentID: "caption-and-file", FileURI: filestream.URL(file), Text: "report caption"}
 	queued, err := s.Enqueue(p.Context, p.Agent.ID, p.Session.ID, request)
-	if err != nil || len(queued) != 2 || queued[0].FileRefID != "" || queued[0].Text != "report caption" || queued[1].FileRefID == "" || queued[1].Text != "" {
+	if err != nil || len(queued) != 2 || len(queued[0].Parts) != 1 || queued[0].Parts[0].Text != "report caption" || len(queued[1].Parts) != 1 || queued[1].Parts[0].FileRefID == "" {
 		t.Fatalf("caption/file effects did not get independent receipts: %#v %v", queued, err)
 	}
 	for _, out := range queued {

@@ -559,7 +559,7 @@ func (n *napcat) Send(ctx context.Context, send Send) (Receipt, error) {
 	if err != nil || !napcatID.MatchString(id) || send.Target.TopicID != "" {
 		return Receipt{}, &SendError{Message: "invalid NapCat destination"}
 	}
-	if len([]rune(send.Text)) > n.Capabilities().TextLimit || send.File == nil && strings.TrimSpace(send.Text) == "" {
+	if len(send.Parts) == 0 && (len([]rune(send.Text)) > n.Capabilities().TextLimit || send.File == nil && strings.TrimSpace(send.Text) == "") {
 		return Receipt{}, &SendError{Message: "NapCat text is empty or exceeds the text limit"}
 	}
 	segments := []map[string]any{}
@@ -576,10 +576,47 @@ func (n *napcat) Send(ctx context.Context, send Send) (Receipt, error) {
 		}
 		segments = append(segments, map[string]any{"type": "reply", "data": map[string]string{"id": send.ReplyTo}})
 	}
-	if send.Text != "" {
+	file, size := send.File, send.Size
+	if len(send.Parts) > 0 {
+		var media *SendPart
+		textLength := 0
+		for i := range send.Parts {
+			part := &send.Parts[i]
+			switch part.Type {
+			case "text":
+				textLength += len([]rune(part.Text))
+				segments = append(segments, map[string]any{"type": "text", "data": map[string]string{"text": part.Text}})
+			case "mention":
+				if kind != "group" || !napcatID.MatchString(part.UserID) {
+					return Receipt{}, &SendError{Message: "NapCat mentions require a group chat and a numeric user ID"}
+				}
+				segments = append(segments, map[string]any{"type": "at", "data": map[string]string{"qq": part.UserID}})
+			case "image", "file":
+				if media != nil || part.OpenFile == nil {
+					return Receipt{}, &SendError{Message: "NapCat fragments require at most one readable media source"}
+				}
+				media = part
+				segments = append(segments, map[string]any{"type": part.Type, "data": map[string]string{"file": "base64://" + filePlaceholderValue, "name": part.FileName}})
+			default:
+				return Receipt{}, &SendError{Message: "unsupported NapCat message part"}
+			}
+		}
+		if textLength > n.Capabilities().TextLimit {
+			return Receipt{}, &SendError{Message: "NapCat text exceeds the text limit"}
+		}
+		if media != nil {
+			var err error
+			file, err = media.OpenFile(ctx)
+			if err != nil {
+				return Receipt{}, &SendError{Message: "NapCat source file could not be opened before sending"}
+			}
+			defer file.Close()
+			size = media.Size
+		}
+	} else if send.Text != "" {
 		segments = append(segments, map[string]any{"type": "text", "data": map[string]string{"text": send.Text}})
 	}
-	if send.File != nil {
+	if len(send.Parts) == 0 && send.File != nil {
 		fileType := "file"
 		if strings.HasPrefix(send.MediaType, "image/") {
 			fileType = "image"
@@ -597,8 +634,8 @@ func (n *napcat) Send(ctx context.Context, send Send) (Receipt, error) {
 		ID qqValue `json:"message_id"`
 	}
 	var sendBody any = params
-	if send.File != nil {
-		sendBody = streamFileJSON(params, filePlaceholderValue, send.File, send.Size)
+	if file != nil {
+		sendBody = streamFileJSON(params, filePlaceholderValue, file, size)
 	}
 	if err := n.call(ctx, action, sendBody, &result); err != nil {
 		var api *napcatAPIError

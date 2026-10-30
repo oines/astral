@@ -250,13 +250,13 @@ func (s *Service) Core(ctx context.Context, id string) (*core.Session, error) {
 	return r.core.Load(), nil
 }
 func (s *Service) CreateSession(ctx context.Context, agentID, title string) (domain.Session, error) {
-	return s.createSession(ctx, agentID, title, domain.ID("session"), "web", false)
+	return s.createSession(ctx, agentID, title, domain.ID("session"), "web", false, false)
 }
 
 // createSession also serves scheduled new conversations. Their deterministic
 // occurrence ID permits reopening an already created Host record without
 // creating a second conversation or copying another Session's history.
-func (s *Service) createSession(ctx context.Context, agentID, title, id, source string, reuse bool) (domain.Session, error) {
+func (s *Service) createSession(ctx context.Context, agentID, title, id, source string, reuse, private bool) (domain.Session, error) {
 	release, err := s.LockAgent(ctx, agentID)
 	if err != nil {
 		return domain.Session{}, err
@@ -282,7 +282,7 @@ func (s *Service) createSession(ctx context.Context, agentID, title, id, source 
 		return domain.Session{}, err
 	}
 	record := domain.Session{Meta: domain.Meta{ID: id}, AgentID: agentID, Title: strings.TrimSpace(title), TitleSource: domain.TitleManual, Source: source,
-		ComputerID: agent.DefaultComputerID}
+		ComputerID: agent.DefaultComputerID, Private: private}
 	if defaultSessionTitle(record.Title) {
 		record.Title = "New session"
 		record.TitleSource = domain.TitleDefault

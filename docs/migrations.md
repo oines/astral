@@ -4,7 +4,7 @@ Astral upgrades data when software is updated, rather than carrying historical r
 
 The newest unified Go binary carries every supported historical SQL/Go migration. Upgrading from an old release downloads only the latest release, then applies the missing data steps in order. It does not install intermediate Apps or fetch migration scripts from the network. A software release with no persisted-format change needs no empty migration.
 
-The current target is **Host schema 4 / Core format 11**. Host step 4 restores visibility of Sessions that were already archived while still bound to IM: it appends an unarchived current revision and preserves every earlier revision, IM event and Core history entry. Ordinary archived Sessions are unchanged. Binding an existing Session now clears its archive state in the same transaction.
+The current target is **Host schema 6 / Core format 11**. Host step 4 restores visibility of Sessions that were already archived while still bound to IM. Step 5 initializes existing Sessions as non-private. Step 6 converts current and historical Outbox business records to one ordered `parts` representation while preserving their revisions, timestamps, outcomes, receipts and idempotency keys. It also restores the pre-step-5 activity timestamp for Sessions whose only change was that initialization, appending a correction revision without changing earlier Session versions. Later real edits keep their own timestamps. IM events and Core history retain their original bytes. Binding an existing Session clears its archive state in the same transaction.
 
 ## Ownership and version chains
 

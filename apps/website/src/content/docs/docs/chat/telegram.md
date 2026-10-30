@@ -46,6 +46,8 @@ The Agent can use the existing Computer API's `setMessageReaction` operation in 
 
 ## Files and troubleshooting
 
+The Bot can send ordered text, native user mentions, images, and files. Markdown and HTML use Telegram Rich Messages, including media embedded between text sections. A mention can use the numeric user ID even without a username. Files stream from the computer to Telegram; no public image host is needed. Spaces and newlines in text are preserved. Use the Gateway capability documentation for the actual `parts` schema and account permissions.
+
 Text, images, and files are supported. Request an image as an original document when needed. Telegram's own size and format limits still apply.
 
 If connected but silent, check chat authorization, Topic ID, message visibility, model access, and computer availability. Channels also need the relevant sending permissions.

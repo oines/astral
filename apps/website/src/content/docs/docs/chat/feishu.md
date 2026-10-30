@@ -41,6 +41,8 @@ Private messages, mentions, and replies to the Bot can trigger tasks directly. R
 
 Text, images, files, and supported message resources are available. File and explanatory text sends are separate; successful text does not prove successful file delivery.
 
+Ordered sends can combine text, native user mentions, and uploaded images in a post. Mentions use the user's application-scoped `open_id` (`ou_…`), not their displayed name. Markdown formatting is preserved; images occupy their own paragraphs. Generic files remain separate ordered messages with independent results.
+
 ## Message reactions
 
 Reaction additions and removals enter context as separate events retaining the original message ID, the supplied user or app operator, and Feishu's emoji type. They do not rewrite the original message. Astral resolves the chat from its archive first, consulting the platform when needed. An unknown original that can no longer be read is not fabricated or allowed to block later events.

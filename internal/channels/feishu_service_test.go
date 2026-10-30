@@ -154,7 +154,7 @@ func TestFeishuServiceActivatesAndContinuesOnlyThroughExplicitSend(t *testing.T)
 					t.Fatalf("Outbox lost its durable Feishu target snapshot: %#v", record)
 				}
 				fact, err := p.Store.Message(p.Context, chat.ID, record.PlatformMessageIDs[0])
-				if err != nil || !fact.Self || fact.Text != record.Text {
+				if err != nil || !fact.Self || fact.Text != archiveMessageText(record) {
 					t.Fatalf("platform receipt was not archived as the accepted send: %#v, %v", fact, err)
 				}
 			}

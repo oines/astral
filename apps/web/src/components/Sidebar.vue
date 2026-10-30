@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Plus, Search, Settings2, FolderOpen, Pin, Clock3 } from '@astral/icons'
+import { Plus, Search, Settings2, FolderOpen, Pin, Clock3, Lock } from '@astral/icons'
 import { Button, Modal, Select } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { errorText } from '../lib/api'
@@ -50,7 +50,7 @@ function renameClosed(event: Event) {
   event.preventDefault()
   if (renameTarget.value) void focusMenu(renameTarget.value.id)
 }
-async function presentation(session: Session, patch: { title?: string; pinned?: boolean; archived?: boolean }) {
+async function presentation(session: Session, patch: { title?: string; pinned?: boolean; archived?: boolean; private?: boolean }) {
   if (pendingID.value || (patch.title !== undefined && !patch.title.trim())) return
   const renaming = patch.title !== undefined
   pendingID.value = session.id
@@ -137,6 +137,12 @@ async function presentation(session: Session, patch: { title?: string; pinned?: 
               :class="{ 'is-typing': typing[s.id] }"
               aria-hidden="true"
             >{{ titles[s.id] ?? s.title }}</span>
+            <Lock
+              v-if="s.private"
+              :aria-label="t('privateSession')"
+            >
+              <title>{{ t('privateSession') }}</title>
+            </Lock>
             <span
               v-if="app.statuses[s.id]?.status === 'running'"
               class="running-dot"

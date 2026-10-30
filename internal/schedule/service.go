@@ -40,6 +40,7 @@ type Occurrence struct {
 	AgentID     string    `json:"agent_id"`
 	SessionMode string    `json:"session_mode,omitempty"`
 	SessionID   string    `json:"session_id"`
+	Private     bool      `json:"private,omitempty"`
 	Title       string    `json:"title"`
 	Prompt      string    `json:"prompt"`
 	ScheduledAt time.Time `json:"scheduled_at"`
@@ -152,6 +153,15 @@ func (s *Service) List(ctx context.Context, agentID string) ([]domain.Schedule, 
 			return nil, err
 		}
 		if agentID == "" || plan.AgentID == agentID {
+			if err := authorizePlan(ctx, s.store, plan); domain.IsMissing(err) {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+			plan, err = s.present(ctx, plan)
+			if err != nil {
+				return nil, err
+			}
 			result = append(result, plan)
 		}
 	}
@@ -167,7 +177,10 @@ func (s *Service) Get(ctx context.Context, agentID, id string) (domain.Schedule,
 	if agentID != "" && plan.AgentID != agentID {
 		return domain.Schedule{}, domain.Missing("Schedule", id)
 	}
-	return plan, nil
+	if err := authorizePlan(ctx, s.store, plan); err != nil {
+		return domain.Schedule{}, err
+	}
+	return s.present(ctx, plan)
 }
 
 func (s *Service) Create(ctx context.Context, agentID string, input Input) (domain.Schedule, error) {
@@ -182,6 +195,9 @@ func (s *Service) Create(ctx context.Context, agentID string, input Input) (doma
 	}
 	plan := record{Schedule: domain.Schedule{Meta: domain.Meta{ID: domain.ID("schedule")}, AgentID: agentID}}
 	apply(&plan.Schedule, input)
+	if scope, ok := persistence.CurrentSessionScope(ctx); ok && input.SessionMode == "new" {
+		plan.SourceSessionID = scope.SessionID
+	}
 	if plan.NextRunAt, err = next(input, now, location); err != nil {
 		return domain.Schedule{}, err
 	}
@@ -192,10 +208,14 @@ func (s *Service) Create(ctx context.Context, agentID string, input Input) (doma
 		if err := target(ctx, tx, agentID, input.SessionMode, input.SessionID); err != nil {
 			return err
 		}
+		if err := authorizePlan(ctx, tx, plan.Schedule); err != nil {
+			return err
+		}
 		return tx.Save(ctx, Kind, &plan.Meta, &plan)
 	})
 	if err == nil {
 		s.notify()
+		return s.present(ctx, plan.Schedule)
 	}
 	return plan.Schedule, err
 }
@@ -222,6 +242,9 @@ func (s *Service) Update(ctx context.Context, agentID, id string, input Input, r
 		if agentID != "" && plan.AgentID != agentID {
 			return domain.Missing("Schedule", id)
 		}
+		if err := authorizePlan(ctx, tx, plan.Schedule); err != nil {
+			return err
+		}
 		if plan.Revision != revision {
 			return domain.Conflict("this Schedule changed; reload it before saving")
 		}
@@ -235,6 +258,14 @@ func (s *Service) Update(ctx context.Context, agentID, id string, input Input, r
 			}
 		}
 		apply(&plan.Schedule, input)
+		if input.SessionMode != "new" {
+			plan.SourceSessionID = ""
+		} else if scope, ok := persistence.CurrentSessionScope(ctx); ok && plan.SourceSessionID == "" {
+			plan.SourceSessionID = scope.SessionID
+		}
+		if err := authorizePlan(ctx, tx, plan.Schedule); err != nil {
+			return err
+		}
 		plan.CalculatedTimezone = ""
 		if plan.Timing.Kind == "cron" {
 			plan.CalculatedTimezone = location.String()
@@ -243,6 +274,7 @@ func (s *Service) Update(ctx context.Context, agentID, id string, input Input, r
 	})
 	if err == nil {
 		s.notify()
+		return s.present(ctx, plan.Schedule)
 	}
 	return plan.Schedule, err
 }
@@ -260,6 +292,9 @@ func (s *Service) Delete(ctx context.Context, agentID, id string, revision int64
 		}
 		if agentID != "" && plan.AgentID != agentID {
 			return domain.Missing("Schedule", id)
+		}
+		if err := authorizePlan(ctx, tx, plan); err != nil {
+			return err
 		}
 		if plan.Revision != revision {
 			return domain.Conflict("this Schedule changed; reload it before deleting")
@@ -281,6 +316,46 @@ type getter interface {
 	Get(context.Context, string, string, any) error
 }
 
+func authorizePlan(ctx context.Context, store getter, plan domain.Schedule) error {
+	if _, scoped := persistence.CurrentSessionScope(ctx); !scoped {
+		return nil
+	}
+	id := plan.SessionID
+	if plan.SessionMode == "new" {
+		id = plan.SourceSessionID
+	}
+	if id == "" {
+		return nil
+	}
+	var session domain.Session
+	if err := store.Get(ctx, "sessions", id, &session); err != nil {
+		return err
+	}
+	if err := persistence.CheckSessionAccess(ctx, session); err != nil {
+		return domain.Missing("Schedule", plan.ID)
+	}
+	return nil
+}
+
+// LastSessionID is a result link, not the plan's authorization scope. Hide an
+// unavailable result in command responses without changing the stored plan or
+// preventing its management. Owner responses retain the full result link.
+func (s *Service) present(ctx context.Context, plan domain.Schedule) (domain.Schedule, error) {
+	if _, scoped := persistence.CurrentSessionScope(ctx); !scoped || plan.LastSessionID == "" {
+		return plan, nil
+	}
+	var session domain.Session
+	err := s.store.Get(ctx, "sessions", plan.LastSessionID, &session)
+	if err == nil {
+		err = persistence.CheckSessionAccess(ctx, session)
+	}
+	if domain.IsMissing(err) {
+		plan.LastSessionID = ""
+		return plan, nil
+	}
+	return plan, err
+}
+
 func target(ctx context.Context, store getter, agentID, mode, sessionID string) error {
 	var agent domain.Agent
 	if err := store.Get(ctx, "agents", agentID, &agent); err != nil {
@@ -299,7 +374,7 @@ func target(ctx context.Context, store getter, agentID, mode, sessionID string) 
 	if session.AgentID != agentID || session.Deletion != nil {
 		return domain.Missing("Session", sessionID)
 	}
-	return nil
+	return persistence.CheckSessionAccess(ctx, session)
 }
 
 var parser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
@@ -386,7 +461,9 @@ func next(input Input, now time.Time, location *time.Location) (*time.Time, erro
 
 // PurgeSession is part of the Host's existing permanent-deletion transaction.
 func PurgeSession(ctx context.Context, tx *persistence.Tx, sessionID string) error {
-	return purge(ctx, tx, func(plan domain.Schedule) bool { return plan.SessionID == sessionID })
+	return purge(ctx, tx, func(plan domain.Schedule) bool {
+		return plan.SessionID == sessionID || plan.SourceSessionID == sessionID
+	})
 }
 
 func PurgeAgent(ctx context.Context, tx *persistence.Tx, agentID string) error {
@@ -662,6 +739,13 @@ func (s *Service) dispatch(ctx context.Context, id string, now time.Time) error 
 		occurrence := Occurrence{ScheduleID: id, AgentID: plan.AgentID, SessionMode: plan.SessionMode, SessionID: plan.SessionID, Title: plan.Title, Prompt: plan.Prompt, ScheduledAt: *plan.NextRunAt}
 		if occurrence.SessionMode == "new" {
 			occurrence.SessionID = occurrence.NewSessionID()
+			if plan.SourceSessionID != "" {
+				var source domain.Session
+				if err := tx.Get(ctx, "sessions", plan.SourceSessionID, &source); err != nil {
+					return err
+				}
+				occurrence.Private = source.Private
+			}
 		}
 		plan.Pending, plan.LastRunAt, plan.LastStatus, plan.LastError = &occurrence, &occurrence.ScheduledAt, "dispatching", ""
 		claimed, changed = true, true
