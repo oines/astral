@@ -127,9 +127,10 @@ type preparedMessage struct {
 func archiveMessageText(record domain.Outbox) string {
 	var body strings.Builder
 	for _, part := range record.Parts {
-		if part.Type == "text" {
+		switch part.Type {
+		case "text":
 			body.WriteString(part.Text)
-		} else if part.Type == "mention" {
+		case "mention":
 			name := part.Name
 			if name == "" {
 				name = part.UserID
