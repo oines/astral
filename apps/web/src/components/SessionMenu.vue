@@ -61,6 +61,7 @@ const { t } = useI18n()
       </RouterLink>
     </MenuItem>
     <MenuItem
+      v-if="!session.binding_id"
       class="menu-item"
       :disabled="busy"
       @select="emit('presentation', { archived: !session.archived })"

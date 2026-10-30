@@ -14,10 +14,11 @@ import { useAction } from '../../composables/useAction'
 import { useAppStore } from '../../stores/app'
 import { useClipboard } from '../../composables/useClipboard'
 import { randomID } from '../../lib/browser'
+import { formatDateTime } from '../../lib/timezone'
 defineProps<{ confirmLabel?: string }>()
 const adding = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ connected: [computer: Computer] }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const app = useAppStore()
 const action = useAction()
 const { copy, copied } = useClipboard()
@@ -287,7 +288,7 @@ function finish() {
               {{ t('generateCommand') }}
             </Button>
           </template><p class="muted small">
-            {{ t('expires') }}: {{ new Date(enrollmentResult.enrollment.expires_at).toLocaleString() }}
+            {{ t('expires') }}: {{ formatDateTime(enrollmentResult.enrollment.expires_at, locale, app.displayTimezone) }}
           </p>
         </template>
       </div>

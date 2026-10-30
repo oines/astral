@@ -126,6 +126,7 @@ func (s *Service) bind(ctx context.Context, conversationID, sessionID string, fi
 			}
 			record.ConversationID, record.BindingID, record.ChannelPlatform = conversationID, binding.ID, connection.Platform
 			record.Title, record.TitleSource = conversation.Title, "conversation"
+			record.Archived = false
 			if err := tx.Save(ctx, "sessions", &record.Meta, &record); err != nil {
 				return err
 			}

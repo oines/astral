@@ -4,8 +4,8 @@ import { type _JSONValue, defineQueryOptions, type UseMutationOptions } from '@p
 
 import { serializeQueryKeyValue } from '../client';
 import { client } from '../client.gen';
-import { agentAccountOperation, agentAccountOperations, agentAccounts, agentAttachmentContent, agentCapabilities, agentCapability, agentComputers, agentContext, agentConversations, agentDownloadAttachment, agentDownloadTelegramSticker, agentFileReference, agentHistory, agentMessage, agentMessages, agentMessageTool, agentResolveConversation, agentSearchSessions, agentSendFile, agentSendReceipt, agentSendText, agentSessions, agentTelegramOperation, agentTelegramOperations, agentTelegramStickerContent, applyServerUpdate, authAccount, authLogin, authLoginRecovery, authLoginTotp, authLogout, authorizeProvider, authPasskeyLoginBegin, authPasskeyLoginFinish, authPasskeyRegisterBegin, authPasskeyRegisterFinish, authPasskeyRemove, authPasswordless, authReauthenticate, authRecoveryCodes, authSessionRevoke, authSessionsRevoke, authSettings, authStatus, authTotpBegin, authTotpConfirm, authTotpRemove, bindConversation, bootstrap, checkServerUpdate, clearPending, compactSession, completeOnboarding, computerHost, computerMaintenance, continueSession, conversationMessages, createLocalContainer, createSession, decideApproval, deleteAgent, deleteComputer, deleteConnection, deleteModel, deleteProvider, deleteSearchProvider, deleteSession, describeModel, enrollComputer, eventSchema, exportRollout, fileContent, forkSession, getComputerOperation, getEnrollment, getNetworkSettings, getPreferences, getServerUpdate, getSession, historyImage, inputReceipt, listAgents, listBindings, listComputers, listConnections, listConversations, listModels, listOutbox, listProviderPresets, listProviders, listSearchAdapters, listSearchProviders, listSessions, modelCatalog, modelRecommendation, movePending, observationDelivery, type Options, pollWeixinLogin, presetModels, providerAuthorization, reasoningFormats, refreshProviderModels, removePending, resolveConversation, resourceUsage, revokeComputer, saveAgent, saveConnection, saveModel, saveNetworkSettings, savePreferences, saveProvider, saveSearchProvider, selectComputer, selectModel, sessionAttempt, sessionAttemptRequest, sessionAttempts, sessionContext, sessionEntry, sessionHistory, sessionSnapshot, setConversationProactive, startWeixinLogin, stopSession, storageInfo, submitInput, testSearchProvider, unbindConversation, updateComputer, updateComputerDaemon, updatePending, updateSession, uploadAttachment, useLocalComputer, verifyModel } from '../sdk.gen';
-import type { AgentAccountOperationData, AgentAccountOperationError, AgentAccountOperationResponse, AgentAccountOperationsData, AgentAccountOperationsError, AgentAccountOperationsResponse, AgentAccountsData, AgentAccountsError, AgentAccountsResponse, AgentAttachmentContentData, AgentAttachmentContentError, AgentAttachmentContentResponse, AgentCapabilitiesData, AgentCapabilitiesError, AgentCapabilitiesResponse, AgentCapabilityData, AgentCapabilityError, AgentCapabilityResponse, AgentComputersData, AgentComputersError, AgentComputersResponse, AgentContextData, AgentContextError, AgentContextResponse, AgentConversationsData, AgentConversationsError, AgentConversationsResponse, AgentDownloadAttachmentData, AgentDownloadAttachmentError, AgentDownloadAttachmentResponse, AgentDownloadTelegramStickerData, AgentDownloadTelegramStickerError, AgentDownloadTelegramStickerResponse, AgentFileReferenceData, AgentFileReferenceError, AgentFileReferenceResponse, AgentHistoryData, AgentHistoryError, AgentHistoryResponse, AgentMessageData, AgentMessageError, AgentMessageResponse, AgentMessagesData, AgentMessagesError, AgentMessagesResponse, AgentMessageToolData, AgentMessageToolError, AgentMessageToolResponse, AgentResolveConversationData, AgentResolveConversationError, AgentResolveConversationResponse, AgentSearchSessionsData, AgentSearchSessionsError, AgentSearchSessionsResponse, AgentSendFileData, AgentSendFileError, AgentSendFileResponse, AgentSendReceiptData, AgentSendReceiptError, AgentSendReceiptResponse, AgentSendTextData, AgentSendTextError, AgentSendTextResponse, AgentSessionsData, AgentSessionsError, AgentSessionsResponse, AgentTelegramOperationData, AgentTelegramOperationError, AgentTelegramOperationResponse, AgentTelegramOperationsData, AgentTelegramOperationsError, AgentTelegramOperationsResponse, AgentTelegramStickerContentData, AgentTelegramStickerContentError, AgentTelegramStickerContentResponse, ApplyServerUpdateData, ApplyServerUpdateError, ApplyServerUpdateResponse, AuthAccountData, AuthAccountError, AuthAccountResponse, AuthLoginData, AuthLoginError, AuthLoginRecoveryData, AuthLoginRecoveryError, AuthLoginRecoveryResponse, AuthLoginResponse, AuthLoginTotpData, AuthLoginTotpError, AuthLoginTotpResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthorizeProviderData, AuthorizeProviderError, AuthorizeProviderResponse, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginError, AuthPasskeyLoginBeginResponse, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishError, AuthPasskeyLoginFinishResponse, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginError, AuthPasskeyRegisterBeginResponse, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishError, AuthPasskeyRegisterFinishResponse, AuthPasskeyRemoveData, AuthPasskeyRemoveError, AuthPasskeyRemoveResponse, AuthPasswordlessData, AuthPasswordlessError, AuthPasswordlessResponse, AuthReauthenticateData, AuthReauthenticateError, AuthReauthenticateResponse, AuthRecoveryCodesData, AuthRecoveryCodesError, AuthRecoveryCodesResponse, AuthSessionRevokeData, AuthSessionRevokeError, AuthSessionRevokeResponse, AuthSessionsRevokeData, AuthSessionsRevokeError, AuthSessionsRevokeResponse, AuthSettingsData, AuthSettingsError, AuthSettingsResponse, AuthStatusData, AuthStatusError, AuthStatusResponse, AuthTotpBeginData, AuthTotpBeginError, AuthTotpBeginResponse, AuthTotpConfirmData, AuthTotpConfirmError, AuthTotpConfirmResponse, AuthTotpRemoveData, AuthTotpRemoveError, AuthTotpRemoveResponse, BindConversationData, BindConversationError, BindConversationResponse, BootstrapData, BootstrapError, BootstrapResponse, CheckServerUpdateData, CheckServerUpdateError, CheckServerUpdateResponse, ClearPendingData, ClearPendingError, ClearPendingResponse, CompactSessionData, CompactSessionError, CompactSessionResponse, CompleteOnboardingData, CompleteOnboardingError, CompleteOnboardingResponse, ComputerHostData, ComputerHostError, ComputerHostResponse, ComputerMaintenanceData, ComputerMaintenanceError, ComputerMaintenanceResponse, ContinueSessionData, ContinueSessionError, ContinueSessionResponse, ConversationMessagesData, ConversationMessagesError, ConversationMessagesResponse, CreateLocalContainerData, CreateLocalContainerError, CreateLocalContainerResponse, CreateSessionData, CreateSessionError, CreateSessionResponse, DecideApprovalData, DecideApprovalError, DecideApprovalResponse, DeleteAgentData, DeleteAgentError, DeleteAgentResponse, DeleteComputerData, DeleteComputerError, DeleteComputerResponse, DeleteConnectionData, DeleteConnectionError, DeleteConnectionResponse, DeleteModelData, DeleteModelError, DeleteModelResponse, DeleteProviderData, DeleteProviderError, DeleteProviderResponse, DeleteSearchProviderData, DeleteSearchProviderError, DeleteSearchProviderResponse, DeleteSessionData, DeleteSessionError, DeleteSessionResponse, DescribeModelData, DescribeModelError, DescribeModelResponse, EnrollComputerData, EnrollComputerError, EnrollComputerResponse, EventSchemaData, EventSchemaError, EventSchemaResponse, ExportRolloutData, ExportRolloutError, ExportRolloutResponse, FileContentData, FileContentError, FileContentResponse, ForkSessionData, ForkSessionError, ForkSessionResponse, GetComputerOperationData, GetComputerOperationError, GetComputerOperationResponse, GetEnrollmentData, GetEnrollmentError, GetEnrollmentResponse, GetNetworkSettingsData, GetNetworkSettingsError, GetNetworkSettingsResponse, GetPreferencesData, GetPreferencesError, GetPreferencesResponse, GetServerUpdateData, GetServerUpdateError, GetServerUpdateResponse, GetSessionData, GetSessionError, GetSessionResponse, HistoryImageData, HistoryImageError, HistoryImageResponse, InputReceiptData, InputReceiptError, InputReceiptResponse, ListAgentsData, ListAgentsError, ListAgentsResponse, ListBindingsData, ListBindingsError, ListBindingsResponse, ListComputersData, ListComputersError, ListComputersResponse, ListConnectionsData, ListConnectionsError, ListConnectionsResponse, ListConversationsData, ListConversationsError, ListConversationsResponse, ListModelsData, ListModelsError, ListModelsResponse, ListOutboxData, ListOutboxError, ListOutboxResponse, ListProviderPresetsData, ListProviderPresetsError, ListProviderPresetsResponse, ListProvidersData, ListProvidersError, ListProvidersResponse, ListSearchAdaptersData, ListSearchAdaptersError, ListSearchAdaptersResponse, ListSearchProvidersData, ListSearchProvidersError, ListSearchProvidersResponse, ListSessionsData, ListSessionsError, ListSessionsResponse, ModelCatalogData, ModelCatalogError, ModelCatalogResponse, ModelRecommendationData, ModelRecommendationError, ModelRecommendationResponse, MovePendingData, MovePendingError, MovePendingResponse, ObservationDeliveryData, ObservationDeliveryError, ObservationDeliveryResponse, PollWeixinLoginData, PollWeixinLoginError, PollWeixinLoginResponse, PresetModelsData, PresetModelsError, PresetModelsResponse, ProviderAuthorizationData, ProviderAuthorizationError, ProviderAuthorizationResponse, ReasoningFormatsData, ReasoningFormatsError, ReasoningFormatsResponse, RefreshProviderModelsData, RefreshProviderModelsError, RefreshProviderModelsResponse, RemovePendingData, RemovePendingError, RemovePendingResponse, ResolveConversationData, ResolveConversationError, ResolveConversationResponse, ResourceUsageData, ResourceUsageError, ResourceUsageResponse, RevokeComputerData, RevokeComputerError, RevokeComputerResponse, SaveAgentData, SaveAgentError, SaveAgentResponse, SaveConnectionData, SaveConnectionError, SaveConnectionResponse, SaveModelData, SaveModelError, SaveModelResponse, SaveNetworkSettingsData, SaveNetworkSettingsError, SaveNetworkSettingsResponse, SavePreferencesData, SavePreferencesError, SavePreferencesResponse, SaveProviderData, SaveProviderError, SaveProviderResponse, SaveSearchProviderData, SaveSearchProviderError, SaveSearchProviderResponse, SelectComputerData, SelectComputerError, SelectComputerResponse, SelectModelData, SelectModelError, SelectModelResponse, SessionAttemptData, SessionAttemptError, SessionAttemptRequestData, SessionAttemptRequestError, SessionAttemptRequestResponse, SessionAttemptResponse, SessionAttemptsData, SessionAttemptsError, SessionAttemptsResponse, SessionContextData, SessionContextError, SessionContextResponse, SessionEntryData, SessionEntryError, SessionEntryResponse, SessionHistoryData, SessionHistoryError, SessionHistoryResponse, SessionSnapshotData, SessionSnapshotError, SessionSnapshotResponse, SetConversationProactiveData, SetConversationProactiveError, SetConversationProactiveResponse, StartWeixinLoginData, StartWeixinLoginError, StartWeixinLoginResponse, StopSessionData, StopSessionError, StopSessionResponse, StorageInfoData, StorageInfoError, StorageInfoResponse, SubmitInputData, SubmitInputError, SubmitInputResponse, TestSearchProviderData, TestSearchProviderError, TestSearchProviderResponse, UnbindConversationData, UnbindConversationError, UnbindConversationResponse, UpdateComputerDaemonData, UpdateComputerDaemonError, UpdateComputerDaemonResponse, UpdateComputerData, UpdateComputerError, UpdateComputerResponse, UpdatePendingData, UpdatePendingError, UpdatePendingResponse, UpdateSessionData, UpdateSessionError, UpdateSessionResponse, UploadAttachmentData, UploadAttachmentError, UploadAttachmentResponse, UseLocalComputerData, UseLocalComputerError, UseLocalComputerResponse, VerifyModelData, VerifyModelError, VerifyModelResponse } from '../types.gen';
+import { agentAccountOperation, agentAccountOperations, agentAccounts, agentAttachmentContent, agentCapabilities, agentCapability, agentComputers, agentContext, agentConversations, agentCreateSchedule, agentDeleteSchedule, agentDownloadAttachment, agentDownloadMessagePart, agentDownloadTelegramSticker, agentFileReference, agentGetSchedule, agentHistory, agentMessage, agentMessagePart, agentMessagePartContent, agentMessagePartRaw, agentMessageParts, agentMessages, agentMessageTool, agentResolveConversation, agentSchedules, agentSearchSessions, agentSendFile, agentSendReceipt, agentSendText, agentSessions, agentTelegramOperation, agentTelegramOperations, agentTelegramStickerContent, agentUpdateSchedule, agentUpdateSession, applyServerUpdate, authAccount, authLogin, authLoginRecovery, authLoginTotp, authLogout, authorizeProvider, authPasskeyLoginBegin, authPasskeyLoginFinish, authPasskeyRegisterBegin, authPasskeyRegisterFinish, authPasskeyRemove, authPasswordless, authReauthenticate, authRecoveryCodes, authSessionRevoke, authSessionsRevoke, authSettings, authStatus, authTotpBegin, authTotpConfirm, authTotpRemove, bindConversation, bootstrap, checkServerUpdate, clearPending, compactSession, completeOnboarding, computerHost, computerMaintenance, continueSession, conversationMessages, createLocalContainer, createSchedule, createSession, decideApproval, deleteAgent, deleteComputer, deleteConnection, deleteModel, deleteProvider, deleteSchedule, deleteSearchProvider, deleteSession, describeModel, enrollComputer, eventSchema, exportRollout, fileContent, forkSession, getComputerOperation, getEnrollment, getNetworkSettings, getPreferences, getSchedule, getServerUpdate, getSession, historyImage, inputReceipt, listAgents, listBindings, listComputers, listConnections, listConversations, listModels, listOutbox, listProviderPresets, listProviders, listSchedules, listSearchAdapters, listSearchProviders, listSessions, modelCatalog, modelRecommendation, movePending, observationDelivery, type Options, pollWeixinLogin, presetModels, providerAuthorization, reasoningFormats, refreshProviderModels, removePending, resolveConversation, resourceUsage, revokeComputer, saveAgent, saveConnection, saveModel, saveNetworkSettings, savePreferences, saveProvider, saveSearchProvider, selectComputer, selectModel, sessionAttempt, sessionAttemptRequest, sessionAttempts, sessionContext, sessionEntry, sessionHistory, sessionSnapshot, setConversationProactive, startWeixinLogin, stopSession, storageInfo, submitInput, testSearchProvider, unbindConversation, updateComputer, updateComputerDaemon, updatePending, updateSchedule, updateSession, uploadAttachment, useLocalComputer, verifyModel } from '../sdk.gen';
+import type { AgentAccountOperationData, AgentAccountOperationError, AgentAccountOperationResponse, AgentAccountOperationsData, AgentAccountOperationsError, AgentAccountOperationsResponse, AgentAccountsData, AgentAccountsError, AgentAccountsResponse, AgentAttachmentContentData, AgentAttachmentContentError, AgentAttachmentContentResponse, AgentCapabilitiesData, AgentCapabilitiesError, AgentCapabilitiesResponse, AgentCapabilityData, AgentCapabilityError, AgentCapabilityResponse, AgentComputersData, AgentComputersError, AgentComputersResponse, AgentContextData, AgentContextError, AgentContextResponse, AgentConversationsData, AgentConversationsError, AgentConversationsResponse, AgentCreateScheduleData, AgentCreateScheduleError, AgentCreateScheduleResponse, AgentDeleteScheduleData, AgentDeleteScheduleError, AgentDeleteScheduleResponse, AgentDownloadAttachmentData, AgentDownloadAttachmentError, AgentDownloadAttachmentResponse, AgentDownloadMessagePartData, AgentDownloadMessagePartError, AgentDownloadMessagePartResponse, AgentDownloadTelegramStickerData, AgentDownloadTelegramStickerError, AgentDownloadTelegramStickerResponse, AgentFileReferenceData, AgentFileReferenceError, AgentFileReferenceResponse, AgentGetScheduleData, AgentGetScheduleError, AgentGetScheduleResponse, AgentHistoryData, AgentHistoryError, AgentHistoryResponse, AgentMessageData, AgentMessageError, AgentMessagePartContentData, AgentMessagePartContentError, AgentMessagePartContentResponse, AgentMessagePartData, AgentMessagePartError, AgentMessagePartRawData, AgentMessagePartRawError, AgentMessagePartResponse, AgentMessagePartsData, AgentMessagePartsError, AgentMessagePartsResponse, AgentMessageResponse, AgentMessagesData, AgentMessagesError, AgentMessagesResponse, AgentMessageToolData, AgentMessageToolError, AgentMessageToolResponse, AgentResolveConversationData, AgentResolveConversationError, AgentResolveConversationResponse, AgentSchedulesData, AgentSchedulesError, AgentSchedulesResponse, AgentSearchSessionsData, AgentSearchSessionsError, AgentSearchSessionsResponse, AgentSendFileData, AgentSendFileError, AgentSendFileResponse, AgentSendReceiptData, AgentSendReceiptError, AgentSendReceiptResponse, AgentSendTextData, AgentSendTextError, AgentSendTextResponse, AgentSessionsData, AgentSessionsError, AgentSessionsResponse, AgentTelegramOperationData, AgentTelegramOperationError, AgentTelegramOperationResponse, AgentTelegramOperationsData, AgentTelegramOperationsError, AgentTelegramOperationsResponse, AgentTelegramStickerContentData, AgentTelegramStickerContentError, AgentTelegramStickerContentResponse, AgentUpdateScheduleData, AgentUpdateScheduleError, AgentUpdateScheduleResponse, AgentUpdateSessionData, AgentUpdateSessionError, AgentUpdateSessionResponse, ApplyServerUpdateData, ApplyServerUpdateError, ApplyServerUpdateResponse, AuthAccountData, AuthAccountError, AuthAccountResponse, AuthLoginData, AuthLoginError, AuthLoginRecoveryData, AuthLoginRecoveryError, AuthLoginRecoveryResponse, AuthLoginResponse, AuthLoginTotpData, AuthLoginTotpError, AuthLoginTotpResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthorizeProviderData, AuthorizeProviderError, AuthorizeProviderResponse, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginError, AuthPasskeyLoginBeginResponse, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishError, AuthPasskeyLoginFinishResponse, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginError, AuthPasskeyRegisterBeginResponse, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishError, AuthPasskeyRegisterFinishResponse, AuthPasskeyRemoveData, AuthPasskeyRemoveError, AuthPasskeyRemoveResponse, AuthPasswordlessData, AuthPasswordlessError, AuthPasswordlessResponse, AuthReauthenticateData, AuthReauthenticateError, AuthReauthenticateResponse, AuthRecoveryCodesData, AuthRecoveryCodesError, AuthRecoveryCodesResponse, AuthSessionRevokeData, AuthSessionRevokeError, AuthSessionRevokeResponse, AuthSessionsRevokeData, AuthSessionsRevokeError, AuthSessionsRevokeResponse, AuthSettingsData, AuthSettingsError, AuthSettingsResponse, AuthStatusData, AuthStatusError, AuthStatusResponse, AuthTotpBeginData, AuthTotpBeginError, AuthTotpBeginResponse, AuthTotpConfirmData, AuthTotpConfirmError, AuthTotpConfirmResponse, AuthTotpRemoveData, AuthTotpRemoveError, AuthTotpRemoveResponse, BindConversationData, BindConversationError, BindConversationResponse, BootstrapData, BootstrapError, BootstrapResponse, CheckServerUpdateData, CheckServerUpdateError, CheckServerUpdateResponse, ClearPendingData, ClearPendingError, ClearPendingResponse, CompactSessionData, CompactSessionError, CompactSessionResponse, CompleteOnboardingData, CompleteOnboardingError, CompleteOnboardingResponse, ComputerHostData, ComputerHostError, ComputerHostResponse, ComputerMaintenanceData, ComputerMaintenanceError, ComputerMaintenanceResponse, ContinueSessionData, ContinueSessionError, ContinueSessionResponse, ConversationMessagesData, ConversationMessagesError, ConversationMessagesResponse, CreateLocalContainerData, CreateLocalContainerError, CreateLocalContainerResponse, CreateScheduleData, CreateScheduleError, CreateScheduleResponse, CreateSessionData, CreateSessionError, CreateSessionResponse, DecideApprovalData, DecideApprovalError, DecideApprovalResponse, DeleteAgentData, DeleteAgentError, DeleteAgentResponse, DeleteComputerData, DeleteComputerError, DeleteComputerResponse, DeleteConnectionData, DeleteConnectionError, DeleteConnectionResponse, DeleteModelData, DeleteModelError, DeleteModelResponse, DeleteProviderData, DeleteProviderError, DeleteProviderResponse, DeleteScheduleData, DeleteScheduleError, DeleteScheduleResponse, DeleteSearchProviderData, DeleteSearchProviderError, DeleteSearchProviderResponse, DeleteSessionData, DeleteSessionError, DeleteSessionResponse, DescribeModelData, DescribeModelError, DescribeModelResponse, EnrollComputerData, EnrollComputerError, EnrollComputerResponse, EventSchemaData, EventSchemaError, EventSchemaResponse, ExportRolloutData, ExportRolloutError, ExportRolloutResponse, FileContentData, FileContentError, FileContentResponse, ForkSessionData, ForkSessionError, ForkSessionResponse, GetComputerOperationData, GetComputerOperationError, GetComputerOperationResponse, GetEnrollmentData, GetEnrollmentError, GetEnrollmentResponse, GetNetworkSettingsData, GetNetworkSettingsError, GetNetworkSettingsResponse, GetPreferencesData, GetPreferencesError, GetPreferencesResponse, GetScheduleData, GetScheduleError, GetScheduleResponse, GetServerUpdateData, GetServerUpdateError, GetServerUpdateResponse, GetSessionData, GetSessionError, GetSessionResponse, HistoryImageData, HistoryImageError, HistoryImageResponse, InputReceiptData, InputReceiptError, InputReceiptResponse, ListAgentsData, ListAgentsError, ListAgentsResponse, ListBindingsData, ListBindingsError, ListBindingsResponse, ListComputersData, ListComputersError, ListComputersResponse, ListConnectionsData, ListConnectionsError, ListConnectionsResponse, ListConversationsData, ListConversationsError, ListConversationsResponse, ListModelsData, ListModelsError, ListModelsResponse, ListOutboxData, ListOutboxError, ListOutboxResponse, ListProviderPresetsData, ListProviderPresetsError, ListProviderPresetsResponse, ListProvidersData, ListProvidersError, ListProvidersResponse, ListSchedulesData, ListSchedulesError, ListSchedulesResponse, ListSearchAdaptersData, ListSearchAdaptersError, ListSearchAdaptersResponse, ListSearchProvidersData, ListSearchProvidersError, ListSearchProvidersResponse, ListSessionsData, ListSessionsError, ListSessionsResponse, ModelCatalogData, ModelCatalogError, ModelCatalogResponse, ModelRecommendationData, ModelRecommendationError, ModelRecommendationResponse, MovePendingData, MovePendingError, MovePendingResponse, ObservationDeliveryData, ObservationDeliveryError, ObservationDeliveryResponse, PollWeixinLoginData, PollWeixinLoginError, PollWeixinLoginResponse, PresetModelsData, PresetModelsError, PresetModelsResponse, ProviderAuthorizationData, ProviderAuthorizationError, ProviderAuthorizationResponse, ReasoningFormatsData, ReasoningFormatsError, ReasoningFormatsResponse, RefreshProviderModelsData, RefreshProviderModelsError, RefreshProviderModelsResponse, RemovePendingData, RemovePendingError, RemovePendingResponse, ResolveConversationData, ResolveConversationError, ResolveConversationResponse, ResourceUsageData, ResourceUsageError, ResourceUsageResponse, RevokeComputerData, RevokeComputerError, RevokeComputerResponse, SaveAgentData, SaveAgentError, SaveAgentResponse, SaveConnectionData, SaveConnectionError, SaveConnectionResponse, SaveModelData, SaveModelError, SaveModelResponse, SaveNetworkSettingsData, SaveNetworkSettingsError, SaveNetworkSettingsResponse, SavePreferencesData, SavePreferencesError, SavePreferencesResponse, SaveProviderData, SaveProviderError, SaveProviderResponse, SaveSearchProviderData, SaveSearchProviderError, SaveSearchProviderResponse, SelectComputerData, SelectComputerError, SelectComputerResponse, SelectModelData, SelectModelError, SelectModelResponse, SessionAttemptData, SessionAttemptError, SessionAttemptRequestData, SessionAttemptRequestError, SessionAttemptRequestResponse, SessionAttemptResponse, SessionAttemptsData, SessionAttemptsError, SessionAttemptsResponse, SessionContextData, SessionContextError, SessionContextResponse, SessionEntryData, SessionEntryError, SessionEntryResponse, SessionHistoryData, SessionHistoryError, SessionHistoryResponse, SessionSnapshotData, SessionSnapshotError, SessionSnapshotResponse, SetConversationProactiveData, SetConversationProactiveError, SetConversationProactiveResponse, StartWeixinLoginData, StartWeixinLoginError, StartWeixinLoginResponse, StopSessionData, StopSessionError, StopSessionResponse, StorageInfoData, StorageInfoError, StorageInfoResponse, SubmitInputData, SubmitInputError, SubmitInputResponse, TestSearchProviderData, TestSearchProviderError, TestSearchProviderResponse, UnbindConversationData, UnbindConversationError, UnbindConversationResponse, UpdateComputerDaemonData, UpdateComputerDaemonError, UpdateComputerDaemonResponse, UpdateComputerData, UpdateComputerError, UpdateComputerResponse, UpdatePendingData, UpdatePendingError, UpdatePendingResponse, UpdateScheduleData, UpdateScheduleError, UpdateScheduleResponse, UpdateSessionData, UpdateSessionError, UpdateSessionResponse, UploadAttachmentData, UploadAttachmentError, UploadAttachmentResponse, UseLocalComputerData, UseLocalComputerError, UseLocalComputerResponse, VerifyModelData, VerifyModelError, VerifyModelResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'path'> & {
@@ -823,6 +823,67 @@ export const resourceUsageQuery = defineQueryOptions<Options<ResourceUsageData>,
         return data;
     }
 }));
+
+export const listSchedulesQueryKey = (options?: Options<ListSchedulesData>) => createQueryKey('listSchedules', options);
+
+export const listSchedulesQuery = defineQueryOptions<Options<ListSchedulesData>, ListSchedulesResponse, ListSchedulesError>((options?: Options<ListSchedulesData>) => ({
+    key: listSchedulesQueryKey(options),
+    query: async (context) => {
+        const { data } = await listSchedules({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const createScheduleMutation = (options?: Partial<Options<CreateScheduleData>>): UseMutationOptions<CreateScheduleResponse, Options<CreateScheduleData>, CreateScheduleError> => ({
+    mutation: async (vars) => {
+        const { data } = await createSchedule({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const deleteScheduleMutation = (options?: Partial<Options<DeleteScheduleData>>): UseMutationOptions<DeleteScheduleResponse, Options<DeleteScheduleData>, DeleteScheduleError> => ({
+    mutation: async (vars) => {
+        const { data } = await deleteSchedule({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const getScheduleQueryKey = (options: Options<GetScheduleData>) => createQueryKey('getSchedule', options);
+
+export const getScheduleQuery = defineQueryOptions<Options<GetScheduleData>, GetScheduleResponse, GetScheduleError>((options: Options<GetScheduleData>) => ({
+    key: getScheduleQueryKey(options),
+    query: async (context) => {
+        const { data } = await getSchedule({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const updateScheduleMutation = (options?: Partial<Options<UpdateScheduleData>>): UseMutationOptions<UpdateScheduleResponse, Options<UpdateScheduleData>, UpdateScheduleError> => ({
+    mutation: async (vars) => {
+        const { data } = await updateSchedule({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
 
 export const listSearchAdaptersQueryKey = (options?: Options<ListSearchAdaptersData>) => createQueryKey('listSearchAdapters', options);
 
@@ -1680,6 +1741,88 @@ export const agentAttachmentContentQuery = defineQueryOptions<Options<AgentAttac
     }
 }));
 
+export const agentMessagePartsQueryKey = (options: Options<AgentMessagePartsData>) => createQueryKey('agentMessageParts', options);
+
+/**
+ * Discover ordered cards, attachments and merged-forward parts within an archived authorized message.
+ */
+export const agentMessagePartsQuery = defineQueryOptions<Options<AgentMessagePartsData>, AgentMessagePartsResponse, AgentMessagePartsError>((options: Options<AgentMessagePartsData>) => ({
+    key: agentMessagePartsQueryKey(options),
+    query: async (context) => {
+        const { data } = await agentMessageParts({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const agentMessagePartQueryKey = (options: Options<AgentMessagePartData>) => createQueryKey('agentMessagePart', options);
+
+/**
+ * Read one normalized part; page forwarded messages with offset and limit.
+ */
+export const agentMessagePartQuery = defineQueryOptions<Options<AgentMessagePartData>, AgentMessagePartResponse, AgentMessagePartError>((options: Options<AgentMessagePartData>) => ({
+    key: agentMessagePartQueryKey(options),
+    query: async (context) => {
+        const { data } = await agentMessagePart({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const agentMessagePartContentQueryKey = (options: Options<AgentMessagePartContentData>) => createQueryKey('agentMessagePartContent', options);
+
+/**
+ * Stream the selected part's original attachment bytes, including nested forward media.
+ */
+export const agentMessagePartContentQuery = defineQueryOptions<Options<AgentMessagePartContentData>, AgentMessagePartContentResponse, AgentMessagePartContentError>((options: Options<AgentMessagePartContentData>) => ({
+    key: agentMessagePartContentQueryKey(options),
+    query: async (context) => {
+        const { data } = await agentMessagePartContent({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+/**
+ * Write one selected part's original to an explicit calling-Computer path and return its file reference.
+ */
+export const agentDownloadMessagePartMutation = (options?: Partial<Options<AgentDownloadMessagePartData>>): UseMutationOptions<AgentDownloadMessagePartResponse, Options<AgentDownloadMessagePartData>, AgentDownloadMessagePartError> => ({
+    mutation: async (vars) => {
+        const { data } = await agentDownloadMessagePart({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const agentMessagePartRawQueryKey = (options: Options<AgentMessagePartRawData>) => createQueryKey('agentMessagePartRaw', options);
+
+/**
+ * Explicitly read a selected card's original JSON or XML payload.
+ */
+export const agentMessagePartRawQuery = defineQueryOptions<Options<AgentMessagePartRawData>, unknown, AgentMessagePartRawError>((options: Options<AgentMessagePartRawData>) => ({
+    key: agentMessagePartRawQueryKey(options),
+    query: async (context) => {
+        const { data } = await agentMessagePartRaw({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
 /**
  * Reference an existing Computer file for Web delivery; snapshot=true fixes its version.
  */
@@ -1739,6 +1882,82 @@ export const agentSendReceiptQuery = defineQueryOptions<Options<AgentSendReceipt
     }
 }));
 
+export const agentSchedulesQueryKey = (options?: Options<AgentSchedulesData>) => createQueryKey('agentSchedules', options);
+
+/**
+ * List this Bot's schedules.
+ */
+export const agentSchedulesQuery = defineQueryOptions<Options<AgentSchedulesData>, AgentSchedulesResponse, AgentSchedulesError>((options?: Options<AgentSchedulesData>) => ({
+    key: agentSchedulesQueryKey(options),
+    query: async (context) => {
+        const { data } = await agentSchedules({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+/**
+ * Create a visible one-time or recurring prompt schedule.
+ */
+export const agentCreateScheduleMutation = (options?: Partial<Options<AgentCreateScheduleData>>): UseMutationOptions<AgentCreateScheduleResponse, Options<AgentCreateScheduleData>, AgentCreateScheduleError> => ({
+    mutation: async (vars) => {
+        const { data } = await agentCreateSchedule({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+/**
+ * Delete a schedule using its current revision.
+ */
+export const agentDeleteScheduleMutation = (options?: Partial<Options<AgentDeleteScheduleData>>): UseMutationOptions<AgentDeleteScheduleResponse, Options<AgentDeleteScheduleData>, AgentDeleteScheduleError> => ({
+    mutation: async (vars) => {
+        const { data } = await agentDeleteSchedule({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const agentGetScheduleQueryKey = (options: Options<AgentGetScheduleData>) => createQueryKey('agentGetSchedule', options);
+
+/**
+ * Read a schedule and its current revision.
+ */
+export const agentGetScheduleQuery = defineQueryOptions<Options<AgentGetScheduleData>, AgentGetScheduleResponse, AgentGetScheduleError>((options: Options<AgentGetScheduleData>) => ({
+    key: agentGetScheduleQueryKey(options),
+    query: async (context) => {
+        const { data } = await agentGetSchedule({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+/**
+ * Replace the editable configuration with its expected revision.
+ */
+export const agentUpdateScheduleMutation = (options?: Partial<Options<AgentUpdateScheduleData>>): UseMutationOptions<AgentUpdateScheduleResponse, Options<AgentUpdateScheduleData>, AgentUpdateScheduleError> => ({
+    mutation: async (vars) => {
+        const { data } = await agentUpdateSchedule({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
 export const agentSessionsQueryKey = (options?: Options<AgentSessionsData>) => createQueryKey('agentSessions', options);
 
 /**
@@ -1762,6 +1981,20 @@ export const agentSessionsQuery = defineQueryOptions<Options<AgentSessionsData>,
 export const agentSearchSessionsMutation = (options?: Partial<Options<AgentSearchSessionsData>>): UseMutationOptions<AgentSearchSessionsResponse, Options<AgentSearchSessionsData>, AgentSearchSessionsError> => ({
     mutation: async (vars) => {
         const { data } = await agentSearchSessions({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+/**
+ * Rename, archive or restore one unbound Session belonging to this Bot.
+ */
+export const agentUpdateSessionMutation = (options?: Partial<Options<AgentUpdateSessionData>>): UseMutationOptions<AgentUpdateSessionResponse, Options<AgentUpdateSessionData>, AgentUpdateSessionError> => ({
+    mutation: async (vars) => {
+        const { data } = await agentUpdateSession({
             ...options,
             ...vars,
             throwOnError: true

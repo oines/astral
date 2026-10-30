@@ -12,7 +12,7 @@ func TestObservationReplyMediaKeepsOriginalIdentityWithoutNativePreview(t *testi
 		ReplyAttachments: []domain.Attachment{{Ref: "42:0", Kind: "image", Name: `photo<&>.png`, MediaType: "image/png", Size: 12}}}
 	message := Observation(event, domain.Connection{}, domain.Conversation{Meta: domain.Meta{ID: "chat"}}, nil, "")
 	body := message.Content[0].Text
-	want := `<in-reply-to id="42" sender="Alice">source caption` + "\n" + `<attachment type="image" name="photo&lt;&amp;&gt;.png" mime="image/png" message-id="42" file-id="42:0" size="12" download-url="` + AttachmentDownloadPath("chat", "42", "42:0") + `"/></in-reply-to>`
+	want := `<in-reply-to id="42" sender="Alice" read-url="` + MessagePartsReadPath("chat", "42") + `">source caption` + "\n" + `<attachment type="image" name="photo&lt;&amp;&gt;.png" mime="image/png" message-id="42" file-id="42:0" size="12" download-url="` + AttachmentDownloadPath("chat", "42", "42:0") + `"/></in-reply-to>`
 	if !strings.Contains(body, want) || len(message.Content) != 1 || strings.Contains(body, AttachmentDownloadPath("chat", "43", "42:0")) {
 		t.Fatal("reply media became a current attachment, acquired automatic pixels, or lost its source identity")
 	}

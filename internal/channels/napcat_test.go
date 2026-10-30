@@ -65,7 +65,7 @@ func TestNapCatForwardWebSocketAndPendingReplay(t *testing.T) {
 		t.Fatalf("poll: %+v %v", batch, err)
 	}
 	event := batch.Events[0]
-	if event.Conversation.ExternalID != "group:456" || event.Conversation.Title != "Team" || event.Observation.Trigger != "mention" || event.Observation.ReplyID != "-42" || event.Observation.Text != "@999 hello[forward]" || event.Observation.Sender.Name != "A" || len(event.Observation.Attachments) != 1 {
+	if event.Conversation.ExternalID != "group:456" || event.Conversation.Title != "Team" || event.Observation.Trigger != "mention" || event.Observation.ReplyID != "-42" || !strings.Contains(event.Observation.Text, "@999 hello") || !strings.Contains(event.Observation.Text, "Merged forward") || event.Observation.Sender.Name != "A" || len(event.Observation.Attachments) != 1 || len(event.Observation.Parts) != 5 || event.Observation.Parts[4].Forward == nil {
 		t.Fatalf("normalize: %+v", event)
 	}
 	replay, err := n.Poll(ctx, "")

@@ -15,6 +15,7 @@ import (
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/transport"
 )
 
 func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
@@ -192,6 +193,40 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 	if err = s.Store.Get(ctx, "conversations", event.ConversationID, &conversation); err != nil {
 		return err
 	}
+	location, err := s.Harness.Timezone.Location(ctx)
+	if err != nil {
+		return err
+	}
+	// Localize only the new model observation. The archived platform event,
+	// existing history and already frozen requests remain byte-for-byte intact.
+	event.SentAt = event.SentAt.In(location)
+	if event.EditedAt != nil {
+		edited := event.EditedAt.In(location)
+		event.EditedAt = &edited
+	}
+	// Preparing a merged forward is optional enrichment of this one event.
+	// Resolve its quoted structure and small image previews under one budget;
+	// neither remote metadata nor pixels may keep later IM messages waiting.
+	previewContext, cancelPreviews := context.WithTimeout(ctx, forwardPreviewTimeout)
+	defer cancelPreviews()
+	partBudget := newForwardPreparationBudget()
+	caller := domain.ExecutionBinding{AgentID: b.AgentID, SessionID: b.SessionID}
+	for _, source := range []struct {
+		messageID string
+		parts     *[]domain.MessagePart
+	}{{event.MessageID, &event.Parts}, {event.ReplyID, &event.ReplyParts}} {
+		prepared, prepareErr := s.prepareForwardParts(previewContext, caller, conversation.ID, source.messageID, *source.parts, partBudget)
+		if prepareErr != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if previewContext.Err() == nil {
+				return prepareErr
+			}
+			continue
+		}
+		*source.parts = prepared
+	}
 	observation := messages.Observation(event, connection, conversation, nil, "")
 	for _, attachment := range event.Attachments {
 		sticker, thumbnail := stickerImage(event.Attachments, attachment)
@@ -208,16 +243,28 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 		}
 		content, err := s.observationImage(ctx, b, conversation, event, connection, attachment)
 		if err != nil {
-			if sticker != nil && ctx.Err() == nil {
-				// A thumbnail is optional, and static sticker pixels can also be
-				// unavailable. Preserve the received sticker and its reusable ID.
-				observation.Content = append(observation.Content, core.Text("[Sticker preview unavailable: the image could not be downloaded or decoded. Original sticker metadata and download-url are retained.]")...)
-				continue
+			var previewErr *observationPreviewError
+			var prerequisiteErr *attachmentPrerequisiteError
+			if ctx.Err() != nil || errors.As(err, &prerequisiteErr) || !errors.As(err, &previewErr) {
+				return err
 			}
-			return err
+			// Inline pixels are optional. Keep the received message, its trigger
+			// and original attachment reference so one unavailable image cannot
+			// hold the inbox cursor ahead of every later message in this chat.
+			label := "Image"
+			if sticker != nil {
+				label = "Sticker"
+			}
+			observation.Content = append(observation.Content, core.Text(fmt.Sprintf("[%s preview unavailable: file-id=%q; the image could not be downloaded or decoded. Original attachment metadata and download-url are retained.]", label, attachment.Ref))...)
+			continue
 		}
 		observation.Content = append(observation.Content, content...)
 	}
+	forwardImages, err := s.forwardObservationImages(ctx, previewContext, b, conversation, event, connection)
+	if err != nil {
+		return err
+	}
+	observation.Content = append(observation.Content, forwardImages...)
 	var trigger *core.Message
 	if event.Trigger != "" && !event.Self {
 		value := messages.Trigger(event)
@@ -242,25 +289,56 @@ func stickerImage(attachments []domain.Attachment, image domain.Attachment) (*do
 	return nil, false
 }
 
+// Only errors from optional media acquisition and processing may be degraded
+// into a model-visible unavailable note. Local authorization, credential and
+// persistence failures must retain the inbox's ordinary retry behavior.
+type observationPreviewError struct{ cause error }
+
+func (e *observationPreviewError) Error() string { return e.cause.Error() }
+func (e *observationPreviewError) Unwrap() error { return e.cause }
+
 func (s *Service) observationImage(ctx context.Context, b domain.ConversationBinding, conversation domain.Conversation, event domain.Observation, connection domain.Connection, attachment domain.Attachment) ([]core.Content, error) {
-	download, err := s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
+	var download Download
+	var err error
+	if attachment.FileURI != "" {
+		download, err = s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
+		var sourceErr *domain.Error
+		var remoteErr *transport.Error
+		unavailableSource := errors.As(err, &sourceErr) && (sourceErr.Status == 404 || sourceErr.Status == 409 || sourceErr.Status == 503)
+		unavailableFile := errors.As(err, &remoteErr) && (remoteErr.Code == "file_unavailable" || remoteErr.Code == "conflict")
+		if unavailableSource || unavailableFile {
+			// Expired/missing snapshots and an unavailable source Computer do
+			// not make an inline preview mandatory. Forbidden access, malformed
+			// references and local database failures remain hard errors.
+			return nil, &observationPreviewError{err}
+		}
+	} else {
+		adapter, adapterErr := s.adapter(ctx, connection)
+		if adapterErr != nil {
+			return nil, adapterErr
+		}
+		download, err = adapter.Download(ctx, attachment)
+		if err != nil {
+			return nil, &observationPreviewError{err}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	data, readErr := io.ReadAll(io.LimitReader(download.Body, (20<<20)+1))
 	closeErr := download.Body.Close()
 	if err := errors.Join(readErr, closeErr); err != nil {
-		return nil, err
+		return nil, &observationPreviewError{err}
 	}
 	if len(data) > 20<<20 {
 		return core.Text("[Image preview omitted: original exceeds the 20 MiB inline image preparation budget. The attachment remains available through its download-url.]"), nil
 	}
 	processed, err := processObservationImage(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, &observationPreviewError{err}
 	}
 	if processed.IsError {
-		return nil, domain.Invalid(processed.Content[0].Text)
+		return nil, &observationPreviewError{domain.Invalid(processed.Content[0].Text)}
 	}
 	image := processed.Content[1]
 	image.URL = messages.AttachmentDownloadPath(conversation.ID, event.MessageID, attachment.Ref)

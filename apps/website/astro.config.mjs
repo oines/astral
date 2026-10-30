@@ -52,6 +52,7 @@ export default defineConfig({
         ]),
         group('Using Astral', '日常使用', [
           page('Conversations', '会话', 'usage/conversations'),
+          page('Schedules', '计划任务', 'usage/schedules'),
           page('Files and results', '文件与结果', 'usage/files'),
           page('Models and search', '模型与搜索', 'usage/models'),
           page('Configure your Bot', '配置 Bot', 'usage/bots'),

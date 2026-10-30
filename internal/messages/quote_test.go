@@ -13,7 +13,7 @@ func TestObservationRendersExactQuoteSeparatelyFromReplyPreview(t *testing.T) {
 	event := domain.Observation{ID: "event", MessageID: "43", Text: "own message", ReplyID: "42", ReplySender: "source", ReplyPreview: "😀x original preview", ReplyQuote: &domain.TextQuote{Text: selected, Position: 3, Manual: true}}
 	message := Observation(event, domain.Connection{Platform: "telegram"}, domain.Conversation{}, nil, "")
 	body := message.Content[0].Text
-	preview := `<in-reply-to id="42" sender="source">😀x original preview</in-reply-to>`
+	preview := `<in-reply-to id="42" sender="source" read-url="` + MessagePartsReadPath("", "42") + `">😀x original preview</in-reply-to>`
 	quote := `<quote position-utf16="3" manual="true">` + Escape(selected) + `</quote>`
 	if !strings.Contains(body, preview+"\n"+quote+"\n"+event.Text) || strings.Contains(body, selected) {
 		t.Fatal("quote was truncated, changed the original preview, or escaped its user-content boundary")

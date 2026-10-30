@@ -27,6 +27,7 @@ import (
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/search"
 	"github.com/oines/astral/internal/serverupdate"
+	"github.com/oines/astral/internal/timezone"
 )
 
 type Config struct {
@@ -63,9 +64,11 @@ type Bootstrap struct {
 	Network     NetworkSettings         `json:"network"`
 	Host        domain.HostInfo         `json:"host"`
 	Preferences Preferences             `json:"preferences"`
+	Timezone    timezone.View           `json:"timezone"`
 	Onboarding  harness.Onboarding      `json:"onboarding"`
 	Agents      []domain.Agent          `json:"agents"`
 	Sessions    []domain.Session        `json:"sessions"`
+	Schedules   []domain.Schedule       `json:"schedules"`
 	Computers   []domain.ComputerStatus `json:"computers"`
 	Models      []domain.ModelProfile   `json:"models"`
 }
@@ -170,6 +173,7 @@ func New(config Config) *API {
 	a := &API{Config: config, Contract: httpcontract.New(), mux: http.NewServeMux()}
 	a.resources()
 	a.sessionRoutes()
+	a.scheduleRoutes()
 	a.attemptRoutes()
 	a.systemRoutes()
 	a.networkRoutes()
@@ -240,6 +244,9 @@ func (a *API) systemRoutes() {
 		if v.Preferences, err = a.preferences(r.Context()); err != nil {
 			return v, err
 		}
+		if v.Timezone, err = h.Timezone.View(r.Context()); err != nil {
+			return v, err
+		}
 		if v.Agents, err = readAll[domain.Agent](r.Context(), h.Store, "agents"); err != nil {
 			return v, err
 		}
@@ -253,6 +260,9 @@ func (a *API) systemRoutes() {
 			}
 		}
 		v.Sessions = visibleSessions
+		if v.Schedules, err = h.Schedules.List(r.Context(), ""); err != nil {
+			return v, err
+		}
 		if v.Computers, err = a.computers(r.Context()); err != nil {
 			return v, err
 		}
@@ -275,6 +285,9 @@ func (a *API) systemRoutes() {
 		}
 		if p.RunningInput != "follow_up" && p.RunningInput != "steer" {
 			return p, domain.Invalid("unknown running input preference")
+		}
+		if err := timezone.Validate(p.Timezone); err != nil {
+			return p, err
 		}
 		p.ID = "owner"
 		err := h.Store.Save(r.Context(), "preferences", &p.Meta, &p)
@@ -542,7 +555,11 @@ func (a *API) resources() {
 		if len(all) > 0 {
 			next = all[len(all)-1].Sequence
 		}
-		return gateway.MessagePage{Items: all, NextSequence: next}, err
+		items := make([]gateway.StoredMessageObservationView, 0, len(all))
+		for _, item := range all {
+			items = append(items, gateway.StoredMessageObservationView{Sequence: item.Sequence, Observation: gateway.MessageObservation(item.Observation)})
+		}
+		return gateway.MessagePage{Items: items, NextSequence: next}, err
 	}, httpcontract.Parameter{Name: "after", Type: "integer"}, httpcontract.Parameter{Name: "limit", Type: "integer"})
 	route[httpcontract.Empty, channels.DeliveryView](a, "GET", "/observations/{id}/delivery", "observationDelivery", "Channels", func(r *http.Request, _ httpcontract.Empty) (channels.DeliveryView, error) {
 		return c.Delivery(r.Context(), r.PathValue("id"))

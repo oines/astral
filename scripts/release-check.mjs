@@ -184,8 +184,23 @@ export async function checkReleaseTools() {
     }
     const publicNotes = await readFile(path.join(temporary, 'public-output', 'RELEASE_NOTES.md'), 'utf8')
     for (const text of ['macOS:', 'Windows:', 'Linux Desktop:', 'Linux VPS:', 'Apple notarization is accepted', 'Windows packages are not code-signed', 'Linux packages are not code-signed', 'Desktop checks for new versions without downloading packages', 'Versioned migrations are bundled', 'without downloading intermediate releases', `<!-- astral-release:${sourceSHA} -->`]) assert(publicNotes.includes(text), `Missing public release note: ${text}`)
+    for (const text of ['Plan one-time or recurring tasks', 'Settings → General → Timezone', 'IM-bound Sessions', 'unavailable IM image preview', 'QQ NapCat cards', 'six seconds, two levels and twelve child messages', '75,000 pixels', 'Existing history and frozen requests are not rewritten']) assert(publicNotes.includes(text), `Missing current release behavior: ${text}`)
     for (const text of ['review-only', 'Draft Release', 'not approved for public distribution', 'public-release gate remains pending', 'Do not publish']) assert(!publicNotes.includes(text), `Draft-only language in public release notes: ${text}`)
     rejects('release-assets.mjs', [...publicArgs, '--output', 'public-output'], 'must be empty')
+
+    // A real forward Host target must survive collection with a truthful
+    // migration notice; a baseline-only fixture must not mask that contract.
+    const upgradedFormats = { ...formats, host_schema: 4, data_formats: { host: 4, core: 11 }, migration_targets: { host: 4, core: 11 } }
+    await writeFormats(upgradedFormats)
+    invoke('release-assets.mjs', [...publicArgs, '--output', 'host4-output'])
+    const upgradedManifest = JSON.parse(await readFile(path.join(temporary, 'host4-output', 'release-manifest.json'), 'utf8'))
+    assert.deepEqual(upgradedManifest.data_formats, { host: 4, core: 11 })
+    assert.deepEqual(upgradedManifest.migration_baselines, { host: 3, core: 11 })
+    assert.deepEqual(upgradedManifest.migration_targets, { host: 4, core: 11 })
+    const upgradedNotes = await readFile(path.join(temporary, 'host4-output', 'RELEASE_NOTES.md'), 'utf8')
+    for (const text of ['current target is Host 4 / Core 11', 'Host 3 → 4 migration', 'appends an unarchived current revision', 'preserving every earlier revision, IM event and Core history entry', 'ordinary archived Sessions stay archived', 'schema-3-core-11/']) assert(upgradedNotes.includes(text), `Missing Host 4 migration statement: ${text}`)
+    assert(!upgradedNotes.includes('requires no migration'), 'Forward migrations must not be described as requiring no migration')
+    await writeFormats(formats)
 
     for (const [name, value, message] of [
       ['wrong-source', { ...formats, source_sha: '2'.repeat(40) }, 'metadata does not match'],

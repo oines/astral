@@ -8,6 +8,7 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
+	"github.com/oines/astral/internal/schedule"
 )
 
 // DeleteSession records an irreversible intent before touching Core or recall.
@@ -95,11 +96,17 @@ func (s *Service) deleteSession(ctx context.Context, id string, revision int64, 
 		if err := tx.PurgeSessionDeliveries(ctx, id); err != nil {
 			return err
 		}
+		if err := schedule.PurgeSession(ctx, tx, id); err != nil {
+			return err
+		}
 		return tx.Purge(ctx, "sessions", id, current.Revision)
 	}); err != nil {
 		return err
 	}
 	s.removeDeletedRuntime(id)
+	if s.Schedules != nil {
+		s.Schedules.NotifyChanged()
+	}
 	s.notify(id)
 	return nil
 }

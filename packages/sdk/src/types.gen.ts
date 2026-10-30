@@ -798,6 +798,12 @@ export type AstralInternalDomainFileRef = {
     version?: string;
 };
 
+export type AstralInternalDomainForwardedMessage = {
+    parts: Array<AstralInternalDomainMessagePart>;
+    sender: AstralInternalDomainSender;
+    sent_at?: string;
+};
+
 export type AstralInternalDomainHostInfo = {
     arch: string;
     container_available: boolean;
@@ -816,6 +822,32 @@ export type AstralInternalDomainMarkdownTemplate = {
 export type AstralInternalDomainMarkdownTemplateParam = {
     key: string;
     values: Array<string>;
+};
+
+export type AstralInternalDomainMessageCard = {
+    description?: string;
+    kind: string;
+    raw?: unknown;
+    source?: string;
+    title?: string;
+    url?: string;
+};
+
+export type AstralInternalDomainMessageForward = {
+    external_id?: string;
+    messages?: Array<AstralInternalDomainForwardedMessage>;
+    raw?: unknown;
+    status: 'inline' | 'unexpanded' | 'truncated' | 'unavailable';
+    total?: number;
+};
+
+export type AstralInternalDomainMessagePart = {
+    attachment?: AstralInternalDomainAttachment;
+    card?: AstralInternalDomainMessageCard;
+    forward?: AstralInternalDomainMessageForward;
+    ref: string;
+    text?: string;
+    type: 'text' | 'card' | 'attachment' | 'forward' | 'unsupported';
 };
 
 export type AstralInternalDomainModelProfile = {
@@ -858,31 +890,6 @@ export type AstralInternalDomainModelVerification = {
     tested_at: string;
     tool_calling: string;
     tool_replay: string;
-};
-
-export type AstralInternalDomainObservation = {
-    attachments?: Array<AstralInternalDomainAttachment>;
-    connection_id: string;
-    conversation_id: string;
-    edited_at?: string;
-    external_event_id: string;
-    format?: string;
-    id: string;
-    kind: string;
-    message_id: string;
-    reaction?: AstralInternalDomainReactionEvent;
-    received_at: string;
-    reply_attachments?: Array<AstralInternalDomainAttachment>;
-    reply_id?: string;
-    reply_preview?: string;
-    reply_quote?: AstralInternalDomainTextQuote;
-    reply_sender?: string;
-    schema_version: number;
-    self: boolean;
-    sender: AstralInternalDomainSender;
-    sent_at: string;
-    text: string;
-    trigger?: string;
 };
 
 export type AstralInternalDomainOutbox = {
@@ -962,6 +969,31 @@ export type AstralInternalDomainReaction = {
 export type AstralInternalDomainReactionEvent = {
     actor_type: string;
     reactions: Array<AstralInternalDomainReaction>;
+};
+
+export type AstralInternalDomainSchedule = {
+    agent_id: string;
+    created_at: string;
+    enabled: boolean;
+    id: string;
+    last_error?: string;
+    last_run_at?: string;
+    last_session_id?: string;
+    last_status?: 'dispatching' | 'delivered' | 'missed' | 'failed';
+    next_run_at?: string;
+    prompt: string;
+    revision: number;
+    session_id?: string;
+    session_mode: 'existing' | 'new';
+    timing: AstralInternalDomainScheduleTiming;
+    title: string;
+    updated_at: string;
+};
+
+export type AstralInternalDomainScheduleTiming = {
+    at?: string;
+    cron?: string;
+    kind: 'once' | 'cron';
 };
 
 export type AstralInternalDomainSearchProvider = {
@@ -1074,6 +1106,7 @@ export type AstralInternalGatewayContext = {
     default_conversation_id?: string;
     session: AstralInternalDomainSession;
     source_computer_id: string;
+    timezone: AstralInternalTimezoneView;
 };
 
 export type AstralInternalGatewayDownloadRequest = {
@@ -1083,15 +1116,98 @@ export type AstralInternalGatewayDownloadRequest = {
     path: string;
 };
 
+export type AstralInternalGatewayForwardedMessageView = {
+    parts: Array<AstralInternalGatewayMessagePartView>;
+    sender: AstralInternalDomainSender;
+    sent_at?: string;
+};
+
 export type AstralInternalGatewayHistoryPage = {
     entries: Array<AstralCoreEntry>;
     head_id: string;
     next_cursor?: string;
 };
 
+export type AstralInternalGatewayMessageAttachmentView = {
+    kind: string;
+    media_type?: string;
+    name: string;
+    ref: string;
+    size?: number;
+    sticker?: AstralInternalDomainStickerMetadata;
+};
+
+export type AstralInternalGatewayMessageCardView = {
+    description?: string;
+    kind: string;
+    source?: string;
+    title?: string;
+    url?: string;
+};
+
+export type AstralInternalGatewayMessageForwardView = {
+    messages?: Array<AstralInternalGatewayForwardedMessageView>;
+    status: 'inline' | 'unexpanded' | 'truncated' | 'unavailable';
+    total?: number;
+};
+
+export type AstralInternalGatewayMessageObservationView = {
+    attachments?: Array<AstralInternalDomainAttachment>;
+    connection_id: string;
+    conversation_id: string;
+    edited_at?: string;
+    external_event_id: string;
+    format?: string;
+    id: string;
+    kind: string;
+    message_id: string;
+    parts?: Array<AstralInternalGatewayMessagePartView>;
+    reaction?: AstralInternalDomainReactionEvent;
+    received_at: string;
+    reply_attachments?: Array<AstralInternalDomainAttachment>;
+    reply_id?: string;
+    reply_parts?: Array<AstralInternalGatewayMessagePartView>;
+    reply_preview?: string;
+    reply_quote?: AstralInternalDomainTextQuote;
+    reply_sender?: string;
+    schema_version: number;
+    self: boolean;
+    sender: AstralInternalDomainSender;
+    sent_at: string;
+    text: string;
+    trigger?: string;
+};
+
 export type AstralInternalGatewayMessagePage = {
-    items: Array<AstralInternalPersistenceStoredObservation>;
+    items: Array<AstralInternalGatewayStoredMessageObservationView>;
     next_sequence: number;
+};
+
+export type AstralInternalGatewayMessagePartDownloadRequest = {
+    path: string;
+};
+
+export type AstralInternalGatewayMessagePartResponse = {
+    next_offset?: number;
+    offset: number;
+    part: AstralInternalGatewayMessagePartView;
+};
+
+export type AstralInternalGatewayMessagePartView = {
+    attachment?: AstralInternalGatewayMessageAttachmentView;
+    card?: AstralInternalGatewayMessageCardView;
+    content_url?: string;
+    download_url?: string;
+    forward?: AstralInternalGatewayMessageForwardView;
+    raw_url?: string;
+    read_url: string;
+    ref: string;
+    text?: string;
+    type: 'text' | 'card' | 'attachment' | 'forward' | 'unsupported';
+};
+
+export type AstralInternalGatewayMessagePartsResponse = {
+    parts: Array<AstralInternalGatewayMessagePartView>;
 };
 
 export type AstralInternalGatewayReferenceRequest = {
@@ -1107,6 +1223,16 @@ export type AstralInternalGatewayReferenceResponse = {
 export type AstralInternalGatewayResolveConversation = {
     external_id: string;
     topic_id?: string;
+};
+
+export type AstralInternalGatewayScheduleUpdate = {
+    enabled: boolean;
+    prompt: string;
+    revision: number;
+    session_id?: string;
+    session_mode?: 'existing' | 'new';
+    timing: AstralInternalDomainScheduleTiming;
+    title: string;
 };
 
 export type AstralInternalGatewaySendFile = {
@@ -1131,6 +1257,16 @@ export type AstralInternalGatewaySendText = {
     reply_to?: string;
     text: string;
     title?: string;
+};
+
+export type AstralInternalGatewaySessionPresentation = {
+    archived?: boolean;
+    title?: string;
+};
+
+export type AstralInternalGatewayStoredMessageObservationView = {
+    observation: AstralInternalGatewayMessageObservationView;
+    sequence: number;
 };
 
 export type AstralInternalGatewayTelegramStickerDownloadRequest = {
@@ -1247,7 +1383,9 @@ export type AstralInternalHttpapiBootstrap = {
     onboarding: AstralInternalHarnessOnboarding;
     preferences: AstralInternalHttpapiPreferences;
     public_url: string;
+    schedules: Array<AstralInternalDomainSchedule>;
     sessions: Array<AstralInternalDomainSession>;
+    timezone: AstralInternalTimezoneView;
     version: string;
 };
 
@@ -1394,6 +1532,7 @@ export type AstralInternalHttpapiPreferences = {
     revision: number;
     running_input: string;
     theme: string;
+    timezone?: string;
     updated_at: string;
 };
 
@@ -1423,6 +1562,26 @@ export type AstralInternalHttpapiProviderInput = {
     replay_revision?: number;
     revision: number;
     updated_at: string;
+};
+
+export type AstralInternalHttpapiScheduleCreate = {
+    agent_id: string;
+    enabled: boolean;
+    prompt: string;
+    session_id?: string;
+    session_mode?: 'existing' | 'new';
+    timing: AstralInternalDomainScheduleTiming;
+    title: string;
+};
+
+export type AstralInternalHttpapiScheduleUpdate = {
+    enabled: boolean;
+    prompt: string;
+    revision: number;
+    session_id?: string;
+    session_mode?: 'existing' | 'new';
+    timing: AstralInternalDomainScheduleTiming;
+    title: string;
 };
 
 export type AstralInternalHttpapiSearchInput = {
@@ -1501,14 +1660,22 @@ export type AstralInternalHttpcontractOk = {
 };
 
 export type AstralInternalMessagesMetadata = {
+    accepted_at?: string;
     attachments?: Array<AstralInternalDomainAttachment>;
     conversation_id?: string;
     delivery_id: string;
     display_text: string;
     event_id?: string;
     files?: Array<AstralInternalDomainFileRef>;
+    schedule?: AstralInternalMessagesScheduleMetadata;
     sender: AstralInternalDomainSender;
     source: string;
+};
+
+export type AstralInternalMessagesScheduleMetadata = {
+    id: string;
+    scheduled_at: string;
+    title: string;
 };
 
 export type AstralInternalModelbridgeAuthorization = {
@@ -1526,11 +1693,6 @@ export type AstralInternalModelbridgeRefreshResult = {
     removed: number;
     unchanged: number;
     updated: number;
-};
-
-export type AstralInternalPersistenceStoredObservation = {
-    observation: AstralInternalDomainObservation;
-    sequence: number;
 };
 
 export type AstralInternalRecallExcerpt = {
@@ -1650,6 +1812,15 @@ export type AstralInternalRecallSessionPage = {
     next_cursor?: string;
 };
 
+export type AstralInternalScheduleInput = {
+    enabled: boolean;
+    prompt: string;
+    session_id?: string;
+    session_mode?: 'existing' | 'new';
+    timing: AstralInternalDomainScheduleTiming;
+    title: string;
+};
+
 export type AstralInternalSearchAdapter = {
     base_url: string;
     base_url_required: boolean;
@@ -1701,6 +1872,13 @@ export type AstralInternalServerupdateState = {
     retry?: 'check' | 'update';
     unavailable?: string;
     version?: string;
+};
+
+export type AstralInternalTimezoneView = {
+    browser_compatible: boolean;
+    name: string;
+    system: string;
+    using_system: boolean;
 };
 
 export type ListAgentsData = {
@@ -3408,6 +3586,171 @@ export type ResourceUsageResponses = {
 };
 
 export type ResourceUsageResponse = ResourceUsageResponses[keyof ResourceUsageResponses];
+
+export type ListSchedulesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Omit to list schedules for all Bots.
+         */
+        agent_id?: string;
+    };
+    url: '/api/v1/schedules';
+};
+
+export type ListSchedulesErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ListSchedulesError = ListSchedulesErrors[keyof ListSchedulesErrors];
+
+export type ListSchedulesResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalDomainSchedule>;
+};
+
+export type ListSchedulesResponse = ListSchedulesResponses[keyof ListSchedulesResponses];
+
+export type CreateScheduleData = {
+    body: AstralInternalHttpapiScheduleCreate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/schedules';
+};
+
+export type CreateScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type CreateScheduleError = CreateScheduleErrors[keyof CreateScheduleErrors];
+
+export type CreateScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSchedule;
+};
+
+export type CreateScheduleResponse = CreateScheduleResponses[keyof CreateScheduleResponses];
+
+export type ScheduleEventsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        agent_id?: string;
+    };
+    url: '/api/v1/schedules/events';
+};
+
+export type ScheduleEventsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ScheduleEventsError = ScheduleEventsErrors[keyof ScheduleEventsErrors];
+
+export type ScheduleEventsResponses = {
+    /**
+     * OK
+     */
+    200: string;
+};
+
+export type ScheduleEventsResponse = ScheduleEventsResponses[keyof ScheduleEventsResponses];
+
+export type DeleteScheduleData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/api/v1/schedules/{id}';
+};
+
+export type DeleteScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type DeleteScheduleError = DeleteScheduleErrors[keyof DeleteScheduleErrors];
+
+export type DeleteScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type DeleteScheduleResponse = DeleteScheduleResponses[keyof DeleteScheduleResponses];
+
+export type GetScheduleData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/schedules/{id}';
+};
+
+export type GetScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type GetScheduleError = GetScheduleErrors[keyof GetScheduleErrors];
+
+export type GetScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSchedule;
+};
+
+export type GetScheduleResponse = GetScheduleResponses[keyof GetScheduleResponses];
+
+export type UpdateScheduleData = {
+    body: AstralInternalHttpapiScheduleUpdate;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/schedules/{id}';
+};
+
+export type UpdateScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type UpdateScheduleError = UpdateScheduleErrors[keyof UpdateScheduleErrors];
+
+export type UpdateScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSchedule;
+};
+
+export type UpdateScheduleResponse = UpdateScheduleResponses[keyof UpdateScheduleResponses];
 
 export type ListSearchAdaptersData = {
     body?: never;
@@ -5156,7 +5499,7 @@ export type AgentMessageResponses = {
     /**
      * OK
      */
-    200: AstralInternalDomainObservation;
+    200: AstralInternalGatewayMessageObservationView;
 };
 
 export type AgentMessageResponse = AgentMessageResponses[keyof AgentMessageResponses];
@@ -5189,6 +5532,157 @@ export type AgentAttachmentContentResponses = {
 };
 
 export type AgentAttachmentContentResponse = AgentAttachmentContentResponses[keyof AgentAttachmentContentResponses];
+
+export type AgentMessagePartsData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}/parts';
+};
+
+export type AgentMessagePartsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessagePartsError = AgentMessagePartsErrors[keyof AgentMessagePartsErrors];
+
+export type AgentMessagePartsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayMessagePartsResponse;
+};
+
+export type AgentMessagePartsResponse = AgentMessagePartsResponses[keyof AgentMessagePartsResponses];
+
+export type AgentMessagePartData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: {
+        /**
+         * Absolute zero-based forwarded message offset; default 0.
+         */
+        offset?: number;
+        /**
+         * Forwarded messages per page, 1–50; default 20.
+         */
+        limit?: number;
+    };
+    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}';
+};
+
+export type AgentMessagePartErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessagePartError = AgentMessagePartErrors[keyof AgentMessagePartErrors];
+
+export type AgentMessagePartResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayMessagePartResponse;
+};
+
+export type AgentMessagePartResponse = AgentMessagePartResponses[keyof AgentMessagePartResponses];
+
+export type AgentMessagePartContentData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}/content';
+};
+
+export type AgentMessagePartContentErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessagePartContentError = AgentMessagePartContentErrors[keyof AgentMessagePartContentErrors];
+
+export type AgentMessagePartContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type AgentMessagePartContentResponse = AgentMessagePartContentResponses[keyof AgentMessagePartContentResponses];
+
+export type AgentDownloadMessagePartData = {
+    body: AstralInternalGatewayMessagePartDownloadRequest;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}/download';
+};
+
+export type AgentDownloadMessagePartErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentDownloadMessagePartError = AgentDownloadMessagePartErrors[keyof AgentDownloadMessagePartErrors];
+
+export type AgentDownloadMessagePartResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayReferenceResponse;
+};
+
+export type AgentDownloadMessagePartResponse = AgentDownloadMessagePartResponses[keyof AgentDownloadMessagePartResponses];
+
+export type AgentMessagePartRawData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}/raw';
+};
+
+export type AgentMessagePartRawErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessagePartRawError = AgentMessagePartRawErrors[keyof AgentMessagePartRawErrors];
+
+export type AgentMessagePartRawResponses = {
+    /**
+     * OK
+     */
+    200: unknown;
+};
 
 export type AgentFileReferenceData = {
     body: AstralInternalGatewayReferenceRequest;
@@ -5304,6 +5798,139 @@ export type AgentSendReceiptResponses = {
 
 export type AgentSendReceiptResponse = AgentSendReceiptResponses[keyof AgentSendReceiptResponses];
 
+export type AgentSchedulesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/schedules';
+};
+
+export type AgentSchedulesErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentSchedulesError = AgentSchedulesErrors[keyof AgentSchedulesErrors];
+
+export type AgentSchedulesResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalDomainSchedule>;
+};
+
+export type AgentSchedulesResponse = AgentSchedulesResponses[keyof AgentSchedulesResponses];
+
+export type AgentCreateScheduleData = {
+    body: AstralInternalScheduleInput;
+    path?: never;
+    query?: never;
+    url: '/v1/schedules';
+};
+
+export type AgentCreateScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentCreateScheduleError = AgentCreateScheduleErrors[keyof AgentCreateScheduleErrors];
+
+export type AgentCreateScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSchedule;
+};
+
+export type AgentCreateScheduleResponse = AgentCreateScheduleResponses[keyof AgentCreateScheduleResponses];
+
+export type AgentDeleteScheduleData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/v1/schedules/{id}';
+};
+
+export type AgentDeleteScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentDeleteScheduleError = AgentDeleteScheduleErrors[keyof AgentDeleteScheduleErrors];
+
+export type AgentDeleteScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type AgentDeleteScheduleResponse = AgentDeleteScheduleResponses[keyof AgentDeleteScheduleResponses];
+
+export type AgentGetScheduleData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/schedules/{id}';
+};
+
+export type AgentGetScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentGetScheduleError = AgentGetScheduleErrors[keyof AgentGetScheduleErrors];
+
+export type AgentGetScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSchedule;
+};
+
+export type AgentGetScheduleResponse = AgentGetScheduleResponses[keyof AgentGetScheduleResponses];
+
+export type AgentUpdateScheduleData = {
+    body: AstralInternalGatewayScheduleUpdate;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/schedules/{id}';
+};
+
+export type AgentUpdateScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentUpdateScheduleError = AgentUpdateScheduleErrors[keyof AgentUpdateScheduleErrors];
+
+export type AgentUpdateScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSchedule;
+};
+
+export type AgentUpdateScheduleResponse = AgentUpdateScheduleResponses[keyof AgentUpdateScheduleResponses];
+
 export type AgentSessionsData = {
     body?: never;
     path?: never;
@@ -5378,6 +6005,33 @@ export type AgentSearchSessionsResponses = {
 };
 
 export type AgentSearchSessionsResponse = AgentSearchSessionsResponses[keyof AgentSearchSessionsResponses];
+
+export type AgentUpdateSessionData = {
+    body: AstralInternalGatewaySessionPresentation;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/sessions/{id}';
+};
+
+export type AgentUpdateSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentUpdateSessionError = AgentUpdateSessionErrors[keyof AgentUpdateSessionErrors];
+
+export type AgentUpdateSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type AgentUpdateSessionResponse = AgentUpdateSessionResponses[keyof AgentUpdateSessionResponses];
 
 export type AgentHistoryData = {
     body?: never;

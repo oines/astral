@@ -13,6 +13,13 @@ async function notices(directory) {
   return text.join('\n\n')
 }
 
+export async function copiedNotices(root) {
+  return [
+    `Copied frontend brand assets\n\n${await notices(path.join(root, 'packages/icons/src/assets'))}`,
+    `Unicode CLDR Windows timezone mapping\nhttps://github.com/unicode-org/cldr/blob/c4bb2c199c5385088f52011c4d4c813f2c36db1e/common/supplemental/windowsZones.xml\n\n${await readFile(path.join(root, 'internal/timezone/system_windows_LICENSE.txt'), 'utf8')}`,
+  ]
+}
+
 export async function buildNotices(root, target) {
   const commandOptions = { cwd: root, encoding: 'utf8', maxBuffer: 20 << 20 }
   const packageManager = process.platform === 'win32' ? process.env.npm_execpath : undefined
@@ -24,7 +31,7 @@ export async function buildNotices(root, target) {
       return { Path, Version, Dir }
     })
   const sections = ['Astral third-party notices\n\nPackage source licenses are reproduced below. Some build-time dependencies may also appear in this inventory.\n\n' + await readFile(path.join(root, 'THIRD_PARTY.md'), 'utf8')]
-  sections.push(`Copied frontend brand assets\n\n${await notices(path.join(root, 'packages/icons/src/assets'))}`)
+  sections.push(...await copiedNotices(root))
   for (const entry of Object.values(nodePackages).flat().sort((a, b) => a.name.localeCompare(b.name))) {
     const texts = []
     for (const directory of entry.paths) {

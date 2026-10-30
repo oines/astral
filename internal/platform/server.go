@@ -298,6 +298,9 @@ func (s *Server) Start() error {
 			s.mu.Unlock()
 		}
 	}
+	if err := s.Harness.Schedules.Start(s.ctx); err != nil {
+		return err
+	}
 	s.startUpdateChecks()
 	return nil
 }

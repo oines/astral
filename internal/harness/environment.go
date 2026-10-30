@@ -272,10 +272,13 @@ func (r *runtime) collectEnvironment(ctx context.Context) (map[string]any, error
 		discovery = computers.UnavailableDiscovery("unavailable", "The selected Computer is unavailable or no longer authorized.")
 	}
 	sort.Slice(allowed, func(i, j int) bool { return allowed[i]["id"].(string) < allowed[j]["id"].(string) })
-	info := map[string]any{"agent": map[string]string{"id": agent.ID, "name": agent.Name}, "session": map[string]string{"id": r.id, "source": record.Source, "conversation_id": record.ConversationID},
-		"current_computer": currentComputer, "allowed_computers": allowed, "search_provider_id": agent.SearchProviderID,
+	zone, err := s.Timezone.View(ctx)
+	if err != nil {
+		return nil, err
+	}
+	info := map[string]any{"current_computer": currentComputer, "allowed_computers": allowed, "search_provider_id": agent.SearchProviderID,
 		"discovery": discovery,
-		"local_api": localAPI}
+		"local_api": localAPI, "timezone": zone.Name}
 	return info, nil
 }
 

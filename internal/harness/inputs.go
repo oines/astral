@@ -170,7 +170,11 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 		}
 		files = append(files, file)
 	}
-	message := messages.Web(input.ID, input.Text, "Owner", time.Now().UTC(), files)
+	location, err := s.Timezone.Location(ctx)
+	if err != nil {
+		return InputReceipt{}, err
+	}
+	message := messages.Web(input.ID, input.Text, "Owner", time.Now().In(location), files)
 	if err = s.Files.FreezeImages(ctx, r.agentID, id, &message); err != nil {
 		return InputReceipt{}, err
 	}

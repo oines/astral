@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 
+	hostmigrations "github.com/oines/astral/internal/persistence/migrations"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/database"
 )
@@ -431,7 +432,9 @@ func (s migrationStore) Insert(ctx context.Context, db database.DBTxConn, req da
 
 // Add immutable, self-contained JSON/data transformations here. A migration's
 // input structs belong to that migration, never to the current domain package.
-func hostGoMigrations() []*goose.Migration { return nil }
+func hostGoMigrations() []*goose.Migration {
+	return []*goose.Migration{hostmigrations.BoundSessionsVisible()}
+}
 
 func migrationURI(path, system string) url.URL {
 	if system == "windows" {

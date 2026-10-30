@@ -140,9 +140,12 @@ func TestEnvironmentModelViewPreservesAPITargetsWithoutInternalFields(t *testing
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(body, "Current Astral environment snapshot:\n")), &visible); err != nil {
 		t.Fatal(err)
 	}
-	agent, session := visible["agent"].(map[string]any), visible["session"].(map[string]any)
+	identity := readPromptIdentity(t, wireSystemPrompt(request))
+	if visible["agent"] != nil || visible["session"] != nil {
+		t.Fatal("identity still included in environment snapshot")
+	}
 	computer := visible["current_computer"].(map[string]any)
-	if agent["id"] != f.agent.ID || session["id"] != f.session.ID || session["source"] != record.Source || session["conversation_id"] != record.ConversationID || computer["id"] != record.ComputerID || computer["cwd"] != record.CWD {
+	if identity.Agent.ID != f.agent.ID || identity.Session.ID != f.session.ID || identity.Session.Source != record.Source || identity.Session.ConversationID != "" || computer["id"] != record.ComputerID || computer["cwd"] != record.CWD {
 		t.Fatalf("model lost its API targets or working directory: %s", body)
 	}
 	for _, field := range []string{"name", "os", "arch", "shell", "agent_home", "online", "revoked"} {
@@ -305,8 +308,15 @@ func TestEnvironmentInitializationDedupAndReadsAcrossRestart(t *testing.T) {
 	}
 	f.idle(t, child.ID)
 	childEnvironments := environmentEntries(t, f, child.ID)
-	if len(childEnvironments) != 4 || !strings.Contains(childEnvironments[len(childEnvironments)-1].Message.Content[0].Text, child.ID) {
-		t.Fatal("first fork execution did not append its own full environment")
+	if len(childEnvironments) != 4 || !strings.Contains(childEnvironments[len(childEnvironments)-1].Message.Content[0].Text, `"current_computer"`) {
+		t.Fatal("first fork execution did not append a full environment")
+	}
+	view, err = f.service.InspectContext(f.ctx, child.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readPromptIdentity(t, view.Request.SystemPrompt); got.Session.ID != child.ID {
+		t.Fatal("Fork did not inject its own System identity")
 	}
 }
 

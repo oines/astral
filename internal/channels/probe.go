@@ -317,7 +317,11 @@ func (s *Service) shouldParticipate(ctx context.Context, b domain.ConversationBi
 	prompt += "\n\n" + messages.ChatMetadataNotice + "\n" + messages.ChatContext(connection, conversation)
 	request := core.Request{ModelID: spec.ID, ModelRevision: spec.Revision, SystemPrompt: prompt,
 		Messages: probeMessages(view.Request.Messages, values.Images == "supported"), Tools: []core.ToolDefinition{decideTool}, Options: options, MaxOutputTokens: min(2048, spec.MaxOutputTokens)}
-	request.Messages = append(request.Messages, core.User("Current time: "+time.Now().UTC().Format(time.RFC3339)+"\nAgent: "+agent.Name+"\nCall decide with only participate."))
+	location, err := s.Harness.Timezone.Location(ctx)
+	if err != nil {
+		return false, err
+	}
+	request.Messages = append(request.Messages, core.User("Current time: "+time.Now().In(location).Format(time.RFC3339)+"\nAgent: "+agent.Name+"\nCall decide with only participate."))
 	request, err = core.PrepareRequest(ctx, model, request)
 	if err != nil {
 		return false, err

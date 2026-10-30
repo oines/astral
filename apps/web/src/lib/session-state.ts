@@ -93,6 +93,12 @@ export function messageText(entry: Entry): string {
   if (m.role === 'user' && typeof metadata.display_text === 'string') return metadata.display_text
   return (m.content ?? []).filter(p => p.type === 'text').map(p => p.text ?? '').join('\n')
 }
+export function scheduledMessage(entry: Entry) {
+  const meta = object(entry.message?.metadata)
+  if (meta.source !== 'schedule') return undefined
+  const schedule = object(meta.schedule)
+  return { title: typeof schedule.title === 'string' ? schedule.title : '', deliveredAt: typeof meta.accepted_at === 'string' ? meta.accepted_at : entry.time }
+}
 function conversationMessage(entry: Entry) {
   const message = entry.message
   // Role describes model input, not UI visibility. Passive context and internal
