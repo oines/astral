@@ -323,9 +323,10 @@ func (w *weixinAdapter) upload(ctx context.Context, send Send, mediaKind string)
 	}
 	encryptedSize := (size/aes.BlockSize + 1) * aes.BlockSize
 	mediaType := 3
-	if mediaKind == "image" {
+	switch mediaKind {
+	case "image":
 		mediaType = 1
-	} else if mediaKind == "video" {
+	case "video":
 		mediaType = 2
 	}
 	fileKey := domain.ID("astral_weixin_file")

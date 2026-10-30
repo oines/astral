@@ -100,7 +100,7 @@ func TestOutboxPartsMigrationFrom4And5PreservesReceiptsAndHistorySemantics(t *te
 				if err := store.Version(context.Background(), "outbox", item.id, 1, &historical); err != nil {
 					t.Fatal(err)
 				}
-				if !reflect.DeepEqual(current.Parts, item.parts) && !(len(current.Parts) == 0 && len(item.parts) == 0) {
+				if !reflect.DeepEqual(current.Parts, item.parts) && (len(current.Parts) != 0 || len(item.parts) != 0) {
 					t.Fatalf("%s current parts: %#v", item.id, current.Parts)
 				}
 				if !reflect.DeepEqual(historical.Parts, current.Parts) {
