@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -235,6 +236,7 @@ func (n *napcat) Poll(ctx context.Context, cursor string) (Batch, error) {
 				event.Observation.ReplySender = reply.Sender.Name
 				event.Observation.ReplyPreview = string([]rune(reply.Text)[:min(len([]rune(reply.Text)), 500)])
 				event.Observation.ReplyAttachments = reply.Attachments
+				event.Observation.ReplyParts = reply.Parts
 				if reply.Self && !event.Observation.Self {
 					event.Observation.Trigger = "reply"
 				}
@@ -251,20 +253,26 @@ func (n *napcat) Poll(ctx context.Context, cursor string) (Batch, error) {
 var napcatID = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 type napcatSegment struct {
-	Type string             `json:"type"`
-	Data map[string]qqValue `json:"data"`
+	Type    string             `json:"type"`
+	Data    map[string]qqValue `json:"data"`
+	RawData json.RawMessage    `json:"-"`
 }
 
 func (s *napcatSegment) UnmarshalJSON(raw []byte) error {
 	var wire struct {
-		Type string                     `json:"type"`
-		Data map[string]json.RawMessage `json:"data"`
+		Type string          `json:"type"`
+		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &wire); err != nil {
-		return err
+		// One malformed optional segment must not hold the event stream. The
+		// enclosing message still has to be a valid JSON array.
+		s.Type, s.Data, s.RawData = "invalid", map[string]qqValue{}, nil
+		return nil
 	}
-	s.Type, s.Data = wire.Type, map[string]qqValue{}
-	for key, raw := range wire.Data {
+	s.Type, s.Data, s.RawData = wire.Type, map[string]qqValue{}, append(json.RawMessage(nil), wire.Data...)
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(wire.Data, &fields)
+	for key, raw := range fields {
 		var scalar qqValue
 		if scalar.UnmarshalJSON(raw) == nil {
 			s.Data[key] = scalar
@@ -435,6 +443,9 @@ func (n *napcat) normalize(raw json.RawMessage) (*Event, error) {
 			default:
 				observation.Text += "[" + segment.Type + "]"
 			}
+		}
+		if slices.ContainsFunc(segments, func(segment napcatSegment) bool { return segment.Type == "json" || segment.Type == "forward" }) {
+			observation.Parts, observation.Text, _ = napcatParts(message.Message, observation.MessageID, "")
 		}
 	}
 	if observation.Self {

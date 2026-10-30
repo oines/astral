@@ -204,6 +204,29 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 		edited := event.EditedAt.In(location)
 		event.EditedAt = &edited
 	}
+	// Preparing a merged forward is optional enrichment of this one event.
+	// Resolve its quoted structure and small image previews under one budget;
+	// neither remote metadata nor pixels may keep later IM messages waiting.
+	previewContext, cancelPreviews := context.WithTimeout(ctx, forwardPreviewTimeout)
+	defer cancelPreviews()
+	partBudget := newForwardPreparationBudget()
+	caller := domain.ExecutionBinding{AgentID: b.AgentID, SessionID: b.SessionID}
+	for _, source := range []struct {
+		messageID string
+		parts     *[]domain.MessagePart
+	}{{event.MessageID, &event.Parts}, {event.ReplyID, &event.ReplyParts}} {
+		prepared, prepareErr := s.prepareForwardParts(previewContext, caller, conversation.ID, source.messageID, *source.parts, partBudget)
+		if prepareErr != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if previewContext.Err() == nil {
+				return prepareErr
+			}
+			continue
+		}
+		*source.parts = prepared
+	}
 	observation := messages.Observation(event, connection, conversation, nil, "")
 	for _, attachment := range event.Attachments {
 		sticker, thumbnail := stickerImage(event.Attachments, attachment)
@@ -237,6 +260,11 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 		}
 		observation.Content = append(observation.Content, content...)
 	}
+	forwardImages, err := s.forwardObservationImages(ctx, previewContext, b, conversation, event, connection)
+	if err != nil {
+		return err
+	}
+	observation.Content = append(observation.Content, forwardImages...)
 	var trigger *core.Message
 	if event.Trigger != "" && !event.Self {
 		value := messages.Trigger(event)

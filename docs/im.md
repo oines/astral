@@ -44,7 +44,7 @@ Model observations render the original preview as `<in-reply-to ...>` and the es
 
 ## Referenced media and QQ notices
 
-`Observation.reply_attachments` retains referenced media separately from the current message's `attachments`. Its `<attachment>` nodes live inside `<in-reply-to>` and identify the original message, attachment reference, type, filename, MIME type, size and same-chat original-download path. They are not automatically downloaded, converted into image previews, saved as Computer files or registered as FileRefs. The Agent can request the original through the advertised Computer API path when it needs it.
+`Observation.reply_attachments` retains referenced media separately from the current message's `attachments`. Its `<attachment>` nodes live inside `<in-reply-to>` and identify the original message, attachment reference, type, filename, MIME type, size and same-chat original-download path. These plain attachment references are not automatically downloaded, converted into image previews, saved as Computer files or registered as FileRefs. The Agent can request the original through the advertised Computer API path when it needs it.
 
 Telegram can supply original media metadata in a same-chat `reply_to_message` even when Astral never received that original as its own update. This metadata supports an authorized original download without fabricating a `message.created` event for the source. Cross-chat `external_reply` does not authorize media lookup. NapCat resolves reply metadata only from the current chat's existing archive; missing source text/media is explicitly marked unavailable, without an automatic `get_msg` or a lookup in another chat.
 
@@ -53,6 +53,18 @@ NapCat `notify.poke` becomes a separate `notice.poke` observation, not a user-au
 Recalls remain independent `message.deleted` observations describing the operator, original author and target message ID. Both notices render as escaped `<event id="…" kind="…" ...>description</event>` records; a poke has no fabricated message ID, and its `<im_trigger>` refers to the notice's event ID. The original Core observation and receipt remain unchanged. Archive lookup can expose the latest message state, while the ordered event stream retains the original and later notice.
 
 NapCat notices without an upstream `event_id` receive a local identity once per received WebSocket frame. Pending-batch retries retain that identity; separately received identical pokes remain distinct. An explicit upstream event ID provides scoped deduplication. NapCat does not offer missed-history replay, and local identities do not promise exact deduplication across disconnection and upstream replay.
+
+## NapCat cards and nested merged forwards
+
+New NapCat observations retain ordered `Observation.parts`; same-chat replies copy the source's tree into `reply_parts`. Parts distinguish text, cards, attachments and merged forwards. A forwarded message retains its sender, supplied time and ordered children, including further forwards. JSON cards expose readable source, title, description and link rather than `[json]`; a platform label such as Bilibili and its actual video title remain separate readable values. Original card JSON is retained for an explicit resource read, without being copied into the initial observation preview. Only the known `com.tencent.multimsg` ARK shape with `meta.detail.resid` becomes a forward resource; its `news` text is a card preview, not a fabricated list of original messages.
+
+The initial context is a bounded preview. Inline nodes are parsed locally. When only a forward handle is available, observation preparation may resolve a small preview within a shared six-second budget, two forward levels and twelve child messages. Poll never performs unbounded recursive network reads. Long, deeper, unavailable and partially resolved trees carry explicit status and `read-url` links; the Agent can page the selected resource when it needs more. An optional expansion failure leaves the enclosing text, reply and trigger available and does not hold later incoming messages behind it.
+
+Images selected from a forward preview use the existing in-memory image path: at most 75,000 display pixels, supplied as native multimodal input and retained with the admitted history. Their original `download-url` remains available. Receiving does not separately save original images or files on Server/Computer disk, or register a FileRef. Videos and ordinary files contribute metadata and original-download links only. An Agent explicitly downloads an original when it needs the file or image details; an unavailable image preview retains its metadata and original path through the ordinary optional-image fallback.
+
+All nodes retain the enclosing authorized account, Conversation and root message. A Host path such as `p0.m1.p2` identifies a part of that root, not a platform message or chat ID. Forwarded sender names, chat IDs, mentions and reply IDs never create another Observation, grant chat access or activate the Agent. Only the enclosing live message follows normal trigger rules. Resource reads recheck current root-chat access and do not accept a caller-supplied bare resource ID.
+
+Discover the tree through `GET /v1/conversations/{id}/messages/{message_id}/parts`, then follow a part's `read_url`. Forward pages use `offset` and `limit` (default 20, maximum 50); a card's `raw_url` explicitly reads its original JSON. Attachment `content_url` streams original bytes, while its explicit download action takes a Computer destination path and returns a FileRef. The capability documents describe the current routes. These reads do not create Sessions or rewrite IMStore, earlier model context, summaries or frozen requests. An older archive that retained only a placeholder may be read from NapCat on explicit request when its original root-chat identity can still be proved; the old observation is not backfilled.
 
 ## Message reactions
 
@@ -146,6 +158,11 @@ The Host prompt points to this discovery entry and explains the command credenti
 | `GET /v1/conversations/{id}/message-tool` | Current adapter's `send_message` description and parameter schema |
 | `GET /v1/conversations/{id}/messages?after=0&limit=100&q=` | Archive search; filtering happens before pagination; continue from `next_sequence` |
 | `GET /v1/conversations/{id}/messages/{message_id}` | Latest archived version of one platform message |
+| `GET /v1/conversations/{id}/messages/{message_id}/parts` | Ordered message-part index with safe read links |
+| `GET /v1/conversations/{id}/messages/{message_id}/parts/{ref}` | Read a selected part; page forwards with `offset` and `limit` |
+| `GET /v1/conversations/{id}/messages/{message_id}/parts/{ref}/raw` | Explicitly read the original payload of a selected card |
+| `GET /v1/conversations/{id}/messages/{message_id}/parts/{ref}/content` | Stream an original attachment, including nested forward media |
+| `POST /v1/conversations/{id}/messages/{message_id}/parts/{ref}/download` | `{path}` explicitly saves that original on the calling Computer |
 | `GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content` | Original file bytes, streamed over the Daemon transport |
 | `POST /v1/attachments/download` | `{conversation_id,event_id,attachment_ref,path}` writes to an explicit path on the calling Computer |
 | `POST /v1/im/messages` | `{conversation_id?,text,reply_to?,format?,…}` sends text and waits for the platform result |

@@ -20,7 +20,6 @@ import (
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/httpcontract"
-	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/timezone"
 )
 
@@ -47,8 +46,8 @@ type Context struct {
 	Timezone              timezone.View  `json:"timezone"`
 }
 type MessagePage struct {
-	Items        []persistence.StoredObservation `json:"items"`
-	NextSequence int64                           `json:"next_sequence"`
+	Items        []StoredMessageObservationView `json:"items"`
+	NextSequence int64                          `json:"next_sequence"`
 }
 type HistoryPage struct {
 	Entries    []sessions.Entry `json:"entries"`
@@ -125,17 +124,19 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		return c.TelegramOperation(r.Context(), binding(r), r.PathValue("id"), r.PathValue("operation"), request)
 	})
 	s.telegramStickerRoutes()
+	s.messagePartRoutes()
 	register[httpcontract.Empty, []domain.Connection](s, "GET", "/v1/accounts", "agentAccounts", func(r *http.Request, _ httpcontract.Empty) ([]domain.Connection, error) {
 		return c.VisibleConnections(r.Context(), binding(r).AgentID)
 	})
 	register[ResolveConversation, domain.Conversation](s, "POST", "/v1/accounts/{id}/conversations/resolve", "agentResolveConversation", func(r *http.Request, request ResolveConversation) (domain.Conversation, error) {
 		return c.ResolveForAgent(r.Context(), binding(r).AgentID, r.PathValue("id"), request.ExternalID, request.TopicID)
 	})
-	register[httpcontract.Empty, domain.Observation](s, "GET", "/v1/conversations/{id}/messages/{message_id}", "agentMessage", func(r *http.Request, _ httpcontract.Empty) (domain.Observation, error) {
+	register[httpcontract.Empty, MessageObservationView](s, "GET", "/v1/conversations/{id}/messages/{message_id}", "agentMessage", func(r *http.Request, _ httpcontract.Empty) (MessageObservationView, error) {
 		if err := s.visibleConversation(r.Context(), binding(r).AgentID, r.PathValue("id")); err != nil {
-			return domain.Observation{}, err
+			return MessageObservationView{}, err
 		}
-		return h.Store.Message(r.Context(), r.PathValue("id"), r.PathValue("message_id"))
+		observation, err := h.Store.Message(r.Context(), r.PathValue("id"), r.PathValue("message_id"))
+		return MessageObservation(observation), err
 	})
 	const contentPath = "/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content"
 	s.Contract.Describe(httpcontract.Operation{Method: "GET", Path: contentPath, ID: "agentAttachmentContent", Tag: "Agent Gateway", CommandAuth: true, ContentType: "application/octet-stream"})
@@ -170,10 +171,10 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		if err != nil {
 			return MessagePage{}, err
 		}
-		page := MessagePage{Items: []persistence.StoredObservation{}, NextSequence: after}
+		page := MessagePage{Items: []StoredMessageObservationView{}, NextSequence: after}
 		for _, item := range items {
 			page.NextSequence = item.Sequence
-			page.Items = append(page.Items, item)
+			page.Items = append(page.Items, StoredMessageObservationView{Sequence: item.Sequence, Observation: MessageObservation(item.Observation)})
 		}
 		return page, nil
 	}, httpcontract.Parameter{Name: "after", Type: "integer"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "q"})

@@ -325,6 +325,7 @@ type Observation struct {
 	MessageID        string         `json:"message_id"`
 	Sender           Sender         `json:"sender"`
 	Text             string         `json:"text"`
+	Parts            []MessagePart  `json:"parts,omitempty"`
 	Format           string         `json:"format,omitempty"`
 	SentAt           time.Time      `json:"sent_at"`
 	EditedAt         *time.Time     `json:"edited_at,omitempty"`
@@ -334,6 +335,7 @@ type Observation struct {
 	ReplyPreview     string         `json:"reply_preview,omitempty"`
 	ReplyQuote       *TextQuote     `json:"reply_quote,omitempty"`
 	ReplyAttachments []Attachment   `json:"reply_attachments,omitempty"`
+	ReplyParts       []MessagePart  `json:"reply_parts,omitempty"`
 	Attachments      []Attachment   `json:"attachments,omitempty"`
 	Trigger          string         `json:"trigger,omitempty"`
 	Self             bool           `json:"self"`

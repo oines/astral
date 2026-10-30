@@ -798,6 +798,12 @@ export type AstralInternalDomainFileRef = {
     version?: string;
 };
 
+export type AstralInternalDomainForwardedMessage = {
+    parts: Array<AstralInternalDomainMessagePart>;
+    sender: AstralInternalDomainSender;
+    sent_at?: string;
+};
+
 export type AstralInternalDomainHostInfo = {
     arch: string;
     container_available: boolean;
@@ -816,6 +822,32 @@ export type AstralInternalDomainMarkdownTemplate = {
 export type AstralInternalDomainMarkdownTemplateParam = {
     key: string;
     values: Array<string>;
+};
+
+export type AstralInternalDomainMessageCard = {
+    description?: string;
+    kind: string;
+    raw?: unknown;
+    source?: string;
+    title?: string;
+    url?: string;
+};
+
+export type AstralInternalDomainMessageForward = {
+    external_id?: string;
+    messages?: Array<AstralInternalDomainForwardedMessage>;
+    raw?: unknown;
+    status: 'inline' | 'unexpanded' | 'truncated' | 'unavailable';
+    total?: number;
+};
+
+export type AstralInternalDomainMessagePart = {
+    attachment?: AstralInternalDomainAttachment;
+    card?: AstralInternalDomainMessageCard;
+    forward?: AstralInternalDomainMessageForward;
+    ref: string;
+    text?: string;
+    type: 'text' | 'card' | 'attachment' | 'forward' | 'unsupported';
 };
 
 export type AstralInternalDomainModelProfile = {
@@ -858,31 +890,6 @@ export type AstralInternalDomainModelVerification = {
     tested_at: string;
     tool_calling: string;
     tool_replay: string;
-};
-
-export type AstralInternalDomainObservation = {
-    attachments?: Array<AstralInternalDomainAttachment>;
-    connection_id: string;
-    conversation_id: string;
-    edited_at?: string;
-    external_event_id: string;
-    format?: string;
-    id: string;
-    kind: string;
-    message_id: string;
-    reaction?: AstralInternalDomainReactionEvent;
-    received_at: string;
-    reply_attachments?: Array<AstralInternalDomainAttachment>;
-    reply_id?: string;
-    reply_preview?: string;
-    reply_quote?: AstralInternalDomainTextQuote;
-    reply_sender?: string;
-    schema_version: number;
-    self: boolean;
-    sender: AstralInternalDomainSender;
-    sent_at: string;
-    text: string;
-    trigger?: string;
 };
 
 export type AstralInternalDomainOutbox = {
@@ -1109,15 +1116,98 @@ export type AstralInternalGatewayDownloadRequest = {
     path: string;
 };
 
+export type AstralInternalGatewayForwardedMessageView = {
+    parts: Array<AstralInternalGatewayMessagePartView>;
+    sender: AstralInternalDomainSender;
+    sent_at?: string;
+};
+
 export type AstralInternalGatewayHistoryPage = {
     entries: Array<AstralCoreEntry>;
     head_id: string;
     next_cursor?: string;
 };
 
+export type AstralInternalGatewayMessageAttachmentView = {
+    kind: string;
+    media_type?: string;
+    name: string;
+    ref: string;
+    size?: number;
+    sticker?: AstralInternalDomainStickerMetadata;
+};
+
+export type AstralInternalGatewayMessageCardView = {
+    description?: string;
+    kind: string;
+    source?: string;
+    title?: string;
+    url?: string;
+};
+
+export type AstralInternalGatewayMessageForwardView = {
+    messages?: Array<AstralInternalGatewayForwardedMessageView>;
+    status: 'inline' | 'unexpanded' | 'truncated' | 'unavailable';
+    total?: number;
+};
+
+export type AstralInternalGatewayMessageObservationView = {
+    attachments?: Array<AstralInternalDomainAttachment>;
+    connection_id: string;
+    conversation_id: string;
+    edited_at?: string;
+    external_event_id: string;
+    format?: string;
+    id: string;
+    kind: string;
+    message_id: string;
+    parts?: Array<AstralInternalGatewayMessagePartView>;
+    reaction?: AstralInternalDomainReactionEvent;
+    received_at: string;
+    reply_attachments?: Array<AstralInternalDomainAttachment>;
+    reply_id?: string;
+    reply_parts?: Array<AstralInternalGatewayMessagePartView>;
+    reply_preview?: string;
+    reply_quote?: AstralInternalDomainTextQuote;
+    reply_sender?: string;
+    schema_version: number;
+    self: boolean;
+    sender: AstralInternalDomainSender;
+    sent_at: string;
+    text: string;
+    trigger?: string;
+};
+
 export type AstralInternalGatewayMessagePage = {
-    items: Array<AstralInternalPersistenceStoredObservation>;
+    items: Array<AstralInternalGatewayStoredMessageObservationView>;
     next_sequence: number;
+};
+
+export type AstralInternalGatewayMessagePartDownloadRequest = {
+    path: string;
+};
+
+export type AstralInternalGatewayMessagePartResponse = {
+    next_offset?: number;
+    offset: number;
+    part: AstralInternalGatewayMessagePartView;
+};
+
+export type AstralInternalGatewayMessagePartView = {
+    attachment?: AstralInternalGatewayMessageAttachmentView;
+    card?: AstralInternalGatewayMessageCardView;
+    content_url?: string;
+    download_url?: string;
+    forward?: AstralInternalGatewayMessageForwardView;
+    raw_url?: string;
+    read_url: string;
+    ref: string;
+    text?: string;
+    type: 'text' | 'card' | 'attachment' | 'forward' | 'unsupported';
+};
+
+export type AstralInternalGatewayMessagePartsResponse = {
+    parts: Array<AstralInternalGatewayMessagePartView>;
 };
 
 export type AstralInternalGatewayReferenceRequest = {
@@ -1172,6 +1262,11 @@ export type AstralInternalGatewaySendText = {
 export type AstralInternalGatewaySessionPresentation = {
     archived?: boolean;
     title?: string;
+};
+
+export type AstralInternalGatewayStoredMessageObservationView = {
+    observation: AstralInternalGatewayMessageObservationView;
+    sequence: number;
 };
 
 export type AstralInternalGatewayTelegramStickerDownloadRequest = {
@@ -1598,11 +1693,6 @@ export type AstralInternalModelbridgeRefreshResult = {
     removed: number;
     unchanged: number;
     updated: number;
-};
-
-export type AstralInternalPersistenceStoredObservation = {
-    observation: AstralInternalDomainObservation;
-    sequence: number;
 };
 
 export type AstralInternalRecallExcerpt = {
@@ -5409,7 +5499,7 @@ export type AgentMessageResponses = {
     /**
      * OK
      */
-    200: AstralInternalDomainObservation;
+    200: AstralInternalGatewayMessageObservationView;
 };
 
 export type AgentMessageResponse = AgentMessageResponses[keyof AgentMessageResponses];
@@ -5442,6 +5532,157 @@ export type AgentAttachmentContentResponses = {
 };
 
 export type AgentAttachmentContentResponse = AgentAttachmentContentResponses[keyof AgentAttachmentContentResponses];
+
+export type AgentMessagePartsData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}/parts';
+};
+
+export type AgentMessagePartsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessagePartsError = AgentMessagePartsErrors[keyof AgentMessagePartsErrors];
+
+export type AgentMessagePartsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayMessagePartsResponse;
+};
+
+export type AgentMessagePartsResponse = AgentMessagePartsResponses[keyof AgentMessagePartsResponses];
+
+export type AgentMessagePartData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: {
+        /**
+         * Absolute zero-based forwarded message offset; default 0.
+         */
+        offset?: number;
+        /**
+         * Forwarded messages per page, 1–50; default 20.
+         */
+        limit?: number;
+    };
+    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}';
+};
+
+export type AgentMessagePartErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessagePartError = AgentMessagePartErrors[keyof AgentMessagePartErrors];
+
+export type AgentMessagePartResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayMessagePartResponse;
+};
+
+export type AgentMessagePartResponse = AgentMessagePartResponses[keyof AgentMessagePartResponses];
+
+export type AgentMessagePartContentData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}/content';
+};
+
+export type AgentMessagePartContentErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessagePartContentError = AgentMessagePartContentErrors[keyof AgentMessagePartContentErrors];
+
+export type AgentMessagePartContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type AgentMessagePartContentResponse = AgentMessagePartContentResponses[keyof AgentMessagePartContentResponses];
+
+export type AgentDownloadMessagePartData = {
+    body: AstralInternalGatewayMessagePartDownloadRequest;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}/download';
+};
+
+export type AgentDownloadMessagePartErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentDownloadMessagePartError = AgentDownloadMessagePartErrors[keyof AgentDownloadMessagePartErrors];
+
+export type AgentDownloadMessagePartResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayReferenceResponse;
+};
+
+export type AgentDownloadMessagePartResponse = AgentDownloadMessagePartResponses[keyof AgentDownloadMessagePartResponses];
+
+export type AgentMessagePartRawData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}/raw';
+};
+
+export type AgentMessagePartRawErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentMessagePartRawError = AgentMessagePartRawErrors[keyof AgentMessagePartRawErrors];
+
+export type AgentMessagePartRawResponses = {
+    /**
+     * OK
+     */
+    200: unknown;
+};
 
 export type AgentFileReferenceData = {
     body: AstralInternalGatewayReferenceRequest;

@@ -555,7 +555,11 @@ func (a *API) resources() {
 		if len(all) > 0 {
 			next = all[len(all)-1].Sequence
 		}
-		return gateway.MessagePage{Items: all, NextSequence: next}, err
+		items := make([]gateway.StoredMessageObservationView, 0, len(all))
+		for _, item := range all {
+			items = append(items, gateway.StoredMessageObservationView{Sequence: item.Sequence, Observation: gateway.MessageObservation(item.Observation)})
+		}
+		return gateway.MessagePage{Items: items, NextSequence: next}, err
 	}, httpcontract.Parameter{Name: "after", Type: "integer"}, httpcontract.Parameter{Name: "limit", Type: "integer"})
 	route[httpcontract.Empty, channels.DeliveryView](a, "GET", "/observations/{id}/delivery", "observationDelivery", "Channels", func(r *http.Request, _ httpcontract.Empty) (channels.DeliveryView, error) {
 		return c.Delivery(r.Context(), r.PathValue("id"))

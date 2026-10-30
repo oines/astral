@@ -166,35 +166,44 @@ func Observation(event domain.Observation, _ domain.Connection, conversation dom
 		}
 		body.WriteString(">\n")
 		if event.ReplyID != "" {
-			fmt.Fprintf(&body, "<in-reply-to id=\"%s\" sender=\"%s\">%s", Escape(event.ReplyID), Escape(event.ReplySender), Escape(event.ReplyPreview))
-			for _, attachment := range event.ReplyAttachments {
-				fmt.Fprintf(&body, "\n<attachment type=\"%s\" name=\"%s\" mime=\"%s\" message-id=\"%s\" file-id=\"%s\" size=\"%d\" download-url=\"%s\"/>",
-					Escape(attachment.Kind), Escape(attachment.Name), Escape(attachment.MediaType), Escape(event.ReplyID), Escape(attachment.Ref), attachment.Size,
-					Escape(AttachmentDownloadPath(conversation.ID, event.ReplyID, attachment.Ref)))
+			fmt.Fprintf(&body, "<in-reply-to id=\"%s\" sender=\"%s\" read-url=\"%s\">", Escape(event.ReplyID), Escape(event.ReplySender), Escape(MessagePartsReadPath(conversation.ID, event.ReplyID)))
+			if len(event.ReplyParts) != 0 {
+				body.WriteString(RichPartsPreview(event.ReplyParts, conversation.ID, event.ReplyID, event.SentAt.Location()).Text)
+			} else {
+				body.WriteString(Escape(event.ReplyPreview))
+				for _, attachment := range event.ReplyAttachments {
+					fmt.Fprintf(&body, "\n<attachment type=\"%s\" name=\"%s\" mime=\"%s\" message-id=\"%s\" file-id=\"%s\" size=\"%d\" download-url=\"%s\"/>",
+						Escape(attachment.Kind), Escape(attachment.Name), Escape(attachment.MediaType), Escape(event.ReplyID), Escape(attachment.Ref), attachment.Size,
+						Escape(AttachmentDownloadPath(conversation.ID, event.ReplyID, attachment.Ref)))
+				}
 			}
 			body.WriteString("</in-reply-to>\n")
 		}
 		if quote := event.ReplyQuote; quote != nil {
 			fmt.Fprintf(&body, "<quote position-utf16=\"%d\" manual=\"%t\">%s</quote>\n", quote.Position, quote.Manual, Escape(quote.Text))
 		}
-		body.WriteString(Escape(event.Text))
-		for _, a := range event.Attachments {
-			fmt.Fprintf(&body, "\n<attachment type=\"%s\" name=\"%s\" mime=\"%s\" file-id=\"%s\" size=\"%d\" download-url=\"%s\"", Escape(a.Kind), Escape(a.Name), Escape(a.MediaType), Escape(a.Ref), a.Size, Escape(AttachmentDownloadPath(conversation.ID, event.MessageID, a.Ref)))
-			if sticker := a.Sticker; sticker != nil {
-				fmt.Fprintf(&body, " platform-file-id=\"%s\" sticker-type=\"%s\" sticker-format=\"%s\" width=\"%d\" height=\"%d\"", Escape(a.ExternalID), Escape(sticker.Type), Escape(sticker.Format), sticker.Width, sticker.Height)
-				for _, attribute := range []struct{ name, value string }{{"emoji", sticker.Emoji}, {"set-name", sticker.SetName}, {"file-unique-id", sticker.UniqueID}, {"custom-emoji-id", sticker.CustomEmojiID}, {"thumbnail-ref", sticker.ThumbnailRef}} {
-					if attribute.value != "" {
-						fmt.Fprintf(&body, " %s=\"%s\"", attribute.name, Escape(attribute.value))
+		if len(event.Parts) != 0 {
+			body.WriteString(RichPartsPreview(event.Parts, conversation.ID, event.MessageID, event.SentAt.Location()).Text)
+		} else {
+			body.WriteString(Escape(event.Text))
+			for _, a := range event.Attachments {
+				fmt.Fprintf(&body, "\n<attachment type=\"%s\" name=\"%s\" mime=\"%s\" file-id=\"%s\" size=\"%d\" download-url=\"%s\"", Escape(a.Kind), Escape(a.Name), Escape(a.MediaType), Escape(a.Ref), a.Size, Escape(AttachmentDownloadPath(conversation.ID, event.MessageID, a.Ref)))
+				if sticker := a.Sticker; sticker != nil {
+					fmt.Fprintf(&body, " platform-file-id=\"%s\" sticker-type=\"%s\" sticker-format=\"%s\" width=\"%d\" height=\"%d\"", Escape(a.ExternalID), Escape(sticker.Type), Escape(sticker.Format), sticker.Width, sticker.Height)
+					for _, attribute := range []struct{ name, value string }{{"emoji", sticker.Emoji}, {"set-name", sticker.SetName}, {"file-unique-id", sticker.UniqueID}, {"custom-emoji-id", sticker.CustomEmojiID}, {"thumbnail-ref", sticker.ThumbnailRef}} {
+						if attribute.value != "" {
+							fmt.Fprintf(&body, " %s=\"%s\"", attribute.name, Escape(attribute.value))
+						}
 					}
 				}
-			}
-			for _, original := range event.Attachments {
-				if original.Sticker != nil && original.Sticker.ThumbnailRef == a.Ref {
-					fmt.Fprintf(&body, " preview-of=\"%s\" preview-only=\"true\"", Escape(original.Ref))
-					break
+				for _, original := range event.Attachments {
+					if original.Sticker != nil && original.Sticker.ThumbnailRef == a.Ref {
+						fmt.Fprintf(&body, " preview-of=\"%s\" preview-only=\"true\"", Escape(original.Ref))
+						break
+					}
 				}
+				body.WriteString("/>")
 			}
-			body.WriteString("/>")
 		}
 		local, _ := AttachmentParts(files)
 		body.WriteString(local)

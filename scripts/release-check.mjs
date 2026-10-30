@@ -184,7 +184,7 @@ export async function checkReleaseTools() {
     }
     const publicNotes = await readFile(path.join(temporary, 'public-output', 'RELEASE_NOTES.md'), 'utf8')
     for (const text of ['macOS:', 'Windows:', 'Linux Desktop:', 'Linux VPS:', 'Apple notarization is accepted', 'Windows packages are not code-signed', 'Linux packages are not code-signed', 'Desktop checks for new versions without downloading packages', 'Versioned migrations are bundled', 'without downloading intermediate releases', `<!-- astral-release:${sourceSHA} -->`]) assert(publicNotes.includes(text), `Missing public release note: ${text}`)
-    for (const text of ['Plan one-time or recurring tasks', 'Settings → General → Timezone', 'IM-bound Sessions', 'unavailable IM image preview']) assert(publicNotes.includes(text), `Missing current release behavior: ${text}`)
+    for (const text of ['Plan one-time or recurring tasks', 'Settings → General → Timezone', 'IM-bound Sessions', 'unavailable IM image preview', 'QQ NapCat cards', 'six seconds, two levels and twelve child messages', '75,000 pixels', 'Existing history and frozen requests are not rewritten']) assert(publicNotes.includes(text), `Missing current release behavior: ${text}`)
     for (const text of ['review-only', 'Draft Release', 'not approved for public distribution', 'public-release gate remains pending', 'Do not publish']) assert(!publicNotes.includes(text), `Draft-only language in public release notes: ${text}`)
     rejects('release-assets.mjs', [...publicArgs, '--output', 'public-output'], 'must be empty')
 
