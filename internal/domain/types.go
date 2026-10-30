@@ -58,6 +58,7 @@ type Session struct {
 	ForkEntryID     string           `json:"fork_entry_id,omitempty"`
 	Pinned          bool             `json:"pinned"`
 	Archived        bool             `json:"archived"`
+	Private         bool             `json:"private,omitempty"`
 	Deletion        *SessionDeletion `json:"deletion,omitempty"`
 }
 
@@ -345,25 +346,26 @@ type Observation struct {
 type Outbox struct {
 	Meta
 	MessageOptions
-	IntentKey           string   `json:"intent_key"`
-	GroupID             string   `json:"group_id"`
-	AgentID             string   `json:"agent_id"`
-	SessionID           string   `json:"session_id"`
-	BindingID           string   `json:"binding_id,omitempty"`
-	ConversationID      string   `json:"conversation_id"`
-	AssistantEntryID    string   `json:"assistant_entry_id,omitempty"`
-	Text                string   `json:"text,omitempty"`
-	ReplyTo             string   `json:"reply_to,omitempty"`
-	FileRefID           string   `json:"file_ref_id,omitempty"`
-	Status              string   `json:"status"`
-	PlatformMessageIDs  []string `json:"platform_message_ids,omitempty"`
-	Error               string   `json:"error,omitempty"`
-	RequestDigest       string   `json:"request_digest"`
-	ConnectionID        string   `json:"connection_id"`
-	ConnectionAccountID string   `json:"connection_account_id"`
-	ExternalID          string   `json:"external_id"`
-	TopicID             string   `json:"topic_id,omitempty"`
-	Fragment            int      `json:"fragment"`
+	IntentKey           string       `json:"intent_key"`
+	GroupID             string       `json:"group_id"`
+	AgentID             string       `json:"agent_id"`
+	SessionID           string       `json:"session_id"`
+	BindingID           string       `json:"binding_id,omitempty"`
+	ConversationID      string       `json:"conversation_id"`
+	AssistantEntryID    string       `json:"assistant_entry_id,omitempty"`
+	Text                string       `json:"text,omitempty"`
+	ReplyTo             string       `json:"reply_to,omitempty"`
+	FileRefID           string       `json:"file_ref_id,omitempty"`
+	Parts               []OutboxPart `json:"parts,omitempty"`
+	Status              string       `json:"status"`
+	PlatformMessageIDs  []string     `json:"platform_message_ids,omitempty"`
+	Error               string       `json:"error,omitempty"`
+	RequestDigest       string       `json:"request_digest"`
+	ConnectionID        string       `json:"connection_id"`
+	ConnectionAccountID string       `json:"connection_account_id"`
+	ExternalID          string       `json:"external_id"`
+	TopicID             string       `json:"topic_id,omitempty"`
+	Fragment            int          `json:"fragment"`
 }
 
 type Preferences struct {

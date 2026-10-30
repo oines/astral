@@ -2,11 +2,12 @@ import type { Entry, SessionEvent, SessionView, Snapshot } from './types'
 import { object } from './api'
 
 export interface PreviewPart { type: string; text: string }
-export interface Preview { runID: string; parts: Record<number, PreviewPart> }
+export interface Preview { runID: string; parts: Record<number, PreviewPart>; interrupted?: boolean }
 export interface LiveTool { name: string; text: string; started: boolean; ended: boolean }
 export interface SessionState {
   epoch: string
   sequence: number
+  historyRevision: number
   view?: SessionView
   entries: Record<string, Entry>
   trace: Record<string, Entry>
@@ -18,10 +19,11 @@ export interface SessionState {
   traceCursor?: string
 }
 export function emptyState(): SessionState {
-  return { epoch: '', sequence: 0, entries: {}, trace: {}, previews: {}, tools: {}, completedAttempts: new Set(), completedRuns: new Set() }
+  return { epoch: '', sequence: 0, historyRevision: 0, entries: {}, trace: {}, previews: {}, tools: {}, completedAttempts: new Set(), completedRuns: new Set() }
 }
 export function addEntry(state: SessionState, entry: Entry, history = false) {
   state.trace[entry.id] = entry
+  state.historyRevision++
   if (history || ['message', 'context', 'compaction'].includes(entry.kind)) state.entries[entry.id] = entry
   const attempt = entry.generation?.attempt_id
   if (attempt) { state.completedAttempts.add(attempt); delete state.previews[attempt] }
@@ -51,6 +53,40 @@ export function fromSnapshot(snapshot: Snapshot): SessionState {
   for (const entry of snapshot.history.entries ?? []) addEntry(state, entry, true)
   return state
 }
+export function interruptPreviews(state: SessionState) {
+  // Core subscriptions only carry future deltas. A reconnect cannot recover a
+  // missing middle segment, so keep the last known prefix frozen until commit.
+  for (const preview of Object.values(state.previews)) preview.interrupted = true
+  const attempt = state.view?.attempt
+  if (attempt?.state === 'running' && attempt.attempt_id && !state.completedAttempts.has(attempt.attempt_id)) {
+    const preview = state.previews[attempt.attempt_id] ??= { runID: attempt.run_id ?? state.view?.run_id ?? '', parts: {} }
+    preview.interrupted = true
+  }
+}
+// Reconnection refreshes durable facts without throwing away pages the reader
+// already loaded. Live output belongs to one server runtime and active run only.
+export function reconcileSnapshot(previous: SessionState, snapshot: Snapshot): SessionState {
+  const next = fromSnapshot(snapshot)
+  const overlap = Object.keys(next.entries).some(id => previous.entries[id])
+  next.entries = { ...previous.entries, ...next.entries }
+  next.trace = { ...previous.trace, ...next.trace }
+  next.historyRevision = previous.historyRevision + 1
+  if (overlap) next.historyCursor = previous.historyCursor
+  if (previous.epoch !== next.epoch) { if (previous.epoch) interruptPreviews(next); return next }
+  for (const id of previous.completedAttempts) next.completedAttempts.add(id)
+  for (const id of previous.completedRuns) next.completedRuns.add(id)
+  for (const [id, tool] of Object.entries(previous.tools)) {
+    const current = next.tools[id]
+    next.tools[id] = current ? { ...current, text: tool.text, ended: tool.ended || current.ended } : tool
+  }
+  const currentAttempt = next.view?.attempt
+  for (const [id, preview] of Object.entries(previous.previews)) {
+    if (currentAttempt && (currentAttempt.state === 'retrying' || currentAttempt.attempt_id !== id)) continue
+    if (preview.runID === next.view?.run_id && !next.completedAttempts.has(id) && !next.completedRuns.has(preview.runID)) next.previews[id] = preview
+  }
+  if (previous.epoch) interruptPreviews(next)
+  return next
+}
 export function applyEvent(state: SessionState, envelope: SessionEvent): boolean {
   if (envelope.epoch !== state.epoch) return false
   const e = envelope.core
@@ -70,7 +106,7 @@ export function applyEvent(state: SessionState, envelope: SessionEvent): boolean
     state.completedAttempts.add(e.attempt_id)
     delete state.previews[e.attempt_id]
   }
-  if (e.type === 'message_update' && e.attempt_id && e.model && !state.completedAttempts.has(e.attempt_id) && !state.completedRuns.has(e.run_id ?? '')) {
+  if (e.type === 'message_update' && e.attempt_id && e.model && !state.completedAttempts.has(e.attempt_id) && !state.completedRuns.has(e.run_id ?? '') && !state.previews[e.attempt_id]?.interrupted) {
     const p = state.previews[e.attempt_id] ??= { runID: e.run_id ?? '', parts: {} }
     const m = e.model
     if (m.content_index !== undefined && ['text_delta', 'reasoning_delta', 'tool_call_delta'].includes(m.type)) {
@@ -166,7 +202,7 @@ export function executionStatus(view: SessionView, fallback = 'working'): Pick<T
   }
   return { status: fallback }
 }
-export function transcriptGroups(state: SessionState): TranscriptGroup[] {
+export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] {
   // Durable messages own accepted content. Attempts are separate execution
   // records; tool lifecycle entries may repeat the same invocation.
   const entries = sortedEntries({ ...state.trace, ...state.entries })
@@ -213,7 +249,7 @@ export function transcriptGroups(state: SessionState): TranscriptGroup[] {
       const group = assistant(entry.run_id, `run:${entry.run_id}:${entry.id}`)
       group.entries.push(entry)
       for (const [index, part] of (message.content ?? []).entries()) {
-        const key = `${entry.id}:${index}`
+        const key = `${entry.generation?.attempt_id || entry.id}:${index}`
         if (part.type === 'text' && part.text) group.blocks.push({ kind: 'text', key, text: part.text })
         else if (part.type === 'reasoning' && part.text) process(group, { kind: 'reasoning', key, text: part.text })
         else if (part.type === 'tool_call' && part.tool_call) {
@@ -226,6 +262,31 @@ export function transcriptGroups(state: SessionState): TranscriptGroup[] {
     } else if (entry.run?.status === 'cancelled') {
       assistant(entry.run.id, `run:${entry.run.id}:${entry.id}`).status = 'stopped'
     }
+  }
+  return groups
+}
+
+export function liveTranscriptGroups(state: SessionState, durable: TranscriptGroup[]): TranscriptGroup[] {
+  // Copy only the tail that may receive live blocks. Historical groups keep
+  // their identity and never need rebuilding for a model text delta.
+  const groups = [...durable]
+  const tail = groups.at(-1)
+  if (tail?.role === 'assistant') groups[groups.length - 1] = { ...tail, blocks: tail.blocks.map(block => block.kind === 'process' ? { ...block, items: [...block.items] } : block) }
+  function assistant(runID: string | undefined, key: string) {
+    let group = groups.at(-1)
+    if (group?.role !== 'assistant' || group.runID !== runID) {
+      const boundary = group?.role === 'user' ? group.key : 'start'
+      group = { key: runID ? `run:${runID}:${boundary}` : key, role: 'assistant', runID, entries: [], blocks: [] }
+      groups.push(group)
+    }
+    return group
+  }
+  function process(group: TranscriptGroup, item?: ProcessItem) {
+    const last = group.blocks.at(-1)
+    const block: Extract<TranscriptBlock, { kind: 'process' }> = last?.kind === 'process' ? last : { kind: 'process', key: `${group.key}:process:${group.blocks.filter(block => block.kind === 'text').length}`, items: [] }
+    if (block !== last) group.blocks.push(block)
+    if (item) block.items.push(item)
+    return block
   }
   for (const [attempt, preview] of Object.entries(state.previews)) {
     const group = assistant(preview.runID, `run:${preview.runID}:live`)
@@ -248,4 +309,8 @@ export function transcriptGroups(state: SessionState): TranscriptGroup[] {
     groups.push(group)
   }
   return groups.filter(group => group.role === 'user' || group.blocks.length || group.status)
+}
+
+export function transcriptGroups(state: SessionState): TranscriptGroup[] {
+  return liveTranscriptGroups(state, durableTranscriptGroups(state))
 }

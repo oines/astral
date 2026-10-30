@@ -36,6 +36,16 @@ func messageTool(c Capabilities) core.ToolDefinition {
 	properties := map[string]any{
 		"text": map[string]any{"type": "string", "description": "Message body. Omitted format means literal text. May be empty for attachments or a QQ Markdown template."},
 	}
+	partTypes := []string{"text"}
+	if c.Adapter == "telegram.bot" || c.Adapter == "qq.napcat" || c.Adapter == "feishu.bot" {
+		partTypes = append(partTypes, "mention")
+	}
+	if c.FileSending {
+		partTypes = append(partTypes, "image", "file")
+	}
+	properties["parts"] = map[string]any{"type": "array", "minItems": 1, "maxItems": 100, "description": "Ordered content, mutually exclusive with text and attachments. Adjacent parts have no automatic separator: put spaces and newlines in text. Mention user_id is the platform's native user ID; name is an optional display label. Images/files require exactly one Computer path or astral-file:// file_uri. Platform-native mixed messages are used where supported; otherwise ordered fragments have separate receipts.", "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
+		"type": map[string]any{"type": "string", "enum": partTypes}, "text": map[string]any{"type": "string"}, "user_id": map[string]any{"type": "string"}, "name": map[string]any{"type": "string"}, "path": map[string]any{"type": "string"}, "file_uri": map[string]any{"type": "string"},
+	}, "required": []string{"type"}}}
 	if c.ReplyReferences {
 		properties["reply_to"] = map[string]any{"type": "string", "description": "Message ID in this chat to reply to."}
 	}
@@ -63,18 +73,18 @@ func messageTool(c Capabilities) core.ToolDefinition {
 		}
 	}
 	def := harness.DefaultMessageTool()
-	def.Version = "astral-3/" + c.Adapter
-	def.Parameters = encoded(map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "required": []string{"text"}})
+	def.Version = "astral-4/" + c.Adapter
+	def.Parameters = encoded(map[string]any{"type": "object", "additionalProperties": false, "properties": properties})
 	def.Description += " Destination: " + c.Name + ". "
 	switch c.Adapter {
 	case "telegram.bot":
-		def.Description += "markdown and html use Telegram Rich Messages (headings, lists, code, tables). Use supported rich syntax, not MarkdownV2. Formatted text and attachments are sent as separate ordered messages."
+		def.Description += "markdown and html use Telegram Rich Messages (headings, lists, code, tables). Use supported rich syntax, not MarkdownV2. parts can mix formatted text, native mentions by numeric user ID, uploaded images and documents in one Rich Message."
 	case "feishu.bot":
-		def.Description += "markdown uses a Feishu rich-text post with an md block; supports CommonMark/GFM with Feishu restrictions. An optional title belongs to that post. Text and files have separate receipts."
+		def.Description += "markdown uses a Feishu rich-text post with md blocks; supports CommonMark/GFM with Feishu restrictions. parts mix text, native mentions (user_id=open_id) and uploaded images in a post; documents have separate receipts. An optional title belongs to that post."
 	case "qq.bot":
 		def.Description += "markdown uses QQ's native Markdown subset; markdown_template uses an approved QQ template. Availability is controlled by this account's QQ permissions. Formatted bodies and attachments have separate receipts; a definitive rejection is returned without silently changing format."
 	case "qq.napcat":
-		def.Description += "Body is sent unchanged as ordinary text, even if it contains Markdown syntax. Rich messages, Markdown segments and JSON/XML cards are not available. Ordinary images, files and reply references are supported."
+		def.Description += "Text is sent unchanged even if it contains Markdown syntax. parts use native at, text and image/file segments in order. Markdown segments and JSON/XML cards are not available."
 	case "weixin.ilink":
 		def.Description += "markdown uses Weixin's partial Markdown support: CJK italics and level 5/6 headings are simplified; inline image syntax becomes readable text, so send actual images through attachments. Outbound reply references are unavailable."
 	}
@@ -111,8 +121,9 @@ func validateMessageOptions(c Capabilities, o domain.MessageOptions) error {
 
 type preparedMessage struct {
 	domain.MessageOptions
-	Text string
-	File bool
+	Text      string
+	FileRefID string
+	Parts     []domain.OutboxPart
 }
 
 func archiveMessageText(record domain.Outbox) string {
@@ -132,7 +143,7 @@ func archiveMessageText(record domain.Outbox) string {
 
 // Prepare before claiming the intent. The resulting presentation is stored in
 // Outbox, so a retry never reparses the source or chooses another format.
-func prepareMessages(a Adapter, text string, options domain.MessageOptions, file bool) ([]preparedMessage, error) {
+func prepareMessages(a Adapter, text string, options domain.MessageOptions) ([]preparedMessage, error) {
 	c := a.Capabilities()
 	if err := validateMessageOptions(c, options); err != nil {
 		return nil, err
@@ -142,14 +153,7 @@ func prepareMessages(a Adapter, text string, options domain.MessageOptions, file
 		if text != "" {
 			return nil, domain.Invalid("QQ template messages require empty text; put content in template params")
 		}
-		result := []preparedMessage{{MessageOptions: options}}
-		if file {
-			result = append(result, preparedMessage{MessageOptions: fileMessageOptions(options), File: true})
-		}
-		return result, nil
-	}
-	if file && format == "text" && c.CaptionLimit > 0 {
-		return []preparedMessage{{MessageOptions: options, Text: text, File: true}}, nil
+		return []preparedMessage{{MessageOptions: options}}, nil
 	}
 	var parts []string
 	var err error
@@ -178,9 +182,6 @@ func prepareMessages(a Adapter, text string, options domain.MessageOptions, file
 	var result []preparedMessage
 	for _, part := range parts {
 		result = append(result, preparedMessage{MessageOptions: options, Text: part})
-	}
-	if file {
-		result = append(result, preparedMessage{MessageOptions: fileMessageOptions(options), File: true})
 	}
 	if len(result) == 0 {
 		return nil, domain.Invalid("message text is empty")

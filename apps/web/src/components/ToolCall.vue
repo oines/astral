@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { sessionEntry } from '@astral/sdk'
 import { ChevronRight } from '@astral/icons'
 import { Collapse } from '@astral/ui'
 import type { Entry } from '../lib/types'
 import type { LiveTool } from '../lib/session-state'
-import { errorText, object, request } from '../lib/api'
+import { errorText, object } from '../lib/api'
+import { toolEntry } from '../lib/tool-entry-cache'
 import { toolPresentation } from '../lib/tool-presentation'
 import Markdown from './Markdown.vue'
 const TerminalViewer = defineAsyncComponent(() => import('./TerminalViewer.vue'))
@@ -18,7 +18,16 @@ const open = ref(false)
 const loaded = ref<Entry>()
 const error = ref('')
 const busy = ref(false)
-const current = computed(() => loaded.value && loaded.value.sequence >= props.entry.sequence ? loaded.value : props.entry)
+const hasLoaded = computed(() => loaded.value?.id === props.entry.id && loaded.value.sequence >= props.entry.sequence)
+const showLoading = ref(false)
+let loadingTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => busy.value && open.value && !hasLoaded.value, waiting => {
+  clearTimeout(loadingTimer)
+  showLoading.value = false
+  if (waiting) loadingTimer = setTimeout(() => { showLoading.value = true }, 300)
+}, { flush: 'sync' })
+onScopeDispose(() => clearTimeout(loadingTimer))
+const current = computed(() => hasLoaded.value ? loaded.value! : props.entry)
 const tool = computed(() => current.value.tool)
 const result = computed(() => tool.value?.result)
 const details = computed(() => object(result.value?.details))
@@ -29,19 +38,20 @@ const output = computed(() => typeof details.value.output === 'string' ? details
 const patch = computed(() => typeof (details.value.patch || details.value.diff) === 'string' ? String(details.value.patch || details.value.diff) : '')
 const sources = computed(() => Array.isArray(details.value.results) ? details.value.results.map(object) : [])
 const text = computed(() => result.value?.content?.filter(part => part.type === 'text').map(part => part.text).join('\n') || '')
-async function toggle() {
-  emit('expand')
-  open.value = !open.value
-  if (!open.value || busy.value || loaded.value?.id === props.entry.id) return
-  busy.value = true
+async function load() {
+  if (!open.value || hasLoaded.value) return
   const id = props.entry.id
+  const sessionID = props.sessionID
+  busy.value = true
+  error.value = ''
   try {
-    const complete = await request(sessionEntry({ path: { id: props.sessionID, entry: id } }))
-    if (props.entry.id === id) loaded.value = complete
-  } catch (e) { error.value = errorText(e) }
-  finally { busy.value = false }
+    const complete = await toolEntry(sessionID, id)
+    if (props.entry.id === id && props.sessionID === sessionID) loaded.value = complete
+  } catch (e) { if (props.entry.id === id && props.sessionID === sessionID) error.value = errorText(e) }
+  finally { if (props.entry.id === id && props.sessionID === sessionID) busy.value = false }
 }
-watch(() => props.entry.id, () => { loaded.value = undefined; error.value = '' })
+function toggle() { emit('expand'); open.value = !open.value; void load() }
+watch(() => [props.sessionID, props.entry.id], () => { loaded.value = undefined; error.value = ''; busy.value = false; void load() })
 </script>
 <template>
   <div class="tool-call">
@@ -73,7 +83,7 @@ watch(() => props.entry.id, () => { loaded.value = undefined; error.value = '' }
           {{ error }}
         </p>
         <p
-          v-if="busy && !result"
+          v-if="showLoading"
           class="muted"
         >
           {{ t('loading') }}

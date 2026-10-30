@@ -148,7 +148,7 @@ export const useAppStore = defineStore('app', () => {
   async function networkSettings(patch: { public_urls?: string[]; allow_remote_management?: boolean }) {
     return confirmNetwork(await request(saveNetworkSettings({ body: patch })))
   }
-  async function presentation(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean }) {
+  async function presentation(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean; private?: boolean }) {
     await request(updateSession({ path: { id }, body: patch }))
     if (sessionViews.value[id]) Object.assign(sessionViews.value[id], patch)
     cache.setQueryData(listSessionsQueryKey(), (sessionQuery.data.value ?? data.value?.sessions ?? []).map(session => session.id === id ? { ...session, ...patch } : session))

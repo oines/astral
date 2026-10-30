@@ -16,6 +16,7 @@ type captionlessAdapter struct{ Adapter }
 
 func (c captionlessAdapter) Capabilities() Capabilities {
 	caps := c.Adapter.Capabilities()
+	caps.Adapter = "captionless.fixture"
 	caps.CaptionLimit = 0
 	return caps
 }

@@ -19,10 +19,17 @@ describe('bound IM conversation actions', () => {
     expect(html).not.toContain('archive')
     expect(html).toContain('pin')
     expect(html).toContain('export')
+    expect(html).toContain('makeSessionPrivate')
   })
   it('offers rename and archive after an IM conversation is unbound', async () => {
     const html = await renderToString(createSSRApp(SessionMenu, { session: { ...session, source: 'im' }, busy: false }))
     expect(html).toContain('rename')
     expect(html).toContain('archive')
+  })
+  it('allows the owner to turn private mode off on an IM-bound session', async () => {
+    const html = await renderToString(createSSRApp(SessionMenu, { session: { ...session, private: true, binding_id: 'binding' }, busy: false }))
+    expect(html).toContain('makeSessionNonPrivate')
+    expect(html).not.toContain('makeSessionPrivate')
+    expect(html).not.toContain('archive')
   })
 })

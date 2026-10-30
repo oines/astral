@@ -24,7 +24,7 @@ type Store struct {
 }
 
 // FormatVersion is the current Astral Host database schema version.
-const FormatVersion = 4
+const FormatVersion = 5
 
 var schema = fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS documents(kind TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,data BLOB NOT NULL,PRIMARY KEY(kind,id));

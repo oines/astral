@@ -14,7 +14,7 @@ func TestBindingArchivedSessionRestoresVisibilityInTheBindingTransaction(t *test
 	bot := newBot(t)
 	connection := bot.connection(t, s, p.Agent.ID)
 	archived := true
-	if err := p.Harness.SaveSessionPresentation(p.Context, p.Session.ID, nil, nil, &archived); err != nil {
+	if err := p.Harness.SaveSessionPresentation(p.Context, p.Session.ID, nil, nil, &archived, nil); err != nil {
 		t.Fatal(err)
 	}
 	var before domain.Session

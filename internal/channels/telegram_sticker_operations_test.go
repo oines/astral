@@ -218,7 +218,7 @@ func TestTelegramSendStickerFileIDArchivesEveryFormat(t *testing.T) {
 func TestTelegramSendStickerMultipartReadsTargetComputerPathAndFileRef(t *testing.T) {
 	p, s, bot, connection, chat := stickerOperationPlatform(t, 1, "static")
 	tool, err := s.MessageTool(p.Context, p.Agent.ID, chat.ConversationID)
-	if err != nil || tool.Name != "send_message" || tool.Version != "astral-3/telegram.bot" || strings.Contains(string(tool.Parameters), "sticker") {
+	if err != nil || tool.Name != "send_message" || tool.Version != "astral-4/telegram.bot" || strings.Contains(string(tool.Parameters), "sticker") {
 		t.Fatal("named sticker support changed the send_message tool:", err)
 	}
 	binding, err := p.Hub.Bind(p.Context, p.Agent.ID, chat.SessionID, p.Daemons[0].Credentials.ComputerID, "")

@@ -66,7 +66,10 @@ export function useTranscriptScroll(options: Options) {
   }
   async function loadEarlier() {
     const el = options.scroller.value
-    if (!active || !initialized || follow.following || !el || el.scrollTop > 320 || !options.hasMore.value || loading || historyFailed) return
+    if (!active || !initialized || !el || !options.hasMore.value || loading || historyFailed) return
+    // A tail full of passive observations may render no bubbles. Fill the
+    // viewport before requiring an upward scroll the user cannot yet perform.
+    if (follow.following && el.scrollHeight > el.clientHeight + 1 || el.scrollTop > Math.max(800, el.clientHeight * 1.5)) return
     loading = true
     const current = generation
     captureAnchor()

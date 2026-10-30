@@ -111,4 +111,19 @@ func TestSendAPIsReturnPlatformFailureAndIndependentSuccess(t *testing.T) {
 	if accepted.Status != http.StatusOK || json.Unmarshal(accepted.Body, &receipts) != nil || len(receipts) != 1 || receipts[0].Status != "accepted" {
 		t.Fatalf("independent send blocked or returned pending: %+v", accepted)
 	}
+	partsBody, _ := json.Marshal(SendText{ConversationID: chat.ID, Parts: []domain.OutboundPart{{Type: "text", Text: "ordered\n"}, {Type: "file", Path: file.Path}, {Type: "text", Text: "must not follow a failed file"}}})
+	partsReply := call("/v1/im/messages", "ordered-parts", string(partsBody))
+	if partsReply.Status != http.StatusBadRequest || !strings.Contains(string(partsReply.Body), "platform rejected document") {
+		t.Fatalf("parts did not use the authenticated Computer source and shared Outbox: %+v", partsReply)
+	}
+	before := adapter.calls.Load()
+	_ = call("/v1/im/messages", "ordered-parts", string(partsBody))
+	if adapter.calls.Load() != before {
+		t.Fatal("replaying ordered parts duplicated platform sends")
+	}
+	unsupported, _ := json.Marshal(SendText{ConversationID: chat.ID, Parts: []domain.OutboundPart{{Type: "text", Text: "must never send"}, {Type: "mention", UserID: "123"}}})
+	refused := call("/v1/im/messages", "unsupported-native-mention", string(unsupported))
+	if refused.Status != http.StatusBadRequest || adapter.calls.Load() != before {
+		t.Fatalf("unsupported mention partially sent: %+v", refused)
+	}
 }

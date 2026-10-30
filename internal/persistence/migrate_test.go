@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -278,6 +279,7 @@ func TestMigrationRunsAllMissingSQLAndGoStepsInOrder(t *testing.T) {
 	if err != nil || status.Current != 5 || status.NeedsMigration {
 		t.Fatalf("after: %+v %v", status, err)
 	}
+	execMigrationSQL(t, db, fmt.Sprintf("PRAGMA user_version=%d;", FormatVersion+1))
 	if err = db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +414,7 @@ func TestMigrationFailureRollsBackDataMarkersAndLedgerThenResumes(t *testing.T) 
 func TestMigrationRejectsUnknownAndInconsistentFormatsBeforeWriting(t *testing.T) {
 	for _, mutation := range []string{
 		"PRAGMA user_version=2;",
-		"PRAGMA user_version=5;",
+		fmt.Sprintf("PRAGMA user_version=%d;", FormatVersion+1),
 		"PRAGMA user_version=0;",
 		"PRAGMA user_version=1;",
 	} {
@@ -490,7 +492,7 @@ func TestMigrationRejectsNonDatabaseAndHonorsCancellation(t *testing.T) {
 func TestMigrationInspectionSeesUncheckpointedWAL(t *testing.T) {
 	directory, db := migrationFixture(t)
 	path := filepath.Join(directory, "astral.db")
-	execMigrationSQL(t, db, "PRAGMA wal_autocheckpoint=0; PRAGMA user_version=5;")
+	execMigrationSQL(t, db, fmt.Sprintf("PRAGMA wal_autocheckpoint=0; PRAGMA user_version=%d;", FormatVersion+1))
 	if info, err := os.Stat(path + "-wal"); err != nil || info.Size() == 0 {
 		t.Fatalf("fixture did not retain a WAL: %v", err)
 	}
@@ -503,7 +505,7 @@ func TestMigrationInspectionSeesUncheckpointedWAL(t *testing.T) {
 		before[suffix] = data
 	}
 	status, err := InspectMigration(context.Background(), directory)
-	if !errors.Is(err, errMigrationFormat) || status.Current != 5 {
+	if !errors.Is(err, errMigrationFormat) || status.Current != FormatVersion+1 {
 		t.Fatalf("inspection ignored the WAL: %+v %v", status, err)
 	}
 	for suffix, data := range before {

@@ -892,6 +892,33 @@ export type AstralInternalDomainModelVerification = {
     tool_replay: string;
 };
 
+export type AstralInternalDomainOutboundPart = {
+    /**
+     * For image/file only. An astral-file:// reference; mutually exclusive with path.
+     */
+    file_uri?: string;
+    /**
+     * Optional display label for a native mention.
+     */
+    name?: string;
+    /**
+     * For image/file only. Source path on the authenticated calling Computer; mutually exclusive with file_uri.
+     */
+    path?: string;
+    /**
+     * For text only. Spaces and newlines are preserved; no separator is inserted between adjacent parts.
+     */
+    text?: string;
+    /**
+     * Ordered content kind. Mention support depends on the selected platform.
+     */
+    type: 'text' | 'mention' | 'image' | 'file';
+    /**
+     * For mention only. Native platform user ID: Telegram numeric ID, NapCat QQ number, or Feishu application open_id.
+     */
+    user_id?: string;
+};
+
 export type AstralInternalDomainOutbox = {
     agent_id: string;
     as_document?: boolean;
@@ -911,6 +938,7 @@ export type AstralInternalDomainOutbox = {
     id: string;
     intent_key: string;
     markdown_template?: AstralInternalDomainMarkdownTemplate;
+    parts?: Array<AstralInternalDomainOutboxPart>;
     platform_message_ids?: Array<string>;
     reply_to?: string;
     request_digest: string;
@@ -921,6 +949,34 @@ export type AstralInternalDomainOutbox = {
     title?: string;
     topic_id?: string;
     updated_at: string;
+};
+
+export type AstralInternalDomainOutboxPart = {
+    file_ref_id?: string;
+    /**
+     * For image/file only. An astral-file:// reference; mutually exclusive with path.
+     */
+    file_uri?: string;
+    /**
+     * Optional display label for a native mention.
+     */
+    name?: string;
+    /**
+     * For image/file only. Source path on the authenticated calling Computer; mutually exclusive with file_uri.
+     */
+    path?: string;
+    /**
+     * For text only. Spaces and newlines are preserved; no separator is inserted between adjacent parts.
+     */
+    text?: string;
+    /**
+     * Ordered content kind. Mention support depends on the selected platform.
+     */
+    type: 'text' | 'mention' | 'image' | 'file';
+    /**
+     * For mention only. Native platform user ID: Telegram numeric ID, NapCat QQ number, or Feishu application open_id.
+     */
+    user_id?: string;
 };
 
 export type AstralInternalDomainProvider = {
@@ -985,6 +1041,7 @@ export type AstralInternalDomainSchedule = {
     revision: number;
     session_id?: string;
     session_mode: 'existing' | 'new';
+    source_session_id?: string;
     timing: AstralInternalDomainScheduleTiming;
     title: string;
     updated_at: string;
@@ -1031,6 +1088,7 @@ export type AstralInternalDomainSession = {
     id: string;
     parent_session_id?: string;
     pinned: boolean;
+    private?: boolean;
     revision: number;
     source: string;
     title: string;
@@ -1254,8 +1312,9 @@ export type AstralInternalGatewaySendText = {
     disable_notification?: boolean;
     format?: string;
     markdown_template?: AstralInternalDomainMarkdownTemplate;
+    parts?: Array<AstralInternalDomainOutboundPart>;
     reply_to?: string;
-    text: string;
+    text?: string;
     title?: string;
 };
 
@@ -1350,6 +1409,7 @@ export type AstralInternalHarnessView = {
     parent_session_id?: string;
     pending: Array<AstralInternalHarnessPendingInput>;
     pinned: boolean;
+    private?: boolean;
     profile_id?: string;
     reasoning?: AstralCoreReasoningOptions;
     revision: number;
@@ -1621,6 +1681,7 @@ export type AstralInternalHttpapiSessionInput = {
 export type AstralInternalHttpapiSessionPresentation = {
     archived?: boolean;
     pinned?: boolean;
+    private?: boolean;
     title?: string;
 };
 
@@ -4693,6 +4754,37 @@ export type StopSessionResponses = {
 };
 
 export type StopSessionResponse = StopSessionResponses[keyof StopSessionResponses];
+
+export type SessionTimelineData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        cursor?: string;
+        limit?: number;
+        trace?: boolean;
+    };
+    url: '/api/v1/sessions/{id}/timeline';
+};
+
+export type SessionTimelineErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SessionTimelineError = SessionTimelineErrors[keyof SessionTimelineErrors];
+
+export type SessionTimelineResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayHistoryPage;
+};
+
+export type SessionTimelineResponse = SessionTimelineResponses[keyof SessionTimelineResponses];
 
 export type GetNetworkSettingsData = {
     body?: never;

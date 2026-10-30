@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	core "github.com/oines/astral-core"
@@ -49,6 +50,11 @@ func (a *API) streamRoutes() {
 		a.Contract.Describe(httpcontract.Operation{Method: "GET", Path: path, ID: spec.id, Tag: "Streams", Auth: true, ContentType: spec.content, Query: []httpcontract.Parameter{{Name: "session_id"}, {Name: "download", Type: "boolean"}}})
 		a.mux.HandleFunc("GET "+path, spec.handler)
 	}
+	route[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/timeline", "sessionTimeline", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
+		page, err := gateway.History(r.Context(), a.Config.Harness, r.PathValue("id"), r.URL.Query().Get("cursor"), limit(r, 60), r.URL.Query().Get("trace") == "true", false)
+		return timelinePage(page), err
+	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
+
 	a.Contract.Describe(httpcontract.Operation{Method: "POST", Path: "/api/v1/sessions/{id}/attachments", ID: "uploadAttachment", Tag: "Files", Auth: true, Response: reflect.TypeFor[gateway.ReferenceResponse](),
 		Query: []httpcontract.Parameter{{Name: "name", Required: true}, {Name: "computer_id"}}})
 	upload := a.Contract.Paths["/api/v1/sessions/{id}/attachments"].(map[string]any)["post"].(map[string]any)
@@ -77,11 +83,40 @@ func (a *API) snapshot(r *http.Request) (Snapshot, error) {
 	if snapshot.View, err = h.View(r.Context(), r.PathValue("id")); err != nil {
 		return snapshot, err
 	}
-	if snapshot.History, err = gateway.History(r.Context(), h, r.PathValue("id"), "", 50, false, false); err != nil {
-		return snapshot, err
+	var historyErr, traceErr error
+	var reads sync.WaitGroup
+	reads.Add(2)
+	go func() {
+		defer reads.Done()
+		snapshot.History, historyErr = gateway.History(r.Context(), h, r.PathValue("id"), "", 60, false, false)
+	}()
+	go func() {
+		defer reads.Done()
+		snapshot.Trace, traceErr = gateway.History(r.Context(), h, r.PathValue("id"), "", 60, true, false)
+	}()
+	reads.Wait()
+	if historyErr != nil {
+		return snapshot, historyErr
 	}
-	snapshot.Trace, err = gateway.History(r.Context(), h, r.PathValue("id"), "", 100, true, false)
-	return snapshot, err
+	if traceErr != nil {
+		return snapshot, traceErr
+	}
+	snapshot.History = timelinePage(snapshot.History)
+	snapshot.Trace = timelinePage(snapshot.Trace)
+	// History already includes accepted messages and tool results. Avoid sending
+	// those bodies a second time in the operational tail.
+	seen := map[string]bool{}
+	for _, entry := range snapshot.History.Entries {
+		seen[entry.ID] = true
+	}
+	trace := snapshot.Trace.Entries[:0]
+	for _, entry := range snapshot.Trace.Entries {
+		if !seen[entry.ID] {
+			trace = append(trace, entry)
+		}
+	}
+	snapshot.Trace.Entries = trace
+	return snapshot, nil
 }
 func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	h := a.Config.Harness
@@ -134,7 +169,20 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 				_ = send("resync", "", map[string]string{"reason": "event subscription ended; reconnect to reconcile durable history"})
 				return
 			}
-			gateway.RemoveImageData(reflect.ValueOf(&event))
+			// Durable content is sent once in Entry. Model events only need their
+			// ordered text deltas; opaque provider payloads are not UI data.
+			event.Message = nil
+			if event.Progress != nil {
+				progress := *event.Progress
+				progress.Details = nil
+				event.Progress = &progress
+			}
+			if event.Model != nil {
+				model := *event.Model
+				model.Data = nil
+				model.Metadata = nil
+				event.Model = &model
+			}
 			envelope := Event{Epoch: h.RuntimeID, Core: &event}
 			if event.Type == core.EventRunStart || event.Type == core.EventRunEnd || event.Type == core.EventApproval || event.Type == core.EventContextApplied || event.Attempt != nil || event.Type == core.EventMaintenanceStart || event.Type == core.EventMaintenanceEnd {
 				if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
@@ -144,7 +192,7 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 			}
 			if event.EntryID != "" {
 				if entry, readErr := session.History().Get(r.Context(), event.EntryID); readErr == nil {
-					gateway.RemoveImageData(reflect.ValueOf(&entry))
+					entry = timelineEntry(entry)
 					envelope.Entry = &entry
 					if entry.Kind == core.EntryMessage && entry.Message != nil && entry.Message.Role == core.RoleAssistant && entry.Usage.Available {
 						if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {

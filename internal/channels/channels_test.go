@@ -95,7 +95,7 @@ func newBot(t *testing.T) *botFixture {
 				return
 			}
 			var text, target string
-			if method == "sendMessage" || method == "sendRichMessage" {
+			if (method == "sendMessage" || method == "sendRichMessage") && !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
 				var data map[string]any
 				_ = json.NewDecoder(r.Body).Decode(&data)
 				text, _ = data["text"].(string)
@@ -116,6 +116,7 @@ func newBot(t *testing.T) *botFixture {
 					http.Error(w, "invalid", 400)
 					return
 				}
+				parameters := map[string]any{}
 				for {
 					part, nextErr := reader.NextPart()
 					if nextErr == io.EOF {
@@ -130,7 +131,22 @@ func newBot(t *testing.T) *botFixture {
 						t.Error(readErr)
 						return
 					}
+					if part.FileName() != "" {
+						b.mu.Lock()
+						b.uploads = append(b.uploads, data)
+						b.mu.Unlock()
+						continue
+					}
+					parameters[part.FormName()] = string(data)
 					switch part.FormName() {
+					case "rich_message":
+						var rich map[string]any
+						_ = json.Unmarshal(data, &rich)
+						parameters["rich_message"] = rich
+						text, _ = rich["markdown"].(string)
+						if value, ok := rich["html"].(string); ok {
+							text = value
+						}
 					case "chat_id":
 						target = string(data)
 					case "caption":
@@ -140,6 +156,16 @@ func newBot(t *testing.T) *botFixture {
 						b.uploads = append(b.uploads, data)
 						b.mu.Unlock()
 					}
+				}
+				if method == "sendRichMessage" {
+					if value, ok := parameters["message_thread_id"].(string); ok {
+						var number float64
+						_, _ = fmt.Sscan(value, &number)
+						parameters["message_thread_id"] = number
+					}
+					b.mu.Lock()
+					b.sendParameters = append(b.sendParameters, parameters)
+					b.mu.Unlock()
 				}
 			}
 			b.mu.Lock()

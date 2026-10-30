@@ -20,6 +20,7 @@ import (
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/httpcontract"
+	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/timezone"
 )
 
@@ -60,9 +61,10 @@ type ResolveConversation struct {
 }
 type SendText struct {
 	domain.MessageOptions
-	ConversationID string `json:"conversation_id,omitempty"`
-	Text           string `json:"text"`
-	ReplyTo        string `json:"reply_to,omitempty"`
+	ConversationID string                `json:"conversation_id,omitempty"`
+	Text           string                `json:"text,omitempty"`
+	Parts          []domain.OutboundPart `json:"parts,omitempty"`
+	ReplyTo        string                `json:"reply_to,omitempty"`
 }
 type SendFile struct {
 	domain.MessageOptions
@@ -197,7 +199,7 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	})
 	register[SendText, []domain.Outbox](s, "POST", "/v1/im/messages", "agentSendText", func(r *http.Request, request SendText) ([]domain.Outbox, error) {
 		b := binding(r)
-		return c.Send(r.Context(), b.AgentID, b.SessionID, channels.SendRequest{MessageOptions: request.MessageOptions, IntentID: r.Header.Get("Idempotency-Key"), ConversationID: request.ConversationID, Text: request.Text, ReplyTo: request.ReplyTo})
+		return c.Send(r.Context(), b.AgentID, b.SessionID, channels.SendRequest{MessageOptions: request.MessageOptions, IntentID: r.Header.Get("Idempotency-Key"), ConversationID: request.ConversationID, Text: request.Text, Parts: request.Parts, ReplyTo: request.ReplyTo, SourceComputerID: b.ComputerID, SourceBinding: &b})
 	})
 	register[SendFile, []domain.Outbox](s, "POST", "/v1/im/files", "agentSendFile", func(r *http.Request, request SendFile) ([]domain.Outbox, error) {
 		b := binding(r)
@@ -217,6 +219,16 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		err := h.Store.Get(r.Context(), "outbox", r.PathValue("id"), &value)
 		if err == nil && value.AgentID != binding(r).AgentID {
 			err = domain.Forbidden("receipt is outside the current Agent view")
+		}
+		if err == nil {
+			err = s.visibleConversation(r.Context(), binding(r).AgentID, value.ConversationID)
+		}
+		if err == nil && value.SessionID != "" {
+			var session domain.Session
+			err = h.Store.Get(r.Context(), "sessions", value.SessionID, &session)
+			if err == nil {
+				err = persistence.CheckSessionAccess(r.Context(), session)
+			}
 		}
 		return value, err
 	})
@@ -274,6 +286,7 @@ func (s *Service) Handle(ctx context.Context, request computers.GatewayRequest) 
 	if err := s.Harness.Hub.Validate(ctx, request.Binding); err != nil {
 		return computers.GatewayResponse{}, err
 	}
+	ctx = persistence.WithSessionScope(ctx, request.Binding.AgentID, request.Binding.SessionID)
 	path, err := url.ParseRequestURI(request.Path)
 	if err != nil || path.RawQuery != "" || path.Host != "" || !strings.HasPrefix(path.Path, "/v1/") {
 		return computers.GatewayResponse{}, domain.Invalid("invalid Gateway path")

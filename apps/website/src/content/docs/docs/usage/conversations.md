@@ -15,6 +15,14 @@ Choose a Bot, create a session, check the model and computer shown near the inpu
 
 The computer determines where file and command operations run. The model determines how the task is interpreted and advanced. Both can change within a session.
 
+## Private sessions
+
+Choose **Make private** from a session's sidebar menu. A lock identifies it; choose **Turn off private mode** to reverse this. You can still open and manage it normally in Desktop and the browser.
+
+Other sessions, including those belonging to the same Bot, cannot discover, read, or modify a private session through the Gateway API. Its bound IM chat and plans targeting it are hidden too, even when the account allows access to all chats. The private session retains access to its own resources. A fork inherits its source session's private setting.
+
+Chat privacy follows the current session binding. Unbinding or rebinding applies the new relationship. Permission checks also apply to known IDs and old cursors. This controls subsequent Gateway access; it does not remove information already copied into another session or isolate shared computer files.
+
 ## Add instructions during work
 
 Ordinary sessions support two modes:
@@ -41,6 +49,8 @@ Changing the timezone updates displayed dates without changing when events occur
 Bot and Session identity is supplied in the model’s System Prompt. New environment snapshots focus on the Computer, workspace, available skills and API discovery. A fork uses its own Session ID while retaining the copied history unchanged.
 
 ## Long conversations
+
+The chat loads recent messages first and fetches earlier history as you approach the top. Reconnecting keeps loaded messages and your reading position. Expand an execution step to load its full details; the original rollout remains available through **Export rollout**.
 
 As a conversation grows, Astral summarizes older context and keeps recent messages for the next model request. Received chat messages and images count toward the context budget even while the Bot stays silent. The budget uses the model's reported usage where it still applies, plus estimates for everything added afterward.
 

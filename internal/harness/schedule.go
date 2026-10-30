@@ -16,7 +16,7 @@ func (s *Service) deliverSchedule(ctx context.Context, occurrence schedule.Occur
 		if occurrence.SessionID != occurrence.NewSessionID() {
 			return domain.Invalid("scheduled Session identity does not match its occurrence")
 		}
-		if _, err := s.createSession(ctx, occurrence.AgentID, occurrence.Title, occurrence.SessionID, "schedule", true); err != nil {
+		if _, err := s.createSession(ctx, occurrence.AgentID, occurrence.Title, occurrence.SessionID, "schedule", true, occurrence.Private); err != nil {
 			return err
 		}
 	}

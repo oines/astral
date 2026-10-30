@@ -588,6 +588,9 @@ func (t *telegram) SplitText(text string) ([]string, error) {
 	return chunks, nil
 }
 func (t *telegram) Send(ctx context.Context, send Send) (Receipt, error) {
+	if len(send.Parts) > 0 {
+		return t.sendParts(ctx, send)
+	}
 	body := map[string]any{"chat_id": send.Target.ExternalID}
 	if send.DisableNotification {
 		body["disable_notification"] = true

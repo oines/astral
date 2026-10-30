@@ -82,7 +82,7 @@ func TestSessionTitleUsesSelectedModelWithoutBlockingOrChangingHistory(t *testin
 		t.Fatal(err)
 	}
 	pin := true
-	if err = f.service.SaveSessionPresentation(f.ctx, session.ID, nil, &pin, nil); err != nil {
+	if err = f.service.SaveSessionPresentation(f.ctx, session.ID, nil, &pin, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	unblock()
@@ -137,7 +137,7 @@ func TestManualSessionTitleWinsDuringGeneration(t *testing.T) {
 	}
 	// Even renaming to the same fallback text must count as an Owner choice.
 	manual := "手动保留的标题"
-	if err = f.service.SaveSessionPresentation(f.ctx, session.ID, &manual, nil, nil); err != nil {
+	if err = f.service.SaveSessionPresentation(f.ctx, session.ID, &manual, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	unblock()

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -711,7 +712,13 @@ func (f *feishu) Send(ctx context.Context, send Send) (Receipt, error) {
 	}
 	kind := "text"
 	var content any = map[string]string{"text": send.Text}
-	if send.File == nil {
+	if len(send.Parts) > 0 {
+		kind = "post"
+		content, err = f.partsContent(ctx, send)
+		if err != nil {
+			return Receipt{}, &SendError{Message: err.Error()}
+		}
+	} else if send.File == nil {
 		if strings.TrimSpace(send.Text) == "" || send.TextFormat() == "text" && utf8.RuneCountInString(send.Text) > f.Capabilities().TextLimit {
 			return Receipt{}, &SendError{Message: "Feishu text fragment is empty or too long"}
 		}
@@ -756,21 +763,126 @@ func (f *feishu) Send(ctx context.Context, send Send) (Receipt, error) {
 }
 
 func (f *feishu) upload(ctx context.Context, send Send) (string, error) {
+	return f.uploadMedia(ctx, send, false)
+}
+
+// A post preserves the ordered text/mention/image nodes; generic documents are
+// separate platform messages and have already been split by the Outbox.
+func (f *feishu) partsContent(ctx context.Context, send Send) (any, error) {
+	textLength := 0
+	for _, part := range send.Parts {
+		switch part.Type {
+		case "text":
+			textLength += utf8.RuneCountInString(part.Text)
+		case "mention":
+			if !strings.HasPrefix(part.UserID, "ou_") || !feishuID(part.UserID) {
+				return nil, domain.Invalid("Feishu mentions require a user open_id from the current application")
+			}
+		case "image":
+			if part.OpenFile == nil {
+				return nil, domain.Invalid("Feishu image part has no readable source")
+			}
+		default:
+			return nil, domain.Invalid("unsupported Feishu post part")
+		}
+	}
+	if textLength > f.Capabilities().TextLimit {
+		return nil, domain.Invalid("Feishu post text exceeds the text limit")
+	}
+	rows := [][]map[string]string{{}}
+	var markdown strings.Builder
+	trailingImageRow := false
+	appendNode := func(node map[string]string) { rows[len(rows)-1] = append(rows[len(rows)-1], node) }
+	for _, part := range send.Parts {
+		switch part.Type {
+		case "text":
+			trailingImageRow = false
+			if send.TextFormat() == "markdown" {
+				markdown.WriteString(part.Text)
+				continue
+			}
+			for index, line := range strings.Split(part.Text, "\n") {
+				if index > 0 {
+					rows = append(rows, []map[string]string{})
+				}
+				if line != "" {
+					appendNode(map[string]string{"tag": "text", "text": line})
+				}
+			}
+		case "mention":
+			trailingImageRow = false
+			if send.TextFormat() == "markdown" {
+				name := part.Name
+				if name == "" {
+					name = part.UserID
+				}
+				fmt.Fprintf(&markdown, `<at user_id="%s">%s</at>`, part.UserID, html.EscapeString(name))
+				continue
+			}
+			node := map[string]string{"tag": "at", "user_id": part.UserID}
+			if part.Name != "" {
+				node["user_name"] = part.Name
+			}
+			appendNode(node)
+		case "image":
+			file, err := part.OpenFile(ctx)
+			if err != nil {
+				return nil, domain.Invalid("Feishu image could not be opened before sending")
+			}
+			key, err := f.uploadMedia(ctx, Send{File: file, FileName: part.FileName, Size: part.Size}, true)
+			if err != nil {
+				return nil, domain.Invalid("Feishu image upload failed before any chat message was sent")
+			}
+			if send.TextFormat() == "markdown" {
+				fmt.Fprintf(&markdown, "\n\n![image](%s)\n\n", key)
+				continue
+			}
+			// Feishu requires images to occupy their own paragraph. Keep
+			// adjacent text/mentions inline while making only media block-level.
+			if len(rows[len(rows)-1]) > 0 {
+				rows = append(rows, []map[string]string{})
+			}
+			appendNode(map[string]string{"tag": "img", "image_key": key})
+			rows = append(rows, []map[string]string{})
+			trailingImageRow = true
+		}
+	}
+	if send.TextFormat() == "markdown" {
+		// An md node must also occupy an entire paragraph. Its native <at>
+		// and uploaded image-key syntax preserve mixed content in one node.
+		rows = [][]map[string]string{{{"tag": "md", "text": markdown.String()}}}
+	} else if trailingImageRow {
+		rows = rows[:len(rows)-1]
+	}
+	return map[string]any{"zh_cn": map[string]any{"title": send.Title, "content": rows}}, nil
+}
+
+func (f *feishu) uploadMedia(ctx context.Context, send Send, image bool) (string, error) {
+	defer send.File.Close()
 	token, err := f.accessToken(ctx)
 	if err != nil {
 		return "", err
 	}
 	reader, writer := io.Pipe()
 	form := multipart.NewWriter(writer)
+	path, field := "/open-apis/im/v1/files", "file"
+	if image {
+		path, field = "/open-apis/im/v1/images", "image"
+	}
 	done := make(chan error, 1)
 	go func() {
-		writeErr := form.WriteField("file_type", "stream")
-		if writeErr == nil {
+		var writeErr error
+		if image {
+			writeErr = form.WriteField("image_type", "message")
+		} else {
+			writeErr = form.WriteField("file_type", "stream")
+		}
+		if writeErr == nil && !image {
 			writeErr = form.WriteField("file_name", send.FileName)
 		}
 		if writeErr == nil {
 			var part io.Writer
-			part, writeErr = form.CreateFormFile("file", send.FileName)
+			part, writeErr = form.CreateFormFile(field, send.FileName)
 			if writeErr == nil {
 				var copied int64
 				copied, writeErr = io.Copy(part, io.LimitReader(send.File, send.Size+1))
@@ -789,9 +901,8 @@ func (f *feishu) upload(ctx context.Context, send Send) (string, error) {
 		_ = reader.CloseWithError(ctx.Err())
 		_ = send.File.Close()
 	})
-	raw, err := f.request(ctx, http.MethodPost, "/open-apis/im/v1/files", token, form.FormDataContentType(), reader)
+	raw, err := f.request(ctx, http.MethodPost, path, token, form.FormDataContentType(), reader)
 	_ = reader.CloseWithError(err)
-	_ = send.File.Close()
 	stopClose()
 	copyErr := <-done
 	if err != nil || copyErr != nil {
@@ -799,10 +910,17 @@ func (f *feishu) upload(ctx context.Context, send Send) (string, error) {
 	}
 	var result struct {
 		Data struct {
-			Key string `json:"file_key"`
+			Key      string `json:"file_key"`
+			ImageKey string `json:"image_key"`
 		} `json:"data"`
 	}
-	if json.Unmarshal(raw, &result) != nil || !feishuID(result.Data.Key) {
+	if json.Unmarshal(raw, &result) != nil {
+		return "", domain.Invalid("Feishu did not return an uploaded media key")
+	}
+	if image {
+		result.Data.Key = result.Data.ImageKey
+	}
+	if !feishuID(result.Data.Key) {
 		return "", domain.Invalid("Feishu did not return an uploaded file key")
 	}
 	return result.Data.Key, nil

@@ -61,7 +61,7 @@ func TestMessageToolBindingChangePreservesHistoryAndReplacesSchema(t *testing.T)
 		}
 		t.Fatal("bound Session has no send_message")
 	}
-	assertSchema("astral-3/telegram.bot", "markdown_template")
+	assertSchema("astral-4/telegram.bot", "markdown_template")
 	if err := s.Unbind(p.Context, bound.ID, bound.Revision); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestMessageToolBindingChangePreservesHistoryAndReplacesSchema(t *testing.T)
 	if _, err = s.Bind(p.Context, chat.ID, p.Session.ID); err != nil {
 		t.Fatal(err)
 	}
-	assertSchema("astral-3/qq.napcat", `"format"`)
+	assertSchema("astral-4/qq.napcat", `"format"`)
 	if _, err = p.Harness.Submit(p.Context, p.Session.ID, harness.InputRequest{ID: "after-binding", Text: "continue"}); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestMessageToolExposesOnlyCurrentPlatformParameters(t *testing.T) {
 				t.Fatalf("wrong tool capabilities: %s", def.Parameters)
 			}
 			if a.Capabilities().Adapter == "qq.napcat" {
-				if len(schema.Properties) != 3 || validateMessageOptions(a.Capabilities(), domain.MessageOptions{Format: "markdown"}) == nil {
+				if len(schema.Properties) != 4 || validateMessageOptions(a.Capabilities(), domain.MessageOptions{Format: "markdown"}) == nil {
 					t.Fatal("NapCat exposed rich-message parameters")
 				}
 			}
@@ -116,7 +116,7 @@ func TestMessageToolExposesOnlyCurrentPlatformParameters(t *testing.T) {
 	}
 }
 
-func TestTelegramRichMessageAndFileFreezeSeparateReceipts(t *testing.T) {
+func TestTelegramRichMessageAndFileFreezeOneReceipt(t *testing.T) {
 	bot := newBot(t)
 	p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	s := New(p.Store, p.Harness)
@@ -132,10 +132,10 @@ func TestTelegramRichMessageAndFileFreezeSeparateReceipts(t *testing.T) {
 	}
 	request := SendRequest{MessageOptions: domain.MessageOptions{Format: "markdown", DisableNotification: true}, IntentID: "rich-file", Text: "# Result\n\n**done**", FileURI: filestream.URL(ref)}
 	receipts, err := s.Enqueue(p.Context, p.Agent.ID, b.SessionID, request)
-	if err != nil || len(receipts) != 2 {
+	if err != nil || len(receipts) != 1 {
 		t.Fatalf("receipts: %#v %v", receipts, err)
 	}
-	if receipts[0].Format != "markdown" || receipts[0].FileRefID != "" || receipts[1].Format != "" || receipts[1].FileRefID != ref.ID || !receipts[1].DisableNotification {
+	if receipts[0].Format != "markdown" || len(receipts[0].Parts) != 2 || receipts[0].Parts[1].FileRefID != ref.ID || !receipts[0].DisableNotification {
 		t.Fatalf("presentation or file intent lost: %#v", receipts)
 	}
 	for _, receipt := range receipts {

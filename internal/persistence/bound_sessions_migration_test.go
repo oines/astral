@@ -100,20 +100,14 @@ func TestMigration4RestoresOnlyCurrentBoundArchivedSessionsAndRetainsHistory(t *
 		t.Fatal(err)
 	}
 	documentsBefore, versionsBefore := migrationRecords(t, db, "documents"), migrationRecords(t, db, "versions")
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
+	plan := currentMigrationPlan()
+	plan.target, plan.goMigrations = 4, plan.goMigrations[:1]
 	for range 2 {
-		if err := Migrate(ctx, directory); err != nil {
+		if err := migrateDatabase(ctx, db, plan); err != nil {
 			t.Fatal(err)
 		}
 	}
-	store, err := Open(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	documentsAfter, versionsAfter := migrationRecords(t, store.db, "documents"), migrationRecords(t, store.db, "versions")
+	documentsAfter, versionsAfter := migrationRecords(t, db, "documents"), migrationRecords(t, db, "versions")
 	for key, original := range documentsBefore {
 		if key != "sessions:bound-archived:3" && !bytes.Equal(original, documentsAfter[key]) {
 			t.Fatalf("migration altered unrelated current document %q", key)
@@ -150,7 +144,7 @@ func TestMigration4RestoresOnlyCurrentBoundArchivedSessionsAndRetainsHistory(t *
 		t.Fatal("migration changed creation metadata, unknown fields or large integer precision")
 	}
 	var retained string
-	if err := store.db.QueryRow("SELECT payload FROM observations WHERE id='event-original'").Scan(&retained); err != nil || retained != observation {
+	if err := db.QueryRow("SELECT payload FROM observations WHERE id='event-original'").Scan(&retained); err != nil || retained != observation {
 		t.Fatal("migration changed archived IM history")
 	}
 	coreAfter, err := os.ReadFile(corePath)
@@ -179,7 +173,7 @@ func TestMigration4RollsBackPresentationChangesOnInconsistentMetadata(t *testing
 		t.Fatal("failed migration partially changed current or historical records")
 	}
 	status, err := InspectMigration(context.Background(), directory)
-	if err != nil || status.Current != 3 || status.Target != 4 || !status.NeedsMigration {
+	if err != nil || status.Current != 3 || status.Target != FormatVersion || !status.NeedsMigration {
 		t.Fatalf("failed step advanced its format marker or ledger: %+v %v", status, err)
 	}
 }

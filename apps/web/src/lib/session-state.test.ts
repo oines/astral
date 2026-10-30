@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addEntry, applyEvent, emptyState, fromSnapshot, messageText, scheduledMessage, transcriptGroups, transcriptRows, visibleEntry } from './session-state'
+import { addEntry, applyEvent, emptyState, fromSnapshot, reconcileSnapshot, durableTranscriptGroups, liveTranscriptGroups, messageText, scheduledMessage, transcriptGroups, transcriptRows, visibleEntry } from './session-state'
 import type { CoreEvent, Entry, SessionView, Snapshot } from './types'
 
 function entry(id: string, sequence: number, rest: Partial<Entry>): Entry {
@@ -267,5 +267,41 @@ describe('ordered transcript process', () => {
     const state = fromSnapshot(snapshot([historyTool], []))
     const group = transcriptGroups(state)[0]!
     expect(group.blocks[0]).toMatchObject({ kind: 'process', items: [{ kind: 'tool', entry: { id: 'result-only' } }] })
+  })
+})
+
+
+describe('stable incremental transcript presentation', () => {
+  it('keeps streamed text identity when the accepted entry arrives', () => {
+    const state = fromSnapshot(snapshot())
+    applyEvent(state, event(1, { model: { type: 'text_delta', content_index: 0, text: 'Answer' } }))
+    const streamingKey = transcriptGroups(state)[0]!.blocks.find(block => block.kind === 'text')!.key
+    addEntry(state, entry('accepted', 2, { run_id: 'run', generation: { attempt_id: 'attempt', configuration_id: 'cfg', context_digest: 'digest', model: { id: 'model', context_window: 1000, max_output_tokens: 100 } }, message: { role: 'assistant', content: [{ type: 'text', text: 'Answer' }] } }))
+    expect(transcriptGroups(state)[0]!.blocks.find(block => block.kind === 'text')!.key).toBe(streamingKey)
+  })
+
+  it('updates the live tail without rebuilding or mutating historical groups', () => {
+    const state = fromSnapshot(snapshot([entry('question', 1, { message: { role: 'user', content: [{ type: 'text', text: 'Hello' }] } })]))
+    const durable = durableTranscriptGroups(state)
+    const before = JSON.stringify(durable)
+    const revision = state.historyRevision
+    applyEvent(state, event(1, { model: { type: 'text_delta', content_index: 0, text: 'Hello back' } }))
+    const groups = liveTranscriptGroups(state, durable)
+    expect(groups[0]).toBe(durable[0])
+    expect(JSON.stringify(durable)).toBe(before)
+    expect(state.historyRevision).toBe(revision)
+  })
+
+  it('retains older pages across reconnects but only retains live previews for an active matching runtime', () => {
+    const old = fromSnapshot(snapshot([entry('older', 1, { message: { role: 'user', content: [{ type: 'text', text: 'old' }] } })]))
+    old.historyCursor = 'older-page'
+    applyEvent(old, event(1, { model: { type: 'text_delta', content_index: 0, text: 'partial' } }))
+    const next = snapshot([entry('older', 1, { message: { role: 'user', content: [{ type: 'text', text: 'old' }] } })])
+    next.history.next_cursor = 'recent-page'
+    const joined = reconcileSnapshot(old, next)
+    expect(joined.historyCursor).toBe('older-page')
+    expect(joined.previews.attempt).toBeDefined()
+    next.epoch = 'server-b'
+    expect(reconcileSnapshot(old, next).previews).toEqual({})
   })
 })

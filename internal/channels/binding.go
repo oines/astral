@@ -210,6 +210,9 @@ func (s *Service) target(ctx context.Context, agentID, sessionID, conversationID
 	if err != nil {
 		return binding, conversation, connection, err
 	}
+	if err := s.authorizeBindingPrivacy(ctx, binding); err != nil {
+		return binding, conversation, connection, err
+	}
 	if connection.AccessMode != "all" && !binding.Enabled {
 		return binding, conversation, connection, domain.Forbidden("chat is not in the account's specified list")
 	}
@@ -253,6 +256,20 @@ func (s *Service) AuthorizeConversation(ctx context.Context, agentID, conversati
 	return err
 }
 
+func (s *Service) authorizeBindingPrivacy(ctx context.Context, binding domain.ConversationBinding) error {
+	if _, scoped := persistence.CurrentSessionScope(ctx); !scoped || !binding.Enabled {
+		return nil
+	}
+	var session domain.Session
+	if err := s.Store.Get(ctx, "sessions", binding.SessionID, &session); err != nil {
+		return err
+	}
+	if err := persistence.CheckSessionAccess(ctx, session); err != nil {
+		return domain.Missing("Conversation", binding.ConversationID)
+	}
+	return nil
+}
+
 // ResolveForAgent permits discovery without activating a Session. In specified
 // mode only an existing authorized chat can be returned, even by a new alias.
 func (s *Service) ResolveForAgent(ctx context.Context, agentID, connectionID, externalID, topicID string) (domain.Conversation, error) {
@@ -273,6 +290,13 @@ func (s *Service) ResolveForAgent(ctx context.Context, agentID, connectionID, ex
 	conversation, err := adapter.ResolveConversation(ctx, externalID, topicID)
 	if err != nil {
 		return conversation, err
+	}
+	bound, err := s.activeBinding(ctx, conversation.ID)
+	if err != nil {
+		return domain.Conversation{}, err
+	}
+	if err := s.authorizeBindingPrivacy(ctx, bound); err != nil {
+		return domain.Conversation{}, err
 	}
 	if connection.AccessMode != "all" {
 		if err := s.AuthorizeConversation(ctx, agentID, conversation.ID); err != nil {

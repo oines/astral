@@ -15,6 +15,8 @@ The date and time you enter for a one-time plan are interpreted in that global t
 
 An existing target must belong to the same Bot. It uses that session's current context, model, computer, and permissions when the prompt arrives. A session can have several plans. Forking a session does not copy its plans.
 
+Plans targeting a private session are hidden from other sessions' Gateway calls. A plan created by a private session in **Create a new session each time** mode is also private to that source; its new sessions inherit the source's private setting at execution time. You can manage all plans in the UI.
+
 ## When the time arrives
 
 An idle session starts working. A busy session receives the prompt through **Steer** at its next input boundary. The prompt appears on the right with a clock, **Scheduled task**, and the task title, so you can distinguish it from a message you typed.

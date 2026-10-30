@@ -347,8 +347,8 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 }
 
 // SaveSessionPresentation changes presentation fields for the Owner.
-func (s *Service) SaveSessionPresentation(ctx context.Context, id string, title *string, pinned, archived *bool) error {
-	return s.saveSessionPresentation(ctx, "", id, title, pinned, archived)
+func (s *Service) SaveSessionPresentation(ctx context.Context, id string, title *string, pinned, archived, private *bool) error {
+	return s.saveSessionPresentation(ctx, "", id, title, pinned, archived, private)
 }
 
 // SaveAgentSessionPresentation exposes title and archive actions within one Bot.
@@ -357,10 +357,10 @@ func (s *Service) SaveAgentSessionPresentation(ctx context.Context, agentID, id 
 	if agentID == "" {
 		return domain.Invalid("Bot identity is required")
 	}
-	return s.saveSessionPresentation(ctx, agentID, id, title, nil, archived)
+	return s.saveSessionPresentation(ctx, agentID, id, title, nil, archived, nil)
 }
 
-func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id string, title *string, pinned, archived *bool) error {
+func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id string, title *string, pinned, archived, private *bool) error {
 	if agentID != "" {
 		var record domain.Session
 		if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
@@ -368,6 +368,9 @@ func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id strin
 		}
 		if record.AgentID != agentID {
 			return domain.Forbidden("Session belongs to another Bot")
+		}
+		if err := persistence.CheckSessionAccess(ctx, record); err != nil {
+			return err
 		}
 	}
 	r, err := s.open(ctx, id)
@@ -382,6 +385,9 @@ func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id strin
 	}
 	if record.Deletion != nil {
 		return domain.Missing("Session", id)
+	}
+	if err := persistence.CheckSessionAccess(ctx, record); err != nil {
+		return err
 	}
 	if record.BindingID != "" && archived != nil {
 		return domain.Conflict("a bound Session cannot be archived")
@@ -401,6 +407,9 @@ func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id strin
 	}
 	if archived != nil {
 		record.Archived = *archived
+	}
+	if private != nil {
+		record.Private = *private
 	}
 	err = s.Store.Save(ctx, "sessions", &record.Meta, &record)
 	s.notify(id)

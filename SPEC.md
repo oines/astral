@@ -833,6 +833,16 @@ IMStore 默认无限期保留收到的消息、已接受的发送及平台实际
 
 ## 9 Loop 与显式发送
 
+### 有序 IM 发送与私密访问
+
+`send_message` 与 Gateway `POST /v1/im/messages` 支持有序 `parts`：`text`、`mention`、`image`、`file`。整条请求的 `format` 控制文字格式，文字中的空格与换行保留，邻接文字与提及不自动插入分隔符。`mention` 使用平台原生用户 ID；媒体使用 Computer 路径或 FileRef。`parts` 与文字/附件便利输入互斥，两者统一归一后由 Outbox 准备；所有媒体先固定快照，全部验证成功后才一次性登记发送组。显式 `file` 保持文档语义，便利附件保留按 MIME 自动选择图片的行为。
+
+Telegram 以原生 Rich Message 顺序混排文字、数字 ID 提及、图片和文档，文件通过 multipart 流式上传。NapCat 群聊使用原生 at，按每条最多一个媒体分片；飞书使用 post，图片独占段落，Markdown 使用同一 md 节点的原生提及与图片引用，普通文件另发。QQ 官方与微信按实际能力顺序拆成文字/媒体消息，不支持的原生提及在发送前明确拒绝。平台要求的媒体段落边界由适配器生成。每个实际消息片段独立持久记录回执，失败停止后续片段，未知结果不自动重发；自身归档保留内容顺序。
+
+Host `Session.private` 由 Owner 在侧栏菜单切换，Owner 始终可见，Fork 继承来源私密状态。Gateway 使用已验证的命令绑定确定调用 Session；私密会话仅对自身开放，对同 Bot 的其他会话也隐藏。目录、搜索、历史、修改、旧游标和已知 ID 每次重新鉴权，拒绝以不存在返回。绑定 IM 的聊天随当前绑定私密化，`all` 不绕过；消息、附件、转发、发送、回应、平台操作与回执沿统一授权链检查。解绑/换绑按当前关系重新判断，不增加独立聊天隐私状态。
+
+固定目标的计划任务随目标 Session 权限隐藏。Gateway 创建的每次新建模式计划记录可信来源 Session，生成会话继承来源在执行时的私密状态；来源可持续管理自己的计划，但不因此获得私密子会话历史的访问权。Owner 管理所有计划。此隔离不清洗已复制的历史，不改变 Computer 文件的共享权限。Host format 5 通过 Goose 将旧 Session 初始化为非私密并追加业务 revision；既有历史版本和 Core 不改写。
+
 Session 的 Idle 表示当前没有活跃 Run，不代表没有历史、静默消息或排队输入。一次激活可产生多次模型调用和工具步骤，正常结束、用户 Stop、失败分别保留真实状态。
 
 绑定聊天的 Session 保持完整 Web 功能。assistant 正文正常持久保存和展示，但不会自动发送至 IM。模型可调用 `send_message`，Host 自动选择账号、聊天和 Topic；附件是当前 Computer 路径或 FileRef，纯附件允许空文本。工具的说明与参数按当前平台能力提供：Telegram 支持普通文本、Markdown、HTML、静默发送和图片作为文档；飞书提供 Markdown post 及标题；QQ 官方提供原生 Markdown 和模板；微信提供部分 Markdown；NapCat 仅将正文原样发送为普通文本，保留普通图片、文件和引用。未指定格式默认普通文本。跨聊天动作通过 Computer API 明确选择目标，也可查询目标聊天的 message-tool schema。
