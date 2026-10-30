@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createSession, continueSession, decideApproval, inputReceipt, movePending, removePending, updatePending, selectComputer, selectModel, stopSession, submitInput, uploadAttachment } from '@astral/sdk'
 import { ArrowUp, ArrowDown, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, Bot, ListEnd, CornerDownRight, Trash2, Ellipsis, Pencil } from '@astral/icons'
-import { Button, Popover } from '@astral/ui'
+import { Button, Popover, useDelayedPending } from '@astral/ui'
 import type { SessionView } from '../lib/types'
 import { errorText, fileURL, request } from '../lib/api'
 import { prepareInputAttempt, sameInputContent } from '../lib/input-attempt'
@@ -12,6 +12,7 @@ import ModelSelection from './ModelSelection.vue'
 import type { ModelSelection as Selection } from '../lib/model-reasoning'
 import { modelUnavailableLabel } from '../lib/model-availability'
 const props = defineProps<{ view: SessionView; live: boolean }>()
+const showConnection = useDelayedPending(() => !props.live)
 const emit = defineEmits<{ compact: []; started: [id: string] }>()
 const app = useAppStore()
 const { t } = useI18n()
@@ -601,7 +602,7 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
       </div>
     </div>
     <div
-      v-if="!live"
+      v-if="showConnection"
       class="composer-connection"
       role="status"
     >

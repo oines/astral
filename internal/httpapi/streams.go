@@ -51,8 +51,7 @@ func (a *API) streamRoutes() {
 		a.mux.HandleFunc("GET "+path, spec.handler)
 	}
 	route[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/timeline", "sessionTimeline", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
-		page, err := gateway.History(r.Context(), a.Config.Harness, r.PathValue("id"), r.URL.Query().Get("cursor"), limit(r, 60), r.URL.Query().Get("trace") == "true", false)
-		return timelinePage(page), err
+		return timelineHistory(r.Context(), a.Config.Harness.CoreStore, r.PathValue("id"), r.URL.Query().Get("cursor"), limit(r, 60), r.URL.Query().Get("trace") == "true")
 	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
 
 	a.Contract.Describe(httpcontract.Operation{Method: "POST", Path: "/api/v1/sessions/{id}/attachments", ID: "uploadAttachment", Tag: "Files", Auth: true, Response: reflect.TypeFor[gateway.ReferenceResponse](),
@@ -77,32 +76,43 @@ func (a *API) streamRoutes() {
 	})
 }
 func (a *API) snapshot(r *http.Request) (Snapshot, error) {
+	session, err := a.Config.Harness.Core(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return a.snapshotAt(r, session.Snapshot().EventSequence)
+}
+
+// The watermark must be captured before parallel reads. A newer View may
+// observe a commit that an earlier history page has not seen; advertising that
+// newer event sequence would make the browser discard its queued committed event.
+func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 	h := a.Config.Harness
 	snapshot := Snapshot{Epoch: h.RuntimeID}
-	var err error
-	if snapshot.View, err = h.View(r.Context(), r.PathValue("id")); err != nil {
-		return snapshot, err
-	}
-	var historyErr, traceErr error
+	var viewErr, historyErr, traceErr error
 	var reads sync.WaitGroup
-	reads.Add(2)
+	reads.Add(3)
+	go func() { defer reads.Done(); snapshot.View, viewErr = h.View(r.Context(), r.PathValue("id")) }()
 	go func() {
 		defer reads.Done()
-		snapshot.History, historyErr = gateway.History(r.Context(), h, r.PathValue("id"), "", 60, false, false)
+		snapshot.History, historyErr = timelineHistory(r.Context(), h.CoreStore, r.PathValue("id"), "", 60, false)
 	}()
 	go func() {
 		defer reads.Done()
-		snapshot.Trace, traceErr = gateway.History(r.Context(), h, r.PathValue("id"), "", 60, true, false)
+		snapshot.Trace, traceErr = timelineHistory(r.Context(), h.CoreStore, r.PathValue("id"), "", 60, true)
 	}()
 	reads.Wait()
+	if viewErr != nil {
+		return snapshot, viewErr
+	}
 	if historyErr != nil {
 		return snapshot, historyErr
 	}
 	if traceErr != nil {
 		return snapshot, traceErr
 	}
-	snapshot.History = timelinePage(snapshot.History)
-	snapshot.Trace = timelinePage(snapshot.Trace)
+	snapshot.View.EventSequence = min(snapshot.View.EventSequence, watermark)
+
 	// History already includes accepted messages and tool results. Avoid sending
 	// those bodies a second time in the operational tail.
 	seen := map[string]bool{}
@@ -129,7 +139,7 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	// by its persistent Entry ID. A reconnect always receives a fresh snapshot.
 	subscription := session.Subscribe(256)
 	defer subscription.Close()
-	snapshot, err := a.snapshot(r)
+	snapshot, err := a.snapshotAt(r, session.Snapshot().EventSequence)
 	if err != nil {
 		httpcontract.Failure(w, r, err)
 		return
@@ -190,10 +200,12 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 					lastView, _ = json.Marshal(view)
 				}
 			}
-			if event.EntryID != "" {
+			if event.Type == core.EventCommitted && event.EntryID != "" {
 				if entry, readErr := session.History().Get(r.Context(), event.EntryID); readErr == nil {
 					entry = timelineEntry(entry)
-					envelope.Entry = &entry
+					if timelineRelevant(entry) {
+						envelope.Entry = &entry
+					}
 					if entry.Kind == core.EntryMessage && entry.Message != nil && entry.Message.Role == core.RoleAssistant && entry.Usage.Available {
 						if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
 							envelope.View = &view

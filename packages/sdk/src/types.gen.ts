@@ -798,6 +798,14 @@ export type AstralInternalDomainFileRef = {
     version?: string;
 };
 
+export type AstralInternalDomainForwardOrigin = {
+    author_signature?: string;
+    message_id?: string;
+    sender: AstralInternalDomainSender;
+    sent_at?: string;
+    type: 'user' | 'hidden_user' | 'chat' | 'channel';
+};
+
 export type AstralInternalDomainForwardedMessage = {
     parts: Array<AstralInternalDomainMessagePart>;
     sender: AstralInternalDomainSender;
@@ -1195,6 +1203,7 @@ export type AstralInternalGatewayMessageObservationView = {
     edited_at?: string;
     external_event_id: string;
     format?: string;
+    forward_origin?: AstralInternalDomainForwardOrigin;
     id: string;
     kind: string;
     message_id: string;
@@ -1202,6 +1211,7 @@ export type AstralInternalGatewayMessageObservationView = {
     reaction?: AstralInternalDomainReactionEvent;
     received_at: string;
     reply_attachments?: Array<AstralInternalDomainAttachment>;
+    reply_forward_origin?: AstralInternalDomainForwardOrigin;
     reply_id?: string;
     reply_parts?: Array<AstralInternalGatewayMessagePartView>;
     reply_preview?: string;
@@ -1707,6 +1717,8 @@ export type AstralInternalMessagesMetadata = {
     display_text: string;
     event_id?: string;
     files?: Array<AstralInternalDomainFileRef>;
+    forward_origin?: AstralInternalDomainForwardOrigin;
+    reply_forward_origin?: AstralInternalDomainForwardOrigin;
     schedule?: AstralInternalMessagesScheduleMetadata;
     sender: AstralInternalDomainSender;
     source: string;

@@ -211,28 +211,29 @@ func (s telegramSticker) preview() string {
 }
 
 type telegramMessage struct {
-	ID              int64                `json:"message_id"`
-	ThreadID        int64                `json:"message_thread_id"`
-	IsTopicMessage  bool                 `json:"is_topic_message"`
-	Date            int64                `json:"date"`
-	EditDate        int64                `json:"edit_date"`
-	From            *telegramUser        `json:"from"`
-	SenderChat      *telegramChat        `json:"sender_chat"`
-	Chat            telegramChat         `json:"chat"`
-	Text            string               `json:"text"`
-	Caption         string               `json:"caption"`
-	RichMessage     *telegramRichMessage `json:"rich_message,omitempty"`
-	Entities        []telegramEntity     `json:"entities"`
-	CaptionEntities []telegramEntity     `json:"caption_entities"`
-	Reply           *telegramMessage     `json:"reply_to_message"`
-	Quote           *telegramTextQuote   `json:"quote"`
-	Photo           []telegramFile       `json:"photo"`
-	Document        *telegramFile        `json:"document"`
-	Audio           *telegramFile        `json:"audio"`
-	Voice           *telegramFile        `json:"voice"`
-	Video           *telegramFile        `json:"video"`
-	Animation       *telegramFile        `json:"animation"`
-	Sticker         *telegramSticker     `json:"sticker"`
+	ID              int64                  `json:"message_id"`
+	ThreadID        int64                  `json:"message_thread_id"`
+	IsTopicMessage  bool                   `json:"is_topic_message"`
+	Date            int64                  `json:"date"`
+	EditDate        int64                  `json:"edit_date"`
+	From            *telegramUser          `json:"from"`
+	SenderChat      *telegramChat          `json:"sender_chat"`
+	ForwardOrigin   *telegramMessageOrigin `json:"forward_origin"`
+	Chat            telegramChat           `json:"chat"`
+	Text            string                 `json:"text"`
+	Caption         string                 `json:"caption"`
+	RichMessage     *telegramRichMessage   `json:"rich_message,omitempty"`
+	Entities        []telegramEntity       `json:"entities"`
+	CaptionEntities []telegramEntity       `json:"caption_entities"`
+	Reply           *telegramMessage       `json:"reply_to_message"`
+	Quote           *telegramTextQuote     `json:"quote"`
+	Photo           []telegramFile         `json:"photo"`
+	Document        *telegramFile          `json:"document"`
+	Audio           *telegramFile          `json:"audio"`
+	Voice           *telegramFile          `json:"voice"`
+	Video           *telegramFile          `json:"video"`
+	Animation       *telegramFile          `json:"animation"`
+	Sticker         *telegramSticker       `json:"sticker"`
 }
 
 type telegramTextQuote struct {
@@ -344,8 +345,10 @@ func (t *telegram) normalize(updateID int64, message telegramMessage, edited boo
 		observation.Sender = domain.Sender{ID: "chat:" + strconv.FormatInt(message.SenderChat.ID, 10), Name: message.SenderChat.Title, Username: message.SenderChat.Username}
 	}
 	observation.Self = observation.Sender.ID == t.connection.AccountID
+	observation.ForwardOrigin = telegramForwardOrigin(message.ForwardOrigin)
 	if message.Reply != nil {
 		observation.ReplyID = strconv.FormatInt(message.Reply.ID, 10)
+		observation.ReplyForwardOrigin = telegramForwardOrigin(message.Reply.ForwardOrigin)
 		if message.Reply.Chat.ID == 0 || message.Reply.Chat.ID == message.Chat.ID {
 			observation.ReplyAttachments = telegramAttachments(*message.Reply)
 		}

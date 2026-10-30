@@ -50,7 +50,9 @@ Bot and Session identity is supplied in the model’s System Prompt. New environ
 
 ## Long conversations
 
-The chat loads recent messages first and fetches earlier history as you approach the top. Reconnecting keeps loaded messages and your reading position. Expand an execution step to load its full details; the original rollout remains available through **Export rollout**.
+The chat loads recent messages first and fetches earlier history as you approach the top. Reconnecting keeps loaded messages and your reading position. Switching back to a session still cached during this visit restores its loaded history and reading position before syncing new messages. Refreshing the page or evicting a cached session loads recent messages again.
+
+Tool arguments, text output, and results arrive with each message page, so expanding an execution step shows its details immediately. Images and attachments load when needed. The original rollout remains available through **Export rollout**. Scrolling up while the Bot responds stops following new output; return to the bottom or click **Jump to latest** to follow again.
 
 As a conversation grows, Astral summarizes older context and keeps recent messages for the next model request. Received chat messages and images count toward the context budget even while the Bot stays silent. The budget uses the model's reported usage where it still applies, plus estimates for everything added afterward.
 

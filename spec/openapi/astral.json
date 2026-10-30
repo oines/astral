@@ -2511,6 +2511,37 @@
         ],
         "type": "object"
       },
+      "astral_internal_domain_ForwardOrigin": {
+        "properties": {
+          "author_signature": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/astral_internal_domain_Sender"
+          },
+          "sent_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "user",
+              "hidden_user",
+              "chat",
+              "channel"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "sender"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_ForwardedMessage": {
         "properties": {
           "parts": {
@@ -3805,6 +3836,9 @@
           "format": {
             "type": "string"
           },
+          "forward_origin": {
+            "$ref": "#/components/schemas/astral_internal_domain_ForwardOrigin"
+          },
           "id": {
             "type": "string"
           },
@@ -3832,6 +3866,9 @@
               "$ref": "#/components/schemas/astral_internal_domain_Attachment"
             },
             "type": "array"
+          },
+          "reply_forward_origin": {
+            "$ref": "#/components/schemas/astral_internal_domain_ForwardOrigin"
           },
           "reply_id": {
             "type": "string"
@@ -5540,6 +5577,12 @@
               "$ref": "#/components/schemas/astral_internal_domain_FileRef"
             },
             "type": "array"
+          },
+          "forward_origin": {
+            "$ref": "#/components/schemas/astral_internal_domain_ForwardOrigin"
+          },
+          "reply_forward_origin": {
+            "$ref": "#/components/schemas/astral_internal_domain_ForwardOrigin"
           },
           "schedule": {
             "$ref": "#/components/schemas/astral_internal_messages_ScheduleMetadata"

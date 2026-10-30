@@ -42,6 +42,12 @@ An incoming `message_thread_id` alone does not identify a separate Topic. Ordina
 
 Model observations render the original preview as `<in-reply-to ...>` and the escaped selection as a separate `<quote position-utf16="…" manual="…">…</quote>`. A fragment remains visible without a local reply ID, such as a quote accompanying `external_reply`. An external message ID is not treated as a message ID in the current chat. Quote contents, including `@Bot`, do not create a mention trigger or grant access to another chat; current-message mentions and replies to the Bot retain their usual trigger rules.
 
+## Telegram forwarded-message origins
+
+New Telegram messages retain the supplied `forward_origin` separately from the current sender and timestamp. `Observation.forward_origin` describes the original `user`, `hidden_user`, `chat` or `channel`, with its supplied name, username, identity and original send time. Hidden users retain only their supplied name, without an invented user ID. Chat and channel identities use the `chat:` sender-ID prefix; a channel's original message ID and an available author signature are retained as source metadata. These fields describe a single forwarded message, not a NapCat merged-forward resource.
+
+A forwarded message inside `reply_to_message` retains its source in `Observation.reply_forward_origin`. Model context renders `<forward-origin .../>` inside the current `<message>` or the quoted `<in-reply-to>` respectively. Names and signatures are escaped, and no source-chat read or download URL is fabricated. Both optional fields survive IMStore and authorized message queries and are included in display metadata. The enclosing forwarder, current-chat message ID, reply target and arrival time retain their meanings; source identities never grant chat access or create a trigger. Earlier archives and frozen model context are not backfilled because they did not retain this Telegram metadata.
+
 ## Referenced media and QQ notices
 
 `Observation.reply_attachments` retains referenced media separately from the current message's `attachments`. Its `<attachment>` nodes live inside `<in-reply-to>` and identify the original message, attachment reference, type, filename, MIME type, size and same-chat original-download path. These plain attachment references are not automatically downloaded, converted into image previews, saved as Computer files or registered as FileRefs. The Agent can request the original through the advertised Computer API path when it needs it.

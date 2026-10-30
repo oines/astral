@@ -15,14 +15,15 @@ import { useTranscriptScroll } from '../composables/useTranscriptScroll'
 import { createMessageTimeFormatter } from '../lib/message-time'
 import { formatDateTime } from '../lib/timezone'
 import { useAppStore } from '../stores/app'
+import type { TranscriptPosition } from '../lib/transcript-position'
 const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean> }>()
-const emit = defineEmits<{ fork: [entryID: string] }>()
+const emit = defineEmits<{ fork: [entryID: string]; position: [state: SessionState, position: TranscriptPosition] }>()
 const { t, locale } = useI18n()
 const surface = useSurfaceStore()
 const app = useAppStore()
 const scroller = ref<HTMLElement>()
 const content = ref<HTMLElement>()
-const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor), loadOlder: () => props.loadOlder() })
+const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor), loadOlder: () => props.loadOlder(), getPosition: () => props.state.scrollPosition, savePosition: position => emit('position', props.state, position) })
 const durable = computed(() => {
   // Live deltas touch previews/tools, not this revision or the durable entries.
   void props.state.historyRevision
@@ -99,7 +100,6 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
               v-for="block in group.blocks"
               :key="block.key"
               :data-scroll-anchor="block.key"
-              :data-scroll-anchor-items="block.kind === 'process' ? block.items.map(item => item.key).join(' ') : undefined"
               class="transcript-block"
             >
               <ActivityLine

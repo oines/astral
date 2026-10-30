@@ -317,30 +317,32 @@ type ReactionEvent struct {
 }
 
 type Observation struct {
-	SchemaVersion    int            `json:"schema_version"`
-	ID               string         `json:"id"`
-	ConnectionID     string         `json:"connection_id"`
-	ConversationID   string         `json:"conversation_id"`
-	ExternalEventID  string         `json:"external_event_id"`
-	Kind             string         `json:"kind"`
-	MessageID        string         `json:"message_id"`
-	Sender           Sender         `json:"sender"`
-	Text             string         `json:"text"`
-	Parts            []MessagePart  `json:"parts,omitempty"`
-	Format           string         `json:"format,omitempty"`
-	SentAt           time.Time      `json:"sent_at"`
-	EditedAt         *time.Time     `json:"edited_at,omitempty"`
-	ReceivedAt       time.Time      `json:"received_at"`
-	ReplyID          string         `json:"reply_id,omitempty"`
-	ReplySender      string         `json:"reply_sender,omitempty"`
-	ReplyPreview     string         `json:"reply_preview,omitempty"`
-	ReplyQuote       *TextQuote     `json:"reply_quote,omitempty"`
-	ReplyAttachments []Attachment   `json:"reply_attachments,omitempty"`
-	ReplyParts       []MessagePart  `json:"reply_parts,omitempty"`
-	Attachments      []Attachment   `json:"attachments,omitempty"`
-	Trigger          string         `json:"trigger,omitempty"`
-	Self             bool           `json:"self"`
-	Reaction         *ReactionEvent `json:"reaction,omitempty"`
+	SchemaVersion      int            `json:"schema_version"`
+	ID                 string         `json:"id"`
+	ConnectionID       string         `json:"connection_id"`
+	ConversationID     string         `json:"conversation_id"`
+	ExternalEventID    string         `json:"external_event_id"`
+	Kind               string         `json:"kind"`
+	MessageID          string         `json:"message_id"`
+	Sender             Sender         `json:"sender"`
+	ForwardOrigin      *ForwardOrigin `json:"forward_origin,omitempty"`
+	Text               string         `json:"text"`
+	Parts              []MessagePart  `json:"parts,omitempty"`
+	Format             string         `json:"format,omitempty"`
+	SentAt             time.Time      `json:"sent_at"`
+	EditedAt           *time.Time     `json:"edited_at,omitempty"`
+	ReceivedAt         time.Time      `json:"received_at"`
+	ReplyID            string         `json:"reply_id,omitempty"`
+	ReplySender        string         `json:"reply_sender,omitempty"`
+	ReplyForwardOrigin *ForwardOrigin `json:"reply_forward_origin,omitempty"`
+	ReplyPreview       string         `json:"reply_preview,omitempty"`
+	ReplyQuote         *TextQuote     `json:"reply_quote,omitempty"`
+	ReplyAttachments   []Attachment   `json:"reply_attachments,omitempty"`
+	ReplyParts         []MessagePart  `json:"reply_parts,omitempty"`
+	Attachments        []Attachment   `json:"attachments,omitempty"`
+	Trigger            string         `json:"trigger,omitempty"`
+	Self               bool           `json:"self"`
+	Reaction           *ReactionEvent `json:"reaction,omitempty"`
 }
 
 type Outbox struct {

@@ -123,7 +123,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .transcript-viewport { min-height: 0; flex: 1; position: relative; display: flex; flex-direction: column; }
 /* Feather only the message edge; the composer and jump control stay crisp. */
 .transcript-viewport::after { content: ''; position: absolute; inset: auto 0 0; height: var(--chat-edge-fade); z-index: 1; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--bg) 16%, transparent) 28%, color-mix(in srgb, var(--bg) 70%, transparent) 72%, var(--bg)); }
-.transcript-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; scrollbar-width: thin; }
+.transcript-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior: contain; overflow-anchor: auto; scrollbar-gutter: stable; scrollbar-width: thin; }
 .transcript-scroll:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: -6px; border-radius: 8px; }
 @media (forced-colors: active) { .transcript-viewport::after { display: none; } }
 /* A turn owns its process, response and actions; only the turn sets outer spacing. */

@@ -122,4 +122,27 @@ describe('session transport reconciliation', () => {
     expect(session.state.value.entries.oldest).toBeDefined()
   })
 
+  it('resumes a cached long-outage gap after navigation and rejects the abandoned page', async () => {
+    const responses: Array<(value: unknown) => void> = []
+    mocks.get.mockImplementation(() => new Promise(done => { responses.push(done) }))
+    const id = ref('chat')
+    const session = scope.run(() => useSession(id))!
+    Source.all[0]!.emit('snapshot', snapshot([entry('old', 2)], 'oldest-page'))
+    const source = await reconnect(session)
+    source.emit('snapshot', snapshot([entry('recent', 9)], 'gap'))
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+    id.value = 'another'
+    id.value = 'chat'
+    expect(session.state.value.entries.old).toBeDefined()
+    expect(session.state.value.entries.recent).toBeDefined()
+    Source.all.at(-1)!.emit('snapshot', snapshot([entry('recent', 9)], 'latest-tail'))
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+    responses[0]!({ data: { entries: [entry('stale', 1)], next_cursor: 'wrong' } })
+    responses[1]!({ data: { entries: [entry('old', 2), entry('middle', 6)], next_cursor: 'overlap' } })
+    await nextTick(); await nextTick()
+    expect(session.state.value.entries.stale).toBeUndefined()
+    expect(session.state.value.entries.middle).toBeDefined()
+    expect(session.state.value.historyCursor).toBe('oldest-page')
+  })
+
 })

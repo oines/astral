@@ -9,6 +9,8 @@ import { useAppStore } from '../stores/app'
 import { useSurfaceStore } from '../stores/surface'
 import { useSession } from '../composables/useSession'
 import type { SessionView } from '../lib/types'
+import type { SessionState } from '../lib/session-state'
+import type { TranscriptPosition } from '../lib/transcript-position'
 import { errorText, newMeta, request } from '../lib/api'
 import { randomID } from '../lib/browser'
 import Sidebar from '../components/Sidebar.vue'
@@ -25,6 +27,7 @@ const { t } = useI18n()
 const id = ref(typeof route.params.id === 'string' ? route.params.id : '')
 watch(() => route.path, path => { if (!path.startsWith('/settings')) id.value = typeof route.params.id === 'string' ? route.params.id : '' })
 const live = useSession(id)
+function rememberPosition(state: SessionState, position: TranscriptPosition) { state.scrollPosition = position }
 const view = computed(() => live.state.value.view)
 const showChatLoading = useDelayedPending(() => id.value && !view.value && !live.error.value ? id.value : '')
 const error = ref('')
@@ -172,10 +175,12 @@ watch(id, () => { surface.close(); error.value = '' })
           {{ error || live.error.value }}
         </div>
         <Transcript
+          :key="id"
           :state="live.state.value"
           :session-i-d="id"
           :load-older="live.older"
           @fork="fork"
+          @position="rememberPosition"
         />
         <Composer
           :key="id"
