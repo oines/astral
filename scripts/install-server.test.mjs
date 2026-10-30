@@ -120,6 +120,59 @@ test('installer accepts the current Core baseline and rejects the previous basel
   }
 })
 
+test('physical Core schema is validated separately from the logical format pair', supported, async t => {
+  const directory = await fixture(t)
+  const file = path.join(directory, 'manifest.json')
+  const current = { ...manifest('0.1.7'), core_schema: 12, storage_migrations: { core_sqlite: { baseline: 11, target: 12 } } }
+  await writeFile(file, JSON.stringify(current))
+  const valid = await run('python3', ['-c', manifestValidator, file, 'v0.1.7'])
+  assert.equal(valid.code, 0, valid.stderr)
+  assert.match(valid.stdout, /3 11\n/)
+  for (const changed of [{ ...current, core_schema: 11 }, { ...current, storage_migrations: {} }]) {
+    await writeFile(file, JSON.stringify(changed))
+    assert.notEqual((await run('python3', ['-c', manifestValidator, file, 'v0.1.7'])).code, 0)
+  }
+})
+
+test('actual activation loop waits through long maintenance and rejects a restarted process', supported, async t => {
+  const loop = source.slice(source.indexOf('startup_deadline=$((SECONDS+45))'), source.indexOf('if [[ -z $server_url ]]; then'))
+  assert.ok(loop.includes('while :; do'))
+  for (const mode of ['complete', 'restart', 'ordinary-timeout']) {
+    const directory = path.join(await fixture(t), mode)
+    await mkdir(path.join(directory, 'data/server'), { recursive: true })
+    const script = `set -eu
+root=$1
+mode=$2
+ready=$root/ready.json
+service=fixture
+server_url=
+printf '0' > "$root/count"
+die() { printf '%s\\n' "$*" >&2; exit 1; }
+sleep() { SECONDS=$((SECONDS+1300)); }
+systemctl() {
+  if [[ $* == *--property=MainPID* ]]; then
+    n=$(cat "$root/count"); n=$((n+1)); printf '%s' "$n" > "$root/count"
+    if [[ $mode == restart && $n -gt 1 ]]; then printf '43'; return; fi
+    if [[ $mode != ordinary-timeout ]]; then
+      if ((n<3)); then printf '{"pid":42,"phase":"preparing-data"}' > "$root/data/server/startup-maintenance.json"
+      else
+        rm -f "$root/data/server/startup-maintenance.json"
+        python3 -c 'import json,sys; json.dump({"pid":42,"url":"http://127.0.0.1:4545","data_directory":sys.argv[1]+"/data/server"},open(sys.argv[1]+"/ready.json","w"))' "$root"
+      fi
+    fi
+    printf '42'
+  fi
+}
+${loop}
+[[ -n $server_url ]] || die 'ordinary startup timed out'
+printf 'READY\\n'
+`
+    const result = await run('bash', ['-c', script, 'fixture', directory, mode])
+    if (mode === 'complete') { assert.equal(result.code, 0, result.stderr); assert.match(result.stdout, /READY/) }
+    else { assert.notEqual(result.code, 0); assert.match(result.stderr, mode === 'restart' ? /restarted/ : /timed out/) }
+  }
+})
+
 test('forward-format preflight rejects private Core formats and downgrades before updating a service', supported, async () => {
   for (const [previous, next] of [['3 11', '3 11'], ['3 11', '3 12'], ['3 12', '4 14']]) {
     const result = await run('python3', ['-c', forwardFormatValidator, previous, next])

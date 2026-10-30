@@ -5,7 +5,7 @@ import path from 'node:path'
 import { isDirectInvocation } from './release-version.mjs'
 
 const coreModule = 'github.com/oines/astral-core'
-const coreMigrations = 'store/sqlite/migrations'
+const coreMigrations = 'store/sqlite'
 const migrationSource = /\/\d+_[^/]+\.(sql|go)$/
 
 // The Go commands only parse metadata and fetch the explicitly pinned source.

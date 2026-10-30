@@ -107,6 +107,8 @@ async function publishFixture() {
     data_formats: metadata.data_formats,
     host_schema: metadata.data_formats.host,
     core_format: metadata.data_formats.core,
+    core_schema: metadata.core_schema,
+    storage_migrations: metadata.storage_migrations,
     migration_status: metadata.migration_status,
     migration_baselines: metadata.migration_baselines,
     migration_targets: metadata.migration_targets,

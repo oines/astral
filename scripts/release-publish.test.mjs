@@ -95,7 +95,7 @@ async function fixture(t, { candidate = false, unsigned = false, published = fal
     digest: `sha256:${'d'.repeat(64)}`, recipe_sha256: recipeSHA, platforms,
     source_sha: 'c'.repeat(40), build_run_url: 'https://github.com/oines/astral/actions/runs/456', created_at: '2026-10-27T00:00:00.000Z',
   }
-  const formats = { schema_version: 1, version, source_sha: sourceSHA, computer_environment: computerEnvironment, data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
+  const formats = { schema_version: 1, version, source_sha: sourceSHA, computer_environment: computerEnvironment, core_schema: 12, storage_migrations: { core_sqlite: { baseline: 11, target: 12 } }, data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
   await writeFile(path.join(directory, 'release-formats.json'), JSON.stringify(formats))
   names.push('release-formats.json')
   const purpose = candidate ? (macSigned ? 'mac-signed-candidate' : 'unsigned-candidate') : 'release'
@@ -103,7 +103,7 @@ async function fixture(t, { candidate = false, unsigned = false, published = fal
   const manifest = {
     schema_version: 1, purpose, public_release_ready: !candidate, version, tag, source_sha: sourceSHA, repository,
     candidate_run_url: `https://github.com/${repository}/actions/runs/123`, ci_run_url: `https://github.com/${repository}/actions/runs/122`,
-    data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture', computer_environment: clone(computerEnvironment),
+    core_schema: 12, storage_migrations: { core_sqlite: { baseline: 11, target: 12 } }, data_formats: { host: 3, core: 11 }, host_schema: 3, core_format: 11, core_module_version: 'fixture', computer_environment: clone(computerEnvironment),
     migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 }, desktop_updater: 'electron-updater',
     signing: { macos: macSigned ? 'signed-and-notarized' : 'not-signed-or-notarized', windows: 'not-signed', linux: 'not-signed' },
     distribution_names: distributionNames,

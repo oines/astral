@@ -251,6 +251,7 @@ host,core=m.get('host_schema'),m.get('core_format')
 if type(host) is not int or type(core) is not int or host<1 or core<1 or m.get('data_formats')!={'host':host,'core':core}: raise SystemExit('Invalid or inconsistent data-format metadata')
 baselines=m.get('migration_baselines',{})
 if m.get('migration_status')!='goose' or baselines!={'host':3,'core':11} or m.get('migration_targets')!={'host':host,'core':core} or host<3 or core<11: raise SystemExit('Invalid Goose migration ranges')
+if 'core_schema' in m and (type(m['core_schema']) is not int or m['core_schema']<11 or m.get('storage_migrations')!={'core_sqlite':{'baseline':11,'target':m['core_schema']}}): raise SystemExit('Invalid Core SQLite migration metadata')
 if sorted(m.get('distribution_names',[]))!=sorted(names): raise SystemExit('Manifest must describe all six distribution binaries')
 assets=m.get('assets',[])
 if not isinstance(assets,list) or any(not isinstance(a,dict) for a in assets): raise SystemExit('Invalid asset inventory')
@@ -290,6 +291,13 @@ new_program=$stage/release/bin/astral
 [[ $("$new_program" version) == "$version" ]] || die 'downloaded executable version differs from the release manifest'
 new_formats=$("$new_program" version --data-formats) || die 'downloaded executable does not expose data-format metadata'
 [[ $new_formats == "$formats" && $new_formats =~ ^[0-9]+\ [0-9]+$ ]] || die 'downloaded executable data formats differ from the manifest'
+python3 - "$distribution/release-manifest.json" "$new_program" <<'PYSCHEMA'
+import json,subprocess,sys
+with open(sys.argv[1],encoding='utf-8') as f: manifest=json.load(f)
+if 'core_schema' in manifest:
+    executable=json.loads(subprocess.check_output([sys.argv[2],'version','--json'],timeout=15))
+    if any(executable.get(key)!=manifest.get(key) for key in ('core_schema','storage_migrations')): raise SystemExit('Executable SQLite schema differs from release metadata')
+PYSCHEMA
 old_program=
 if [[ -L $root/current ]]; then
   old_current=$(readlink "$root/current")
@@ -387,18 +395,31 @@ systemctl --user daemon-reload
 systemctl --user enable "$service"
 systemctl --user start "$service"
 server_url=
-startup_limit=45
-for ((attempt=0; attempt<startup_limit; attempt++)); do
+startup_deadline=$((SECONDS+45))
+maintenance_pid=
+maintenance_active=0
+while :; do
   pid=$(systemctl --user show "$service" --property=MainPID --value)
+  if [[ -n $maintenance_pid && $pid != "$maintenance_pid" ]]; then die 'Server exited or restarted during data maintenance'; fi
+  maintaining=0
   if [[ $pid =~ ^[1-9][0-9]*$ && -f $root/data/server/startup-maintenance.json ]]; then
     if python3 - "$root/data/server/startup-maintenance.json" "$pid" <<'PY'
 import json,sys
 with open(sys.argv[1],encoding='utf-8') as f: state=json.load(f)
 if state.get('pid')!=int(sys.argv[2]) or state.get('phase')!='preparing-data': raise SystemExit(1)
 PY
-    then startup_limit=1200; fi
+    then
+      maintaining=1
+      maintenance_pid=$pid
+      if ((maintenance_active==0)); then printf 'Preparing Astral data; waiting for backup and migration. Press Ctrl-C to cancel.\n'; fi
+    fi
   fi
-  if [[ $pid =~ ^[1-9][0-9]*$ && -f $ready ]]; then
+  if ((maintaining==0)); then
+    if ((maintenance_active==1)); then startup_deadline=$((SECONDS+45)); fi
+    if ((SECONDS>=startup_deadline)); then break; fi
+  fi
+  maintenance_active=$maintaining
+  if ((maintaining==0)) && [[ $pid =~ ^[1-9][0-9]*$ && -f $ready ]]; then
     if server_url=$(python3 - "$ready" "$pid" "$root/data/server" <<'PY'
 import json,sys,urllib.parse
 with open(sys.argv[1],encoding='utf-8') as f: ready=json.load(f)

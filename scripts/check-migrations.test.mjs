@@ -69,6 +69,14 @@ test('published Host and Core SQL/Go sources survive while new steps may be appe
   assert.ok(f.calls[1].includes(newVersion))
 })
 
+test('numbered Core codecs and storage helpers are immutable migration dependencies', t => {
+  const f = fixture(t)
+  const file = 'store/sqlite/00012_codec.go'
+  write(f.previous, file, 'frozen codec\n')
+  write(f.current, file, 'changed codec\n')
+  assert.throws(() => checkReleasedMigrations(f.cwd, f.options), /Published Core migration changed/)
+})
+
 for (const file of coreSources) {
   test(`a changed published Core source fails: ${file}`, t => {
     const f = fixture(t)

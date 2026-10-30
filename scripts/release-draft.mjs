@@ -54,7 +54,7 @@ export async function createDraft(directory, { publicRelease = false, environmen
   }
   const formats = JSON.parse(await readFile(path.join(directory, 'release-formats.json'), 'utf8'))
   validateDataFormats(formats, { version, sourceSHA: manifest.source_sha })
-  for (const key of ['data_formats', 'host_schema', 'core_format', 'core_module_version', 'migration_status', 'migration_baselines', 'migration_targets', 'computer_environment']) {
+  for (const key of ['data_formats', 'host_schema', 'core_format', 'core_schema', 'storage_migrations', 'core_module_version', 'migration_status', 'migration_baselines', 'migration_targets', 'computer_environment']) {
     if (JSON.stringify(formats[key]) !== JSON.stringify(manifest[key])) throw new Error('Release format metadata and manifest must describe the same Goose migration contract and Computer environment lock.')
   }
   const manifestNames = requiredNames.filter(name => !['release-manifest.json', 'RELEASE_NOTES.md'].includes(name))

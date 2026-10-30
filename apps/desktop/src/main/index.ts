@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { access } from 'node:fs/promises'
 import electronUpdater from 'electron-updater'
 import { LocalService } from './service'
+import { startupStatus } from './startup-status'
 import { desktopRequestHeaders, externalURL, trustedSender } from './policy'
 import { setLinuxLoginStart } from './login'
 import { networkArguments } from './network-arguments'
@@ -184,6 +185,7 @@ async function start() {
   const system = process.platform === 'win32' ? 'windows' : process.platform
   const binary = join(bins, `astral-${system}-${architecture}${system === 'windows' ? '.exe' : ''}`)
   await configureUpdates()
+  service.onMaintenance = startupStatus(applicationIcon(), app.getLocale().startsWith('zh'), () => app.quit())
   const token = await service.start(binary, root, bins, networkArguments(process.argv.slice(1)), updateBridge)
   serverURL = service.url
   // Only this Electron session may attach the process-local Desktop identity,
@@ -265,7 +267,7 @@ app.on('before-quit', event => {
 app.on('will-quit', () => traceLifecycle('will-quit'))
 app.on('quit', (_event, exitCode) => traceLifecycle(`quit: exitCode=${exitCode}`))
 if (single) void app.whenReady().then(start).catch(async error => {
-  dialog.showErrorBox('Astral could not start', `${error instanceof Error ? error.message : String(error)}\n\nIf another Astral server already uses this data directory, stop it before opening the desktop application.`)
+  if (!quitting) dialog.showErrorBox('Astral could not start', `${error instanceof Error ? error.message : String(error)}\n\nIf another Astral server already uses this data directory, stop it before opening the desktop application.`)
   await service.stop()
   await updateBridge?.close()
   app.quit()

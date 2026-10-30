@@ -3,7 +3,7 @@ import { createReadStream, readFileSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { desktopArtifactName, desktopUpdateFeeds, writeDesktopUpdateFeeds, validateDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
-import { isDirectInvocation, readReleaseVersion, validateTag } from './release-version.mjs'
+import { validateStorageMigrations, isDirectInvocation, readReleaseVersion, validateTag } from './release-version.mjs'
 import { recipeHash, recipePath, validateLock } from './computer-image-contract.mjs'
 
 export const distributionNames = ['darwin', 'linux', 'windows'].flatMap(system => ['amd64', 'arm64'].map(arch => `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`))
@@ -17,6 +17,7 @@ export const macSigningReportName = 'mac-signing-report.json'
 const signingChecks = ['signatures', 'hardened_runtime', 'secure_timestamps', 'embedded_checksums', 'packaged_app_startup_shutdown']
 
 export function validateDataFormats(formats, { version, sourceSHA }) {
+  validateStorageMigrations(formats)
   if (formats?.schema_version !== 1 || formats.version !== version || formats.source_sha !== sourceSHA ||
       !Number.isSafeInteger(formats.host_schema) || !Number.isSafeInteger(formats.core_format) ||
       formats.host_schema < 3 || formats.core_format < 11 ||
@@ -131,6 +132,8 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
     data_formats: formats.data_formats,
     host_schema: formats.host_schema,
     core_format: formats.core_format,
+    core_schema: formats.core_schema,
+    storage_migrations: formats.storage_migrations,
     core_module_version: formats.core_module_version,
     computer_environment: formats.computer_environment,
     migration_status: formats.migration_status,
@@ -170,7 +173,7 @@ An unavailable IM image preview no longer blocks later messages or mentions on T
 
 QQ NapCat cards now expose their readable titles, descriptions and links. Merged forwards retain ordered nested messages, senders, times and media references, including replies quoting those trees. Forward-only references receive a bounded initial resolution of six seconds, two levels and twelve child messages; longer content has authenticated reading links for on-demand paging. Selected images use the existing in-memory native preview of at most 75,000 pixels and remain in history with their original-download URLs. Videos and files retain metadata and download links. Originals are not separately saved or registered as FileRefs on receipt. All resource reads retain the enclosing chat's permissions; forwarded identities and mentions do not activate the Bot. Existing history and frozen requests are not rewritten.
 
-Versioned migrations are bundled with the latest binary. Upgrades apply missing migrations in order without downloading intermediate releases. Before a migration, the Server snapshots its data; migration failure stops startup and restores that snapshot. The current target is Host ${formats.host_schema} / Core ${formats.core_format}, starting from the supported Host 3 / Core 11 baseline. ${hostMigration} Older private data formats and downgrades are not supported. Desktop installation errors can be retried; a release which cannot start may require manually reinstalling a previous version after restoring its matching data backup.
+Versioned migrations are bundled with the latest binary. Upgrades apply missing migrations in order without downloading intermediate releases. Before a migration, the Server snapshots its data; migration failure stops startup and restores that snapshot. The current target is Host ${formats.host_schema} / Core ${formats.core_format} / SQLite schema ${formats.core_schema}, starting from the supported Host 3 / Core 11 baseline. ${hostMigration} Older private data formats and downgrades are not supported. Desktop installation errors can be retried; a release which cannot start may require manually reinstalling a previous version after restoring its matching data backup.
 
 - Source: ${sourceSHA}
 - Required CI: ${ciRunURL}

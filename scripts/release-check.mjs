@@ -42,7 +42,7 @@ export async function checkReleaseTools() {
     await writeFile(path.join(temporary, 'go.mod'), 'module fixture\nrequire (\n  github.com/oines/astral-core v0.0.0-fixture\n)\n')
     // Node itself stands in for the native executable and reads this tiny
     // script when the producer invokes `version --json`; no Astral is built.
-    await writeFile(path.join(temporary, 'version'), `console.log(${JSON.stringify(JSON.stringify({ version: '0.1.0', data_formats: { host: 3, core: 11 }, migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }))})`)
+    await writeFile(path.join(temporary, 'version'), `console.log(${JSON.stringify(JSON.stringify({ version: '0.1.0', core_schema: 12, storage_migrations: { core_sqlite: { baseline: 11, target: 12 } }, data_formats: { host: 3, core: 11 }, migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }))})`)
     const producedFormats = JSON.parse(invoke('release-version.mjs', ['formats', '--binary', process.execPath, '--sha', sourceSHA]))
     assert.deepEqual(producedFormats.computer_environment, computerEnvironment)
     assert.equal(producedFormats.core_module_version, 'v0.0.0-fixture')
@@ -54,7 +54,7 @@ export async function checkReleaseTools() {
     assert.equal(desktopNames('0.1.0').length, 12)
     for (const name of packageNames) await writeFile(path.join(temporary, 'input', name), `Small fixture only: ${name}\n`)
     await writeFile(path.join(temporary, 'input', 'checksums.txt'), 'stale build checksum: must be recalculated\n')
-    const formats = { schema_version: 1, version: '0.1.0', source_sha: sourceSHA, computer_environment: computerEnvironment, host_schema: 3, core_format: 11, data_formats: { host: 3, core: 11 }, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
+    const formats = { schema_version: 1, version: '0.1.0', source_sha: sourceSHA, computer_environment: computerEnvironment, host_schema: 3, core_format: 11, core_schema: 12, storage_migrations: { core_sqlite: { baseline: 11, target: 12 } }, data_formats: { host: 3, core: 11 }, core_module_version: 'fixture', migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 } }
     const writeFormats = async value => writeFile(path.join(temporary, 'input', 'release-formats.json'), JSON.stringify(value))
     await writeFormats(formats)
     const collectedNames = [...packageNames, 'release-formats.json', ...desktopUpdateFeeds('0.1.0').map(feed => feed.name)]

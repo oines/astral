@@ -31,6 +31,9 @@ type Plan struct {
 
 func Inspect(ctx context.Context, data string) (Plan, error) {
 	var p Plan
+	if err := inspectionSpace(data); err != nil {
+		return p, err
+	}
 	var err error
 	p.Host, err = persistence.InspectMigration(ctx, data)
 	if err != nil {
@@ -149,6 +152,9 @@ func prepare(ctx context.Context, data, version string, protect func(string) err
 	if !plan.Pending {
 		return nil, nil
 	}
+	if err = migrationSpace(ctx, data); err != nil {
+		return nil, err
+	}
 	backup, err := snapshot(ctx, data, version, protect)
 	if err != nil {
 		return nil, err
@@ -168,9 +174,9 @@ func prepare(ctx context.Context, data, version string, protect func(string) err
 		}
 	}
 	if err != nil {
-		recovery, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		return nil, errors.Join(fmt.Errorf("migration failed: %w", err), upgrade.Rollback(recovery))
+		// A cancelled owner may exit now; its durable journal drives recovery on
+		// the next start. A live owner can restore without a fixed size-blind timer.
+		return nil, errors.Join(fmt.Errorf("migration failed: %w", err), upgrade.Rollback(ctx))
 	}
 	return upgrade, nil
 }
@@ -246,6 +252,12 @@ func snapshot(ctx context.Context, data, version string, protect func(string) er
 	if err != nil {
 		return "", err
 	}
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.RemoveAll(backup)
+		}
+	}()
 	if err = protect(backup); err != nil {
 		return "", err
 	}
@@ -290,6 +302,7 @@ func snapshot(ctx context.Context, data, version string, protect func(string) er
 	if err = syncDir(backup); err != nil {
 		return "", err
 	}
+	complete = true
 	return backup, nil
 }
 
@@ -358,6 +371,19 @@ func Restore(ctx context.Context, data, backup string, protect func(string) erro
 		}
 		return nil
 	}); err != nil {
+		return err
+	}
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+	var restoreBytes uint64
+	for _, file := range m.Files {
+		if file.Size < 0 {
+			return fmt.Errorf("invalid snapshot size")
+		}
+		restoreBytes += uint64(file.Size)
+	}
+	if err = checkSpace([]spaceNeed{{data, restoreBytes + (64 << 20), "snapshot restoration"}}, availableSpace); err != nil {
 		return err
 	}
 	if err = writeJSON(filepath.Join(data, journalName), journal{Schema: 1, Backup: backup}, protect); err != nil {

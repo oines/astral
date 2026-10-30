@@ -129,8 +129,8 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	s := &Server{Config: config, provisioning: map[string]bool{}, closeDone: make(chan struct{})}
 	defer func() {
 		if err != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			// Startup recovery shares the caller's cancellation, not a fixed
+			// deadline that repeatedly interrupts restoration of a large snapshot.
 			_ = s.Close(ctx)
 		}
 	}()
@@ -142,7 +142,6 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	if err = WriteJSON(maintenanceFile, map[string]any{"pid": os.Getpid(), "phase": "preparing-data"}); err != nil {
 		return nil, err
 	}
-	defer os.Remove(maintenanceFile)
 	s.upgrade, err = datamigrate.Prepare(ctx, config.DataDirectory, config.Version, ProtectPrivate)
 	if err != nil {
 		return nil, err
@@ -270,6 +269,9 @@ func (s *Server) Start() error {
 		return err
 	}
 	s.upgrade = nil
+	if err := os.Remove(filepath.Join(s.Config.DataDirectory, "startup-maintenance.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	if err := s.startLocalControl(); err != nil {
 		return err
 	}
@@ -369,9 +371,7 @@ func (s *Server) Close(ctx context.Context) error {
 	}
 	if s.upgrade != nil {
 		if errors.Join(all...) == nil {
-			recovery, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			all = append(all, s.upgrade.Rollback(recovery))
-			cancel()
+			all = append(all, s.upgrade.Rollback(ctx))
 		} else {
 			all = append(all, errors.New("shutdown incomplete; migration journal retained for recovery after the process exits"))
 		}
@@ -381,6 +381,9 @@ func (s *Server) Close(ctx context.Context) error {
 		all = append(all, s.localLock.Close())
 	}
 	if s.lock != nil {
+		if err := os.Remove(filepath.Join(s.Config.DataDirectory, "startup-maintenance.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+			all = append(all, err)
+		}
 		_ = os.Remove(filepath.Join(s.Config.DataDirectory, "running.json"))
 		all = append(all, s.lock.Close())
 	}
