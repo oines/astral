@@ -36,13 +36,9 @@ func (s *Service) freezeOutboundParts(ctx context.Context, agentID, sessionID st
 	if len(inputs) > 100 {
 		return nil, domain.Invalid("a message supports at most 100 parts")
 	}
-	parts := make([]domain.OutboxPart, len(inputs))
-	for i, p := range inputs {
-		parts[i].OutboundPart = p
-	}
 	// Validate every part before snapshotting sources. Unsupported mentions are
 	// rejected before earlier text can reach the external chat.
-	for _, p := range parts {
+	for _, p := range inputs {
 		switch p.Type {
 		case "text":
 			if p.UserID != "" || p.Name != "" || p.Path != "" || p.FileURI != "" || !utf8.ValidString(p.Text) {
@@ -75,8 +71,10 @@ func (s *Service) freezeOutboundParts(ctx context.Context, agentID, sessionID st
 			return nil, domain.Invalid("unsupported outbound part type")
 		}
 	}
-	for i := range parts {
+	parts := make([]domain.OutboxPart, len(inputs))
+	for i, input := range inputs {
 		p := &parts[i]
+		p.Type, p.Text, p.UserID, p.Name = input.Type, input.Text, input.UserID, input.Name
 		if p.Type == "text" {
 			p.Text = presentText(p.Text)
 			continue
@@ -86,14 +84,14 @@ func (s *Service) freezeOutboundParts(ctx context.Context, agentID, sessionID st
 		}
 		var f domain.FileRef
 		var err error
-		if p.Path != "" {
+		if input.Path != "" {
 			source := r.SourceBinding
 			if source == nil || source.AgentID != agentID || source.SessionID != sessionID || source.ComputerID != r.SourceComputerID {
 				return nil, domain.Forbidden("file path needs the authenticated source Computer")
 			}
-			f, err = s.Harness.Files.Reference(ctx, *source, p.Path, true)
+			f, err = s.Harness.Files.Reference(ctx, *source, input.Path, true)
 		} else {
-			f, err = s.Harness.Files.Get(ctx, agentID, p.FileURI)
+			f, err = s.Harness.Files.Get(ctx, agentID, input.FileURI)
 		}
 		if err != nil {
 			return nil, err
@@ -101,7 +99,23 @@ func (s *Service) freezeOutboundParts(ctx context.Context, agentID, sessionID st
 		// The text/attachments conveniences retain their automatic image
 		// presentation. An explicit parts.file always remains a document.
 		if p.Type == "file" && (r.autoMediaTypes || len(r.Parts) == 0) && strings.HasPrefix(f.MediaType, "image/") {
-			p.Type = "image"
+			switch c.Adapter {
+			case "telegram.bot":
+				if f.MediaType == "image/png" || f.MediaType == "image/jpeg" || f.MediaType == "image/webp" {
+					p.Type = "image"
+				}
+			case "feishu.bot": // The convenience previously uploaded a generic file.
+			default:
+				p.Type = "image"
+			}
+		}
+		if p.Type == "file" && (r.autoMediaTypes || len(r.Parts) == 0) {
+			if (c.Adapter == "qq.bot" || c.Adapter == "weixin.ilink") && strings.HasPrefix(f.MediaType, "video/") {
+				p.MediaKind = "video"
+			}
+			if c.Adapter == "qq.bot" && strings.HasPrefix(f.MediaType, "audio/") {
+				p.MediaKind = "audio"
+			}
 		}
 		if p.Type == "image" && !strings.HasPrefix(f.MediaType, "image/") {
 			return nil, domain.Invalid("image part source is not an image")
@@ -123,8 +137,6 @@ func (s *Service) freezeOutboundParts(ctx context.Context, agentID, sessionID st
 			return nil, domain.Invalid("file exceeds the platform upload limit")
 		}
 		p.FileRefID = f.ID
-		p.Path = ""
-		p.FileURI = ""
 	}
 	return parts, nil
 }
@@ -207,7 +219,7 @@ func prepareOutboundParts(a Adapter, parts []domain.OutboxPart, options domain.M
 				if err := appendGroup(parts[start:i]); err != nil {
 					return nil, err
 				}
-				result = append(result, preparedMessage{MessageOptions: fileMessageOptions(options), FileRefID: p.FileRefID, Parts: []domain.OutboxPart{p}})
+				result = append(result, preparedMessage{MessageOptions: fileMessageOptions(options), Parts: []domain.OutboxPart{p}})
 				start = i + 1
 			}
 		}
@@ -238,7 +250,7 @@ func prepareOutboundParts(a Adapter, parts []domain.OutboxPart, options domain.M
 			if err := flush(); err != nil {
 				return nil, err
 			}
-			result = append(result, preparedMessage{MessageOptions: fileMessageOptions(options), FileRefID: p.FileRefID, Parts: []domain.OutboxPart{p}})
+			result = append(result, preparedMessage{MessageOptions: fileMessageOptions(options), Parts: []domain.OutboxPart{p}})
 		}
 		if err := flush(); err != nil {
 			return nil, err

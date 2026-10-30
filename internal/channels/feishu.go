@@ -687,6 +687,32 @@ func (f *feishu) SplitText(text string) ([]string, error) {
 }
 
 func (f *feishu) Send(ctx context.Context, send Send) (Receipt, error) {
+	if len(send.Parts) == 1 && send.Parts[0].Type == "file" {
+		part := send.Parts[0]
+		if part.OpenFile == nil {
+			return Receipt{}, &SendError{Message: "Feishu file source is unavailable"}
+		}
+		file, err := part.OpenFile(ctx)
+		if err != nil {
+			return Receipt{}, &SendError{Message: err.Error()}
+		}
+		defer file.Close()
+		send.File, send.FileName, send.MediaType, send.Size, send.OpenFile = file, part.FileName, part.MediaType, part.Size, part.OpenFile
+		send.Parts = nil
+	} else if len(send.Parts) > 0 {
+		onlyText := true
+		var text strings.Builder
+		for _, part := range send.Parts {
+			if part.Type != "text" {
+				onlyText = false
+				break
+			}
+			text.WriteString(part.Text)
+		}
+		if onlyText {
+			send.Text, send.Parts = text.String(), nil
+		}
+	}
 	if !feishuID(send.Target.ExternalID) || send.Target.TopicID != "" || send.ReplyTo != "" && !feishuID(send.ReplyTo) {
 		return Receipt{}, &SendError{Message: "invalid Feishu chat or reply target"}
 	}

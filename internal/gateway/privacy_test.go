@@ -18,7 +18,7 @@ func TestOwnerControlsPrivacyAndCommandScopeCannotBypassIt(t *testing.T) {
 	f.call(t, true, "PATCH", "/api/v1/sessions/"+target.ID, map[string]any{"private": true}, nil, http.StatusOK)
 	var owner harness.View
 	f.call(t, true, "GET", "/api/v1/sessions/"+target.ID, nil, &owner, http.StatusOK)
-	if !owner.Session.Private {
+	if !owner.Private {
 		t.Fatal("Owner privacy update was not persisted")
 	}
 	var catalog recall.SessionPage

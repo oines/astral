@@ -76,6 +76,7 @@ type Send struct {
 // when preparing its platform request and must close it on every outcome.
 type SendPart struct {
 	Type, Text, UserID, Name string
+	MediaKind                string
 	FileName, MediaType      string
 	Size                     int64
 	OpenFile                 func(context.Context) (io.ReadCloser, error)

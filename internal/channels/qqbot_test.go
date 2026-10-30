@@ -265,3 +265,51 @@ func TestQQChatIDUtilityRecognizesDirectBotMention(t *testing.T) {
 		t.Fatal("a command addressed to another bot was consumed")
 	}
 }
+
+func TestQQPreparedMediaKindControlsNativeUpload(t *testing.T) {
+	for _, test := range []struct {
+		name, partType, mediaKind, mime string
+		want                            int
+	}{
+		{"explicit image document", "file", "", "image/png", 4},
+		{"native image", "image", "", "image/png", 1},
+		{"explicit video document", "file", "", "video/mp4", 4},
+		{"automatic native video", "file", "video", "video/mp4", 2},
+		{"automatic native audio", "file", "audio", "audio/mpeg", 3},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var uploadType atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/token":
+					_, _ = io.WriteString(w, `{"access_token":"access","expires_in":"7200"}`)
+				case "/v2/groups/g-1/files":
+					var body struct {
+						Type int    `json:"file_type"`
+						Data string `json:"file_data"`
+					}
+					_ = json.NewDecoder(r.Body).Decode(&body)
+					uploadType.Store(int64(body.Type))
+					data, _ := base64.StdEncoding.DecodeString(body.Data)
+					if string(data) != "media bytes" {
+						t.Errorf("source bytes changed: %q", data)
+					}
+					_, _ = io.WriteString(w, `{"file_info":"media"}`)
+				case "/v2/groups/g-1/messages":
+					_, _ = io.WriteString(w, `{"id":"sent"}`)
+				default:
+					t.Errorf("unexpected route %s", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			q := qqTestAdapter(t, server)
+			result, err := q.Send(t.Context(), Send{Target: domain.Conversation{ExternalID: "group:g-1"}, Parts: []SendPart{{Type: test.partType, MediaKind: test.mediaKind, MediaType: test.mime, FileName: "media", Size: 11, OpenFile: func(context.Context) (io.ReadCloser, error) {
+				return io.NopCloser(strings.NewReader("media bytes")), nil
+			}}}})
+			if err != nil || len(result.MessageIDs) != 1 || uploadType.Load() != int64(test.want) {
+				t.Fatalf("upload kind=%d want=%d receipt=%#v err=%v", uploadType.Load(), test.want, result, err)
+			}
+		})
+	}
+}

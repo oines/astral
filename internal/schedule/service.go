@@ -158,6 +158,10 @@ func (s *Service) List(ctx context.Context, agentID string) ([]domain.Schedule, 
 			} else if err != nil {
 				return nil, err
 			}
+			plan, err = s.present(ctx, plan)
+			if err != nil {
+				return nil, err
+			}
 			result = append(result, plan)
 		}
 	}
@@ -176,7 +180,7 @@ func (s *Service) Get(ctx context.Context, agentID, id string) (domain.Schedule,
 	if err := authorizePlan(ctx, s.store, plan); err != nil {
 		return domain.Schedule{}, err
 	}
-	return plan, nil
+	return s.present(ctx, plan)
 }
 
 func (s *Service) Create(ctx context.Context, agentID string, input Input) (domain.Schedule, error) {
@@ -211,6 +215,7 @@ func (s *Service) Create(ctx context.Context, agentID string, input Input) (doma
 	})
 	if err == nil {
 		s.notify()
+		return s.present(ctx, plan.Schedule)
 	}
 	return plan.Schedule, err
 }
@@ -269,6 +274,7 @@ func (s *Service) Update(ctx context.Context, agentID, id string, input Input, r
 	})
 	if err == nil {
 		s.notify()
+		return s.present(ctx, plan.Schedule)
 	}
 	return plan.Schedule, err
 }
@@ -311,36 +317,43 @@ type getter interface {
 }
 
 func authorizePlan(ctx context.Context, store getter, plan domain.Schedule) error {
-	scope, scoped := persistence.CurrentSessionScope(ctx)
-	if !scoped {
+	if _, scoped := persistence.CurrentSessionScope(ctx); !scoped {
 		return nil
 	}
-	ids := []string{plan.SessionID}
+	id := plan.SessionID
 	if plan.SessionMode == "new" {
-		ids = []string{plan.SourceSessionID, plan.LastSessionID}
-		// The originating Session owns this instruction, not the independently
-		// private histories it later creates. It must retain edit/delete access
-		// after the first delivery, without gaining history access to the child.
-		if scope.SessionID == plan.SourceSessionID && scope.AgentID == plan.AgentID {
-			ids = []string{plan.SourceSessionID}
-		}
+		id = plan.SourceSessionID
 	}
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		var session domain.Session
-		if err := store.Get(ctx, "sessions", id, &session); err != nil {
-			if domain.IsMissing(err) && id == plan.LastSessionID {
-				continue
-			}
-			return err
-		}
-		if err := persistence.CheckSessionAccess(ctx, session); err != nil {
-			return domain.Missing("Schedule", plan.ID)
-		}
+	if id == "" {
+		return nil
+	}
+	var session domain.Session
+	if err := store.Get(ctx, "sessions", id, &session); err != nil {
+		return err
+	}
+	if err := persistence.CheckSessionAccess(ctx, session); err != nil {
+		return domain.Missing("Schedule", plan.ID)
 	}
 	return nil
+}
+
+// LastSessionID is a result link, not the plan's authorization scope. Hide an
+// unavailable result in command responses without changing the stored plan or
+// preventing its management. Owner responses retain the full result link.
+func (s *Service) present(ctx context.Context, plan domain.Schedule) (domain.Schedule, error) {
+	if _, scoped := persistence.CurrentSessionScope(ctx); !scoped || plan.LastSessionID == "" {
+		return plan, nil
+	}
+	var session domain.Session
+	err := s.store.Get(ctx, "sessions", plan.LastSessionID, &session)
+	if err == nil {
+		err = persistence.CheckSessionAccess(ctx, session)
+	}
+	if domain.IsMissing(err) {
+		plan.LastSessionID = ""
+		return plan, nil
+	}
+	return plan, err
 }
 
 func target(ctx context.Context, store getter, agentID, mode, sessionID string) error {

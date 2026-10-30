@@ -385,6 +385,43 @@ func (w *weixinAdapter) SplitText(text string) ([]string, error) {
 }
 
 func (w *weixinAdapter) Send(ctx context.Context, send Send) (Receipt, error) {
+	mediaKind := "file"
+	if strings.HasPrefix(send.MediaType, "image/") {
+		mediaKind = "image"
+	} else if strings.HasPrefix(send.MediaType, "video/") {
+		mediaKind = "video"
+	}
+	if len(send.Parts) > 0 {
+		if len(send.Parts) == 1 && (send.Parts[0].Type == "image" || send.Parts[0].Type == "file") {
+			part := send.Parts[0]
+			mediaKind = part.Type
+			if part.MediaKind != "" {
+				mediaKind = part.MediaKind
+			}
+			if mediaKind != "image" && mediaKind != "video" && mediaKind != "file" {
+				return Receipt{}, &SendError{Message: "unsupported Weixin media delivery kind"}
+			}
+			if part.OpenFile == nil {
+				return Receipt{}, &SendError{Message: "Weixin media source is unavailable"}
+			}
+			file, err := part.OpenFile(ctx)
+			if err != nil {
+				return Receipt{}, &SendError{Message: err.Error()}
+			}
+			defer file.Close()
+			send.File, send.FileName, send.MediaType, send.Size, send.OpenFile = file, part.FileName, part.MediaType, part.Size, part.OpenFile
+		} else {
+			var text strings.Builder
+			for _, part := range send.Parts {
+				if part.Type != "text" {
+					return Receipt{}, &SendError{Message: "Weixin fragments require text or one media file"}
+				}
+				text.WriteString(part.Text)
+			}
+			send.Text = text.String()
+		}
+		send.Parts = nil
+	}
 	if send.ReplyTo != "" {
 		return Receipt{}, &SendError{Message: "Weixin iLink does not expose outbound quote references"}
 	}
@@ -419,7 +456,7 @@ func (w *weixinAdapter) Send(ctx context.Context, send Send) (Receipt, error) {
 		if send.Text != "" {
 			return Receipt{}, &SendError{Message: "Weixin file captions must be queued as separate text messages"}
 		}
-		item, err = w.upload(ctx, send)
+		item, err = w.upload(ctx, send, mediaKind)
 		if err != nil {
 			// CDN preparation does not send a chat message, so this failure is
 			// known even when an upload response was lost. Never retry internally.

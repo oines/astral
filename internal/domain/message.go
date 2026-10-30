@@ -14,8 +14,14 @@ type OutboundPart struct {
 // OutboxPart is a prepared part whose media has an immutable Computer snapshot.
 // Its internal file reference is never accepted as a public sending argument.
 type OutboxPart struct {
-	OutboundPart
+	Type      string `json:"type" enum:"text,mention,image,file"`
+	Text      string `json:"text,omitempty"`
+	UserID    string `json:"user_id,omitempty"`
+	Name      string `json:"name,omitempty"`
 	FileRefID string `json:"file_ref_id,omitempty"`
+	// MediaKind preserves native video/audio delivery selected by a convenience
+	// input. Explicit public file parts remain documents even for media MIME.
+	MediaKind string `json:"media_kind,omitempty" enum:"video,audio"`
 }
 
 // MessageOptions describes a frozen outbound presentation, independently of

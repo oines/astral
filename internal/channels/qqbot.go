@@ -508,6 +508,52 @@ func (q *qqbot) replyMessage(ctx context.Context, send Send) (string, error) {
 }
 
 func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
+	fileType := 4
+	for i, prefix := range []string{"image/", "video/", "audio/"} {
+		if strings.HasPrefix(send.MediaType, prefix) {
+			fileType = i + 1
+		}
+	}
+	if len(send.Parts) > 0 {
+		if len(send.Parts) == 1 && (send.Parts[0].Type == "image" || send.Parts[0].Type == "file") {
+			part := send.Parts[0]
+			kind := part.Type
+			if part.MediaKind != "" {
+				kind = part.MediaKind
+			}
+			switch kind {
+			case "image":
+				fileType = 1
+			case "video":
+				fileType = 2
+			case "audio":
+				fileType = 3
+			case "file":
+				fileType = 4
+			default:
+				return Receipt{}, &SendError{Message: "unsupported QQ media delivery kind"}
+			}
+			if part.OpenFile == nil {
+				return Receipt{}, &SendError{Message: "QQ media source is unavailable"}
+			}
+			file, err := part.OpenFile(ctx)
+			if err != nil {
+				return Receipt{}, &SendError{Message: err.Error()}
+			}
+			defer file.Close()
+			send.File, send.FileName, send.MediaType, send.Size, send.OpenFile = file, part.FileName, part.MediaType, part.Size, part.OpenFile
+		} else {
+			var text strings.Builder
+			for _, part := range send.Parts {
+				if part.Type != "text" {
+					return Receipt{}, &SendError{Message: "QQ Bot fragments require text or one media file"}
+				}
+				text.WriteString(part.Text)
+			}
+			send.Text = text.String()
+		}
+		send.Parts = nil
+	}
 	kind, id, err := qqTarget(send.Target.ExternalID)
 	if err != nil || send.Target.TopicID != "" {
 		return Receipt{}, &SendError{Message: "invalid QQ Bot destination"}
@@ -546,12 +592,6 @@ func (q *qqbot) Send(ctx context.Context, send Send) (Receipt, error) {
 		route = "/v2/groups/" + id
 	}
 	if send.File != nil {
-		fileType := 4
-		for i, prefix := range []string{"image/", "video/", "audio/"} {
-			if strings.HasPrefix(send.MediaType, prefix) {
-				fileType = i + 1
-			}
-		}
 		var upload struct {
 			Info string `json:"file_info"`
 		}

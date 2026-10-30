@@ -238,7 +238,7 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 			record := domain.Outbox{Meta: domain.Meta{ID: id}, GroupID: key, IntentKey: fmt.Sprintf("%s:%d", key, index), RequestDigest: hash,
 				MessageOptions: fragment.MessageOptions,
 				AgentID:        agentID, SessionID: sessionID, BindingID: binding.ID, ConversationID: conversation.ID, ConnectionID: connection.ID, ConnectionAccountID: connection.AccountID,
-				ExternalID: conversation.ExternalID, TopicID: conversation.TopicID, AssistantEntryID: request.AssistantEntryID, Fragment: index, Text: fragment.Text, ReplyTo: request.ReplyTo, FileRefID: fragment.FileRefID, Parts: fragment.Parts, Status: "pending"}
+				ExternalID: conversation.ExternalID, TopicID: conversation.TopicID, AssistantEntryID: request.AssistantEntryID, Fragment: index, ReplyTo: request.ReplyTo, Parts: fragment.Parts, Status: "pending"}
 			if claimErr = tx.Save(ctx, "outbox", &record.Meta, &record); claimErr != nil {
 				return claimErr
 			}
@@ -388,42 +388,21 @@ func (s *Service) dispatch(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	send := Send{MessageOptions: record.MessageOptions, Target: domain.Conversation{ConnectionID: record.ConnectionID, ExternalID: record.ExternalID, TopicID: record.TopicID}, Text: record.Text, ReplyTo: record.ReplyTo}
-	if len(record.Parts) > 0 && record.FileRefID == "" && (connection.Adapter == "telegram.bot" || connection.Adapter == "qq.napcat" || connection.Adapter == "feishu.bot") {
-		for _, part := range record.Parts {
-			prepared := SendPart{Type: part.Type, Text: part.Text, UserID: part.UserID, Name: part.Name}
-			if part.FileRefID != "" {
-				var file domain.FileRef
-				if err = s.Store.Get(ctx, "files", part.FileRefID, &file); err != nil {
-					return s.finish(ctx, &record, Receipt{}, &SendError{Message: err.Error()})
-				}
-				prepared.FileName, prepared.MediaType, prepared.Size = file.DisplayName, file.MediaType, file.Size
-				prepared.OpenFile = func(openCtx context.Context) (io.ReadCloser, error) {
-					_, _, body, openErr := s.Harness.Files.Read(openCtx, record.AgentID, record.SessionID, filestream.URL(file), 0, nil)
-					return body, openErr
-				}
+	send := Send{MessageOptions: record.MessageOptions, Target: domain.Conversation{ConnectionID: record.ConnectionID, ExternalID: record.ExternalID, TopicID: record.TopicID}, ReplyTo: record.ReplyTo}
+	for _, part := range record.Parts {
+		prepared := SendPart{Type: part.Type, Text: part.Text, UserID: part.UserID, Name: part.Name, MediaKind: part.MediaKind}
+		if part.FileRefID != "" {
+			var file domain.FileRef
+			if err = s.Store.Get(ctx, "files", part.FileRefID, &file); err != nil {
+				return s.finish(ctx, &record, Receipt{}, &SendError{Message: err.Error()})
 			}
-			send.Parts = append(send.Parts, prepared)
-		}
-	}
-	if record.FileRefID != "" {
-		var file domain.FileRef
-		err = s.Store.Get(ctx, "files", record.FileRefID, &file)
-		if err == nil {
-			_, _, body, readErr := s.Harness.Files.Read(ctx, record.AgentID, record.SessionID, filestream.URL(file), 0, nil)
-			err = readErr
-			if err == nil {
-				defer body.Close()
-				send.File, send.FileName, send.MediaType, send.Size = body, file.DisplayName, file.MediaType, file.Size
-				send.OpenFile = func(openCtx context.Context) (io.ReadCloser, error) {
-					_, _, source, openErr := s.Harness.Files.Read(openCtx, record.AgentID, record.SessionID, filestream.URL(file), 0, nil)
-					return source, openErr
-				}
+			prepared.FileName, prepared.MediaType, prepared.Size = file.DisplayName, file.MediaType, file.Size
+			prepared.OpenFile = func(openCtx context.Context) (io.ReadCloser, error) {
+				_, _, body, openErr := s.Harness.Files.Read(openCtx, record.AgentID, record.SessionID, filestream.URL(file), 0, nil)
+				return body, openErr
 			}
 		}
-		if err != nil {
-			return s.finish(ctx, &record, Receipt{}, &SendError{Message: err.Error()})
-		}
+		send.Parts = append(send.Parts, prepared)
 	}
 	receipt, sendErr := adapter.Send(ctx, send)
 	return s.finish(ctx, &record, receipt, sendErr)
@@ -460,42 +439,34 @@ func (s *Service) finish(ctx context.Context, record *domain.Outbox, receipt Rec
 			event := domain.Observation{SchemaVersion: 1, ConnectionID: record.ConnectionID, ConversationID: record.ConversationID, Kind: "message.created", MessageID: messageID,
 				Sender: domain.Sender{ID: connection.AccountID, Name: connection.Name, Username: connection.Username}, Self: true,
 				Text: archiveMessageText(*record), Format: record.Format, ReplyID: record.ReplyTo, SentAt: time.Now().UTC(), ReceivedAt: time.Now().UTC()}
-			if record.FileRefID != "" {
-				var file domain.FileRef
-				if err := tx.Get(persist, "files", record.FileRefID, &file); err != nil {
-					return err
-				}
-				kind := "file"
-				if strings.HasPrefix(file.MediaType, "image/") {
-					kind = "image"
-				}
-				event.Attachments = []domain.Attachment{{Ref: "outbox:" + record.ID, Kind: kind, Name: file.DisplayName, MediaType: file.MediaType, Size: file.Size, FileURI: filestream.URL(file)}}
+			if record.Title != "" {
+				event.Parts = append(event.Parts, domain.MessagePart{Ref: "p0", Type: "text", Text: record.Title + "\n\n"})
 			}
-			if len(record.Parts) > 0 {
-				event.Text, event.Parts, event.Attachments = "", nil, nil
-				for i, part := range record.Parts {
-					ref := fmt.Sprintf("outbox:%s:%d", record.ID, i)
-					if part.FileRefID != "" {
-						var file domain.FileRef
-						if err := tx.Get(persist, "files", part.FileRefID, &file); err != nil {
-							return err
-						}
-						kind := part.Type
-						attachment := domain.Attachment{Ref: ref, Kind: kind, Name: file.DisplayName, MediaType: file.MediaType, Size: file.Size, FileURI: filestream.URL(file)}
-						event.Attachments = append(event.Attachments, attachment)
-						event.Parts = append(event.Parts, domain.MessagePart{Ref: fmt.Sprintf("p%d", i), Type: "attachment", Attachment: &attachment})
-					} else {
-						text := part.Text
-						if part.Type == "mention" {
-							name := part.Name
-							if name == "" {
-								name = part.UserID
-							}
-							text = "@" + strings.TrimPrefix(name, "@")
-						}
-						event.Text += text
-						event.Parts = append(event.Parts, domain.MessagePart{Ref: fmt.Sprintf("p%d", i), Type: "text", Text: text})
+			for i, part := range record.Parts {
+				ref := fmt.Sprintf("outbox:%s:%d", record.ID, i)
+				partRef := fmt.Sprintf("p%d", len(event.Parts))
+				if part.FileRefID != "" {
+					var file domain.FileRef
+					if err := tx.Get(persist, "files", part.FileRefID, &file); err != nil {
+						return err
 					}
+					kind := part.Type
+					if part.MediaKind != "" {
+						kind = part.MediaKind
+					}
+					attachment := domain.Attachment{Ref: ref, Kind: kind, Name: file.DisplayName, MediaType: file.MediaType, Size: file.Size, FileURI: filestream.URL(file)}
+					event.Attachments = append(event.Attachments, attachment)
+					event.Parts = append(event.Parts, domain.MessagePart{Ref: partRef, Type: "attachment", Attachment: &attachment})
+				} else {
+					text := part.Text
+					if part.Type == "mention" {
+						name := part.Name
+						if name == "" {
+							name = part.UserID
+						}
+						text = "@" + strings.TrimPrefix(name, "@")
+					}
+					event.Parts = append(event.Parts, domain.MessagePart{Ref: partRef, Type: "text", Text: text})
 				}
 			}
 			if _, err := tx.Archive(persist, normalizeSelf(event)); err != nil {

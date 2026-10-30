@@ -2890,9 +2890,6 @@
           "external_id": {
             "type": "string"
           },
-          "file_ref_id": {
-            "type": "string"
-          },
           "format": {
             "type": "string"
           },
@@ -2938,9 +2935,6 @@
           "status": {
             "type": "string"
           },
-          "text": {
-            "type": "string"
-          },
           "title": {
             "type": "string"
           },
@@ -2976,24 +2970,20 @@
           "file_ref_id": {
             "type": "string"
           },
-          "file_uri": {
-            "description": "For image/file only. An astral-file:// reference; mutually exclusive with path.",
+          "media_kind": {
+            "enum": [
+              "video",
+              "audio"
+            ],
             "type": "string"
           },
           "name": {
-            "description": "Optional display label for a native mention.",
-            "type": "string"
-          },
-          "path": {
-            "description": "For image/file only. Source path on the authenticated calling Computer; mutually exclusive with file_uri.",
             "type": "string"
           },
           "text": {
-            "description": "For text only. Spaces and newlines are preserved; no separator is inserted between adjacent parts.",
             "type": "string"
           },
           "type": {
-            "description": "Ordered content kind. Mention support depends on the selected platform.",
             "enum": [
               "text",
               "mention",
@@ -3003,7 +2993,6 @@
             "type": "string"
           },
           "user_id": {
-            "description": "For mention only. Native platform user ID: Telegram numeric ID, NapCat QQ number, or Feishu application open_id.",
             "type": "string"
           }
         },

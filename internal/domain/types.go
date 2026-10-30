@@ -353,9 +353,7 @@ type Outbox struct {
 	BindingID           string       `json:"binding_id,omitempty"`
 	ConversationID      string       `json:"conversation_id"`
 	AssistantEntryID    string       `json:"assistant_entry_id,omitempty"`
-	Text                string       `json:"text,omitempty"`
 	ReplyTo             string       `json:"reply_to,omitempty"`
-	FileRefID           string       `json:"file_ref_id,omitempty"`
 	Parts               []OutboxPart `json:"parts,omitempty"`
 	Status              string       `json:"status"`
 	PlatformMessageIDs  []string     `json:"platform_message_ids,omitempty"`

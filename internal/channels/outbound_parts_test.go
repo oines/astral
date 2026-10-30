@@ -105,6 +105,15 @@ func TestOrderedPartsPreparationFreezesAllSourcesAndRejectsUnsupportedMentions(t
 	if len(queued[0].Parts) != 4 || queued[0].Parts[2].FileRefID != file.ID || queued[0].Parts[1].Text != "\nresult " {
 		t.Fatalf("frozen parts %#v", queued[0].Parts)
 	}
+	raw, _ := json.Marshal(queued[0])
+	var stored map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &stored)
+	if stored["text"] != nil || stored["file_ref_id"] != nil {
+		t.Fatalf("Outbox has competing content representations: %s", raw)
+	}
+	if strings.Contains(string(stored["parts"]), `"path"`) || strings.Contains(string(stored["parts"]), `"file_uri"`) {
+		t.Fatalf("frozen parts retained an unfrozen source: %s", raw)
+	}
 	if err = s.dispatch(p.Context, queued[0].ID); err != nil {
 		t.Fatal(err)
 	}
@@ -180,5 +189,47 @@ func TestAttachmentConvenienceKeepsAutomaticPhotosAndExplicitFilesStayDocuments(
 	inferred, err := service.freezeOutboundParts(p.Context, p.Agent.ID, binding.SessionID, SendRequest{FileURI: filestream.URL(image)}, (&napcat{}).Capabilities())
 	if err != nil || len(inferred) != 1 || inferred[0].Type != "image" {
 		t.Fatalf("NapCat convenience lost image presentation: %#v %v", inferred, err)
+	}
+}
+
+func TestConvenienceFreezesNativeMediaIntentWithoutChangingExplicitFile(t *testing.T) {
+	p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
+	service := New(p.Store, p.Harness)
+	source, err := p.Hub.Bind(p.Context, p.Agent.ID, p.Session.ID, p.Agent.DefaultComputerID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mime := range []string{"image/png", "video/mp4", "audio/mpeg"} {
+		file, err := p.Harness.Files.Upload(p.Context, source, "media.bin", strings.NewReader("media"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		file.MediaType = mime
+		if err = p.Store.Save(p.Context, "files", &file.Meta, &file); err != nil {
+			t.Fatal(err)
+		}
+		for _, adapter := range []Adapter{&qqbot{}, &weixinAdapter{}} {
+			caps := adapter.Capabilities()
+			native, err := service.freezeOutboundParts(p.Context, p.Agent.ID, p.Session.ID, SendRequest{FileURI: filestream.URL(file)}, caps)
+			if err != nil || len(native) != 1 {
+				t.Fatalf("%s freeze native %s: %#v %v", caps.Adapter, mime, native, err)
+			}
+			wantType, wantKind := "file", ""
+			switch {
+			case strings.HasPrefix(mime, "image/"):
+				wantType = "image"
+			case strings.HasPrefix(mime, "video/"):
+				wantKind = "video"
+			case caps.Adapter == "qq.bot" && strings.HasPrefix(mime, "audio/"):
+				wantKind = "audio"
+			}
+			if native[0].Type != wantType || native[0].MediaKind != wantKind {
+				t.Fatalf("%s convenience changed %s delivery: %#v", caps.Adapter, mime, native)
+			}
+			explicit, err := service.freezeOutboundParts(p.Context, p.Agent.ID, p.Session.ID, SendRequest{Parts: []domain.OutboundPart{{Type: "file", FileURI: filestream.URL(file)}}}, caps)
+			if err != nil || len(explicit) != 1 || explicit[0].Type != "file" || explicit[0].MediaKind != "" {
+				t.Fatalf("%s explicit file changed %s delivery: %#v %v", caps.Adapter, mime, explicit, err)
+			}
+		}
 	}
 }

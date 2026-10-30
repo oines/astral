@@ -931,7 +931,6 @@ export type AstralInternalDomainOutbox = {
     disable_notification?: boolean;
     error?: string;
     external_id: string;
-    file_ref_id?: string;
     format?: string;
     fragment: number;
     group_id: string;
@@ -945,7 +944,6 @@ export type AstralInternalDomainOutbox = {
     revision: number;
     session_id: string;
     status: string;
-    text?: string;
     title?: string;
     topic_id?: string;
     updated_at: string;
@@ -953,29 +951,10 @@ export type AstralInternalDomainOutbox = {
 
 export type AstralInternalDomainOutboxPart = {
     file_ref_id?: string;
-    /**
-     * For image/file only. An astral-file:// reference; mutually exclusive with path.
-     */
-    file_uri?: string;
-    /**
-     * Optional display label for a native mention.
-     */
+    media_kind?: 'video' | 'audio';
     name?: string;
-    /**
-     * For image/file only. Source path on the authenticated calling Computer; mutually exclusive with file_uri.
-     */
-    path?: string;
-    /**
-     * For text only. Spaces and newlines are preserved; no separator is inserted between adjacent parts.
-     */
     text?: string;
-    /**
-     * Ordered content kind. Mention support depends on the selected platform.
-     */
     type: 'text' | 'mention' | 'image' | 'file';
-    /**
-     * For mention only. Native platform user ID: Telegram numeric ID, NapCat QQ number, or Feishu application open_id.
-     */
     user_id?: string;
 };
 

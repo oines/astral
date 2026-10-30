@@ -121,13 +121,23 @@ func validateMessageOptions(c Capabilities, o domain.MessageOptions) error {
 
 type preparedMessage struct {
 	domain.MessageOptions
-	Text      string
-	FileRefID string
-	Parts     []domain.OutboxPart
+	Parts []domain.OutboxPart
 }
 
 func archiveMessageText(record domain.Outbox) string {
-	text := record.Text
+	var body strings.Builder
+	for _, part := range record.Parts {
+		if part.Type == "text" {
+			body.WriteString(part.Text)
+		} else if part.Type == "mention" {
+			name := part.Name
+			if name == "" {
+				name = part.UserID
+			}
+			body.WriteString("@" + strings.TrimPrefix(name, "@"))
+		}
+	}
+	text := body.String()
 	if record.MarkdownTemplate != nil {
 		var values []string
 		for _, param := range record.MarkdownTemplate.Params {
@@ -181,7 +191,7 @@ func prepareMessages(a Adapter, text string, options domain.MessageOptions) ([]p
 	}
 	var result []preparedMessage
 	for _, part := range parts {
-		result = append(result, preparedMessage{MessageOptions: options, Text: part})
+		result = append(result, preparedMessage{MessageOptions: options, Parts: []domain.OutboxPart{{Type: "text", Text: part}}})
 	}
 	if len(result) == 0 {
 		return nil, domain.Invalid("message text is empty")

@@ -105,12 +105,16 @@ func TestNewSessionPlansKeepGatewaySourcePrivacy(t *testing.T) {
 	if len(delivered) != 2 {
 		t.Fatalf("expected two scheduled deliveries, got %d", len(delivered))
 	}
+	ownerRead, err := s.Get(ctx, "a", plan.ID)
+	if err != nil || ownerRead.LastSessionID == "" {
+		t.Fatalf("Owner lost the private result link: %+v %v", ownerRead, err)
+	}
 	read, err := s.Get(source, "a", plan.ID)
-	if err != nil || read.LastSessionID == "" {
-		t.Fatalf("private source lost its own plan after producing a private child: %+v %v", read, err)
+	if err != nil || read.LastSessionID != "" {
+		t.Fatalf("private source lost its own plan or saw the hidden child ID: %+v %v", read, err)
 	}
 	var child domain.Session
-	if err := s.store.Get(ctx, "sessions", read.LastSessionID, &child); err != nil {
+	if err := s.store.Get(ctx, "sessions", ownerRead.LastSessionID, &child); err != nil {
 		t.Fatal(err)
 	}
 	if err := persistence.CheckSessionAccess(source, child); !domain.IsMissing(err) {
@@ -125,5 +129,57 @@ func TestNewSessionPlansKeepGatewaySourcePrivacy(t *testing.T) {
 	}
 	if err := s.Delete(source, "a", read.ID, read.Revision); err != nil {
 		t.Fatalf("private source cannot delete its own plan after delivery: %v", err)
+	}
+}
+
+func TestPrivateResultDoesNotHideOrLockPublicSourcePlan(t *testing.T) {
+	ctx := context.Background()
+	s, now := fixture(t, nil)
+	input := once(now.Add(time.Minute))
+	input.SessionMode, input.SessionID = "new", ""
+	source := persistence.WithSessionScope(ctx, "a", "session_a")
+	plan, err := s.Create(source, "a", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := domain.Session{Meta: domain.Meta{ID: "private-result"}, AgentID: "a", Private: true}
+	if err := s.store.Save(ctx, "sessions", &child.Meta, &child); err != nil {
+		t.Fatal(err)
+	}
+	var stored record
+	if err := s.store.Get(ctx, Kind, plan.ID, &stored); err != nil {
+		t.Fatal(err)
+	}
+	stored.LastSessionID = child.ID
+	if err := s.store.Save(ctx, Kind, &stored.Meta, &stored); err != nil {
+		t.Fatal(err)
+	}
+	other := persistence.WithSessionScope(ctx, "a", "another-session")
+	read, err := s.Get(other, "a", plan.ID)
+	if err != nil || read.LastSessionID != "" {
+		t.Fatalf("private result hid the public source plan or leaked its ID: %+v %v", read, err)
+	}
+	listed, err := s.List(other, "a")
+	if err != nil || len(listed) != 1 || listed[0].ID != plan.ID || listed[0].LastSessionID != "" {
+		t.Fatalf("private result affected plan listing: %+v %v", listed, err)
+	}
+	resultScope := persistence.WithSessionScope(ctx, "a", child.ID)
+	resultRead, err := s.Get(resultScope, "a", plan.ID)
+	if err != nil || resultRead.LastSessionID != child.ID {
+		t.Fatalf("result Session could not see its own result link: %+v %v", resultRead, err)
+	}
+	updated, err := s.Update(other, "a", read.ID, input, read.Revision)
+	if err != nil || updated.LastSessionID != "" {
+		t.Fatalf("private result prevented editing or leaked in its response: %+v %v", updated, err)
+	}
+	ownerRead, err := s.Get(ctx, "a", plan.ID)
+	if err != nil || ownerRead.LastSessionID != child.ID || ownerRead.Revision != updated.Revision {
+		t.Fatalf("presentation filtering changed persisted metadata: %+v %v", ownerRead, err)
+	}
+	if err := persistence.CheckSessionAccess(other, child); !domain.IsMissing(err) {
+		t.Fatalf("public plan granted access to its private result history: %v", err)
+	}
+	if err := s.Delete(other, "a", updated.ID, updated.Revision); err != nil {
+		t.Fatalf("private result prevented deletion of an authorized plan: %v", err)
 	}
 }

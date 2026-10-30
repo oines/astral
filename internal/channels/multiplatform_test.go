@@ -43,7 +43,7 @@ func TestCaptionlessFileUsesSeparateOrderedReceipts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 2 || records[0].Text != "file explanation" || records[0].FileRefID != "" || records[1].Text != "" || records[1].FileRefID != ref.ID || records[0].GroupID != records[1].GroupID {
+	if len(records) != 2 || len(records[0].Parts) != 1 || records[0].Parts[0].Type != "text" || records[0].Parts[0].Text != "file explanation" || len(records[1].Parts) != 1 || records[1].Parts[0].FileRefID != ref.ID || records[0].GroupID != records[1].GroupID {
 		t.Fatalf("untracked or duplicated side effects: %#v", records)
 	}
 	repeated, err := s.Enqueue(p.Context, p.Agent.ID, bound.SessionID, request)

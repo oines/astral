@@ -35,6 +35,18 @@ func (*sendAdapter) Poll(ctx context.Context, _ string) (channels.Batch, error) 
 func (*sendAdapter) SplitText(text string) ([]string, error) { return []string{text}, nil }
 func (a *sendAdapter) Send(_ context.Context, send channels.Send) (channels.Receipt, error) {
 	a.calls.Add(1)
+	for _, part := range send.Parts {
+		if part.Type == "text" {
+			send.Text += part.Text
+		} else if part.OpenFile != nil {
+			file, err := part.OpenFile(context.Background())
+			if err != nil {
+				return channels.Receipt{}, err
+			}
+			defer file.Close()
+			send.File = file
+		}
+	}
 	if send.File != nil {
 		if _, err := io.Copy(io.Discard, send.File); err != nil {
 			return channels.Receipt{}, err

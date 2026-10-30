@@ -10,7 +10,7 @@ import (
 
 func TestSessionPrivacyMigrationAppendsDefaultWithoutRewritingHistory(t *testing.T) {
 	ctx := context.Background()
-	dir, db := migrationFixture(t)
+	_, db := migrationFixture(t)
 	const current = `{"id":"session","revision":7,"title":"Original","counter":9007199254740993123,"extra":{"kept":true}}`
 	const historical = `{"id":"session","revision":3,"title":"Past"}`
 	for _, statement := range []string{
@@ -25,10 +25,12 @@ func TestSessionPrivacyMigrationAppendsDefaultWithoutRewritingHistory(t *testing
 		t.Fatal(err)
 	}
 	before := migrationRecords(t, db, "versions")
-	if err := Migrate(ctx, dir); err != nil {
+	plan := currentMigrationPlan()
+	plan.target, plan.goMigrations = 5, plan.goMigrations[:2]
+	if err := migrateDatabase(ctx, db, plan); err != nil {
 		t.Fatal(err)
 	}
-	if err := Migrate(ctx, dir); err != nil {
+	if err := migrateDatabase(ctx, db, plan); err != nil {
 		t.Fatal(err)
 	}
 	versions := migrationRecords(t, db, "versions")
