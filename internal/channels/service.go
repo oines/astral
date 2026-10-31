@@ -37,6 +37,10 @@ type Service struct {
 	handoffs       map[string]int64
 	agentWorkers   map[string]*agentWorkers
 	deletingAgents map[string]bool
+	StorageChanged func()
+	storageMu      sync.Mutex
+	storageWorkMu  sync.Mutex
+	storageRunning map[string]bool
 }
 type poller struct {
 	revision int64
@@ -347,6 +351,7 @@ func (s *Service) run() {
 	}
 }
 func (s *Service) reconcile() {
+	s.reconcileStorage()
 	connections, err := list[domain.Connection](s.ctx, s.Store, "connections")
 	if err != nil {
 		return

@@ -7,6 +7,7 @@ vi.mock('@vueuse/core', () => ({ useResizeObserver: (_targets: unknown, callback
 vi.mock('vue', async importOriginal => ({
   ...await importOriginal<typeof import('vue')>(),
   onActivated: vi.fn(),
+  onBeforeUnmount: vi.fn(),
   onDeactivated: vi.fn(),
 }))
 
@@ -15,17 +16,18 @@ afterEach(() => { scope?.stop(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 // Model real layout coordinates separately from native scrolling. This lets the
 // tests deliver wheel/scroll events between a DOM update and its next paint.
-async function transcript(options: { height?: number; hasMore?: boolean; reducedMotion?: boolean } = {}) {
+async function transcript(options: { height?: number; hasMore?: boolean; reducedMotion?: boolean; nativeAnchor?: boolean; savedTop?: number } = {}) {
   vi.useFakeTimers()
   let top = 0
   let height = options.height ?? 1600
+  let width = 800
   let frameID = 0
   const frames = new Map<number, FrameRequestCallback>()
   const writes: number[] = []
   const nodes: Array<{ key: string; top: number; height: number; element: HTMLElement }> = []
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++frameID, callback); return frameID })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
-  vi.stubGlobal('CSS', { escape: (value: string) => value })
+  vi.stubGlobal('CSS', { escape: (value: string) => value, supports: () => !!options.nativeAnchor })
   vi.stubGlobal('window', { matchMedia: () => ({ matches: !!options.reducedMotion }) })
   const scrollTo = vi.fn((options: ScrollToOptions) => {
     if (options.behavior !== 'smooth') el.scrollTop = options.top ?? top
@@ -36,12 +38,11 @@ async function transcript(options: { height?: number; hasMore?: boolean; reduced
     get scrollHeight() { return height },
     scrollTo,
     clientHeight: 600,
-    clientWidth: 800,
-    getBoundingClientRect: () => ({ top: 40, bottom: 640 }),
-    querySelectorAll: () => nodes.map(node => node.element),
-    querySelector: (selector: string) => nodes.find(node => selector.includes('data-scroll-anchor-items')
-      ? node.element.dataset.scrollAnchorItems?.split(' ').includes(selector.split('"')[1]!)
-      : node.key === selector.split('"')[1])?.element,
+    get clientWidth() { return width },
+    style: { overflowAnchor: '' },
+    getBoundingClientRect: () => ({ top: 40, bottom: 640, left: 0, right: 800, width: 800 }),
+    contains: (element: HTMLElement) => nodes.some(node => node.element === element),
+    querySelector: (selector: string) => nodes.find(node => node.key === selector.split('"')[1])?.element,
   } as unknown as HTMLElement
   function add(key: string, y: number, size = 100) {
     const node = { key, top: y, height: size, element: undefined as unknown as HTMLElement }
@@ -55,11 +56,14 @@ async function transcript(options: { height?: number; hasMore?: boolean; reduced
     return node
   }
   for (let y = 0; y < height; y += 100) add(`message-${y}`, y)
+  vi.stubGlobal('document', { elementFromPoint: (_x: number, y: number) => nodes.find(node => y >= 40 + node.top - top && y < 40 + node.top + node.height - top)?.element })
   let finishLoad: (loaded: boolean) => void = () => {}
   const loadOlder = vi.fn(() => new Promise<boolean>(resolve => { finishLoad = resolve }))
   scope = effectScope()
   const sessionID = ref('chat')
-  const scroll = scope.run(() => useTranscriptScroll({ scroller: shallowRef(el), content: shallowRef(el), sessionID, hasMore: ref(options.hasMore ?? true), loadOlder }))!
+  const saved = options.savedTop === undefined ? undefined : { following: false, top: options.savedTop }
+  const savePosition = vi.fn()
+  const scroll = scope.run(() => useTranscriptScroll({ scroller: shallowRef(el), content: shallowRef(el), sessionID, hasMore: ref(options.hasMore ?? true), loadOlder, getPosition: () => saved, savePosition }))!
   function frame() {
     const pending = [...frames.values()]
     frames.clear()
@@ -70,14 +74,23 @@ async function transcript(options: { height?: number; hasMore?: boolean; reduced
   function prepend(size: number) {
     nodes.forEach(node => { node.top += size })
     height += size
+    if (options.nativeAnchor && el.style.overflowAnchor !== 'none') top += size
     add(`older-${size}`, 0, size)
     resize.notify()
   }
   function grow(size: number) { height += size; resize.notify() }
+  function reflow(nextWidth: number, nativeCorrected = false) {
+    const ratio = width / nextWidth
+    nodes.forEach(node => { node.top *= ratio; node.height *= ratio })
+    height *= ratio
+    if (nativeCorrected) top *= ratio
+    width = nextWidth
+    resize.notify()
+  }
   await nextTick()
   frame()
   writes.length = 0
-  return { el, scroll, scrollTo, sessionID, frame, wheel, move, prepend, grow, writes, nodes, add, loadOlder, finishLoad: (loaded = true) => finishLoad(loaded) }
+  return { el, scroll, scrollTo, sessionID, frame, wheel, move, prepend, grow, reflow, writes, nodes, add, loadOlder, savePosition, finishLoad: (loaded = true) => finishLoad(loaded) }
 }
 
 describe('transcript history scroll anchoring', () => {
@@ -92,27 +105,50 @@ describe('transcript history scroll anchoring', () => {
     expect(t.loadOlder).toHaveBeenCalledTimes(1)
   })
 
-  it('finds the same process item when prepending reuses its old group key and DOM for an earlier block', async () => {
-    const t = await transcript()
-    const process = t.nodes[0]!
-    process.element.dataset.scrollAnchorItems = 'original-tool'
-    t.wheel(-1000)
-    t.move(0)
+  it('lets native scroll anchoring handle prepends without a second correction', async () => {
+    const t = await transcript({ nativeAnchor: true })
+    t.wheel(-710)
+    t.move(290)
     t.frame()
-
+    t.writes.length = 0
     t.prepend(3000)
-    // Vue reuses process:0 for the newly loaded earlier process. The old
-    // process now lives in process:1, with the same durable tool identity.
-    const restored = t.add('process:1', process.top)
-    restored.element.dataset.scrollAnchorItems = 'original-tool'
-    process.top = 0
-    process.element.dataset.scrollAnchorItems = 'earlier-tool'
     t.finishLoad()
     await nextTick()
     t.frame()
+    expect(t.el.scrollTop).toBe(3290)
+    expect(t.writes).toEqual([])
+  })
 
+  it('restores a cached reading position on the first frame and saves it with the session', async () => {
+    const t = await transcript({ savedTop: 400, hasMore: false })
+    expect(t.el.scrollTop).toBe(400)
+    expect(t.scroll.showJump.value).toBe(true)
+    expect(t.savePosition).toHaveBeenLastCalledWith(expect.objectContaining({ following: false, top: 400, anchor: expect.objectContaining({ key: 'message-400' }) }))
+  })
+
+  it('temporarily owns the anchor at zero where browsers suppress native anchoring', async () => {
+    const t = await transcript({ nativeAnchor: true })
+    t.wheel(-1000)
+    t.move(0)
+    t.frame()
+    expect(t.el.style.overflowAnchor).toBe('none')
+    t.prepend(3000)
+    t.finishLoad()
+    await nextTick()
+    t.frame()
     expect(t.el.scrollTop).toBe(3000)
-    expect(t.loadOlder).toHaveBeenCalledTimes(1)
+    expect(t.el.style.overflowAnchor).toBe('auto')
+  })
+
+  it.each([false, true])('keeps the visible paragraph on width changes even if native correction is %s', async nativeCorrected => {
+    const t = await transcript({ nativeAnchor: true, hasMore: false })
+    t.wheel(-600)
+    t.move(400)
+    t.frame()
+    t.reflow(400, nativeCorrected)
+    t.frame()
+    expect(t.el.scrollTop).toBe(800)
+    expect(t.el.style.overflowAnchor).toBe('auto')
   })
 
   it('keeps the original message in place when another upward wheel arrives after a prepend but before paint', async () => {

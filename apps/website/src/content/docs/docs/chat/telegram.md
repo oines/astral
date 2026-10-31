@@ -38,6 +38,12 @@ The Bot receives a preview of the original message as well as the exact fragment
 
 Referenced images, files and stickers retain their original message identity and download reference. They are kept separate from attachments on your new message and are not automatically downloaded or shown as image previews. The Agent can download the original when needed. This also works when Telegram includes the original media in a reply but Astral did not receive that original message separately. An external quote does not grant access to another chat or its files.
 
+## Forwarded messages
+
+When Telegram supplies a forwarded message's origin, the Bot receives the original author or chat/channel name and original send time, alongside the person who forwarded it. Channel post IDs and author signatures are retained when available. If Telegram hides the original user, Astral keeps the supplied name without inventing an account identity. Replies to forwarded messages also retain this distinction.
+
+Forwarding does not give the Bot access to the source chat or notify it on behalf of the original author. This applies to newly received messages; older archives without source information remain unchanged.
+
 ## Message reactions
 
 Astral subscribes to Telegram reaction updates. Receiving them requires the Bot to be a chat administrator; private-chat notifications are not guaranteed. Additions, removals and anonymous count changes enter context as separate events targeting the original message, with only the actor or counts actually supplied. They do not rewrite that message. Anonymous totals may arrive late and do not identify an actor. Topic routing uses the original message's archive; unknown targets are never broadcast to all topics.

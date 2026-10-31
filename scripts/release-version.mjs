@@ -46,6 +46,11 @@ export async function setReleaseVersion(version, root = repositoryRoot) {
   return readReleaseVersion(root)
 }
 
+export function validateStorageMigrations(metadata) {
+  const range = metadata.storage_migrations?.core_sqlite
+  if (!Number.isSafeInteger(metadata.core_schema) || metadata.core_schema < 11 || range?.baseline !== 11 || range.target !== metadata.core_schema || Object.keys(range).length !== 2 || Object.keys(metadata.storage_migrations).length !== 1) throw new Error('Release storage metadata does not match the Core SQLite migration contract.')
+}
+
 export async function readDataFormats(binary, sourceSHA, root = repositoryRoot) {
   if (!/^[a-f0-9]{40}$/.test(sourceSHA || '')) throw new Error('A full source commit SHA is required.')
   if (!binary) throw new Error('Pass --binary with the just-built runner-native Astral executable.')
@@ -61,6 +66,7 @@ export async function readDataFormats(binary, sourceSHA, root = repositoryRoot) 
       metadata.migration_targets?.host !== metadata.data_formats.host || metadata.migration_targets?.core !== metadata.data_formats.core) {
     throw new Error('Built executable does not report the expected release version and Host/Core data formats.')
   }
+  validateStorageMigrations(metadata)
   return {
     schema_version: 1,
     version,
@@ -68,6 +74,8 @@ export async function readDataFormats(binary, sourceSHA, root = repositoryRoot) 
     data_formats: metadata.data_formats,
     host_schema: metadata.data_formats.host,
     core_format: metadata.data_formats.core,
+    core_schema: metadata.core_schema,
+    storage_migrations: metadata.storage_migrations,
     core_module_version: dependency[1],
     computer_environment: computerEnvironment,
     migration_status: metadata.migration_status,

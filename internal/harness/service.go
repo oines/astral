@@ -25,26 +25,27 @@ import (
 )
 
 type Service struct {
-	Store     *persistence.Store
-	CoreStore core.Store
-	Models    *modelbridge.Bridge
-	Hub       *computers.Hub
-	Files     *filestream.Service
-	Search    *search.Service
-	Recall    *recall.Service
-	Schedules *schedule.Service
-	Timezone  *timezone.Service
-	RuntimeID string
-	IM        Messenger
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	deleteMu  sync.Mutex
-	agentMu   sync.RWMutex
-	runtimes  map[string]*runtime
-	closed    bool
-	changes   chan string
-	workers   sync.WaitGroup
+	Store          *persistence.Store
+	CoreStore      core.Store
+	Models         *modelbridge.Bridge
+	Hub            *computers.Hub
+	Files          *filestream.Service
+	Search         *search.Service
+	Recall         *recall.Service
+	Schedules      *schedule.Service
+	Timezone       *timezone.Service
+	RuntimeID      string
+	IM             Messenger
+	StorageChanged func()
+	ctx            context.Context
+	cancel         context.CancelFunc
+	mu             sync.Mutex
+	deleteMu       sync.Mutex
+	agentMu        sync.RWMutex
+	runtimes       map[string]*runtime
+	closed         bool
+	changes        chan string
+	workers        sync.WaitGroup
 }
 
 type runtime struct {

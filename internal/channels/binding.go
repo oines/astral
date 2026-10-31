@@ -27,6 +27,10 @@ func (s *Service) Bind(ctx context.Context, conversationID, sessionID string) (d
 }
 
 func (s *Service) bind(ctx context.Context, conversationID, sessionID string, firstSequence *int64) (domain.ConversationBinding, error) {
+	return s.bindExpected(ctx, conversationID, sessionID, firstSequence, "")
+}
+
+func (s *Service) bindExpected(ctx context.Context, conversationID, sessionID string, firstSequence *int64, expected string) (domain.ConversationBinding, error) {
 	s.bindings.Lock()
 	defer s.bindings.Unlock()
 	var conversation domain.Conversation
@@ -45,6 +49,9 @@ func (s *Service) bind(ctx context.Context, conversationID, sessionID string, fi
 	old, err := s.activeBinding(ctx, conversationID)
 	if err != nil {
 		return old, err
+	}
+	if expected != "" && old.ID != expected {
+		return old, domain.Conflict("聊天绑定已改变，请刷新后重试。")
 	}
 	if old.ID != "" && (firstSequence != nil || sessionID == old.SessionID) {
 		return old, nil

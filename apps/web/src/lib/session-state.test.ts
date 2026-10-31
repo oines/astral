@@ -145,6 +145,9 @@ describe('transcript facts', () => {
     const user = entry('user', 1, { message: { role: 'user', metadata: { display_text: 'Hello <team>' }, content: [{ type: 'text', text: '<prompt>internal envelope</prompt>' }] } })
     expect(messageText(user)).toBe('Hello <team>')
     expect(visibleEntry(entry('image', 2, { message: { role: 'user', content: [{ type: 'image', media_type: 'image/png' }] } }))).toBe(true)
+    const fileOnly = entry('file-only', 2, { message: { role: 'user', metadata: { display_text: '', files: [{ id: 'document' }] }, content: [] } })
+    expect(visibleEntry(fileOnly)).toBe(true)
+    expect(visibleEntry({ ...fileOnly, kind: 'context' })).toBe(false)
     expect(visibleEntry(entry('trigger', 3, { message: { role: 'user', metadata: { source: 'im.trigger' }, content: [{ type: 'text', text: '<trigger/>' }] } }))).toBe(false)
     expect(visibleEntry(entry('failure', 4, { message: { role: 'assistant', finish_reason: 'error', content: [{ type: 'text', text: 'Do not show' }] } }))).toBe(false)
   })
@@ -272,6 +275,84 @@ describe('ordered transcript process', () => {
 
 
 describe('stable incremental transcript presentation', () => {
+  it('deduplicates immutable entries and preserves their identity through pages and snapshots', () => {
+    const original = entry('accepted', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'Answer' }] } })
+    const state = fromSnapshot(snapshot([original]))
+    const before = transcriptGroups(state)
+    const revision = state.historyRevision
+    addEntry(state, structuredClone(original), true)
+    expect(state.historyRevision).toBe(revision)
+    expect(state.entries.accepted).toBe(original)
+    expect(state.trace.accepted).toBe(original)
+    state.scrollPosition = { following: false, top: 120, anchor: { key: 'accepted:0', offset: -15 } }
+    const restored = reconcileSnapshot(state, snapshot([structuredClone(original)]))
+    expect(restored.historyRevision).toBe(revision)
+    expect(restored.entries.accepted).toBe(original)
+    expect(restored.scrollPosition).toBe(state.scrollPosition)
+    expect(transcriptGroups(restored)[0]).toBe(before[0])
+  })
+
+  it('can promote an existing trace fact into history without replacing it or invalidating later duplicates', () => {
+    const state = emptyState()
+    const fact = entry('tool', 2, { kind: 'tool_result' })
+    addEntry(state, fact)
+    const revision = state.historyRevision
+    addEntry(state, structuredClone(fact), true)
+    expect(state.entries.tool).toBe(fact)
+    expect(state.historyRevision).toBe(revision + 1)
+    addEntry(state, structuredClone(fact), true)
+    expect(state.historyRevision).toBe(revision + 1)
+  })
+
+  it('preserves displayed group and process identities when earlier input and text are prepended', () => {
+    const state = fromSnapshot(snapshot([entry('thought', 5, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'reasoning', text: 'Current process' }] } })]))
+    const before = transcriptGroups(state)[0]!
+    const processKey = before.blocks[0]!.key
+    addEntry(state, entry('question', 1, { message: { role: 'user', content: [{ type: 'text', text: 'Inspect it' }] } }), true)
+    addEntry(state, entry('earlier-thought', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'reasoning', text: 'Earlier process' }] } }), true)
+    addEntry(state, entry('commentary', 3, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'Earlier commentary' }] } }), true)
+    const after = transcriptGroups(state)[1]!
+    expect(after.key).toBe(before.key)
+    expect(after.blocks.map(block => block.kind)).toEqual(['process', 'text', 'process'])
+    expect(after.blocks[2]!.key).toBe(processKey)
+    expect(after.blocks[0]!.key).not.toBe(processKey)
+  })
+
+  it('preserves a live group when pagination reveals its preceding user and when it commits', () => {
+    const state = fromSnapshot(snapshot())
+    applyEvent(state, event(1, { model: { type: 'reasoning_delta', content_index: 0, text: 'Checking' } }))
+    const before = transcriptGroups(state)[0]!
+    addEntry(state, entry('question', 1, { message: { role: 'user', content: [{ type: 'text', text: 'Inspect it' }] } }), true)
+    expect(transcriptGroups(state)[1]!.key).toBe(before.key)
+    addEntry(state, entry('thought', 3, { run_id: 'run', generation: { attempt_id: 'attempt', configuration_id: 'cfg', context_digest: 'digest', model: { id: 'model', context_window: 1000, max_output_tokens: 100 } }, message: { role: 'assistant', content: [{ type: 'reasoning', text: 'Checking' }] } }))
+    const after = transcriptGroups(state)[1]!
+    expect(after.key).toBe(before.key)
+    expect(after.blocks[0]!.key).toBe(before.blocks[0]!.key)
+  })
+
+  it('keeps separate same-run segments unique while preserving a previously rendered later segment', () => {
+    const state = emptyState()
+    addEntry(state, entry('later', 6, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'reasoning', text: 'Later thought' }] } }))
+    const before = transcriptGroups(state)[0]!
+    addEntry(state, entry('earlier', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'reasoning', text: 'Earlier thought' }] } }), true)
+    addEntry(state, entry('steering', 4, { message: { role: 'user', content: [{ type: 'text', text: 'A steering message' }] } }), true)
+    const after = transcriptGroups(state)
+    expect(new Set(after.map(group => group.key)).size).toBe(after.length)
+    expect(after[2]!.key).toBe(before.key)
+    expect(after[2]!.blocks[0]!.key).toBe(before.blocks[0]!.key)
+  })
+
+  it('reuses unchanged groups after an unrelated durable commit', () => {
+    const state = emptyState()
+    addEntry(state, entry('question', 1, { message: { role: 'user', content: [{ type: 'text', text: 'Hello' }] } }))
+    addEntry(state, entry('answer', 2, { run_id: 'first', message: { role: 'assistant', content: [{ type: 'text', text: 'Hello back' }] } }))
+    const before = transcriptGroups(state)
+    addEntry(state, entry('next-question', 4, { message: { role: 'user', content: [{ type: 'text', text: 'Continue' }] } }))
+    const after = transcriptGroups(state)
+    expect(after[0]).toBe(before[0])
+    expect(after[1]).toBe(before[1])
+  })
+
   it('keeps streamed text identity when the accepted entry arrives', () => {
     const state = fromSnapshot(snapshot())
     applyEvent(state, event(1, { model: { type: 'text_delta', content_index: 0, text: 'Answer' } }))

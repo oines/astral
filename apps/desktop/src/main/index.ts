@@ -5,13 +5,16 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { access } from 'node:fs/promises'
 import electronUpdater from 'electron-updater'
+import { getAppCacheDir } from 'electron-updater/out/AppAdapter.js'
 import { LocalService } from './service'
+import { startupStatus } from './startup-status'
 import { desktopRequestHeaders, externalURL, trustedSender } from './policy'
 import { setLinuxLoginStart } from './login'
 import { networkArguments } from './network-arguments'
 import { DesktopUpdates, updateChannel, updateFeed } from './updates'
 import { DesktopShutdown } from './shutdown'
 import { DesktopUpdateControl, startDesktopUpdateBridge } from './update-control'
+import { DesktopUpdateCache } from './update-cache'
 import { nativeWindowAppearance, titleBarAppearance } from './window-appearance'
 import type { DesktopUpdateState } from '../shared/updates'
 
@@ -108,7 +111,14 @@ async function configureUpdates() {
     // Release only after confirmed Server exit so the new app can take the lock.
     app.releaseSingleInstanceLock()
   }, unavailable)
-  updateControl = new DesktopUpdateControl(updates, join(app.getPath('userData'), 'update-operation.json'))
+  const cache = app.isPackaged ? new DesktopUpdateCache({
+    // electron-updater's exported adapter supplies the actual platform cache
+    // base. Its bundled config and pending metadata prove the selected files.
+    directory: join(getAppCacheDir(), 'astral-updater'), configuration: resourcePath('app-update.yml'),
+    journalDirectory: join(app.getPath('userData'), 'update-cache-cleanup'), platform: process.platform, architecture: process.arch,
+    state: () => updateControl!.state(), recoveryBlocked: () => updateControl!.cacheRecoveryBlocked(),
+  }) : undefined
+  updateControl = new DesktopUpdateControl(updates, join(app.getPath('userData'), 'update-operation.json'), cache)
   await updateControl.initialize()
   updateBridge = await startDesktopUpdateBridge(updateControl)
   updateControl.onState = state => {
@@ -184,6 +194,7 @@ async function start() {
   const system = process.platform === 'win32' ? 'windows' : process.platform
   const binary = join(bins, `astral-${system}-${architecture}${system === 'windows' ? '.exe' : ''}`)
   await configureUpdates()
+  service.onMaintenance = startupStatus(applicationIcon(), app.getLocale().startsWith('zh'), () => app.quit())
   const token = await service.start(binary, root, bins, networkArguments(process.argv.slice(1)), updateBridge)
   serverURL = service.url
   // Only this Electron session may attach the process-local Desktop identity,
@@ -265,7 +276,7 @@ app.on('before-quit', event => {
 app.on('will-quit', () => traceLifecycle('will-quit'))
 app.on('quit', (_event, exitCode) => traceLifecycle(`quit: exitCode=${exitCode}`))
 if (single) void app.whenReady().then(start).catch(async error => {
-  dialog.showErrorBox('Astral could not start', `${error instanceof Error ? error.message : String(error)}\n\nIf another Astral server already uses this data directory, stop it before opening the desktop application.`)
+  if (!quitting) dialog.showErrorBox('Astral could not start', `${error instanceof Error ? error.message : String(error)}\n\nIf another Astral server already uses this data directory, stop it before opening the desktop application.`)
   await service.stop()
   await updateBridge?.close()
   app.quit()

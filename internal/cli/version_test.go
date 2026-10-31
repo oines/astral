@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	core "github.com/oines/astral-core"
+	"github.com/oines/astral-core/store/sqlite"
 	"github.com/oines/astral/internal/persistence"
 )
 
@@ -36,7 +37,7 @@ func TestVersionCommandOutput(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					want = fmt.Sprintf("{\"version\":%s,\"data_formats\":{\"host\":%d,\"core\":%d},\"migration_status\":\"goose\",\"migration_baselines\":{\"host\":3,\"core\":11},\"migration_targets\":{\"host\":%d,\"core\":%d}}\n", versionJSON, persistence.FormatVersion, core.FormatVersion, persistence.FormatVersion, core.FormatVersion)
+					want = fmt.Sprintf("{\"version\":%s,\"data_formats\":{\"host\":%d,\"core\":%d},\"migration_status\":\"goose\",\"migration_baselines\":{\"host\":3,\"core\":11},\"migration_targets\":{\"host\":%d,\"core\":%d},\"core_schema\":%d,\"storage_migrations\":{\"core_sqlite\":{\"baseline\":11,\"target\":%d}}}\n", versionJSON, persistence.FormatVersion, core.FormatVersion, persistence.FormatVersion, core.FormatVersion, sqlite.SchemaVersion, sqlite.SchemaVersion)
 				}
 				if out.String() != want {
 					t.Errorf("run(%q) output = %q, want %q", args, out.String(), want)

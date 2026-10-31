@@ -3,7 +3,7 @@ import { createReadStream, readFileSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { desktopArtifactName, desktopUpdateFeeds, writeDesktopUpdateFeeds, validateDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
-import { isDirectInvocation, readReleaseVersion, validateTag } from './release-version.mjs'
+import { validateStorageMigrations, isDirectInvocation, readReleaseVersion, validateTag } from './release-version.mjs'
 import { recipeHash, recipePath, validateLock } from './computer-image-contract.mjs'
 
 export const distributionNames = ['darwin', 'linux', 'windows'].flatMap(system => ['amd64', 'arm64'].map(arch => `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`))
@@ -17,6 +17,7 @@ export const macSigningReportName = 'mac-signing-report.json'
 const signingChecks = ['signatures', 'hardened_runtime', 'secure_timestamps', 'embedded_checksums', 'packaged_app_startup_shutdown']
 
 export function validateDataFormats(formats, { version, sourceSHA }) {
+  validateStorageMigrations(formats)
   if (formats?.schema_version !== 1 || formats.version !== version || formats.source_sha !== sourceSHA ||
       !Number.isSafeInteger(formats.host_schema) || !Number.isSafeInteger(formats.core_format) ||
       formats.host_schema < 3 || formats.core_format < 11 ||
@@ -131,6 +132,8 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
     data_formats: formats.data_formats,
     host_schema: formats.host_schema,
     core_format: formats.core_format,
+    core_schema: formats.core_schema,
+    storage_migrations: formats.storage_migrations,
     core_module_version: formats.core_module_version,
     computer_environment: formats.computer_environment,
     migration_status: formats.migration_status,
@@ -145,11 +148,17 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   const label = macSigned ? 'Mac signed candidate' : 'unsigned candidate'
   const macStatus = macSigned ? (notarized ? 'verified signed and notarized' : 'verified signed; Apple notarization is pending') + '; final-byte evidence is in mac-signing-report.json' : 'not performed'
   const hostMigration = formats.host_schema >= 4 ? 'The Host 3 → 4 migration restores visibility of Sessions archived while still bound to IM. It appends an unarchived current revision while preserving every earlier revision, IM event and Core history entry; ordinary archived Sessions stay archived. Desktop keeps its existing schema-3-core-11/ data directory.' : 'The supported public data baseline is Host 3 / Core 11.'
-  const capabilities = `IM sends now accept ordered text, native user mentions, images and files. Telegram can embed them in one Rich Message without a public image host. NapCat supports native group mentions, and Feishu supports mentions and images in posts; other platforms preserve order through supported message types and reject unsupported mentions. Outbox uses one frozen content representation, with per-message receipts and no automatic retry of uncertain sends.
+  const capabilities = `Settings → Storage now shows measured disk usage separately from logical content estimates, with Bot → chat and other-session navigation. Clear a chat's session to switch it to one new session and permanently delete the old history while preserving chat access, private settings and the IM archive. Clear IM archives independently by date, or retain them forever or for 30, 90 or 180 days. Pending messages and lightweight deduplication receipts are protected. Application cleanup recognizes owned upgrade backups, model caches, stale temporary files and metadata-backed Desktop update packages; current recovery dependencies are protected. Deletions durably queue background database reclamation, including across restart. Full VACUUM may delay storage requests, and a reclamation failure does not undo successful logical deletion.
+
+SQLite schema 12 shares repeated large payloads across history, runtime state and model attempts, while Core logical format 11 and the existing Desktop data directory stay unchanged. Inputs and pending rows reference their durable queue events. Startup checks space, snapshots the data and resumes or restores interrupted migration work. Logical history and independent forks are preserved; older executables cannot open the new physical schema.
+
+Telegram observations and quoted replies now preserve user, hidden-user, chat and channel forward origins. Existing archives cannot reconstruct origin metadata that was never recorded.
+
+IM sends now accept ordered text, native user mentions, images and files. Telegram can embed them in one Rich Message without a public image host. NapCat supports native group mentions, and Feishu supports mentions and images in posts; other platforms preserve order through supported message types and reject unsupported mentions. Outbox uses one frozen content representation, with per-message receipts and no automatic retry of uncertain sends.
 
 Make a Session private from its sidebar menu. Other Sessions' Gateway calls cannot discover or operate on its history, bound IM chat or protected schedules, including through an account's all-chat permission. Owners retain normal UI access. Plans follow their fixed target or creation source; a private last execution result only hides that result link and does not hide an otherwise accessible plan.
 
-Chat loading uses lightweight display data and fetches complete tool details when expanded. Reconnection preserves loaded history and fills durable gaps, paging rejects stale responses, and streamed messages keep stable identities. A preview interrupted by disconnection is retained until the complete persisted message arrives instead of concatenating text across missing fragments.
+Chat history keeps stable message and process identities across pagination and streaming. Complete tool arguments and text results arrive with the history page, so expanding them is immediate. Updates are batched per frame, and a bounded in-memory cache restores loaded pages and reading positions when switching sessions. Reconnection fills durable gaps and rejects stale pages; native scroll anchoring preserves reading position during new output, delayed images and resize. An interrupted preview remains until its complete persisted message arrives.
 
 Plan one-time or recurring tasks from the sidebar or the authenticated Gateway API. Both use the same editable task list. A plan can deliver a prompt to an existing Session or create an independent Session for each occurrence; busy Sessions receive the prompt through Steer, and missed times are skipped. Scheduled messages are marked separately from messages you type.
 
@@ -170,7 +179,7 @@ An unavailable IM image preview no longer blocks later messages or mentions on T
 
 QQ NapCat cards now expose their readable titles, descriptions and links. Merged forwards retain ordered nested messages, senders, times and media references, including replies quoting those trees. Forward-only references receive a bounded initial resolution of six seconds, two levels and twelve child messages; longer content has authenticated reading links for on-demand paging. Selected images use the existing in-memory native preview of at most 75,000 pixels and remain in history with their original-download URLs. Videos and files retain metadata and download links. Originals are not separately saved or registered as FileRefs on receipt. All resource reads retain the enclosing chat's permissions; forwarded identities and mentions do not activate the Bot. Existing history and frozen requests are not rewritten.
 
-Versioned migrations are bundled with the latest binary. Upgrades apply missing migrations in order without downloading intermediate releases. Before a migration, the Server snapshots its data; migration failure stops startup and restores that snapshot. The current target is Host ${formats.host_schema} / Core ${formats.core_format}, starting from the supported Host 3 / Core 11 baseline. ${hostMigration} Older private data formats and downgrades are not supported. Desktop installation errors can be retried; a release which cannot start may require manually reinstalling a previous version after restoring its matching data backup.
+Versioned migrations are bundled with the latest binary. Upgrades apply missing migrations in order without downloading intermediate releases. Before a migration, the Server snapshots its data; migration failure stops startup and restores that snapshot. The current target is Host ${formats.host_schema} / Core ${formats.core_format} / SQLite schema ${formats.core_schema}, starting from the supported Host 3 / Core 11 baseline. ${hostMigration} Older private data formats and downgrades are not supported. Desktop installation errors can be retried; a release which cannot start may require manually reinstalling a previous version after restoring its matching data backup.
 
 - Source: ${sourceSHA}
 - Required CI: ${ciRunURL}

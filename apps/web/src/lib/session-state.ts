@@ -1,4 +1,7 @@
+import { markRaw } from 'vue'
 import type { Entry, SessionEvent, SessionView, Snapshot } from './types'
+import type { TranscriptPosition } from './transcript-position'
+import { carryTranscriptIdentity, reconcileTranscriptGroups } from './transcript-identity'
 import { object } from './api'
 
 export interface PreviewPart { type: string; text: string }
@@ -17,14 +20,22 @@ export interface SessionState {
   completedRuns: Set<string>
   historyCursor?: string
   traceCursor?: string
+  scrollPosition?: TranscriptPosition
 }
 export function emptyState(): SessionState {
   return { epoch: '', sequence: 0, historyRevision: 0, entries: {}, trace: {}, previews: {}, tools: {}, completedAttempts: new Set(), completedRuns: new Set() }
 }
 export function addEntry(state: SessionState, entry: Entry, history = false) {
-  state.trace[entry.id] = entry
+  // Entries are immutable facts. Replayed snapshots/pages must neither replace
+  // their objects nor invalidate every rendered historical group.
+  const existing = state.trace[entry.id] ?? state.entries[entry.id]
+  const accepted = existing ?? markRaw(entry)
+  const inHistory = history || ['message', 'context', 'compaction'].includes(accepted.kind)
+  if (state.trace[entry.id] && (!inHistory || state.entries[entry.id])) return
+  state.trace[entry.id] = accepted
   state.historyRevision++
-  if (history || ['message', 'context', 'compaction'].includes(entry.kind)) state.entries[entry.id] = entry
+  if (inHistory) state.entries[entry.id] = accepted
+  entry = accepted
   const attempt = entry.generation?.attempt_id
   if (attempt) { state.completedAttempts.add(attempt); delete state.previews[attempt] }
   if (entry.run && entry.run.status !== 'started') {
@@ -68,9 +79,14 @@ export function interruptPreviews(state: SessionState) {
 export function reconcileSnapshot(previous: SessionState, snapshot: Snapshot): SessionState {
   const next = fromSnapshot(snapshot)
   const overlap = Object.keys(next.entries).some(id => previous.entries[id])
+  const changed = Object.keys(next.trace).some(id => !previous.trace[id]) || Object.keys(next.entries).some(id => !previous.entries[id])
+  for (const id of Object.keys(next.trace)) next.trace[id] = previous.trace[id] ?? previous.entries[id] ?? next.trace[id]!
+  for (const id of Object.keys(next.entries)) next.entries[id] = next.trace[id]!
   next.entries = { ...previous.entries, ...next.entries }
   next.trace = { ...previous.trace, ...next.trace }
-  next.historyRevision = previous.historyRevision + 1
+  next.historyRevision = previous.historyRevision + Number(changed)
+  next.scrollPosition = previous.scrollPosition
+  carryTranscriptIdentity(previous, next)
   if (overlap) next.historyCursor = previous.historyCursor
   if (previous.epoch !== next.epoch) { if (previous.epoch) interruptPreviews(next); return next }
   for (const id of previous.completedAttempts) next.completedAttempts.add(id)
@@ -147,7 +163,8 @@ export function visibleEntry(entry: Entry) {
   if (!message || message.is_error) return false
   if (message.role === 'assistant') return Boolean(messageText(entry))
   if (message.role !== 'user') return false
-  return Boolean(messageText(entry)) || Boolean(message.content?.some(p => p.type === 'image'))
+  const files = object(message.metadata).files
+  return Boolean(messageText(entry)) || Boolean(message.content?.some(p => p.type === 'image')) || (Array.isArray(files) && files.length > 0)
 }
 export function sortedEntries(entries: Record<string, Entry>): Entry[] {
   return Object.values(entries).sort((a, b) => a.sequence - b.sequence)
@@ -308,7 +325,7 @@ export function liveTranscriptGroups(state: SessionState, durable: TranscriptGro
     process(group).active = true
     groups.push(group)
   }
-  return groups.filter(group => group.role === 'user' || group.blocks.length || group.status)
+  return reconcileTranscriptGroups(state, groups.filter(group => group.role === 'user' || group.blocks.length || group.status))
 }
 
 export function transcriptGroups(state: SessionState): TranscriptGroup[] {

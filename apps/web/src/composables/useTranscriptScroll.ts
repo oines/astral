@@ -1,18 +1,24 @@
-import { computed, nextTick, onActivated, onDeactivated, onScopeDispose, reactive, watch, type Ref } from 'vue'
+import { nextTick, onActivated, onBeforeUnmount, onDeactivated, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import { ScrollFollow, type ScrollMetrics } from '../lib/scroll-follow'
+import type { TranscriptPosition } from '../lib/transcript-position'
 
-type Anchor = { element: HTMLElement; key: string; item?: string; node?: string; offset: number; metrics: ScrollMetrics }
+type Anchor = NonNullable<TranscriptPosition['anchor']> & { element: HTMLElement; metrics: ScrollMetrics }
 type Options = {
   scroller: Ref<HTMLElement | undefined>
   content: Ref<HTMLElement | undefined>
   sessionID: Ref<string>
   hasMore: Ref<boolean>
   loadOlder: () => Promise<boolean>
+  getPosition?: () => TranscriptPosition | undefined
+  savePosition?: (position: TranscriptPosition) => void
 }
 
 export function useTranscriptScroll(options: Options) {
-  const follow = reactive(new ScrollFollow())
+  // Scrolling updates one boolean in Vue, not the whole metrics tree.
+  const follow = new ScrollFollow()
+  const showJump = ref(false)
+  const nativeAnchor = typeof CSS !== 'undefined' && CSS.supports?.('overflow-anchor', 'auto') === true
   let active = true
   let initialized = false
   let frame = 0
@@ -20,6 +26,7 @@ export function useTranscriptScroll(options: Options) {
   let jumpTimer: ReturnType<typeof setTimeout> | undefined
   let jumping = false
   let anchor: Anchor | undefined
+  let manualAnchor = !nativeAnchor
   let touchY = 0
   let loading = false
   let historyFailed = false
@@ -28,75 +35,116 @@ export function useTranscriptScroll(options: Options) {
   function metrics(el: HTMLElement): ScrollMetrics {
     return { top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight, width: el.clientWidth }
   }
-  function captureAnchor(restored = false) {
-    const el = options.scroller.value
-    if (!active || !el || !el.clientHeight) return
-    const current = metrics(el)
-    // Input/scroll callbacks can run after a prepend but before layout(). Keep
-    // the pre-update anchor until it is restored, independent of follow.metrics.
-    if (!restored && anchor && (anchor.metrics.height !== current.height || anchor.metrics.viewport !== current.viewport || anchor.metrics.width !== current.width)) return
-    const bounds = el.getBoundingClientRect()
-    let best: HTMLElement | undefined
-    let distance = Infinity
-    for (const candidate of el.querySelectorAll<HTMLElement>('[data-scroll-anchor], .markdown [data-node-index]')) {
-      const rect = candidate.getBoundingClientRect()
-      if (rect.bottom <= bounds.top || rect.top >= bounds.bottom) continue
-      const next = Math.abs(rect.top - bounds.top)
-      if (next < distance) { best = candidate; distance = next }
-    }
-    const owner = best?.closest<HTMLElement>('[data-scroll-anchor]')
-    if (best && owner) anchor = { element: best, key: owner.dataset.scrollAnchor!, item: owner.dataset.scrollAnchorItems?.split(' ')[0], node: best.dataset.nodeIndex, offset: best.getBoundingClientRect().top - bounds.top, metrics: current }
+  function measure(el: HTMLElement, written = false) {
+    if (written) follow.wrote(metrics(el))
+    else follow.measure(metrics(el))
+    showJump.value = follow.showJump
   }
-  function restoreAnchor(el: HTMLElement) {
-    if (!anchor) return
-    let target = anchor.element
-    // Prepending within a run renumbers process blocks. The DOM/key can be
-    // reused for an earlier block, so resolve it by a durable process item.
-    if (anchor.item || !target.isConnected) {
-      const owner = el.querySelector<HTMLElement>(anchor.item ? `[data-scroll-anchor-items~="${CSS.escape(anchor.item)}"]` : `[data-scroll-anchor="${CSS.escape(anchor.key)}"]`)
-      const node = anchor.node === undefined ? undefined : owner?.querySelector<HTMLElement>(`[data-node-index="${CSS.escape(anchor.node)}"]`)
-      if (!owner) return
-      target = node || owner
+  function resolveAnchor(el: HTMLElement, saved: NonNullable<TranscriptPosition['anchor']>) {
+    const owner = el.querySelector<HTMLElement>(`[data-scroll-anchor="${CSS.escape(saved.key)}"]`)
+    return saved.node === undefined ? owner : owner?.querySelector<HTMLElement>(`[data-node-index="${CSS.escape(saved.node)}"]`) ?? owner
+  }
+  function captureAnchor(settled = false) {
+    const el = options.scroller.value
+    if (!active || !el?.clientHeight) return
+    const current = metrics(el)
+    // Keep the pre-layout position until a fallback correction has run. Native
+    // anchoring, when available, is the only code allowed to correct reading.
+    if (!settled && anchor && (anchor.metrics.height !== current.height || anchor.metrics.width !== current.width || anchor.metrics.viewport !== current.viewport)) return
+    // Browsers suppress native anchoring at scrollTop=0. Choose one owner
+    // before the prepend, then return control after the correction leaves zero.
+    manualAnchor = !nativeAnchor || current.top <= 1
+    el.style.overflowAnchor = manualAnchor ? 'none' : 'auto'
+    const bounds = el.getBoundingClientRect()
+    const body = options.content.value?.getBoundingClientRect() ?? bounds
+    const left = Math.max(bounds.left, body.left)
+    const right = Math.min(bounds.right, body.right)
+    // User bubbles are right-aligned; the viewport center can hit only blank
+    // space above the next assistant. Probe both content edges as well.
+    const points = [(left + right) / 2, right - 32, left + 32]
+    for (const inset of [12, 48, 96]) {
+      for (const x of points) {
+        const hit = document.elementFromPoint(x, Math.min(bounds.bottom - 1, bounds.top + inset))
+        if (!hit || !el.contains(hit)) continue
+        const target = hit.closest<HTMLElement>('[data-node-index], [data-scroll-anchor]')
+        const owner = target?.closest<HTMLElement>('[data-scroll-anchor]')
+        if (!target || !owner) continue
+        anchor = { element: target, key: owner.dataset.scrollAnchor!, node: target.dataset.nodeIndex, offset: target.getBoundingClientRect().top - bounds.top, metrics: current }
+        return
+      }
     }
-    // Compare content positions, not viewport positions: native scrolling since
-    // capture must survive the correction. Account for a shrinking scroll range.
+  }
+  function restoreFallback(el: HTMLElement, reflowed = false) {
+    if (!anchor) return
+    const target = anchor.element.isConnected ? anchor.element : resolveAnchor(el, anchor)
+    if (!target) return
     const previousTop = Math.min(anchor.metrics.top, Math.max(0, el.scrollHeight - el.clientHeight))
-    const delta = target.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset + el.scrollTop - previousTop
-    if (Math.abs(delta) > .5) { el.scrollTop += delta; follow.wrote(metrics(el)) }
+    const delta = target.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset + (reflowed ? 0 : el.scrollTop - previousTop)
+    if (Math.abs(delta) > .5) { el.scrollTop += delta; measure(el, true) }
+  }
+  function savePosition() {
+    const el = options.scroller.value
+    if (!initialized || !el) return
+    options.savePosition?.({ following: follow.following, top: el.scrollTop, anchor: anchor && { key: anchor.key, node: anchor.node, offset: anchor.offset } })
+  }
+  function restorePosition(el: HTMLElement) {
+    const saved = options.getPosition?.()
+    follow.following = saved?.following ?? true
+    if (!follow.following && saved) {
+      el.scrollTop = saved.top
+      const target = saved.anchor && resolveAnchor(el, saved.anchor)
+      if (target && saved.anchor) el.scrollTop += target.getBoundingClientRect().top - el.getBoundingClientRect().top - saved.anchor.offset
+      measure(el, true)
+      captureAnchor(true)
+    }
+    initialized = true
   }
   async function loadEarlier() {
     const el = options.scroller.value
     if (!active || !initialized || !el || !options.hasMore.value || loading || historyFailed) return
-    // A tail full of passive observations may render no bubbles. Fill the
-    // viewport before requiring an upward scroll the user cannot yet perform.
-    if (follow.following && el.scrollHeight > el.clientHeight + 1 || el.scrollTop > Math.max(800, el.clientHeight * 1.5)) return
+    // A page may hit its scan/byte budget before filling the screen. Continue
+    // until there is something to scroll, without requiring an impossible gesture.
+    if (follow.following && el.scrollHeight > el.clientHeight + 1 || el.scrollTop > Math.max(320, el.clientHeight * .75)) return
     loading = true
     const current = generation
     captureAnchor()
-    const loaded = await options.loadOlder()
-    if (current !== generation) return
-    historyFailed = !loaded
-    loading = false
-    await nextTick()
-    schedule()
+    try {
+      const loaded = await options.loadOlder()
+      if (current === generation) historyFailed = !loaded
+    } catch { if (current === generation) historyFailed = true }
+    finally {
+      if (current === generation) {
+        loading = false
+        await nextTick()
+        schedule()
+      }
+    }
   }
   function layout() {
     frame = 0
     const el = options.scroller.value
-    if (!active || !el || !el.clientHeight) return
-    if (jumping) { follow.measure(metrics(el)); return }
+    if (!active || !el?.clientHeight) return
+    if (!initialized) restorePosition(el)
+    if (jumping) { measure(el); return }
     if (follow.following) {
       const cooldown = follow.cooldown(performance.now())
       if (cooldown > 0) { clearTimeout(timer); timer = setTimeout(schedule, cooldown); return }
-      el.scrollTop = el.scrollHeight
-      follow.wrote(metrics(el))
+      if (el.scrollHeight - el.clientHeight - el.scrollTop > .5) el.scrollTop = el.scrollHeight
+      measure(el, true)
       anchor = undefined
+      el.style.overflowAnchor = 'none'
     } else {
-      restoreAnchor(el)
-      follow.measure(metrics(el))
+      const reflowed = anchor && (anchor.metrics.width !== el.clientWidth || anchor.metrics.viewport !== el.clientHeight)
+      if (reflowed) {
+        // Width/viewport changes can suppress native anchoring too. Restore
+        // the measured paragraph once, without adding any native movement.
+        el.style.overflowAnchor = 'none'
+        restoreFallback(el, true)
+      } else if (manualAnchor) restoreFallback(el)
+      measure(el)
       captureAnchor(true)
     }
-    initialized = true
+    savePosition()
     void loadEarlier()
   }
   function schedule() { if (active && !frame) frame = requestAnimationFrame(layout) }
@@ -105,39 +153,29 @@ export function useTranscriptScroll(options: Options) {
     jumping = false
     clearTimeout(jumpTimer)
     const el = options.scroller.value
-    if (el) {
-      el.scrollTo({ top: el.scrollTop, behavior: 'instant' })
-      follow.following = false
-      follow.measure(metrics(el))
-    }
+    if (el) { el.scrollTo({ top: el.scrollTop, behavior: 'instant' }); follow.following = false; measure(el) }
   }
   function stop() { cancelAnimationFrame(frame); frame = 0; clearTimeout(timer); cancelJump() }
   function waitForJumpEnd() {
     clearTimeout(jumpTimer)
-    // scrollend handles native completion; this also covers engines that do not
-    // emit it, without writing scrollTop during the animation.
     jumpTimer = setTimeout(onScrollEnd, 150)
   }
   function onScrollEnd() {
     const el = options.scroller.value
     if (!jumping || !el) return
     clearTimeout(jumpTimer)
-    follow.measure(metrics(el))
+    measure(el)
     if (follow.distance > 1) {
-      // Streaming may have moved the bottom while the native animation ran.
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
       waitForJumpEnd()
-    } else {
-      jumping = false
-      follow.wrote(metrics(el))
-      schedule()
-    }
+    } else { jumping = false; measure(el, true); schedule() }
   }
   function onScroll() {
     const el = options.scroller.value
     if (!el) return
-    if (jumping) { follow.measure(metrics(el)); waitForJumpEnd(); return }
+    if (jumping) { measure(el); waitForJumpEnd(); return }
     follow.observe(metrics(el))
+    showJump.value = follow.showJump
     if (!follow.following) captureAnchor()
     schedule()
   }
@@ -146,6 +184,7 @@ export function useTranscriptScroll(options: Options) {
     if (!el) return
     cancelJump()
     follow.input(direction, metrics(el), performance.now())
+    showJump.value = follow.showJump
     if (direction === 'up') { historyFailed = false; captureAnchor() }
     schedule()
   }
@@ -161,30 +200,26 @@ export function useTranscriptScroll(options: Options) {
     if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || event.key === ' ' && event.shiftKey) input('up')
     else if (['ArrowDown', 'PageDown', 'End', ' '].includes(event.key)) input('down')
   }
-  function pause() { cancelJump(); follow.following = false; captureAnchor() }
-  function reset() { stop(); follow.reset(); initialized = true; anchor = undefined; schedule() }
+  function pause() { cancelJump(); follow.following = false; captureAnchor(); schedule() }
+  function reset() { stop(); follow.reset(); initialized = false; anchor = undefined; showJump.value = false; schedule() }
   function bottom() {
-    reset()
+    stop()
+    follow.reset()
+    initialized = true
+    anchor = undefined
     const el = options.scroller.value
-    if (!el || el.scrollHeight - el.clientHeight - el.scrollTop <= 1 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (!el || el.scrollHeight - el.clientHeight - el.scrollTop <= 1 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { schedule(); return }
     jumping = true
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     waitForJumpEnd()
   }
 
   useResizeObserver([options.content, options.scroller], schedule)
-  watch(options.hasMore, schedule, { flush: 'post' })
-  watch(options.sessionID, async () => {
-    generation++
-    loading = false
-    historyFailed = false
-    initialized = false
-    reset()
-    await nextTick()
-    schedule()
-  }, { immediate: true, flush: 'post' })
-  onActivated(() => { active = true; schedule() })
-  onDeactivated(() => { active = false; stop() })
-  onScopeDispose(stop)
-  return { showJump: computed(() => follow.showJump), onScroll, onScrollEnd, onWheel, onTouchStart, onTouchMove, onKeydown, onPointerdown: () => input('pointer'), pause, bottom }
+  watch([options.scroller, options.content, options.hasMore], schedule, { immediate: true, flush: 'post' })
+  watch(options.sessionID, () => { generation++; loading = false; historyFailed = false; reset() }, { immediate: true, flush: 'post' })
+  onActivated(() => { active = true; initialized = false; schedule() })
+  onDeactivated(() => { savePosition(); active = false; stop() })
+  onBeforeUnmount(savePosition)
+  onScopeDispose(() => { savePosition(); active = false; stop() })
+  return { showJump, onScroll, onScrollEnd, onWheel, onTouchStart, onTouchMove, onKeydown, onPointerdown: () => input('pointer'), pause, bottom }
 }

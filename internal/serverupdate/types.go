@@ -24,6 +24,22 @@ type Controller interface {
 	Apply(context.Context) (State, error)
 }
 
+// CacheCleanup is an optional capability of the private Desktop controller.
+// Tokens identify main-process verified files; no caller supplies a path.
+type CacheCleanup interface {
+	CacheInventory(context.Context) ([]CacheItem, error)
+	CleanCache(context.Context, string, string) (int64, error)
+}
+
+type CacheItem struct {
+	Token     string `json:"token"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Bytes     int64  `json:"bytes"`
+	Protected bool   `json:"protected"`
+	Reason    string `json:"reason,omitempty"`
+}
+
 type Unmanaged struct{ Version string }
 
 func (u Unmanaged) State(context.Context) (State, error) {

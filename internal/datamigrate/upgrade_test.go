@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/oines/astral-core/store/sqlite"
 	"github.com/oines/astral/internal/persistence"
 )
 
@@ -24,11 +23,20 @@ func fixture(t *testing.T) string {
 	if err = host.Close(); err != nil {
 		t.Fatal(err)
 	}
-	core, err := sqlite.Open(filepath.Join(data, "core.db"))
+	// Frozen baseline fixture: the current Open creates schema 12 and cannot
+	// be turned into schema 11 just by removing its migration ledger.
+	old, err := os.ReadFile("testdata/core-schema11.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = core.Close(); err != nil {
+	db, err := sql.Open("sqlite", filepath.Join(data, "core.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(string(old)); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"astral.db", "core.db"} {

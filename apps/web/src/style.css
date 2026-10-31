@@ -123,7 +123,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .transcript-viewport { min-height: 0; flex: 1; position: relative; display: flex; flex-direction: column; }
 /* Feather only the message edge; the composer and jump control stay crisp. */
 .transcript-viewport::after { content: ''; position: absolute; inset: auto 0 0; height: var(--chat-edge-fade); z-index: 1; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--bg) 16%, transparent) 28%, color-mix(in srgb, var(--bg) 70%, transparent) 72%, var(--bg)); }
-.transcript-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; scrollbar-width: thin; }
+.transcript-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior: contain; overflow-anchor: auto; scrollbar-gutter: stable; scrollbar-width: thin; }
 .transcript-scroll:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: -6px; border-radius: 8px; }
 @media (forced-colors: active) { .transcript-viewport::after { display: none; } }
 /* A turn owns its process, response and actions; only the turn sets outer spacing. */
@@ -529,14 +529,6 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .settings-next-step > .button { flex-shrink: 0; }
 .search-test-input > input { flex: 1; }
 .search-test-input > .button { flex-shrink: 0; }
-.storage-summary { display: flex; flex-wrap: wrap; gap: 12px 32px; padding: var(--settings-row-padding) 0; font-size: 12px; color: var(--muted); }
-.storage-summary strong { color: var(--ink); font-weight: 500; margin-left: 8px; }
-.storage-location { display: flex; align-items: flex-start; gap: 12px; padding: var(--settings-row-padding) 0; }
-.storage-summary + .storage-location { border-top: 1px solid var(--panel-line); }
-.storage-location > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.storage-location strong { font-size: 13px; font-weight: 500; }
-.storage-location code, .break-word { overflow-wrap: anywhere; }
-.storage-location code { font-size: 12px; }
 .about-identity { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: var(--settings-row-padding) 0; }
 .about-identity > p { font-size: 12px; }
 .danger-row > p { max-width: 520px; line-height: 1.6; }

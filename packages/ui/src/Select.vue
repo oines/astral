@@ -12,7 +12,7 @@ const props = withDefaults(defineProps<{
   name?: string
   label?: string
 }>(), { modelValue: '', placeholder: '', disabled: false, required: false, name: undefined, label: undefined })
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string]; closeAutoFocus: [event: Event] }>()
 const emptyValue = '__astral_empty_option__'
 const selected = computed(() => props.options.find(option => option.value === props.modelValue))
 const open = ref(false)
@@ -41,6 +41,7 @@ onDeactivated(() => { open.value = false })
         position="popper"
         :side-offset="6"
         :collision-padding="12"
+        @close-auto-focus="emit('closeAutoFocus', $event)"
       >
         <SelectViewport>
           <SelectItem

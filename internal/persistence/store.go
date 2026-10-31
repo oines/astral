@@ -431,7 +431,7 @@ func (s *Store) SearchObservations(ctx context.Context, conversation string, aft
 	if limit < 1 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT sequence,payload FROM observations WHERE conversation_id=? AND sequence>? AND (?='' OR instr(lower(json_extract(payload,'$.text')),lower(?))>0) ORDER BY sequence LIMIT ?", conversation, after, query, query, limit)
+	rows, err := s.db.QueryContext(ctx, "SELECT sequence,payload FROM observations WHERE conversation_id=? AND sequence>? AND COALESCE(json_extract(payload,'$.kind'),'')<>? AND (?='' OR instr(lower(json_extract(payload,'$.text')),lower(?))>0) ORDER BY sequence LIMIT ?", conversation, after, PrunedObservation, query, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +526,7 @@ SELECT o.sequence,a.value FROM observations o,json_each(o.payload,'$.reply_attac
 func (s *Store) Observation(ctx context.Context, id string) (domain.Observation, error) {
 	var raw []byte
 	var event domain.Observation
-	err := s.db.QueryRowContext(ctx, "SELECT payload FROM observations WHERE id=?", id).Scan(&raw)
+	err := s.db.QueryRowContext(ctx, "SELECT payload FROM observations WHERE id=? AND COALESCE(json_extract(payload,'$.kind'),'')<>?", id, PrunedObservation).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return event, domain.Missing("observation", id)
 	}

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { headlessUpdateTransport } from './headless-update-transport.mjs'
-import { retainedFixtureCookie } from './check-headless-install.mjs'
+import { prepareHostMigrationFixture, retainedFixtureCookie } from './check-headless-install.mjs'
 
 const execute = promisify(execFile)
 test('the CI-only trusted HTTPS transport serves fixed official URLs and restores selected manager variables', { skip: process.platform === 'win32' }, async t => {
@@ -72,4 +72,34 @@ test('a failed initial login can retry, and distinct Server origins have separat
   assert.equal(await cookie('http://127.0.0.1:4545'), 'authenticated:http://127.0.0.1:4545')
   assert.equal(await cookie('http://127.0.0.1:4546'), 'authenticated:http://127.0.0.1:4546')
   assert.equal(logins, 3)
+})
+
+test('headless recovery fixture only resets Host migration state and preserves current Core schema and ledger', { skip: process.platform === 'win32' }, async t => {
+  const data = await mkdtemp(path.join(tmpdir(), 'astral-headless-migration-fixture-'))
+  t.after(() => rm(data, { recursive: true, force: true }))
+  await execute('python3', ['-c', `import pathlib,sqlite3,sys
+for name,version in (('astral.db',6),('core.db',12)):
+    with sqlite3.connect(pathlib.Path(sys.argv[1])/name) as db:
+        db.execute('CREATE TABLE goose_db_version(version_id INTEGER,is_applied INTEGER)')
+        db.execute('INSERT INTO goose_db_version VALUES(?,1)',(version,))
+        db.execute('CREATE TABLE retained_content(body TEXT)')
+        db.execute("INSERT INTO retained_content VALUES('keep actual data')")
+        db.execute('PRAGMA user_version='+str(version))
+`, data], { encoding: 'utf8', timeout: 5000 })
+  const coreBefore = await readFile(path.join(data, 'core.db'))
+  await prepareHostMigrationFixture(data)
+  assert.deepEqual(await readFile(path.join(data, 'core.db')), coreBefore, 'Fixture changed the current Core database')
+  const state = await execute('python3', ['-c', `import json,pathlib,sqlite3,sys
+result={}
+for name in ('astral.db','core.db'):
+    with sqlite3.connect(pathlib.Path(sys.argv[1])/name) as db:
+        result[name]={'schema':db.execute('PRAGMA user_version').fetchone()[0],
+          'ledger':db.execute("SELECT count(*) FROM sqlite_schema WHERE name='goose_db_version'").fetchone()[0],
+          'content':db.execute('SELECT body FROM retained_content').fetchone()[0]}
+print(json.dumps(result))
+`, data], { encoding: 'utf8', timeout: 5000 })
+  assert.deepEqual(JSON.parse(state.stdout), {
+    'astral.db': { schema: 3, ledger: 0, content: 'keep actual data' },
+    'core.db': { schema: 12, ledger: 1, content: 'keep actual data' },
+  })
 })

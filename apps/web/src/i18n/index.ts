@@ -12,7 +12,9 @@ import { computersEn, computersZh } from './computers'
 import { reasoningEn, reasoningZh } from './reasoning'
 import { updatesEn, updatesZh } from './updates'
 import { schedulesEn, schedulesZh } from './schedules'
+import { storageEn, storageZh } from './storage'
 const en = {
+  ...storageEn,
   ...schedulesEn,
   ...updatesEn,
   ...authEn, ...channelsEn, ...detailEn, ...redesignEn, ...providersEn, ...settingsEn, ...settingsUxEn, ...searchEn, ...onboardingEn, ...computersEn, ...reasoningEn,
@@ -53,6 +55,7 @@ const en = {
   disconnect: 'Sign out', loading: 'Loading…', empty: 'Nothing here yet.', inspect: 'Inspect', result: 'Result', source: 'Source', terminal: 'Terminal output',
 }
 const zh: typeof en = {
+  ...storageZh,
   ...schedulesZh,
   ...updatesZh,
   ...authZh, ...channelsZh, ...detailZh, ...redesignZh, ...providersZh, ...settingsZh, ...settingsUxZh, ...searchZh, ...onboardingZh, ...computersZh, ...reasoningZh,

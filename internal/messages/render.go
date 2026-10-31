@@ -29,16 +29,18 @@ func Escape(value string) string {
 }
 
 type Metadata struct {
-	Source         string              `json:"source"`
-	DeliveryID     string              `json:"delivery_id"`
-	EventID        string              `json:"event_id,omitempty"`
-	ConversationID string              `json:"conversation_id,omitempty"`
-	DisplayText    string              `json:"display_text"`
-	AcceptedAt     *time.Time          `json:"accepted_at,omitempty"`
-	Sender         domain.Sender       `json:"sender"`
-	Files          []domain.FileRef    `json:"files,omitempty"`
-	Attachments    []domain.Attachment `json:"attachments,omitempty"`
-	Schedule       *ScheduleMetadata   `json:"schedule,omitempty"`
+	Source             string                `json:"source"`
+	DeliveryID         string                `json:"delivery_id"`
+	EventID            string                `json:"event_id,omitempty"`
+	ConversationID     string                `json:"conversation_id,omitempty"`
+	DisplayText        string                `json:"display_text"`
+	AcceptedAt         *time.Time            `json:"accepted_at,omitempty"`
+	Sender             domain.Sender         `json:"sender"`
+	Files              []domain.FileRef      `json:"files,omitempty"`
+	Attachments        []domain.Attachment   `json:"attachments,omitempty"`
+	ForwardOrigin      *domain.ForwardOrigin `json:"forward_origin,omitempty"`
+	ReplyForwardOrigin *domain.ForwardOrigin `json:"reply_forward_origin,omitempty"`
+	Schedule           *ScheduleMetadata     `json:"schedule,omitempty"`
 }
 
 func AttachmentDownloadPath(conversationID, messageID, ref string) string {
@@ -165,8 +167,10 @@ func Observation(event domain.Observation, _ domain.Connection, conversation dom
 			fmt.Fprintf(&body, " trigger=\"%s\"", Escape(event.Trigger))
 		}
 		body.WriteString(">\n")
+		renderForwardOrigin(&body, event.ForwardOrigin, event.SentAt.Location())
 		if event.ReplyID != "" {
 			fmt.Fprintf(&body, "<in-reply-to id=\"%s\" sender=\"%s\" read-url=\"%s\">", Escape(event.ReplyID), Escape(event.ReplySender), Escape(MessagePartsReadPath(conversation.ID, event.ReplyID)))
+			renderForwardOrigin(&body, event.ReplyForwardOrigin, event.SentAt.Location())
 			if len(event.ReplyParts) != 0 {
 				body.WriteString(RichPartsPreview(event.ReplyParts, conversation.ID, event.ReplyID, event.SentAt.Location()).Text)
 			} else {
@@ -213,8 +217,30 @@ func Observation(event domain.Observation, _ domain.Connection, conversation dom
 		body.WriteString("\n</message>")
 	}
 	_, images := AttachmentParts(files)
-	metadata, _ := json.Marshal(Metadata{Source: "im", DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: observationDisplayText(event), Sender: event.Sender, Files: files, Attachments: event.Attachments})
+	metadata, _ := json.Marshal(Metadata{Source: "im", DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: observationDisplayText(event), Sender: event.Sender, Files: files, Attachments: event.Attachments, ForwardOrigin: event.ForwardOrigin, ReplyForwardOrigin: event.ReplyForwardOrigin})
 	return core.Message{Role: core.RoleUser, ContextKind: "im.observation", Content: append(core.Text(body.String()), images...), Metadata: metadata}
+}
+
+func renderForwardOrigin(body *strings.Builder, origin *domain.ForwardOrigin, location *time.Location) {
+	if origin == nil {
+		return
+	}
+	sender := origin.Sender.Name
+	if origin.Sender.Username != "" {
+		sender += " (@" + origin.Sender.Username + ")"
+	}
+	fmt.Fprintf(body, "<forward-origin type=\"%s\" sender=\"%s\"", Escape(origin.Type), Escape(sender))
+	for _, attribute := range []struct{ name, value string }{
+		{"sender-id", origin.Sender.ID}, {"message-id", origin.MessageID}, {"author-signature", origin.AuthorSignature},
+	} {
+		if attribute.value != "" {
+			fmt.Fprintf(body, " %s=\"%s\"", attribute.name, Escape(attribute.value))
+		}
+	}
+	if origin.SentAt != nil {
+		fmt.Fprintf(body, " t=\"%s\"", origin.SentAt.In(location).Format(time.RFC3339Nano))
+	}
+	body.WriteString("/>\n")
 }
 
 func observationDisplayText(event domain.Observation) string {

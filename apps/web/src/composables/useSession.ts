@@ -1,4 +1,4 @@
-import { onScopeDispose, ref, watch, type Ref } from 'vue'
+import { effectScope, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { client } from '@astral/sdk/client'
 import type { SessionHistoryResponses, SessionHistoryErrors } from '@astral/sdk'
 import { addEntry, applyEvent, emptyState, interruptPreviews, reconcileSnapshot } from '../lib/session-state'
@@ -6,6 +6,28 @@ import { errorText, request } from '../lib/api'
 import type { SessionEvent, Snapshot } from '../lib/types'
 import { useAppStore } from '../stores/app'
 import { useAuthStore } from '../stores/auth'
+import { createSessionEventBatch } from '../lib/session-event-batch'
+import { createSessionCache, type HistoryBoundary } from '../lib/session-cache'
+
+const caches = new WeakMap<ReturnType<typeof useAppStore>, ReturnType<typeof createSessionCache>>()
+function accountIdentity(app: ReturnType<typeof useAppStore>, auth: ReturnType<typeof useAuthStore>) {
+  return app.authorized ? `${auth.status?.desktop ? 'desktop' : 'web'}:${auth.status?.username ?? ''}` : ''
+}
+function sessionCache(app: ReturnType<typeof useAppStore>, auth: ReturnType<typeof useAuthStore>) {
+  let cache = caches.get(app)
+  if (cache) return cache
+  cache = createSessionCache()
+  caches.set(app, cache)
+  const owned = cache
+  // The app/account outlive ChatPage. Invalidate even if logout happens from a
+  // settings page after the last session component has been disposed.
+  effectScope(true).run(() => watch(() => accountIdentity(app, auth), () => owned.clear(), { flush: 'sync' }))
+  app.$onAction?.(({ name, args, after }) => after(() => {
+    if (name === 'forgetSession') owned.remove(args[0] as string)
+    if (name === 'forgetAgent') owned.removeAgent(args[0] as string)
+  }), true)
+  return cache
+}
 
 export function useSession(sessionID: Ref<string>) {
   const state = ref(emptyState())
@@ -13,13 +35,20 @@ export function useSession(sessionID: Ref<string>) {
   const error = ref('')
   const app = useAppStore()
   const auth = useAuthStore()
+  const cache = sessionCache(app, auth)
   let source: EventSource | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let generation = 0
   let historyEpoch = 0
   let historyRequest: AbortController | undefined
   let olderPending: Promise<boolean> | undefined
-  let historyBoundary: { sequence: number; cursor?: string } | undefined
+  let historyBoundary: HistoryBoundary | undefined
+  const events = createSessionEventBatch(batch => {
+    try {
+      for (const event of batch) if (!applyEvent(state.value, event)) { reconnect(); return }
+      if (state.value.view) app.sessionViews[state.value.view.id] = state.value.view
+    } catch (e) { error.value = errorText(e); reconnect() }
+  })
   function resetHistoryRequest() { historyEpoch++; historyRequest?.abort(); historyRequest = undefined; olderPending = undefined; loadingHistory.value = false }
   function history(cursor: string, trace: boolean, signal?: AbortSignal) {
     return request(client.get<SessionHistoryResponses, SessionHistoryErrors>({ url: `/api/v1/sessions/${encodeURIComponent(sessionID.value)}/timeline`, query: { cursor, limit: trace ? 100 : 60, trace }, signal }))
@@ -32,7 +61,7 @@ export function useSession(sessionID: Ref<string>) {
   }
   function connect() {
     close()
-    if (!sessionID.value || !app.authorized) return
+    if (!sessionID.value || !app.authorized || !retainCurrent) return
     const current = generation
     const transport = new EventSource(`/api/v1/sessions/${encodeURIComponent(sessionID.value)}/events`)
     source = transport
@@ -40,6 +69,8 @@ export function useSession(sessionID: Ref<string>) {
     source.addEventListener('snapshot', event => {
       if (!active()) return
       try {
+        events.flush()
+        if (!active()) return
         const snapshot = JSON.parse((event as MessageEvent<string>).data) as Snapshot
         const previous = state.value
         const known = Object.values(previous.entries)
@@ -60,8 +91,7 @@ export function useSession(sessionID: Ref<string>) {
     const receive = (event: Event) => {
       if (!active()) return
       try {
-        if (!applyEvent(state.value, JSON.parse((event as MessageEvent<string>).data) as SessionEvent)) { reconnect(); return }
-        if (state.value.view) app.sessionViews[state.value.view.id] = state.value.view
+        events.push(JSON.parse((event as MessageEvent<string>).data) as SessionEvent)
       } catch (e) { error.value = errorText(e); reconnect() }
     }
     source.addEventListener('event', receive)
@@ -74,8 +104,10 @@ export function useSession(sessionID: Ref<string>) {
     }
   }
   function reconnect() {
+    events.flush()
     interruptPreviews(state.value)
     close()
+    if (!sessionID.value || !app.authorized || !retainCurrent) return
     connection.value = 'reconnecting'
     timer = setTimeout(connect, 1000)
   }
@@ -126,17 +158,48 @@ export function useSession(sessionID: Ref<string>) {
     for (const entry of page.entries ?? []) addEntry(state.value, entry)
     state.value.traceCursor = page.next_cursor
   }
-  watch(() => app.authorized, value => { if (!value) { interruptPreviews(state.value); generation++; resetHistoryRequest(); close() } else if (sessionID.value) connect() })
-  watch(sessionID, (_, previous) => {
-    if (previous) delete app.sessionViews[previous]
+  let activeID = ''
+  let owner = accountIdentity(app, auth)
+  let retainCurrent = true
+  app.$onAction?.(({ name, args, after }) => after(() => {
+    if ((name === 'forgetSession' && args[0] === activeID) || (name === 'forgetAgent' && args[0] === state.value.view?.agent_id)) {
+      retainCurrent = false
+      leave(false)
+      historyBoundary = undefined
+      state.value = emptyState()
+      connection.value = 'disconnected'
+      error.value = ''
+    }
+  }))
+  function leave(retain: boolean) {
+    if (retain) events.flush()
+    else events.clear()
+    interruptPreviews(state.value)
+    if (retain && retainCurrent && activeID) cache.put(activeID, { state: state.value, historyBoundary })
+    if (activeID) delete app.sessionViews[activeID]
     generation++
     resetHistoryRequest()
+    close()
+  }
+  watch([sessionID, () => accountIdentity(app, auth)], ([id, nextOwner]) => {
+    leave(!!owner && owner === nextOwner)
+    owner = nextOwner
+    activeID = id
+    retainCurrent = true
     historyBoundary = undefined
-    state.value = emptyState()
+    const restored = owner && id ? cache.take(id) : undefined
+    state.value = restored?.state ?? emptyState()
+    historyBoundary = restored?.historyBoundary
     error.value = ''
     connection.value = 'connecting'
+    if (state.value.view) app.sessionViews[id] = state.value.view
     connect()
-  }, { immediate: true })
-  onScopeDispose(() => { generation++; resetHistoryRequest(); close(); if (sessionID.value) delete app.sessionViews[sessionID.value] })
+  }, { immediate: true, flush: 'sync' })
+  const visibility = () => { if (document.visibilityState !== 'hidden') events.flush() }
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibility)
+  onScopeDispose(() => {
+    leave(!!owner && owner === accountIdentity(app, auth))
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibility)
+  })
   return { state, connection, error, older, moreTrace, loadingHistory, reconnect }
 }

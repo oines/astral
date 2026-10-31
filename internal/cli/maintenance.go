@@ -15,11 +15,14 @@ import (
 )
 
 func maintenance(ctx context.Context, args []string, out, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "vacuum" {
+		return maintenanceVacuum(ctx, args[1:], out, stderr)
+	}
 	if len(args) > 0 && args[0] == "with-data-lock" {
 		return maintenanceWithDataLock(ctx, args[1:], out, stderr)
 	}
 	if len(args) == 0 || args[0] != "weixin-wire-ownership" {
-		return fmt.Errorf("usage: astral maintenance with-data-lock --data DIRECTORY --computers-dir DIRECTORY -- COMMAND [ARGS...] | weixin-wire-ownership --data DIRECTORY [--purge-unowned]")
+		return fmt.Errorf("usage: astral maintenance vacuum --data DIRECTORY | with-data-lock --data DIRECTORY --computers-dir DIRECTORY -- COMMAND [ARGS...] | weixin-wire-ownership --data DIRECTORY [--purge-unowned]")
 	}
 	f := flags("maintenance weixin-wire-ownership", stderr)
 	directory := f.String("data", "", "existing Server data directory; stop Desktop or Server first")

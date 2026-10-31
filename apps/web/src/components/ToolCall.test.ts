@@ -4,8 +4,6 @@ import { createRenderer, defineComponent, h, nextTick, reactive, ssrContextKey, 
 import ToolCall from './ToolCall.vue'
 import type { Entry } from '../lib/types'
 
-const mocks = vi.hoisted(() => ({ load: vi.fn() }))
-vi.mock('../lib/tool-entry-cache', () => ({ toolEntry: mocks.load }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('@astral/ui', () => ({ Collapse: defineComponent({ setup(_props, { slots }) { return () => h('div', slots.default?.()) } }) }))
 vi.mock('./Markdown.vue', () => ({ default: defineComponent({ props: { content: { type: String, default: '' } }, setup(props) { return () => h('div', props.content) } }) }))
@@ -31,11 +29,11 @@ function entry(id: string, sequence: number, finished = true): Entry {
   return { id, sequence, version: sequence, session_id: 'session', time: '', kind: finished ? 'tool_result' : 'tool_started', tool: { invocation: { session_id: 'session', run_id: 'run', turn_id: 'turn', assistant_id: 'assistant', execution_id: 'exec', call: { id: 'call', name: 'exec_command', arguments: { cmd: 'pwd' } } }, ...(finished ? { result: { outcome: 'succeeded' } } : {}) } }
 }
 let dispose: (() => void) | undefined
-afterEach(() => { dispose?.(); vi.useRealTimers(); mocks.load.mockReset() })
+afterEach(() => { dispose?.(); vi.useRealTimers() })
 function mount(initial: Entry) {
   vi.useFakeTimers()
   const root = node('root')
-  const props = reactive({ entry: initial, sessionID: 'session' })
+  const props = reactive({ entry: initial, sessionID: 'session', live: { name: 'exec_command', started: true, ended: false, text: 'streaming output' } })
   // Vitest compiles this SFC for SSR. A no-op client render lets us exercise
   // its real setup/watch lifecycle without installing a browser DOM emulator.
   const component = { ...ToolCall, render: () => null } as unknown as Component
@@ -43,45 +41,34 @@ function mount(initial: Entry) {
   app.provide(ssrContextKey, {})
   app.mount(root)
   dispose = () => app.unmount()
-  const state = (app._instance!.subTree.component as unknown as { setupState: { toggle: () => void; showLoading: boolean; output: string } }).setupState
+  const state = (app._instance!.subTree.component as unknown as { setupState: { toggle: () => void; open: boolean; output: string } }).setupState
   const click = () => state.toggle()
   return { state, props, click }
 }
 
-describe('loading complete tool details', () => {
-  it('shows delayed feedback even when the lightweight entry already has a result object', async () => {
-    let resolve!: (entry: Entry) => void
-    mocks.load.mockImplementation(() => new Promise(done => { resolve = done }))
-    const view = mount(entry('result', 3))
-    view.click()
-    await nextTick()
-    expect(view.state.showLoading).toBe(false)
-    await vi.advanceTimersByTimeAsync(299)
-    expect(view.state.showLoading).toBe(false)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(view.state.showLoading).toBe(true)
+describe('displaying tool details from the loaded history page', () => {
+  it('exposes the complete output immediately when expanded', () => {
     const complete = entry('result', 3)
     complete.tool!.result!.details = { output: 'complete output' }
-    resolve(complete)
-    await nextTick()
-    await nextTick()
-    expect(view.state.showLoading).toBe(false)
+    const view = mount(complete)
+    view.click()
+    expect(view.state.open).toBe(true)
+    expect(view.state.output).toBe('complete output')
+    view.click()
+    view.click()
     expect(view.state.output).toBe('complete output')
   })
 
-  it('loads the new immutable result entry when an expanded started invocation completes', async () => {
-    mocks.load.mockResolvedValueOnce(entry('started', 1, false)).mockResolvedValueOnce({ ...entry('finished', 5), tool: { ...entry('finished', 5).tool!, result: { outcome: 'succeeded', details: { output: 'final result' } } } })
+  it('keeps an expanded invocation open when its final result replaces live output', async () => {
     const view = mount(entry('started', 1, false))
     view.click()
+    expect(view.state.output).toBe('streaming output')
+    const complete = entry('finished', 5)
+    complete.tool!.result!.details = { output: 'final result' }
+    view.props.entry = complete
+    view.props.live.ended = true
     await nextTick()
-    await nextTick()
-    view.props.entry = entry('finished', 5)
-    await nextTick()
-    await nextTick()
-    await nextTick()
-    expect(mocks.load).toHaveBeenNthCalledWith(1, 'session', 'started')
-    expect(mocks.load).toHaveBeenNthCalledWith(2, 'session', 'finished')
     expect(view.state.output).toBe('final result')
-    expect(view.state.showLoading).toBe(false)
+    expect(view.state.open).toBe(true)
   })
 })

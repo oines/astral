@@ -104,6 +104,7 @@ func usage(out io.Writer) {
   astral migrate --data DIRECTORY [--status]
   astral migrate restore --data DIRECTORY (--backup SNAPSHOT | --latest)
   astral migrate recover --data DIRECTORY
+  astral maintenance vacuum --data DIRECTORY
   astral maintenance weixin-wire-ownership --data DIRECTORY [--purge-unowned]
   astral maintenance with-data-lock --data DIRECTORY --computers-dir DIRECTORY -- COMMAND [ARGS...]
   astral version [--json | --data-formats]

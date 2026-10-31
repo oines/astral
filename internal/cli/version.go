@@ -6,12 +6,18 @@ import (
 	"io"
 
 	core "github.com/oines/astral-core"
+	"github.com/oines/astral-core/store/sqlite"
 	"github.com/oines/astral/internal/persistence"
 )
 
 type dataFormatVersions struct {
 	Host int `json:"host"`
 	Core int `json:"core"`
+}
+
+type storageMigrationRange struct {
+	Baseline int64 `json:"baseline"`
+	Target   int64 `json:"target"`
 }
 
 func version(args []string, out io.Writer) error {
@@ -33,17 +39,21 @@ func version(args []string, out io.Writer) error {
 	switch mode {
 	case "--json":
 		metadata := struct {
-			Version            string             `json:"version"`
-			DataFormats        dataFormatVersions `json:"data_formats"`
-			MigrationStatus    string             `json:"migration_status"`
-			MigrationBaselines dataFormatVersions `json:"migration_baselines"`
-			MigrationTargets   dataFormatVersions `json:"migration_targets"`
+			Version            string                           `json:"version"`
+			DataFormats        dataFormatVersions               `json:"data_formats"`
+			MigrationStatus    string                           `json:"migration_status"`
+			MigrationBaselines dataFormatVersions               `json:"migration_baselines"`
+			MigrationTargets   dataFormatVersions               `json:"migration_targets"`
+			CoreSchema         int64                            `json:"core_schema"`
+			StorageMigrations  map[string]storageMigrationRange `json:"storage_migrations"`
 		}{Version: Version}
 		metadata.DataFormats.Host = persistence.FormatVersion
 		metadata.DataFormats.Core = core.FormatVersion
 		metadata.MigrationStatus = "goose"
 		metadata.MigrationBaselines = dataFormatVersions{Host: int(persistence.BaselineVersion), Core: 11}
 		metadata.MigrationTargets = metadata.DataFormats
+		metadata.CoreSchema = sqlite.SchemaVersion
+		metadata.StorageMigrations = map[string]storageMigrationRange{"core_sqlite": {Baseline: 11, Target: sqlite.SchemaVersion}}
 		return json.NewEncoder(out).Encode(metadata)
 	case "--data-formats":
 		_, err := fmt.Fprintf(out, "%d %d\n", persistence.FormatVersion, core.FormatVersion)

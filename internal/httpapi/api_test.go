@@ -285,6 +285,9 @@ func TestEventSubscriptionPrecedesSnapshotAndReconcilesCommit(t *testing.T) {
 			t.Fatal("mixed server event epoch")
 		}
 		if event.Entry != nil {
+			if event.Core == nil || event.Core.Type != sessions.EventCommitted || entries[event.Entry.ID] {
+				t.Fatal("durable entry repeated outside its committed event")
+			}
 			entries[event.Entry.ID] = true
 			if event.Entry.Message != nil && event.Entry.Message.Role == "assistant" {
 				assistantID = event.Entry.ID

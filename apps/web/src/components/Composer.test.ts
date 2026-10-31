@@ -19,7 +19,8 @@ vi.mock('../lib/api', () => ({
 }))
 vi.mock('@astral/sdk', async (importOriginal) => ({ ...await importOriginal<object>(), continueSession: fixture.continueSession, submitInput: fixture.submitInput }))
 vi.mock('./ModelSelection.vue', () => ({ default: { render: () => null } }))
-vi.mock('@astral/ui', () => ({
+vi.mock('@astral/ui', async () => ({
+  ...await import('../../../../packages/ui/src/useDelayedPending'),
   Button: defineComponent({ props: { disabled: Boolean }, setup(props, { attrs, slots }) {
     if (attrs.class === 'composer-send') {
       const parent = getCurrentInstance()!.parent! as unknown as { setupState: { send: () => Promise<void> } }

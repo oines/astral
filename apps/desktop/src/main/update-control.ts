@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { DesktopUpdateState } from '../shared/updates'
 import type { DesktopUpdates } from './updates'
+import { DesktopUpdateCache, UpdateCacheConflict } from './update-cache'
 
 interface Operation {
   id: string
@@ -20,10 +21,11 @@ export class DesktopUpdateControl {
   private active?: Promise<void>
   private writes = Promise.resolve()
   private recoveryError?: string
+  private cacheWork = Promise.resolve()
   onState?: (state: DesktopUpdateState) => void
   onInstallError?: (error: Error) => void
 
-  constructor(private readonly updates: DesktopUpdates, private readonly journal: string) {
+  constructor(private readonly updates: DesktopUpdates, private readonly journal: string, private readonly cache?: DesktopUpdateCache) {
     updates.onState = state => {
       if (this.operation?.state === 'running' && state.version && ['downloading', 'installing'].includes(state.phase)) this.operation.target = state.version
       this.onState?.(this.state())
@@ -67,6 +69,15 @@ export class DesktopUpdateControl {
     return { ...state, ...details }
   }
 
+  cacheRecoveryBlocked(): boolean { return !!this.recoveryError }
+  async cacheInventory() { return this.cache ? this.cache.inventory() : [] }
+  cleanCache(operation: string, token: string): Promise<number> {
+    if (!this.cache || this.active || this.recoveryError) return Promise.reject(new UpdateCacheConflict('Desktop update cache cleanup is unavailable during an update.'))
+    const work = this.cacheWork.then(() => this.cache!.clean(operation, token))
+    this.cacheWork = work.then(() => {}, () => {})
+    return work
+  }
+
   async check(automatic = false) {
     if (automatic && this.operation?.state === 'failed') return this.state()
     await this.updates.check(automatic)
@@ -97,8 +108,12 @@ export class DesktopUpdateControl {
   private begin() {
     this.recoveryError = undefined
     this.operation = { id: randomUUID(), from: this.updates.state().currentVersion, state: 'running' }
+    const cacheWork = this.cacheWork
     this.active = Promise.resolve().then(async () => {
       try {
+        // Cache cleanup owns its selected files until its durable outcome is
+        // written. The updater cannot start a download halfway through unlink.
+        await cacheWork
         await this.save()
         await this.updates.update()
         if (this.updates.state().phase === 'current') {
@@ -144,7 +159,7 @@ export function privateUpdateState(state: DesktopUpdateState) {
 }
 
 /** Local managed-stdin credentials are never exposed to Renderer or the browser. */
-export async function startDesktopUpdateBridge(control: Pick<DesktopUpdateControl, 'state' | 'check' | 'apply'>): Promise<{ url: string; token: string; close: () => Promise<void> }> {
+export async function startDesktopUpdateBridge(control: Pick<DesktopUpdateControl, 'state' | 'check' | 'apply'> & Partial<Pick<DesktopUpdateControl, 'cacheInventory' | 'cleanCache'>>): Promise<{ url: string; token: string; close: () => Promise<void> }> {
   const token = randomBytes(32).toString('hex')
   let expectedHost = ''
   const server: Server = createServer(async (request, response) => {
@@ -155,15 +170,38 @@ export async function startDesktopUpdateBridge(control: Pick<DesktopUpdateContro
     const expected = Buffer.from(`Bearer ${token}`)
     if (!['127.0.0.1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress || '') || request.headers.host !== expectedHost ||
       request.headers.origin !== undefined || authorization.length !== expected.length || !timingSafeEqual(authorization, expected)) return reject(403)
-    if (request.headers['transfer-encoding'] !== undefined || Number(request.headers['content-length'] || 0) !== 0) return reject(400)
+    const cleaning = request.method === 'POST' && request.url === '/storage/cache/clean'
+    const length = Number(request.headers['content-length'] || 0)
+    if (request.headers['transfer-encoding'] !== undefined || !Number.isSafeInteger(length) || length < 0 || length > 4096 || !cleaning && length !== 0) return reject(400)
     try {
+      if (request.method === 'GET' && request.url === '/storage/cache' && control.cacheInventory) {
+        response.end(JSON.stringify({ items: await control.cacheInventory() }))
+        return
+      }
+      if (cleaning && control.cleanCache) {
+        const chunks: Buffer[] = []
+        let size = 0
+        for await (const chunk of request) {
+          size += chunk.length
+          if (size > 4096) return reject(400)
+          chunks.push(Buffer.from(chunk))
+        }
+        let input: { operation_id?: unknown; token?: unknown }
+        try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { return reject(400) }
+        if (!input || Object.keys(input).some(key => key !== 'operation_id' && key !== 'token') || typeof input.operation_id !== 'string' || typeof input.token !== 'string') return reject(400)
+        response.end(JSON.stringify({ removed_bytes: await control.cleanCache(input.operation_id, input.token) }))
+        return
+      }
       let state: DesktopUpdateState
       if (request.method === 'GET' && request.url === '/state') state = control.state()
       else if (request.method === 'POST' && request.url === '/check') state = await control.check()
       else if (request.method === 'POST' && request.url === '/apply') state = control.apply()
       else return reject(404)
       response.end(JSON.stringify(privateUpdateState(state)))
-    } catch { response.writeHead(503); response.end('{"error":"Desktop update control could not complete the request."}') }
+    } catch (error) {
+      response.writeHead(error instanceof UpdateCacheConflict ? 409 : 503)
+      response.end('{"error":"Desktop update control could not complete the request."}')
+    }
   })
   server.headersTimeout = 5000
   server.requestTimeout = 10_000

@@ -11,8 +11,17 @@ export interface DesktopUpdateConnection { url: string; token: string }
 export function managedHandshake(credential: string, updates?: DesktopUpdateConnection): string {
   return `${JSON.stringify({ desktop_token: credential, ...(updates ? { desktop_update_url: updates.url, desktop_update_token: updates.token } : {}) })}\n`
 }
-export function maintenanceDeadline(startedAt: number, childPID: number | undefined, marker: StartupMaintenance | undefined): number | undefined {
-  return childPID !== undefined && marker?.pid === childPID && marker.phase === 'preparing-data' ? startedAt + 20 * 60_000 : undefined
+export class StartupWait {
+  private deadline: number
+  private maintenance = false
+  constructor(startedAt: number) { this.deadline = startedAt + 30_000 }
+  update(now: number, childPID: number | undefined, marker: StartupMaintenance | undefined) {
+    const maintaining = childPID !== undefined && marker?.pid === childPID && marker.phase === 'preparing-data'
+    if (this.maintenance && marker && marker.pid !== childPID) throw new Error('Local service maintenance process changed.')
+    if (this.maintenance && !maintaining) this.deadline = now + 30_000
+    this.maintenance = maintaining
+    return { maintaining, expired: !maintaining && now >= this.deadline }
+  }
 }
 export class LocalService {
   child?: ChildProcess
@@ -22,6 +31,7 @@ export class LocalService {
   private temporary = ''
   private closed?: Promise<void>
   onUnexpectedExit?: (detail: string) => void
+  onMaintenance?: (active: boolean) => void
 
   async start(binary: string, root: string, distribution: string, networkArguments: string[] = [], updates?: DesktopUpdateConnection): Promise<string> {
     await mkdir(root, { recursive: true, mode: 0o700 })
@@ -46,16 +56,16 @@ export class LocalService {
       if (this.url && !this.stopping) this.onUnexpectedExit?.(failure.message)
     })
     try {
-      const startedAt = Date.now()
-      let deadline = startedAt + 30_000
-      while (Date.now() < deadline) {
+      const waiting = new StartupWait(Date.now())
+      while (true) {
         if (failure) throw failure
+        if (this.stopping) throw new Error('Local service startup cancelled.')
         const maintenance = await readFile(join(root, 'server', 'startup-maintenance.json'), 'utf8').then(raw => JSON.parse(raw) as StartupMaintenance).catch(() => undefined)
-        // Only a marker belonging to this exact child can extend the startup
-        // budget. Old markers and ordinary startup retain the normal timeout.
-        deadline = maintenanceDeadline(startedAt, this.child.pid, maintenance) ?? deadline
+        const status = waiting.update(Date.now(), this.child.pid, maintenance)
+        this.onMaintenance?.(status.maintaining)
+        if (status.expired) throw new Error(`The local service did not become ready.\n${this.output}`)
         const ready = await readFile(readyFile, 'utf8').then(raw => JSON.parse(raw) as Ready).catch(() => undefined)
-        if (ready) {
+        if (ready && !status.maintaining) {
           if (ready.pid !== this.child.pid) throw new Error('Invalid local service startup response.')
           const url = new URL(ready.url)
           const loopback = ['[::1]', 'localhost'].includes(url.hostname) || (isIP(url.hostname) === 4 && url.hostname.startsWith('127.'))
@@ -65,10 +75,11 @@ export class LocalService {
         }
         await delay(100)
       }
-      throw new Error(`The local service did not become ready.\n${this.output}`)
     } catch (error) {
       await this.stop()
       throw error
+    } finally {
+      this.onMaintenance?.(false)
     }
   }
   async stop() {

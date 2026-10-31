@@ -107,6 +107,8 @@ async function publishFixture() {
     data_formats: metadata.data_formats,
     host_schema: metadata.data_formats.host,
     core_format: metadata.data_formats.core,
+    core_schema: metadata.core_schema,
+    storage_migrations: metadata.storage_migrations,
     migration_status: metadata.migration_status,
     migration_baselines: metadata.migration_baselines,
     migration_targets: metadata.migration_targets,
@@ -322,6 +324,16 @@ async function cleanup() {
   await rm(temporary, { recursive: true, force: true })
 }
 
+// Exercise the Host migration/recovery path without relabelling a current Core
+// database as its older physical schema. The snapshot still includes both stores.
+export async function prepareHostMigrationFixture(data) {
+  await command('python3', ['-c', `import pathlib,sqlite3,sys
+with sqlite3.connect(pathlib.Path(sys.argv[1])/'astral.db') as db:
+    db.execute('DROP TABLE goose_db_version')
+    db.execute('PRAGMA user_version=3')
+`, data])
+}
+
 async function main() {
   if (process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true' || !process.env.RUNNER_TEMP) throw new Error('Headless update acceptance requires a disposable GitHub Actions user; never run it on a developer account.')
   if (process.platform !== 'linux') throw new Error('Headless service verification requires native Linux; do not run it on another platform.')
@@ -378,31 +390,25 @@ async function main() {
 
     // Leave the old service stopped while preparing a genuine interrupted
     // migration: starting it here would consume the journal before installation.
-    // Recreate the published Host-3/Core-11 baseline without ledgers. The
-    // current invariant already holds, so Host step 4 is an identity-preserving
-    // no-op here; the migration CLI still makes a verified full snapshot.
+    // Recreate the published Host-3 baseline without its ledger. Current Host
+    // invariants already hold, so replay preserves them. Keep the current Core
+    // physical schema and ledger together; the CLI still snapshots both stores.
     await command('systemctl', ['--user', 'stop', service], { timeout: 45_000 })
     const data = path.join(installRoot, 'data/server')
     const resultFile = path.join(data, 'last-upgrade.json')
     const markerFile = path.join(data, 'journal-recovery-marker.txt')
     const marker = 'Keep data written after the previous committed upgrade.\n'
-    const adoptBaseline = async () => {
-      await command('python3', ['-c', `import pathlib,sqlite3,sys
-for name in ('astral.db','core.db'):
-    with sqlite3.connect(pathlib.Path(sys.argv[1])/name) as db:
-        db.execute('DROP TABLE goose_db_version')
-        if name == 'astral.db':
-            db.execute('PRAGMA user_version=3')
-`, data])
+    const adoptHostBaseline = async () => {
+      await prepareHostMigrationFixture(data)
       await command(nativeBinary, ['migrate', '--data', data], { timeout: 120_000 })
       const record = JSON.parse(await readFile(resultFile, 'utf8'))
       assert.equal(record.schema, 1, 'Migration CLI did not record a committed snapshot')
       assert.ok(path.isAbsolute(record.backup), 'Migration CLI did not record an absolute snapshot path')
       return record
     }
-    const previousUpgrade = await adoptBaseline()
+    const previousUpgrade = await adoptHostBaseline()
     await writeFile(markerFile, marker, { mode: 0o600 })
-    const interruptedUpgrade = await adoptBaseline()
+    const interruptedUpgrade = await adoptHostBaseline()
     assert.notEqual(interruptedUpgrade.backup, previousUpgrade.backup, 'Migration fixture reused a snapshot')
     assert.equal(await exists(path.join(previousUpgrade.backup, 'files/journal-recovery-marker.txt')), false, 'Earlier snapshot unexpectedly contains the later data marker')
     assert.equal(await readFile(path.join(interruptedUpgrade.backup, 'files/journal-recovery-marker.txt'), 'utf8'), marker, 'Interrupted snapshot omitted the later data marker')

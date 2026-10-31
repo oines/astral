@@ -4,11 +4,36 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/recall"
 )
+
+func TestPermanentSessionDeletionCancelsWhileWaitingForBotDeletion(t *testing.T) {
+	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("unused") })
+	record := archiveForDeletion(t, f, f.session.ID)
+	f.service.deleteMu.Lock()
+	defer f.service.deleteMu.Unlock()
+	ctx, cancel := context.WithCancel(f.ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- f.service.DeleteSession(ctx, record.ID, record.Revision) }()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("deletion ignored worker cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session cleanup cannot leave the Bot deletion lock wait")
+	}
+	var retained domain.Session
+	if err := f.store.Get(f.ctx, "sessions", record.ID, &retained); err != nil || retained.Deletion != nil {
+		t.Fatal("cancelled waiter changed the Session", err)
+	}
+}
 
 type deleteFaultStore struct {
 	core.Store
@@ -56,6 +81,9 @@ func TestPermanentSessionDeletionPreservesCopyAndInvalidatesRecall(t *testing.T)
 	record := archiveForDeletion(t, f, f.session.ID)
 	if err = f.service.DeleteSession(f.ctx, record.ID, record.Revision); err != nil {
 		t.Fatal(err)
+	}
+	if token, err := f.store.StorageReclaimDirty(f.ctx); err != nil || token == "" {
+		t.Fatal("deletion committed without a durable space reclamation trigger", err)
 	}
 	if err = f.service.DeleteSession(f.ctx, record.ID, record.Revision); err != nil {
 		t.Fatal("retry:", err)

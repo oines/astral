@@ -28,6 +28,7 @@ import (
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/securetransport"
 	"github.com/oines/astral/internal/serverupdate"
+	"github.com/oines/astral/internal/storage"
 )
 
 // The release build copies the shared Vite output into web/. A source checkout
@@ -72,6 +73,7 @@ type Server struct {
 	Harness          *harness.Service
 	Channels         *channels.Service
 	Owner            *httpapi.API
+	Storage          *storage.Service
 	Listener         net.Listener
 	HTTP             *http.Server
 	URL              string
@@ -129,8 +131,8 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	s := &Server{Config: config, provisioning: map[string]bool{}, closeDone: make(chan struct{})}
 	defer func() {
 		if err != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			// Startup recovery shares the caller's cancellation, not a fixed
+			// deadline that repeatedly interrupts restoration of a large snapshot.
 			_ = s.Close(ctx)
 		}
 	}()
@@ -142,7 +144,6 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	if err = WriteJSON(maintenanceFile, map[string]any{"pid": os.Getpid(), "phase": "preparing-data"}); err != nil {
 		return nil, err
 	}
-	defer os.Remove(maintenanceFile)
 	s.upgrade, err = datamigrate.Prepare(ctx, config.DataDirectory, config.Version, ProtectPrivate)
 	if err != nil {
 		return nil, err
@@ -243,7 +244,31 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	} else {
 		s.updates = serverupdate.Unmanaged{Version: config.Version}
 	}
-	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, Auth: s.Auth, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
+	storageConfig := storage.Config{Directory: config.DataDirectory, Store: s.Store, Core: s.CoreStore, Busy: s.Harness.StorageBusy,
+		Reclaimers: []func(context.Context) error{s.Store.Reclaim, s.Harness.Recall.Reclaim},
+		Updating: func(ctx context.Context) bool {
+			state, err := s.updates.State(ctx)
+			return err != nil || state.OperationState == "running" || state.Phase == "installing" || state.Phase == "downloading"
+		},
+	}
+	if cleanup, ok := s.updates.(serverupdate.CacheCleanup); ok {
+		storageConfig.ExternalCleanup = func(ctx context.Context) ([]storage.CleanupItem, error) {
+			items, err := cleanup.CacheInventory(ctx)
+			if err != nil {
+				return nil, err
+			}
+			result := make([]storage.CleanupItem, 0, len(items))
+			for _, item := range items {
+				result = append(result, storage.CleanupItem{Token: item.Token, Kind: item.Kind, Name: item.Name, Bytes: item.Bytes, Protected: item.Protected, Reason: item.Reason})
+			}
+			return result, nil
+		}
+		storageConfig.CleanExternal = cleanup.CleanCache
+	}
+	s.Storage = storage.New(s.ctx, storageConfig)
+	s.Harness.StorageChanged = s.Storage.RequestReclaim
+	s.Channels.StorageChanged = s.Storage.RequestReclaim
+	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, Auth: s.Auth, Storage: s.Storage, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
 		HostInfo: s.HostInfo, UseLocal: s.UseLocal, CreateContainer: s.CreateContainer,
 		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings, ValidateAccessAddresses: s.ValidateAccessAddresses, Updates: s.updates})
 	mux := http.NewServeMux()
@@ -270,6 +295,9 @@ func (s *Server) Start() error {
 		return err
 	}
 	s.upgrade = nil
+	if err := os.Remove(filepath.Join(s.Config.DataDirectory, "startup-maintenance.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	if err := s.startLocalControl(); err != nil {
 		return err
 	}
@@ -325,6 +353,9 @@ func (s *Server) Close(ctx context.Context) error {
 		s.cancel()
 	}
 	var all []error
+	if s.Storage != nil {
+		all = append(all, s.Storage.Close(ctx))
+	}
 	if s.control != nil {
 		all = append(all, s.control.Close(ctx))
 	}
@@ -369,9 +400,7 @@ func (s *Server) Close(ctx context.Context) error {
 	}
 	if s.upgrade != nil {
 		if errors.Join(all...) == nil {
-			recovery, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			all = append(all, s.upgrade.Rollback(recovery))
-			cancel()
+			all = append(all, s.upgrade.Rollback(ctx))
 		} else {
 			all = append(all, errors.New("shutdown incomplete; migration journal retained for recovery after the process exits"))
 		}
@@ -381,6 +410,9 @@ func (s *Server) Close(ctx context.Context) error {
 		all = append(all, s.localLock.Close())
 	}
 	if s.lock != nil {
+		if err := os.Remove(filepath.Join(s.Config.DataDirectory, "startup-maintenance.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+			all = append(all, err)
+		}
 		_ = os.Remove(filepath.Join(s.Config.DataDirectory, "running.json"))
 		all = append(all, s.lock.Close())
 	}
