@@ -66,12 +66,18 @@ async function run(page, response, status = 200) {
 }
 
 test('both languages retain eight usable versioned downloads without JavaScript', async () => {
+  let fallbackVersion
   for (const language of ['docs', 'zh-cn/docs']) {
     const page = await readFile(new URL(`../src/content/docs/${language}/start/get-astral.md`, import.meta.url), 'utf8')
+    const version = /data-fallback-version="([^"]+)"/.exec(page)?.[1]
+    assert.match(version || '', /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/)
+    fallbackVersion ??= version
+    assert.equal(version, fallbackVersion, 'both languages must identify the same published fallback')
     const links = [...page.matchAll(/data-astral-download="([^"]+)" href="([^"]+)"/g)]
     assert.equal(links.length, 8)
-    for (const target of targets) assert.deepEqual(links.filter(match => match[1] === target[0]).map(match => match[2]), [urlFor('0.1.8', target)])
-    assert.match(page, /data-fallback-version="0\.1\.8"/)
+    for (const target of targets) assert.deepEqual(links.filter(match => match[1] === target[0]).map(match => match[2]), [urlFor(version, target)])
+    assert.deepEqual([...page.matchAll(/data-astral-release-notes href="([^"]+)"/g)].map(match => match[1]), [`${repository}/releases/tag/v${version}`])
+    assert.deepEqual([...page.matchAll(/\]\((https:\/\/github\.com\/oines\/astral\/releases\/download\/[^)]+\/mac-signing-report\.json)\)/g)].map(match => match[1]), [`${repository}/releases/download/v${version}/mac-signing-report.json`])
     assert.match(page, /schema-3-core-11/)
     assert.match(page, /Host 3 \/ Core 11/)
     assert.match(page, /releases\/latest\/download\/install-server\.sh/)

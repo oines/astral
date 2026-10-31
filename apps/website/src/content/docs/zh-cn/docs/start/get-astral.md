@@ -5,20 +5,20 @@ description: "下载适用于 macOS、Windows 或 Linux 的 Astral 桌面版，�
 
 下载 Astral 桌面版，或将 Astral Server 安装到 Linux VPS。
 
-<p><span data-astral-release-status data-fallback-version="0.1.8" data-latest-prefix="最新发行版：" aria-live="polite">可用版本：v0.1.8</span> · <a data-astral-release-notes href="https://github.com/oines/astral/releases/tag/v0.1.8">发行说明、全部文件与校验和</a> · <a href="https://github.com/oines/astral/releases/latest">在 GitHub 查看最新版</a></p>
+<p><span data-astral-release-status data-fallback-version="0.1.9" data-latest-prefix="最新发行版：" aria-live="polite">可用版本：v0.1.9</span> · <a data-astral-release-notes href="https://github.com/oines/astral/releases/tag/v0.1.9">发行说明、全部文件与校验和</a> · <a href="https://github.com/oines/astral/releases/latest">在 GitHub 查看最新版</a></p>
 
 ## 下载桌面版
 
 | 平台 | 架构 | 下载 |
 | --- | --- | --- |
-| macOS | Apple 芯片 | <a data-astral-download="mac-arm64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.8/Astral-0.1.8-mac-arm64.dmg">DMG</a> |
-| macOS | Intel | <a data-astral-download="mac-x64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.8/Astral-0.1.8-mac-x64.dmg">DMG</a> |
-| Windows | x64 | <a data-astral-download="win-x64-exe" href="https://github.com/oines/astral/releases/download/v0.1.8/Astral-0.1.8-win-x64.exe">EXE 安装包</a> |
-| Windows | ARM64 | <a data-astral-download="win-arm64-exe" href="https://github.com/oines/astral/releases/download/v0.1.8/Astral-0.1.8-win-arm64.exe">EXE 安装包</a> |
-| Linux | x86_64 | <a data-astral-download="linux-x64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.8/Astral-0.1.8-linux-x86_64.AppImage">AppImage</a> · <a data-astral-download="linux-x64-deb" href="https://github.com/oines/astral/releases/download/v0.1.8/Astral-0.1.8-linux-amd64.deb">DEB</a> |
-| Linux | ARM64 | <a data-astral-download="linux-arm64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.8/Astral-0.1.8-linux-arm64.AppImage">AppImage</a> · <a data-astral-download="linux-arm64-deb" href="https://github.com/oines/astral/releases/download/v0.1.8/Astral-0.1.8-linux-arm64.deb">DEB</a> |
+| macOS | Apple 芯片 | <a data-astral-download="mac-arm64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-mac-arm64.dmg">DMG</a> |
+| macOS | Intel | <a data-astral-download="mac-x64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-mac-x64.dmg">DMG</a> |
+| Windows | x64 | <a data-astral-download="win-x64-exe" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-win-x64.exe">EXE 安装包</a> |
+| Windows | ARM64 | <a data-astral-download="win-arm64-exe" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-win-arm64.exe">EXE 安装包</a> |
+| Linux | x86_64 | <a data-astral-download="linux-x64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-linux-x86_64.AppImage">AppImage</a> · <a data-astral-download="linux-x64-deb" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-linux-amd64.deb">DEB</a> |
+| Linux | ARM64 | <a data-astral-download="linux-arm64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-linux-arm64.AppImage">AppImage</a> · <a data-astral-download="linux-arm64-deb" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-linux-arm64.deb">DEB</a> |
 
-- **macOS**：打开 DMG，将 Astral 拖入“应用程序”。Astral 0.1.8 的 Mac 安装包已使用 Developer ID 签名并通过 Apple 公证，详见[签名报告](https://github.com/oines/astral/releases/download/v0.1.8/mac-signing-report.json)。
+- **macOS**：打开 DMG，将 Astral 拖入“应用程序”。Astral 0.1.9 的 Mac 安装包已使用 Developer ID 签名并通过 Apple 公证，详见[签名报告](https://github.com/oines/astral/releases/download/v0.1.9/mac-signing-report.json)。
 - **Windows**：运行 EXE，为当前用户安装。Windows 安装包尚未签名，可能显示 SmartScreen 提示。
 - **Linux**：为 AppImage 添加执行权限后打开，或通过包管理器安装 DEB。Linux 安装包尚未签名。AppImage 支持应用内更新；DEB 需要手动安装新版。
 
