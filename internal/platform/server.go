@@ -28,6 +28,7 @@ import (
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/securetransport"
 	"github.com/oines/astral/internal/serverupdate"
+	"github.com/oines/astral/internal/storage"
 )
 
 // The release build copies the shared Vite output into web/. A source checkout
@@ -72,6 +73,7 @@ type Server struct {
 	Harness          *harness.Service
 	Channels         *channels.Service
 	Owner            *httpapi.API
+	Storage          *storage.Service
 	Listener         net.Listener
 	HTTP             *http.Server
 	URL              string
@@ -242,7 +244,31 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	} else {
 		s.updates = serverupdate.Unmanaged{Version: config.Version}
 	}
-	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, Auth: s.Auth, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
+	storageConfig := storage.Config{Directory: config.DataDirectory, Store: s.Store, Core: s.CoreStore, Busy: s.Harness.StorageBusy,
+		Reclaimers: []func(context.Context) error{s.Store.Reclaim, s.Harness.Recall.Reclaim},
+		Updating: func(ctx context.Context) bool {
+			state, err := s.updates.State(ctx)
+			return err != nil || state.OperationState == "running" || state.Phase == "installing" || state.Phase == "downloading"
+		},
+	}
+	if cleanup, ok := s.updates.(serverupdate.CacheCleanup); ok {
+		storageConfig.ExternalCleanup = func(ctx context.Context) ([]storage.CleanupItem, error) {
+			items, err := cleanup.CacheInventory(ctx)
+			if err != nil {
+				return nil, err
+			}
+			result := make([]storage.CleanupItem, 0, len(items))
+			for _, item := range items {
+				result = append(result, storage.CleanupItem{Token: item.Token, Kind: item.Kind, Name: item.Name, Bytes: item.Bytes, Protected: item.Protected, Reason: item.Reason})
+			}
+			return result, nil
+		}
+		storageConfig.CleanExternal = cleanup.CleanCache
+	}
+	s.Storage = storage.New(s.ctx, storageConfig)
+	s.Harness.StorageChanged = s.Storage.RequestReclaim
+	s.Channels.StorageChanged = s.Storage.RequestReclaim
+	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, Auth: s.Auth, Storage: s.Storage, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
 		HostInfo: s.HostInfo, UseLocal: s.UseLocal, CreateContainer: s.CreateContainer,
 		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings, ValidateAccessAddresses: s.ValidateAccessAddresses, Updates: s.updates})
 	mux := http.NewServeMux()
@@ -327,6 +353,9 @@ func (s *Server) Close(ctx context.Context) error {
 		s.cancel()
 	}
 	var all []error
+	if s.Storage != nil {
+		all = append(all, s.Storage.Close(ctx))
+	}
 	if s.control != nil {
 		all = append(all, s.control.Close(ctx))
 	}

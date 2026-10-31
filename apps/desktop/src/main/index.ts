@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { access } from 'node:fs/promises'
 import electronUpdater from 'electron-updater'
+import { getAppCacheDir } from 'electron-updater/out/AppAdapter.js'
 import { LocalService } from './service'
 import { startupStatus } from './startup-status'
 import { desktopRequestHeaders, externalURL, trustedSender } from './policy'
@@ -13,6 +14,7 @@ import { networkArguments } from './network-arguments'
 import { DesktopUpdates, updateChannel, updateFeed } from './updates'
 import { DesktopShutdown } from './shutdown'
 import { DesktopUpdateControl, startDesktopUpdateBridge } from './update-control'
+import { DesktopUpdateCache } from './update-cache'
 import { nativeWindowAppearance, titleBarAppearance } from './window-appearance'
 import type { DesktopUpdateState } from '../shared/updates'
 
@@ -109,7 +111,14 @@ async function configureUpdates() {
     // Release only after confirmed Server exit so the new app can take the lock.
     app.releaseSingleInstanceLock()
   }, unavailable)
-  updateControl = new DesktopUpdateControl(updates, join(app.getPath('userData'), 'update-operation.json'))
+  const cache = app.isPackaged ? new DesktopUpdateCache({
+    // electron-updater's exported adapter supplies the actual platform cache
+    // base. Its bundled config and pending metadata prove the selected files.
+    directory: join(getAppCacheDir(), 'astral-updater'), configuration: resourcePath('app-update.yml'),
+    journalDirectory: join(app.getPath('userData'), 'update-cache-cleanup'), platform: process.platform, architecture: process.arch,
+    state: () => updateControl!.state(), recoveryBlocked: () => updateControl!.cacheRecoveryBlocked(),
+  }) : undefined
+  updateControl = new DesktopUpdateControl(updates, join(app.getPath('userData'), 'update-operation.json'), cache)
   await updateControl.initialize()
   updateBridge = await startDesktopUpdateBridge(updateControl)
   updateControl.onState = state => {

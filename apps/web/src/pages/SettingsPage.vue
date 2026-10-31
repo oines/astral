@@ -3,16 +3,14 @@ import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from '
 import { usePreferredReducedMotion } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useQuery } from '@pinia/colada'
-import { storageInfoQuery } from '@astral/sdk/colada'
-import { deleteSession, getPreferences } from '@astral/sdk'
-import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, Bot, HardDrive, Shield, Terminal, AstralLogo, Copy, Search } from '@astral/icons'
-import { Button, ConfirmPopover, Select, Switch, SettingsSection, SettingsRow } from '@astral/ui'
+import { getPreferences } from '@astral/sdk'
+import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, Bot, HardDrive, Shield, Terminal, AstralLogo, Copy } from '@astral/icons'
+import { Button, Select, Switch, SettingsSection, SettingsRow } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { useAction } from '../composables/useAction'
 import { useClipboard } from '../composables/useClipboard'
 import { useSettingsSave } from '../composables/useSettingsSave'
-import { bytes, request } from '../lib/api'
+import { request } from '../lib/api'
 import ModelsSettings from '../components/settings/ModelsSettings.vue'
 import ComputersSettings from '../components/settings/ComputersSettings.vue'
 import AgentsSettings from '../components/settings/AgentsSettings.vue'
@@ -23,6 +21,7 @@ import NetworkSettings from '../components/settings/NetworkSettings.vue'
 import AuthSettings from '../components/settings/AuthSettings.vue'
 import DesktopUpdates from '../components/settings/DesktopUpdates.vue'
 import TimezonePicker from '../components/settings/TimezonePicker.vue'
+import StorageSettings from '../components/settings/StorageSettings.vue'
 const app = useAppStore()
 const route = useRoute()
 const { t } = useI18n()
@@ -31,7 +30,7 @@ const { copy } = useClipboard()
 const saves = useSettingsSave()
 const section = ref(typeof route.params.section === 'string' ? route.params.section : 'general')
 watch(() => route.path, path => { if (path.startsWith('/settings')) section.value = typeof route.params.section === 'string' ? route.params.section : 'general' })
-const panes = { models: ModelsSettings, computers: ComputersSettings, agents: AgentsSettings, search: SearchSettings }
+const panes = { models: ModelsSettings, computers: ComputersSettings, agents: AgentsSettings, search: SearchSettings, storage: StorageSettings }
 const activeComponent = computed(() => panes[section.value as keyof typeof panes])
 const currentBot = computed(() => section.value === 'agents' ? app.agents.find(a => a.id === route.query.agent) : undefined)
 const scroll = ref<HTMLElement>()
@@ -54,25 +53,12 @@ watch(() => route.fullPath, async (next, previous) => {
   }
 })
 async function copyDiagnostics() { if (await copy(JSON.stringify({ version: app.data?.version, host: app.data?.host, computers: app.computers.map(c => ({ name: c.name, online: c.online, error: c.last_error })) }, null, 2))) action.success.value = t('copied') }
-const storage = useQuery({ ...storageInfoQuery(), enabled: () => section.value === 'storage' })
 const links = [
   ['general', 'general', Settings2], ['appearance', 'appearance', Sun], ['models', 'models', SlidersHorizontal], ['search', 'webSearch', Globe], ['computers', 'computers', Monitor], ['agents', 'agents', Bot], ['storage', 'storage', HardDrive], ['security', 'security', Shield], ['advanced', 'advanced', Terminal],
 ] as const
 watch(section, () => { action.success.value = ''; action.error.value = '' })
 const title = computed(() => links.find(l => l[0] === section.value)?.[1] || 'general')
 const desktop = Boolean(window.astralDesktop)
-const sessionSearch = ref('')
-const deletingSession = ref('')
-const sessions = computed(() => app.sessions.filter(s => s.archived && s.title.toLocaleLowerCase().includes(sessionSearch.value.toLocaleLowerCase())))
-async function removeSession(session: (typeof app.sessions)[number]) {
-  await action.run(async () => {
-    await request(deleteSession({ path: { id: session.id }, query: { revision: session.revision } }))
-    app.forgetSession(session.id)
-    deletingSession.value = ''
-    await Promise.allSettled([app.refresh(), storage.refetch()])
-  })
-}
-async function copyText(value: string) { if (await copy(value)) action.success.value = t('copied') }
 async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
   const field = Object.keys(patch)[0] || 'preferences'
   await saves.run('preferences', field, {
@@ -131,7 +117,7 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
         class="settings-content"
       >
         <div
-          v-if="section !== 'models' && !currentBot"
+          v-if="section !== 'models' && section !== 'storage' && !currentBot"
           class="settings-title"
         >
           <h1>{{ t(title) }}</h1><span
@@ -243,100 +229,6 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
             </SettingsRow>
             <SettingsFeedback :scope="['preferences/theme', 'preferences/language']" />
           </SettingsSection>
-        </div>
-        <div
-          v-else-if="section === 'storage'"
-          class="settings-sections"
-        >
-          <SettingsSection :title="t('archivedConversations')">
-            <div class="settings-list-search search-input">
-              <Search /><input
-                v-model="sessionSearch"
-                :placeholder="t('search')"
-                :aria-label="t('search')"
-              >
-            </div>
-            <div
-              v-for="s in sessions"
-              :key="s.id"
-              class="resource-row"
-            >
-              <RouterLink :to="`/sessions/${s.id}`">
-                <strong>{{ s.title }}</strong><small>{{ app.agents.find(a => a.id === s.agent_id)?.name }}</small>
-              </RouterLink>
-              <div class="row">
-                <Button
-                  variant="ghost"
-                  size="small"
-                  :disabled="action.busy.value"
-                  @click="action.run(() => app.presentation(s.id, { archived: false }))"
-                >
-                  {{ t('restoreConversation') }}
-                </Button>
-                <ConfirmPopover
-                  :open="deletingSession === s.id"
-                  :title="t('deleteConversationTitle', { name: s.title })"
-                  :description="t(s.binding_id ? 'deleteBoundConversationHint' : 'deleteConversationHint')"
-                  :confirm-label="t('permanentlyDelete')"
-                  :cancel-label="t('cancel')"
-                  :busy="action.busy.value"
-                  :disabled="!!s.binding_id"
-                  :error="action.error.value"
-                  @update:open="open => { deletingSession = open ? s.id : ''; action.error.value = '' }"
-                  @confirm="removeSession(s)"
-                >
-                  <template #trigger>
-                    <Button
-                      variant="ghost"
-                      size="small"
-                      class="danger-text"
-                      :disabled="action.busy.value"
-                    >
-                      {{ t('permanentlyDelete') }}
-                    </Button>
-                  </template>
-                </ConfirmPopover>
-              </div>
-            </div>
-            <p
-              v-if="!sessions.length"
-              class="empty"
-            >
-              {{ t(sessionSearch ? 'noResults' : 'noArchived') }}
-            </p>
-          </SettingsSection>
-          <SettingsSection
-            v-if="storage.data.value"
-            :title="t('dataOverview')"
-          >
-            <div class="storage-summary">
-              <span>{{ t('configurationData') }} <strong>{{ bytes(storage.data.value.database_bytes) }}</strong></span>
-              <span>{{ t('conversationData') }} <strong>{{ bytes(storage.data.value.rollout_bytes) }}</strong></span>
-            </div>
-            <div class="storage-location">
-              <div>
-                <strong>{{ t('dataDirectory') }}</strong><code>{{ storage.data.value.directory }}</code><p class="muted small">
-                  {{ t('storageLocationHint') }}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                :aria-label="t('copyDirectory')"
-                :title="t('copyDirectory')"
-                @click="copyText(storage.data.value.directory)"
-              >
-                <Copy />
-              </Button>
-            </div>
-          </SettingsSection>
-          <p
-            v-else-if="storage.error.value"
-            class="error-box"
-            role="alert"
-          >
-            {{ t('storageLoadFailed') }}
-          </p>
         </div>
         <div
           v-else-if="section === 'security'"

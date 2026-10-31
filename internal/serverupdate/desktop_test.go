@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -80,5 +81,71 @@ func TestDesktopUpdateClientDoesNotFollowRedirectsOrExposePrivateResponses(t *te
 	}
 	if contacted {
 		t.Fatal("private update redirect escaped the trusted endpoint")
+	}
+}
+
+func TestDesktopCacheCleanupRelayKeepsPathsPrivateAndStableIdentity(t *testing.T) {
+	token := "desktop:" + strings.Repeat("c", 64)
+	var requests []map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+strings.Repeat("a", 64) || r.Header.Get("Origin") != "" {
+			t.Error("cleanup relay lost private authentication")
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "GET /storage/cache":
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []CacheItem{{Token: token, Kind: "update_cache", Name: "Astral-0.1.6-mac-arm64.zip", Bytes: 2048}}})
+		case "POST /storage/cache/clean":
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			requests = append(requests, body)
+			_ = json.NewEncoder(w).Encode(map[string]int64{"removed_bytes": 2048})
+		default:
+			t.Errorf("arbitrary cleanup route %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	controller, err := NewDesktop(server.URL, strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup := controller.(CacheCleanup)
+	items, err := cleanup.CacheInventory(context.Background())
+	if err != nil || len(items) != 1 || items[0].Token != token {
+		t.Fatalf("inventory: %+v %v", items, err)
+	}
+	for range 2 {
+		removed, err := cleanup.CleanCache(context.Background(), "stable-operation", token)
+		if err != nil || removed != 2048 {
+			t.Fatalf("cleanup: %d %v", removed, err)
+		}
+	}
+	if !reflect.DeepEqual(requests, []map[string]string{{"operation_id": "stable-operation", "token": token}, {"operation_id": "stable-operation", "token": token}}) {
+		t.Fatalf("cleanup exposed a path or changed identity: %+v", requests)
+	}
+	if _, err = cleanup.CleanCache(context.Background(), "stable-operation", "/private/file"); err == nil {
+		t.Fatal("accepted a path instead of a cleanup token")
+	}
+}
+
+func TestDesktopCacheRelayRejectsMalformedInventoryAndOutcome(t *testing.T) {
+	for _, body := range []string{`{}`, `{"items":[{"token":"desktop:bad","kind":"update_cache","name":"installer.exe","bytes":1}]}`, `{"items":[{"token":"desktop:` + strings.Repeat("a", 64) + `","kind":"update_cache","name":"/private/file","bytes":1}]}`, `{"removed_bytes":-1}`} {
+		t.Run(body, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
+			defer server.Close()
+			controller, err := NewDesktop(server.URL, strings.Repeat("a", 64))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cleanup := controller.(CacheCleanup)
+			if _, err = cleanup.CacheInventory(context.Background()); err == nil {
+				t.Fatal("accepted malformed inventory")
+			}
+			if _, err = cleanup.CleanCache(context.Background(), "operation", "desktop:"+strings.Repeat("a", 64)); err == nil {
+				t.Fatal("accepted malformed cleanup result")
+			}
+		})
 	}
 }

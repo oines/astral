@@ -125,6 +125,9 @@ func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) er
 		if err := tx.Purge(ctx, "agents", id, current.Revision); err != nil {
 			return err
 		}
+		if err := tx.MarkStorageReclaim(ctx); err != nil {
+			return err
+		}
 		var setup Onboarding
 		if err := tx.Get(ctx, "onboarding", "owner", &setup); err != nil && !domain.IsMissing(err) {
 			return err

@@ -52,13 +52,35 @@ Before conversion, Astral checks free space for the complete backup, database wo
 
 In this build, Desktop displays a data-preparation window if startup maintenance takes more than 300ms. It waits while the matching Server process prepares data; close the window to cancel. A cancelled or interrupted conversion is recovered on the next launch. The updated Linux installer also waits for data preparation instead of applying its ordinary service-start timeout. An older installer already running keeps its old timeout; use the offline migration command when upgrading a large database through that route.
 
-After keeping a complete backup and stopping Desktop or Server, the development binary can reclaim unused Core database pages:
+### Review and clean storage
+
+Open **Settings → Storage** in Desktop or its signed-in Web UI. The overview shows the data volume's capacity and measured Astral files, including database sidecar files, upgrade backups and identified cache or temporary files. The application database contains IM archives as well as settings and other application records. Files on connected computers are separate.
+
+Below the overview, select a Bot to see its **Chats** and **Other sessions**. A chat contains its IM archive and its currently bound Astral session; previous sessions that were unbound remain under Other sessions. The size bars in these lists are logical estimates of archived content, session records, state and model attempts. They are not physical disk ownership or the space a deletion will free. Shared content, indexes and unused database pages make these estimates differ from file sizes. Refresh the estimate when needed; a partial or failed estimate remains labeled.
+
+Chat archive cleanup, archive retention and clearing a chat's current session are separate actions. See [Manage session and chat storage](/docs/usage/conversations/#manage-session-and-chat-storage) for their effects and the prerequisites for permanently deleting other sessions.
+
+**Application cleanup** lists files Astral can identify and attribute to this Server: eligible upgrade backups, its model-directory cache and recognized old temporary files. Packaged Desktop installations also list old update packages when their updater configuration and download metadata establish ownership. Pending newer updates, packages needed for recovery and updates being downloaded or installed are protected. Unidentified cache files are left out; a standalone Server does not claim access to Desktop's cache.
+
+Select the items to remove and confirm **Remove selected files**. Latest recovery points and snapshots needed by an active upgrade or recovery are protected. A changed file or recovery dependency requires refreshing the inventory before removal. This control does not remove unknown logs or computer work files.
+
+Removing a backup permanently removes that recovery copy. Existing backups can still contain history that you subsequently deleted; ordinary session or archive cleanup does not rewrite them. Keep an independent backup suitable for your recovery needs.
+
+### Automatic database reclamation
+
+After session deletion or cleanup, Astral queues background disk-space reclamation and waits for an idle opportunity. This works in the running Desktop Server and a foreground `serve` deployment; you do not have to stop the Server yourself. The job compacts the Core, application and existing recall databases with full VACUUM and completes their WAL checkpoints. This operation adds no schema migration.
+
+Full compaction needs free working space and can temporarily delay storage requests. Deleting content does not promise an immediate reduction in file size. The page distinguishes queued, waiting, running and failed reclamation; a busy database is retried later, and other failures offer a retry after their cause is addressed. A reclamation failure does not reverse completed cleanup. Disk usage is measured again after maintenance, rather than inferred from the logical size of deleted records.
+
+### Offline Core maintenance
+
+The separate command-line alternative reclaims unused Core database pages. Keep a complete backup and stop Desktop or Server before running it:
 
 ```sh
 astral maintenance vacuum --data /path/to/server
 ```
 
-This separate operation checks free space and database integrity. It reports the main database size before and after and retains all upgrade snapshots. Reclaiming database pages does not remove old backups or change conversation history. Do not use it while another program is using this Server data directory.
+This offline operation checks free space and database integrity. It handles only the Core database, reports its main file size before and after, and retains all upgrade snapshots. Reclaiming database pages does not remove backups or change conversation history. Do not use this command while another program is using this Server data directory.
 
 ## Update remote computers and containers
 

@@ -52,6 +52,9 @@ func TestDeleteAgentErasesAllSessionsAndKeepsOtherBots(t *testing.T) {
 	if err = f.service.DeleteAgent(f.ctx, f.agent.ID, f.agent.Revision); err != nil {
 		t.Fatal(err)
 	}
+	if token, err := f.store.StorageReclaimDirty(f.ctx); err != nil || token == "" {
+		t.Fatal("Bot deletion committed without a durable space reclamation trigger", err)
+	}
 	if err = f.service.DeleteAgent(f.ctx, f.agent.ID, f.agent.Revision); err != nil {
 		t.Fatal("retry:", err)
 	}

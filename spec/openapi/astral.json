@@ -1836,6 +1836,101 @@
         ],
         "type": "object"
       },
+      "astral_internal_channels_StorageOperation": {
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "archive_after": {
+            "type": "integer"
+          },
+          "before": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "binding_id": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "new_session_id": {
+            "type": "string"
+          },
+          "old_session_id": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "removed_count": {
+            "type": "integer"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "created_at",
+          "updated_at",
+          "agent_id",
+          "kind",
+          "state",
+          "conversation_id",
+          "removed_count",
+          "fingerprint"
+        ],
+        "type": "object"
+      },
+      "astral_internal_channels_StorageRequest": {
+        "properties": {
+          "before": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation_id"
+        ],
+        "type": "object"
+      },
       "astral_internal_channels_TelegramOperation": {
         "properties": {
           "account_scoped": {
@@ -6229,6 +6324,397 @@
           "phase",
           "current_version",
           "manager"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_Agent": {
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "chats": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_storage_Chat"
+            },
+            "type": "array"
+          },
+          "logical_bytes": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_storage_Session"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "agent_id",
+          "name",
+          "logical_bytes",
+          "chats",
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_Chat": {
+        "properties": {
+          "account_name": {
+            "type": "string"
+          },
+          "archive_count": {
+            "type": "integer"
+          },
+          "archive_newest": {
+            "type": "string"
+          },
+          "archive_oldest": {
+            "type": "string"
+          },
+          "binding_id": {
+            "type": "string"
+          },
+          "binding_revision": {
+            "type": "integer"
+          },
+          "connection_id": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "estimate_state": {
+            "type": "string"
+          },
+          "im_bytes": {
+            "type": "integer"
+          },
+          "logical_bytes": {
+            "type": "integer"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "rollout_bytes": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "session_revision": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "connection_id",
+          "account_name",
+          "title",
+          "platform",
+          "binding_id",
+          "binding_revision",
+          "session_id",
+          "session_revision",
+          "retention_days",
+          "archive_count",
+          "logical_bytes",
+          "im_bytes",
+          "rollout_bytes",
+          "estimate_state"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_CleanupInventory": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_storage_CleanupItem"
+            },
+            "type": "array"
+          },
+          "total_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_bytes"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_CleanupItem": {
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "protected": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "kind",
+          "name",
+          "bytes",
+          "protected"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_CleanupOperation": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "removed_bytes": {
+            "type": "integer"
+          },
+          "removed_tokens": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "state",
+          "removed_bytes",
+          "removed_tokens"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_CleanupRequest": {
+        "properties": {
+          "operation_id": {
+            "type": "string"
+          },
+          "tokens": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation_id",
+          "tokens"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_Estimate": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_Physical": {
+        "properties": {
+          "available_bytes": {
+            "type": "integer"
+          },
+          "backup_bytes": {
+            "type": "integer"
+          },
+          "cache_bytes": {
+            "type": "integer"
+          },
+          "database_bytes": {
+            "type": "integer"
+          },
+          "disk_total_bytes": {
+            "type": "integer"
+          },
+          "disk_used_bytes": {
+            "type": "integer"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_storage_PhysicalItem"
+            },
+            "type": "array"
+          },
+          "log_bytes": {
+            "type": "integer"
+          },
+          "temporary_bytes": {
+            "type": "integer"
+          },
+          "total_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_bytes",
+          "database_bytes",
+          "backup_bytes",
+          "cache_bytes",
+          "log_bytes",
+          "temporary_bytes",
+          "disk_total_bytes",
+          "disk_used_bytes",
+          "available_bytes",
+          "items",
+          "errors"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_PhysicalItem": {
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_Reclaim": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_RefreshRequest": {
+        "properties": {
+          "cancel": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "astral_internal_storage_Session": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "estimate_state": {
+            "type": "string"
+          },
+          "logical_bytes": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "revision",
+          "archived",
+          "logical_bytes",
+          "estimate_state"
+        ],
+        "type": "object"
+      },
+      "astral_internal_storage_Snapshot": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_storage_Agent"
+            },
+            "type": "array"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/astral_internal_storage_Estimate"
+          },
+          "physical": {
+            "$ref": "#/components/schemas/astral_internal_storage_Physical"
+          },
+          "reclaim": {
+            "$ref": "#/components/schemas/astral_internal_storage_Reclaim"
+          }
+        },
+        "required": [
+          "directory",
+          "physical",
+          "estimate",
+          "agents",
+          "reclaim"
         ],
         "type": "object"
       },
@@ -12136,6 +12622,565 @@
         ],
         "tags": [
           "System"
+        ]
+      }
+    },
+    "/api/v1/storage/cleanup": {
+      "get": {
+        "operationId": "storageCleanupInventory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_storage_CleanupInventory"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      },
+      "post": {
+        "operationId": "cleanupStorage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_storage_CleanupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_storage_CleanupOperation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      }
+    },
+    "/api/v1/storage/cleanup/{id}": {
+      "get": {
+        "operationId": "storageCleanupOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_storage_CleanupOperation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      }
+    },
+    "/api/v1/storage/cleanup/{id}/retry": {
+      "post": {
+        "operationId": "retryStorageCleanup",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_storage_CleanupOperation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      }
+    },
+    "/api/v1/storage/conversations/{id}/cleanup": {
+      "post": {
+        "operationId": "cleanConversationArchive",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_channels_StorageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_channels_StorageOperation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      }
+    },
+    "/api/v1/storage/conversations/{id}/reset": {
+      "post": {
+        "operationId": "resetStorageConversation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_channels_StorageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_channels_StorageOperation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      }
+    },
+    "/api/v1/storage/manage": {
+      "get": {
+        "operationId": "manageStorage",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_storage_Snapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      }
+    },
+    "/api/v1/storage/operations/{id}": {
+      "get": {
+        "operationId": "storageOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_channels_StorageOperation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      }
+    },
+    "/api/v1/storage/operations/{id}/retry": {
+      "post": {
+        "operationId": "retryStorageOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_channels_StorageOperation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      }
+    },
+    "/api/v1/storage/reclaim": {
+      "post": {
+        "operationId": "reclaimStorage",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_storage_Snapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
+        ]
+      }
+    },
+    "/api/v1/storage/refresh": {
+      "post": {
+        "operationId": "refreshStorage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_storage_RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_storage_Snapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Storage"
         ]
       }
     },

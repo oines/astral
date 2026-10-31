@@ -58,6 +58,26 @@ As a conversation grows, Astral summarizes older context and keeps recent messag
 
 Automatic summarization can call the model without starting an ordinary task or sending an IM reply. Original history is preserved. If summarization or the final context check fails, existing context and pending messages remain available; address the reported error before continuing.
 
+## Manage session and chat storage
+
+The development build adds **Settings → Storage**; these controls are not yet in a published release. Choose a Bot to see its chats and other unbound sessions, including both archived and unarchived sessions. Search or sort the other-session list to find old work. Open a chat to inspect its IM archive separately from the records of its current Astral session.
+
+The size bars are logical content estimates, including model attempts. Shared content and database overhead mean they cannot be added to the measured disk total or used to predict space freed. Refresh the estimate when needed; an incomplete estimate remains marked.
+
+For an unbound session, **Archive** hides it from ordinary recent history and **Restore** makes it available again. **Permanently delete** requires an archived session with no chat binding and confirms the selected session before deletion. It removes that session's Astral history, execution attempts, pending inputs, recall records and scheduled tasks. Independent forks keep their histories. Computer work files and external platform messages remain.
+
+For a bound chat, choose the action matching what you want to remove:
+
+| Action | Effect |
+| --- | --- |
+| **Clear IM archive** | Removes eligible Astral archive payloads before the selected date. Keeps the current session's history and external platform messages. Messages still awaiting processing are retained. |
+| **Archive retention** | Defaults to **Keep forever**. Choose **30**, **90** or **180 days** to clean eligible expired archives now and check daily afterward. Returning to forever stops automatic expiry; it does not restore deleted archives. |
+| **Clear session** | Stops current work, creates a new session with the same private setting, changes the chat binding and permanently deletes the old session and its scheduled tasks. Keeps the IM archive, account settings and external platform messages. |
+
+Archive cleanup keeps lightweight event receipts so a platform retry does not import the same old messages again. Content already in the session remains there until that session is separately cleared or deleted. An ordinary **Replace session** action continues to preserve the old session; only the explicit **Clear session** action deletes it.
+
+Cleanup tasks retain their identity across a page change or lost connection. Check an uncertain result before retrying; retry continues the existing operation. After cleanup, background database reclamation may wait for an idle moment, and storage requests can wait during full compaction. A completed logical deletion and reclaimed disk space are separate results. See [Storage maintenance](/docs/hosting/maintenance/#review-and-clean-storage) for file cleanup, backup protection and reclamation status.
+
 ## Separate unrelated work
 
 Keep related tasks together and use a new session for unrelated work. A copied or forked session is independent; later messages do not synchronize.

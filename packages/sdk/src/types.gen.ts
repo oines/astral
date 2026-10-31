@@ -601,6 +601,34 @@ export type AstralInternalChannelsStatus = {
     state: string;
 };
 
+export type AstralInternalChannelsStorageOperation = {
+    agent_id: string;
+    archive_after?: number;
+    before?: string;
+    binding_id?: string;
+    conversation_id: string;
+    created_at: string;
+    error?: string;
+    fingerprint: string;
+    id: string;
+    kind: string;
+    new_session_id?: string;
+    old_session_id?: string;
+    phase?: string;
+    removed_count: number;
+    retention_days?: number;
+    revision: number;
+    state: string;
+    updated_at: string;
+};
+
+export type AstralInternalChannelsStorageRequest = {
+    before?: string;
+    operation_id: string;
+    retention_days?: number;
+    revision?: number;
+};
+
 export type AstralInternalChannelsTelegramOperation = {
     account_scoped?: boolean;
     documentation: string;
@@ -1924,6 +1952,117 @@ export type AstralInternalServerupdateState = {
     retry?: 'check' | 'update';
     unavailable?: string;
     version?: string;
+};
+
+export type AstralInternalStorageAgent = {
+    agent_id: string;
+    chats: Array<AstralInternalStorageChat>;
+    logical_bytes: number;
+    name: string;
+    sessions: Array<AstralInternalStorageSession>;
+};
+
+export type AstralInternalStorageChat = {
+    account_name: string;
+    archive_count: number;
+    archive_newest?: string;
+    archive_oldest?: string;
+    binding_id: string;
+    binding_revision: number;
+    connection_id: string;
+    conversation_id: string;
+    error?: string;
+    estimate_state: string;
+    im_bytes: number;
+    logical_bytes: number;
+    platform: string;
+    retention_days: number;
+    rollout_bytes: number;
+    session_id: string;
+    session_revision: number;
+    title: string;
+};
+
+export type AstralInternalStorageCleanupInventory = {
+    error?: string;
+    items: Array<AstralInternalStorageCleanupItem>;
+    total_bytes: number;
+};
+
+export type AstralInternalStorageCleanupItem = {
+    bytes: number;
+    kind: string;
+    name: string;
+    protected: boolean;
+    reason?: string;
+    token: string;
+};
+
+export type AstralInternalStorageCleanupOperation = {
+    error?: string;
+    operation_id: string;
+    removed_bytes: number;
+    removed_tokens: Array<string>;
+    state: string;
+};
+
+export type AstralInternalStorageCleanupRequest = {
+    operation_id: string;
+    tokens: Array<string>;
+};
+
+export type AstralInternalStorageEstimate = {
+    error?: string;
+    state: string;
+    updated_at?: string;
+};
+
+export type AstralInternalStoragePhysical = {
+    available_bytes: number;
+    backup_bytes: number;
+    cache_bytes: number;
+    database_bytes: number;
+    disk_total_bytes: number;
+    disk_used_bytes: number;
+    errors: Array<string>;
+    items: Array<AstralInternalStoragePhysicalItem>;
+    log_bytes: number;
+    temporary_bytes: number;
+    total_bytes: number;
+};
+
+export type AstralInternalStoragePhysicalItem = {
+    bytes: number;
+    id: string;
+};
+
+export type AstralInternalStorageReclaim = {
+    error?: string;
+    requested_at?: string;
+    state: string;
+    updated_at?: string;
+};
+
+export type AstralInternalStorageRefreshRequest = {
+    cancel?: boolean;
+};
+
+export type AstralInternalStorageSession = {
+    archived: boolean;
+    error?: string;
+    estimate_state: string;
+    logical_bytes: number;
+    revision: number;
+    session_id: string;
+    title: string;
+};
+
+export type AstralInternalStorageSnapshot = {
+    agents: Array<AstralInternalStorageAgent>;
+    directory: string;
+    estimate: AstralInternalStorageEstimate;
+    physical: AstralInternalStoragePhysical;
+    reclaim: AstralInternalStorageReclaim;
 };
 
 export type AstralInternalTimezoneView = {
@@ -4851,6 +4990,295 @@ export type StorageInfoResponses = {
 };
 
 export type StorageInfoResponse = StorageInfoResponses[keyof StorageInfoResponses];
+
+export type StorageCleanupInventoryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/storage/cleanup';
+};
+
+export type StorageCleanupInventoryErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type StorageCleanupInventoryError = StorageCleanupInventoryErrors[keyof StorageCleanupInventoryErrors];
+
+export type StorageCleanupInventoryResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalStorageCleanupInventory;
+};
+
+export type StorageCleanupInventoryResponse = StorageCleanupInventoryResponses[keyof StorageCleanupInventoryResponses];
+
+export type CleanupStorageData = {
+    body: AstralInternalStorageCleanupRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/storage/cleanup';
+};
+
+export type CleanupStorageErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type CleanupStorageError = CleanupStorageErrors[keyof CleanupStorageErrors];
+
+export type CleanupStorageResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalStorageCleanupOperation;
+};
+
+export type CleanupStorageResponse = CleanupStorageResponses[keyof CleanupStorageResponses];
+
+export type StorageCleanupOperationData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/storage/cleanup/{id}';
+};
+
+export type StorageCleanupOperationErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type StorageCleanupOperationError = StorageCleanupOperationErrors[keyof StorageCleanupOperationErrors];
+
+export type StorageCleanupOperationResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalStorageCleanupOperation;
+};
+
+export type StorageCleanupOperationResponse = StorageCleanupOperationResponses[keyof StorageCleanupOperationResponses];
+
+export type RetryStorageCleanupData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/storage/cleanup/{id}/retry';
+};
+
+export type RetryStorageCleanupErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type RetryStorageCleanupError = RetryStorageCleanupErrors[keyof RetryStorageCleanupErrors];
+
+export type RetryStorageCleanupResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalStorageCleanupOperation;
+};
+
+export type RetryStorageCleanupResponse = RetryStorageCleanupResponses[keyof RetryStorageCleanupResponses];
+
+export type CleanConversationArchiveData = {
+    body: AstralInternalChannelsStorageRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/storage/conversations/{id}/cleanup';
+};
+
+export type CleanConversationArchiveErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type CleanConversationArchiveError = CleanConversationArchiveErrors[keyof CleanConversationArchiveErrors];
+
+export type CleanConversationArchiveResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalChannelsStorageOperation;
+};
+
+export type CleanConversationArchiveResponse = CleanConversationArchiveResponses[keyof CleanConversationArchiveResponses];
+
+export type ResetStorageConversationData = {
+    body: AstralInternalChannelsStorageRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/storage/conversations/{id}/reset';
+};
+
+export type ResetStorageConversationErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ResetStorageConversationError = ResetStorageConversationErrors[keyof ResetStorageConversationErrors];
+
+export type ResetStorageConversationResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalChannelsStorageOperation;
+};
+
+export type ResetStorageConversationResponse = ResetStorageConversationResponses[keyof ResetStorageConversationResponses];
+
+export type ManageStorageData = {
+    body?: never;
+    path?: never;
+    query?: {
+        agent_id?: string;
+    };
+    url: '/api/v1/storage/manage';
+};
+
+export type ManageStorageErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ManageStorageError = ManageStorageErrors[keyof ManageStorageErrors];
+
+export type ManageStorageResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalStorageSnapshot;
+};
+
+export type ManageStorageResponse = ManageStorageResponses[keyof ManageStorageResponses];
+
+export type StorageOperationData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/storage/operations/{id}';
+};
+
+export type StorageOperationErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type StorageOperationError = StorageOperationErrors[keyof StorageOperationErrors];
+
+export type StorageOperationResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalChannelsStorageOperation;
+};
+
+export type StorageOperationResponse = StorageOperationResponses[keyof StorageOperationResponses];
+
+export type RetryStorageOperationData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/storage/operations/{id}/retry';
+};
+
+export type RetryStorageOperationErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type RetryStorageOperationError = RetryStorageOperationErrors[keyof RetryStorageOperationErrors];
+
+export type RetryStorageOperationResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalChannelsStorageOperation;
+};
+
+export type RetryStorageOperationResponse = RetryStorageOperationResponses[keyof RetryStorageOperationResponses];
+
+export type ReclaimStorageData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/storage/reclaim';
+};
+
+export type ReclaimStorageErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ReclaimStorageError = ReclaimStorageErrors[keyof ReclaimStorageErrors];
+
+export type ReclaimStorageResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalStorageSnapshot;
+};
+
+export type ReclaimStorageResponse = ReclaimStorageResponses[keyof ReclaimStorageResponses];
+
+export type RefreshStorageData = {
+    body: AstralInternalStorageRefreshRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/storage/refresh';
+};
+
+export type RefreshStorageErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type RefreshStorageError = RefreshStorageErrors[keyof RefreshStorageErrors];
+
+export type RefreshStorageResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalStorageSnapshot;
+};
+
+export type RefreshStorageResponse = RefreshStorageResponses[keyof RefreshStorageResponses];
 
 export type GetServerUpdateData = {
     body?: never;

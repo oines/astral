@@ -6,6 +6,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DesktopUpdates } from './updates'
 import { DesktopUpdateControl, startDesktopUpdateBridge } from './update-control'
+import { DesktopUpdateCache } from './update-cache'
 import { managedHandshake } from './service'
 
 class Engine extends EventEmitter {
@@ -117,5 +118,39 @@ describe('private Desktop update control', () => {
   it('sends independent update credentials only inside the private managed stdin record', () => {
     expect(JSON.parse(managedHandshake('a'.repeat(64), { url: 'http://127.0.0.1:12345', token: 'b'.repeat(64) }))).toEqual({ desktop_token: 'a'.repeat(64), desktop_update_url: 'http://127.0.0.1:12345', desktop_update_token: 'b'.repeat(64) })
     expect(JSON.parse(managedHandshake('a'.repeat(64)))).not.toHaveProperty('desktop_update_token')
+  })
+
+  it('relays only bounded token-based cleanup requests over the authenticated private bridge', async () => {
+    const f = await fixture()
+    const cache = { inventory: vi.fn(async () => []), clean: vi.fn(async () => 42) } as unknown as DesktopUpdateCache
+    const control = new DesktopUpdateControl(f.updates, f.journal, cache)
+    const bridge = await startDesktopUpdateBridge(control)
+    cleanups.push(bridge.close)
+    const headers = { Authorization: `Bearer ${bridge.token}`, 'Content-Type': 'application/json' }
+    expect(await (await fetch(`${bridge.url}/storage/cache`, { headers })).json()).toEqual({ items: [] })
+    for (const input of [{ path: '/private/secret', token: 'opaque', operation_id: 'op' }, { token: 'x'.repeat(5000), operation_id: 'op' }]) {
+      expect((await fetch(`${bridge.url}/storage/cache/clean`, { method: 'POST', headers, body: JSON.stringify(input) })).status).toBe(400)
+    }
+    expect(cache.clean).not.toHaveBeenCalled()
+    expect((await fetch(`${bridge.url}/storage/cache/clean`, { method: 'POST', body: JSON.stringify({ operation_id: 'op', token: 'opaque' }) })).status).toBe(403)
+    expect(await (await fetch(`${bridge.url}/storage/cache/clean`, { method: 'POST', headers, body: JSON.stringify({ operation_id: 'op', token: 'opaque' }) })).json()).toEqual({ removed_bytes: 42 })
+    expect(cache.clean).toHaveBeenCalledExactlyOnceWith('op', 'opaque')
+  })
+
+  it('waits for durable cache cleanup before starting an update and rejects cleanup admitted after update', async () => {
+    const f = await fixture()
+    let finish!: () => void
+    const cache = { inventory: vi.fn(async () => []), clean: vi.fn(() => new Promise<number>(resolve => { finish = () => resolve(42) })) } as unknown as DesktopUpdateCache
+    const control = new DesktopUpdateControl(f.updates, f.journal, cache)
+	 f.stop.mockImplementationOnce(async () => { await control.beforeInstall() })
+    const cleaning = control.cleanCache('operation', 'token')
+    await vi.waitFor(() => expect(cache.clean).toHaveBeenCalledOnce())
+    const updating = control.update()
+    expect(f.engine.checkForUpdates).not.toHaveBeenCalled()
+    await expect(control.cleanCache('another', 'token')).rejects.toThrow('during an update')
+    finish()
+    expect(await cleaning).toBe(42)
+    await updating
+    expect(f.engine.downloadUpdate).toHaveBeenCalledOnce()
   })
 })

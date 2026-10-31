@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
@@ -15,8 +16,21 @@ import (
 // Every cleanup phase is idempotent, so a retry or server restart can complete
 // an interrupted deletion without ever reopening the execution runtime.
 func (s *Service) DeleteSession(ctx context.Context, id string, revision int64) error {
-	s.deleteMu.Lock()
+	// Bot deletion holds this lock while cancelling and joining its IM
+	// workers. A session-cleanup worker must be able to leave this wait.
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for !s.deleteMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tick.C:
+		}
+	}
 	defer s.deleteMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return s.deleteSession(ctx, id, revision, false)
 }
 
@@ -99,7 +113,10 @@ func (s *Service) deleteSession(ctx context.Context, id string, revision int64, 
 		if err := schedule.PurgeSession(ctx, tx, id); err != nil {
 			return err
 		}
-		return tx.Purge(ctx, "sessions", id, current.Revision)
+		if err := tx.Purge(ctx, "sessions", id, current.Revision); err != nil {
+			return err
+		}
+		return tx.MarkStorageReclaim(ctx)
 	}); err != nil {
 		return err
 	}
@@ -108,6 +125,9 @@ func (s *Service) deleteSession(ctx context.Context, id string, revision int64, 
 		s.Schedules.NotifyChanged()
 	}
 	s.notify(id)
+	if s.StorageChanged != nil {
+		s.StorageChanged()
+	}
 	return nil
 }
 

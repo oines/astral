@@ -27,6 +27,7 @@ import (
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/search"
 	"github.com/oines/astral/internal/serverupdate"
+	"github.com/oines/astral/internal/storage"
 	"github.com/oines/astral/internal/timezone"
 )
 
@@ -44,6 +45,7 @@ type Config struct {
 	SaveNetworkSettings     func(context.Context, NetworkPatch) (NetworkSettings, error)
 	ValidateAccessAddresses func(*http.Request, []string) error
 	Updates                 serverupdate.Controller
+	Storage                 *storage.Service
 }
 type API struct {
 	Config       Config
@@ -177,6 +179,8 @@ func New(config Config) *API {
 	a.scheduleRoutes()
 	a.attemptRoutes()
 	a.systemRoutes()
+	a.storageRoutes()
+	a.storageConversationRoutes()
 	a.networkRoutes()
 	a.updateRoutes()
 	a.streamRoutes()
