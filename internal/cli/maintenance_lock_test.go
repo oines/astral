@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -71,6 +72,43 @@ func maintenanceChildArguments(t *testing.T, data, computers, mode, marker strin
 	}
 	return []string{"--data", data, "--computers-dir", computers, "--", executable, "-test.run=^TestMaintenanceLockChild$", "--", mode, marker}
 }
+
+func waitMaintenanceMarker(ctx context.Context, marker string, finished <-chan error) ([]byte, error) {
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	var lastReadError error
+	childExited := func(err error) error {
+		if err == nil {
+			return errors.New("maintenance exited before child was ready")
+		}
+		return fmt.Errorf("maintenance exited before child was ready: %w", err)
+	}
+	for {
+		select {
+		case err := <-finished:
+			return nil, childExited(err)
+		case <-ctx.Done():
+			return nil, fmt.Errorf("maintenance child ready record did not become readable (last read: %v): %w", lastReadError, ctx.Err())
+		default:
+		}
+		raw, err := os.ReadFile(marker)
+		if err == nil {
+			return raw, nil
+		}
+		if !os.IsNotExist(err) && !maintenanceMarkerReadRetry(err) {
+			return nil, fmt.Errorf("read maintenance child ready record: %w", err)
+		}
+		lastReadError = err
+		select {
+		case err := <-finished:
+			return nil, childExited(err)
+		case <-ctx.Done():
+			return nil, fmt.Errorf("maintenance child ready record did not become readable (last read: %v): %w", lastReadError, ctx.Err())
+		case <-tick.C:
+		}
+	}
+}
+
 func TestMaintenanceWithDataLockHoldsActualProcessLocksUntilChildExit(t *testing.T) {
 	t.Setenv("ASTRAL_TEST_LOCK_CHILD", "1")
 	data, computers, daemon := maintenanceLockFixture(t)
@@ -87,24 +125,11 @@ func TestMaintenanceWithDataLockHoldsActualProcessLocksUntilChildExit(t *testing
 	go func() {
 		result <- maintenanceWithDataLock(ctx, args, io.Discard, io.Discard)
 	}()
-	timeout := time.After(8 * time.Second)
-	var raw []byte
-	for raw == nil {
-		select {
-		case err := <-result:
-			t.Fatalf("maintenance exited before child was ready: %v", err)
-		case <-timeout:
-			t.Fatal("maintenance child did not start")
-		default:
-			if bytes, err := os.ReadFile(marker); err == nil {
-				raw = bytes
-			} else if !os.IsNotExist(err) {
-				t.Fatal(err)
-			}
-			if raw == nil {
-				time.Sleep(10 * time.Millisecond)
-			}
-		}
+	readyContext, readyCancel := context.WithTimeout(ctx, 8*time.Second)
+	defer readyCancel()
+	raw, err := waitMaintenanceMarker(readyContext, marker, result)
+	if err != nil {
+		t.Fatal(err)
 	}
 	var environment map[string]string
 	if err = json.Unmarshal(raw, &environment); err != nil {
@@ -141,6 +166,31 @@ func TestMaintenanceWithDataLockHoldsActualProcessLocksUntilChildExit(t *testing
 		}
 		lock.Close()
 	}
+}
+
+func TestMaintenanceMarkerWaitRetainsExitTimeoutAndPermanentErrors(t *testing.T) {
+	t.Run("child exit", func(t *testing.T) {
+		finished := make(chan error, 1)
+		failed := errors.New("child failed")
+		finished <- failed
+		if _, err := waitMaintenanceMarker(context.Background(), filepath.Join(t.TempDir(), "missing"), finished); !errors.Is(err, failed) {
+			t.Fatalf("child exit was hidden: %v", err)
+		}
+	})
+	t.Run("bounded missing marker", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+		defer cancel()
+		if _, err := waitMaintenanceMarker(ctx, filepath.Join(t.TempDir(), "missing"), make(chan error)); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("marker wait was not bounded: %v", err)
+		}
+	})
+	t.Run("permanent read error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if _, err := waitMaintenanceMarker(ctx, t.TempDir(), make(chan error)); err == nil || errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("permanent ready-record error was retried: %v", err)
+		}
+	})
 }
 func TestMaintenanceWithDataLockRejectsLiveProcessAndReleasesAfterFailure(t *testing.T) {
 	t.Setenv("ASTRAL_TEST_LOCK_CHILD", "1")
