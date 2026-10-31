@@ -7,9 +7,11 @@ Astral prepares your first Bot when you open it. Connect a model, then choose a 
 
 Desktop opens directly. Browser access to a Server requires a configured [web account](/docs/hosting/security/).
 
+Read [Use Astral safely](/docs/start/safe-use/) before granting computer access. For a public group, use a dedicated Bot and a separate container.
+
 ## 1. Connect a model
 
-Choose your model service, enter its connection details, and save. Then select the model to use. Saving an API key and choosing a model are separate steps.
+Choose your model service, enter its connection details, and save. Then select the model the Bot should use.
 
 You can use a hosted API or your own compatible service. A custom endpoint must be reachable from the machine running **Astral Server**.
 

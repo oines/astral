@@ -48,6 +48,7 @@
 :lang(zh-CN) :is(.section h2, .run-section h2, .closing h2) { letter-spacing: 0; }
 .section-copy p { color: var(--muted); font-size: 15px; line-height: 1.9; margin: 0 0 20px; }
 .section-copy .section-lead { color: var(--ink); margin-bottom: 12px; }
+.section-copy .core-intro { margin-top: 20px; }
 .chat-section { align-items: start; }
 .chat-copy .chat-intro { margin-top: 20px; }
 .chat-copy h3 { font-size: 17px; line-height: 1.5; font-weight: 500; margin: 32px 0 10px; }

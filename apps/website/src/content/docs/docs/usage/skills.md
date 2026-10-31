@@ -3,7 +3,7 @@ title: "Skills and project guidance"
 description: "Give your Bot reusable instructions and guidance for the current project."
 ---
 
-Skills are reusable working instructions stored as files on a computer. Astral discovers skills on the current computer, and the Bot reads relevant instructions for its task.
+Skills are reusable working instructions stored as files on a computer. Astral discovers them on the current computer, and the Bot reads the ones relevant to its task. Review a third-party skill’s source, guidance, and included scripts before using it; see [outside content and skills](/docs/start/safe-use/#review-outside-content-and-skills).
 
 ## Add a skill
 
@@ -34,6 +34,6 @@ Astral reads **that file in the current directory**. It does not walk parent dir
 
 ## Use skills across computers
 
-Switching computers does not copy skills. Install the skill and its dependencies on each computer where it is needed. Discovering instructions does not mean the required software is installed.
+Install the skill and its required software on every computer where it will be used. Skills stay on the computer where you put them.
 
 If a skill is missing, check the session's computer, working directory, readable files, frontmatter, and computer service version. Ask the Bot which skills it currently sees to help diagnose the issue.

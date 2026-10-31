@@ -2,7 +2,7 @@ export {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bot, Check, ChevronDown, ChevronRight,
   ChevronsUpDown, Circle, CircleAlert, CircleCheck, CircleHelp, CircleStop, Clock3,
   Code2, Copy, Download, Ellipsis, ExternalLink, Eye, File, FileCode, FileImage,
-  FileText, FolderOpen, GitBranch, Globe, HardDrive, Image, Info, LoaderCircle,
+  FileText, FolderOpen, GitBranch, Github, Globe, HardDrive, Image, Info, LoaderCircle,
   Lock, Maximize2, Menu, MessageCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen,
   Paperclip, Pencil, Pin, Play, Plus, Search, Send, Server, Settings2, Shield,
   SlidersHorizontal, Sparkle, Square, Sun, Terminal, Trash2, TriangleAlert,

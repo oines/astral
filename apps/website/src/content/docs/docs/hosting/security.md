@@ -3,7 +3,7 @@ title: "Sign-in and security"
 description: "Set up browser login, two-step verification, Passkeys, and account recovery."
 ---
 
-Desktop uses its own local access identity and opens directly. Browsers and the CLI use a web account, managed separately.
+Desktop uses its own local access identity and opens directly. Browsers and the CLI use the web account, which can manage every Bot, session, and computer, including private sessions. Reserve it for trusted administrators. See [Use Astral safely](/docs/start/safe-use/) for computer and group-chat permissions.
 
 ## Set up web sign-in
 
@@ -19,7 +19,7 @@ Use the Server's actual data directory. Enter the password at the terminal promp
 
 Adding and confirming an authenticator or Passkey enables two-step verification. Password login then requires an added verification method.
 
-Passkeys require an actual HTTPS page and a supported browser. They belong to the hostname where they were registered; another hostname or HTTP URL may not work. Desktop opens the configured HTTPS page for setup.
+Passkeys require HTTPS and a compatible browser, and belong to the hostname where you register them. Keep using that hostname to sign in; add a Passkey for a new hostname if it changes. Desktop opens the configured HTTPS page for setup.
 
 “Allow Passkey passwordless sign-in” is a separate option, off by default, and requires at least one Passkey.
 

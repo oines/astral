@@ -17,17 +17,13 @@ An existing target must belong to the same Bot. It uses that session's current c
 
 Plans targeting a private session are hidden from other sessions' Gateway calls. A plan created by a private session in **Create a new session each time** mode is also private to that source; its new sessions inherit the source's private setting at execution time. You can manage all plans in the UI.
 
-The last created session does not determine whether the plan is visible. Gateway responses include its `last_session_id` link only when the calling session can access that result; the plan itself remains manageable according to its target or source. The UI retains the result link for you.
-
 ## When the time arrives
 
 An idle session starts working. A busy session receives the prompt through **Steer** at its next input boundary. The prompt appears on the right with a clock, **Scheduled task**, and the task title, so you can distinguish it from a message you typed.
 
-**Delivered** means the session accepted the prompt; it does not mean the Bot finished the work. In a session bound to IM, the Bot still needs to send a message explicitly to reply to the external chat.
+**Delivered** means the session received the task. Open the session to check progress and results. Include a request to send the result back when the task should reply to an external chat.
 
 Astral must remain running on the host that manages the plans. Closing the Desktop App completely stops its local scheduler. Missed times are skipped: a one-time task becomes **Missed**, and a repeating task resumes at its next future time. There is no catch-up run.
-
-New scheduled messages use the current global timezone in their model-visible timestamps. Changing the setting does not rewrite earlier context, saved summaries, or frozen requests; an in-flight retry keeps its original request.
 
 ## Manage plans
 

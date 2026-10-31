@@ -320,7 +320,7 @@ async function removeConnection() {
         v-else-if="list.data.value"
         class="empty-state"
       >
-        <strong>{{ t('noAccountsOnPlatform', { platform: platformName }) }}</strong><p>{{ t('connectAccountHint') }}</p>
+        <strong>{{ t('noAccountsOnPlatform', { platform: platformName }) }}</strong>
       </div>
       <p
         v-else
@@ -544,7 +544,6 @@ async function removeConnection() {
       <SettingsSection v-if="!hasHistory">
         <SettingsRow
           :label="t('deleteConnection')"
-          :description="t('accountDeleteHint')"
         >
           <ConfirmPopover
             v-model:open="deleting"

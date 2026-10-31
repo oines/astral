@@ -29,8 +29,10 @@ Server 进程需要能访问所选模型、搜索服务和聊天平台；每台�
 
 一个 Session 可以在获准电脑之间切换。文件和进程仍各自留在执行的电脑上。
 
-## 官网托管与运行 Astral
+## 内置能力如何调用
 
-官网和本使用文档是静态网站，可以托管在 Cloudflare Pages。Astral Server 需要持续运行进程、保存数据并连接模型与电脑，不能用上传静态网站的方式代替。
+Harness 负责推进会话和工具执行。Bot 通过文件、命令等基础工具使用电脑；历史查询、计划任务、聊天和文件管理通过内置 API 按需发现和调用。你可以直接交代任务，Bot 会读取所需接口的说明。
 
-准备自行部署时，继续阅读[运行 Server](/zh-cn/docs/hosting/server/)与[登录与安全](/zh-cn/docs/hosting/security/)。
+Astral 保持稳定的上下文前缀，环境发生变化时再追加更新，帮助连续工作复用模型服务的缓存。
+
+准备自行部署时，继续阅读[运行 Server](/zh-cn/docs/hosting/server/)与[登录与安全](/zh-cn/docs/hosting/security/)。为群聊安排电脑时，先阅读[安全使用 Astral](/zh-cn/docs/start/safe-use/)。

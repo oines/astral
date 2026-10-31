@@ -42,7 +42,11 @@ func TestNapCatMessageOperationsVerifyCurrentPlatformScope(t *testing.T) {
 					fmt.Fprint(w, `{"status":"ok","retcode":0,"data":null}`)
 				}))
 				n := napcatTestAdapter(t, server)
-				_, err := napcatOperation(context.Background(), n, operation, domain.Conversation{ExternalID: test.chat}, map[string]any{"message_id": "-42", "emoji_id": "76"})
+				parameters := map[string]any{"message_id": "-42"}
+				if operation == "set_reaction" {
+					parameters["emoji_id"] = "76"
+				}
+				_, err := napcatOperation(context.Background(), n, operation, domain.Conversation{ExternalID: test.chat}, parameters)
 				if (err == nil) != test.allowed {
 					t.Errorf("%s scope result: %v", operation, err)
 				}

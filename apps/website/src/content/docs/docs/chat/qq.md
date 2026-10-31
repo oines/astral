@@ -48,20 +48,20 @@ A recall appends an event identifying the operator and original message. It does
 
 ## Cards and merged forwards
 
-The Bot can read a QQ card's source, title, description and link, including both the platform name and a video's actual title. Merged forwards retain their message order, senders and available times, including nested forwards, cards and media. A card's visible summary is not treated as the full forwarded conversation or the contents of its linked page.
+The Bot can read a QQ card’s source, title, description, and link. Merged forwards retain message order, senders, available times, and included cards, images, and other attachments.
 
-Astral initially shows a small preview. Content already supplied by NapCat is parsed locally; when only a forward reference is supplied, automatic resolution shares a six-second budget, two levels and twelve child messages. Long, deeper or unavailable content keeps an explicit status and a reading link. The Bot can follow that link and request more pages when needed, without holding later incoming messages behind an unbounded expansion.
+Long forwards start with a partial preview, which the Bot can expand as needed. Images provide compressed previews and original-image references. Videos and ordinary files retain their sources and are downloaded to a computer when needed. Ask the Bot to retry if a preview is unavailable.
 
-Selected images in a forward use the existing in-memory preview, with at most 75,000 pixels, and enter the model as image input. That prepared preview stays with conversation history; the original-image download link remains available. Receiving does not separately save original images or files, or create a FileRef. Videos and ordinary files show metadata and an original-download link; the Bot explicitly downloads a file when needed. A failed optional image preview keeps its reference and does not block later messages.
-
-All reads and downloads remain authorized through the enclosing QQ account, chat and original message. People, mentions and chat identifiers quoted inside a forward do not wake the Bot or grant access to another chat. This applies to newly constructed context; older conversation context and summaries are not rewritten.
-
-The Bot discovers the authenticated Gateway's message `/parts` index and follows its reading links to expand content. Raw card JSON and saving an original to a chosen Computer path are explicit actions. These reads do not create new sessions or modify the message archive.
+This content remains within the current authorized chat. Quoted names, mentions, and group identifiers do not grant access to another chat or directly wake the Bot. To expand a full forward or download an original, the Bot follows the message’s reading links through the built-in API.
 
 ## NapCat reactions and outgoing pokes
 
-NapCat provides partial group-reaction notifications, mainly for the logged-in account's own messages. Astral appends events preserving QQ emoji IDs and the actor when supplied; absent identities are explicitly unknown. Native counts remain reported values rather than reliable totals, and missing notifications are not invented. Known self actions do not wake the Bot. Reactions with an unknown actor are passive context only, without starting a participation check; a working Bot can still read them. Group reactions from a known external actor follow optional proactive rules.
+NapCat delivers some group reactions, mainly for messages sent by the logged-in account. The Bot receives the emoji and actor when supplied; counts are the values reported by NapCat. Reactions from known members follow proactive-participation settings. Its own reactions and those with an unknown actor are context only.
 
 The Agent can use the existing Computer API's `set_reaction` to add or remove a reaction on an archived message whose chat membership is verified, and `poke` to poke someone. Group targets must be specified and verified as group members; private targets can only be that chat's peer. These actions retain account and chat permissions without changing `send_message`.
 
-A private window shake is separate from a poke. An incoming shake appears as `[QQ private window shake]` in context. The current NapCat API has no supported outbound window-shake operation, so Astral cannot send one and does not substitute a poke.
+Astral can receive private window shakes but cannot currently send them. Outgoing pokes use the separate `poke` operation.
+
+## Platform queries and management
+
+A QQ NapCat account can use built-in APIs to query members and profiles, manage groups, and work with notices, group files, and essence messages. It can also read group and personal avatars or save them to the calling Computer. Personal avatars are limited to the private peer or a verified current group member. See [Platform APIs](/docs/chat/platform-api/) for methods and permissions.

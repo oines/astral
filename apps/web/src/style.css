@@ -91,9 +91,19 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .session-row .session-link { margin: 0; padding-right: 36px; }
 .session-row:hover .session-link { background: var(--hover); }
 .session-row.selected .session-link { background: var(--selected); }
-.session-menu-trigger { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; min-height: 26px; padding: 5px; border-radius: 6px; opacity: 0; pointer-events: none; color: var(--muted); }
+.session-menu-trigger { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; min-height: 26px; padding: 5px; border-radius: 6px; color: var(--muted); }
 .session-menu-trigger svg { width: 16px; height: 16px; }
-.session-row:is(:hover, .selected, :focus-within) .session-menu-trigger, .session-menu-trigger[data-state='open'] { opacity: 1; pointer-events: auto; }
+/* A touch must follow the link, not reveal a previously hidden control. */
+@media (hover: hover) and (pointer: fine) {
+  .session-menu-trigger { opacity: 0; pointer-events: none; }
+  .session-row:hover .session-menu-trigger { opacity: 1; pointer-events: auto; }
+}
+/* Keep touch access on devices that also have a mouse or trackpad. */
+@media (any-pointer: coarse) {
+  .session-menu-trigger { width: 32px; height: 32px; min-height: 32px; padding: 8px; opacity: 1; pointer-events: auto; }
+  .session-row .session-link { padding-right: 40px; }
+}
+.session-row:is(.selected, :focus-within) .session-menu-trigger, .session-menu-trigger[data-state='open'] { opacity: 1; pointer-events: auto; }
 .session-menu-trigger:active:not(:disabled) { transform: translateY(-50%); }
 .sidebar-action-error { padding: 6px 12px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 :is(.session-link, .new-session, .sidebar-settings, .settings-back, .settings-nav nav :is(a, .settings-nav-action)):focus-visible { outline: 1px solid var(--focus-ring); outline-offset: -1px; background: var(--hover); }
@@ -531,6 +541,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .search-test-input > .button { flex-shrink: 0; }
 .about-identity { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: var(--settings-row-padding) 0; }
 .about-identity > p { font-size: 12px; }
+.about-links { flex-wrap: wrap; margin: var(--settings-row-padding) 0 4px; }
 .danger-row > p { max-width: 520px; line-height: 1.6; }
 .danger-row > .button { flex-shrink: 0; }
 @media (max-width: 600px) {

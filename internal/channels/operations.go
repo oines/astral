@@ -3,7 +3,6 @@ package channels
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"slices"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 type ChatOperation struct {
 	Name          string   `json:"name"`
 	Parameters    []string `json:"parameters"`
+	FileFields    []string `json:"file_fields,omitempty"`
 	MessageScoped bool     `json:"message_scoped"`
 	AccountScoped bool     `json:"account_scoped,omitempty"`
 	Documentation string   `json:"documentation"`
@@ -59,19 +59,7 @@ func chatOperations(adapter Adapter) []ChatOperation {
 			result = append(result, ChatOperation{Name: op.Name, Parameters: op.Parameters, MessageScoped: op.MessageScoped, Documentation: op.Documentation})
 		}
 	case *napcat:
-		for _, op := range []ChatOperation{
-			{Name: "get_chat", Parameters: []string{}},
-			{Name: "get_message", Parameters: []string{"message_id"}, MessageScoped: true},
-			{Name: "delete_message", Parameters: []string{"message_id"}, MessageScoped: true},
-			{Name: "set_reaction", Parameters: []string{"message_id", "emoji_id", "set"}, MessageScoped: true},
-			{Name: "poke", Parameters: []string{"user_id"}},
-			{Name: "get_members", Parameters: []string{}},
-			{Name: "get_member", Parameters: []string{"user_id"}},
-			{Name: "set_group_ban", Parameters: []string{"user_id", "duration"}},
-		} {
-			op.Documentation = "https://napneko.github.io/api/"
-			result = append(result, op)
-		}
+		result = append(result, NapCatOperationsCatalog()...)
 	}
 	return result
 }
@@ -84,8 +72,11 @@ func (s *Service) AccountOperation(ctx context.Context, b domain.ExecutionBindin
 		result, err := s.TelegramOperation(ctx, b, accountID, name, request)
 		return ChatOperationResult(result), err
 	}
-	if request.SourceConversationID != "" || len(request.Files) != 0 {
-		return ChatOperationResult{}, domain.Invalid("this operation does not accept source chats or file uploads")
+	if request.SourceConversationID != "" {
+		return ChatOperationResult{}, domain.Invalid("this operation does not accept source chats")
+	}
+	if _, napcatFiles := a.(*napcat); len(request.Files) != 0 && !napcatFiles {
+		return ChatOperationResult{}, domain.Invalid("this operation does not accept file uploads")
 	}
 	operations := chatOperations(a)
 	index := slices.IndexFunc(operations, func(op ChatOperation) bool { return op.Name == name })
@@ -109,6 +100,14 @@ func (s *Service) AccountOperation(ctx context.Context, b domain.ExecutionBindin
 			return ChatOperationResult{}, domain.Invalid("unsupported operation parameter: " + key)
 		}
 	}
+	for field := range request.Files {
+		if !slices.Contains(op.FileFields, field) {
+			return ChatOperationResult{}, domain.Invalid("unsupported operation upload field: " + field)
+		}
+		if _, duplicate := params[field]; duplicate {
+			return ChatOperationResult{}, domain.Invalid("supply the upload only through files." + field)
+		}
+	}
 	messageID := ""
 	if op.MessageScoped {
 		messageID, _ = params["message_id"].(string)
@@ -119,6 +118,11 @@ func (s *Service) AccountOperation(ctx context.Context, b domain.ExecutionBindin
 			return ChatOperationResult{}, domain.Forbidden("message is not archived in the selected chat")
 		}
 	}
+	uploads, err := s.operationFiles(ctx, b, request.Files)
+	if err != nil {
+		return ChatOperationResult{}, err
+	}
+	defer closeOperationFiles(uploads)
 	if err = s.AuthorizeConversation(ctx, b.AgentID, chat.ID); err != nil {
 		return ChatOperationResult{}, err
 	}
@@ -129,10 +133,10 @@ func (s *Service) AccountOperation(ctx context.Context, b domain.ExecutionBindin
 	case *feishu:
 		raw, err = adapter.operation(ctx, name, chat, encoded(params))
 	case *napcat:
-		raw, err = napcatOperation(ctx, adapter, name, chat, params)
+		raw, err = napcatOperation(ctx, adapter, name, chat, params, uploads)
 	}
 	if err != nil {
-		return ChatOperationResult{}, err
+		return ChatOperationResult{}, operationError(err)
 	}
 	if name == "delete_message" {
 		persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -144,211 +148,4 @@ func (s *Service) AccountOperation(ctx context.Context, b domain.ExecutionBindin
 		}
 	}
 	return ChatOperationResult{Result: raw}, nil
-}
-func napcatOperation(ctx context.Context, n *napcat, name string, chat domain.Conversation, params map[string]any) (json.RawMessage, error) {
-	kind, id, err := qqTarget(chat.ExternalID)
-	if err != nil {
-		return nil, err
-	}
-	payload := map[string]any{}
-	method := ""
-	switch name {
-	case "get_chat":
-		if kind == "group" {
-			method = "get_group_info"
-			payload["group_id"] = id
-		} else {
-			method = "get_stranger_info"
-			payload["user_id"] = id
-		}
-	case "get_message":
-		method = "get_msg"
-		payload["message_id"] = params["message_id"]
-	case "delete_message", "set_reaction":
-		if name == "set_reaction" {
-			emojiID, ok := params["emoji_id"].(string)
-			if !ok || emojiID == "" || len(emojiID) > 20 {
-				return nil, domain.Invalid("emoji_id must be a QQ emoji ID string")
-			}
-			for _, r := range emojiID {
-				if r < '0' || r > '9' {
-					return nil, domain.Invalid("emoji_id must be a QQ emoji ID string")
-				}
-			}
-			set := true
-			if value, exists := params["set"]; exists {
-				var valid bool
-				set, valid = value.(bool)
-				if !valid {
-					return nil, domain.Invalid("set must be a boolean")
-				}
-			}
-			payload["emoji_id"], payload["set"] = emojiID, set
-		}
-		// NapCat's globally addressed short message IDs can outlive a mapping
-		// reset. Verify the current platform mapping as well as the archived
-		// authorization before a destructive request.
-		var message json.RawMessage
-		if err := n.call(ctx, "get_msg", map[string]any{"message_id": params["message_id"]}, &message); err != nil {
-			return nil, err
-		}
-		if err := napcatMessageScope(ctx, n, chat, message, telegramID(params["message_id"])); err != nil {
-			return nil, err
-		}
-		method = "delete_msg"
-		if name == "set_reaction" {
-			method = "set_msg_emoji_like"
-		}
-		payload["message_id"] = params["message_id"]
-	case "poke":
-		method = "send_poke"
-		if !napcatNumericID(id) {
-			return nil, domain.Invalid("poke requires a numeric QQ chat ID")
-		}
-		userID := id
-		if value, exists := params["user_id"]; exists {
-			if number, ok := value.(float64); ok && (number > 1<<53 || number < 1) {
-				return nil, domain.Invalid("user_id must be a positive QQ number")
-			}
-			userID = telegramID(value)
-			if !napcatNumericID(userID) {
-				return nil, domain.Invalid("user_id must be a positive QQ number")
-			}
-		} else if kind == "group" {
-			return nil, domain.Invalid("user_id is required to poke a group member")
-		}
-		if kind == "private" && userID != id {
-			return nil, domain.Forbidden("poke target must be the selected private chat's peer")
-		}
-		payload["user_id"] = userID
-		if kind == "group" {
-			payload["group_id"] = id
-			var member struct {
-				GroupID qqValue `json:"group_id"`
-				UserID  qqValue `json:"user_id"`
-			}
-			if err := n.call(ctx, "get_group_member_info", map[string]any{"group_id": id, "user_id": userID, "no_cache": true}, &member); err != nil {
-				return nil, err
-			}
-			if string(member.GroupID) != id || string(member.UserID) != userID {
-				return nil, domain.Forbidden("NapCat could not prove that the poke target belongs to the selected group")
-			}
-		}
-	case "get_members":
-		method = "get_group_member_list"
-		payload["group_id"] = id
-	case "get_member", "set_group_ban":
-		if number, ok := params["user_id"].(float64); ok && (number > 1<<53 || number < 1) {
-			return nil, domain.Invalid("large user IDs must be strings")
-		}
-		userID := telegramID(params["user_id"])
-		if !napcatNumericID(userID) {
-			return nil, domain.Invalid("user_id must be a positive QQ number")
-		}
-		payload["group_id"] = id
-		payload["user_id"] = userID
-		if name == "get_member" {
-			method = "get_group_member_info"
-		} else {
-			method = "set_group_ban"
-			duration := telegramID(params["duration"])
-			if duration == "" {
-				duration = "1800"
-			}
-			// OneBot uses seconds, with zero lifting the restriction.
-			var seconds int64
-			if json.Unmarshal([]byte(duration), &seconds) != nil || seconds < 0 || seconds > 30*24*60*60 {
-				return nil, domain.Invalid("duration must be between 0 and 2592000 seconds")
-			}
-			payload["duration"] = seconds
-		}
-	default:
-		return nil, domain.Invalid("unknown NapCat chat operation")
-	}
-	if (name == "get_members" || name == "get_member" || name == "set_group_ban") && kind != "group" {
-		return nil, domain.Invalid("this operation requires a group chat")
-	}
-	var result json.RawMessage
-	if err = n.call(ctx, method, payload, &result); err != nil {
-		if name == "delete_message" || name == "set_group_ban" || name == "set_reaction" || name == "poke" {
-			var api *napcatAPIError
-			if errors.As(err, &api) {
-				return nil, api.sendError()
-			}
-			return nil, &SendError{Message: err.Error(), Unknown: true}
-		}
-		return nil, err
-	}
-	if name == "get_message" {
-		if err := napcatMessageScope(ctx, n, chat, result, telegramID(params["message_id"])); err != nil {
-			return nil, err
-		}
-	}
-	if len(result) == 0 {
-		result = encoded(nil)
-	}
-	return result, nil
-}
-
-func napcatMessageScope(ctx context.Context, n *napcat, chat domain.Conversation, raw json.RawMessage, requested string) error {
-	kind, id, err := qqTarget(chat.ExternalID)
-	if err != nil {
-		return err
-	}
-	var message struct {
-		Type     string  `json:"message_type"`
-		ID       qqValue `json:"message_id"`
-		GroupID  qqValue `json:"group_id"`
-		UserID   qqValue `json:"user_id"`
-		TargetID qqValue `json:"target_id"`
-	}
-	if json.Unmarshal(raw, &message) != nil || message.ID == "" || string(message.ID) != requested || message.Type != kind {
-		return domain.Forbidden("NapCat could not prove that this message belongs to the selected chat")
-	}
-	if kind == "group" {
-		if string(message.GroupID) != id {
-			return domain.Forbidden("NapCat message belongs to another group")
-		}
-		return nil
-	}
-	if string(message.UserID) == id && (message.TargetID == "" || string(message.TargetID) == n.connection.AccountID) {
-		return nil
-	}
-	if string(message.UserID) != n.connection.AccountID {
-		return domain.Forbidden("NapCat message belongs to another private chat")
-	}
-	if message.TargetID != "" {
-		if string(message.TargetID) != id {
-			return domain.Forbidden("NapCat message belongs to another private chat")
-		}
-		return nil
-	}
-	// NapCat get_msg omits the peer for self-sent private messages. The
-	// explicitly chat-scoped history endpoint can prove recent membership;
-	// an account-global message lookup alone cannot.
-	var history struct {
-		Messages []struct {
-			ID qqValue `json:"message_id"`
-		} `json:"messages"`
-	}
-	if err := n.call(ctx, "get_friend_msg_history", map[string]any{"user_id": id, "count": 100}, &history); err != nil {
-		return err
-	}
-	for _, candidate := range history.Messages {
-		if candidate.ID == message.ID {
-			return nil
-		}
-	}
-	return domain.Forbidden("NapCat could not find this self-sent message in the selected private chat's recent history")
-}
-func napcatNumericID(value string) bool {
-	if len(value) == 0 || len(value) > 20 {
-		return false
-	}
-	for _, r := range value {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return value != "0"
 }

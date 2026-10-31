@@ -63,7 +63,8 @@ func (s *Service) TelegramOperations(ctx context.Context, agentID, accountID str
 	return telegramOperations, err
 }
 
-func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBinding, accountID, method string, request TelegramRequest) (TelegramResult, error) {
+func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBinding, accountID, method string, request TelegramRequest) (response TelegramResult, err error) {
+	defer func() { err = operationError(err) }()
 	index := slices.IndexFunc(telegramOperations, func(v TelegramOperation) bool { return v.Name == method })
 	if index < 0 {
 		return TelegramResult{}, domain.Invalid("unknown chat operation; inspect the account's operations catalog")
@@ -71,6 +72,9 @@ func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBindi
 	operation := telegramOperations[index]
 	if operation.AccountScoped {
 		return s.telegramResourceOperation(ctx, b, accountID, method, request)
+	}
+	if telegramUserRead(method) {
+		return s.telegramUserOperation(ctx, b, accountID, operation, request)
 	}
 	t, connection, err := s.telegramAccount(ctx, b.AgentID, accountID)
 	if err != nil {

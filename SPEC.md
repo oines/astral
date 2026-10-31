@@ -87,7 +87,7 @@ IM 复用同一套 IMStore、Conversation、Session 绑定、持续上下文、P
 | D05 | 首版单 Owner、多 Agent、多 Session；全局资源、Agent 选择、Session 当前状态分层。 |
 | D06 | 每个接入聊天稳定绑定一个持久 Session；一个 Session 最多绑定一个聊天。Topic 独立识别。 |
 | D07 | IM 账号属于 Agent，范围为全部聊天或指定聊天；默认指定且为空，不使用绑定码或群成员权限名单。 |
-| D08 | 工作中的主 Agent 通过持续观察接收群聊和私聊新消息，不额外 Probe 或 IM Steer；空闲时私聊、@、回复 Bot、戳 Bot 直接唤醒，普通群消息按主动模式判断。绑定 Session 的 Web 输入仍使用 Steer。 |
+| D08 | 工作中的主 Agent 通过持续观察接收群聊和私聊新消息，不额外 Probe 或 IM Steer；空闲时私聊、@、回复 Bot、戳 Bot 直接唤醒，普通群消息按主动模式判断。所有 Session 的 Web 输入遵循用户的排队偏好，默认 FollowUp；显式立即补充使用 Steer。 |
 | D09 | 模型可见消息沿用 Cahciua 的紧凑 XML，并补充 Astral 的来源与稳定身份信息。 |
 | D10 | assistant text 在 Web 正常显示；IM 只由 send_message 或显式 Computer API 调用发送。 |
 | D11 | 聊天主动模式默认关闭；开启时 LLM Probe 只为普通群消息判断是否唤醒空闲的主 Agent，只返回参与布尔值；Host 中性唤起，主 Agent 独立决定行为。 |
@@ -768,7 +768,7 @@ NapCat 通过既有 Computer API 操作目录增加 `set_reaction` 与 `poke`，
 | 工作中的 IM 消息，含私聊、@、回复 Bot、戳 Bot 和普通群消息 | 消息 XML，`RoleUser`，`ContextKind=im.observation` | `InjectContext`，在后续主模型请求的安全边界读取；不另启动 Probe，不追加独立 IM Steer |
 | 空闲时的普通群消息 | 同样的观察内容 | 不单独激活主模型；开启该聊天主动模式时，经防抖由 Probe 判断是否唤醒 |
 | 空闲时的 @、回复 Bot、私聊、戳 Bot 等直接触发 | 同样的观察内容与一条引用目标事件的驱动输入 | 沿用现有直接触发流程，提交关联观察与 Steer，再 Continue |
-| Web UI prompt | 带 Web 来源的 User Message | 始终是驱动输入；绑定 Session 使用 Steer，没有 Probe 分支 |
+| Web UI prompt | 带 Web 来源的 User Message | 始终是驱动输入；按排队偏好使用 FollowUp 或 Steer，没有 Probe 分支 |
 
 静默表示不因该观察单独创建一次模型执行。若 Session 已经运行，观察在安全边界进入后续主模型请求，由主 Agent 结合当前工作处理。群聊和私聊共用此机制；不同之处在空闲时是否需要直接唤醒或判断参与。记录已进入历史、主模型确实已经读取、模型选择回复是三种不同事实。
 
@@ -861,7 +861,7 @@ Core 只提供一个 Session 执行实现，SQLite 与 Memory 共用。Host 直�
 
 `Prompt` 仅在空闲且协议完整时接收输入并启动，忙时返回 Busy 且不接收；`Steer`、`FollowUp` 只入队。`Continue` 显式处理队列或未完成工作，不添加虚构消息；无工作时不请求模型。`InjectContext` 接收被动上下文，空闲维护及 Run 收尾分批应用积压，可调用现有自动 compact；不启动主 Agent。取消、预算或摘要失败保留尚未提交的输入。读取和 Core 重开不启动执行；Host 恢复已绑定聊天时重新维护 pending Context。
 
-Composer 在输入框上方展示已接受的驱动输入队列，支持逐条引导、编辑文字、删除和拖拽排序。“引导”将选定输入改为 Steer，在下一安全边界应用；其余输入保持 FollowUp。编辑和排序复用原输入身份，并通过 Core 的单次原子提交持久化。已经冻结的附件与关联上下文不重新读取。输入框支持文件选择、剪贴板图片和文件拖入，图片显示缩略图；未绑定 Session 可切换排队偏好，Command/Ctrl+Enter 可直接引导；绑定 Session 的 Web 输入使用 Steer。
+Composer 在输入框上方展示已接受的驱动输入队列，支持逐条引导、编辑文字、删除和拖拽排序。“引导”将选定输入改为 Steer，在下一安全边界应用；其余输入保持 FollowUp。编辑和排序复用原输入身份，并通过 Core 的单次原子提交持久化。已经冻结的附件与关联上下文不重新读取。输入框支持文件选择、剪贴板图片和文件拖入，图片显示缩略图；所有 Session（包括绑定 IM 的会话）均可切换排队偏好，默认 FollowUp，Command/Ctrl+Enter 可直接引导。输入法组合输入及其确认回车不触发发送，确认结束后的独立回车才按当前模式发送。
 
 输入框默认保持紧凑单行，随正文和附件按需增高；Computer、Agent、模型和上下文选项位于输入框下方。
 
@@ -888,6 +888,12 @@ Server 在派发每条 `exec_command` 前生成独立的高熵随机凭据，仅
 `GET /v1/capabilities` 是统一发现入口，返回调用与身份范围说明、按用途组织的能力及其 `read_url`，并链接完整 OpenAPI。`GET /v1/capabilities/{id}` 按需提供历史、会话管理、计划任务、聊天、文件或环境能力的用途、作用范围、行为与错误规则、请求示例及该能力的 OpenAPI 子集。子集直接取实际注册的路由、请求／响应 schema 及其传递引用，不能另维护一份参数定义；完整契约与每个能力子集均声明独立的 command Bearer 安全方案，并包含其定义。平台能力按账号继续发现，不将某个平台的能力泛化到所有账号。
 
 发送规则明确区分直接工具和 HTTP：绑定聊天优先使用当前 `send_message` schema 支持的文字与附件；其执行标识由 Host 提供。`Idempotency-Key` 仅是 HTTP 发送接口的必需请求头，在发现文档及 OpenAPI 中声明。文件文档同时说明 Web 文件引用、IM 原件下载及图片预览省略的区别。
+
+平台具名操作统一通过账号的 `/v1/accounts/{id}/operations` 发现并调用，目录声明参数、上传 `file_fields` 和官方文档。Telegram 覆盖群管理、指定成员/管理员/人数查询与用户资料读取；Bot API 不支持完整群成员枚举。用户资料限于当前授权私聊对方或经平台证明的群成员，Topic 权限不扩大为父群授权。NapCat 覆盖成员和资料卡、群管理、公告、群文件及精华；原生群号由当前授权聊天确定。公告、文件及目录等不透明 ID 由当前群实时列表证明后才操作。文件、头像和公告图片上传使用来源 Computer 路径或 FileRef 流式读取，不解释为适配器宿主机路径或任意 URL。平台不提供的公告编辑、文件夹改名等能力不通过删建模拟。
+
+NapCat 头像通过聊天下的 `/avatar/content` 读取群头像或私聊对方头像，通过 `/members/{user_id}/avatar/content` 读取指定个人头像；个人目标只限私聊对方或 NapCat 已核实的当前群成员。对应 `/download` 接受明确的 `path`，保存到调用命令的来源电脑并返回 FileRef 与 URI。每次沿当前账号、聊天及私密 Session 授权校验，头像源由 Server 固定为 QQ 头像服务，不接受任意 URL；不创建入站事件或修改历史。QQ 官方 Bot 不复用这组 NapCat 资源接口。
+
+NapCat 精华保留有序文字、图片及实际提供的其他媒体，不压平成文字。设置精华按原消息的平台群归属校验；取消精华从当前授权群列表取得可信序号和随机标识，支持未被 Astral 归档的历史精华，只移除标记而不删原消息。独立精华 parts/content/download 资源每次核对当前群精华来源，提供安全的按需读取和来源电脑下载；成对的 `msg_seq`/`msg_random` 查询参数在平台短消息 ID 变化时维持同条精华的身份；媒体链接附带必需的 `media_digest` 来源指纹，片段顺序变化时拒绝把旧链接解释为另一张图，要求重新读取 parts。图片流保留有效的真实媒体类型。查询不批量下载、不创建会话、不补写入站归档或 Core 历史。具名操作只尝试一次，明确拒绝与效果未知分别反馈，不套用普通消息发送的幂等规则。
 
 ```text
 Agent 的 Bash / 脚本

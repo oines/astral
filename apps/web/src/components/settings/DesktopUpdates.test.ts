@@ -11,6 +11,9 @@ interface Setup {
   error: string
   busy: boolean
   waiting: boolean
+  description?: string
+  actionLabel: string
+  failure: string
   act: (intent?: 'check' | 'update' | 'downloads') => Promise<void>
 }
 const fixture = vi.hoisted(() => ({ state: undefined as DesktopUpdateState | undefined, setup: undefined as Setup | undefined, waiting: false,
@@ -29,7 +32,7 @@ vi.mock('@astral/ui', () => ({
     return () => h('section', slots.default?.())
   } }),
   SettingsRow: defineComponent({ props: { label: { type: String, default: '' }, description: { type: String, default: '' } }, setup(props, { slots }) {
-    return () => h('div', [h('strong', props.label), h('p', props.description), slots.default?.()])
+    return () => h('div', [h('strong', props.label), props.description ? h('p', props.description) : undefined, slots.default?.()])
   } }),
   Button: defineComponent({ props: { busy: Boolean, disabled: Boolean }, setup(props, { attrs, slots }) {
     return () => h('button', { ...attrs, disabled: props.busy || props.disabled }, slots.default?.())
@@ -53,7 +56,7 @@ describe('Desktop on-demand update actions', () => {
   it('explains download and task interruption before offering update, without starting it', async () => {
     const html = await render()
     expect(html).toContain('0.1.1 is available')
-    expect(html).toContain('restarts the service and interrupts running tasks')
+    expect(html).toContain('restarts Astral and interrupts running tasks')
     expect(html).toContain('Update and restart')
     expect(html).not.toContain('Check for updates')
     expect(html.match(/<button/g)).toHaveLength(1)
@@ -86,7 +89,7 @@ describe('Desktop on-demand update actions', () => {
     fixture.state = { phase: 'error', currentVersion: '0.1.0', retry: 'update', error: 'Package checksum mismatch' }
     const html = await render()
     expect(html).toContain('Retry update')
-    expect(html).toContain('restarts the service and interrupts running tasks')
+    expect(html).not.toContain('restarts Astral')
     expect(html).toContain('Package checksum mismatch')
     expect(html.match(/<button/g)).toHaveLength(1)
     await fixture.setup!.act()
@@ -107,6 +110,7 @@ describe('Desktop on-demand update actions', () => {
     fixture.state = { phase: 'downloading', currentVersion: '0.1.0', version: '0.1.1', percent: 35.8 }
     const html = await render()
     expect(html).toContain('Downloading 0.1.1 · 35%')
+    expect(html).not.toContain('interrupts running tasks')
     expect(html).toContain('<progress')
     expect(html).not.toContain('<button')
     await fixture.setup!.act()
@@ -127,14 +131,16 @@ describe('Desktop on-demand update actions', () => {
     const html = await render()
     expect(html).not.toContain('<progress')
     expect(html).toContain('Reconnecting…')
-    expect(html).toContain('A lost connection does not confirm')
+    expect(html.match(/Reconnecting…/g)).toHaveLength(1)
+    expect(html).not.toContain('<p>')
   })
   it('does not invent a percentage when a managed Server has not reported one', async () => {
     fixture.state = { phase: 'downloading', currentVersion: '0.1.0', version: '0.1.1' }
     const html = await render()
     expect(html).not.toContain('<progress')
     expect(html).not.toContain('0%')
-    expect(html).toContain('Preparing update…')
+    expect(html).toContain('Downloading update…')
+    expect(html).not.toContain('<p>')
     expect(html).toContain('disabled')
   })
   it('shows the same Server update entry in an ordinary Web page', async () => {
@@ -144,5 +150,48 @@ describe('Desktop on-demand update actions', () => {
     expect(html).toContain('Update and restart')
     await fixture.setup!.act()
     expect(update).toHaveBeenCalledOnce()
+  })
+  it('keeps the idle row to its action without a repeated explanation', async () => {
+    fixture.state = { phase: 'idle', currentVersion: '0.1.0' }
+    const html = await render()
+    expect(html).toContain('Check for updates')
+    expect(html).not.toContain('<p>')
+  })
+  it.each([
+    ['checking', 'Checking for updates…'],
+    ['installing', 'Installing update…'],
+  ] as const)('shows one status while %s', async (phase, label) => {
+    fixture.state = { phase, currentVersion: '0.1.0' }
+    const html = await render()
+    expect(html).toContain(label)
+    expect(html.split(label)).toHaveLength(2)
+    expect(html).not.toContain('<p>')
+    expect(html).toContain('disabled')
+  })
+  it('shows the check status and removes the previous error while retrying', async () => {
+    fixture.state = { phase: 'error', currentVersion: '0.1.0', retry: 'check', error: 'Metadata could not be fetched' }
+    await render()
+    const checking = fixture.setup!.act()
+    expect(fixture.setup!.actionLabel).toBe('desktopUpdate_checking')
+    expect(fixture.setup!.description).toBeUndefined()
+    expect(fixture.setup!.failure).toBe('')
+    await checking
+  })
+  it('uses a fallback only when the failed update has no specific error', async () => {
+    fixture.state = { phase: 'error', currentVersion: '0.1.0', retry: 'update' }
+    const html = await render()
+    expect(html).toContain('The update failed.')
+    expect(html).toContain('Retry update')
+    expect(html).not.toContain('Could not check for updates')
+  })
+  it.each([
+    ['development', 'Download and install a release build'],
+    ['signature', 'Install an official signed Astral release'],
+    ['package', 'Install the latest DEB package manually'],
+  ])('keeps a concrete next step for the %s restriction', async (unavailable, nextStep) => {
+    fixture.state = { phase: 'unavailable', currentVersion: '0.1.0', unavailable: unavailable as DesktopUpdateState['unavailable'] }
+    const html = await render()
+    expect(html).toContain(nextStep)
+    expect(html).toContain('Download latest version')
   })
 })

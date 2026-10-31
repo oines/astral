@@ -3,7 +3,7 @@ title: "Use containers"
 description: "Give a Bot a separate, persistent execution environment."
 ---
 
-A container appears as an independent computer with its own identity and filesystem. Use one when you want a task environment separate from your everyday system.
+A container is an independent computer in Astral, with its own filesystem and identity. For public groups, use a dedicated Bot authorized only for a container or dedicated machine. Read the [environment and access guidance](/docs/start/safe-use/#use-a-separate-environment-for-public-groups) before creating one.
 
 ## Prepare the host
 

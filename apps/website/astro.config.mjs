@@ -44,6 +44,7 @@ export default defineConfig({
           page('Introduction', '认识 Astral', 'start/introduction'),
           page('Get Astral', '获取 Astral', 'start/get-astral'),
           page('First steps', '首次配置', 'start/first-steps'),
+          page('Use Astral safely', '安全使用 Astral', 'start/safe-use'),
         ]),
         group('Your computers', '连接电脑', [
           page('Connect a computer', '连接电脑', 'computers/connect'),
@@ -61,6 +62,7 @@ export default defineConfig({
         group('Chat platforms', '聊天平台', [
           page('Connect a chat', '接入聊天', 'chat/overview'),
           page('Work in group chats', '群聊协作', 'chat/groups'),
+          page('Platform APIs', '平台 API', 'chat/platform-api'),
           page('Telegram', 'Telegram', 'chat/telegram'),
           page('QQ', 'QQ', 'chat/qq'),
           page('Weixin', '微信', 'chat/weixin'),

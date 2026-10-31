@@ -127,6 +127,8 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	})
 	s.telegramStickerRoutes()
 	s.messagePartRoutes()
+	s.napcatEssenceRoutes()
+	s.napcatAvatarRoutes()
 	register[httpcontract.Empty, []domain.Connection](s, "GET", "/v1/accounts", "agentAccounts", func(r *http.Request, _ httpcontract.Empty) ([]domain.Connection, error) {
 		return c.VisibleConnections(r.Context(), binding(r).AgentID)
 	})

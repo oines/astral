@@ -18,7 +18,7 @@ Once online, its details show the environment, version, and data directory.
 3. Generate the connection command and run it in the target's Shell or PowerShell.
 4. The command checks connectivity and installs a background service. Wait for the computer to appear online in Astral.
 
-The command contains temporary pairing credentials. Use it only on the intended machine and generate a new command if it expires. The installer needs the matching official release assets. In a source-development environment without those published assets, do not assume a public download is available.
+The command contains temporary pairing credentials. Use it only on the intended machine and generate a new command if it expires. The installer needs matching official release assets. For an unpublished development version, prepare the target computer’s program yourself.
 
 The remote computer connects outward to the Server. `127.0.0.1` refers to the same machine; a LAN, VPN, or public address must actually be reachable from the target. HTTP and HTTPS connection addresses are supported; the computer channel provides its own encryption and server identity verification. Browser access has separate requirements described in [Run a Server](/docs/hosting/server/).
 
@@ -32,7 +32,7 @@ The server-machine Daemon updates with Desktop or Server. If the computer is off
 
 Open **Settings → Bots → your Bot → Computer access**, allow the new machine, and optionally make it the default for new sessions.
 
-An online computer is not automatically available to every Bot. If it is absent from a session's choices, check that Bot's permission first.
+If an online computer is missing from a session’s choices, check whether that Bot has been granted access.
 
 ## Background services
 
@@ -42,4 +42,23 @@ On Linux, native background enrollment checks user-service availability before p
 
 To connect as root, log in directly as root or run `sudo -i`, then paste the complete connection command. Avoid retaining another account's `HOME` or XDG session environment. Agent commands will have root's permissions. Lingering applies to the account, so uninstalling one Astral Daemon does not disable it or stop the whole user manager.
 
-Revoking Bot access, removing a connection, and deleting files are different operations. See [Updates and backups](/docs/hosting/maintenance/) for service maintenance.
+## Disconnect and stop a computer
+
+Stop affected sessions first and check for work still running. Revoking a Bot's computer access blocks its subsequent operations. To disconnect the computer from all Bots, choose **Revoke connection** in its details.
+
+Stop or uninstall a native remote service on the target computer, using the same operating-system account used for enrollment. Replace `--root` with the data directory shown in computer details. These examples assume `astral` is on PATH; use `astral.exe` on Windows:
+
+```sh
+astral computer service stop --root /path/to/computer
+astral computer service status --root /path/to/computer
+```
+
+To use it again, run `astral computer service start --root /path/to/computer`. For longer-term removal, uninstall the background service:
+
+```sh
+astral computer service uninstall --root /path/to/computer
+```
+
+Uninstalling stops the service and removes its startup configuration, keeping computer data and work files. Stop a container computer through the host's container manager; back up work before removing a container or volume. Desktop manages its local service with the App; use the desktop background-running settings to stop it.
+
+See [Updates and backups](/docs/hosting/maintenance/) for updating and preserving data.

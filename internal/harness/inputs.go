@@ -154,14 +154,7 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 	if receipt, exists, err := r.existingReceipt(ctx, input.ID, hash); err != nil || exists {
 		return receipt, err
 	}
-	var record domain.Session
-	if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
-		return InputReceipt{}, err
-	}
 	kind := core.InputKind(input.Mode)
-	if record.BindingID != "" {
-		kind = core.InputSteer
-	}
 	files := make([]domain.FileRef, 0, len(input.Files))
 	for _, uri := range input.Files {
 		file, err := s.Files.Get(ctx, r.agentID, uri)

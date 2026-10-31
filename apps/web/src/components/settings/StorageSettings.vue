@@ -2,13 +2,14 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { deleteSession } from '@astral/sdk'
+import { deleteSession, listConnections } from '@astral/sdk'
 import { Bot, ChevronDown, ChevronRight, Copy, Search } from '@astral/icons'
 import { Button, ConfirmPopover, Select, SettingsRow, SettingsSection, useDelayedPending } from '@astral/ui'
 import { useAppStore } from '../../stores/app'
 import { useClipboard } from '../../composables/useClipboard'
 import { bytes, errorText, request } from '../../lib/api'
-import { platformLabel } from '../../lib/im-platforms'
+import { storageChatAccount, type StorageAccount } from '../../lib/storage-presentation'
+import { createStorageLoader } from '../../lib/storage-refresh'
 import { readStorageTasks, writeStorageTasks, storageTaskRequest, type StorageTaskRequest } from '../../lib/storage-tasks'
 import {
   cleanStorageApplication, cleanStorageChat, getStorage, getStorageCleanup, getStorageCleanupOperation,
@@ -25,12 +26,14 @@ const { copy, copied } = useClipboard()
 const snapshot = ref<StorageSnapshot>()
 const loading = ref(false)
 const loadError = ref('')
+let retrySizeRefresh = false
 const waiting = useDelayedPending(loading)
 const busy = ref('')
 const errors = ref<Record<string, string>>({})
 const confirming = ref('')
 const selectedBot = computed(() => typeof route.query.bot === 'string' ? route.query.bot : '')
 const selectedChat = computed(() => typeof route.query.chat === 'string' ? route.query.chat : '')
+const accounts = ref<(StorageAccount & { agent_id: string })[]>([])
 const bot = computed(() => snapshot.value?.agents.find(value => value.agent_id === selectedBot.value))
 const chat = computed(() => bot.value?.chats.find(value => value.conversation_id === selectedChat.value))
 const maximumBotBytes = computed(() => Math.max(1, ...(snapshot.value?.agents.map(value => value.logical_bytes) || [])))
@@ -50,7 +53,8 @@ const cleanupTokens = ref<string[]>([])
 const taskMemory = readStorageTasks(localStorage)
 cleanupOpen.value = !!taskMemory.application
 const pendingRequests = ref(taskMemory.requests)
-const unconfirmedRequests = computed(() => Object.fromEntries(Object.entries(pendingRequests.value).filter(([key]) => key !== busy.value)))
+const requestCheckFailed = ref<Record<string, boolean>>({})
+const unconfirmedRequests = computed(() => Object.fromEntries(Object.entries(pendingRequests.value).filter(([key, value]) => key !== busy.value && requestCheckFailed.value[key] && (value.kind === 'application' ? !selectedBot.value : value.conversation_id === selectedChat.value))))
 const cleanupOperation = ref<StorageCleanupOperation | undefined>(taskMemory.application)
 const cleanupSelectionBytes = computed(() => (cleanup.value?.items || []).filter(value => cleanupTokens.value.includes(value.token)).reduce((total, value) => total + value.bytes, 0))
 const cleanupActive = computed(() => cleanupOperation.value?.state === 'running' || !!pendingRequests.value.cleanup)
@@ -66,16 +70,19 @@ const estimating = computed(() => snapshot.value?.estimate.state === 'running')
 const estimateWaiting = useDelayedPending(estimating)
 const reclaimState = computed(() => snapshot.value?.reclaim.state || 'idle')
 const reclaiming = computed(() => ['queued', 'waiting', 'running'].includes(reclaimState.value))
-const reclaimWaiting = useDelayedPending(reclaiming)
+const recentlyDeleted = ref(false)
+const cleanupPending = useDelayedPending(() => cleanupActive.value && !unconfirmedRequests.value.cleanup)
+const chatPending = useDelayedPending(() => chatActive.value && !Object.values(unconfirmedRequests.value).some(value => value.conversation_id === selectedChat.value))
+watch(reclaimState, state => { if (state === 'complete' || state === 'idle') recentlyDeleted.value = false })
 let active = false
 let timer: ReturnType<typeof setTimeout> | undefined
-let fetching = false
 
 function href(botID = '', chatID = '') { return { path: '/settings/storage', query: { ...(botID ? { bot: botID } : {}), ...(chatID ? { chat: chatID } : {}) } } }
 function size(value: number, state?: EstimateState) {
-  if (state === 'complete') return t('storageEstimated', { size: bytes(value) })
+  if (state === 'complete') return value === 0 ? bytes(value) : t('storageEstimated', { size: bytes(value) })
   if (state === 'partial' && value > 0) return t('storageEstimatePartial', { size: bytes(value) })
-  return t(state === 'failed' || state === 'partial' ? 'storageEstimateFailed' : 'storageEstimatePending')
+  if (state === 'failed' || state === 'partial') return t('storageEstimateFailed')
+  return estimating.value ? t('storageEstimatePending') : '—'
 }
 function botState(value: NonNullable<typeof bot.value>): EstimateState {
   const states = [...value.chats, ...value.sessions].map(item => item.estimate_state)
@@ -84,17 +91,14 @@ function botState(value: NonNullable<typeof bot.value>): EstimateState {
   if (states.some(state => state === 'pending' || state === 'running')) return 'pending'
   return 'partial'
 }
-function account(value: StorageChat) { return [platformLabel(value.platform, locale.value), value.account_name || t('storageUnknownAccount')].join(' · ') }
+function account(value: StorageChat) { return storageChatAccount(value, bot.value?.chats || [], accounts.value.filter(item => item.agent_id === selectedBot.value), locale.value, number => t('storageAccountNumber', { number })) }
 function cleanupProtection(reason?: string) {
   if (reason === 'update_running') return t('storageCleanupProtectedUpdate')
   if (reason === 'update_pending') return t('storageCleanupProtectedPending')
   if (reason === 'update_recovery') return t('storageCleanupProtectedRecovery')
   return t('storageLatestRecovery')
 }
-function formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : date.toLocaleString(locale.value) }
 function isWorking(value?: StorageConversationOperation) { return value?.state === 'queued' || value?.state === 'running' }
-function operationText(value: StorageConversationOperation) { return t(value.state === 'queued' ? 'storageTaskQueued' : value.state === 'running' ? 'storageTaskRunning' : value.state === 'failed' ? 'storageTaskFailed' : 'storageTaskComplete') }
-function reclaimText() { return t(`storageReclaim${reclaimState.value.charAt(0).toUpperCase()}${reclaimState.value.slice(1)}`) }
 function closeConfirmation(open: boolean, key: string) {
   confirming.value = open ? key : ''
   if (!open && key.startsWith('retention:')) delete retentionDraft.value[key.slice('retention:'.length)]
@@ -117,16 +121,14 @@ async function run(key: string, action: () => Promise<void>, close = true) {
     if (storageRequestRejected(error)) delete pendingRequests.value[key]
     if (storageRequestRejected(error) || key.startsWith('delete:') || key.startsWith('session:')) await load()
   }
-  finally { busy.value = ''; schedulePoll() }
+  finally { busy.value = ''; if (active && Object.keys(pendingRequests.value).length) void poll(); else schedulePoll() }
 }
-async function load() {
-  if (fetching) return
-  fetching = true
+const load = createStorageLoader(async refreshSizes => {
   loading.value = true
-  try { snapshot.value = await getStorage(); loadError.value = '' }
-  catch (error) { loadError.value = `${t('storageRefreshFailed')} ${errorText(error)}` }
-  finally { fetching = false; loading.value = false }
-}
+  try { snapshot.value = await (refreshSizes ? refreshStorage() : getStorage()); if (refreshSizes || !retrySizeRefresh) { loadError.value = ''; retrySizeRefresh = false } }
+  catch (error) { retrySizeRefresh ||= refreshSizes; loadError.value = `${t('storageRefreshFailed')} ${errorText(error)}` }
+  finally { loading.value = false }
+})
 async function loadCleanup() {
   if (cleanupLoading.value) return
   cleanupLoading.value = true
@@ -147,7 +149,7 @@ async function cleanApplication() {
     const intent = storageTaskRequest(pendingRequests.value, 'cleanup', { kind: 'application', tokens: [...cleanupTokens.value] })
     cleanupOperation.value = await cleanStorageApplication(intent.operation_id, intent.tokens!)
     delete pendingRequests.value.cleanup
-    if (cleanupOperation.value.state === 'complete') { await Promise.all([load(), loadCleanup()]) }
+    if (cleanupOperation.value.state === 'complete') { cleanupOperation.value = undefined; await Promise.all([load(true), loadCleanup()]) }
   })
 }
 async function retryApplication() {
@@ -155,7 +157,7 @@ async function retryApplication() {
   if (!value) return
   await run('cleanupRetry', async () => {
     cleanupOperation.value = await retryStorageCleanupOperation(value.operation_id)
-    if (cleanupOperation.value.state === 'complete') await Promise.all([load(), loadCleanup()])
+    if (cleanupOperation.value.state === 'complete') { cleanupOperation.value = undefined; await Promise.all([load(true), loadCleanup()]) }
   }, false)
 }
 async function cleanArchive(value: StorageChat) {
@@ -167,7 +169,7 @@ async function cleanArchive(value: StorageChat) {
     const intent = storageTaskRequest(pendingRequests.value, key, { kind: 'archive', conversation_id: value.conversation_id, before: before.toISOString() })
     operations.value[value.conversation_id] = await cleanStorageChat(value.conversation_id, intent.operation_id, intent.before)
     delete pendingRequests.value[key]
-    if (operations.value[value.conversation_id]!.state === 'complete') await load()
+    await reconcileOperation(operations.value[value.conversation_id]!)
   })
 }
 async function chooseRetention(value: StorageChat, days: string) {
@@ -187,7 +189,8 @@ async function saveRetention(value: StorageChat) {
     if (days !== 0 || result.state !== 'complete') operations.value[value.conversation_id] = result
     delete pendingRequests.value[key]
     if (result.state === 'failed') throw new Error(result.error || t('storageTaskFailed'))
-    await load()
+    if (result.state === 'complete' && days !== 0) await reconcileOperation(result)
+    else await load()
     delete retentionDraft.value[value.conversation_id]
   })
 }
@@ -202,8 +205,10 @@ async function resetChat(value: StorageChat) {
 }
 async function reconcileOperation(value: StorageConversationOperation) {
   if (value.state !== 'complete') return
+  recentlyDeleted.value = true
   if (value.old_session_id) app.forgetSession(value.old_session_id)
-  await Promise.allSettled([load(), app.refresh()])
+  await Promise.allSettled([load(true), app.refresh()])
+  if (operations.value[value.conversation_id]?.id === value.id) delete operations.value[value.conversation_id]
 }
 async function retryChat(value: StorageConversationOperation) {
   await run(`retry:${value.conversation_id}`, async () => {
@@ -219,18 +224,24 @@ async function deleteStoredSession(value: StorageSession) {
   await run(`delete:${value.session_id}`, async () => {
     await request(deleteSession({ path: { id: value.session_id }, query: { revision: value.revision } }))
     app.forgetSession(value.session_id)
-    await Promise.allSettled([load(), app.refresh()])
+    recentlyDeleted.value = true
+    await Promise.allSettled([load(true), app.refresh()])
   })
 }
 async function checkRequest(key: string, value: StorageTaskRequest) {
-  if (value.kind === 'application') cleanupOperation.value = await getStorageCleanupOperation(value.operation_id)
+  if (value.kind === 'application') {
+    cleanupOperation.value = await getStorageCleanupOperation(value.operation_id)
+    if (cleanupOperation.value.state === 'complete') { cleanupOperation.value = undefined; await Promise.all([load(true), loadCleanup()]) }
+  }
   else {
     const next = await getStorageConversationOperation(value.operation_id)
     operations.value[value.conversation_id!] = next
     await reconcileOperation(next)
   }
   delete pendingRequests.value[key]
+  delete requestCheckFailed.value[key]
   delete errors.value[key]
+  if (confirming.value === key) confirming.value = ''
 }
 async function retryRequest(key: string, value: StorageTaskRequest) {
   await run(key, async () => {
@@ -244,8 +255,9 @@ async function retryRequest(key: string, value: StorageTaskRequest) {
     }
     const next = value.conversation_id ? operations.value[value.conversation_id] : undefined
     if (next) await reconcileOperation(next)
-    if (value.kind === 'application' && cleanupOperation.value?.state === 'complete') await loadCleanup()
-    await load()
+    if (value.kind === 'application' && cleanupOperation.value?.state === 'complete') { cleanupOperation.value = undefined; await loadCleanup() }
+    delete requestCheckFailed.value[key]
+    await load(true)
   })
 }
 function schedulePoll() {
@@ -255,12 +267,12 @@ function schedulePoll() {
   if (pending) timer = setTimeout(() => { void poll() }, 1500)
 }
 let polling = false
-async function poll() {
+async function poll(refreshSizes = false) {
   if (!active || polling) return
   polling = true
   try {
     const results = await Promise.allSettled([
-      ...Object.entries(pendingRequests.value).map(async ([key, value]) => { try { await checkRequest(key, value) } catch (error) { errors.value[key] = errorText(error) } }),
+      ...Object.entries(pendingRequests.value).filter(([key]) => key !== busy.value).map(async ([key, value]) => { try { await checkRequest(key, value) } catch (error) { requestCheckFailed.value[key] = true; errors.value[key] = errorText(error) } }),
       ...Object.values(operations.value).filter(isWorking).map(async value => {
         const next = await getStorageConversationOperation(value.id)
         operations.value[value.conversation_id] = next
@@ -268,16 +280,23 @@ async function poll() {
       }),
       ...(cleanupOperation.value?.state === 'running' ? [(async () => {
         cleanupOperation.value = await getStorageCleanupOperation(cleanupOperation.value!.operation_id)
-        if (cleanupOperation.value.state === 'complete') await loadCleanup()
+        if (cleanupOperation.value.state === 'complete') { cleanupOperation.value = undefined; await Promise.all([load(true), loadCleanup()]) }
       })()] : []),
     ])
     const failure = results.find(result => result.status === 'rejected')
     if (failure?.status === 'rejected') errors.value.poll = errorText(failure.reason)
     else delete errors.value.poll
-    await load()
+    await load(refreshSizes)
   } finally { polling = false; schedulePoll() }
 }
-onActivated(async () => { active = true; await Promise.allSettled([poll(), ...(cleanupOpen.value ? [loadCleanup()] : [])]) })
+onActivated(async () => {
+  active = true
+  await Promise.allSettled([
+    poll(true),
+    request(listConnections()).then(value => { accounts.value = value }),
+    ...(cleanupOpen.value ? [loadCleanup()] : []),
+  ])
+})
 onDeactivated(() => { active = false; clearTimeout(timer) })
 onBeforeUnmount(() => { active = false; clearTimeout(timer) })
 </script>
@@ -327,7 +346,7 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
       {{ loadError }} <button
         class="text-button"
         type="button"
-        @click="load"
+        @click="load(retrySizeRefresh)"
       >
         {{ t('retry') }}
       </button>
@@ -357,38 +376,11 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
       {{ errors.poll }} <button
         type="button"
         class="text-button"
-        @click="poll"
+        @click="poll()"
       >
         {{ t('retry') }}
       </button>
     </p>
-    <div
-      v-if="snapshot && (reclaimWaiting || reclaimState === 'failed' || reclaimState === 'complete')"
-      class="storage-task"
-      :class="{ 'storage-task-error': reclaimState === 'failed' }"
-      :role="reclaimState === 'failed' ? 'alert' : 'status'"
-    >
-      <span
-        v-if="reclaimWaiting"
-        class="spinner"
-        aria-hidden="true"
-      />
-      <div>
-        <strong>{{ reclaimText() }}</strong><p v-if="reclaimState !== 'complete'">
-          {{ snapshot.reclaim.error || t('storageReclaimHint') }}
-        </p><p v-if="errors.reclaim">
-          {{ errors.reclaim }}
-        </p>
-      </div>
-      <Button
-        v-if="reclaimState === 'failed'"
-        size="small"
-        :busy="busy === 'reclaim'"
-        @click="retryReclaim"
-      >
-        {{ t('storageRetryReclaim') }}
-      </Button>
-    </div>
     <div
       v-for="(value, key) in unconfirmedRequests"
       :key="key"
@@ -396,8 +388,8 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
       role="alert"
     >
       <div>
-        <strong>{{ t('storageTaskUnconfirmed') }}</strong><p>{{ t('storageTaskUnconfirmedHint') }}</p><p v-if="errors[key]">
-          {{ errors[key] }}
+        <strong>{{ t('storageTaskUnconfirmed') }}</strong><p>
+          {{ errors[key] || t('storageTaskUnconfirmedHint') }}
         </p>
       </div><Button
         size="small"
@@ -444,6 +436,31 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
           >
             {{ t('storagePhysicalWarnings') }} {{ disk.errors.join(' ') }}
           </p>
+          <div
+            v-if="reclaimState === 'failed'"
+            class="storage-task storage-task-error"
+            role="alert"
+          >
+            <div>
+              <strong>{{ t('storageReclaimFailed') }}</strong>
+              <p v-if="snapshot.reclaim.error || errors.reclaim">
+                {{ errors.reclaim || snapshot.reclaim.error }}
+              </p>
+            </div>
+            <Button
+              size="small"
+              :busy="busy === 'reclaim'"
+              @click="retryReclaim"
+            >
+              {{ t('retry') }}
+            </Button>
+          </div>
+          <p
+            v-else-if="recentlyDeleted && reclaiming"
+            class="muted small"
+          >
+            {{ t('storageSpacePending') }}
+          </p>
         </div>
       </SettingsSection>
       <SettingsSection
@@ -457,6 +474,7 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
           class="resource-row storage-object-row"
         >
           <Bot /><span><strong>{{ value.name }}</strong><span
+            v-if="value.logical_bytes > 0"
             class="storage-size-track"
             aria-hidden="true"
           ><span :style="{ width: storageShare(value.logical_bytes, maximumBotBytes) }" /></span></span><span class="storage-object-size">{{ size(value.logical_bytes, botState(value)) }}</span><ChevronRight />
@@ -475,7 +493,7 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
           :aria-expanded="cleanupOpen"
           @click="toggleCleanup"
         >
-          <span><strong>{{ t('storageApplicationCleanup') }}</strong><small>{{ t('storageApplicationCleanupHint') }}</small></span><ChevronDown v-if="cleanupOpen" /><ChevronRight v-else />
+          <span><strong>{{ t('storageApplicationCleanup') }}</strong></span><ChevronDown v-if="cleanupOpen" /><ChevronRight v-else />
         </button>
         <template v-if="cleanupOpen">
           <p
@@ -543,17 +561,17 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
             </ConfirmPopover>
           </div>
           <div
-            v-if="cleanupOperation"
+            v-if="cleanupOperation?.state === 'failed' || cleanupPending"
             class="storage-task"
-            :class="{ 'storage-task-error': cleanupOperation.state === 'failed' }"
-            :role="cleanupOperation.state === 'failed' ? 'alert' : 'status'"
+            :class="{ 'storage-task-error': cleanupOperation?.state === 'failed' }"
+            :role="cleanupOperation?.state === 'failed' ? 'alert' : 'status'"
           >
             <div>
-              <strong>{{ t(cleanupOperation.state === 'running' ? 'storageTaskRunning' : cleanupOperation.state === 'failed' ? 'storageTaskFailed' : 'storageTaskComplete') }}</strong><p v-if="cleanupOperation.error || errors.cleanupRetry">
-                {{ cleanupOperation.error || errors.cleanupRetry }}
+              <strong>{{ t(cleanupOperation?.state === 'failed' ? 'storageTaskFailed' : pendingRequests.cleanup ? 'storageTaskChecking' : 'storageTaskRunning') }}</strong><p v-if="cleanupOperation?.error || errors.cleanupRetry">
+                {{ cleanupOperation?.error || errors.cleanupRetry }}
               </p>
             </div><Button
-              v-if="cleanupOperation.state === 'failed'"
+              v-if="cleanupOperation?.state === 'failed'"
               size="small"
               :busy="busy === 'cleanupRetry'"
               @click="retryApplication"
@@ -582,7 +600,6 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
     <template v-else-if="snapshot && bot && !selectedChat">
       <SettingsSection
         :title="t('storageChats')"
-        :description="t('storageChatsHint')"
       >
         <RouterLink
           v-for="value in bot.chats"
@@ -591,6 +608,7 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
           class="resource-row storage-object-row"
         >
           <span><strong>{{ value.title }}</strong><small>{{ account(value) }}</small><span
+            v-if="value.logical_bytes > 0"
             class="storage-size-track"
             aria-hidden="true"
           ><span :style="{ width: storageShare(value.logical_bytes, maximumChatBytes) }" /></span></span><span class="storage-object-size">{{ size(value.logical_bytes, value.estimate_state) }}</span><ChevronRight />
@@ -604,7 +622,6 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
       </SettingsSection>
       <SettingsSection
         :title="t('storageOtherSessions')"
-        :description="t('storageOtherSessionsHint')"
       >
         <div
           v-if="bot.sessions.length"
@@ -681,19 +698,17 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
     </template>
     <template v-else-if="snapshot && bot && chat">
       <div
-        v-if="chatOperation"
+        v-if="chatOperation?.state === 'failed' || chatPending"
         class="storage-task"
-        :class="{ 'storage-task-error': chatOperation.state === 'failed' }"
-        :role="chatOperation.state === 'failed' ? 'alert' : 'status'"
+        :class="{ 'storage-task-error': chatOperation?.state === 'failed' }"
+        :role="chatOperation?.state === 'failed' ? 'alert' : 'status'"
       >
         <div>
-          <strong>{{ operationText(chatOperation) }}</strong><p v-if="chatOperation.removed_count !== undefined && chatOperation.state === 'complete'">
-            {{ t('storageArchiveRemoved', { count: chatOperation.removed_count }) }}
-          </p><p v-if="chatOperation.error || errors[`retry:${chat.conversation_id}`]">
-            {{ chatOperation.error || errors[`retry:${chat.conversation_id}`] }}
+          <strong>{{ t(chatOperation?.state === 'failed' ? 'storageTaskFailed' : chatOperation ? 'storageTaskRunning' : 'storageTaskChecking') }}</strong><p v-if="chatOperation?.error || errors[`retry:${chat.conversation_id}`]">
+            {{ chatOperation?.error || errors[`retry:${chat.conversation_id}`] }}
           </p>
         </div><Button
-          v-if="chatOperation.state === 'failed'"
+          v-if="chatOperation?.state === 'failed'"
           size="small"
           :busy="busy === `retry:${chat.conversation_id}`"
           @click="retryChat(chatOperation)"
@@ -777,7 +792,6 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
       </SettingsSection>
       <SettingsSection
         :title="t('storageSessionRecords')"
-        :description="t('storageSessionDescription')"
       >
         <SettingsRow :label="t('storageSessionRecords')">
           <span>{{ size(chat.rollout_bytes, chat.estimate_state) }}</span><RouterLink
@@ -827,7 +841,7 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
       {{ t(bot ? 'storageChatMissing' : 'storageBotMissing') }}
     </p>
     <div
-      v-if="snapshot && !selectedChat"
+      v-if="snapshot && !selectedChat && (estimateWaiting || snapshot.estimate.error && snapshot.estimate.state !== 'canceled')"
       class="storage-estimate-status small muted"
       role="status"
     >
@@ -835,8 +849,8 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
         v-if="estimateWaiting"
         class="spinner"
         aria-hidden="true"
-      /><span v-if="estimateWaiting">{{ t('storageEstimating') }}</span><span v-else-if="snapshot.estimate.updated_at">{{ t('storageEstimateUpdated', { time: formatTime(snapshot.estimate.updated_at) }) }}</span><p
-        v-if="snapshot.estimate.error"
+      /><span v-if="estimateWaiting">{{ t('storageEstimating') }}</span><p
+        v-if="snapshot.estimate.error && snapshot.estimate.state !== 'canceled'"
         class="storage-warning"
       >
         {{ snapshot.estimate.error }}

@@ -29,8 +29,7 @@ const uploading = ref(false)
 const error = ref('')
 const pick = ref<HTMLInputElement>()
 const textarea = ref<HTMLTextAreaElement>()
-const preferredMode = ref(app.data?.preferences.running_input || 'follow_up')
-const mode = computed({ get: () => view.value.binding_id ? 'steer' : preferredMode.value, set: value => { preferredMode.value = value } })
+const mode = ref(app.data?.preferences.running_input || 'follow_up')
 type Pending = SessionView['pending'][number]
 const editing = ref<{ id: string; text: string; files: NonNullable<Pending['metadata']['files']> }>()
 const composerText = computed({ get: () => editing.value?.text ?? text.value, set: value => { if (editing.value) editing.value.text = value; else text.value = value } })
@@ -167,8 +166,11 @@ function dropFiles(event: DragEvent) {
   void uploadFiles(Array.from(event.dataTransfer.files))
 }
 function keyboard(event: KeyboardEvent) {
+  // Safari can end composition before the confirming Enter keydown while
+  // retaining keyCode 229. Leave that key to the input method.
+  if (event.isComposing || event.keyCode === 229) return
   if (event.key === 'Escape' && editing.value) { editing.value = undefined; return }
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !event.altKey) { event.preventDefault(); void send(event.metaKey || event.ctrlKey ? 'steer' : undefined) }
+  if (event.key === 'Enter' && !event.shiftKey && !event.altKey) { event.preventDefault(); void send(event.metaKey || event.ctrlKey ? 'steer' : undefined) }
 }
 async function queueAction(fn: () => Promise<unknown>) {
   if (queueBusy.value) return
@@ -358,7 +360,6 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
                 <ArrowDown />{{ t('moveDown') }}
               </button>
               <button
-                v-if="!view.binding_id"
                 type="button"
                 class="menu-item"
                 @click="toggleQueue(); close()"
@@ -449,7 +450,6 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
                 <Plus />{{ t('attach') }}
               </button>
               <button
-                v-if="!view.binding_id"
                 type="button"
                 class="menu-item"
                 @click="toggleQueue(); close()"

@@ -24,7 +24,7 @@ Select the discovered chat, or enter its actual received identifier, then [autho
 
 Text, images, files, video, and voice attachments or transcripts supplied by the platform are supported. Outgoing quoted replies, groups, message editing, and read receipts are not currently supported.
 
-Text and files may be sent separately. A successful text reply does not prove that an attachment was sent. The service's own file restrictions apply.
+Text and files may be sent separately; check the result of each. File formats and sizes depend on the Weixin service.
 
 ## Reauthorize
 

@@ -396,10 +396,16 @@ func TestRefreshCancelDoesNotKeepWorkerRunning(t *testing.T) {
 	}}
 	s, store := fixture(t, h)
 	save(t, store, "sessions", "s", domain.Session{AgentID: "a"})
+	s.cache["s"] = sessionEstimate{State: "complete", Entries: 42}
 	s.Refresh(false)
 	<-started
 	s.Refresh(true)
 	await(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.estimate.State == "canceled" })
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.estimate.Error != "" || s.cache["s"].State != "complete" || s.cache["s"].Entries != 42 {
+		t.Fatalf("stopping an estimate discarded its last result or reported a failure: %+v %+v", s.estimate, s.cache["s"])
+	}
 }
 
 func TestExternalCleanupIsCountedAndUsesDurableOperationIdentity(t *testing.T) {
