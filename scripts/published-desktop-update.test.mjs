@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -137,4 +137,26 @@ test('the real published-update command refuses a developer account before any d
   const command = spawnSync(process.execPath, [fileURLToPath(new URL('./check-desktop-update.mjs', import.meta.url)), '--published-from', 'v0.1.0'], { env: environment, encoding: 'utf8', timeout: 10_000 })
   assert.equal(command.status, 1)
   assert.match(command.stderr, /requires a disposable GitHub Actions user; never run on a developer account/)
+})
+
+test('the published CLI reaches its safety guard without node_modules', async t => {
+  const target = await directory(t)
+  const scripts = fileURLToPath(new URL('./', import.meta.url))
+  const copied = path.join(target, 'scripts')
+  await mkdir(copied)
+  for (const name of await readdir(scripts)) {
+    if (name.endsWith('.mjs')) await copyFile(path.join(scripts, name), path.join(copied, name))
+  }
+  const environment = { ...process.env }
+  for (const name of ['CI', 'GITHUB_ACTIONS', 'RUNNER_TEMP', 'NODE_PATH', 'NODE_OPTIONS']) delete environment[name]
+  const options = { cwd: target, env: environment, encoding: 'utf8', timeout: 10_000 }
+  // Prove the copied tree cannot find the fixture-only parser through its
+  // ancestors or the developer checkout before testing the real CLI imports.
+  const dependency = spawnSync(process.execPath, ['--input-type=module', '-e', "await import('typescript')"], options)
+  assert.equal(dependency.status, 1)
+  assert.match(dependency.stderr, /ERR_MODULE_NOT_FOUND/)
+  const command = spawnSync(process.execPath, [path.join(copied, 'check-desktop-update.mjs'), '--published-from', 'v0.1.7'], options)
+  assert.equal(command.status, 1)
+  assert.match(command.stderr, /requires a disposable GitHub Actions user; never run on a developer account/)
+  assert.doesNotMatch(command.stderr, /ERR_MODULE_NOT_FOUND/)
 })

@@ -15,7 +15,6 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { evaluateRenderer, managedRendererEndpoint, rendererAuthentication, rendererUpdateMethod, rendererUpdateProgress, startRendererUpdate } from './desktop-renderer-auth.mjs'
 import { desktopArtifactName, desktopUpdateFeeds } from './desktop-update-feeds.mjs'
-import { patchCompiledUpdateFeed } from './desktop-update-fixture.mjs'
 import { readReleaseVersion } from './release-version.mjs'
 import { publishedUpdateInputs } from './published-desktop-update.mjs'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
@@ -213,6 +212,9 @@ try {
       expectedAsar = path.join(expected, process.platform === 'darwin' ? 'Astral.app/Contents/Resources/app.asar' : 'resources/app.asar')
     }
   } else {
+    // Published update verification runs with Node alone; only the copied
+    // candidate fixture needs the parser from the installed build dependencies.
+    const { patchCompiledUpdateFeed } = await import('./desktop-update-fixture.mjs')
     await mkdir(fixtureApp)
     await cp(path.join(desktop, 'out'), path.join(fixtureApp, 'out'), { recursive: true })
     const packageJSON = JSON.parse(await readFile(path.join(desktop, 'package.json'), 'utf8'))

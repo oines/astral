@@ -56,6 +56,12 @@ Different tags can build concurrently. The final publication job is serialized; 
 
 Candidate packages are retained for seven days as `candidate-distribution` and `candidate-desktop-mac`, `candidate-desktop-win` and `candidate-desktop-linux`. `release-preview-validation` contains the verified manifest, data formats, Mac signing report, six feeds, checksums and release notes. This proves the selected source passed the candidate pipeline; it does not promote those artifacts into a public Release. The tagged run rebuilds, signs and tests its own final bytes. After publication, the separate official-old-package update and public VPS installation jobs verify the actual GitHub downloads; those post-publication checks cannot run against an unpublished candidate or retract an already public Release.
 
+If post-publication verification needs an infrastructure retry, the repository owner can dispatch `verify-published-update.yml` from `main`, supplying the existing public target `tag` and `previous_tag`. It checks out the exact target tag in trusted main history, installs that tag's locked verification dependencies with lifecycle scripts disabled, and runs the original checker against untouched official packages in fresh three-platform CI users. It has only `contents: read` permissions and retains the native update evidence; it does not rebuild packages, upload assets or move tags. For example:
+
+```sh
+gh workflow run verify-published-update.yml --repo oines/astral --ref main -f tag=v0.1.8 -f previous_tag=v0.1.7
+```
+
 Only the Mac job receives signing secrets, through the protected `mac-signing` Environment restricted to `main` and version tags. It uses a temporary keychain with unconditional cleanup; missing credentials fail the job. Only the final publication job has `contents: write`. It uses the job-scoped `GITHUB_TOKEN`, not a personal access token. Actions in the release workflow are pinned to commits. Pull-request CI receives no signing credentials.
 
 ## Computer environment images
