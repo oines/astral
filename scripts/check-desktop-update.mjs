@@ -15,6 +15,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { evaluateRenderer, managedRendererEndpoint, rendererAuthentication, rendererUpdateMethod, rendererUpdateProgress, startRendererUpdate } from './desktop-renderer-auth.mjs'
 import { desktopArtifactName, desktopUpdateFeeds } from './desktop-update-feeds.mjs'
+import { patchCompiledUpdateFeed } from './desktop-update-fixture.mjs'
 import { readReleaseVersion } from './release-version.mjs'
 import { publishedUpdateInputs } from './published-desktop-update.mjs'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
@@ -220,9 +221,7 @@ try {
     await symlink(path.join(desktop, 'node_modules'), path.join(fixtureApp, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
     const main = path.join(fixtureApp, 'out/main/index.js')
     const source = await readFile(main, 'utf8')
-    const productionFeed = 'https://github.com/oines/astral/releases/latest/download/'
-    assert.equal(source.split(productionFeed).length, 2, 'Fixture must replace exactly one compiled update source')
-    await writeFile(main, source.replace(productionFeed, fixtureFeed))
+    await writeFile(main, patchCompiledUpdateFeed(source, fixtureFeed))
     const builder = ['--config.directories.app=' + fixtureApp, '--config.directories.output=' + output, '--publish', 'never', `--${architecture}`]
     if (process.platform === 'darwin') builder.push('--config', 'electron-builder.release.cjs', '--mac', '--dir')
     else if (process.platform === 'win32') builder.push('--win', 'nsis')
