@@ -56,7 +56,7 @@ func fixture(t *testing.T, h *historyStore) (*Service, *persistence.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New(context.Background(), Config{Directory: data, Store: store, Core: h})
+	s := New(context.Background(), Config{Directory: data, Store: store, Core: h, reclaimInterval: 20 * time.Millisecond})
 	t.Cleanup(func() {
 		if err := s.Close(context.Background()); err != nil {
 			t.Error(err)
@@ -247,6 +247,57 @@ func TestInventoryProtectsRecoveryAndRefusesUnknownFilesAndChangedTokens(t *test
 	}
 	if _, err := s.Cleanup(context.Background(), CleanupRequest{OperationID: op.OperationID, Tokens: []string{latestToken}}); err == nil {
 		t.Fatal("operation identity reused with new payload")
+	}
+}
+
+func TestBackupSelectionTracksFilesAndDirectoryMembershipInsteadOfDirectoryTimestamps(t *testing.T) {
+	s, _ := fixture(t, &historyStore{})
+	path := backup(t, s, "server-stable")
+	selected, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().Add(-48 * time.Hour)
+	for _, directory := range []string{path, filepath.Join(path, "files")} {
+		if err = os.Chtimes(directory, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unchanged, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Token != selected.Token || unchanged.Bytes != selected.Bytes {
+		t.Fatal("unchanged backup files were invalidated by directory timestamps")
+	}
+	if err = os.Mkdir(filepath.Join(path, "new-empty-directory"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	addedDirectory, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addedDirectory.Token == unchanged.Token {
+		t.Fatal("new directory was not included in selection identity")
+	}
+	file := filepath.Join(path, "files", "astral.db")
+	if err = os.Chtimes(file, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	changedFile, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedFile.Token == addedDirectory.Token {
+		t.Fatal("changed file metadata was not rejected")
+	}
+	write(t, filepath.Join(path, "files", "new.db"), []byte("new file"))
+	addedFile, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addedFile.Token == changedFile.Token {
+		t.Fatal("new file was not included in selection identity")
 	}
 }
 

@@ -37,7 +37,11 @@ func (s *Service) RequestReclaim() {
 }
 func (s *Service) reclaimWorker() {
 	defer s.workers.Done()
-	tick := time.NewTicker(2 * time.Second)
+	interval := s.config.reclaimInterval
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
+	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
 		select {
@@ -60,7 +64,7 @@ func (s *Service) reclaimWorker() {
 		if state.State != "queued" && state.State != "waiting" {
 			continue
 		}
-		if state.RequestedAt != nil && time.Since(*state.RequestedAt) < 2*time.Second {
+		if state.RequestedAt != nil && time.Since(*state.RequestedAt) < interval {
 			continue
 		}
 		if s.config.Busy != nil && s.config.Busy() {
@@ -89,6 +93,9 @@ func (s *Service) reclaimWorker() {
 		// The service lifecycle cancels maintenance on shutdown. Large databases
 		// are not forced to restart the same VACUUM by a size-blind deadline.
 		err := s.runReclaim(s.ctx, generation)
+		if s.ctx.Err() != nil {
+			return
+		}
 		if err != nil {
 			if errors.Is(err, core.ErrBusy) || strings.Contains(strings.ToLower(err.Error()), "locked") || strings.Contains(strings.ToLower(err.Error()), "busy") {
 				s.reclaimState(generation, "waiting", err.Error())
@@ -145,6 +152,10 @@ func (s *Service) reclaimState(generation uint64, state, message string) {
 	_ = s.persistReclaim()
 }
 func (s *Service) persistReclaim() error {
+	return s.persistReclaimContext(s.ctx)
+}
+
+func (s *Service) persistReclaimContext(ctx context.Context) error {
 	s.reclaimPersistMu.Lock()
 	defer s.reclaimPersistMu.Unlock()
 	s.mu.Lock()
@@ -155,7 +166,7 @@ func (s *Service) persistReclaim() error {
 	if !dirty {
 		return nil
 	}
-	if err := s.config.Store.SaveMaintenance(s.ctx, "storage_reclaim", "owner", state.State, state); err != nil {
+	if err := s.config.Store.SaveMaintenance(ctx, "storage_reclaim", "owner", state.State, state); err != nil {
 		s.mu.Lock()
 		if generation == s.reclaimGeneration {
 			s.reclaim.Error = "Could not persist reclamation progress; retrying: " + err.Error()

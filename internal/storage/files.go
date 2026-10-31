@@ -52,10 +52,15 @@ func inspectTree(ctx context.Context, path string) (bytes int64, fingerprint str
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(h, "%s\x00%d\x00%d\x00%d\n", rel, info.Size(), info.ModTime().UnixNano(), info.Mode())
-		if info.Mode().IsRegular() {
-			bytes += info.Size()
+		if info.IsDir() {
+			// Directory size/timestamps describe filesystem bookkeeping and can
+			// settle after child handles close on Windows. Relative paths retain
+			// membership identity; only regular files contribute content metadata.
+			fmt.Fprintf(h, "%s\x00directory\n", rel)
+			return nil
 		}
+		fmt.Fprintf(h, "%s\x00%d\x00%d\x00%d\n", rel, info.Size(), info.ModTime().UnixNano(), info.Mode())
+		bytes += info.Size()
 		return nil
 	})
 	return bytes, hex.EncodeToString(h.Sum(nil)), err

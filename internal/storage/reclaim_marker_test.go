@@ -157,3 +157,34 @@ func TestRestartContinuesCompletedDatabaseStepsForSameDirtyToken(t *testing.T) {
 		t.Fatalf("lost durable database progress: core=%d host=%d", coreCalls.Load(), hostCalls.Load())
 	}
 }
+
+func TestClosePersistsObservedFailureWithShutdownContext(t *testing.T) {
+	s, store := fixture(t, &historyStore{})
+	token := markReclaim(t, store)
+	retained := reclaimRecord{Reclaim: Reclaim{State: "running"}, ObservedDirtyToken: token}
+	if err := store.SaveMaintenance(context.Background(), "storage_reclaim", "owner", "running", retained); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.reclaim = Reclaim{State: "failed", Error: "vacuum failed"}
+	s.reclaimObserved = token
+	s.reclaimDirty = true
+	s.mu.Unlock()
+	if err := s.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Maintenance(context.Background(), "storage_reclaim", "owner", &retained); err != nil {
+		t.Fatal(err)
+	}
+	if retained.State != "failed" || retained.Error != "vacuum failed" || retained.ObservedDirtyToken != token {
+		t.Fatalf("shutdown lost the failure published in memory: %+v", retained)
+	}
+	restarted := New(context.Background(), s.config)
+	defer restarted.Close(context.Background())
+	restarted.mu.Lock()
+	state := restarted.reclaim.State
+	restarted.mu.Unlock()
+	if state != "failed" {
+		t.Fatalf("normal restart automatically retried an observed failure: %s", state)
+	}
+}

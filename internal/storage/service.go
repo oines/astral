@@ -24,6 +24,7 @@ type Config struct {
 	Updating        func(context.Context) bool
 	ExternalCleanup func(context.Context) ([]CleanupItem, error)
 	CleanExternal   func(context.Context, string, string) (int64, error)
+	reclaimInterval time.Duration
 }
 type sessionEstimate struct {
 	Version        uint64
@@ -97,7 +98,11 @@ func (s *Service) Close(ctx context.Context) error {
 	go func() { s.workers.Wait(); close(done) }()
 	select {
 	case <-done:
-		return nil
+		// The service context is canceled first to release a running VACUUM or
+		// blocked reader. Flush its last state with the shutdown owner's still
+		// live context, so an already observed failure cannot remain "running"
+		// on disk and turn into an automatic retry after a normal restart.
+		return s.persistReclaimContext(ctx)
 	case <-ctx.Done():
 		return ctx.Err()
 	}
