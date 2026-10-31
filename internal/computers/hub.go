@@ -48,12 +48,14 @@ type Hub struct {
 	attempts           map[string]authenticationBucket
 	mu                 sync.RWMutex
 	live               map[string]*connection
+	nextConnection     uint64
+	admittedConnection map[string]uint64
 	grants             map[string]domain.ExecutionBinding
 	commandCredentials map[string]*commandCredential
 }
 
 func NewHub(store *persistence.Store) *Hub {
-	return &Hub{Store: store, live: map[string]*connection{}, grants: map[string]domain.ExecutionBinding{}, commandCredentials: map[string]*commandCredential{}, pending: make(chan struct{}, 64), authenticating: map[string]int{}, attempts: map[string]authenticationBucket{}}
+	return &Hub{Store: store, live: map[string]*connection{}, admittedConnection: map[string]uint64{}, grants: map[string]domain.ExecutionBinding{}, commandCredentials: map[string]*commandCredential{}, pending: make(chan struct{}, 64), authenticating: map[string]int{}, attempts: map[string]authenticationBucket{}}
 }
 
 func (h *Hub) SetIdentity(identity *securetransport.Identity) { h.identity = identity }
@@ -320,9 +322,12 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 	default:
 		response.Error = "unsupported Computer authentication operation"
 	}
+	var sequence uint64
 	if request.Operation == "connect" && response.Error == "" {
 		if err = h.saveEnvironment(r.Context(), request.ComputerID, request.Hello); err != nil {
 			response.Error = "Computer is unavailable"
+		} else {
+			sequence = h.reserveConnectionSequence()
 		}
 	}
 	if writeAuthentication(conn, response) != nil || response.Error != "" || request.Operation != "connect" {
@@ -330,7 +335,7 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 	release()
-	h.serveConnection(r.Context(), conn, request.ComputerID, request.Hello)
+	h.serveConnection(r.Context(), conn, request.ComputerID, request.Hello, sequence)
 }
 
 func (h *Hub) authenticateComputer(ctx context.Context, id, token string) (domain.Computer, error) {
@@ -359,7 +364,19 @@ func (h *Hub) saveEnvironment(ctx context.Context, id string, hello Hello) error
 		return tx.Save(ctx, "computers", &computer.Meta, &computer)
 	})
 }
-func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hello Hello) {
+
+// Reserve the ordering before sending the authentication acknowledgement. A
+// client can reconnect as soon as it receives that acknowledgement, before this
+// handler gets another chance to run. Reserving does not publish a connection or
+// supersede an existing one: failed acknowledgements must leave both untouched.
+func (h *Hub) reserveConnectionSequence() uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.nextConnection++
+	return h.nextConnection
+}
+
+func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hello Hello, sequence uint64) {
 	active := &connection{hello: hello, connected: time.Now().UTC()}
 	ready := make(chan struct{})
 	active.peer = transport.New(conn, func(ctx context.Context, request transport.Request, out *transport.Responder) error {
@@ -399,13 +416,16 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 	})
 	h.mu.Lock()
 	var current domain.Computer
-	if err := h.Store.Get(ctx, "computers", id, &current); err != nil || current.Revoked {
+	if sequence <= h.admittedConnection[id] || h.Store.Get(ctx, "computers", id, &current) != nil || current.Revoked {
 		h.mu.Unlock()
 		close(ready)
 		_ = active.peer.Close()
 		return
 	}
 	old := h.live[id]
+	// Keep this watermark after live is cleared. Otherwise an older handler
+	// could resurrect its connection after the newer connection has exited.
+	h.admittedConnection[id] = sequence
 	h.live[id] = active
 	h.mu.Unlock()
 	close(ready)
@@ -565,6 +585,7 @@ func (h *Hub) Forget(id string) {
 	h.mu.Lock()
 	active := h.live[id]
 	delete(h.live, id)
+	delete(h.admittedConnection, id)
 	for key, grant := range h.grants {
 		if grant.ComputerID == id {
 			delete(h.grants, key)
