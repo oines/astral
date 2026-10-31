@@ -60,7 +60,7 @@ Automatic summarization can call the model without starting an ordinary task or 
 
 ## Manage session and chat storage
 
-The development build adds **Settings → Storage**; these controls are not yet in a published release. Choose a Bot to see its chats and other unbound sessions, including both archived and unarchived sessions. Search or sort the other-session list to find old work. Open a chat to inspect its IM archive separately from the records of its current Astral session.
+Astral 0.1.8 provides **Settings → Storage** for managing session and chat history. Choose a Bot to see its chats and other unbound sessions, including both archived and unarchived sessions. Search or sort the other-session list to find old work. Open a chat to inspect its IM archive separately from the records of its current Astral session.
 
 The size bars are logical content estimates, including model attempts. Shared content and database overhead mean they cannot be added to the measured disk total or used to predict space freed. Refresh the estimate when needed; an incomplete estimate remains marked.
 
