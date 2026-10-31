@@ -84,6 +84,6 @@ Desktop 管理本机运行服务，打开后可直接进行[首次配置](/zh-cn
 | Windows | `pnpm --filter @astral/desktop package:windows` |
 | Linux | `pnpm --filter @astral/desktop package:linux` |
 
-自行构建的安装包不等于经过官方签名和公证的发行包。构建输出在 `apps/desktop/release/`。
+构建输出在 `apps/desktop/release/`。自行分发时需要另外处理签名和公证。
 
 <script is:inline type="module" src="/scripts/release-downloads.js"></script>

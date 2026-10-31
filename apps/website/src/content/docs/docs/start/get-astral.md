@@ -84,6 +84,6 @@ Desktop manages its local runtime and opens directly into [first-time setup](/do
 | Windows | `pnpm --filter @astral/desktop package:windows` |
 | Linux | `pnpm --filter @astral/desktop package:linux` |
 
-Packages appear in `apps/desktop/release/`. A locally built installer is not an officially signed or notarized release.
+Packages appear in `apps/desktop/release/`. Handle signing and notarization separately when distributing your own build.
 
 <script is:inline type="module" src="/scripts/release-downloads.js"></script>

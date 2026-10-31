@@ -304,14 +304,13 @@ async function remove() {
       <template v-if="selected.id">
         <SettingsSection
           :title="t('testSearch')"
-          :description="t('testSavedConnectionHint')"
+          :description="dirty ? t('connectionDraftPending') : undefined"
         >
           <SettingsRow :label="t('testQuery')">
             <div class="row search-test-input">
               <input
                 v-model="query"
                 :aria-label="t('testQuery')"
-                :placeholder="t('testQuery')"
               ><Button
                 :busy="action.busy.value"
                 :disabled="!query.trim() || dirty"
@@ -321,12 +320,6 @@ async function remove() {
               </Button>
             </div>
           </SettingsRow>
-          <p
-            v-if="dirty"
-            class="settings-context-note"
-          >
-            {{ t('connectionDraftPending') }}
-          </p>
           <div
             v-if="result"
             class="search-results"

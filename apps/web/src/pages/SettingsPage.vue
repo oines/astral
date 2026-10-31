@@ -4,7 +4,7 @@ import { usePreferredReducedMotion } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getPreferences } from '@astral/sdk'
-import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Globe, Monitor, Bot, HardDrive, Shield, Terminal, AstralLogo, Copy } from '@astral/icons'
+import { ArrowLeft, Settings2, Sun, SlidersHorizontal, Github, Globe, Monitor, Bot, HardDrive, Shield, Terminal, AstralLogo, Copy } from '@astral/icons'
 import { Button, Select, Switch, SettingsSection, SettingsRow } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { useAction } from '../composables/useAction'
@@ -162,7 +162,6 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           >
             <SettingsRow
               :label="t('loginStart')"
-              :description="t('loginStartHint')"
             >
               <Switch
                 :model-value="saves.value('preferences/login_start', app.data?.preferences.login_start)"
@@ -172,7 +171,6 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
             </SettingsRow>
             <SettingsRow
               :label="t('keepRunning')"
-              :description="t('keepRunningHint')"
             >
               <Switch
                 :model-value="saves.value('preferences/keep_running', app.data?.preferences.keep_running)"
@@ -246,6 +244,28 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
               <AstralLogo lockup /><p class="muted">
                 {{ t('versionLabel') }} {{ app.data?.version }}
               </p>
+              <div class="row about-links">
+                <a
+                  href="https://astral.oines.dev/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="button button-secondary button-small"
+                ><Globe aria-hidden="true" />{{ t('officialWebsite') }}</a>
+                <a
+                  href="https://github.com/oines/astral"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="button button-secondary button-small"
+                ><Github aria-hidden="true" />GitHub</a>
+              </div>
+              <p class="muted">
+                {{ t('licenseLabel') }}
+                <a
+                  href="https://github.com/oines/astral/blob/main/LICENSE"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >AGPLv3</a>
+              </p>
             </div>
           </SettingsSection>
           <DesktopUpdates />
@@ -278,7 +298,6 @@ async function setPreference(patch: Parameters<typeof app.preferences>[0]) {
           <SettingsSection :title="t('developerResources')">
             <SettingsRow
               :label="t('apiReference')"
-              :description="t('apiReferenceHint')"
             >
               <a
                 href="/openapi.json"

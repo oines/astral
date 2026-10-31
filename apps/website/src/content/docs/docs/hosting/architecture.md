@@ -29,8 +29,10 @@ The Server needs access to your model, search, and chat services. Each connected
 
 A session can switch between authorized computers. Files and processes remain on the machine that created them.
 
-## Website hosting and the Astral runtime
+## How built-in capabilities work
 
-The public website and these docs are static and can be hosted on Cloudflare Pages. Astral Server needs a persistent process, stored data, and connections to models and computers; uploading a static site does not run it.
+The harness advances sessions and tool execution. The Bot uses basic file and command tools to work on computers, and discovers history, scheduling, chat, and file-management APIs as needed. Give it a task; it reads the relevant API instructions when it needs them.
 
-Continue with [Run a Server](/docs/hosting/server/) and [Sign-in and security](/docs/hosting/security/).
+Astral keeps context prefixes stable and appends environment changes when needed, helping ongoing work reuse the model service’s prompt cache.
+
+Continue with [Run a Server](/docs/hosting/server/) and [Sign-in and security](/docs/hosting/security/) for deployment. Read [Use Astral safely](/docs/start/safe-use/) before assigning computers to a group-chat Bot.

@@ -3,7 +3,7 @@ title: "Use sessions"
 description: "Start work, add instructions, stop execution, and continue later."
 ---
 
-A session belongs to one Bot and retains messages, execution records, and task context. Reopen it from the sidebar to continue earlier work.
+A session belongs to one Bot and retains messages, execution records, and task context. Select it in the sidebar to continue. On narrow screens, one tap opens the session and closes the sidebar; the three-dot button on each row opens its menu.
 
 The sidebar shows running and scheduled sessions first, then sessions bound to Telegram, QQ, WeChat, and Feishu, followed by pinned and recent ordinary sessions. Empty groups are hidden. QQ's official Bot and NapCat share the QQ group. A session appears once according to that order.
 
@@ -17,22 +17,24 @@ The computer determines where file and command operations run. The model determi
 
 ## Private sessions
 
-Choose **Make private** from a session's sidebar menu. A lock identifies it; choose **Turn off private mode** to reverse this. You can still open and manage it normally in Desktop and the browser.
+When personal work and a group share one Bot, make personal sessions private to keep other sessions from querying their records.
 
-Other sessions, including those belonging to the same Bot, cannot discover, read, or modify a private session through the Gateway API. Its bound IM chat and plans targeting it are hidden too, even when the account allows access to all chats. The private session retains access to its own resources. A fork inherits its source session's private setting.
+Choose **Make private** from the session's sidebar menu. A lock marks the session; choose **Turn off private mode** to reverse it. You can still open and manage it in Desktop and the browser.
 
-Chat privacy follows the current session binding. Unbinding or rebinding applies the new relationship. Permission checks also apply to known IDs and old cursors. This controls subsequent Gateway access; it does not remove information already copied into another session or isolate shared computer files.
+Other sessions cannot discover, read, or modify a private session through the built-in API, or access its currently bound IM chat and plans targeting it. The private session retains access to its own resources. A fork inherits its source session's private setting.
+
+Private sessions still save history and send the context needed for work to the selected model service. Files on shared computers are not isolated, and information already copied to another session remains there. Unbinding or rebinding a chat applies the new session relationship. See [Use Astral safely](/docs/start/safe-use/) for the full guidance.
 
 ## Add instructions during work
 
-Ordinary sessions support two modes:
+Web input supports two modes in every session, including sessions bound to a chat platform:
 
 - **Queue:** handle the message after the current turn. Use it for a next task.
 - **Steer:** deliver the new instruction at the next point where the running Bot can accept it. Use it to correct direction or add a constraint.
 
 Pending queued messages can be edited, removed, or reordered. A new instruction does not undo an operation that has already run.
 
-In a session bound to a chat platform, messages received from that chat join the Bot's following model steps while it is working, without a separate wakeup. When idle, private messages, direct mentions, replies to the Bot, and supported pokes wake it directly; ordinary group messages follow the [proactive participation setting](/docs/chat/groups/). Web input in a bound session uses Steer.
+In a session bound to a chat platform, messages received from that chat join the Bot's following model steps while it is working, without a separate wakeup. When idle, private messages, direct mentions, replies to the Bot, and supported pokes wake it directly; ordinary group messages follow the [proactive participation setting](/docs/chat/groups/). Web input follows the same mode preference, with Queue as the default. Use Command/Ctrl+Enter to Steer a message directly. Confirming text with an input method does not send it; press Enter separately to send, or Shift+Enter for a new line.
 
 ## Stop and continue
 
@@ -42,11 +44,7 @@ When Continue is available, resume from the existing context or send updated ins
 
 ## Timezone
 
-Choose the shared timezone in **Settings → General → Timezone**. **Follow system** uses the operating-system environment where Astral is installed, not the browser device or the computer selected for commands. Message times, reply dates, and schedules use this setting across clients. Today and yesterday are determined in that timezone; hover over a reply's time to see its complete date, seconds, and timezone.
-
-Changing the timezone updates displayed dates without changing when events occurred. Only newly constructed model inputs use the new timezone. Earlier model context, environment snapshots, summaries, and frozen requests are not rewritten; network retries reuse their original request.
-
-Bot and Session identity is supplied in the model’s System Prompt. New environment snapshots focus on the Computer, workspace, available skills and API discovery. A fork uses its own Session ID while retaining the copied history unchanged.
+Choose the timezone for displayed times and schedules under **Settings → General → Timezone**. **Follow system** uses the Astral host's timezone. Clients display messages and schedules in the new timezone after a change; the time an existing event occurred stays the same.
 
 ## Long conversations
 
@@ -54,29 +52,29 @@ The chat loads recent messages first and fetches earlier history as you approach
 
 Tool arguments, text output, and results arrive with each message page, so expanding an execution step shows its details immediately. Images and attachments load when needed. The original rollout remains available through **Export rollout**. Scrolling up while the Bot responds stops following new output; return to the bottom or click **Jump to latest** to follow again.
 
-As a conversation grows, Astral summarizes older context and keeps recent messages for the next model request. Received chat messages and images count toward the context budget even while the Bot stays silent. The budget uses the model's reported usage where it still applies, plus estimates for everything added afterward.
+As a conversation grows, Astral asks the model to summarize older context and keeps recent messages. Incoming chat messages and images use context even when the Bot does not reply. Original history remains available.
 
-Automatic summarization can call the model without starting an ordinary task or sending an IM reply. Original history is preserved. If summarization or the final context check fails, existing context and pending messages remain available; address the reported error before continuing.
+If summarization fails, existing context and pending messages remain. Address the reported error before continuing.
 
 ## Manage session and chat storage
 
-Astral 0.1.8 provides **Settings → Storage** for managing session and chat history. Choose a Bot to see its chats and other unbound sessions, including both archived and unarchived sessions. Search or sort the other-session list to find old work. Open a chat to inspect its IM archive separately from the records of its current Astral session.
+Open **Settings → Storage**, check disk usage, then select a Bot and find the chat or session to clean up. Usage refreshes when you enter and after cleanup; you can also refresh manually. Chat names and platforms identify the rows, with account details when a platform has several accounts.
 
-The size bars are logical content estimates, including model attempts. Shared content and database overhead mean they cannot be added to the measured disk total or used to predict space freed. Refresh the estimate when needed; an incomplete estimate remains marked.
+“About” marks a content-size estimate for comparing chats and sessions. The overview shows measured disk usage. An unfinished or failed estimate is labeled.
 
-For an unbound session, **Archive** hides it from ordinary recent history and **Restore** makes it available again. **Permanently delete** requires an archived session with no chat binding and confirms the selected session before deletion. It removes that session's Astral history, execution attempts, pending inputs, recall records and scheduled tasks. Independent forks keep their histories. Computer work files and external platform messages remain.
+Sessions without a chat binding can be **archived** or **restored**. Only archived, unbound sessions can be **permanently deleted**. Deletion removes that session's history, model calls, pending messages, recall index, and schedules. Independent forks, computer work files, and external platform messages remain.
 
-For a bound chat, choose the action matching what you want to remove:
+For a bound chat, choose the content to remove:
 
 | Action | Effect |
 | --- | --- |
-| **Clear IM archive** | Removes eligible Astral archive payloads before the selected date. Keeps the current session's history and external platform messages. Messages still awaiting processing are retained. |
-| **Archive retention** | Defaults to **Keep forever**. Choose **30**, **90** or **180 days** to clean eligible expired archives now and check daily afterward. Returning to forever stops automatic expiry; it does not restore deleted archives. |
-| **Clear session** | Stops current work, creates a new session with the same private setting, changes the chat binding and permanently deletes the old session and its scheduled tasks. Keeps the IM archive, account settings and external platform messages. |
+| **Clear IM archive** | Delete Astral's chat archive before the selected date. Messages awaiting processing stay temporarily; session records and platform messages remain. |
+| **Archive retention** | Defaults to **Keep forever**. Choosing **30, 90, or 180 days** immediately clears eligible expired archives, then checks daily. Returning to Keep forever stops expiry; deleted content cannot be restored. |
+| **Clear session** | Stop current work, permanently delete the old session and its plans, and create a new session with the same private setting for the chat. The IM archive, account settings, and platform messages remain. |
 
-Archive cleanup keeps lightweight event receipts so a platform retry does not import the same old messages again. Content already in the session remains there until that session is separately cleared or deleted. An ordinary **Replace session** action continues to preserve the old session; only the explicit **Clear session** action deletes it.
+Content already included in a session remains after archive cleanup until you clear or delete that session separately. **Replacing the session** keeps the old history, useful when starting a new topic you may want to revisit later.
 
-Cleanup tasks retain their identity across a page change or lost connection. Check an uncertain result before retrying; retry continues the existing operation. After cleanup, background database reclamation may wait for an idle moment, and storage requests can wait during full compaction. A completed logical deletion and reclaimed disk space are separate results. See [Storage maintenance](/docs/hosting/maintenance/#review-and-clean-storage) for file cleanup, backup protection and reclamation status.
+The list updates after cleanup. Astral reclaims disk space in the background, so it may be released later. Follow the affected operation's error or retry action if it fails. After a lost connection, let the page reconnect and check the result before starting the same cleanup again. See [Storage maintenance](/docs/hosting/maintenance/#review-and-clean-storage) for backups and application files.
 
 ## Separate unrelated work
 

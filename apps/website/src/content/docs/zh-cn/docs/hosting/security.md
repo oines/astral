@@ -3,7 +3,7 @@ title: "登录与安全"
 description: "配置网页登录、两步验证、Passkey 与账号恢复。"
 ---
 
-Desktop 使用自己的本机访问身份，打开即可使用。浏览器和命令行访问使用网页登录账户；两者分别管理。
+Desktop 使用自己的本机访问身份，打开即可使用。浏览器和命令行使用网页登录账户；该账户可以管理全部 Bot、会话和电脑，包括私密会话。请只由可信的管理者使用。电脑授权和群聊使用建议见[安全使用 Astral](/zh-cn/docs/start/safe-use/)。
 
 ## 设置网页登录
 
@@ -19,7 +19,7 @@ astral auth setup --data /path/to/server --username admin
 
 在安全设置中添加并确认验证器动态码或 Passkey 后，会自动开启两步验证。密码登录后还需一种已添加的验证方式。
 
-Passkey 要求实际的 HTTPS 网页和支持的浏览器。它绑定注册时的域名，换到另一个域名或 HTTP 地址不能保证继续使用。Desktop 会引导你打开配置好的 HTTPS 网页进行设置。
+Passkey 需要 HTTPS 网页和兼容浏览器，并绑定注册时的域名。继续使用该域名登录；更换域名时需要在新地址添加 Passkey。Desktop 会引导你打开配置好的 HTTPS 网页进行设置。
 
 “允许 Passkey 免密登录”是单独选项，默认关闭，至少有一个 Passkey 时才能开启。
 

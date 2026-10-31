@@ -7,7 +7,7 @@ Use Telegram, QQ, Weixin, or Feishu to give Astral tasks and receive results fro
 
 ## Before connecting
 
-Complete the Bot's [model and computer setup](/docs/start/first-steps/) and verify a task inside Astral first.
+Complete the Bot’s [model and computer setup](/docs/start/first-steps/) and verify a task inside Astral. For public groups, we strongly recommend a dedicated Bot and separate container, with no direct access to your everyday computer. Review [permissions and data access](/docs/start/safe-use/) before connecting.
 
 | Platform | Connection | Supported chats |
 | --- | --- | --- |
@@ -20,13 +20,13 @@ Complete the Bot's [model and computer setup](/docs/start/first-steps/) and veri
 
 Open **Settings → Bots → your Bot → Connect a platform**. Select a platform and enter credentials or complete QR authorization. Each platform retains an account list; accounts manage their chats separately.
 
-A successful connection does not authorize every chat.
+After connecting, choose which chats this account may use.
 
 ## 2. Choose chat access
 
 New accounts start with “Only specified chats” and an empty list. Add a chat or select a discovered one, check its Chat ID, and supply a Telegram Topic ID when needed.
 
-Alternatively, allow all chats the account can access. A private message or the first group mention or reply to the Bot creates a session automatically. This cannot expose messages the platform does not deliver.
+Alternatively, allow all chats the account can access. A private message or the first group mention or reply to the Bot creates a session automatically. Its reach depends on the chats the platform allows that account to receive.
 
 Switching back to specified chats retains active chats and their settings. Use this mode before removing an individual chat.
 
@@ -38,12 +38,14 @@ Open the session in Astral to inspect messages, executions, and files. Results r
 
 ## How the Bot understands its chat
 
-For a bound chat, Astral describes the current platform, account connection, chat identity, type, title and optional topic once in the model's System prompt. This section stays identical while the chat data is unchanged; a renamed chat appears in the next new model request. Individual observations retain their own source, identity, sender, time, replies, attachments and notices without repeating the full chat information.
-
-Ordinary unbound Web sessions have no current-chat section. Unbinding, replacing a binding or forking a session preserves the source of existing history, so old messages do not become messages from a new chat. Already prepared requests remain unchanged. Wakeups and delivery of new messages still follow the existing [group-chat rules](/docs/chat/groups/).
+The Bot receives the current platform, chat name, and topic, together with each message’s sender, time, quotes, and attachments. Names inside forwards or quotes remain source information. Changing a binding or forking a session preserves the original chat source of earlier messages.
 
 ## Replace a binding or pause
 
 Replacing the session binding stops work in both the original and target sessions while keeping their histories. Already accepted sends keep their original destination.
 
-Disable the account to pause message reception and retain history. See [Group chats](/docs/chat/groups/) for triggers and proactive participation.
+Disable the account to pause incoming messages and keep history. Stop any computer work already running in its session separately. See [Group chats](/docs/chat/groups/) for trigger rules.
+
+## Platform queries and management
+
+The Bot can also query members and profiles, moderate groups, and use platform-specific notice, file and essence operations through the Gateway. See [Platform APIs](/docs/chat/platform-api/) for discovery, permissions and examples.

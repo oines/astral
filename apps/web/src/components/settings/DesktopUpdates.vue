@@ -40,22 +40,26 @@ const action = computed<UpdateAction>(() => {
 })
 const actionLabel = computed(() => {
   if (waiting.value) return 'desktopUpdateWaiting'
-  if (phase.value === 'downloading') return 'desktopUpdatePreparing'
+  if (phase.value === 'downloading') return 'desktopUpdateDownloadingLabel'
   if (phase.value === 'installing') return 'desktopUpdateInstalling'
+  if (phase.value === 'checking' || pending.value === 'check' || pending.value === 'update') return 'desktopUpdate_checking'
   if (action.value === 'downloads') return 'desktopUpdateDownloads'
   if (phase.value === 'error') return action.value === 'update' ? 'desktopUpdateRetryUpdate' : 'desktopUpdateRetryCheck'
   return action.value === 'update' ? 'desktopUpdateUpdate' : 'desktopUpdateCheck'
 })
 const description = computed(() => {
-  if (waiting.value) return t('desktopUpdateWaitingDescription')
+  if (waiting.value || pending.value || ['idle', 'checking', 'installing', 'error'].includes(phase.value)) return undefined
   if (phase.value === 'unavailable') {
     const reason = state.value?.unavailable
     return t(`desktopUpdateUnavailable_${['development', 'package', 'windows-zip', 'signature'].includes(reason || '') ? reason : 'unmanaged'}`)
   }
-  if (phase.value === 'downloading') return hasProgress.value ? t('desktopUpdateDownloading', { version: state.value?.version, percent: Math.floor(state.value!.percent!) }) : t('desktopUpdatePreparingDescription')
+  if (phase.value === 'downloading') return hasProgress.value ? t('desktopUpdateDownloading', { version: state.value?.version, percent: Math.floor(state.value!.percent!) }) : undefined
   if (phase.value === 'available') return t('desktopUpdateAvailable', { version: state.value?.version })
-  if (phase.value === 'error' && state.value?.retry === 'update') return t('desktopUpdateRetryDescription')
   return t(`desktopUpdate_${phase.value}`)
+})
+const failure = computed(() => {
+  if (busy.value) return ''
+  return error.value || state.value?.error || (phase.value === 'error' ? t(action.value === 'update' ? 'desktopUpdateFailedUpdate' : 'desktopUpdateFailedCheck') : '')
 })
 async function act(intent: UpdateAction = action.value) {
   if (busy.value) return
@@ -91,11 +95,11 @@ async function act(intent: UpdateAction = action.value) {
       </Button>
     </SettingsRow>
     <p
-      v-if="error || state?.error"
+      v-if="failure"
       class="error-box"
       role="alert"
     >
-      {{ error || state?.error }}
+      {{ failure }}
     </p>
   </SettingsSection>
 </template>

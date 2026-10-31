@@ -52,4 +52,16 @@ describe('destructive task recovery', () => {
     expect(readStorageTasks({ getItem: () => '{' })).toEqual({ requests: {}, conversations: {} })
     expect(() => writeStorageTasks({ setItem: () => { throw new Error('denied') } }, { requests: {}, conversations: {} })).not.toThrow()
   })
+  it('does not restore old success notices, while retaining failures and unconfirmed requests', () => {
+    const complete = { id: 'done', conversation_id: 'done-chat', kind: 'archive', state: 'complete' as const }
+    const failed = { id: 'failed', conversation_id: 'failed-chat', kind: 'reset', state: 'failed' as const, error: 'offline' }
+    const pending = { cleanup: { operation_id: 'unconfirmed', kind: 'application' as const, tokens: ['backup'] } }
+    const memory = { requests: pending, conversations: { done: complete, failed }, application: { operation_id: 'old-cleanup', state: 'complete' as const, removed_bytes: 10, removed_tokens: ['cache'] } }
+    let stored = JSON.stringify(memory)
+    const storage = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value } }
+    const expected = { requests: pending, conversations: { failed } }
+    expect(readStorageTasks(storage)).toEqual(expected)
+    writeStorageTasks(storage, memory)
+    expect(JSON.parse(stored)).toEqual(expected)
+  })
 })

@@ -13,11 +13,11 @@ Identify the failing step, then check its connection and permissions. Keep the a
 - Passkey unavailable: use its registered HTTPS hostname and a compatible browser.
 - Password or second factor lost: use a recovery code or local account reset.
 
-The former Owner Token and removed TLS startup flags do not repair the current login flow.
+Use [Sign-in and security](/docs/hosting/security/) for account setup and recovery.
 
 ## Model connected, but tasks fail
 
-Check that a specific model is selected, supports the required tools, and the Bot may use its current computer. A valid service connection, usable model, and online computer are distinct states.
+Check that the session has an available model with tool support and that the Bot may use the selected computer.
 
 Test custom endpoints from the Server machine, not only from your browser device.
 
@@ -25,7 +25,7 @@ Test custom endpoints from the Server machine, not only from your browser device
 
 Check sleep state, background service, and whether its saved Server address is reachable. Changing the Server's advertised address does not rewrite existing computer connections.
 
-Generate a fresh command when pairing expires. Distinguish installer-download failures from Server-connection failures. Regenerating a command cannot create unpublished release assets.
+Generate a fresh command when pairing expires. For download failures, check release availability and networking; prepare the target program yourself for an unpublished development version. For connection failures, check the address and route from the computer to the Server.
 
 ## Chat account connected, but no reply
 
@@ -40,6 +40,8 @@ Check whether the source computer is online, the file exists, and the Bot still 
 Read the actual send result. When uncertain, inspect the destination chat before retrying to avoid duplicates.
 
 ## Report a reproducible issue
+
+Open **Settings → About and diagnostics** to check your version and access the website, GitHub repository and AGPLv3 license. External links open in a browser.
 
 Include Astral version, operating system, reproduction steps, expected and actual results, and redacted errors. For computers, include their type and version; for chats, include the platform and connection method. Omit credentials, passwords, recovery codes, and unnecessary personal conversation content.
 

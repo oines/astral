@@ -3,7 +3,7 @@ title: "Files and results"
 description: "Provide input files, open generated results, and know where they are stored."
 ---
 
-Work files live on the computer executing the task. File links retain their source, so switching computers does not change where an earlier link points.
+Work files stay on the computer executing the task, and links retain that source. File contents read by the Bot may enter model context and be sent to the selected service; see [where data goes](/docs/start/safe-use/#know-where-data-goes).
 
 ## Provide files
 
@@ -15,11 +15,11 @@ Ask it to confirm the file and location when multiple computers have similar dir
 
 Open a returned file link to preview or download it. Images can appear in the conversation; previews for other files depend on their format.
 
-Reading the original content requires the source computer to be online and the Bot to retain access. Keeping conversation history does not back up that file to the Server.
+Opening an original requires its source computer to be online, the file to still exist, and the Bot to have access. Back up important files on that computer separately.
 
 ## Working directories
 
-A Bot has a default working directory on each computer, which multiple sessions may share. Use separate project directories or containers when files should be separated.
+A Bot has a default working directory on each computer, which several sessions may share. Use different directories to organize projects; use separate operating-system accounts or containers to restrict access.
 
 The default directory is not a filesystem sandbox. Access follows the permissions of the account running the computer service.
 
@@ -27,10 +27,10 @@ The default directory is not a filesystem sandbox. Access follows the permission
 
 Incoming chat attachments retain their source information and can be read or downloaded to a computer as needed. Sending a file also depends on platform permissions and format restrictions.
 
-Before a new IM image enters the Bot's passive context, Astral creates a proportional preview of at most 75,000 pixels and labels it as compressed. The original attachment reference remains available. If text or details are unclear, the Bot can download the original and read it with the existing file tools. The same stored preview is used by group participation decisions, ordinary requests and later context compaction. Existing history and images opened through file tools are unchanged.
+Chat images first provide a compressed preview and retain a reference to the original. If text or details are unclear, ask the Bot to download and read the original. Videos and ordinary files are downloaded to a computer when the task needs them.
 
-If an image preview cannot be downloaded or decoded, QQ (NapCat and the official Bot), Telegram, WeChat, and Feishu still deliver the message text, reply information, and original attachment references with a preview-unavailable note. Later messages keep arriving. Image documents follow the same rule. Originals are not automatically saved; the Bot can explicitly retry downloading one when needed.
+If a preview fails, the message identifies the unavailable image and keeps its text and attachment source. Ask the Bot to retry the download, or provide the file again.
 
-A file visible in Astral has not necessarily been sent to the external chat. Ask explicitly to send the result back and check the send outcome.
+To return a result to the chat platform, explicitly ask the Bot to send the file to the current chat, then check the send result.
 
 Back up Server data, computer work files, and container data separately. See [Updates and backups](/docs/hosting/maintenance/).

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -96,7 +97,11 @@ func qqDownloadURL(ctx context.Context, client *http.Client, raw string, attachm
 		response.Body.Close()
 		return Download{}, domain.Offline(fmt.Sprintf("attachment download returned HTTP %d", response.StatusCode))
 	}
-	return Download{Body: response.Body, Size: response.ContentLength, Name: attachment.Name}, nil
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil {
+		mediaType = ""
+	}
+	return Download{Body: response.Body, Size: response.ContentLength, Name: attachment.Name, MediaType: mediaType}, nil
 }
 
 // OneBot uses both strings and JSON integers for identifiers. Do not round a

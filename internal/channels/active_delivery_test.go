@@ -1045,6 +1045,14 @@ func TestFreshDirectIMResumesFrozenGenerationAfterReopen(t *testing.T) {
 }
 
 func TestDeferredDirectIMHandoffResumesExistingOwnerDriverOnly(t *testing.T) {
+	for _, kind := range []core.InputKind{core.InputSteer, core.InputFollowUp} {
+		t.Run(string(kind), func(t *testing.T) {
+			testDeferredDirectIMHandoffResumesExistingOwnerDriverOnly(t, kind)
+		})
+	}
+}
+
+func testDeferredDirectIMHandoffResumesExistingOwnerDriverOnly(t *testing.T, kind core.InputKind) {
 	requests := make(chan map[string]any, 4)
 	var mains atomic.Int64
 	p := testkit.New(t, 0, func(_ context.Context, _ int, request map[string]any) any {
@@ -1068,7 +1076,11 @@ func TestDeferredDirectIMHandoffResumesExistingOwnerDriverOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	const ownerText = "Unique Owner task queued while maintenance was pending."
-	if _, err := session.Steer(p.Context, core.Input{ID: "pending-owner-driver", Message: messages.Web("pending-owner-driver", ownerText, "Owner", time.Now().UTC(), nil)}); err != nil {
+	enqueue := session.Steer
+	if kind == core.InputFollowUp {
+		enqueue = session.FollowUp
+	}
+	if _, err := enqueue(p.Context, core.Input{ID: "pending-owner-driver", Message: messages.Web("pending-owner-driver", ownerText, "Owner", time.Now().UTC(), nil)}); err != nil {
 		t.Fatal(err)
 	}
 	// Establish maintenance's completed state: its IM delivery was passive,

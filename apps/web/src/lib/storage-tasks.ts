@@ -16,14 +16,21 @@ export interface StorageTaskMemory {
   application?: StorageCleanupOperation
 }
 const key = 'astral:storage-tasks:v1'
+function unfinished(memory: Partial<StorageTaskMemory>): StorageTaskMemory {
+  return {
+    requests: memory.requests || {},
+    conversations: Object.fromEntries(Object.entries(memory.conversations || {}).filter(([, value]) => value.state !== 'complete')),
+    ...(memory.application && memory.application.state !== 'complete' ? { application: memory.application } : {}),
+  }
+}
 export function readStorageTasks(storage: Pick<Storage, 'getItem'>): StorageTaskMemory {
   try {
     const value = JSON.parse(storage.getItem(key) || '{}') as Partial<StorageTaskMemory>
-    return { requests: value.requests || {}, conversations: value.conversations || {}, application: value.application }
+    return unfinished(value)
   } catch { return { requests: {}, conversations: {} } }
 }
 export function writeStorageTasks(storage: Pick<Storage, 'setItem'>, memory: StorageTaskMemory) {
-  try { storage.setItem(key, JSON.stringify(memory)) }
+  try { storage.setItem(key, JSON.stringify(unfinished(memory))) }
   catch { /* Storage access can be blocked; the in-memory task remains usable. */ }
 }
 // Keep the exact confirmed request until the Server acknowledges it. A response

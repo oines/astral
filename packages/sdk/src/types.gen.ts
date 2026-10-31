@@ -576,6 +576,7 @@ export type AstralInternalChannelsCapabilities = {
 export type AstralInternalChannelsChatOperation = {
     account_scoped?: boolean;
     documentation: string;
+    file_fields?: Array<string>;
     message_scoped: boolean;
     name: string;
     parameters: Array<string>;
@@ -1283,6 +1284,10 @@ export type AstralInternalGatewayMessagePartView = {
 
 export type AstralInternalGatewayMessagePartsResponse = {
     parts: Array<AstralInternalGatewayMessagePartView>;
+};
+
+export type AstralInternalGatewayNapCatAvatarDownloadRequest = {
+    path: string;
 };
 
 export type AstralInternalGatewayReferenceRequest = {
@@ -5928,6 +5933,275 @@ export type AgentConversationsResponses = {
 };
 
 export type AgentConversationsResponse = AgentConversationsResponses[keyof AgentConversationsResponses];
+
+export type AgentNapCatAvatarContentData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/avatar/content';
+};
+
+export type AgentNapCatAvatarContentErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentNapCatAvatarContentError = AgentNapCatAvatarContentErrors[keyof AgentNapCatAvatarContentErrors];
+
+export type AgentNapCatAvatarContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type AgentNapCatAvatarContentResponse = AgentNapCatAvatarContentResponses[keyof AgentNapCatAvatarContentResponses];
+
+export type AgentDownloadNapCatAvatarData = {
+    body: AstralInternalGatewayNapCatAvatarDownloadRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/avatar/download';
+};
+
+export type AgentDownloadNapCatAvatarErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentDownloadNapCatAvatarError = AgentDownloadNapCatAvatarErrors[keyof AgentDownloadNapCatAvatarErrors];
+
+export type AgentDownloadNapCatAvatarResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayReferenceResponse;
+};
+
+export type AgentDownloadNapCatAvatarResponse = AgentDownloadNapCatAvatarResponses[keyof AgentDownloadNapCatAvatarResponses];
+
+export type AgentNapCatEssencePartsData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+    };
+    query?: {
+        /**
+         * Original message sequence from the essence list; supply together with msg_random to survive synthetic/native ID changes.
+         */
+        msg_seq?: string;
+        /**
+         * Original message random value from the essence list; supply together with msg_seq.
+         */
+        msg_random?: string;
+    };
+    url: '/v1/conversations/{id}/essence/{message_id}/parts';
+};
+
+export type AgentNapCatEssencePartsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentNapCatEssencePartsError = AgentNapCatEssencePartsErrors[keyof AgentNapCatEssencePartsErrors];
+
+export type AgentNapCatEssencePartsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayMessagePartsResponse;
+};
+
+export type AgentNapCatEssencePartsResponse = AgentNapCatEssencePartsResponses[keyof AgentNapCatEssencePartsResponses];
+
+export type AgentNapCatEssencePartData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query?: {
+        /**
+         * Original message sequence from the essence list; supply together with msg_random to survive synthetic/native ID changes.
+         */
+        msg_seq?: string;
+        /**
+         * Original message random value from the essence list; supply together with msg_seq.
+         */
+        msg_random?: string;
+    };
+    url: '/v1/conversations/{id}/essence/{message_id}/parts/{ref}';
+};
+
+export type AgentNapCatEssencePartErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentNapCatEssencePartError = AgentNapCatEssencePartErrors[keyof AgentNapCatEssencePartErrors];
+
+export type AgentNapCatEssencePartResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayMessagePartResponse;
+};
+
+export type AgentNapCatEssencePartResponse = AgentNapCatEssencePartResponses[keyof AgentNapCatEssencePartResponses];
+
+export type AgentNapCatEssenceContentData = {
+    body?: never;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query: {
+        /**
+         * Original message sequence from the essence list; supply together with msg_random to survive synthetic/native ID changes.
+         */
+        msg_seq?: string;
+        /**
+         * Original message random value from the essence list; supply together with msg_seq.
+         */
+        msg_random?: string;
+        /**
+         * Opaque media locator fingerprint from the returned part link; not a file checksum. Refresh parts if it conflicts.
+         */
+        media_digest: string;
+    };
+    url: '/v1/conversations/{id}/essence/{message_id}/parts/{ref}/content';
+};
+
+export type AgentNapCatEssenceContentErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentNapCatEssenceContentError = AgentNapCatEssenceContentErrors[keyof AgentNapCatEssenceContentErrors];
+
+export type AgentNapCatEssenceContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type AgentNapCatEssenceContentResponse = AgentNapCatEssenceContentResponses[keyof AgentNapCatEssenceContentResponses];
+
+export type AgentDownloadNapCatEssencePartData = {
+    body: AstralInternalGatewayMessagePartDownloadRequest;
+    path: {
+        id: string;
+        message_id: string;
+        ref: string;
+    };
+    query: {
+        /**
+         * Original message sequence from the essence list; supply together with msg_random to survive synthetic/native ID changes.
+         */
+        msg_seq?: string;
+        /**
+         * Original message random value from the essence list; supply together with msg_seq.
+         */
+        msg_random?: string;
+        /**
+         * Opaque media locator fingerprint from the returned part link; not a file checksum. Refresh parts if it conflicts.
+         */
+        media_digest: string;
+    };
+    url: '/v1/conversations/{id}/essence/{message_id}/parts/{ref}/download';
+};
+
+export type AgentDownloadNapCatEssencePartErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentDownloadNapCatEssencePartError = AgentDownloadNapCatEssencePartErrors[keyof AgentDownloadNapCatEssencePartErrors];
+
+export type AgentDownloadNapCatEssencePartResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayReferenceResponse;
+};
+
+export type AgentDownloadNapCatEssencePartResponse = AgentDownloadNapCatEssencePartResponses[keyof AgentDownloadNapCatEssencePartResponses];
+
+export type AgentNapCatMemberAvatarContentData = {
+    body?: never;
+    path: {
+        id: string;
+        user_id: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/members/{user_id}/avatar/content';
+};
+
+export type AgentNapCatMemberAvatarContentErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentNapCatMemberAvatarContentError = AgentNapCatMemberAvatarContentErrors[keyof AgentNapCatMemberAvatarContentErrors];
+
+export type AgentNapCatMemberAvatarContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type AgentNapCatMemberAvatarContentResponse = AgentNapCatMemberAvatarContentResponses[keyof AgentNapCatMemberAvatarContentResponses];
+
+export type AgentDownloadNapCatMemberAvatarData = {
+    body: AstralInternalGatewayNapCatAvatarDownloadRequest;
+    path: {
+        id: string;
+        user_id: string;
+    };
+    query?: never;
+    url: '/v1/conversations/{id}/members/{user_id}/avatar/download';
+};
+
+export type AgentDownloadNapCatMemberAvatarErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentDownloadNapCatMemberAvatarError = AgentDownloadNapCatMemberAvatarErrors[keyof AgentDownloadNapCatMemberAvatarErrors];
+
+export type AgentDownloadNapCatMemberAvatarResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayReferenceResponse;
+};
+
+export type AgentDownloadNapCatMemberAvatarResponse = AgentDownloadNapCatMemberAvatarResponses[keyof AgentDownloadNapCatMemberAvatarResponses];
 
 export type AgentMessageToolData = {
     body?: never;

@@ -9,7 +9,10 @@ const { t } = useI18n()
 const { network, addresses, allowRemote, setAddress, addAddress, removeAddress, saveAddresses, setAllowRemote } = useNetworkSettings()
 const { copy, copied } = useClipboard()
 function source(value: { source: string; editable: boolean }) {
-  return t(value.editable ? 'networkSource' : 'networkSourceLocked', { source: t(`networkSources.${value.source}`) })
+  return value.editable ? '' : t('networkSourceLocked', { source: t(`networkSources.${value.source}`) })
+}
+function description(hint: string, value: { source: string; editable: boolean }) {
+  return [t(hint), source(value)].filter(Boolean).join(' ')
 }
 </script>
 <template>
@@ -20,7 +23,7 @@ function source(value: { source: string; editable: boolean }) {
   >
     <SettingsRow
       :label="t('allowRemoteManagement')"
-      :description="`${t('allowRemoteManagementHint')} ${source(network.allow_remote_management)}`"
+      :description="description('allowRemoteManagementHint', network.allow_remote_management)"
     >
       <Switch
         :model-value="allowRemote"
@@ -32,7 +35,7 @@ function source(value: { source: string; editable: boolean }) {
     <SettingsFeedback scope="network/allow_remote_management" />
     <SettingsRow
       :label="t('networkAddress')"
-      :description="`${t('networkAddressHint')} ${source(network.public_urls)}`"
+      :description="description('networkAddressHint', network.public_urls)"
     >
       <Button
         v-if="network.public_urls.editable"

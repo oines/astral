@@ -224,7 +224,6 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
             v-model="form.model_id"
             :aria-label="t('modelID')"
             list="provider-model-catalog"
-            :placeholder="t('modelID')"
             required
             @change="chooseModel(form.model_id)"
           ><datalist id="provider-model-catalog"><option
@@ -256,7 +255,6 @@ const extraNumbers = [{ key: 'max_input_tokens', label: 'maxInput' }, { key: 'im
         <label class="label">{{ t('modelDescription') }}<textarea
           v-model="form.description"
           :aria-label="t('modelDescription')"
-          :placeholder="t('modelDescriptionHint')"
           rows="2"
         /></label>
         <fieldset class="model-compatibility">

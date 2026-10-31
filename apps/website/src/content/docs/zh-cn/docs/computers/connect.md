@@ -18,7 +18,7 @@ description: "把服务所在电脑或远程机器接入 Astral，并授予 Bot 
 3. 生成接入命令，在目标电脑的 Shell 或 PowerShell 中运行完整命令。
 4. 命令会检查连接并安装后台服务。回到 Astral，等待该电脑显示在线。
 
-命令包含临时配对凭据，请只在要接入的电脑上使用。命令过期时重新生成，不要反复运行旧命令。安装器需要访问对应版本的官方发行资源；从源码开发时，若尚未发布匹配资源，应按当前开发环境处理，不能假定公开下载已经可用。
+命令包含临时配对凭据，请只在要接入的电脑上使用。命令过期时重新生成，不要反复运行旧命令。安装器需要访问对应版本的官方发行资源。从源码开发、尚无匹配发行包时，需要自行准备目标电脑的程序。
 
 远程电脑主动连接 Server。`127.0.0.1` 只适用于同一台机器；局域网、VPN 或公网地址必须从目标电脑实际可达。接入地址可以是 HTTP 或 HTTPS，电脑通道自身使用加密连接和服务器身份校验。浏览器登录的网络要求见[运行 Server](/zh-cn/docs/hosting/server/)。
 
@@ -32,7 +32,7 @@ description: "把服务所在电脑或远程机器接入 Astral，并授予 Bot 
 
 进入 **设置 → Bot → 目标 Bot → 电脑权限**，允许使用刚接入的电脑。按需要设置新会话的默认电脑。
 
-全局电脑页显示在线，不代表某个 Bot 已有权限。如果会话里找不到这台电脑，先检查该 Bot 的授权。
+如果会话里找不到已在线的电脑，先检查该 Bot 是否已获准使用它。
 
 ## 后台服务与断开
 
@@ -42,4 +42,23 @@ Linux 裸机后台接入会在配对前检查用户服务是否可用。使用 r
 
 要以 root 接入，请直接登录 root，或先运行 `sudo -i`，再粘贴完整接入命令，避免保留其他账户的 `HOME` 或 XDG 会话环境。Agent 执行的命令将拥有 root 权限。linger 作用于整个账户，因此卸载某个 Astral Daemon 不会自动撤销 linger 或停止整个用户管理器。
 
-撤销 Bot 权限会停止它使用该电脑；移除连接和删除电脑上的实际文件是不同操作。服务管理与升级见[升级与备份](/zh-cn/docs/hosting/maintenance/)。
+## 断开与停用电脑
+
+先停止相关会话，并检查仍在运行的任务。取消 Bot 的电脑授权会阻止它继续发起操作；要断开所有 Bot 与这台电脑的连接，在电脑详情中选择**撤销连接**。
+
+远程裸机服务可以在目标电脑上停止或卸载。使用当初接入的同一系统账号，把 `--root` 替换为电脑详情中的数据目录；下面假设 `astral` 已在 PATH 中，Windows 使用 `astral.exe`：
+
+```sh
+astral computer service stop --root /path/to/computer
+astral computer service status --root /path/to/computer
+```
+
+以后需要继续使用时，运行 `astral computer service start --root /path/to/computer`。长期停用可卸载后台服务：
+
+```sh
+astral computer service uninstall --root /path/to/computer
+```
+
+卸载会停止服务并移除开机启动配置，电脑数据和工作文件保留。容器电脑在宿主机用容器管理器停止对应容器；删除容器或数据卷前先备份工作文件。Desktop 管理的本机服务随应用运行，按桌面后台运行设置停用。
+
+更新和备份步骤见[升级与备份](/zh-cn/docs/hosting/maintenance/)。

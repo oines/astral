@@ -45,7 +45,7 @@ Ordered sends can combine text, native user mentions, and uploaded images in a p
 
 ## Message reactions
 
-Reaction additions and removals enter context as separate events retaining the original message ID, the supplied user or app operator, and Feishu's emoji type. They do not rewrite the original message. Astral resolves the chat from its archive first, consulting the platform when needed. An unknown original that can no longer be read is not fabricated or allowed to block later events.
+The Bot can read reactions delivered by Feishu, including the original message, emoji type, and actor supplied by the platform.
 
 The Agent can use the existing Computer API's `list_reactions`, `add_reaction` and `delete_reaction` operations in an authorized chat with the corresponding permissions. Known self actions do not wake the Bot again. Reactions missing an actor identity are passive context only, without starting a participation check; a working Bot can still read them. Group reactions from a known external actor follow optional proactive rules; private-chat reactions do not directly wake it.
 
@@ -53,4 +53,4 @@ The Agent can use the existing Computer API's `list_reactions`, `add_reaction` a
 
 Check publication, user availability, group membership, long-connection subscription, and effective permissions, then Astral's chat authorization.
 
-Missing chat-information permission may leave only a Chat ID visible. A successful connection does not authorize every message, file, or management operation.
+If only a Chat ID appears, check permission to read chat details. For message, attachment, or management failures, check the Feishu permission named in the error.

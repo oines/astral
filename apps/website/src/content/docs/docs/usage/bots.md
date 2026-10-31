@@ -19,7 +19,7 @@ Leave it empty if no custom persona is needed. Model and search connections are 
 
 Select the computers this Bot may use and its default for new sessions. Global Computer settings manage connections; Bot settings manage permission.
 
-Access allows file operations and commands under the computer service's operating-system account. The default working directory does not restrict access to that folder.
+Granting access lets the Bot read files and run commands as the computer service’s operating-system account. Review all computer permissions against the [safe-use guidance](/docs/start/safe-use/) before connecting a group.
 
 ## Platforms and accounts
 

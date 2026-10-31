@@ -30,7 +30,7 @@ Add these identifiers in Connected chats and choose a session. Forum topics use 
 
 Authorize the chat in Astral, then mention the Bot or reply to it. To receive ordinary group messages as context, configure privacy mode or administrator permissions according to [Telegram's privacy rules](https://core.telegram.org/bots/features#privacy-mode).
 
-Ordinary replies stay in the group's existing session, including replies to another member that also mention the Bot. Actual Topics keep their own authorization and session; a reply's thread ID alone does not create a Topic. This applies to new incoming messages, without moving or replaying older archived messages.
+Ordinary replies stay in the group’s session, including replies to another member that also mention the Bot. Forum topics have separate chat permissions and session bindings.
 
 ## Replies and selected quotes
 
@@ -40,15 +40,15 @@ Referenced images, files and stickers retain their original message identity and
 
 ## Forwarded messages
 
-When Telegram supplies a forwarded message's origin, the Bot receives the original author or chat/channel name and original send time, alongside the person who forwarded it. Channel post IDs and author signatures are retained when available. If Telegram hides the original user, Astral keeps the supplied name without inventing an account identity. Replies to forwarded messages also retain this distinction.
+Forwarded messages retain the original author or chat and send time supplied by Telegram, alongside the person who forwarded them. When the original identity is hidden, only the name supplied by the platform is available.
 
-Forwarding does not give the Bot access to the source chat or notify it on behalf of the original author. This applies to newly received messages; older archives without source information remain unchanged.
+The Bot can only access authorized chats. A forward’s origin provides context; wakeup rules apply to the new forwarded message.
 
 ## Message reactions
 
-Astral subscribes to Telegram reaction updates. Receiving them requires the Bot to be a chat administrator; private-chat notifications are not guaranteed. Additions, removals and anonymous count changes enter context as separate events targeting the original message, with only the actor or counts actually supplied. They do not rewrite that message. Anonymous totals may arrive late and do not identify an actor. Topic routing uses the original message's archive; unknown targets are never broadcast to all topics.
+Receiving group reactions requires the Bot to be an administrator. It can see additions, removals, and anonymous counts delivered by Telegram. Anonymous totals may arrive late and have no actor identity. Private-chat reaction delivery depends on the platform.
 
-The Agent can use the existing Computer API's `setMessageReaction` operation in an authorized chat. Telegram does not echo reactions set by bots, so Astral records the accepted selection itself without waking the Bot again. Anonymous totals and reactions with an unknown actor are passive context only, without starting a participation check; a working Bot can still read them. Group reactions from a known external actor follow optional proactive rules; private-chat reactions do not directly wake the Bot as new private messages.
+The Bot can use the built-in API to react to messages in authorized chats. Group reactions from known members follow proactive-participation settings. Its own actions, anonymous reactions, and private-chat reactions do not wake it by themselves; a working Bot can still read received events.
 
 ## Files and troubleshooting
 
@@ -57,3 +57,7 @@ The Bot can send ordered text, native user mentions, images, and files. Markdown
 Text, images, and files are supported. Request an image as an original document when needed. Telegram's own size and format limits still apply.
 
 If connected but silent, check chat authorization, Topic ID, message visibility, model access, and computer availability. Channels also need the relevant sending permissions.
+
+## Platform queries and management
+
+The Bot can use built-in APIs for member and profile queries, group management, topics, invitations, and pins. See [Platform APIs](/docs/chat/platform-api/) for methods and permissions.

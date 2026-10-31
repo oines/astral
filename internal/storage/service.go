@@ -336,6 +336,9 @@ func (s *Service) estimateAll(ctx context.Context) {
 		bound, stop := context.WithTimeout(ctx, 30*time.Second)
 		e := s.measureSession(bound, session.ID)
 		stop()
+		if err = ctx.Err(); err != nil {
+			break
+		}
 		s.mu.Lock()
 		s.cache[session.ID] = e
 		s.mu.Unlock()
@@ -350,10 +353,11 @@ func (s *Service) estimateAll(ctx context.Context) {
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			state = "canceled"
+			message = ""
 		} else {
 			state = "partial"
+			message = err.Error()
 		}
-		message = err.Error()
 	}
 	now := time.Now().UTC()
 	s.mu.Lock()

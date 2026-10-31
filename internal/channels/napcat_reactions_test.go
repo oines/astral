@@ -220,7 +220,11 @@ func TestNapCatNewActionsPreserveUncertainFailure(t *testing.T) {
 			fmt.Fprint(w, `{"status":"failed","retcode":200}`)
 		}))
 		n := napcatTestAdapter(t, server)
-		_, err := napcatOperation(context.Background(), n, name, domain.Conversation{ExternalID: "group:456"}, map[string]any{"message_id": "-42", "emoji_id": "76", "user_id": "123"})
+		parameters := map[string]any{"user_id": "123"}
+		if name == "set_reaction" {
+			parameters = map[string]any{"message_id": "-42", "emoji_id": "76"}
+		}
+		_, err := napcatOperation(context.Background(), n, name, domain.Conversation{ExternalID: "group:456"}, parameters)
 		var sendErr *SendError
 		if mutation.Load() != 1 || !errors.As(err, &sendErr) || !sendErr.Unknown {
 			t.Fatalf("%s failure could cause duplicate actions on retry: %v", name, err)

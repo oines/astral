@@ -269,7 +269,6 @@ function preventDeleteDismiss(event: Event) { if (action.busy.value) event.preve
         <SettingsSection :title="t('botSearchSettings')">
           <SettingsRow
             :label="t('searchServices')"
-            :description="t('agentSearchHint')"
           >
             <Select
               :model-value="saves.value(`${resource}/search`, selected.search_provider_id || '')"
@@ -352,7 +351,6 @@ function preventDeleteDismiss(event: Event) { if (action.busy.value) event.preve
         <SettingsSection>
           <SettingsRow
             :label="t('manageComputerConnections')"
-            :description="t('manageComputerConnectionsHint')"
           >
             <RouterLink
               to="/settings/computers"
