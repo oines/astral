@@ -442,8 +442,10 @@ func TestDaemonConnectReapsBeforeReturningAndReconnectStartsFresh(t *testing.T) 
 			d.mu.Unlock()
 			if generation == nil {
 				select {
+				case err := <-connected:
+					t.Fatalf("daemon connection %d returned before becoming connected: %v", i+1, err)
 				case <-ctx.Done():
-					t.Fatal("daemon did not connect")
+					t.Fatalf("daemon connection %d did not connect: %v", i+1, ctx.Err())
 				case <-time.After(time.Millisecond):
 				}
 			}
