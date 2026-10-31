@@ -44,13 +44,13 @@ The first supported public data baseline is Host 3 / Core 11; the current target
 
 Earlier private Core 10 or older data is not imported; those directories, including `schema-3/`, remain untouched. Older private development formats and unknown newer formats are rejected when explicitly selected. Installing an old executable is not a data downgrade: restoring older data requires a matching backup and program version. Keep independent backups, including Computer files, rather than relying only on upgrade snapshots.
 
-## Storage maintenance in the development build
+## Storage maintenance
 
-The development branch adds Core SQLite schema 12 while keeping Core logical format 11 and the existing Desktop data directory. This storage update is not yet in a published release. Its automatic migration shares repeated large content and replaces input/queue copies with event references. Messages, timestamps, attachments already present in history and model-request boundaries retain their logical values; media is not fetched again.
+Astral 0.1.8 adds Core SQLite schema 12 while keeping Core logical format 11 and the existing Desktop data directory. Its automatic migration shares repeated large content and replaces input/queue copies with event references. Messages, timestamps, attachments already present in history and model-request boundaries retain their logical values; media is not fetched again.
 
 Before conversion, Astral checks free space for the complete backup, database work, temporary files and recovery. A smaller final database does not mean the migration needs less working space. If preflight fails, free space or move the complete stopped Server directory to a suitable volume, then retry. Completed upgrade backups are retained.
 
-In this build, Desktop displays a data-preparation window if startup maintenance takes more than 300ms. It waits while the matching Server process prepares data; close the window to cancel. A cancelled or interrupted conversion is recovered on the next launch. The updated Linux installer also waits for data preparation instead of applying its ordinary service-start timeout. An older installer already running keeps its old timeout; use the offline migration command when upgrading a large database through that route.
+Desktop displays a data-preparation window if startup maintenance takes more than 300ms. It waits while the matching Server process prepares data; close the window to cancel. A cancelled or interrupted conversion is recovered on the next launch. The updated Linux installer also waits for data preparation instead of applying its ordinary service-start timeout. An older installer already running keeps its old timeout; use the offline migration command when upgrading a large database through that route.
 
 ### Review and clean storage
 
