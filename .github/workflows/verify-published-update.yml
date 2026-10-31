@@ -1,0 +1,107 @@
+name: Verify published Desktop updates
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing public release to verify
+        required: true
+        default: v0.1.8
+        type: string
+      previous_tag:
+        description: Untouched preceding public release to install first
+        required: true
+        default: v0.1.7
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-published-update-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Official update (${{ matrix.platform }})
+    if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: mac
+          - os: windows-2022
+            platform: win
+          - os: ubuntu-24.04
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      PREVIOUS_RELEASE_TAG: ${{ inputs.previous_tag }}
+    steps:
+      - name: Validate version-tag inputs before checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          for release_tag in "$RELEASE_TAG" "$PREVIOUS_RELEASE_TAG"; do
+            if [[ ! "$release_tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo '::error::Both releases must be vMAJOR.MINOR.PATCH tags.'
+              exit 1
+            fi
+          done
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the exact tag in trusted main history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show-ref --verify "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "$RELEASE_TAG^{commit}")"
+          git merge-base --is-ancestor HEAD origin/main
+          git merge-base --is-ancestor "$PREVIOUS_RELEASE_TAG^{commit}" HEAD
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '10.31.0'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+          cache: pnpm
+      - name: Install the frozen verification dependencies without lifecycle scripts
+        # Older published checkers import TypeScript while loading the module.
+        # Install their own lockfile; keep every checked-out source file intact.
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter astral
+      - name: Check the published version contract
+        shell: bash
+        run: node scripts/release-version.mjs check --tag "$RELEASE_TAG"
+      - name: Prepare the disposable Linux desktop session
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Update the untouched official Mac or Windows installation
+        if: runner.os != 'Linux'
+        shell: bash
+        run: node scripts/check-desktop-update.mjs --published-from "$PREVIOUS_RELEASE_TAG"
+      - name: Update the untouched official Linux AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: xvfb-run -a node scripts/check-desktop-update.mjs --published-from "$PREVIOUS_RELEASE_TAG"
+      - name: Require verification to leave the published source intact
+        run: git diff --exit-code
+      - name: Preserve actual published-update evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: published-update-${{ matrix.platform }}-${{ inputs.tag }}
+          path: |
+            ${{ runner.temp }}/astral-published-desktop-update.json
+            ${{ runner.temp }}/astral-update-acceptance.log
+          if-no-files-found: warn
+          retention-days: 14
