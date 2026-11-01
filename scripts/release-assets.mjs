@@ -156,7 +156,7 @@ Standalone Servers allow remote Web management by default. Hostname restrictions
 
 Computer settings distinguish a missing Docker command, an unreachable engine and insufficient permissions, show the actual Server account, and provide a retry action. Feishu setup guidance links to the external permissions and event configuration required to complete a connection.
 
-Narrow chat panels use a two-layer Composer with one frame, directly accessible Computer and model selection, and a stable send/stop position. The FollowUp queue uses compact continuous rows. Message images and files appear above the separate text bubble; multiple images use two columns and file names wrap within the message. Image previews retain access to their original attachment without duplicating its file row.
+Narrow chat panels use a two-layer Composer with one frame, directly accessible Computer and model selection, and a stable send/stop position. The FollowUp queue uses compact continuous rows. Message images and files appear above the separate text bubble; multiple images use two columns and file names wrap within the message. Clicking an image opens a full-page viewer with zoom, pan, multi-image navigation and download, including trackpad and phone gestures. Unavailable originals retain their historical preview and preview download. Ordinary files continue to open in the file sidebar.
 
 Slow network sends show a centered spinner in place of the button icon only after 300ms. Repeated Enter does not submit again while the request is pending. A failed send retains the draft, and an unchanged retry reuses the original input identity.
 
