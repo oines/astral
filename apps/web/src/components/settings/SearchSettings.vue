@@ -377,6 +377,7 @@ async function remove() {
         :open="deleting"
         kind="search"
         :name="selected.name"
+        :description="t('searchDeleteHint')"
         :busy="action.busy.value"
         :error-message="action.error.value"
         @update:open="deleting = $event"

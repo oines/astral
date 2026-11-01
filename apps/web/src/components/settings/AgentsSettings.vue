@@ -29,6 +29,12 @@ const saves = useSettingsSave()
 const searches = useQuery(listSearchProvidersQuery())
 const selected = computed(() => app.agents.find(a => a.id === route.query.agent))
 const resource = computed(() => `agent:${selected.value?.id || ''}`)
+const selectedSearch = computed(() => saves.value(`${resource.value}/search`, selected.value?.search_provider_id || ''))
+const searchOptions = computed(() => {
+  const options = [{ value: '', label: t('notEnabled') }, ...(searches.data.value || []).map(p => ({ value: p.id, label: p.name }))]
+  return selectedSearch.value && searches.data.value && !options.some(option => option.value === selectedSearch.value)
+    ? [{ value: selectedSearch.value, label: t('searchUnavailable'), disabled: true }, ...options] : options
+})
 const personaKey = computed(() => `${resource.value}/persona`)
 const persona = computed({
   get: () => saves.drafts[personaKey.value] ?? selected.value?.persona ?? '',
@@ -271,9 +277,9 @@ function preventDeleteDismiss(event: Event) { if (action.busy.value) event.preve
             :label="t('searchServices')"
           >
             <Select
-              :model-value="saves.value(`${resource}/search`, selected.search_provider_id || '')"
+              :model-value="selectedSearch"
               :label="t('webSearch')"
-              :options="[{ value: '', label: t('notEnabled') }, ...(searches.data.value || []).map(p => ({ value: p.id, label: p.name }))]"
+              :options="searchOptions"
               @update:model-value="update(selected!.id, 'search', { search_provider_id: $event }, $event)"
             />
           </SettingsRow>

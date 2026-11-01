@@ -593,10 +593,7 @@ func (a *API) resources() {
 		return httpcontract.OK{OK: true}, h.Models.DeleteProfile(r.Context(), r.PathValue("id"), revision(r))
 	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
 	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/search-providers/{id}", "deleteSearchProvider", "Resources", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
-		err := h.Store.Update(r.Context(), func(tx *persistence.Tx) error {
-			return tx.Delete(r.Context(), "search", r.PathValue("id"), revision(r))
-		})
-		return httpcontract.OK{OK: true}, err
+		return httpcontract.OK{OK: true}, h.DeleteSearchProvider(r.Context(), r.PathValue("id"), revision(r))
 	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
 }
 func (a *API) sessionRoutes() {

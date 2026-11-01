@@ -70,12 +70,6 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 			}
 		}
 	}
-	if agent.SearchProviderID != "" {
-		var search domain.SearchProvider
-		if err := s.Store.Get(ctx, "search", agent.SearchProviderID, &search); err != nil {
-			return err
-		}
-	}
 	seen := map[string]bool{}
 	for _, id := range agent.AllowedComputers {
 		if seen[id] {
@@ -94,8 +88,23 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 		agent.ID = domain.ID("agent")
 	}
 	err := s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		var current domain.Agent
 		if agent.Revision != 0 {
-			if err := availableAgent(ctx, tx, agent.ID); err != nil {
+			if err := tx.Get(ctx, "agents", agent.ID, &current); err != nil {
+				return err
+			}
+			if current.Deletion {
+				return domain.Missing("Bot", agent.ID)
+			}
+			if current.Revision != agent.Revision {
+				return domain.Conflict("this record changed; reload it before saving")
+			}
+		}
+		// Legacy references may outlive their search service. They must not
+		// block unrelated edits, but a new selection must exist at commit time.
+		if agent.SearchProviderID != "" && (agent.Revision == 0 || agent.SearchProviderID != current.SearchProviderID) {
+			var search domain.SearchProvider
+			if err := tx.Get(ctx, "search", agent.SearchProviderID, &search); err != nil {
 				return err
 			}
 		}

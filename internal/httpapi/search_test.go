@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -68,5 +69,55 @@ func TestSearchCatalogCredentialsAndTestOptions(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != 200 || strings.Contains(string(raw), "legacy-api-key") {
 		t.Fatalf("legacy api_key compatibility: %d", response.StatusCode)
+	}
+}
+
+func TestDeleteSearchProviderDisablesReferencingBots(t *testing.T) {
+	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
+	_, server := apiFixture(t, p)
+	provider := domain.SearchProvider{Meta: domain.Meta{ID: "search-to-delete"}, Name: "Search"}
+	if err := p.Store.Save(p.Context, "search", &provider.Meta, &provider); err != nil {
+		t.Fatal(err)
+	}
+	bot := p.Agent
+	bot.SearchProviderID = provider.ID
+	if err := p.Harness.SaveAgent(p.Context, &bot); err != nil {
+		t.Fatal(err)
+	}
+	pathPrefix := "/api/v1/search-providers/" + provider.ID + "?revision="
+	path := pathPrefix + strconv.FormatInt(provider.Revision, 10)
+	for _, check := range []struct {
+		name   string
+		path   string
+		auth   bool
+		status int
+	}{
+		{"unauthenticated", path, false, http.StatusUnauthorized},
+		{"stale-confirmation", pathPrefix + strconv.FormatInt(provider.Revision+1, 10), true, http.StatusConflict},
+		{"confirmed-delete", path, true, http.StatusOK},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			response := request(t, p.Context, server, "DELETE", check.path, nil, check.auth)
+			raw, err := io.ReadAll(response.Body)
+			response.Body.Close()
+			if err != nil || response.StatusCode != check.status {
+				t.Fatalf("delete: %d %s %v", response.StatusCode, raw, err)
+			}
+			var saved domain.Agent
+			if err := p.Store.Get(p.Context, "agents", bot.ID, &saved); err != nil {
+				t.Fatal(err)
+			}
+			if check.status == http.StatusOK {
+				if saved.SearchProviderID != "" || saved.Revision != bot.Revision+1 || saved.Name != bot.Name {
+					t.Fatalf("API deletion did not disable Bot search: %+v", saved)
+				}
+			} else if saved.SearchProviderID != provider.ID || saved.Revision != bot.Revision {
+				t.Fatalf("rejected API deletion changed Bot search: %+v", saved)
+			}
+		})
+	}
+	var removed domain.SearchProvider
+	if err := p.Store.Get(p.Context, "search", provider.ID, &removed); !domain.IsMissing(err) {
+		t.Fatal("API deletion retained search service:", err)
 	}
 }
