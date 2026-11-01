@@ -48,6 +48,10 @@ class TestNode {
   setPointerCapture = vi.fn()
   constructor(readonly type: string, public text = '') {}
   getBoundingClientRect() { return { left: 40, top: 60, width: this.clientWidth, height: this.clientHeight } }
+  closest(selector: string): TestNode | null {
+    if (selector === '[data-image-viewer-controls]' && 'data-image-viewer-controls' in this.props) return this
+    return this.parent?.closest(selector) ?? null
+  }
   addEventListener(type: string, listener: EventListener) {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set())
     this.listeners.get(type)!.add(listener)
@@ -101,6 +105,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-11-01T12:00:00Z'))
   images.length = 0
   vi.stubGlobal('Image', TestImage)
+  vi.stubGlobal('Element', TestNode)
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 })
 afterEach(() => {
@@ -119,10 +124,24 @@ function find(node: TestNode, predicate: (node: TestNode) => boolean): TestNode 
 function hasClass(node: TestNode, name: string) { return String(node.props.class ?? '').split(' ').includes(name) }
 function text(node: TestNode): string { return node.text + node.children.map(text).join('') }
 async function fire(node: TestNode, type: string, fields: Record<string, unknown> = {}) {
-  const event = Object.assign(new Event(type, { cancelable: true }), fields)
-  const handler = node.props[`on${type[0]!.toUpperCase()}${type.slice(1)}`]
-  if (typeof handler === 'function') handler(event)
-  for (const listener of node.listeners.get(type) ?? []) listener(event)
+  const event = Object.assign(new Event(type, { cancelable: true, bubbles: true }), fields)
+  Object.defineProperty(event, 'target', { value: node })
+  const path: TestNode[] = []
+  for (let target: TestNode | undefined = node; target; target = target.parent) path.push(target)
+  const eventProp = `on${type[0]!.toUpperCase()}${type.slice(1)}`
+  const invoke = (target: TestNode, capture: boolean) => {
+    const handler = target.props[`${eventProp}${capture ? 'Capture' : ''}`]
+    if (typeof handler === 'function') handler(event)
+    if (!capture) for (const listener of target.listeners.get(type) ?? []) listener(event)
+  }
+  for (const target of path.toReversed()) {
+    invoke(target, true)
+    if (event.cancelBubble) break
+  }
+  if (!event.cancelBubble) for (const target of path) {
+    invoke(target, false)
+    if (event.cancelBubble) break
+  }
   await nextTick()
   return event
 }
@@ -130,7 +149,9 @@ async function fire(node: TestNode, type: string, fields: Record<string, unknown
 async function mount(items: ImageViewerItem[] = [{ src: '/preview' }]) {
   const props = reactive({ open: true, items, index: 0, labels })
   const root = new TestNode('root')
-  const app = renderer.createApp(defineComponent({ setup: () => () => h(clientViewer, props) }))
+  const updateOpen = vi.fn()
+  const updateIndex = vi.fn()
+  const app = renderer.createApp(defineComponent({ setup: () => () => h(clientViewer, { ...props, 'onUpdate:open': updateOpen, 'onUpdate:index': updateIndex }) }))
   app.provide(ssrContextKey, { modules: new Set() })
   app.mount(root)
   disposals.push(() => app.unmount())
@@ -143,16 +164,136 @@ async function mount(items: ImageViewerItem[] = [{ src: '/preview' }]) {
     const match = style.transform.match(/translate\(([-\d.e]+)px, ([-\d.e]+)px\) scale\(([-\d.e]+)\)$/)!
     return { x: Number(match[1]), y: Number(match[2]), zoom: Number(match[3]) }
   }
-  const load = async (src = props.items[props.index]!.src) => {
+  const load = async (src = props.items[props.index]!.src, width = 1600, height = 1200) => {
     const image = images.findLast(image => image.src === src)!
-    image.succeed()
+    image.succeed(width, height)
     await nextTick()
     return image
   }
-  const pointer = (type: string, id: number, x: number, y: number) => fire(stage(), type, { pointerType: 'touch', pointerId: id, button: 0, clientX: x, clientY: y })
+  const pointer = (type: string, id: number, x: number, y: number, pointerType = 'touch') => fire(stage(), type, { pointerType, pointerId: id, button: 0, clientX: x, clientY: y })
   const wheel = (fields: Record<string, unknown>) => fire(stage(), 'wheel', { clientX: 440, clientY: 360, deltaMode: 0, deltaX: 0, deltaY: 0, ctrlKey: false, metaKey: false, ...fields })
-  return { props, root, byClass, stage, image, pose, load, pointer, wheel }
+  return { props, root, byClass, stage, image, pose, load, pointer, wheel, updateOpen, updateIndex }
 }
+
+describe('ImageViewer blank backdrop dismissal', () => {
+  it('protects actual control surfaces while allowing blank header, footer and feedback gaps to close', async () => {
+    const view = await mount([{ src: '/first', originalSrc: '/original' }, { src: '/second' }])
+    await view.load()
+    images.find(image => image.src === '/original')!.fail()
+    await nextTick()
+    const feedback = view.byClass('image-viewer-feedback')!
+    const feedbackText = find(feedback, node => node.type === 'span')!
+    const retry = find(feedback, node => node.type === 'button')!
+    const click = async (node: TestNode) => {
+      const fields = { pointerType: 'mouse', pointerId: 1, button: 0, clientX: 440, clientY: 700 }
+      await fire(node, 'pointerdown', fields)
+      await fire(node, 'pointerup', fields)
+      await fire(node, 'click', fields)
+    }
+    for (const surface of [
+      view.byClass('image-viewer-title')!, view.byClass('image-viewer-navigation-controls')!,
+      view.byClass('image-viewer-zoom-controls')!, view.byClass('image-viewer-download')!, feedbackText, retry,
+    ]) await click(surface)
+    expect(view.updateOpen).not.toHaveBeenCalled()
+    for (const container of [
+      view.byClass('image-viewer-header')!, view.byClass('image-viewer-toolbar')!,
+      view.byClass('image-viewer-navigation')!, feedback,
+    ]) {
+      await click(container)
+      expect(view.updateOpen).toHaveBeenCalledExactlyOnceWith(false)
+      view.updateOpen.mockClear()
+    }
+  })
+
+  it('closes a blank mouse click and a blank phone tap while retaining image clicks', async () => {
+    const view = await mount()
+    await view.load('/preview', 800, 400)
+    // The image covers y=160..560; pointer capture still targets the viewport.
+    await view.pointer('pointerdown', 1, 440, 360, 'mouse')
+    await view.pointer('pointerup', 1, 440, 360, 'mouse')
+    await fire(view.stage(), 'click', { button: 0, clientX: 440, clientY: 360 })
+    expect(view.updateOpen).not.toHaveBeenCalled()
+    await view.pointer('pointerdown', 1, 440, 100, 'mouse')
+    await view.pointer('pointerup', 1, 440, 100, 'mouse')
+    await fire(view.stage(), 'click', { button: 0, clientX: 440, clientY: 100 })
+    expect(view.updateOpen).toHaveBeenCalledExactlyOnceWith(false)
+    view.updateOpen.mockClear()
+    await view.pointer('pointerdown', 1, 440, 620)
+    await view.pointer('pointerup', 1, 440, 620)
+    expect(view.updateOpen).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('uses the moved image bounds and ignores a drag ending on blank space', async () => {
+    const view = await mount()
+    await view.load('/preview', 200, 100)
+    await view.wheel({ ctrlKey: true, deltaY: -Math.log(2) / 0.01 })
+    await view.pointer('pointerdown', 1, 440, 360, 'mouse')
+    await view.pointer('pointermove', 1, 440, 100, 'mouse')
+    await view.pointer('pointerup', 1, 440, 100, 'mouse')
+    await fire(view.stage(), 'click', { button: 0, clientX: 440, clientY: 100 })
+    expect(view.updateOpen).not.toHaveBeenCalled()
+    await view.pointer('pointerdown', 1, 440, 500, 'mouse')
+    await view.pointer('pointermove', 1, 480, 510, 'mouse')
+    await view.pointer('pointerup', 1, 480, 510, 'mouse')
+    await fire(view.stage(), 'click', { button: 0, clientX: 480, clientY: 510 })
+    expect(view.updateOpen).not.toHaveBeenCalled()
+    await view.pointer('pointerdown', 1, 440, 100, 'mouse')
+    await view.pointer('pointerup', 1, 440, 100, 'mouse')
+    expect(view.updateOpen).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('does not close after a pinch or double tap even when the synthesized click is now outside the fitted image', async () => {
+    const view = await mount()
+    await view.load('/preview', 200, 100)
+    await view.pointer('pointerdown', 1, 390, 360)
+    await view.pointer('pointerdown', 2, 490, 360)
+    await view.pointer('pointermove', 1, 340, 360)
+    await view.pointer('pointermove', 2, 540, 360)
+    await view.pointer('pointerup', 1, 340, 360)
+    await view.pointer('pointerup', 2, 540, 360)
+    await fire(view.stage(), 'click', { button: 0, clientX: 700, clientY: 100 })
+    expect(view.updateOpen).not.toHaveBeenCalled()
+    const tap = async () => {
+      await view.pointer('pointerdown', 1, 590, 360)
+      await vi.advanceTimersByTimeAsync(30)
+      await view.pointer('pointerup', 1, 590, 360)
+      await fire(view.stage(), 'click', { button: 0, clientX: 590, clientY: 360 })
+    }
+    await tap()
+    await vi.advanceTimersByTimeAsync(70)
+    await tap()
+    expect(view.pose().zoom).toBe(1)
+    expect(view.updateOpen).not.toHaveBeenCalled()
+  })
+
+  it('allows blank dismissal during loading and failure but keeps retry and navigation controls active', async () => {
+    const view = await mount([{ src: '/first' }, { src: '/second' }])
+    await vi.advanceTimersByTimeAsync(300)
+    await view.pointer('pointerdown', 1, 440, 100)
+    await view.pointer('pointerup', 1, 440, 100)
+    expect(view.updateOpen).toHaveBeenCalledExactlyOnceWith(false)
+    view.updateOpen.mockClear()
+    images[0]!.fail()
+    await nextTick()
+    const retry = find(view.byClass('image-viewer-failure')!, node => node.type === 'button')!
+    await fire(retry, 'pointerdown', { pointerType: 'touch', pointerId: 1, button: 0, clientX: 440, clientY: 400 })
+    await fire(retry, 'pointerup', { pointerType: 'touch', pointerId: 1, button: 0, clientX: 440, clientY: 400 })
+    await fire(retry, 'click', { button: 0, clientX: 440, clientY: 400 })
+    expect(images).toHaveLength(2)
+    expect(view.updateOpen).not.toHaveBeenCalled()
+    const next = find(view.root, node => node.props['aria-label'] === labels.next)!
+    await fire(next, 'pointerdown', { pointerType: 'mouse', pointerId: 1, button: 0, clientX: 440, clientY: 700 })
+    await fire(next, 'pointerup', { pointerType: 'mouse', pointerId: 1, button: 0, clientX: 440, clientY: 700 })
+    await fire(next, 'click', { button: 0, clientX: 440, clientY: 700 })
+    expect(view.updateIndex).toHaveBeenCalledExactlyOnceWith(1)
+    expect(view.updateOpen).not.toHaveBeenCalled()
+    images[1]!.fail()
+    await nextTick()
+    await view.pointer('pointerdown', 1, 440, 100)
+    await view.pointer('pointerup', 1, 440, 100)
+    expect(view.updateOpen).toHaveBeenCalledExactlyOnceWith(false)
+  })
+})
 
 describe('ImageViewer input events', () => {
   it('anchors macOS pinch wheel at the cursor, then pans with ordinary two-finger wheel', async () => {

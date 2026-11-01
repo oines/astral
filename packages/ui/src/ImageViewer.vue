@@ -45,6 +45,9 @@ let lastTouchAt = 0
 type SafariGesture = Event & { scale?: number; clientX?: number; clientY?: number }
 let safariGesture: { view: ImageView; anchor: ImagePoint; scale: number } | undefined
 let safariEndedAt = 0
+const surfacePointers = new Set<number>()
+let blankPress: { id: number; point: ImagePoint; startedOnImage: boolean; moved: boolean } | undefined
+let ignorePointerClick = false
 
 function resetInteraction() {
   pointers.clear()
@@ -62,6 +65,9 @@ watch(() => [viewerOpen.value, activeIndex.value, item.value?.src, item.value?.o
   originalState.value = 'idle'
   originalFailed.value = false
   resetInteraction()
+  surfacePointers.clear()
+  blankPress = undefined
+  ignorePointerClick = false
   retryOriginal = undefined
   if (!open || !src) return
 
@@ -141,6 +147,53 @@ function zoomTo(zoom: number, anchor: ImagePoint = { x: 0, y: 0 }) {
 function pointAt(clientX: number, clientY: number): ImagePoint {
   const bounds = viewportElement.value?.getBoundingClientRect()
   return bounds ? { x: clientX - bounds.left - bounds.width / 2, y: clientY - bounds.top - bounds.height / 2 } : { x: 0, y: 0 }
+}
+
+function isOnImage(point: ImagePoint) {
+  if (!displayedSrc.value || Math.abs(point.x) > viewport.value.width / 2 || Math.abs(point.y) > viewport.value.height / 2) return false
+  return Math.abs(point.x - view.value.x) <= fitted.value.width * view.value.zoom / 2
+    && Math.abs(point.y - view.value.y) <= fitted.value.height * view.value.zoom / 2
+}
+
+function isOnControls(event: Event) {
+  return event.target instanceof Element && !!event.target.closest('[data-image-viewer-controls]')
+}
+
+function onSurfacePointerDown(event: PointerEvent) {
+  if (event.pointerType !== 'touch' && event.button !== 0) return
+  ignorePointerClick = true
+  surfacePointers.add(event.pointerId)
+  const point = pointAt(event.clientX, event.clientY)
+  blankPress = surfacePointers.size === 1 && !isOnControls(event)
+    ? { id: event.pointerId, point, startedOnImage: isOnImage(point), moved: false }
+    : undefined
+}
+
+function onSurfacePointerMove(event: PointerEvent) {
+  if (!blankPress || blankPress.id !== event.pointerId) return
+  const point = pointAt(event.clientX, event.clientY)
+  if (Math.hypot(point.x - blankPress.point.x, point.y - blankPress.point.y) > 8) blankPress.moved = true
+}
+
+function onSurfacePointerEnd(event: PointerEvent) {
+  if (!surfacePointers.has(event.pointerId)) return
+  const point = pointAt(event.clientX, event.clientY)
+  const close = event.type === 'pointerup' && surfacePointers.size === 1 && blankPress?.id === event.pointerId
+    && !blankPress.moved && !blankPress.startedOnImage && !isOnImage(point) && !isOnControls(event)
+  surfacePointers.delete(event.pointerId)
+  blankPress = undefined
+  // Closing on pointerup also works when touch preventDefault suppresses click.
+  // Keep its subsequent captured/synthesized click from becoming another action.
+  if (close) emit('update:open', false)
+}
+
+function onBlankClick(event: MouseEvent) {
+  if (ignorePointerClick) {
+    ignorePointerClick = false
+    return
+  }
+  if (event.button !== 0 || event.defaultPrevented || isOnControls(event) || isOnImage(pointAt(event.clientX, event.clientY))) return
+  emit('update:open', false)
 }
 
 function toggleZoom(point: ImagePoint) {
@@ -291,17 +344,26 @@ function focusClose(event: Event) {
         :aria-describedby="undefined"
         @open-auto-focus="focusClose"
         @keydown="onKeydown"
+        @pointerdown.capture="onSurfacePointerDown"
+        @pointermove.capture="onSurfacePointerMove"
+        @pointerup.capture="onSurfacePointerEnd"
+        @pointercancel.capture="onSurfacePointerEnd"
+        @click="onBlankClick"
       >
-        <header class="image-viewer-header">
+        <header
+          class="image-viewer-header"
+        >
           <DialogTitle
             class="image-viewer-title"
             :title="item?.name || labels.title"
+            data-image-viewer-controls
           >
             {{ item?.name || labels.title }}
           </DialogTitle>
           <DialogClose
             class="button button-ghost image-viewer-control"
             data-viewer-close
+            data-image-viewer-controls
             :aria-label="labels.close"
             :title="labels.close"
           >
@@ -333,10 +395,10 @@ function focusClose(event: Event) {
             class="image-viewer-loading"
             role="status"
             :aria-label="labels.loading"
-          ><span
+          ><span class="image-viewer-loading-indicator"><span
             class="spinner"
             aria-hidden="true"
-          /></span>
+          /></span></span>
           <div
             v-if="failed"
             class="image-viewer-failure"
@@ -345,7 +407,8 @@ function focusClose(event: Event) {
             <span>{{ labels.failed }}</span>
             <Button
               variant="secondary"
-              @click="retry"
+              data-image-viewer-controls
+              @click.stop="retry"
             >
               {{ labels.retry }}
             </Button>
@@ -356,43 +419,54 @@ function focusClose(event: Event) {
           class="image-viewer-feedback"
           role="status"
         >
-          <span>{{ labels.originalUnavailable }}</span>
+          <span data-image-viewer-controls>{{ labels.originalUnavailable }}</span>
           <Button
             variant="ghost"
             :busy="originalState === 'loading'"
+            data-image-viewer-controls
             @click="retry"
           >
             {{ labels.retry }}
           </Button>
         </div>
-        <footer class="image-viewer-toolbar">
+        <footer
+          class="image-viewer-toolbar"
+        >
           <div
             v-if="items.length > 1"
             class="image-viewer-navigation"
           >
-            <Button
-              variant="ghost"
-              class="image-viewer-control"
-              :disabled="activeIndex === 0"
-              :aria-label="labels.previous"
-              :title="labels.previous"
-              @click="navigate(-1)"
+            <div
+              class="image-viewer-navigation-controls"
+              data-image-viewer-controls
             >
-              <ArrowLeft aria-hidden="true" />
-            </Button>
-            <span class="image-viewer-count">{{ activeIndex + 1 }} / {{ items.length }}</span>
-            <Button
-              variant="ghost"
-              class="image-viewer-control"
-              :disabled="activeIndex === items.length - 1"
-              :aria-label="labels.next"
-              :title="labels.next"
-              @click="navigate(1)"
-            >
-              <ArrowRight aria-hidden="true" />
-            </Button>
+              <Button
+                variant="ghost"
+                class="image-viewer-control"
+                :disabled="activeIndex === 0"
+                :aria-label="labels.previous"
+                :title="labels.previous"
+                @click="navigate(-1)"
+              >
+                <ArrowLeft aria-hidden="true" />
+              </Button>
+              <span class="image-viewer-count">{{ activeIndex + 1 }} / {{ items.length }}</span>
+              <Button
+                variant="ghost"
+                class="image-viewer-control"
+                :disabled="activeIndex === items.length - 1"
+                :aria-label="labels.next"
+                :title="labels.next"
+                @click="navigate(1)"
+              >
+                <ArrowRight aria-hidden="true" />
+              </Button>
+            </div>
           </div>
-          <div class="image-viewer-zoom-controls">
+          <div
+            class="image-viewer-zoom-controls"
+            data-image-viewer-controls
+          >
             <Button
               variant="ghost"
               class="image-viewer-control"
@@ -427,6 +501,7 @@ function focusClose(event: Event) {
           </div>
           <a
             class="button button-ghost image-viewer-control image-viewer-download"
+            data-image-viewer-controls
             :href="downloadHref"
             :download="item?.name || ''"
             :aria-label="downloadLabel"
@@ -444,22 +519,25 @@ function focusClose(event: Event) {
 
 <style scoped>
 .image-viewer-overlay { position: fixed; inset: 0; z-index: 70; background: var(--overlay); }
-.image-viewer { position: fixed; inset: 0; z-index: 71; display: flex; flex-direction: column; min-width: 0; height: 100%; height: 100dvh; overflow: hidden; background: var(--canvas); color: var(--ink); overscroll-behavior: contain; -webkit-app-region: no-drag; }
+.image-viewer { position: fixed; inset: 0; z-index: 71; display: flex; flex-direction: column; min-width: 0; height: 100%; height: 100dvh; overflow: hidden; background: transparent; color: var(--ink); overscroll-behavior: contain; -webkit-app-region: no-drag; }
 .image-viewer-header { display: flex; align-items: center; gap: 16px; flex-shrink: 0; padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 8px max(20px, env(safe-area-inset-left)); }
-.image-viewer-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 550; line-height: 1.5; }
-.image-viewer-control { width: 44px; height: 44px; min-height: 44px; flex-shrink: 0; padding: 11px; }
+.image-viewer-title { flex: 0 1 auto; min-width: 0; margin-right: auto; padding: 8px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: var(--radius-control); background: var(--raised); font-size: 14px; font-weight: 550; line-height: 1.5; }
+.image-viewer-control { width: 44px; height: 44px; min-height: 44px; flex-shrink: 0; padding: 11px; background: var(--raised); }
 .image-viewer-control svg { width: 20px; height: 20px; }
 .image-viewer-viewport { position: relative; flex: 1; min-height: 0; margin: 0 max(20px, env(safe-area-inset-right)) 0 max(20px, env(safe-area-inset-left)); overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; cursor: zoom-in; }
 .image-viewer-zoomed { cursor: grab; }
 .image-viewer-zoomed:active { cursor: grabbing; }
 .image-viewer-image { position: absolute; top: 50%; left: 50%; max-width: none; max-height: none; object-fit: contain; transform-origin: center; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; pointer-events: none; }
 .image-viewer-loading, .image-viewer-failure { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.image-viewer-loading-indicator { display: inline-flex; padding: 14px; border-radius: var(--radius-control); background: var(--raised); }
 .image-viewer-failure { flex-direction: column; gap: 12px; color: var(--muted); font-size: 13px; cursor: default; }
+.image-viewer-failure > span, .image-viewer-feedback > span { padding: 8px 12px; border-radius: var(--radius-control); background: var(--raised); }
 .image-viewer-failure .button { min-height: 44px; }
 .image-viewer-feedback { display: flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 8px; padding: 8px max(20px, env(safe-area-inset-right)) 0 max(20px, env(safe-area-inset-left)); color: var(--muted); font-size: 13px; line-height: 1.5; }
-.image-viewer-feedback .button { min-height: 44px; }
+.image-viewer-feedback .button { min-height: 44px; background: var(--raised); }
 .image-viewer-toolbar { display: flex; align-items: center; justify-content: center; flex-shrink: 0; flex-wrap: wrap; gap: 8px 20px; padding: 12px max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
-.image-viewer-navigation, .image-viewer-zoom-controls { display: flex; align-items: center; gap: 2px; }
+.image-viewer-navigation { display: flex; align-items: center; }
+.image-viewer-navigation-controls, .image-viewer-zoom-controls { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: var(--radius-panel); background: var(--raised); }
 .image-viewer-count, .image-viewer-zoom-value { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
 .image-viewer-count { min-width: 44px; }
 .image-viewer-zoom-value { width: 48px; }
