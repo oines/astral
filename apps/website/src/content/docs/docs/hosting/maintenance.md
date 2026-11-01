@@ -1,118 +1,124 @@
 ---
 title: "Updates and backups"
-description: "Update Desktop, Server and connected computers while preserving history and work files."
+description: "Update Astral, back up your account and work, and restore them when needed."
 ---
 
-Keep your existing data directories when replacing a program. Download availability is listed under [Get Astral](/docs/start/get-astral/); the controls below apply to builds that include the updater and migration tools. An older build without the updater needs one manual installation before it can update in the App.
+Keep the same data directories when updating Astral. Your account, conversations, and computer identities live there; replacing the program does not require recreating them. Keep an independent backup before important work. Updates and recovery restart services, so finish running tasks first.
 
 ## Update Desktop
 
-Open **Settings → About & diagnostics** in the App or its signed-in Web UI and select **Check for updates**. When a newer version is available, the button becomes **Update and restart**. Supported Desktop installations also check periodically.
+Check for updates in **Settings → About & diagnostics**, then follow the page to install and restart. Official macOS builds, Windows EXE installations, and Linux AppImage support in-app updates.
 
-Selecting **Update and restart** checks the latest release, downloads and verifies it, then installs and restarts. The Web UI’s button updates the same running Desktop App.
+For Linux DEB, Windows ZIP, or a custom build, get the new version from [Downloads](/docs/start/get-astral/), replace the program, and retain its data. When accessing Desktop through a browser, the web update action updates the desktop app on that computer.
 
-| Installation | Update method |
-| --- | --- |
-| Official signed macOS App | Select **Update and restart** in the App or its signed-in Web UI |
-| Windows EXE installer for the current user | Select **Update and restart** in the App or its signed-in Web UI |
-| Linux AppImage | Select **Update and restart** in the App or its signed-in Web UI |
-| Linux DEB, Windows ZIP, unsigned Mac or development build | Download and install the newer package manually |
+## Update Server
 
-You can keep using Astral during the download. Installation and restart interrupt running tasks and computer commands, so update when you are ready for that interruption. The local computer service updates with Desktop; remote computers are updated separately.
+Official Linux installations can update through **Settings → About & diagnostics**. Alternatively, rerun the [installer](/docs/hosting/server/#update) as the original OS account. Keep the original `--root` for a custom directory.
 
-Wait for the page to reconnect and show the update result. If it fails, follow the error and retry. If Astral returns to the previous version, inspect the error before continuing work.
+Wait for the service to restart and reconnect, then check the version and task history. Retry download errors as directed. If activation fails, the installer attempts to restore the previous program and that update's data backup. An older installation offering only manual updates can first be updated with the current installer.
 
-If a Mac release says Apple notarization is pending, its Developer ID signature is verified but Gatekeeper may still block the first launch. After trying to open the trusted official download, follow [Apple's instructions](https://support.apple.com/en-us/102445) to allow it under **System Settings → Privacy & Security → Open Anyway**. This is separate from Astral's update controls.
-
-## Update a headless Server
-
-An official Linux current-user service with verified installation metadata supports the same update row in **Settings → About & diagnostics**. Check for a new version, then select **Update and restart** when you are ready to interrupt current tasks. The browser does not need access to a shell.
-
-Updates retain the installation directory, data, and network settings. Once the download is verified, the Server restarts and applies any required data conversion. If activation fails, the installer attempts to restore the previous program, service, and this update’s data backup. Reconnect and check the result before resuming work. Update records are stored in `updates/` beneath the installation root.
-
-If an older official installation only offers manual downloads, rerun the [installation command](/docs/hosting/server/) as the same user with the same installation directory, then check again. The command also remains available for updates to a specific published version.
-
-For a foreground `serve` process, custom service, or self-managed container, stop it, replace the program, and restart with the same `--data` directory and startup options. Its local computer service updates with the Server.
-
-## Skipping versions and data changes
-
-Upgrade directly from a supported earlier version to the latest release. You do not need to install intermediate versions. Keep an independent backup before updating.
-
-When data conversion is needed, Astral first backs up the full Server directory. A failed conversion restores that backup; after an interruption, the next launch recovers it before continuing. Once the Server starts successfully and accepts new work, later failures need to be handled individually rather than automatically replacing new data with the old backup. Automatic backups are in `upgrade-backups/` beside the Server directory.
-
-Desktop releases from 0.1.0 onward keep the existing data directory, setup, history, and computer identities. Earlier private-development data is left in place and is not imported automatically. To return to an older version, use a data backup matching that version.
-
-## Storage maintenance
-
-A large database conversion needs additional space for backups and temporary files. If free space is insufficient, free some space or stop Astral and move its complete data directory to a suitable disk, then retry.
-
-The startup preparation window shows the current stage. Close it to cancel startup; the next launch recovers the interrupted conversion. If an old installer times out on a large database, retry with the current installer and the same installation directory.
-
-### Review and clean storage
-
-Open **Settings → Storage** in Desktop or its signed-in Web UI. The overview shows disk capacity and Astral file usage, refreshing on entry and after cleanup. Manage project and work files on their own computers.
-
-Select a Bot to browse **Chats** and **Other sessions** and compare their content sizes. List sizes are estimates; the overview shows measured disk use. Shared content and unused database space affect how much a deletion eventually frees.
-
-Chat archive cleanup, archive retention and clearing a chat's current session are separate actions. See [Manage session and chat storage](/docs/usage/conversations/#manage-session-and-chat-storage) for their effects and the prerequisites for permanently deleting other sessions.
-
-**Application cleanup** lists identified upgrade backups, model-catalog caches, old temporary files, and old update packages from supported Desktop installations. Files needed for an active update or recovery show why they must be kept.
-
-Select the items and confirm **Remove selected files**. The list and usage update after cleanup. If a file has changed or removal fails, follow that item’s refresh or retry action.
-
-Removing a backup permanently removes that recovery copy. Existing backups can still contain history that you subsequently deleted; ordinary session or archive cleanup does not rewrite them. Keep an independent backup suitable for your recovery needs.
-
-### Automatic database reclamation
-
-After deleting sessions or clearing records, Astral compacts its databases in the background. Disk space may be released later; you do not need to stop the Server. Operations may briefly wait while a large database is compacted.
-
-The page updates measured usage afterward. If reclamation fails, it shows the cause and a retry action; deleted records remain deleted. If it reports insufficient space, free the temporary space needed for compaction first.
-
-### Offline Core maintenance
-
-The separate command-line alternative reclaims unused Core database pages. Keep a complete backup and stop Desktop or Server before running it:
-
-```sh
-astral maintenance vacuum --data /path/to/server
-```
-
-This command compacts only the Core database, keeps session history and upgrade backups, and reports file size before and after. Keep Desktop and Server stopped while it runs.
+For manual `serve`, a custom service, or a custom container, stop it using your deployment method, replace the program, and restart with the **same data directory and startup configuration**.
 
 ## Update remote computers and containers
 
-Open **Settings → Computers → computer details → Daemon maintenance**. For an online managed computer, select **Update Daemon** and confirm that running tasks will stop. Astral downloads and verifies the official version, replaces the program and checks that the same computer reconnects. If its Daemon is newer than the Server, Astral reminds you to update Desktop or Server; this does not block checking for a newer Daemon. The action checks the latest release even when the current versions match, and skips an equal or older target.
+Open the computer under **Settings → Computers** and use the update action in **Daemon maintenance**. The Daemon is the Astral connection program installed on that computer. Updating interrupts its running tasks; afterward, the same computer should reconnect.
 
-You can also copy the displayed update command. Use this route for older Daemons without the management action, or when the action is unavailable:
+If the button is unavailable, use the complete update command provided in its details. Run native-computer commands on that computer and container commands on its Docker host. The server machine's connection program updates with Server or Desktop.
 
-- Native computer: run the shell or PowerShell command on that machine to update its current-user service.
-- Container: run the command on its Docker host. It replaces the Daemon and restarts the same container, preserving its identity, installed tools, writable layer and data.
-
-Container updates keep the environment, installed tools, and data. A failed update attempts to restore the previous program; check the result and connection before resuming work. If a release requires a new supervisor, restart the same container after updating.
-
-Base environment images are used for new containers. Use **Update Daemon** to update Astral inside an existing container. To change the base environment, back up work files before creating a new container. See [Use containers](/docs/computers/containers/).
+Updating Astral inside a container retains the container, files, and installed software. To replace its base environment, back up your work and create a new container.
 
 ## What to back up
 
-| Component | Preserve |
+Astral's records and the files a Bot works on may be on different computers:
+
+| What to keep | Back up |
 | --- | --- |
-| Server | The full data directory, including databases, `master.key`, `computer-identity/` and configuration |
-| Local and remote computers | Service state, Bot work directories and actual project files |
-| Containers | Data volumes and any required writable-layer state or rebuild instructions |
+| Account, Bots, model connections, conversation history, and computer trust | The complete Server data directory, including databases, `master.key`, `computer-identity/`, and configuration |
+| Work on a local or remote computer | That computer's Astral data, Bot working directories, and actual projects or files used by tasks |
+| Work inside a container | Data volumes; preserve the writable layer or a rebuild method for installed software and other changes |
 
-Database files alone are insufficient. The encryption key is needed for saved credentials; the computer identity preserves existing computers' trust in the Server. Server migration backups do not copy work files from connected computers or undo external actions.
+Copying the full Server directory preserves the key needed to read saved credentials and the Server identity trusted by connected computers. Store this sensitive backup where only you can access it.
 
-The simplest consistent backup is to stop Desktop or Server before copying its complete data directory. Live backups require a consistent SQLite backup procedure, not an arbitrary copy of an active database.
+### Back up an official Linux installation
+
+This example uses the default installation. Run the steps in the same terminal as the OS account running Astral. If you used `--root`, set `astral_install_root` to that original absolute path.
+
+**Stop the service and verify that it stopped:**
+
+```sh
+systemctl --user stop astral-server.service
+systemctl --user show astral-server.service --property=ActiveState,MainPID
+```
+
+Continue only when the state is `inactive` or `failed` and `MainPID=0`. This avoids copying a database while it is still being written.
+
+**Copy the complete `data/` directory and record the version and service configuration:**
+
+```sh
+astral_install_root="${XDG_DATA_HOME:-$HOME/.local/share}/astral-server"
+astral_backup_dir="$HOME/astral-backups/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$astral_backup_dir"
+chmod 700 "$astral_backup_dir"
+cp -a "$astral_install_root/data" "$astral_backup_dir/data"
+cp -a "$astral_install_root/installation.json" "$astral_backup_dir/installation.json"
+cp -a "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/astral-server.service" "$astral_backup_dir/astral-server.service"
+astral version > "$astral_backup_dir/program-version.txt"
+echo "$astral_backup_dir"
+```
+
+The last line prints the backup location. It includes Server data, local computer data, and automatic update backups. Back up remote computer files and Docker volumes separately. Copy the backup to another disk or your backup service to protect against failure of the original disk.
+
+**Start the service again after a successful copy:**
+
+```sh
+systemctl --user start astral-server.service
+```
+
+For Desktop and manual deployments, quit the application completely or stop the process before copying their actual data directories. Live backups require a consistent backup mechanism rather than copying an active database.
 
 ## Locate the data
 
-Check startup logs, computer details and launch arguments first. Standalone defaults use these Astral roots:
+For custom paths, use your actual startup options and configuration. Defaults are:
 
-- macOS: `~/Library/Application Support/astral`
-- Windows: `%APPDATA%\astral`
-- Linux: `$XDG_CONFIG_HOME/astral`, normally `~/.config/astral`
+| Installation | Server and local computer data |
+| --- | --- |
+| Official Linux installer | `${XDG_DATA_HOME:-$HOME/.local/share}/astral-server/data/server/` and sibling `computers/` |
+| macOS Desktop | `server/` and `computers/` under `~/Library/Application Support/astral/schema-3-core-11/` |
+| Windows Desktop | `server\` and `computers\` under `%APPDATA%\astral\schema-3-core-11\` |
+| Linux Desktop | Usually `server/` and `computers/` under `~/.config/astral/schema-3-core-11/` |
+| Manual `serve` | `server/` and `computers/` under the system Astral configuration directory, or your explicit paths |
 
-Server data normally uses `server/` and local computer data uses `computers/` beneath that root. Desktop uses a `schema-3-core-11/` subdirectory in its OS application-data root; on macOS and Windows these are the Astral locations above, and on Linux this is normally `~/.config/astral/schema-3-core-11/`. The Linux VPS installer instead keeps them beneath its installation root's `data/`. Explicit paths and environment settings override defaults.
+For manual operation, Astral's configuration directory is `~/Library/Application Support/astral` on macOS, `%APPDATA%\astral` on Windows, and `${XDG_CONFIG_HOME:-$HOME/.config}/astral` on Linux.
 
-## Verify recovery
+When a recovery command needs `--data`, supply the **Server data directory** from the table. For the official Linux installation, this ends in `…/data/server/`.
 
-Stop Desktop or Server before restoring. Use a program matching the restored data, then check history, saved model connections, computer status and chat accounts before resuming work. Do not run two Servers against the same data directory.
+## Check after restoring
+
+These steps restore your own complete backup under the **original OS account and original paths**. Check the recorded program version and use a matching program. Moving to another machine or installation path requires a separate deployment plan; moving data while retaining the old startup path is incomplete.
+
+1. Quit Desktop or stop Server. For an official Linux installation, use the `stop` and `show` commands above and confirm `MainPID=0`.
+2. Rename the current data directory to keep it, then restore the backup to the original location, preserving ownership and access permissions. Do not merge the old and restored directory contents. For the Linux backup above, restore its `data/` as `data/` beneath the original installation root—not inside `data/server/`.
+3. Check that the startup configuration still points to this installation. Restore work files or Docker volumes where needed; a Server backup does not retrieve files from other computers.
+4. Start Astral. Confirm that sign-in works, history is present, model connections work, and computers reconnect before resuming tasks.
+
+Do not let two Server processes use the same data directory. Automatic upgrade snapshots contain a manifest and `files/`; they differ from the manual backup above. Do not copy an entire snapshot directory over the Server data directory. Follow the program's recovery instructions after a failed update.
+
+## Failed updates or insufficient disk space
+
+When a data conversion is required, Astral makes a backup first. After a failure or interrupted startup, the next start attempts recovery. Automatic backups live in `upgrade-backups/` beside Server data: `<installation-root>/data/upgrade-backups/` for the official Linux installer.
+
+If space runs out, free space on the data and backup disks before retrying. Large databases need additional room for backups and temporary files. Once the service has started and accepted new tasks, do not overwrite that new work with an old backup.
+
+## Review and clean storage
+
+Use **Settings → Data & storage** to review usage and follow the page's cleanup actions. Deleting a backup permanently removes that recovery copy. Keep independent backups you still need.
+
+Conversation cleanup and backup cleanup have different effects; see [Conversations and history](/docs/usage/conversations/). Astral reclaims free database space in the background, so disk usage can fall later.
+
+For offline database compaction, back up and stop Astral first, then run:
+
+```sh
+astral maintenance vacuum --data /actual/server/data-directory
+```
+
+This retains conversations and update backups. Start Astral again after it finishes.

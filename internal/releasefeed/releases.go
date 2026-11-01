@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/oines/astral/internal/githubrelease"
 )
 
 var versionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
@@ -63,27 +65,22 @@ func AssetName(platform, arch string) (string, error) {
 }
 
 func client() *http.Client {
-	return &http.Client{Timeout: 5 * time.Minute, CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		if len(via) >= 8 || r.URL.Scheme != "https" {
-			return errors.New("untrusted release redirect")
-		}
-		switch r.URL.Hostname() {
-		case "github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
-			return nil
-		}
-		return errors.New("unexpected release host")
-	}}
+	return &http.Client{Timeout: 5 * time.Minute, CheckRedirect: githubrelease.CheckRedirect}
 }
 
 func get(ctx context.Context, c *http.Client, url string) (io.ReadCloser, error) {
-	r, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	address, err := githubrelease.Address(url)
+	if err != nil {
+		return nil, err
+	}
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return nil, err
 	}
 	r.Header.Set("User-Agent", "Astral-Updater")
 	response, err := c.Do(r)
 	if err != nil {
-		return nil, err
+		return nil, githubrelease.RequestError(err, url)
 	}
 	if response.StatusCode != http.StatusOK {
 		response.Body.Close()

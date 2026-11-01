@@ -19,6 +19,7 @@ import (
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/daemonservice"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/securetransport"
 	"github.com/oines/astral/internal/serviceurl"
 )
@@ -145,6 +146,9 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 	}
 	if err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: credentialsPath, EnvironmentPATH: os.Getenv("PATH")}); err != nil {
 		return fmt.Errorf("computer registered, but its current-user service could not be installed: %w", err)
+	}
+	if err = rememberComputerInstallation(root); err != nil {
+		return fmt.Errorf("computer service installed, but its command-line discovery record could not be saved: %w", err)
 	}
 	if err = manager.Start(ctx); err != nil {
 		return fmt.Errorf("daemon service installed but could not start: %w", err)
@@ -286,7 +290,7 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 		if report != nil {
 			report("Existing container started: " + existing + ". Its program, environment, and enrollment were retained.")
 		}
-		return nil
+		return rememberComputerInstallation(options.Root)
 	}
 	var preparation struct {
 		LocalContainerURL string `json:"local_container_url"`
@@ -332,6 +336,9 @@ func connectContainer(ctx context.Context, options ConnectOptions, report func(s
 	if err != nil {
 		return err
 	}
+	if err = rememberComputerInstallation(options.Root); err != nil {
+		return fmt.Errorf("container created, but its command-line discovery record could not be saved: %w", err)
+	}
 	if report != nil {
 		report("Container started: " + id + ". Astral will show it online after its Daemon connects.")
 	}
@@ -351,19 +358,13 @@ const officialReleaseBase = "https://github.com/oines/astral/releases/latest/dow
 func downloadVerifiedBinary(ctx context.Context, name, target string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	client := &http.Client{CheckRedirect: func(request *http.Request, via []*http.Request) error {
-		if len(via) >= 8 || request.URL.Scheme != "https" {
-			return errors.New("official release redirect is not trusted")
-		}
-		switch request.URL.Hostname() {
-		case "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
-			return nil
-		default:
-			return errors.New("official release redirect has an unexpected host")
-		}
-	}}
+	base, err := githubrelease.Address(officialReleaseBase)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{CheckRedirect: githubrelease.CheckRedirect}
 	defer client.CloseIdleConnections()
-	return downloadReleaseBinary(ctx, officialReleaseBase, name, target, client)
+	return githubrelease.RequestError(downloadReleaseBinary(ctx, base, name, target, client), officialReleaseBase+"/"+name)
 }
 
 func downloadReleaseBinary(ctx context.Context, base, name, target string, client *http.Client) error {

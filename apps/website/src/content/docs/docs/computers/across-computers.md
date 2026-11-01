@@ -1,30 +1,30 @@
 ---
 title: "Work across computers"
-description: "Use several computers in one session while keeping the task context."
+description: "Share a task across machines while keeping track of files and execution locations."
 ---
 
-The session holds task context; computers provide execution environments. Earlier messages and execution records stay in the same session when the computer changes.
+One session can use several computers while retaining the discussion and execution history. This is useful when a task needs different environments, such as processing data on a server and preparing a report on an office computer.
+
+Prepare the files and tools on each machine. Changing the selected computer does not synchronize them.
 
 ## Assign work to machines
 
-Grant the Bot access to the required computers and check that they are online. Use recognizable names such as “Development Mac,” “Linux test server,” and “Windows build machine.”
+First [connect the computers and grant the Bot access](/docs/computers/connect/). Check that they are online and give them recognizable names, such as “Office computer” and “Data server.” Then describe the division of work:
 
-Then describe the task in one session:
+> Analyze /home/mei/data/sales.csv on the data server and create this month's sales summary. Transfer the summary to the office computer's report folder and make charts there. Check the transfer method before switching; do not assume both machines have the same directories.
 
-> Read this project on the development Mac, run tests on the Linux server, and create the Windows build on the Windows machine. Tell me first if code or dependencies are missing.
-
-You can select the session's current computer. The Bot can also switch between computers it is authorized to use. Check the computer attached to each execution to understand where the work happened.
+You can select the current computer while the session is idle. The Bot can also switch between allowed computers during a task. Ask it to identify the machine and full path for an operation, and check its execution records when you need confirmation.
 
 ## What stays with the session
 
-- Existing messages, task context, and execution records.
-- Generated file links and their original source computer.
-- Processes already started on the previous machine, until they finish, are stopped, or the machine goes offline.
+Messages, task instructions, and execution records remain in the session. Existing file links still point to their original computers. A server-generated file does not move when you select the office computer.
+
+A process already started on the previous machine stays there too. Switching does not stop or migrate it; it may run until completion, until stopped, or until its connection ends. Keep track of unfinished work on the earlier computer.
 
 ## What does not move automatically
 
-Project files, dependencies, environment variables, sign-ins, and running processes are not copied. Prepare the code and tools on the next machine, or explicitly ask the Bot to use Git or an available file-transfer method.
+Project files, installed software, environment variables, sign-ins, and running processes do not migrate with the session. Ask the Bot explicitly to transfer required material using an available method; code projects can also use an existing Git repository. Confirm the destination and access before transferring files.
 
-Identical paths can refer to entirely different directories on different computers. Changing a working directory affects later operations; it does not move earlier output.
+Identical paths on different computers can hold entirely different content. Before the first operation on a new machine, check that the files and required tools exist. Changing a working directory does not move output from earlier work either.
 
-History remains readable while a source computer is offline, but live file access and process control require that computer to reconnect.
+History remains readable if a source computer goes offline. Reading its original files or controlling processes requires that connection again. See [Files and results](/docs/usage/files/) for downloading and keeping important output.

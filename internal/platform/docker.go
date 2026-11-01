@@ -82,14 +82,7 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 	}
 	execution := currentDockerExecution()
 	if execution.err != nil {
-		message := "Install and start Docker Engine before creating a Computer container."
-		switch runtime.GOOS {
-		case "windows":
-			message = "Install and start Docker Desktop in Linux-container mode before creating a Computer container."
-		case "darwin":
-			message = "Install and start OrbStack or Docker Desktop before creating a Computer container."
-		}
-		return DockerInfo{}, domain.Offline(message)
+		return DockerInfo{}, dockerProbeFailure(execution.err)
 	}
 	// Context inspection and version both start the Docker CLI. Allow cold starts
 	// and a busy local runtime without treating it as an unavailable engine.
@@ -112,10 +105,10 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 		args = append(args, "--format", "{{json .}}")
 		raw, err = dockerOutput(ctx, args...)
 		if err != nil {
-			return DockerInfo{}, domain.Offline("Start the local container runtime. " + err.Error())
+			return DockerInfo{}, dockerProbeFailure(err)
 		}
-		if json.Unmarshal(raw, &dockerContext) != nil {
-			return DockerInfo{}, domain.Invalid("Docker returned an invalid context")
+		if err = json.Unmarshal(raw, &dockerContext); err != nil {
+			return DockerInfo{}, domain.Invalid("Docker returned an invalid context: " + err.Error())
 		}
 		endpoint = dockerContext.Endpoints["docker"].Host
 	}
@@ -128,7 +121,7 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 	// command can leave a metadata plugin holding this process's cwd on Windows.
 	raw, err = dockerOutput(ctx, "version", "--format", "{{json .Server}}")
 	if err != nil {
-		return DockerInfo{}, domain.Offline("Start the local container runtime. " + err.Error())
+		return DockerInfo{}, dockerProbeFailure(err)
 	}
 	var wire struct {
 		OS            string `json:"Os"`
@@ -136,7 +129,10 @@ func ProbeDocker(ctx context.Context) (DockerInfo, error) {
 		KernelVersion string
 		Platform      struct{ Name string }
 	}
-	if json.Unmarshal(raw, &wire) != nil || wire.OS != "linux" {
+	if err = json.Unmarshal(raw, &wire); err != nil {
+		return DockerInfo{}, domain.Invalid("Docker returned an invalid Server version: " + err.Error())
+	}
+	if wire.OS != "linux" {
 		return DockerInfo{}, domain.Invalid("a Linux container runtime is required")
 	}
 	arch := wire.Arch

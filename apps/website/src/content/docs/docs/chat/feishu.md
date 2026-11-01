@@ -1,56 +1,106 @@
 ---
 title: "Connect Feishu"
-description: "Use a custom enterprise app Bot to receive tasks and send results."
+description: "Create a Feishu app, grant message permissions, and connect a private chat or group to Astral."
 ---
 
-Use a **custom enterprise application with Bot capability**. A group's custom webhook Bot cannot replace the two-way connection required here.
+Create an **enterprise custom app** in Feishu, enable its bot capability, and let Astral use that bot to receive and send messages. A custom webhook bot added through group settings can only push notifications and cannot provide this two-way connection.
 
-## Configure the Feishu app
+You need a Feishu account that can manage custom apps, plus an Astral Bot with its [model and computer configured](/docs/start/first-steps/). Your organization may require administrator approval for permissions and releases. Start by making the app available to yourself and your test users.
 
-Create the application on the [Feishu Open Platform](https://open.feishu.cn/document/client-docs/bot-v3/bot-overview), enable Bot capability, and obtain its App ID and App Secret.
+Follow this order: **create the app → grant permissions and publish → connect Astral → configure events and publish again → add a chat and test**. The first release activates the bot. Connecting Astral then lets Feishu save the long-connection event configuration.
 
-Choose long-connection event delivery and subscribe to `im.message.receive_v1`. To receive reactions, also subscribe to `im.message.reaction.created_v1` and `im.message.reaction.deleted_v1`. Astral establishes the connection; no public webhook is required.
+## 1. Create the app and find its credentials
 
-Grant and publish permissions for the features you need:
+1. Open the [Feishu Developer Console](https://open.feishu.cn/app), create an enterprise custom app, and give it the name you want people to see in Feishu.
+2. In the app, add **Bot** under **Add app capability**.
+3. Open **Credentials & Basic Info** and locate **App ID** and **App Secret**. Keep this page open; you will copy both values into Astral.
 
-| Purpose | Permission |
+App Secret is a connection credential. Do not share it in a group. Astral's **Configure Feishu app** link also opens the console; after you enter a valid App ID, it opens that app's permissions page directly.
+
+## 2. Grant permissions and publish the first version
+
+In the app's **Development Configuration → Permissions → Batch import/export permissions**, choose import and paste the complete JSON below. Confirm the new permissions, then apply to enable them. These are application permissions; leave `user` empty.
+
+```json
+{
+  "scopes": {
+    "tenant": [
+      "im:chat:readonly",
+      "im:message:readonly",
+      "im:message.p2p_msg:readonly",
+      "im:message.group_msg",
+      "im:message:send_as_bot",
+      "im:resource",
+      "im:message.reactions:write_only"
+    ],
+    "user": []
+  }
+}
+```
+
+Each permission serves a specific part of the connection:
+
+| Feature | Permission |
 | --- | --- |
-| Receive private messages | `im:message.p2p_msg:readonly` |
-| Receive group mentions | `im:message.group_at_msg:readonly` |
-| Receive ordinary group messages | `im:message.group_msg`, subject to approval |
-| Send as the Bot | `im:message:send_as_bot` |
-| Upload and read attachments | `im:resource` |
-| Read chat information | `im:chat:readonly` |
-| Receive and read message reactions | `im:message.reactions:read` |
-| Add or remove the Bot's own reactions | `im:message.reactions:write_only` |
+| Receive private messages sent to the bot | `im:message.p2p_msg:readonly` |
+| Receive group messages, including mentions; read group messages and replies | `im:message.group_msg` |
+| Read messages, download received attachments, and read reactions | `im:message:readonly` |
+| Send messages and recall the Bot's own messages | `im:message:send_as_bot` |
+| Upload images and files | `im:resource` |
+| Read chat information, such as group names | `im:chat:readonly` |
+| Add and remove the Bot's own reactions | `im:message.reactions:write_only` |
 
-Publish the app, include the intended users in its availability scope, and add the Bot to the group. Permission changes must also complete the platform's publication process.
+`im:message.group_msg` is a sensitive permission subject to your organization's approval. It also supports reading group messages and replies; it is not just a switch for proactive participation. Upload permission through `im:resource` alone does not provide the permissions needed to read incoming attachments.
 
-## Connect in Astral
+Open **Version Management & Release**, create a version, add yourself and test users to its **availability range**, and submit it for release. Complete any required approval and make sure the app is enabled. Permissions marked “Pending release” are not yet active in the published version. Keep existing permissions; batch import skips duplicates.
 
-1. Open **Settings → Bots → your Bot → Connect a platform → Feishu**.
-2. Enter App ID and App Secret and connect. Normally retain the default server address.
-3. Send a message in the target private chat or group so Astral can discover it.
-4. Authorize it under Connected chats and bind a new or existing unbound session.
+## 3. Connect the app in Astral
 
-Feishu Chat IDs use `oc_…`. Threads currently belong to the parent chat rather than separate topic authorization.
+At **Settings → Bots → your Bot → Connect a platform → Feishu**, use App ID and App Secret from Feishu's **Credentials & Basic Info**, normally keeping the default server address. After connecting, leave Astral running while you configure events in Feishu.
 
-## Replies and files
+If the bot is inactive, finish the release, enablement, and approval from the previous step before connecting again.
 
-Private messages, mentions, and replies to the Bot can trigger tasks directly. Receiving ordinary group context requires the corresponding permission.
+## 4. Configure events and publish again
 
-Text, images, files, and supported message resources are available. File and explanatory text sends are separate; successful text does not prove successful file delivery.
+In the Feishu app, open **Events & Callbacks → Event Configuration**:
 
-Ordered sends can combine text, native user mentions, and uploaded images in a post. Mentions use the user's application-scoped `open_id` (`ou_…`), not their displayed name. Markdown formatting is preserved; images occupy their own paragraphs. Generic files remain separate ordered messages with independent results.
+1. Select **Receive events through a long connection** and save. Astral must already be connected and running. Astral opens the connection to Feishu, so you do not need a public webhook URL.
+2. Add these three events:
 
-## Message reactions
+   | Event identifier | Purpose |
+   | --- | --- |
+   | `im.message.receive_v1` | Receive chat messages |
+   | `im.message.reaction.created_v1` | Receive added reactions |
+   | `im.message.reaction.deleted_v1` | Receive removed reactions |
 
-The Bot can read reactions delivered by Feishu, including the original message, emoji type, and actor supplied by the platform.
+3. Return to **Version Management & Release** and publish another version to activate the event configuration and any pending permissions.
 
-The Agent can use the existing Computer API's `list_reactions`, `add_reaction` and `delete_reaction` operations in an authorized chat with the corresponding permissions. Known self actions do not wake the Bot again. Reactions missing an actor identity are passive context only, without starting a participation check; a working Bot can still read them. Group reactions from a known external actor follow optional proactive rules; private-chat reactions do not directly wake it.
+If saving the subscription fails, check that the Astral account is connected and its host can reach Feishu. Feishu requires an online client before saving this subscription method; see its [long-connection configuration guide](https://open.feishu.cn/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/request-url-configuration-case).
 
-## If no messages arrive
+## 5. Add a chat and verify a real reply
 
-Check publication, user availability, group membership, long-connection subscription, and effective permissions, then Astral's chat authorization.
+Have a user within the app's availability range start a private chat, or add the bot to a group. Send a message such as “Hello,” mentioning the Bot in a group. Astral can then discover the chat; add it under the account's **Connected chats** and choose a conversation.
 
-If only a Chat ID appears, check permission to read chat details. For message, attachment, or management failures, check the Feishu permission named in the error.
+After adding it, return to Feishu and **send a new message**: “Please reply in this Feishu chat: connection successful.” Mention the Bot in a group or reply to one of its messages. Check Astral's processing and the actual reply in Feishu. Earlier discovery messages do not run as tasks after adding the chat.
+
+For manual lookup, use the `oc_…` Chat ID Astral actually received. Feishu threads currently share authorization and an Astral conversation with their parent chat.
+
+## Images, files, and group discussions
+
+Test reading and sending an image or small file after the first reply works. Images can accompany text and native mentions; ordinary files and their explanatory text are separate messages, so check that the attachment also arrives.
+
+The permissions above include ordinary group messages. Astral starts tasks on mentions and replies by default; enable proactive participation per group if wanted. See [Group collaboration](/docs/chat/groups/), or [Platform APIs](/docs/chat/platform-api/) for custom message and reaction queries.
+
+## Check the step that is failing
+
+| Symptom | What to check |
+| --- | --- |
+| Astral says the bot is inactive | Complete the first release, enablement, and administrator approval |
+| Long-connection subscription cannot be saved | Connect the Astral account and leave it running before saving event settings |
+| Users cannot find the app or start a private chat | Add them to the app's availability range and publish; check whether an administrator disabled access |
+| The account connects, but no chat is discovered | Check `im.message.receive_v1`, message permissions, and the published version; the bot must also be in the group |
+| Only a Chat ID appears, without a group name | Check that `im:chat:readonly` is active |
+| Text arrives, but attachments or quoted messages cannot be read | Check `im:message:readonly` and, for groups, `im:message.group_msg`; publish permission changes |
+| An added chat still gets no reply | Send a new task in Feishu and mention the Bot in groups; inspect model, computer, and platform send errors in Astral |
+
+If a send times out or has an uncertain result, check the actual Feishu chat before sending again.

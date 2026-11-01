@@ -1,36 +1,56 @@
 ---
 title: "Files and results"
-description: "Provide input files, open generated results, and know where they are stored."
+description: "Provide source material, check generated files, and keep a copy where you need it."
 ---
 
-Work files stay on the computer executing the task, and links retain that source. File contents read by the Bot may enter model context and be sent to the selected service; see [where data goes](/docs/start/safe-use/#know-where-data-goes).
+Give the Bot an attachment or point it to files on a connected computer. The computer selected in the session determines where files are uploaded and work is performed. Your browser is the interface to that computer.
+
+For example, if you open Astral on a laptop but select “Office computer,” uploads and generated files live on the office computer. Content the Bot reads may be sent to the selected model service; see [where data goes](/docs/start/safe-use/#where-does-my-data-go) before providing sensitive material.
 
 ## Provide files
 
-Choose a computer in the session before uploading an attachment. The upload goes to that computer, not the public website or the device displaying your browser. You can also give the Bot an absolute path on a connected computer.
+Check the selected computer before attaching a file: that is where the upload goes. Explain which material to process, what to produce, and whether to preserve the original. For example:
 
-Ask it to confirm the file and location when multiple computers have similar directories.
+> Turn the attached meeting notes into an action list with an owner and due date for each item. Mark missing details as “To confirm.” Keep the original and save a separate meeting-actions.md file. Give me a download link.
+
+If a file is already on the computer, provide its full path, such as `/home/mei/reports/meeting.txt`. That path must be on the computer the Bot is using. If you are unsure, ask it to report its current directory and list the files before doing the work.
 
 ## Open results
 
-Open a returned file link to preview or download it. Images can appear in the conversation; previews for other files depend on their format.
+Open a returned file link to preview or download it. Images can display in the conversation; other previews depend on the file format. Download a copy to your own device or back it up on the source computer when you need to keep it.
 
-Opening an original requires its source computer to be online, the file to still exist, and the Bot to have access. Back up important files on that computer separately.
+If the Bot reports completion without a link, ask:
+
+> Give me a link to the file you created, along with its source computer and full path.
+
+The link retains its original computer. Selecting a different computer later does not move the file or change where an older link points.
+
+### A file will not open
+
+Check these in order:
+
+1. Confirm that the source computer is online in **Settings → Computers**.
+2. Check that the Bot still has permission to use it under **Computer access**.
+3. Ask the Bot to check whether the original path still exists and is readable. Locate a moved file or restore a deleted one from backup.
+
+A link can remain in history after its source file has disappeared. Keep a separate copy of important results.
 
 ## Working directories
 
-A Bot has a default working directory on each computer, which several sessions may share. Use different directories to organize projects; use separate operating-system accounts or containers to restrict access.
+The working directory is the folder the Bot uses by default for its operations. Ask “Which computer and working directory are you using?” to check it. For another project, ask the Bot to switch to that project's directory before working and confirm the full path.
 
-The default directory is not a filesystem sandbox. Access follows the permissions of the account running the computer service.
+Several sessions belonging to the same Bot can share its default directory on a computer. A new session does not automatically get separate files. Give projects distinct folders to keep their material apart.
+
+Folders organize work; the operating-system account running the computer service determines access. The Bot may be able to read or change other files available to that account. Use a separate system account or a [container computer](/docs/computers/containers/) when you need a narrower environment.
 
 ## Chat attachments
 
-Incoming chat attachments retain their source information and can be read or downloaded to a computer as needed. Sending a file also depends on platform permissions and format restrictions.
+In a connected Telegram, QQ, or other platform chat, send attachments with the task you want performed. Images initially supply a compressed preview. If text or detail is unclear, ask the Bot to download and read the original image. Videos and ordinary files are downloaded to a computer when the task needs them.
 
-Chat images first provide a compressed preview and retain a reference to the original. If text or details are unclear, ask the Bot to download and read the original. Videos and ordinary files are downloaded to a computer when the task needs them.
+To return a result to the chat, ask explicitly:
 
-If a preview fails, the message identifies the unavailable image and keeps its text and attachment source. Ask the Bot to retry the download, or provide the file again.
+> Send meeting-actions.md back to this chat as an attachment.
 
-To return a result to the chat platform, explicitly ask the Bot to send the file to the current chat, then check the send result.
+Check that the attachment actually arrives. Platform file limits, supported formats, and account permissions can affect sending. Creating a file or displaying its path in Astral does not send a platform attachment.
 
-Back up Server data, computer work files, and container data separately. See [Updates and backups](/docs/hosting/maintenance/).
+If an image is marked unavailable, ask the Bot to retry downloading it or upload it again. For a full backup, preserve Server data, computer work files, and container data separately; see [Updates and backups](/docs/hosting/maintenance/).

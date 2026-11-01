@@ -1,54 +1,64 @@
 ---
-title: "Schedule tasks"
-description: "Deliver a prompt to a session once or on a repeating schedule."
+title: "Scheduled tasks"
+description: "Start work at a chosen time or repeat it on a daily or weekly schedule."
 ---
 
-Open **Schedules** in the sidebar to manage the current Bot's plans. You can add a task yourself or ask the Bot to create one through its Gateway API. Both appear in the same list and can be edited, paused, resumed, or deleted.
+A scheduled task gives the Bot instructions at a chosen time. Use it for work such as a morning task review or a Friday summary. Create it in the interface or ask the Bot to arrange it in a session. Both methods use the same task list.
+
+The host running Astral must be running when the task is due. Fully quitting Desktop stops its local scheduler. Missed times are skipped, with no catch-up runs.
 
 ## Create a plan
 
-Choose a title, how to run the task, and the prompt to deliver. **Use a selected session** continues an existing conversation. **Create a new session each time** starts an independent conversation for every occurrence, using the Bot's current default model and computer, without copying earlier history or an IM binding. You can create this kind of plan before any sessions exist; its last created session is linked from the task list.
+First check **Settings → General → Timezone**. All schedules use this timezone. **Follow system** means the Astral host's timezone, which may differ from your browser or the computer performing the task.
 
-Select a one-time date and time, or repeat daily, weekly, or with a custom five-field Cron expression. All plans use Astral's global timezone in **Settings → General → Timezone**. The default follows the operating system where Astral is installed, not the browser or the selected computer. You can choose an IANA timezone such as `Asia/Singapore`; there is no separate timezone for each plan.
+Open **Scheduled tasks** for the current Bot. The main choice is whether to **Use a selected conversation** to continue earlier work or start a **New conversation each time** for independent runs.
 
-The date and time you enter for a one-time plan are interpreted in that global timezone. Once saved, the plan keeps the same execution instant if you change the timezone; its displayed time changes. Repeating plans follow the new timezone and calculate their next future occurrence.
+The **Prompt** is the instruction delivered when the task is due. Specify the source material, work, and destination. For a Bot with access to your work computer, an example is:
 
-An existing target must belong to the same Bot. It uses that session's current context, model, computer, and permissions when the prompt arrives. A session can have several plans. Forking a session does not copy its plans.
+> Read tasks.md in the working directory. List unfinished items due today and report them in this session. Keep the file unchanged. If it is missing, tell me what I need to provide.
 
-Plans targeting a private session are hidden from other sessions' Gateway calls. A plan created by a private session in **Create a new session each time** mode is also private to that source; its new sessions inherit the source's private setting at execution time. You can manage all plans in the UI.
+After creating the task, check its **Next** time in the list. One-time tasks need a future time; ordinary repeating work can use the daily or weekly options.
 
-## When the time arrives
-
-An idle session starts working. A busy session receives the prompt through **Steer** at its next input boundary. The prompt appears on the right with a clock, **Scheduled task**, and the task title, so you can distinguish it from a message you typed.
-
-**Delivered** means the session received the task. Open the session to check progress and results. Include a request to send the result back when the task should reply to an external chat.
-
-Astral must remain running on the host that manages the plans. Closing the Desktop App completely stops its local scheduler. Missed times are skipped: a one-time task becomes **Missed**, and a repeating task resumes at its next future time. There is no catch-up run.
-
-## Manage plans
-
-An enabled plan with a next execution time and a fixed target puts that session in the sidebar's **Scheduled** group. A plan that creates a new session each time stays in the Schedules page; the created sessions appear in **In progress** or **Recent**. Each session appears only once. Paused and ended tasks remain in the Schedules page.
-
-Pausing or deleting stops future deliveries. Inputs already accepted by a session stay in its queue. To repeat an expired one-time plan, set a new future time before enabling it. Archiving an ordinary session does not pause its tasks; permanently deleting a session or Bot removes its plans.
+A new conversation uses the Bot's default model and computer at the time of the run. It does not copy earlier history or a messaging-platform binding. Include the paths and requirements it needs instead of relying on earlier discussion. You can create this kind of schedule before any sessions exist.
 
 ## Let the Bot manage schedules
 
-The Bot discovers the `schedules` capability through its authenticated Computer Gateway. It can create plans for itself or another session of the same Bot. A daily plan uses a request such as:
+You can also describe the arrangement in a session:
 
-```json
-{
-  "session_id": "<session-id>",
-  "session_mode": "existing",
-  "title": "Daily project review",
-  "prompt": "Review today's project updates and report anything that needs attention.",
-  "enabled": true,
-  "timing": {
-    "kind": "cron",
-    "cron": "0 9 * * *"
-  }
-}
-```
+> Every Friday at 5 pm, review this week's unfinished items in this session. Check Astral's timezone first, then create the schedule and tell me its next run time.
 
-This Cron runs at 09:00 in Astral's global timezone. For a one-time API request, use `timing.kind: "once"` and an absolute RFC3339 `timing.at` with an explicit offset or `Z`. The API has no `timing.timezone` field.
+The Bot can manage schedules for sessions belonging to the same Bot. Open **Scheduled tasks** afterward to confirm the timing and prompt, then edit or pause it if needed. If creation loses its connection or has an uncertain result, check the list before creating another copy.
 
-Use `session_mode: "new"` and omit `session_id` to create an independent session for each occurrence. `last_session_id` identifies its most recent actual session. The API provides listing, reading, creation, updates, and deletion under `/v1/schedules`. Updates submit the full editable configuration with its current revision; deletion also requires the revision. A conflict means the plan changed and must be read again before editing. A failed connection during creation may leave the result uncertain; check the task list before creating another copy.
+## When the time arrives
+
+A selected conversation uses its current model, computer, permissions, and history when the task arrives. An idle session starts work; a busy session receives it as a Steer instruction. The message shows a clock, the **Scheduled task** label, and its name.
+
+When the list says **Delivered to conversation**, open that conversation to inspect the actual work. For a new-conversation schedule, use **Latest conversation** on the task. If results should go to an external chat, include that sending instruction and check that they arrive there.
+
+An overdue one-time task becomes **Missed**. A repeating task waits for its next future time rather than replaying runs missed while Astral was stopped.
+
+## Manage plans
+
+Edit, pause, resume, or delete plans in the task list. Pausing or deleting prevents future deliveries. A prompt already received by a session must be handled or stopped in that session.
+
+An enabled task targeting an existing conversation places that conversation in the sidebar's **Scheduled** group while a next run time exists. New-conversation schedules remain in the task page; sessions they create appear under in-progress or recent work.
+
+Archiving an ordinary session keeps its schedules active. Permanently deleting a session or Bot removes its plans. Copying or forking a session does not copy them. Give an expired one-time task a future time before enabling it again.
+
+### Timezone changes and custom timing
+
+A saved one-time task keeps its actual execution instant when you change timezone; only its displayed time changes. Repeating plans recalculate the next time using the new timezone. Review the **Next** times after changing this setting.
+
+For more complex timing, use a five-field Cron expression: minute, hour, day of month, month, and day of week. For example, `0 9 * * *` runs daily at 09:00 in Astral's global timezone. Use the ordinary daily or weekly controls when those fit your needs.
+
+### Plans involving private sessions
+
+Plans targeting a private session are hidden from other sessions. A new-conversation plan created by a private session is also protected by that source session; each new conversation inherits its source's private setting at execution time. You can still manage these plans in the interface.
+
+## A task did not run as expected
+
+- **The next time is wrong:** check Astral's global timezone and the repeat rule. Your browser timezone does not override them.
+- **The task is marked Missed:** check whether the Astral host was running when it was due. Give a one-time task a new future time and enable it again.
+- **It was delivered, but there is no result:** open the conversation and check for a model error, offline computer, or missing permission.
+- **The result is in Astral but absent from the chat platform:** check the task's sending instructions and the actual send result.
+- **An edit reports that the task changed:** reopen the current task before applying the change.

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { createReadStream, constants } from 'node:fs'
-import { access, copyFile, link, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { access, copyFile, link, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -150,7 +150,14 @@ const source = path.join(process.env.ASTRAL_INSTALL_FIXTURE_DIRECTORY, name);
 // binary, which must never change dist/bin permissions or an older release.
 fs.copyFileSync(source, args[output + 1], fs.constants.COPYFILE_FICLONE);
 `, { mode: 0o700 })
-  environment = { ...process.env, PATH: `${wrappers}${path.delimiter}${process.env.PATH || ''}`, ASTRAL_INSTALL_FIXTURE_TAG: tag, ASTRAL_INSTALL_FIXTURE_DIRECTORY: payload }
+  const passwordFile = path.join(temporary, 'administrator-password')
+  await writeFile(passwordFile, 'Astral-disposable-CI-password-42!\n', { mode: 0o600 })
+  environment = {
+    ...process.env, PATH: `${wrappers}${path.delimiter}${process.env.PATH || ''}`,
+    ASTRAL_GITHUB_PROXY: '', ASTRAL_INSTALL_FIXTURE_TAG: tag, ASTRAL_INSTALL_FIXTURE_DIRECTORY: payload,
+    ASTRAL_ADMIN_USERNAME: 'ci-administrator', ASTRAL_ADMIN_PASSWORD_FILE: passwordFile,
+  }
+  delete environment.ASTRAL_ALLOW_REMOTE_MANAGEMENT
 }
 async function install(expectedSuccess = true) {
   let result
@@ -166,7 +173,10 @@ async function install(expectedSuccess = true) {
     return { failed: true, checksumFailure: /checksum mismatch/.test(error.stderr || ''), startupFailure: /did not become ready|exited during startup/.test(error.stderr || '') }
   }
   assert.ok(expectedSuccess, 'Installer accepted a deliberately invalid release')
-  assert.ok(result.stdout.includes(`Astral Server ${version} is running:`), 'Installer did not report successful startup')
+  assert.ok(result.stdout.includes(`Astral Server ${version} is ready:`), 'Installer did not report successful startup and account setup')
+  const selected = (await command('bash', ['--noprofile', '--norc', '-c', 'command -v astral'], { env: environment })).stdout.trim()
+  assert.equal(await readlink(selected), path.join(installRoot, 'current/bin/astral'), 'The terminal command does not follow the managed current release')
+  assert.equal((await command('bash', ['--noprofile', '--norc', '-c', 'astral version'], { env: environment })).stdout.trim(), version, 'The command is not usable on the unchanged terminal PATH')
   return { failed: false }
 }
 async function snapshot() {
@@ -236,6 +246,18 @@ async function managedWebUpdate() {
   fixtureTransport = await headlessUpdateTransport({ temporary, payload, tag: () => tag, environment, command })
   await install()
   const before = await snapshot()
+  const network = JSON.parse(await readFile(path.join(installRoot, 'data/server/network.json'), 'utf8'))
+  assert.equal(network.allow_remote_management, undefined, 'Fresh install must not persist a remote-management application preference')
+  assert.equal(network.restrict_hostnames, false, 'Fresh install unexpectedly restricted hostnames')
+  const effectiveNetwork = await owner(before, 'GET', 'settings/network')
+  assert.equal(effectiveNetwork.allow_remote_management.value, true, 'Fresh Server did not allow remote Web access')
+  assert.equal(effectiveNetwork.allow_remote_management.source, 'server', 'Fresh Server unexpectedly uses an explicit remote-management override')
+  assert.equal(effectiveNetwork.allow_remote_management.editable, false, 'Web settings must not offer to disable standalone Server management')
+  const account = JSON.parse((await command('astral', ['auth', 'status', '--data', path.join(installRoot, 'data/server')], { env: environment })).stdout)
+  assert.equal(account.configured, true, 'Installer reported success before completing the Web account')
+  // Existing account setup must survive unattended upgrades without credentials.
+  delete environment.ASTRAL_ADMIN_USERNAME
+  delete environment.ASTRAL_ADMIN_PASSWORD_FILE
   const marker = path.join(installRoot, 'data/server/managed-update-marker')
   await writeFile(marker, 'Retain live Server data across detached updates.\n', { mode: 0o600 })
   const session = await retainedUpdateSession(before)

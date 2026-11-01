@@ -18,7 +18,12 @@ import (
 // DaemonVersion is set by the executable entry point before any Daemon starts.
 var DaemonVersion = "dev"
 
-type UpdateOptions struct{ Root, Container, Version string }
+type UpdateOptions struct {
+	Root, Container, Version string
+	// Automatically selected container installations must retain their original
+	// local Docker endpoint instead of updating a same-named container elsewhere.
+	ContainerEndpoint string
+}
 
 // UpdateComputer is deliberately a local command. The caller downloads this
 // release first, then executes it on the computer being updated.
@@ -37,6 +42,9 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 		probe, err := ProbeDocker(ctx)
 		if err != nil {
 			return err
+		}
+		if options.ContainerEndpoint != "" && options.ContainerEndpoint != probe.Endpoint {
+			return fmt.Errorf("the selected Computer belongs to another local Docker endpoint; select its original Docker context before updating")
 		}
 		directory, err := os.MkdirTemp("", "astral-update-")
 		if err != nil {

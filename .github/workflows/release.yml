@@ -613,7 +613,13 @@ jobs:
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
+          astral_password_file=$(mktemp "$RUNNER_TEMP/astral-admin-password.XXXXXX")
+          chmod 600 "$astral_password_file"
+          printf '%s\n' 'Astral-disposable-CI-password-42!' > "$astral_password_file"
+          trap 'rm -f "$astral_password_file"' EXIT
+          export ASTRAL_ADMIN_USERNAME=ci-administrator ASTRAL_ADMIN_PASSWORD_FILE="$astral_password_file"
           bash "$RUNNER_TEMP/install-server.sh" --tag "$RELEASE_TAG" --root "$RUNNER_TEMP/astral-public-install"
+          test "$(astral version)" = "$RELEASE_VERSION"
           systemctl --user is-active --quiet astral-server.service
           node --input-type=module <<'JS'
           import assert from 'node:assert/strict'

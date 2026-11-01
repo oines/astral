@@ -18,6 +18,42 @@ import (
 )
 
 func pointer[T any](v T) *T { return &v }
+
+func TestStandaloneServerManagementDefaultsOpenAndOnlyStartupOverridesCanCloseIt(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		cli, environment NetworkValues
+		want             bool
+		source           string
+	}{
+		{name: "server default ignores obsolete Web preference", want: true, source: "server"},
+		{name: "environment can close", environment: NetworkValues{AllowRemoteManagement: pointer(false)}, want: false, source: "environment"},
+		{name: "CLI false overrides environment true", cli: NetworkValues{AllowRemoteManagement: pointer(false)}, environment: NetworkValues{AllowRemoteManagement: pointer(true)}, want: false, source: "cli"},
+		{name: "CLI true overrides environment false", cli: NetworkValues{AllowRemoteManagement: pointer(true)}, environment: NetworkValues{AllowRemoteManagement: pointer(false)}, want: true, source: "cli"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			if err := WriteJSON(filepath.Join(directory, "network.json"), NetworkValues{AllowRemoteManagement: pointer(false)}); err != nil {
+				t.Fatal(err)
+			}
+			network, err := newNetworkState(Config{DataDirectory: directory, NetworkCLI: test.cli, NetworkEnvironment: test.environment})
+			if err != nil {
+				t.Fatal(err)
+			}
+			current := network.snapshot().AllowRemoteManagement
+			if current.Value != test.want || current.Source != test.source || current.Editable {
+				t.Fatalf("incorrect standalone policy: %+v", current)
+			}
+			server := &Server{network: network}
+			if _, err := server.SaveNetworkSettings(context.Background(), httpapi.NetworkPatch{AllowRemoteManagement: pointer(!test.want)}); err == nil {
+				t.Fatal("Web settings changed standalone management reachability")
+			}
+			if network.snapshot().AllowRemoteManagement.Value != test.want {
+				t.Fatal("rejected Web setting changed management reachability")
+			}
+		})
+	}
+}
 func TestNetworkPriorityPreservesFalseAndSavedPreferences(t *testing.T) {
 	directory := t.TempDir()
 	saved := NetworkValues{Listen: pointer("127.0.0.1:4546"), PublicURLs: pointer([]string{"http://saved.example:4546"}), AllowRemoteManagement: pointer(true)}
@@ -47,7 +83,7 @@ func TestNetworkPriorityPreservesFalseAndSavedPreferences(t *testing.T) {
 }
 func TestNetworkEmptyOverrideSelectsAutomaticAndSettingsApplyAtomically(t *testing.T) {
 	directory := t.TempDir()
-	n, err := newNetworkState(Config{DataDirectory: directory, NetworkCLI: NetworkValues{PublicURLs: pointer([]string{})}})
+	n, err := newNetworkState(Config{DataDirectory: directory, DesktopToken: testDesktopToken, NetworkCLI: NetworkValues{PublicURLs: pointer([]string{})}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +111,7 @@ func TestNetworkEmptyOverrideSelectsAutomaticAndSettingsApplyAtomically(t *testi
 	if err != nil || state.PublicURLs.Value[0] != n.addresses[0].URL || state.PublicURLs.Source != "discovery" || state.AllowRemoteManagement.Value || state.AllowRemoteManagement.Source != "settings" {
 		t.Fatalf("reset/explicit false failed: %+v %v", state, err)
 	}
-	reopened, err := newNetworkState(Config{DataDirectory: directory})
+	reopened, err := newNetworkState(Config{DataDirectory: directory, DesktopToken: testDesktopToken})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +120,7 @@ func TestNetworkEmptyOverrideSelectsAutomaticAndSettingsApplyAtomically(t *testi
 	}
 }
 func TestNetworkRemoteSurfaceUsesTCPPeerOnly(t *testing.T) {
-	n, err := newNetworkState(Config{DataDirectory: t.TempDir()})
+	n, err := newNetworkState(Config{DataDirectory: t.TempDir(), DesktopToken: testDesktopToken})
 	if err != nil {
 		t.Fatal(err)
 	}

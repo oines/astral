@@ -1,45 +1,100 @@
 ---
 title: "使用容器"
-description: "提供独立、持久的电脑执行环境。"
+description: "为 Bot 准备独立的 Linux 工作环境，保留日常文件和已安装工具。"
 ---
 
-容器在 Astral 中是一台独立电脑，拥有自己的文件系统和身份。公开群聊建议使用专用 Bot，并只授权容器或专用机器。创建前先阅读[环境与权限建议](/zh-cn/docs/start/safe-use/#公开群聊使用独立环境)。
+容器适合给 Bot 一套单独的工作环境：它在 Astral 里显示为另一台电脑，有自己的文件和软件。你可以让公开群聊使用专用 Bot，并只授权这个容器，避免直接把日常工作电脑交给群聊使用。
 
-## 准备运行环境
-
-容器宿主机需要已运行的 Linux 容器引擎，并能通过本地 Docker CLI 和 context 访问。运行 Astral 或接入命令的账户必须有权使用该引擎。
-
-| 宿主机 | 目标兼容环境 |
-| --- | --- |
-| macOS | Docker Desktop、OrbStack、Colima，或使用 Docker 兼容后端的 Rancher Desktop |
-| Linux | Docker Engine，包括 rootless Docker，或 Docker Desktop |
-| Windows | 使用 Linux 容器模式的 Docker Desktop |
-
-Astral 和 Windows 接入命令原生运行，使用时不需要进入 WSL；容器运行时管理自己的 Linux 环境。请选中本地 Docker context；本机容器快捷入口不会通过远程 Docker context 创建容器。
-
-上表说明目标兼容范围，不表示每一种运行时版本、系统和 CPU 组合都已实测。实际验收环境以该次发行的检查记录为准。
-
-“使用本机容器”会使用 **Server 所在机器**的本地容器运行时；不会因为你在另一台电脑的浏览器打开 Astral，就改用那台电脑的 Docker。
+如果只是希望 Bot 处理电脑上已有的文件，可以直接[连接那台电脑](/zh-cn/docs/computers/connect/)。宿主机文件不会自动出现在容器里，需要上传、复制或明确配置挂载；“宿主机”就是实际运行容器的电脑。容器也需要配合权限安排，具体见[公开群聊的环境建议](/zh-cn/docs/start/safe-use/#接入群聊给群安排专用-bot)。
 
 ## 创建容器电脑
 
-- 在 Server 所在机器创建：打开 **设置 → 电脑 → 添加电脑 → 使用本机容器**。
-- 在其他机器创建：选择“连接其他机器”，启用“使用容器”，在容器宿主机执行生成的命令。
+如果已经安装并启动 Docker Desktop、OrbStack 等兼容环境，可以直接打开**设置 → 电脑 → 添加电脑**：
 
-Astral 会下载当前应用版本指定的官方预构建 Ubuntu 环境，检查容器到 Server 的连接，再创建持久工作目录和容器，将对应架构的 Linux Daemon 复制进去，启动并等待电脑连接。界面会显示这些阶段及日志。首次下载镜像可能较慢，后续创建可复用 Docker 已缓存的镜像。
+- 在 Astral 所在机器创建，选择**使用本机容器**。这里的“本机”指 Server 主机，包括 Desktop 自带的 Server，不是打开网页的设备。
+- 在另一台机器创建，选择**连接其他机器**并启用**使用容器**，到那台机器运行生成的命令。
 
-目标电脑不需要现场构建镜像或从头安装工具链。准备失败时，先确认容器运行时已启动、账户有访问权限，并能访问官方镜像仓库及发行下载。
+Astral 会下载准备好的 Ubuntu 环境并启动容器。首次下载可能需要一些时间，界面或目标终端会显示进度和错误；以后创建时可以复用已下载的镜像。
 
-上线后，在 Bot 的电脑权限中开放使用，再从会话选择该容器。
+电脑上线后，到 Bot 的**电脑权限**中授权，再在会话里选择它。可以发一个小任务核对环境：
+
+> 在当前电脑创建“容器试用.md”，写入今天的日期，并给我文件链接。告诉我保存目录，不要修改其他文件。
+
+打开文件确认结果，然后按[文件与结果](/zh-cn/docs/usage/files/)提供自己的资料。容器环境基于 Ubuntu 24.04，已包含常用开发、数据、文档、媒体、OCR 和浏览器工具，以及中文和 emoji 字体；Bot 可以继续安装任务需要的软件。
+
+## 准备运行环境
+
+如果还没有容器运行环境，先在**容器所在电脑**上安装并启动适合系统的工具：
+
+| 容器所在电脑 | 可选运行环境 |
+| --- | --- |
+| macOS | Docker Desktop、OrbStack、Colima，或使用 Docker 兼容后端的 Rancher Desktop |
+| Linux | Docker Engine（含 Rootless Docker）或 Docker Desktop |
+| Windows | 使用 Linux 容器模式的 Docker Desktop |
+
+Astral 使用本地 Docker 命令访问运行环境。运行 Astral 或接入命令的系统账号需要有相应权限，并选择本地 Docker context，也就是本地容器引擎的连接配置。**使用本机容器**不通过远程 Docker context 创建容器。
+
+Windows 上直接使用 Astral 和 PowerShell 接入命令，不需要进入 WSL；容器工具负责它自己的 Linux 环境。
+
+在“添加电脑”中，Astral 会检查 Server 主机的 Docker。处理环境问题后点击**重新检测**；检测通过即可创建，检查本身不会下载镜像或创建容器。
+
+## 容器创建不了
+
+| 提示或现象 | 下一步 |
+| --- | --- |
+| 未安装 Docker 命令 | 在容器所在机器安装运行环境，确认运行 Astral 的账号能找到 Docker 命令。 |
+| 引擎不可达 | 启动 Docker Desktop 或对应容器服务，检查当前是否选中了本地引擎。 |
+| 权限不足 | 按提示辨认实际运行 Server 的系统账号。Linux Server 参照下方配置。 |
+| 下载镜像或程序失败 | 检查该机器能否访问官方镜像仓库和发行下载地址。 |
+| 浏览器所在电脑有 Docker，入口仍不可用 | 检查的是 Server 主机。要在浏览器这台电脑创建，使用“连接其他机器”的容器命令。 |
+
+其他检测错误可以展开**错误详情**查看 Docker 的具体原因。暂时不能用容器时，仍可连接普通电脑。
+
+### Linux Server 的 Docker 权限
+
+本节适用于在 Linux 上自行运行 Server、Docker 已安装但 Astral 无法使用它的情况。Astral 使用已有 Docker，不负责安装引擎、启动系统服务或把账号加入用户组。尚未安装时，先按 [Docker 官方安装文档](https://docs.docker.com/engine/install/)准备。
+
+用**实际运行 Astral Server 的系统账号**登录终端，检查：
+
+```sh
+id -un
+id -nG
+docker context show
+docker info
+```
+
+关键结果是 `docker info` 不加 sudo 也能成功。网页登录用户名和这个系统账号是两回事；在另一个管理员账号中测试成功，也不能说明 Server 有权限。
+
+若只有 `sudo docker info` 成功，可以由管理员选择授予 docker 组权限，或使用下方 Rootless Docker。**docker 组相当于授予宿主机 root 等级的权限。** 接受这个范围时，将 `SERVER_USER` 替换为 Server 的实际系统账号：
+
+```sh
+sudo usermod -aG docker SERVER_USER
+```
+
+按 [Docker 官方说明](https://docs.docker.com/engine/install/linux-postinstall/)重新登录以应用组变更。已经运行的后台进程仍可能保留旧权限：`newgrp docker` 只影响新的 Shell，单独重启 Astral 也可能继续继承旧权限。
+
+如果该账号的 systemd 用户管理器早已运行，让管理员在维护时间重启其 `user@UID.service`，或重启宿主机。`UID` 是 `id -u` 得到的数字。此操作会中断该账号的其他服务和任务，安排好之后再执行。重新检查 `docker info`、启动 Astral，并在网页点击**重新检测**。
+
+### Rootless Docker
+
+不希望授予 docker 组权限时，可按 [Rootless Docker 指南](https://docs.docker.com/engine/security/rootless/)在 Server 的同一个系统账号下安装，并先满足指南列出的系统条件。完成后选择本地引擎、启动用户服务：
+
+```sh
+docker context use rootless
+systemctl --user enable --now docker.service
+docker info
+```
+
+如果你的 context 使用其他名字，替换 `rootless`。确认 `docker info` 的安全选项包含 `rootless`，并始终使用 Server 账号检查；配置和服务属于这个账号。
+
+需要退出 SSH 后继续运行、重启后启动时，该账号还需启用 linger。官方 Astral Server 安装器会准备这一项；自定义部署可让管理员执行 `loginctl enable-linger SERVER_USER`。后台 Server 应与终端使用同一 Docker context；如果配置了 `DOCKER_HOST` 或 `DOCKER_CONTEXT`，也要传给 Server 服务。
 
 ## 环境与持久化
 
-当前环境基于 Ubuntu 24.04，包含常用开发、数据、文档、媒体、OCR 和浏览器工具，以及中文和 emoji 字体。Bot 可以继续安装任务需要的软件。宿主机的项目文件不会自动出现在容器里，需明确复制或挂载。
+日常使用的容器会保留工作文件和已安装的软件。重要文件仍应另行备份，特别是在准备删除容器或数据卷之前。
 
-环境镜像与 Astral 程序分别更新。每个应用版本固定使用一个镜像摘要；只有 Dockerfile 或其他构建输入变化时才重新构建镜像，应用发版可以复用同一个环境。Astral 在启动前把程序复制到容器可写层，位于持久工作数据目录之外，不新增宿主机程序目录挂载；原有数据卷和只读配对配置挂载保留。
+**更新 Daemon**只更新容器里的 Astral 程序，并重启服务，正在运行的任务会中断。原容器、文件和已安装软件保留，Ubuntu 基础环境不会随之升级。备用更新命令需要在 Docker 宿主机运行，会重启原容器。
 
-“更新 Daemon”下载并校验官方程序，再重启原容器内的 Daemon。容器 ID、可写层、文件和已安装环境保留，正在运行的任务会中断。同一 Astral 二进制负责更新接管，不访问 Docker socket。这不会升级基础镜像。备用更新命令在 Docker 宿主机执行，会重启原有容器。
+更新 Desktop 或 Server 也不会重建已有容器。应用版本指定的环境镜像用于新建容器；需要新的基础环境时，另建容器并妥善迁移工作文件。
 
-更新 Desktop 或 Server 不会重新创建已有容器电脑，也不会替换其中的环境。新的环境镜像仅用于以后创建的容器；准备其他环境时，保留原容器及工作文件。
-
-断开电脑或撤销 Bot 权限不会自动清理宿主机上的容器和数据卷。删除前先确认工作文件已备份；容器不是替代权限规划的绝对隔离边界。
+撤销 Bot 权限、断开电脑或删除 Astral 中的登记，都会保留宿主机上的容器和数据卷。彻底移除时，在宿主机的容器管理器操作，先确认文件已有备份。

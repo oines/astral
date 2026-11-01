@@ -1,63 +1,70 @@
 ---
 title: "Connect Telegram"
-description: "Use a Bot Token for private chats, groups, and forum topics."
+description: "Create a Telegram bot, connect a private chat or group, and receive your first reply."
 ---
 
-Prepare a Telegram Bot you manage and ensure the Astral Server can reach Telegram's API.
+You need a **Telegram bot that you manage**. It is the account you talk to in Telegram; your Astral Bot provides its model, computers, and work context. Start with one chat, then add group and file workflows as needed.
 
-## Connect the account
+Complete Astral's [First-time setup](/docs/start/first-steps/) first. The computer or server running Astral must be able to reach the Telegram API. Being able to open Telegram on your phone is not enough.
 
-1. Create a Bot through BotFather and obtain its Bot Token.
-2. Open **Settings → Bots → your Bot → Connect a platform → Telegram**.
-3. Enter an account name and the token, then connect. Normally leave the server address at its default.
-4. Message the Bot privately or add it to your group.
+## 1. Create a bot and copy its token
 
-Astral receives updates through long polling. An active webhook for the same Bot prevents connection validation. Stop the previous receiver and remove its webhook before handing it over to Astral.
+1. Open the official [@BotFather](https://t.me/BotFather) in Telegram and send `/newbot`.
+2. Follow the prompts to choose a name and username. Keep the username so you can find the bot later.
+3. Copy the **Bot Token** returned by BotFather. It authorizes Astral to use this bot. Put it only in the connection form, not in a group message.
+
+You can use an existing bot and its token. See [Telegram's creation instructions](https://core.telegram.org/bots/features#creating-a-new-bot). If another service is receiving its messages, stop that receiver first. Remove any webhook configured by the old service as well: Astral uses long polling, and an active webhook blocks connection.
+
+## 2. Connect the account
+
+Use the token at **Settings → Bots → your Bot → Connect a platform → Telegram**, normally keeping the default server address. Then open the bot's private chat in Telegram or add it to the target group.
 
 ## Find the Chat ID
 
-In a chat where the Bot can receive and reply, send:
+The Chat ID tells Astral which chat you want to connect. You can get it in the chat itself.
+
+Send this in the private chat:
 
 ```text
 /chat_id
 ```
 
-In groups, use `/chat_id@your_bot_username`. Astral replies with the Chat ID and, in a forum topic, the Topic ID. This utility needs no model or computer and does not authorize the chat.
+In a group, send `/chat_id@your_bot_username`, replacing the username with the one from BotFather. For example, use `/chat_id@my_astral_bot` for `my_astral_bot`.
 
-Add these identifiers in Connected chats and choose a session. Forum topics use the parent group's Chat ID plus a separate Topic ID.
+Astral replies in the same chat with its **Chat ID**. In a forum topic, it also returns a **Topic ID**. This command works before you add the chat and does not use a model or computer.
+
+## 3. Add the chat and test a reply
+
+Under the account's **Connected chats**, select the discovered chat or find it with the returned Chat ID. Add it to a new conversation or an unbound conversation belonging to the same Bot. Forum topics need both the parent group's Chat ID and their Topic ID. New accounts allow only added chats; `/chat_id` itself does not grant access.
+
+Then **send a new message** in Telegram: “Please reply in this Telegram chat: connection successful.” In a group, reply to the Bot's message containing the Chat ID, so the test also works with default privacy mode.
+
+Check that Astral starts processing and that the reply actually arrives in Telegram.
 
 ## Use groups
 
-Authorize the chat in Astral, then mention the Bot or reply to it. To receive ordinary group messages as context, configure privacy mode or administrator permissions according to [Telegram's privacy rules](https://core.telegram.org/bots/features#privacy-mode).
+Replying to the Bot's messages works with the default Telegram privacy settings. To let it follow ordinary discussion and receive more mentions, turn off the bot's group privacy mode in BotFather, then remove and re-add it to the group. Group administrators also receive group messages; grant only the management permissions you need. [Telegram privacy rules](https://core.telegram.org/bots/features#privacy-mode)
 
-Ordinary replies stay in the group’s session, including replies to another member that also mention the Bot. Forum topics have separate chat permissions and session bindings.
+Astral's proactive group participation is off by default. Once ordinary messages can reach Astral, choose whether the Bot joins discussion in that group's reply setting. See [Group collaboration](/docs/chat/groups/).
 
-## Replies and selected quotes
+Forum topics can have separate permissions and Astral conversations. Replying to a member in an ordinary group stays in the group's conversation; it does not create a separate topic binding.
 
-The Bot receives a preview of the original message as well as the exact fragment you selected when Telegram supplies a quote. Quoting text that mentions the Bot does not itself notify it; mention the Bot in your new message or reply to a message it sent.
+## Images, files, quotes, and group management
 
-Referenced images, files and stickers retain their original message identity and download reference. They are kept separate from attachments on your new message and are not automatically downloaded or shown as image previews. The Agent can download the original when needed. This also works when Telegram includes the original media in a reply but Astral did not receive that original message separately. An external quote does not grant access to another chat or its files.
+Send images, files, or forwards and ask the Bot to read them and send its findings back. Replies and selected quotes retain the original preview, fragment, and media references supplied by Telegram. Mention the Bot in your new message or reply to the Bot itself when you need it to act; a name inside a quote is not a mention. Source metadata does not grant access to other chats.
 
-## Forwarded messages
+The Bot supports text, native mentions, images, files, and Markdown/HTML rich messages. Ask for an image as an original document when needed. Files upload directly from the computer without an image host, subject to Telegram's size and format limits.
 
-Forwarded messages retain the original author or chat and send time supplied by Telegram, alongside the person who forwarded them. When the original identity is hidden, only the name supplied by the platform is available.
+Ask the Bot to look up members, manage topics, pin messages, or set reactions. Receiving group reactions requires administrator status, and an ordinary reaction does not guarantee a reply. For custom calls, see [Platform APIs](/docs/chat/platform-api/).
 
-The Bot can only access authorized chats. A forward’s origin provides context; wakeup rules apply to the new forwarded message.
+## If the result is missing
 
-## Message reactions
+| What happens | Next step |
+| --- | --- |
+| The account will not connect | Check the token, API access from the machine running Astral, and whether the old receiver and webhook are disabled |
+| `/chat_id` gets no reply | Check that the account is enabled and the bot can receive and send in this chat; use the command with its username in groups |
+| Chat ID works, but tasks do not run | Add the chat, choose its Astral conversation, and send a new task; check Topic ID for forum topics |
+| Private chat works, but a group does not | First test by replying to a Bot message, then check privacy mode and Astral's group authorization |
+| Astral has a result, but Telegram has no reply | Ask it to send the result to this chat and inspect platform send errors; channels also need sending permissions |
 
-Receiving group reactions requires the Bot to be an administrator. It can see additions, removals, and anonymous counts delivered by Telegram. Anonymous totals may arrive late and have no actor identity. Private-chat reaction delivery depends on the platform.
-
-The Bot can use the built-in API to react to messages in authorized chats. Group reactions from known members follow proactive-participation settings. Its own actions, anonymous reactions, and private-chat reactions do not wake it by themselves; a working Bot can still read received events.
-
-## Files and troubleshooting
-
-The Bot can send ordered text, native user mentions, images, and files. Markdown and HTML use Telegram Rich Messages, including media embedded between text sections. A mention can use the numeric user ID even without a username. Files stream from the computer to Telegram; no public image host is needed. Spaces and newlines in text are preserved. Use the Gateway capability documentation for the actual `parts` schema and account permissions.
-
-Text, images, and files are supported. Request an image as an original document when needed. Telegram's own size and format limits still apply.
-
-If connected but silent, check chat authorization, Topic ID, message visibility, model access, and computer availability. Channels also need the relevant sending permissions.
-
-## Platform queries and management
-
-The Bot can use built-in APIs for member and profile queries, group management, topics, invitations, and pins. See [Platform APIs](/docs/chat/platform-api/) for methods and permissions.
+If a send times out or has an uncertain outcome, check Telegram before asking it to send again.

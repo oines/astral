@@ -107,7 +107,7 @@ async function save() {
           v-if="current.adapter !== 'telegram.bot'"
           class="muted small"
         >
-          {{ t('platformChatIDHint', { example: chatIDHint(current.adapter) }) }}
+          {{ t(options.length ? 'platformChatIDHint' : 'platformChatIDEmptyHint', { example: chatIDHint(current.adapter) }) }}
         </p>
         <button
           v-if="!manual"

@@ -383,6 +383,8 @@ type HostInfo struct {
 	Arch               string `json:"arch"`
 	ContainerRuntime   string `json:"container_runtime,omitempty"`
 	ContainerAvailable bool   `json:"container_available"`
+	ContainerStatus    string `json:"container_status,omitempty" enum:"available,missing_cli,not_running,permission_denied,error"`
+	ContainerUser      string `json:"container_user,omitempty"`
 	ContainerError     string `json:"container_error,omitempty"`
 	LocalError         string `json:"local_error,omitempty"`
 }

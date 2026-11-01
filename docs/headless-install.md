@@ -2,11 +2,11 @@
 
 The headless Server includes Astral's Web UI and the local Computer. It runs `astral serve` on the VPS. This is separate from the expiring **Connect another computer** command, which enrolls a Computer's Daemon into an existing Server.
 
-The installer requires a published GitHub Release marked `public_release_ready: true`; unsigned candidates, draft-only artifacts and an empty release list are rejected. Until such a release exists, there is no supported one-command download to install. The first supported public data baseline is Host schema 3 / Core format 11. The current implementation includes ordered Goose migrations and a separate Desktop updater; actual publication and N→N+1 update acceptance remain separate release checks.
+The installer requires a published GitHub Release marked `public_release_ready: true`; unsigned candidates, draft-only artifacts and an empty release list are rejected. The first supported public data baseline is Host schema 3 / Core format 11. The current implementation includes ordered Goose migrations and a separate Desktop updater; actual publication and N→N+1 update acceptance remain separate release checks.
 
 ## Installation
 
-Use a Linux amd64 or arm64 login account with a running `systemd --user` manager. The installer requires Bash, Python 3, curl, sha256sum, flock and normal GNU/Linux file utilities. They must already be installed; the script does not install dependencies, use sudo, create a system account or write a system-level service. A root shell without a user manager is rejected too.
+Use a Linux amd64 or arm64 account on a systemd host. The installer requires Bash, Python 3, curl, sha256sum, flock and normal GNU/Linux file utilities. It checks and enables lingering for the current account as needed, and starts `user@UID.service` only when the user's manager is not already running. A non-root account may need sudo for these system preparations or for registration in an existing system PATH directory. Preparation must succeed before installation changes begin. The Server remains a current-user `systemd --user` service; no system account or system-wide Astral service is created, and dependencies or Docker are not installed.
 
 Once a ready release is published, its installer asset supports this command:
 
@@ -30,73 +30,98 @@ The installer obtains all six macOS/Linux/Windows distribution binaries, the lic
 
 Programs live in versioned directories under `${XDG_DATA_HOME:-~/.local/share}/astral-server/releases/`. An atomic `current` symlink selects the active distribution. Databases, credentials, `master.key`, the persistent Computer tunnel identity and Computer files are outside those version directories, under `astral-server/data/`. Keep the full data directory when updating or replacing a program.
 
-The service is visible as **Astral Server**:
+The service is visible as **Astral Server**. Run each operation as the installation account:
 
-```sh
-systemctl --user status astral-server.service
-journalctl --user -u astral-server.service
-systemctl --user restart astral-server.service
-systemctl --user stop astral-server.service
-```
+| Operation | Command |
+| --- | --- |
+| Status | `systemctl --user status astral-server.service` |
+| Start now | `systemctl --user start astral-server.service` |
+| Stop now | `systemctl --user stop astral-server.service` |
+| Restart | `systemctl --user restart astral-server.service` |
+| Enable automatic startup | `systemctl --user enable astral-server.service` |
+| Disable automatic startup | `systemctl --user disable astral-server.service` |
+| Read logs | `journalctl --user -u astral-server.service` |
+
+Enable/disable changes automatic startup, not the running process; start/stop changes the process, not automatic startup. Stop before uninstalling or restoring data, and confirm the service is inactive.
 
 Its unit is in `${XDG_CONFIG_HOME:-~/.config}/systemd/user/astral-server.service`. The installer manages one Server service per user, enables it for that user's manager and starts it. `--root /absolute/dedicated/directory` selects another installation root; it cannot overwrite a service belonging to a different root or an unrelated unit.
 
-## Opening the Web UI
+## First setup, command entry and Web access
 
-The default HTTP listener is `0.0.0.0:4545`, with direct remote management disabled. Computers can connect on that port. To open the local management entry from your computer:
+The installer makes `astral` available on the current terminal's existing PATH and verifies that it runs. The stable entry points to `root/current/bin/astral`. Unrelated commands are not overwritten. Changing a profile or asking the user to reload PATH is not successful command registration.
 
-```sh
-ssh -N -L 4545:127.0.0.1:4545 USER@VPS
-```
+An unconfigured Server prompts for its administrator username and a hidden password plus confirmation. For unattended setup use `ASTRAL_ADMIN_USERNAME` and `ASTRAL_ADMIN_PASSWORD_FILE`; keep the file private. Existing accounts skip initialization. An interrupted initial setup leaves a retryable installation and returns nonzero rather than claiming setup is complete.
 
-First create the Web administrator on the VPS using the command printed by the installer. For the default installation root:
+An unattended example must download the script before executing it:
 
 ```sh
-~/.local/share/astral-server/current/bin/astral auth setup \
-  --data ~/.local/share/astral-server/data/server --username admin
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+  https://github.com/oines/astral/releases/latest/download/install-server.sh -o install-server.sh
+ASTRAL_ADMIN_USERNAME=admin \
+ASTRAL_ADMIN_PASSWORD_FILE=/secure/path/astral-admin-password \
+  bash install-server.sh
 ```
 
-The command prompts for a hidden password and confirmation. It uses the running Server's private local control channel and does not publish an account-creation endpoint. The same command works offline while holding the data lock. `astral auth reset --data DIRECTORY --username admin` deliberately resets an existing account, clears its factors and revokes every Web login while retaining business data and Computer identities.
-
-Open `http://127.0.0.1:4545` locally and sign in with that username and password. Localhost and an SSH tunnel do not grant Desktop identity or bypass login. There is no `owner.token` login or old-token compatibility path.
-
-For direct LAN/Tailscale browser access, enable remote management explicitly, either in Settings after signing in over SSH or during installation:
+The account must also have the necessary OS authorization without an interactive prompt. Web administrator credentials do not grant sudo rights.
 
 ```sh
-bash install-server.sh --allow-remote-management --public-url http://YOUR-TAILSCALE-IP:4545
+astral auth status
+astral auth setup --username admin
 ```
 
-For a domain, a loopback listener and your own HTTPS reverse proxy can expose the local management entry:
+Account and hostname-recovery commands automatically locate the matching installation. Explicit `--data` takes priority; multiple candidates require a choice or an explicit directory for noninteractive use. They use the private pinned local control channel while the Server runs, or the ordinary data lock while offline.
+
+Standalone Servers default to remote Web access and accept hostnames without prior URL registration. Open the reachable Server IP/domain and actual port, then sign in. Listener bindings, the firewall and a reverse proxy remain the operator's responsibility. Desktop remains distinct. To intentionally close direct remote management, pass `--allow-remote-management=false` to the installer or set `ASTRAL_ALLOW_REMOTE_MANAGEMENT=false`. The explicit choice is saved in `installation.json` and the user-service startup environment; Web cannot change standalone reachability.
+
+Web hostname restriction is optional. Its switch and list use one explicit local save. A misconfigured name can be recovered over SSH:
 
 ```sh
-bash install-server.sh --listen 127.0.0.1:4545 --public-url https://astral.example.com
+astral config hostnames show
+astral config hostnames disable
 ```
 
-The installer accepts one `--public-url`; set multiple access addresses afterward in Settings, or use repeated `astral serve --public-url` arguments / the JSON-array `ASTRAL_PUBLIC_URLS` environment value for a directly managed process. The first configured address is used by default in enrollment commands. Runtime CLI arguments take priority over environment, saved App settings and automatic discovery; an override does not rewrite lower-priority settings.
+Disabling keeps the list and account protection. Desktop and existing installations retain the previous Host restriction until deliberately changed. A startup hostname override must be changed at its source and restarted; the command reports that source. Computer tunnels and their pinned authentication are unaffected by Web hostname choices.
 
-See [deployment and operations](deployment.md) for proxy, Host, trusted-proxy and WebSocket/SSE requirements. A local proxy intentionally reaches the loopback management entry regardless of the direct remote-management switch, but account login remains required. Separate proxy containers require explicit trusted-proxy IP/CIDR configuration to report HTTPS; forwarded client/Host headers do not make a remote connection local.
+The Server provides HTTP. A local HTTPS reverse proxy can preserve the external Host and report `X-Forwarded-Proto: https`; only explicitly trusted peers may do so. Use `--trusted-proxy IP_OR_CIDR` for separate proxy hosts/containers. TOTP/password login works over HTTP or HTTPS; Passkeys require an actual HTTPS domain and remain scoped to its RP ID.
 
-Username/password and TOTP login are allowed over HTTP or HTTPS. Adding and confirming TOTP or a Passkey automatically enables the second step, with no separate 2FA switch. Passkeys can only be added or used from an actual HTTPS Web page and are tied to its hostname. When explicitly enabled, Passkey passwordless login skips username, password and TOTP. Recovery codes can replace the second step. The Web device list shows browser and CLI sessions; deletion invalidates them immediately and ends associated event streams. Desktop identities are separate and cannot be revoked there.
+## Optional public GitHub proxy
 
-Daemon connections remain encrypted even when their access address begins with HTTP: WS/WSS always carries a pinned inner TLS 1.3 connection. Its identity is a persistent Server key with a 100-year self-signed certificate, without automatic renewal. Enrollment commands pin that public key, and their temporary token is consumed once on successful registration. The copied installer and programs are fetched from the official HTTPS release, not from the HTTP Server. Preserve the Server identity when backing up or moving the deployment.
+For networks that cannot reach GitHub, the public manual provides an explicit GH-Proxy alternative. The bootstrap URL and the installer's internal API/asset downloads must both use the selected prefix:
 
-Astral does not configure DNS, a firewall, public HTTPS certificates or a proxy. This installer is a native Linux user-service deployment; an official Docker Server image/Compose package is not included. The Ubuntu Computer image is an Agent execution environment, not the Server image.
+```sh
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+  https://gh-proxy.org/https://github.com/oines/astral/releases/latest/download/install-server.sh \
+  | bash -s -- --github-proxy https://gh-proxy.org/
+```
 
-For remote API use, `astral connect --server URL --username admin` prompts for the password and an available TOTP/recovery code. It stores a private `client.session` credential under the local Astral root; it follows the same expiry and device-revocation rules as Web login. It does not use the private local account-administration channel as a remote authentication shortcut.
+`ASTRAL_GITHUB_PROXY` provides the same selection. Priority is explicit installer option, defined environment value, previous installation marker, then direct GitHub. Explicit empty disables the proxy. The choice persists into the user service and independent update task; metadata, release and digest checks remain. This is a third-party public service, not an Astral-operated CDN. Server addresses, management sessions and Computer credentials never use it.
+
+The current installer verifies required CLI capabilities before stopping a service or writing new network settings. To install an older release without those capabilities, use that release's own installer. Normal upgrades retain credentials, identities, data and the hostname policy.
 
 ## Logout and reboot
 
-Enabling a user service does not itself keep the user's systemd manager alive after logout or start it at boot. If user lingering is absent or cannot be confirmed, the installer says so. Ask the VPS administrator to run this deliberately for the installation account:
+The installer prepares lingering for the installation account before installing the enabled user service. Successful installation therefore supports continued operation after SSH logout and startup after a host reboot. It reports required system preparations and requests sudo when a normal account needs it; failure stops before service or program replacement. An already running user manager is not restarted, avoiding interruption of its other services.
+
+Lingering is account-wide. It is not revoked on Astral uninstallation, because other user services, including Rootless Docker, may need it. A foreground `astral serve` is distinct: it installs no service and may end when SSH disconnects.
+
+For root deployment, use a root login or `sudo -i`; do not preserve another account's HOME or XDG session environment. Local Computer commands then execute with root's privileges.
+
+## Uninstallation
+
+Download the installer as shown above, then use its explicit uninstall mode as the installation account:
 
 ```sh
-loginctl enable-linger USER
+bash install-server.sh --uninstall
+bash install-server.sh --uninstall --root /absolute/dedicated/directory
 ```
 
-The administrator may need an elevated session. The installer never runs this command or silently requests elevation. Without lingering or an equivalent administrator-provided user session, continued operation after logout or reboot is not guaranteed.
+The second command illustrates a custom installation root, not a second required step. Uninstallation validates installation ownership, the exact official unit and command entry, stops and disables the service, and verifies shutdown before cleanup. A mismatch or unconfirmed shutdown prevents further removal. It removes the unit and safely removable programs/links. A command or program shared with a registered Computer, another service or process remains and is reported.
+
+Data, account configuration, Computer identities/files, installation metadata and backups remain. One complete verified release, including its native program and distribution assets, is retained through `data-program` for reinstallation format checks and recovery; uninstall does not empty the installation root. Additional releases needed by shared services are retained too. It does not disable lingering, remove Docker resources or uninstall remote Computers. Destructive data deletion is a separate operator action after backup.
 
 ## Updating and failure recovery
 
-Run the installer again, optionally selecting `--tag`. Omitted network options retain their saved values. Pass `--public-url ''` for automatic address selection or `--allow-remote-management=false` to disable direct remote management. Installer options update `data/server/network.json`; the user-service unit leaves network options to the normal resolver so App settings remain editable. Explicit runtime CLI arguments and environment variables still take priority. Updating restarts the Server and interrupts active runs and connected Computer dispatch. Persisted browser logins remain valid until their expiry or explicit revocation; restarting the service is not a password reset.
+Run the installer again, optionally selecting `--tag`. Omitted network options retain their saved values. Pass `--public-url ''` for compatibility address discovery or `--allow-remote-management=false` for an explicit startup override. Listener and legacy address preferences use `data/server/network.json`; the remote-management choice is recorded in the installation marker and user unit environment. Explicit runtime CLI arguments and environment variables still take priority. Updating restarts the Server and interrupts active runs and connected Computer dispatch. Persisted browser logins remain valid until their expiry or explicit revocation; restarting the service is not a password reset.
 
 Before stopping an existing service, the installer checks the release manifest and both programs' format metadata against the forward migration ranges, beginning at Host 3 / Core 11. The latest binary contains all supported historical steps; intermediate application versions are not downloaded. An older development format below the baseline, a future data format, missing metadata or nonempty unmanaged data without a trusted program is rejected before changing the old service. There is no legacy Owner-token, native Server-TLS or old Daemon protocol reader.
 

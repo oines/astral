@@ -2679,6 +2679,19 @@
           "container_runtime": {
             "type": "string"
           },
+          "container_status": {
+            "enum": [
+              "available",
+              "missing_cli",
+              "not_running",
+              "permission_denied",
+              "error"
+            ],
+            "type": "string"
+          },
+          "container_user": {
+            "type": "string"
+          },
           "hostname": {
             "type": "string"
           },
@@ -5086,6 +5099,7 @@
               "cli",
               "environment",
               "settings",
+              "server",
               "default"
             ],
             "type": "string"
@@ -5102,10 +5116,51 @@
         ],
         "type": "object"
       },
+      "astral_internal_httpapi_NetworkHostnamesSetting": {
+        "properties": {
+          "editable": {
+            "type": "boolean"
+          },
+          "saved_value": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "cli",
+              "environment",
+              "settings",
+              "default"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "value",
+          "saved_value",
+          "source",
+          "editable"
+        ],
+        "type": "object"
+      },
       "astral_internal_httpapi_NetworkPatch": {
         "properties": {
           "allow_remote_management": {
             "type": "boolean"
+          },
+          "allowed_hostnames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "listen": {
             "type": "string"
@@ -5115,6 +5170,9 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "restrict_hostnames": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -5130,6 +5188,9 @@
           "allow_remote_management": {
             "$ref": "#/components/schemas/astral_internal_httpapi_NetworkBoolSetting"
           },
+          "allowed_hostnames": {
+            "$ref": "#/components/schemas/astral_internal_httpapi_NetworkHostnamesSetting"
+          },
           "listen": {
             "$ref": "#/components/schemas/astral_internal_httpapi_NetworkStringSetting"
           },
@@ -5138,12 +5199,17 @@
           },
           "restart_required": {
             "type": "boolean"
+          },
+          "restrict_hostnames": {
+            "$ref": "#/components/schemas/astral_internal_httpapi_NetworkBoolSetting"
           }
         },
         "required": [
           "listen",
           "public_urls",
           "allow_remote_management",
+          "restrict_hostnames",
+          "allowed_hostnames",
           "addresses",
           "restart_required"
         ],

@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -16,8 +17,129 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/securetransport"
 )
+
+func TestOfflineAccountSetupKeepsFirstServerAndDesktopHostnameDefaults(t *testing.T) {
+	for _, desktop := range []bool{false, true} {
+		t.Run(map[bool]string{false: "standalone", true: "desktop"}[desktop], func(t *testing.T) {
+			directory := t.TempDir()
+			if err := ConfigureAdministrator(context.Background(), directory, "owner", "strong-test-password", false); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(directory, accountInitializationFile)
+			if _, err := os.Stat(marker); err != nil {
+				t.Fatalf("new offline account lost its initialization provenance: %v", err)
+			}
+			if _, err := LocalHostnameSettings(context.Background(), directory, false); err != nil {
+				t.Fatalf("could not inspect the offline account's hostname settings: %v", err)
+			}
+			if _, err := os.Stat(marker); err != nil {
+				t.Fatalf("read-only hostname inspection consumed initialization provenance: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(directory, "network.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("read-only hostname inspection persisted a first-start policy: %v", err)
+			}
+			config := Config{DataDirectory: directory}
+			if desktop {
+				config.DesktopToken = testDesktopToken
+			}
+			network, err := newNetworkState(config)
+			if err != nil || network.snapshot().RestrictHostnames.Value != desktop {
+				t.Fatalf("offline account setup changed first-start hostname default: %v", err)
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("persisted hostname policy did not consume initialization marker: %v", err)
+			}
+			network, err = newNetworkState(config)
+			if err != nil || network.snapshot().RestrictHostnames.Value != desktop {
+				t.Fatalf("hostname default changed after the next restart: %v", err)
+			}
+		})
+	}
+}
+
+func TestOfflineAccountSetupPreservesExistingHostnamePolicy(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		database bool
+		network  *NetworkValues
+		want     bool
+	}{
+		{name: "old database", database: true, want: true},
+		{name: "old network settings", network: &NetworkValues{}, want: true},
+		{name: "saved restriction", network: &NetworkValues{RestrictHostnames: pointer(true)}, want: true},
+		{name: "saved unrestricted policy", network: &NetworkValues{RestrictHostnames: pointer(false)}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			if test.database {
+				store, err := persistence.Open(directory)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := store.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if test.network != nil {
+				if err := WriteJSON(filepath.Join(directory, "network.json"), test.network); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := ConfigureAdministrator(context.Background(), directory, "owner", "strong-test-password", false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(directory, accountInitializationFile)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("existing Server was marked as a new CLI initialization: %v", err)
+			}
+			network, err := newNetworkState(Config{DataDirectory: directory})
+			if err != nil || network.snapshot().RestrictHostnames.Value != test.want {
+				t.Fatalf("offline account setup changed an existing hostname policy: %v", err)
+			}
+		})
+	}
+}
+
+func TestOfflineAdministratorStatusDoesNotInitializeServerData(t *testing.T) {
+	directory := t.TempDir()
+	status, err := AdministratorStatus(context.Background(), directory)
+	if err != nil || status.Configured {
+		t.Fatalf("empty-directory status failed: %+v %v", status, err)
+	}
+	for _, name := range []string{"astral.db", "network.json", accountInitializationFile} {
+		if _, err := os.Stat(filepath.Join(directory, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read-only account status created %s: %v", name, err)
+		}
+	}
+	network, err := newNetworkState(Config{DataDirectory: directory})
+	if err != nil || network.snapshot().RestrictHostnames.Value {
+		t.Fatalf("read-only account status changed a new Server's hostname default: %v", err)
+	}
+}
+
+func TestOfflineHostnameCommandsOnlyPersistAnExplicitChange(t *testing.T) {
+	directory := t.TempDir()
+	if _, err := LocalHostnameSettings(context.Background(), directory, false); err == nil {
+		t.Fatal("empty directory was treated as an installed Server")
+	}
+	for _, name := range []string{"astral.db", "network.json", accountInitializationFile} {
+		if _, err := os.Stat(filepath.Join(directory, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read-only hostname inspection created %s: %v", name, err)
+		}
+	}
+	if err := ConfigureAdministrator(context.Background(), directory, "owner", "strong-test-password", false); err != nil {
+		t.Fatal(err)
+	}
+	if settings, err := LocalHostnameSettings(context.Background(), directory, true); err != nil || settings.RestrictHostnames.Value {
+		t.Fatalf("explicit offline recovery did not disable hostname restriction: %v", err)
+	}
+	network, err := newNetworkState(Config{DataDirectory: directory, DesktopToken: testDesktopToken})
+	if err != nil || network.snapshot().RestrictHostnames.Value {
+		t.Fatalf("Desktop replaced an explicitly saved recovery choice: %v", err)
+	}
+}
 
 func controlTestServer(t *testing.T) *Server {
 	t.Helper()

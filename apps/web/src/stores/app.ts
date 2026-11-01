@@ -145,7 +145,7 @@ export const useAppStore = defineStore('app', () => {
     return network
   }
   async function refreshNetwork() { return confirmNetwork(await request(getNetworkSettings())) }
-  async function networkSettings(patch: { public_urls?: string[]; allow_remote_management?: boolean }) {
+  async function networkSettings(patch: { public_urls?: string[]; allow_remote_management?: boolean; restrict_hostnames?: boolean; allowed_hostnames?: string[] }) {
     return confirmNetwork(await request(saveNetworkSettings({ body: patch })))
   }
   async function presentation(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean; private?: boolean }) {

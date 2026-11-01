@@ -1,51 +1,48 @@
 ---
-title: "Connect a chat"
-description: "Give tasks through chat, let your computers do the work, and receive results there."
+title: "Connect a chat platform"
+description: "Give Astral tasks in Telegram, QQ, Weixin, or Feishu and receive results in the same chat."
 ---
 
-Use Telegram, QQ, Weixin, or Feishu to give Astral tasks and receive results from your computers. Each connected chat has an independent Astral session.
+A connected chat lets you give Astral tasks from your usual messaging app. It uses the model and computers you configured, then sends back the results or files you ask to share. Each chat has its own Astral conversation, keeping tasks and follow-up messages together.
 
-## Before connecting
+[Complete a task inside Astral](/docs/start/first-steps/) before connecting a platform. Astral must stay running to receive messages. To use it while your own computer is off, see [Running Astral](/docs/hosting/architecture/).
 
-Complete the Bot’s [model and computer setup](/docs/start/first-steps/) and verify a task inside Astral. For public groups, we strongly recommend a dedicated Bot and separate container, with no direct access to your everyday computer. Review [permissions and data access](/docs/start/safe-use/) before connecting.
+## Choose your connection method
 
-| Platform | Connection | Supported chats |
-| --- | --- | --- |
-| [Telegram](/docs/chat/telegram/) | Bot Token | Private chats, groups, forum topics, channels |
-| [QQ](/docs/chat/qq/) | Official Bot or NapCat | Private and group chats; identifiers and capabilities differ |
-| [Weixin](/docs/chat/weixin/) | ClawBot / iLink QR authorization | Private chats |
-| [Feishu](/docs/chat/feishu/) | Custom enterprise app Bot | Private and group chats |
+Start at **Settings → Bots → your Bot → Connect a platform** and follow the guide for your account:
 
-## 1. Connect an account
+| Account | Guide |
+| --- | --- |
+| Telegram bot | [Connect Telegram](/docs/chat/telegram/) and get a token through BotFather |
+| Regular QQ account or official QQ bot | [Connect QQ](/docs/chat/qq/) using NapCat or QQ Open Platform, respectively |
+| Bot authorized through a Weixin QR code | [Connect Weixin](/docs/chat/weixin/), currently for private chats |
+| Feishu enterprise custom-app bot | [Connect Feishu](/docs/chat/feishu/), including permissions, releases, and event configuration |
 
-Open **Settings → Bots → your Bot → Connect a platform**. Select a platform and enter credentials or complete QR authorization. Each platform retains an account list; accounts manage their chats separately.
+One Astral Bot can connect several platform accounts, each with its own chats. Group members can ask the Bot to use its authorized computers and platform permissions. Use a dedicated Bot and a [separate execution environment](/docs/start/safe-use/) for public groups.
 
-After connecting, choose which chats this account may use.
+## Choose chats after connecting the account
 
-## 2. Choose chat access
+New accounts use **Only specified chats** with an empty list. The platform guide explains how to discover a chat or get its Chat ID; then add it under the account's **Connected chats**.
 
-New accounts start with “Only specified chats” and an empty list. Add a chat or select a discovered one, check its Chat ID, and supply a Telegram Topic ID when needed.
+A new conversation starts with fresh work context. Choosing an existing conversation continues that context; it must belong to the same Bot and be unbound. Before connecting a group, check that any existing context is suitable for its members.
 
-Alternatively, allow all chats the account can access. A private message or the first group mention or reply to the Bot creates a session automatically. Its reach depends on the chats the platform allows that account to receive.
+You can instead allow **All chats the account can access**. A new private message, or the first group mention or reply addressed to the Bot, then creates a conversation automatically. This expands the Bot's chat access; keep specified mode if it should serve only a few chats.
 
-Switching back to specified chats retains active chats and their settings. Use this mode before removing an individual chat.
+## Confirm the connection with a new message
 
-## 3. Bind and verify
+After adding the chat, return to the platform and **send a new message**:
 
-Create a new session or select an unbound session belonging to the same Bot. Send a small task, such as “Which computers can you use?”, and verify the reply in that chat.
+> Please reply in this chat with “Connection successful” and tell me which computer you are using.
 
-Open the session in Astral to inspect messages, executions, and files. Results reach the external chat through explicit sends; every Web reply is not automatically forwarded.
+Mention the Bot in a group or reply to a message it sent. Earlier discovery messages do not become tasks after authorization.
 
-## How the Bot understands its chat
+Check both the processing in Astral and the reply in the original chat. Next, send an image or small file and ask the Bot to read it and send it back. Say “send it back to this chat” when you want a result delivered: the Bot uses its sending tool, and working notes shown in Astral are not all forwarded.
 
-The Bot receives the current platform, chat name, and topic, together with each message’s sender, time, quotes, and attachments. Names inside forwards or quotes remain source information. Changing a binding or forking a session preserves the original chat source of earlier messages.
+## What matters during everyday use
 
-## Replace a binding or pause
+- **Group replies:** mentions and replies call the Bot by default. See [Group collaboration](/docs/chat/groups/) for ordinary discussion.
+- **Removing one chat:** first switch to **Only specified chats**. Switching retains connected chats and their settings.
+- **Pausing an account:** turn off **Enabled** to stop reception and keep history. Stop any computer task already in progress separately in its conversation.
+- **Changing the bound conversation:** stops work in both the original and target conversations and retains their histories. Previously accepted sends keep their original destination.
 
-Replacing the session binding stops work in both the original and target sessions while keeping their histories. Already accepted sends keep their original destination.
-
-Disable the account to pause incoming messages and keep history. Stop any computer work already running in its session separately. See [Group chats](/docs/chat/groups/) for trigger rules.
-
-## Platform queries and management
-
-The Bot can also query members and profiles, moderate groups, and use platform-specific notice, file and essence operations through the Gateway. See [Platform APIs](/docs/chat/platform-api/) for discovery, permissions and examples.
+Ask the Bot directly to look up members or manage group files. Read the [Platform API reference](/docs/chat/platform-api/) only when you need custom calls.

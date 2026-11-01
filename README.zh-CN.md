@@ -47,7 +47,7 @@ pnpm install --frozen-lockfile
 GOWORK=off pnpm build:distribution
 ```
 
-Windows PowerShell 步骤见[源码构建说明](https://astral.oines.dev/zh-cn/docs/start/get-astral/#从源码构建)。`GOWORK=off` 可避免本地工作区覆盖固定依赖。
+Windows PowerShell 步骤见[源码构建说明](https://astral.oines.dev/zh-cn/docs/hosting/build-from-source/)。`GOWORK=off` 可避免本地工作区覆盖固定依赖。
 
 选择运行方式：
 

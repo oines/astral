@@ -1,63 +1,70 @@
 ---
 title: "连接 Telegram"
-description: "使用 Bot Token 接入私聊、群聊和论坛 Topic。"
+description: "创建 Telegram 机器人，接入一个私聊或群聊，并收到第一条回复。"
 ---
 
-Telegram 通过 Bot Token 连接。准备一个由你管理的 Telegram Bot，并确认 Astral Server 能访问 Telegram API。
+你需要一个由自己管理的 **Telegram 机器人**。它是你在 Telegram 中聊天的对象；Astral 中的 Bot 为它提供模型、电脑和工作上下文。下面先接通一个聊天，再说明群聊和文件的用法。
 
-## 连接账号
+开始前，先完成 Astral 的[首次配置](/zh-cn/docs/start/first-steps/)。运行 Astral 的电脑或服务器必须能访问 Telegram API；只在手机上能打开 Telegram 还不够。
 
-1. 在 Telegram 的 BotFather 创建 Bot，取得 Bot Token。
-2. 在 Astral 中打开 **设置 → Bot → 目标 Bot → 连接平台 → Telegram**。
-3. 填写账号名称和 Bot Token，连接账号。通常保留默认服务器地址。
-4. 到私聊发送消息，或把 Bot 加入目标群。
+## 1. 创建机器人并复制 Token
 
-Astral 使用长轮询接收消息。如果同一个 Bot 已配置活动 webhook，连接验证会报错；先停止原有接收程序并清理 webhook，再由 Astral 接管。
+1. 在 Telegram 打开官方 [@BotFather](https://t.me/BotFather)，发送 `/newbot`。
+2. 按提示设置名称和用户名。记下用户名，后面会用它找到机器人。
+3. 复制 BotFather 返回的 **Bot Token**。它是允许 Astral 使用这个机器人的凭据，请只填入连接表单，不要发到群里。
+
+已有机器人可以继续使用原来的 Token。创建步骤见 [Telegram 官方说明](https://core.telegram.org/bots/features#creating-a-new-bot)。如果它已接入其他程序，先停止原程序接收消息；已配置 webhook 时，还要在原服务中移除它。Astral 使用长轮询接收消息，活动 webhook 会阻止连接。
+
+## 2. 连接账号，取得聊天标识
+
+在 **设置 → Bot → 目标 Bot → 连接平台 → Telegram** 中使用 Token 连接，通常保留默认服务器地址。然后到 Telegram 打开机器人的私聊，或把它加入目标群。
 
 ## 找到 Chat ID
 
-在 Bot 能收到并回复的聊天中发送：
+Chat ID 用来告诉 Astral 你要接入哪一个聊天，不需要去 Telegram 后台查找。
+
+在刚才的私聊中发送：
 
 ```text
 /chat_id
 ```
 
-群里可使用 `/chat_id@你的Bot用户名`。Astral 会回复 Chat ID；在论坛 Topic 中还会给出 Topic ID。这个命令不需要模型或电脑，也不会自动授权聊天。
+群里发送 `/chat_id@你的Bot用户名`，把后半段换成 BotFather 中的用户名。例如用户名是 `my_astral_bot`，就发送 `/chat_id@my_astral_bot`。
 
-回到账号的“已接入聊天”，填写对应标识，选择会话。如果要区分论坛话题，Chat ID 使用父群标识，Topic ID 单独填写。
+Astral 会在原聊天返回 **Chat ID**。在论坛话题中，还会返回 **Topic ID**。这个命令可以在聊天尚未添加时使用，不调用模型，也不使用电脑。
+
+## 3. 添加聊天并验证回复
+
+在 Astral 账号的 **已接入聊天** 中选择发现的聊天，或使用返回的 Chat ID 查找，再添加到新会话或同一 Bot 的未绑定会话。论坛话题要同时填入父群 Chat ID 和该话题的 Topic ID。新账号默认只允许添加的聊天，`/chat_id` 本身不会授权。
+
+完成后，在 Telegram **重新发送**“请在这个 Telegram 聊天里回复：连接成功”。群里请回复刚才返回 Chat ID 的那条 Bot 消息，再发送这句话，这样默认隐私模式下也能收到。
+
+检查 Astral 对应会话是否开始处理，以及 Telegram 是否收到实际回复。
 
 ## 让 Bot 参与群聊
 
-先完成 Astral 的聊天授权，再 `@Bot` 或回复它的消息。希望使用普通群消息作为上下文时，需要按 Telegram 的规则调整 BotFather 隐私模式或管理员权限。[Telegram 隐私模式说明](https://core.telegram.org/bots/features#privacy-mode)
+默认可以通过回复 Bot 的消息交代任务。要让 Bot 读取普通群讨论、接收更多提及，需调整 Telegram 的消息接收范围：在 BotFather 中关闭这个机器人的群隐私模式，然后将它重新加入群。Bot 担任群管理员时也能接收群消息，但请只授予实际需要的管理权限。[Telegram 隐私模式说明](https://core.telegram.org/bots/features#privacy-mode)
 
-普通群回复留在原群会话，包括回复其他成员时同时 `@Bot` 的消息。论坛 Topic 分别授权并绑定会话。
+Astral 的群聊主动参与默认关闭。能够收到普通消息后，是否主动加入讨论仍在 Astral 的该群回复方式中设置，见[群聊协作](/zh-cn/docs/chat/groups/)。
 
-## 回复与选中引用
+论坛话题可以分别添加、授权并使用不同 Astral 会话。普通群中回复某位成员的消息仍留在原群会话，不会因此另开话题。
 
-Bot 会看到原消息预览，以及 Telegram 提供的选中引用片段。需要它处理引用内容时，在新正文中提及 Bot，或回复它发出的消息。
+## 图片、文件、引用和群管理
 
-引用中的图片、文件和贴纸保留原消息身份与下载入口，与新消息自身的附件分开，不会因为被引用而自动下载或生成图片预览。Agent 需要时可主动下载原件。即使 Astral 没有单独收到原消息，只要 Telegram 在同聊天回复中带来了原媒体信息，也能使用该入口。外部引用不会授予另一个聊天或文件的访问权限。
+可以直接发图片、文件或转发内容，让 Bot 读取并把结果发回来。回复和选中引用会保留平台提供的原消息预览、片段与媒体入口；需要它处理时，在新消息里提及 Bot 或回复 Bot 本身，引用中的名字不算提及。来源信息不会授予其他聊天的访问权限。
 
-## 转发消息
+Bot 支持文字、原生提及、图片、文件和 Markdown／HTML 富文本。可以要求把图片作为原始文档发送；文件从电脑直接上传，无需图床，大小和格式受 Telegram 限制。
 
-转发消息会保留 Telegram 提供的原作者或来源聊天、原发送时间，以及本次转发者。原作者身份被隐藏时，只能看到平台提供的名字。
+查询成员、管理话题、置顶或设置表情可以直接交给 Bot；接收群表情回应需机器人为管理员。普通回应不保证触发回复。自定义调用见[平台 API](/zh-cn/docs/chat/platform-api/)。
 
-Bot 只能访问已授权的聊天。转发中的来源信息用于理解内容，唤醒行为按本次转发消息判断。
+## 没有收到预期结果时
 
-## 消息表情回应
+| 你看到的情况 | 下一步 |
+| --- | --- |
+| 无法连接账号 | 核对 Token、运行 Astral 的机器能否访问 Telegram，以及原接收程序和 webhook 是否已停用 |
+| `/chat_id` 没有回复 | 确认账号启用、机器人已在聊天中且能发送消息；群里使用带用户名的完整命令 |
+| Chat ID 能返回，但任务没有处理 | 在 Astral 添加聊天并选择会话，然后重新发送任务；论坛话题核对 Topic ID |
+| 私聊正常，群里没响应 | 先回复 Bot 的现有消息测试，再检查 Telegram 隐私模式和 Astral 的群授权 |
+| Astral 中已有处理结果，Telegram 没有消息 | 明确要求“发回这个聊天”，检查会话中的平台发送错误；频道还需授予发言权限 |
 
-接收群聊表情回应需要 Bot 是群管理员。Bot 可以看到平台交付的新增、移除和匿名数量变化；匿名汇总可能延迟，也不包含操作者身份。私聊回应的接收取决于平台。
-
-Bot 可以通过内置 API 为获准聊天中的消息设置回应。已知其他成员的群回应遵循主动参与设置；自身动作、匿名回应和私聊回应不会单独唤醒 Bot，工作中的 Bot 仍可读取收到的事件。
-
-## 文件与排查
-
-Bot 可以按顺序发送文字、原生提及、图片和文件。Markdown 和 HTML 使用 Telegram Rich Message，可在文字段落之间嵌入媒体；没有用户名时也可以通过用户数字 ID 提及。文件从电脑流式上传到 Telegram，无需图床；文字中的空格、换行保留。具体 `parts` 参数和账号权限通过 Gateway 能力文档发现。
-
-支持文本、图片和文件。发送图片时可按任务要求发送原图文档；实际大小和类型限制由 Telegram 决定。
-
-连接正常但不回复时，检查聊天授权、Topic ID、消息接收范围，以及模型与电脑是否可用。向频道发送消息还需要对应的发言权限。
-
-## 平台查询与管理
-
-Bot 可以通过内置 API 查询成员和资料、管理群聊、话题、邀请和置顶等。具体方法与权限见[平台 API](/zh-cn/docs/chat/platform-api/)。
+发送超时或结果不明时，先到 Telegram 检查实际消息，再决定是否重发。

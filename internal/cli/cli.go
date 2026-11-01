@@ -80,6 +80,8 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return session(ctx, args[1:], out, stderr)
 	case "auth":
 		return administrator(ctx, args[1:], out, stderr)
+	case "config":
+		return configuration(ctx, args[1:], out, stderr)
 	default:
 		return fmt.Errorf("unknown command %q; use astral help", args[0])
 	}
@@ -89,8 +91,8 @@ func usage(out io.Writer) {
 
   astral serve [--listen 0.0.0.0:4545] [--public-url http://…] [--allow-remote-management]
   astral computer connect --server URL --enrollment ID --token TOKEN [--container]
-  astral computer service status|logs|start|stop|restart|uninstall --root DIRECTORY
-  astral computer update --root DIRECTORY
+  astral computer service status|logs|start|stop|restart|uninstall [--root DIRECTORY]
+  astral computer update [--root DIRECTORY]
   astral computer update --container CONTAINER_NAME
   astral server update --root DIRECTORY --operation ID --managed-helper
   astral connect --server URL --username USER
@@ -100,7 +102,8 @@ func usage(out io.Writer) {
   astral sessions stop|continue|history|export ID
   astral request METHOD /api/v1/PATH [--body-file FILE]
   astral doctor
-  astral auth setup|reset [--data DIRECTORY]
+  astral auth setup|reset|status [--data DIRECTORY] [--username USER]
+  astral config hostnames [show|disable] [--data DIRECTORY] [--json]
   astral migrate --data DIRECTORY [--status]
   astral migrate restore --data DIRECTORY (--backup SNAPSHOT | --latest)
   astral migrate recover --data DIRECTORY
@@ -110,8 +113,11 @@ func usage(out io.Writer) {
   astral version [--json | --data-formats]
 
 The Server serves HTTP. Use your own reverse proxy for HTTPS when needed.
-Remote management is disabled by default; Computer connections remain available.
+Standalone Servers enable remote Web access; only a CLI/environment override can disable it.
+Desktop keeps remote management off by default and offers its Web settings switch.
+New Servers accept any hostname; Desktop and upgraded installations retain their Host restriction.
 Network settings: explicit CLI > environment > saved settings > discovery/defaults.
+Account and recovery commands locate the installed Server; computer maintenance locates installed Daemons.
 Web login uses a username, password and any configured second factor.
 Desktop authenticates only through its private startup channel.
 Computer registration tokens are temporary; normal Daemon credentials are saved locally.
@@ -124,6 +130,9 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 	var publicURLs repeatedStrings
 	f.Var(&publicURLs, "public-url", "HTTP/HTTPS access address; repeat for multiple addresses, empty for automatic")
 	remoteManagement := f.Bool("allow-remote-management", false, "allow remote Web UI and management API access (account login still required)")
+	restrictHostnames := f.Bool("restrict-hostnames", false, "restrict management to allowed hostnames (overrides Web settings)")
+	var allowedHostnames repeatedStrings
+	f.Var(&allowedHostnames, "allowed-hostname", "allowed hostname or IP without protocol/port; repeat for multiple values")
 	f.StringVar(&config.DataDirectory, "data", "", "Server database directory")
 	f.StringVar(&config.ComputerDirectory, "computers-dir", "", "local Daemon data directory (separate from Server data)")
 	f.StringVar(&config.WebDirectory, "web-dir", "", "shared Web UI build directory")
@@ -145,6 +154,9 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 		return fmt.Errorf("unexpected serve argument %q; use --allow-remote-management=false for an explicit false value", f.Arg(0))
 	}
 	if err := serveNetworkOptions(&config, f, *listen, []string(publicURLs), *remoteManagement, os.LookupEnv); err != nil {
+		return err
+	}
+	if err := serveHostnameOptions(&config, f, *restrictHostnames, []string(allowedHostnames), os.LookupEnv); err != nil {
 		return err
 	}
 	if err := serveRuntimeOptions(&config, f, []string(trustedProxies), *adminUsername, *adminPasswordFile, os.LookupEnv); err != nil {
@@ -237,7 +249,9 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) error {
 		defer os.Remove(*ready)
 	}
 	fmt.Fprintln(out, "Astral is ready:", s.URL)
-	fmt.Fprintln(out, "Set up Web login with: astral auth setup --data", s.Config.DataDirectory)
+	if status, statusErr := s.Auth.Status(ctx); statusErr == nil && !status.Configured {
+		fmt.Fprintln(out, "Set up Web login with: astral auth setup --data", s.Config.DataDirectory)
+	}
 	fmt.Fprintln(out, "Computer data:", s.Config.ComputerDirectory)
 	<-ctx.Done()
 	return nil

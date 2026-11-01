@@ -1,36 +1,40 @@
 ---
 title: "Configure a Bot"
-description: "Manage a Bot’s identity, models, computer access, and chat accounts."
+description: "Choose how an assistant works, which model it uses, and which computers it can access."
 ---
 
-A Bot is a persistent identity. It can own several sessions, use authorized computers, and connect multiple chat accounts.
+A Bot is an assistant you use over time. It has a name and working preferences, can hold multiple sessions, and can connect to several messaging accounts. First-time setup provides an Astral Bot that you can use for everyday work.
 
-Open it from the **Bot list in Settings**. These settings belong to the selected Bot and do not automatically apply to others.
+Create another Bot when you need different behavior or access. A personal assistant might use your work computer, while a public-group Bot uses a dedicated container and chat account. For a different topic, you can simply [start another session](/docs/usage/conversations/#separate-unrelated-work).
 
 ## Basic settings
 
-Change the name, avatar, default model, and search service here. Use the optional persona for identity, speaking style, or working preferences, then choose Apply persona. It takes effect on subsequent model requests for this Bot.
+Open **Settings → Bots → your Bot → Basic settings**. The default model applies to new sessions; existing sessions keep their own selections. Model and search connections live in the [global settings](/docs/usage/models/), where you manage credentials once and choose a connection for each Bot.
 
-When proactive group participation is enabled, the next participation check also includes the current Bot's persona to help judge whether it should join the conversation.
+Use the persona for preferences that should apply across tasks. For example:
 
-Leave it empty if no custom persona is needed. Model and search connections are maintained globally; the Bot chooses which ones to use.
+> Help me organize my daily work. Start with practical recommendations. If a source does not specify an owner or date, mark it as “To confirm” rather than filling it in.
+
+Select **Apply persona** to use it in subsequent model requests across this Bot's sessions. Clear it and apply again to remove it. Proactive group-participation decisions also use the current persona. Leave it empty when you have no standing preferences to add.
 
 ## Computer access
 
-Select the computers this Bot may use and its default for new sessions. Global Computer settings manage connections; Bot settings manage permission.
+Open the Bot's **Computer access** page, allow the computers it needs, and optionally choose a default. New sessions start with that default; existing sessions can select another allowed computer.
 
-Granting access lets the Bot read files and run commands as the computer service’s operating-system account. Review all computer permissions against the [safe-use guidance](/docs/start/safe-use/) before connecting a group.
+If the computer is not connected yet, follow [Connect a computer](/docs/computers/connect/), then return here to grant access. Permission allows the Bot to read files, write files, and run commands with the rights of the computer service's operating-system account. Grant only the computers this Bot needs, especially before [using it in a public group](/docs/start/safe-use/#group-chats-use-a-dedicated-bot).
+
+Revoking access to the default computer also clears that default. Choose another computer explicitly when work should continue elsewhere.
 
 ## Platforms and accounts
 
-Choose Connect a platform to add Telegram, QQ, Weixin, or Feishu. A platform can have several accounts, each with separate credentials, enabled state, chat access, and session bindings.
+To use the Bot from a messaging app, choose **Connect platform** in its settings, select Telegram, QQ, WeChat, or Feishu, and follow the [platform guide](/docs/chat/overview/).
 
-Connection fields take effect after Save connection in their section. Account switches and chat permissions have their own scope.
-
-See [Connect a chat](/docs/chat/overview/) for the full workflow.
+A Bot can connect several accounts, including more than one on the same platform. Each account has its own credentials, enabled state, allowed chats, and session bindings.
 
 ## Disable or delete
 
-Disable a platform account to pause incoming messages while keeping its sessions.
+To stop receiving messages temporarily, disable the relevant platform account and keep its records. To stop the Bot using a particular computer, revoke that computer's access.
 
-Deleting a Bot permanently removes its sessions, connection credentials, and Astral's stored chat data. It does not delete external accounts, chats, messages, or computer work files. Save any records and files you need before deleting.
+Delete the Bot when you want to remove the assistant completely. This permanently removes its sessions and schedules, platform credentials, and chat data stored by Astral. Save any records you need first.
+
+Accounts, chats, and messages on the external platforms remain, as do working files on computers. Manage those separately where they are stored.

@@ -78,8 +78,6 @@ test('both languages retain eight usable versioned downloads without JavaScript'
     for (const target of targets) assert.deepEqual(links.filter(match => match[1] === target[0]).map(match => match[2]), [urlFor(version, target)])
     assert.deepEqual([...page.matchAll(/data-astral-release-notes href="([^"]+)"/g)].map(match => match[1]), [`${repository}/releases/tag/v${version}`])
     assert.deepEqual([...page.matchAll(/\]\((https:\/\/github\.com\/oines\/astral\/releases\/download\/[^)]+\/mac-signing-report\.json)\)/g)].map(match => match[1]), [`${repository}/releases/download/v${version}/mac-signing-report.json`])
-    assert.match(page, /schema-3-core-11/)
-    assert.match(page, /Host 3 \/ Core 11/)
     assert.match(page, /releases\/latest\/download\/install-server\.sh/)
   }
 })

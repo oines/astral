@@ -9,6 +9,7 @@ import { errorText, fileURL, request } from '../lib/api'
 import { prepareInputAttempt, sameInputContent } from '../lib/input-attempt'
 import { useAppStore } from '../stores/app'
 import ModelSelection from './ModelSelection.vue'
+import ComposerContext from './ComposerContext.vue'
 import type { ModelSelection as Selection } from '../lib/model-reasoning'
 import { modelUnavailableLabel } from '../lib/model-availability'
 const props = defineProps<{ view: SessionView; live: boolean }>()
@@ -38,9 +39,18 @@ const queueBusy = ref(false)
 const dragging = ref('')
 const dropBefore = ref<string | undefined>()
 const fileDrag = ref(false)
+const showContext = ref(false)
+const contextTrigger = ref<HTMLButtonElement>()
+const contextInMenu = ref(false)
+function openActions(open: boolean) {
+  showContext.value = false
+  // The menu is portaled outside the chat container. Follow the visibility
+  // selected by its container query without maintaining a second breakpoint.
+  if (open) contextInMenu.value = !contextTrigger.value?.getClientRects().length
+}
 const sendLabel = computed(() => editing.value ? t('save') : !text.value.trim() && !files.value.length && canContinue.value ? t('continue') : retrying.value ? t('retry') : running.value ? t(mode.value === 'follow_up' ? 'queueMessage' : 'steerNow') : t('send'))
 const inputContent = computed(() => ({ text: text.value, files: files.value.map(file => file.uri), mode: mode.value }))
-const retrying = computed(() => attempt.value && sameInputContent(attempt.value, inputContent.value))
+const retrying = computed(() => !busy.value && attempt.value && sameInputContent(attempt.value, inputContent.value))
 watch(inputContent, () => { if (!busy.value) error.value = '' })
 watch(() => app.data?.preferences.running_input, value => { if (value) mode.value = value })
 const running = computed(() => ['running', 'stopping', 'compacting'].includes(view.value.status))
@@ -371,235 +381,244 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
         </div>
       </div>
       <form
-        class="composer"
+        class="composer-form"
         :class="{ 'file-drag': fileDrag }"
         @submit.prevent="send()"
         @dragover="dragFiles"
         @dragleave.self="fileDrag = false"
         @drop="dropFiles"
       >
-        <div
-          v-if="editing"
-          class="composer-editing"
-        >
-          <Pencil />{{ t('editMessage') }}<button
-            type="button"
-            :aria-label="t('cancel')"
-            @click="editing = undefined"
+        <div class="composer">
+          <div
+            v-if="editing"
+            class="composer-editing"
           >
-            <X />
-          </button>
-        </div>
-        <div
-          v-if="attachments.length || uploading"
-          class="attachment-tray"
-        >
-          <span
-            v-for="(file, i) in attachments"
-            :key="file.id"
-            class="attachment-chip"
-            :class="{ 'attachment-image': file.media_type.startsWith('image/') }"
-          >
-            <img
-              v-if="file.media_type.startsWith('image/')"
-              :src="fileURL(file.id, view.id)"
-              :alt="file.display_name"
-            >
-            <template v-else><File /><span>{{ file.display_name }}</span></template>
-            <button
-              v-if="!busy && !editing"
+            <Pencil />{{ t('editMessage') }}<button
               type="button"
-              :aria-label="t('delete')"
-              @click="files.splice(i, 1)"
-            ><X /></button>
-          </span>
-          <span
-            v-if="uploading"
-            class="attachment-chip muted"
-          ><span class="spinner" />{{ t('upload') }}</span>
-        </div>
-        <div class="composer-input-row">
-          <input
-            ref="pick"
-            type="file"
-            hidden
-            multiple
-            @change="upload"
-          >
-          <Popover
-            side="top"
-            :label="t('common.more')"
-          >
-            <template #trigger>
-              <button
-                type="button"
-                class="composer-add"
-                :aria-label="t('attach')"
-                :title="t('attach')"
-              >
-                <Plus />
-              </button>
-            </template>
-            <template #default="{ close }">
-              <button
-                type="button"
-                class="menu-item"
-                :disabled="!view.computer_id || uploading || busy || Boolean(editing)"
-                @click="pick?.click(); close()"
-              >
-                <Plus />{{ t('attach') }}
-              </button>
-              <button
-                type="button"
-                class="menu-item"
-                @click="toggleQueue(); close()"
-              >
-                <ListEnd />{{ t(mode === 'follow_up' ? 'disableQueue' : 'enableQueue') }}
-              </button>
-            </template>
-          </Popover>
-          <textarea
-            ref="textarea"
-            v-model="composerText"
-            :placeholder="t('message')"
-            :aria-label="t('message')"
-            :readonly="busy || queueBusy"
-            rows="1"
-            @keydown="keyboard"
-            @paste="paste"
-          />
-          <div class="composer-submit-actions">
-            <Button
-              v-if="editing"
-              variant="ghost"
-              size="small"
+              :aria-label="t('cancel')"
               @click="editing = undefined"
             >
-              {{ t('cancel') }}
-            </Button>
-            <Button
-              v-if="running && !composerText.trim() && !attachments.length && !editing"
-              class="composer-stop"
-              variant="primary"
-              size="icon"
-              :aria-label="t('stop')"
-              :title="t('stop')"
-              :disabled="view.status === 'stopping'"
-              @click="action(() => request(stopSession({ path: { id: view.id } })))"
+              <X />
+            </button>
+          </div>
+          <div
+            v-if="attachments.length || uploading"
+            class="attachment-tray"
+          >
+            <span
+              v-for="(file, i) in attachments"
+              :key="file.id"
+              class="attachment-chip"
+              :class="{ 'attachment-image': file.media_type.startsWith('image/') }"
             >
-              <Square />
-            </Button>
-            <Button
-              v-else
-              class="composer-send"
-              type="submit"
-              variant="primary"
-              size="icon"
-              :aria-label="sendLabel"
-              :title="sendLabel"
-              :busy="busy || queueBusy"
-              :disabled="uploading || (!editing && !modelAvailable && !continuing) || (!composerText.trim() && !attachments.length && (Boolean(editing) || !canContinue)) || !live"
+              <img
+                v-if="file.media_type.startsWith('image/')"
+                :src="fileURL(file.id, view.id)"
+                :alt="file.display_name"
+              >
+              <template v-else><File /><span>{{ file.display_name }}</span></template>
+              <button
+                v-if="!busy && !editing"
+                type="button"
+                :aria-label="t('delete')"
+                @click="files.splice(i, 1)"
+              ><X /></button>
+            </span>
+            <span
+              v-if="uploading"
+              class="attachment-chip muted"
+            ><span class="spinner" />{{ t('upload') }}</span>
+          </div>
+          <div class="composer-input-row">
+            <input
+              ref="pick"
+              type="file"
+              hidden
+              multiple
+              @change="upload"
             >
-              <Check v-if="editing" /><ListEnd v-else-if="running && mode === 'follow_up'" /><ArrowUp v-else />
-            </Button>
+            <Popover
+              side="top"
+              :label="showContext ? t('context') : t('common.more')"
+              @update:open="openActions"
+            >
+              <template #trigger>
+                <button
+                  type="button"
+                  class="composer-add"
+                  :aria-label="t('attach')"
+                  :title="t('attach')"
+                >
+                  <Plus />
+                </button>
+              </template>
+              <template #default="{ close }">
+                <ComposerContext
+                  v-if="showContext"
+                  autofocus
+                  :usage="contextUsage"
+                  :ratio="ratio"
+                  :disabled="running || !modelAvailable"
+                  @compact="emit('compact'); close()"
+                />
+                <template v-else>
+                  <button
+                    type="button"
+                    class="menu-item"
+                    :disabled="!view.computer_id || uploading || busy || Boolean(editing)"
+                    @click="pick?.click(); close()"
+                  >
+                    <Plus />{{ t('attach') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="menu-item"
+                    @click="toggleQueue(); close()"
+                  >
+                    <ListEnd />{{ t(mode === 'follow_up' ? 'disableQueue' : 'enableQueue') }}
+                  </button>
+                  <button
+                    v-if="view.id && contextInMenu"
+                    type="button"
+                    class="menu-item"
+                    @click="showContext = true"
+                  >
+                    <span
+                      class="context-ring"
+                      :style="{ '--progress': `${ratio ?? 0}%` }"
+                    ><span /></span>{{ t('context') }}
+                  </button>
+                </template>
+              </template>
+            </Popover>
+            <textarea
+              ref="textarea"
+              v-model="composerText"
+              :placeholder="t('message')"
+              :aria-label="t('message')"
+              :readonly="busy || queueBusy"
+              rows="1"
+              @keydown="keyboard"
+              @paste="paste"
+            />
+            <div class="composer-submit-actions">
+              <Button
+                v-if="editing"
+                class="composer-cancel"
+                variant="ghost"
+                size="small"
+                @click="editing = undefined"
+              >
+                {{ t('cancel') }}
+              </Button>
+              <Button
+                v-if="running && !composerText.trim() && !attachments.length && !editing"
+                class="composer-stop"
+                variant="primary"
+                size="icon"
+                :aria-label="t('stop')"
+                :title="t('stop')"
+                :disabled="view.status === 'stopping'"
+                @click="action(() => request(stopSession({ path: { id: view.id } })))"
+              >
+                <Square />
+              </Button>
+              <Button
+                v-else
+                class="composer-send"
+                type="submit"
+                variant="primary"
+                size="icon"
+                :aria-label="sendLabel"
+                :title="sendLabel"
+                :busy="busy || queueBusy"
+                :disabled="uploading || (!editing && !modelAvailable && !continuing) || (!composerText.trim() && !attachments.length && (Boolean(editing) || !canContinue)) || !live"
+              >
+                <Check v-if="editing" /><ListEnd v-else-if="running && mode === 'follow_up'" /><ArrowUp v-else />
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div class="composer-environment">
+          <div class="composer-environment-left">
+            <Popover
+              side="top"
+              :label="t('computer')"
+            >
+              <template #trigger>
+                <button
+                  type="button"
+                  class="composer-picker computer-picker"
+                  :disabled="running"
+                  :aria-label="t('computer')"
+                  :title="computer?.name"
+                >
+                  <Monitor /><span>{{ computer?.name || t('missing') }}</span><ChevronDown />
+                </button>
+              </template>
+              <template #default="{ close }">
+                <div class="popover-label">
+                  {{ t('computer') }}
+                </div>
+                <button
+                  v-for="c in computers"
+                  :key="c.id"
+                  type="button"
+                  class="menu-item"
+                  @click="changeComputer(c.id); close()"
+                >
+                  <Monitor /><span>{{ c.name }}<small
+                    v-if="!c.online"
+                    class="muted"
+                  > · {{ t('offline') }}</small></span><Check v-if="view.computer_id === c.id" />
+                </button>
+              </template>
+            </Popover>
+            <div class="composer-agent">
+              <Bot /><span
+                :title="view.id ? t('agentLocked') : agent?.name"
+              >{{ agent?.name }}</span>
+            </div>
+          </div>
+          <div class="composer-environment-right">
+            <ModelSelection
+              :model-value="view.profile_id || ''"
+              :reasoning="view.reasoning"
+              :unavailable-reason="view.model_unavailable_reason"
+              :busy="modelBusy"
+              composer
+              @select="changeModel"
+            />
+            <Popover
+              v-if="view.id"
+              side="top"
+              align="end"
+              :label="t('context')"
+            >
+              <template #trigger>
+                <button
+                  ref="contextTrigger"
+                  type="button"
+                  class="context-button"
+                  :title="`${t('context')}: ${ratio === undefined ? '—' : `${ratio}%`}`"
+                  :aria-label="t('context')"
+                >
+                  <span
+                    class="context-ring"
+                    :style="{ '--progress': `${ratio ?? 0}%` }"
+                  ><span /></span>
+                </button>
+              </template>
+              <ComposerContext
+                :usage="contextUsage"
+                :ratio="ratio"
+                :disabled="running || !modelAvailable"
+                @compact="emit('compact')"
+              />
+            </Popover>
           </div>
         </div>
       </form>
-    </div>
-    <div class="composer-environment">
-      <div class="composer-environment-left">
-        <Popover
-          side="top"
-          :label="t('computer')"
-        >
-          <template #trigger>
-            <button
-              type="button"
-              class="composer-picker computer-picker"
-              :disabled="running"
-              :aria-label="t('computer')"
-              :title="computer?.name"
-            >
-              <Monitor /><span>{{ computer?.name || t('missing') }}</span><ChevronDown />
-            </button>
-          </template>
-          <template #default="{ close }">
-            <div class="popover-label">
-              {{ t('computer') }}
-            </div>
-            <button
-              v-for="c in computers"
-              :key="c.id"
-              type="button"
-              class="menu-item"
-              @click="changeComputer(c.id); close()"
-            >
-              <Monitor /><span>{{ c.name }}<small
-                v-if="!c.online"
-                class="muted"
-              > · {{ t('offline') }}</small></span><Check v-if="view.computer_id === c.id" />
-            </button>
-          </template>
-        </Popover>
-        <div class="composer-agent">
-          <Bot /><span
-            :title="view.id ? t('agentLocked') : agent?.name"
-          >{{ agent?.name }}</span>
-        </div>
-      </div>
-      <div class="composer-environment-right">
-        <ModelSelection
-          :model-value="view.profile_id || ''"
-          :reasoning="view.reasoning"
-          :unavailable-reason="view.model_unavailable_reason"
-          :busy="modelBusy"
-          composer
-          @select="changeModel"
-        />
-        <Popover
-          v-if="view.id"
-          side="top"
-          align="end"
-          :label="t('context')"
-        >
-          <template #trigger>
-            <button
-              type="button"
-              class="context-button"
-              :title="`${t('context')}: ${ratio === undefined ? '—' : `${ratio}%`}`"
-              :aria-label="t('context')"
-            >
-              <span
-                class="context-ring"
-                :style="{ '--progress': `${ratio ?? 0}%` }"
-              ><span /></span>
-            </button>
-          </template>
-          <div class="context-menu">
-            <strong>{{ t('context') }} <span>{{ ratio === undefined ? '—' : `${ratio}%` }}</span></strong>
-            <div class="context-meter">
-              <span :style="{ width: `${ratio ?? 0}%` }" />
-            </div>
-            <p class="muted">
-              {{ contextUsage?.input_tokens.toLocaleString() ?? '—' }} / {{ contextUsage?.context_window?.toLocaleString() ?? '—' }} tokens
-            </p>
-            <p
-              v-if="!contextUsage"
-              class="muted small"
-            >
-              {{ t('contextNotReported') }}
-            </p>
-            <Button
-              variant="secondary"
-              size="small"
-              :disabled="running || !modelAvailable"
-              @click="emit('compact')"
-            >
-              {{ t('compact') }}
-            </Button>
-          </div>
-        </Popover>
-      </div>
     </div>
     <div
       v-if="showConnection"

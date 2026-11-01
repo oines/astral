@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { authAPI, authRequest, creationOptions, credentialJSON, getPasskey, passkeySupported, requestOptions, sessionDevice } from './auth'
+import { authAPI, authRequest, creationOptions, credentialJSON, getPasskey, passkeyRegistrationState, passkeySupported, requestOptions, sessionDevice } from './auth'
 
 afterEach(() => vi.unstubAllGlobals())
 describe('browser authentication transport', () => {
@@ -54,6 +54,25 @@ describe('Passkey ceremonies', () => {
     const bytes = new Uint8Array([251, 255]).buffer
     const json = credentialJSON({ id: '-_8', type: 'public-key', rawId: bytes, response: { clientDataJSON: bytes, authenticatorData: bytes, signature: bytes, userHandle: null }, getClientExtensionResults: () => ({}), authenticatorAttachment: 'platform' } as unknown as PublicKeyCredential)
     expect(json).toMatchObject({ id: '-_8', rawId: '-_8', response: { clientDataJSON: '-_8', authenticatorData: '-_8', signature: '-_8', userHandle: null } })
+  })
+})
+
+describe('Passkey registration guidance', () => {
+  const options = { desktop: false, browserSupported: true, serverAvailable: true }
+  it('directs Desktop to a browser instead of describing its managed HTTP page as an incompatible browser', () => {
+    expect(passkeyRegistrationState({ protocol: 'http:', hostname: '127.0.0.1' }, { ...options, desktop: true, browserSupported: false })).toBe('desktop')
+  })
+  it('identifies HTTP before browser support, which may be unavailable on an insecure page', () => {
+    expect(passkeyRegistrationState({ protocol: 'http:', hostname: 'astral.example' }, { ...options, browserSupported: false, serverAvailable: false })).toBe('http')
+  })
+  it.each(['192.168.1.10', '[2001:db8::1]', '2001:db8::1'])('explains the domain requirement for HTTPS IP %s', hostname => {
+    expect(passkeyRegistrationState({ protocol: 'https:', hostname }, options)).toBe('ip')
+  })
+  it('distinguishes browser support from Server availability on an HTTPS domain', () => {
+    const location = { protocol: 'https:', hostname: 'astral.example' }
+    expect(passkeyRegistrationState(location, { ...options, browserSupported: false })).toBe('browser')
+    expect(passkeyRegistrationState(location, { ...options, serverAvailable: false })).toBe('unavailable')
+    expect(passkeyRegistrationState(location, options)).toBe('available')
   })
 })
 it('names browser sessions without calling them physical computers', () => {

@@ -10,12 +10,19 @@ tag=latest
 root=${XDG_DATA_HOME:-${HOME:?HOME must be set}/.local/share}/astral-server
 listen=
 public_url=
-allow_remote=false
+allow_remote=true
+restrict_hostnames=false
+github_proxy=${ASTRAL_GITHUB_PROXY:-}
+github_proxy_set=0
+if [[ ${ASTRAL_GITHUB_PROXY+x} ]]; then github_proxy_set=1; fi
 listen_set=0
 public_set=0
 remote_set=0
+if [[ ${ASTRAL_ALLOW_REMOTE_MANAGEMENT+x} ]]; then allow_remote=$ASTRAL_ALLOW_REMOTE_MANAGEMENT; remote_set=1; fi
 download_only=
 dry_run=0
+uninstall=0
+install_options=0
 stage=
 unit_temp=
 link_temp=
@@ -24,12 +31,17 @@ complete=0
 had_unit=0
 had_config=0
 config_snapshot=0
+had_marker=0
+marker_snapshot=0
 was_active=0
 was_enabled=0
 old_current=
 recovery_program=
 previous_upgrade=
 upgrade_baseline_ready=0
+command_path=
+command_needs_sudo=0
+command_created=0
 
 die() { printf 'Astral Server: %s\n' "$*" >&2; exit 1; }
 usage() {
@@ -42,15 +54,23 @@ Usage: bash install-server.sh [OPTIONS]
   --listen HOST:PORT    HTTP listen address (first install: 0.0.0.0:4545)
   --public-url URL      HTTP or reverse-proxy HTTPS address; empty selects automatic
   --allow-remote-management[=true|false]
-                       Allow remote Web UI and Owner API (default false)
+                       Persist a service startup override (Server default: true)
+                       Or use ASTRAL_ALLOW_REMOTE_MANAGEMENT=true|false
+  --github-proxy PREFIX Optional HTTPS GitHub download proxy, for example
+                       https://gh-proxy.org/ (or ASTRAL_GITHUB_PROXY; empty disables)
   --download-only DIR   Download and verify the full distribution; execute nothing
+  --uninstall           Remove this user's managed Server; retain data and recovery files
   --dry-run            Print the plan; no network, writes or service operations
   --version            Print the installer format version
   --help               Show this help
 
-Network options update saved App settings; omitted values are preserved.
-The Server serves HTTP; configure HTTPS on your own reverse proxy. Installation requires
-an existing systemd user manager and never uses sudo or enables user lingering.
+Listen and access-address options update saved App settings. Remote-management
+overrides use the user-service environment; omitted explicit choices are preserved.
+The Server serves HTTP; configure HTTPS on your own reverse proxy. Installation prepares
+user lingering and starts the user manager only if needed. These account-wide setup
+actions and command registration may request sudo; the Server stays in the current user.
+Uninstall does not disable lingering, delete data or remove Docker. Initial Web account setup requires a
+terminal, or ASTRAL_ADMIN_USERNAME and ASTRAL_ADMIN_PASSWORD_FILE.
 Tags contain three integers from 0 to 9007199254740991, without leading zeroes,
 prerelease identifiers or build metadata.
 Unsigned candidates and releases not marked public_release_ready are rejected.
@@ -61,13 +81,16 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --help|-h) usage; exit 0 ;;
     --version) printf 'Astral Server installer %s\n' "$installer_version"; exit 0 ;;
-    --tag) need_value "$@"; tag=$2; shift 2 ;;
+    --tag) need_value "$@"; tag=$2; install_options=1; shift 2 ;;
     --root) need_value "$@"; root=$2; shift 2 ;;
-    --listen) need_value "$@"; listen=$2; listen_set=1; shift 2 ;;
-    --public-url) [[ $# -ge 2 ]] || die '--public-url requires a value'; public_url=$2; public_set=1; shift 2 ;;
-    --allow-remote-management) allow_remote=true; remote_set=1; shift ;;
-    --allow-remote-management=true|--allow-remote-management=false) allow_remote=${1#*=}; remote_set=1; shift ;;
-    --download-only) need_value "$@"; download_only=$2; shift 2 ;;
+    --listen) need_value "$@"; listen=$2; listen_set=1; install_options=1; shift 2 ;;
+    --public-url) [[ $# -ge 2 ]] || die '--public-url requires a value'; public_url=$2; public_set=1; install_options=1; shift 2 ;;
+    --allow-remote-management) allow_remote=true; remote_set=1; install_options=1; shift ;;
+    --allow-remote-management=true|--allow-remote-management=false) allow_remote=${1#*=}; remote_set=1; install_options=1; shift ;;
+    --github-proxy) [[ $# -ge 2 ]] || die '--github-proxy requires a value'; github_proxy=$2; github_proxy_set=1; install_options=1; shift 2 ;;
+    --github-proxy=*) github_proxy=${1#*=}; github_proxy_set=1; install_options=1; shift ;;
+    --download-only) need_value "$@"; download_only=$2; install_options=1; shift 2 ;;
+    --uninstall) uninstall=1; shift ;;
     --dry-run) dry_run=1; shift ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
@@ -86,12 +109,273 @@ valid_release_tag() {
 for command in python3 uname; do command -v "$command" >/dev/null 2>&1 || die "required command is missing: $command"; done
 root=$(python3 -c 'import os,sys; p=sys.argv[1]; assert os.path.isabs(p), "--root must be absolute"; print(os.path.realpath(p))' "$root")
 [[ $root != / && $root != "$HOME" ]] || die '--root must be a dedicated Astral directory'
+unit_dir=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user
+unit=$unit_dir/$service
+# BEGIN user service preparation
+user_service_environment() {
+  local uid
+  uid=$(id -u)
+  export XDG_RUNTIME_DIR=/run/user/$uid
+  export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+}
+authorize_system_preparation() {
+  command -v sudo >/dev/null 2>&1 || die 'administrator access is required to prepare this user service, but sudo is unavailable; ask an administrator to complete the printed action, then retry'
+  if ! sudo -n true 2>/dev/null; then
+    if ! { exec 8<>/dev/tty; } 2>/dev/null; then die 'user-service preparation requires sudo authentication in a terminal; the existing Astral installation was not changed'; fi
+    sudo -v <&8 || die 'administrator access for user-service preparation was not granted; the existing Astral installation was not changed'
+    exec 8>&-
+  fi
+}
+prepare_user_service() {
+  local uid account linger deadline
+  uid=$(id -u); account=$(id -un)
+  user_service_environment
+  command -v loginctl >/dev/null 2>&1 || die 'loginctl is required to prepare persistent user services; the existing Astral installation was not changed'
+  linger=$(loginctl show-user "$uid" --property=Linger --value 2>/dev/null || true)
+  if [[ $linger != yes ]]; then
+    printf 'Preparing account %s (UID %s): loginctl enable-linger %s\n' "$account" "$uid" "$uid"
+    printf 'Lingering lets this account\047s user services run after logout and start at boot; uninstalling Astral will leave this account-wide setting enabled.\n'
+    if [[ $uid == 0 ]]; then loginctl enable-linger "$uid" || die 'could not enable user lingering; the existing Astral installation was not changed'
+    elif ! loginctl --no-ask-password enable-linger "$uid" 2>/dev/null; then
+      authorize_system_preparation
+      sudo -n loginctl enable-linger "$uid" || die 'could not enable user lingering; the existing Astral installation was not changed'
+    fi
+    [[ $(loginctl show-user "$uid" --property=Linger --value 2>/dev/null || true) == yes ]] || die 'user lingering could not be verified; the existing Astral installation was not changed'
+  fi
+  if ! systemctl --user show-environment >/dev/null 2>&1 && ! systemctl is-active --quiet "user@$uid.service"; then
+    printf 'Starting account %s\047s user service manager: systemctl start user@%s.service\n' "$account" "$uid"
+    if [[ $uid == 0 ]]; then systemctl start "user@$uid.service" || die 'could not start the user service manager; the existing Astral installation was not changed'
+    else
+      authorize_system_preparation
+      sudo -n systemctl start "user@$uid.service" || die 'could not start the user service manager; the existing Astral installation was not changed'
+    fi
+  fi
+  deadline=$((SECONDS+15))
+  until systemctl --user show-environment >/dev/null 2>&1; do
+    ((SECONDS<deadline)) || die 'the user service manager is not reachable; verify systemd user-session D-Bus support and /run/user/UID/bus, then retry. The existing Astral installation was not changed'
+    sleep 1
+  done
+}
+# END user service preparation
+# BEGIN managed Server uninstall
+uninstall_server() {
+  python3 - "$root" "$unit" "$dry_run" "$(command -v astral || true)" <<'PYUNINSTALL'
+import hashlib,json,os,pathlib,re,shutil,subprocess,sys
+root,unit,dry,selected=map(str,sys.argv[1:])
+uid=os.getuid()
+def fail(message): raise SystemExit('Astral Server: '+message)
+def owned(path,directory=False):
+    try:
+        value=os.lstat(path)
+        return value.st_uid==uid and not os.path.islink(path) and (os.path.isdir(path) if directory else os.path.isfile(path))
+    except OSError: return False
+def run(*args,check=True):
+    result=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    if check and result.returncode: fail('command failed: '+' '.join(args)+'; '+result.stderr.strip())
+    return result
+if not os.path.isabs(unit) or any(ord(c)<32 or ord(c)==127 for c in root+unit): fail('installation and unit paths must be absolute and contain no control characters')
+marker_path=root+'/installation.json'
+if not owned(root,True) or not owned(marker_path): fail('installation ownership could not be verified: '+root)
+try:
+    with open(marker_path,encoding='utf-8') as f: marker=json.load(f)
+except (OSError,ValueError): fail('installation metadata could not be read; inspect '+marker_path)
+if not isinstance(marker,dict): fail('installation metadata must be an object; inspect '+marker_path)
+expected={'schema':1,'root':root,'data_directory':root+'/data/server','uid':uid,'service':'astral-server.service','unit_path':unit}
+if any(marker.get(k)!=v for k,v in expected.items()): fail('installation metadata does not match this account, root and user service: '+marker_path)
+if marker.get('uninstalled') is True and not os.path.lexists(unit):
+    print('Astral Server is already uninstalled. Retained data and recovery files: '+root)
+    sys.exit(0)
+def quote(value): return '"'+value.replace('\\','\\\\').replace('"','\\"').replace('%','%%')+'"'
+args=[root+'/current/bin/astral','serve','--installation-root',root,'--data',root+'/data/server','--computers-dir',root+'/data/computers','--distribution-dir',root+'/current/distribution','--ready-file',root+'/run/ready.json']
+environment=''
+if 'github_proxy' in marker:
+    if not isinstance(marker['github_proxy'],str): fail('invalid saved GitHub proxy')
+    environment+='Environment='+quote('ASTRAL_GITHUB_PROXY='+marker['github_proxy'])+'\n'
+if 'allow_remote_management' in marker:
+    if type(marker['allow_remote_management']) is not bool: fail('invalid saved remote-management setting')
+    environment+='Environment='+quote('ASTRAL_ALLOW_REMOTE_MANAGEMENT='+str(marker['allow_remote_management']).lower())+'\n'
+expected_unit='# Astral Server installer root: '+root+'\n[Unit]\nDescription=Astral Server\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=/\n'+environment+'ExecStart=:'+ ' '.join(map(quote,args))+'\nRestart=on-failure\nRestartSec=3\nTimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n'
+if not owned(unit) or pathlib.Path(unit).read_text()!=expected_unit: fail('the service file was modified or is not owned by this installation; inspect '+unit)
+def service_state():
+    output=run('systemctl','--user','show','astral-server.service','--property=Id,LoadState,ActiveState,MainPID,FragmentPath,DropInPaths','--no-pager').stdout
+    return dict(line.split('=',1) for line in output.splitlines() if '=' in line)
+state=service_state()
+if state.get('Id')!='astral-server.service' or state.get('LoadState')!='loaded' or state.get('FragmentPath')!=unit or state.get('DropInPaths'):
+    fail('the loaded service has a different definition or overrides; inspect systemctl --user cat astral-server.service')
+releases=root+'/releases'
+current=root+'/current'
+cohort=os.path.realpath(current)
+if not os.path.islink(current) or os.path.dirname(cohort)!=releases or not owned(releases,True) or not owned(cohort,True): fail('current does not select an owned release inside '+releases)
+native=os.path.realpath(current+'/bin/astral')
+if os.path.dirname(native)!=cohort+'/distribution' or not owned(native): fail('the installed program does not belong to its release')
+try:
+    manifest=json.loads(pathlib.Path(cohort+'/distribution/release-manifest.json').read_text())
+    asset=next(a for a in manifest['assets'] if a['name']==os.path.basename(native))
+    if hashlib.sha256(pathlib.Path(native).read_bytes()).hexdigest()!=asset['sha256']: fail('the installed recovery program was modified; files were retained')
+except (OSError,ValueError,KeyError,StopIteration): fail('the recovery program could not be verified; files were retained')
+entry=marker.get('command_path',selected)
+if entry:
+    if not isinstance(entry,str) or not os.path.isabs(entry) or any(ord(c)<32 for c in entry): fail('invalid saved command entry')
+    if os.path.lexists(entry) and (not os.path.islink(entry) or os.readlink(entry)!=current+'/bin/astral'): fail('the command entry no longer belongs to this installation; inspect '+entry)
+shared=False
+retained=set([cohort])
+# A Computer installation can reuse this terminal command while its daemon
+# runs its own downloaded executable. Its registration, not just ExecStart,
+# therefore keeps the shared command available for maintenance.
+config_root=pathlib.Path(os.environ.get('XDG_CONFIG_HOME') or str(pathlib.Path.home()/'.config'))/'astral'
+computer_roots=list((config_root/'computers').glob('*/*'))
+for registration in (config_root/'installations/computers').glob('*.json'):
+    try:
+        registration_value=json.loads(registration.read_text())
+        if isinstance(registration_value.get('root'),str) and os.path.isabs(registration_value['root']): computer_roots.append(pathlib.Path(registration_value['root']))
+    except (OSError,ValueError): continue
+for computer_root in computer_roots:
+    try:
+        if not owned(str(computer_root),True): continue
+        credentials=computer_root/'credentials.json'
+        container=computer_root/'container.json'
+        if owned(str(credentials)) and owned(str(computer_root/'service/spec.json')) and json.loads(credentials.read_text()).get('computer_id'):
+            shared=True
+        elif owned(str(container)):
+            value=json.loads(container.read_text())
+            if value.get('name') and value.get('identity'): shared=True
+    except (OSError,ValueError): continue
+# A separate user unit or live process may use this unified program. Retain its
+# entry and release rather than breaking another Daemon or foreground command.
+for candidate in pathlib.Path(unit).parent.rglob('*'):
+    if candidate.is_file() and str(candidate)!=unit and not candidate.is_symlink():
+        try: text=candidate.read_text()
+        except (OSError,UnicodeError): continue
+        if current in text or (entry and entry in text) or re.search(r'(?m)^ExecStart(?:Pre|Post)?=[-+!:@]*"?astral"?(?:\s|$)',text): shared=True
+        for release in pathlib.Path(releases).iterdir():
+            if str(release) in text: retained.add(str(release))
+server_pid=int(state.get('MainPID','0'))
+def server_descendant(pid):
+    seen=set()
+    while pid>1 and pid not in seen:
+        if pid==server_pid: return True
+        seen.add(pid)
+        try:
+            status=pathlib.Path('/proc/'+str(pid)+'/status').read_text()
+            pid=int(re.search(r'(?m)^PPid:\s*(\d+)',status).group(1))
+        except (OSError,ValueError,AttributeError): return False
+    return False
+for process in pathlib.Path('/proc').glob('[0-9]*'):
+    try:
+        if process.stat().st_uid!=uid: continue
+        pid=int(process.name)
+        if pid in (os.getpid(),os.getppid()) or server_descendant(pid): continue
+        executable=os.path.realpath(str(process/'exe'))
+        command=(process/'cmdline').read_bytes().decode(errors='replace').split('\0')
+        if current+'/bin/astral' in command or (entry and entry in command): shared=True
+        for release in pathlib.Path(releases).iterdir():
+            if executable.startswith(str(release)+'/'): retained.add(str(release))
+    except (OSError,ValueError): continue
+for directory in os.environ.get('PATH','').split(os.pathsep):
+    if not os.path.isabs(directory): continue
+    try:
+        for candidate in pathlib.Path(directory).iterdir():
+            if str(candidate)!=entry and candidate.is_symlink() and os.path.realpath(candidate)==native: shared=True
+    except OSError: continue
+if shared: print('The astral command is shared with another Computer installation, user service or process; its entry and current release will be retained.')
+needs_sudo=bool(entry and os.path.lexists(entry) and not shared and not os.access(os.path.dirname(entry),os.W_OK))
+if dry=='1':
+    print('No changes made. Plan: stop and disable astral-server.service; remove '+unit)
+    print('Retain data, configuration, backups and one verified recovery release: '+root)
+    if entry and not shared: print('Remove owned command entry: '+entry)
+    if needs_sudo: print('Removing the command entry requires sudo.')
+    sys.exit(0)
+if needs_sudo:
+    print('Removing the owned command entry requires administrator access: '+entry)
+    if not shutil.which('sudo'): fail('sudo is unavailable; no service or files were changed')
+    if run('sudo','-n','true',check=False).returncode:
+        try:
+            with open('/dev/tty','r+') as tty:
+                if subprocess.run(['sudo','-v'],stdin=tty,stdout=tty,stderr=tty).returncode: fail('administrator access was not granted; no service or files were changed')
+        except OSError: fail('sudo authentication requires a terminal; no service or files were changed')
+run('systemctl','--user','stop','astral-server.service')
+state=service_state()
+if state.get('ActiveState') not in ('inactive','failed') or state.get('MainPID')!='0': fail('the Server has not stopped; no program or service files were removed')
+run('systemctl','--user','disable','astral-server.service')
+if run('systemctl','--user','is-enabled','--quiet','astral-server.service',check=False).returncode==0: fail('the Server is still enabled; no program or service files were removed')
+if not owned(unit) or pathlib.Path(unit).read_text()!=expected_unit: fail('the service file changed during uninstall; files were retained')
+# Reinstallation needs a trusted old executable for version/format checks and
+# migration recovery. Keep one full verified cohort so same-version reinstall
+# can also reuse its immutable distribution without a partial-directory error.
+data_program=root+'/data-program'
+if os.path.lexists(data_program) and not os.path.islink(data_program): fail('data-program is not an installer symlink; files were retained')
+temporary=root+'/.data-program.uninstall.'+str(os.getpid())
+os.symlink(cohort,temporary)
+os.replace(temporary,data_program)
+if entry and os.path.lexists(entry) and not shared:
+    if not os.path.islink(entry) or os.readlink(entry)!=current+'/bin/astral': fail('the command entry changed during uninstall; files were retained')
+    if needs_sudo: run('sudo','-n','rm','--',entry)
+    else: os.unlink(entry)
+os.unlink(unit)
+run('systemctl','--user','daemon-reload')
+if not shared: os.unlink(current)
+allowed={'astral-darwin-amd64','astral-darwin-arm64','astral-linux-amd64','astral-linux-arm64','astral-windows-amd64.exe','astral-windows-arm64.exe','checksums.txt','LICENSE.txt','THIRD_PARTY_NOTICES.txt','SHA256SUMS','release-manifest.json'}
+for release in pathlib.Path(releases).iterdir():
+    if str(release) in retained: continue
+    if not re.fullmatch(r'v\d+\.\d+\.\d+-[0-9a-f]{16}',release.name) or not owned(str(release),True): continue
+    # Unknown files, symlinks or changed ownership are preserved for inspection.
+    safe=set(p.name for p in release.iterdir())=={'bin','distribution'}
+    for child in release.rglob('*'):
+        if child.is_symlink(): safe=safe and child==release/'bin/astral' and os.readlink(child).startswith('../distribution/astral-linux-')
+        elif child.is_dir(): safe=safe and child in (release/'bin',release/'distribution') and owned(str(child),True)
+        else: safe=safe and child.parent==release/'distribution' and child.name in allowed and owned(str(child))
+    if safe: shutil.rmtree(release)
+marker['uninstalled']=True
+temporary=marker_path+'.uninstall.'+str(os.getpid())
+with open(temporary,'x',encoding='utf-8') as f:
+    json.dump(marker,f,indent=2); f.write('\n'); f.flush(); os.fsync(f.fileno())
+os.replace(temporary,marker_path)
+print('Astral Server was stopped, disabled and uninstalled for this account.')
+print('Retained data, account, Computer identities, backups and recovery release: '+root)
+print('User lingering, Docker, containers and files on other computers were left in place.')
+PYUNINSTALL
+}
+# END managed Server uninstall
+if [[ $uninstall == 1 ]]; then
+  [[ $install_options == 0 ]] || die '--uninstall accepts only --root and --dry-run, not installation options'
+  [[ $(uname -s) == Linux || $dry_run == 1 ]] || die 'this installer supports Linux only'
+  for command in systemctl flock id; do command -v "$command" >/dev/null 2>&1 || die "required command is missing: $command"; done
+  user_service_environment
+  [[ -d $unit_dir ]] || die "no user service installation was found: $unit_dir"
+  if [[ $dry_run == 0 ]]; then
+    exec 9>"$unit_dir/.astral-server-install.lock"
+    flock -n 9 || die 'another Astral Server installer is running for this user'
+  fi
+  uninstall_server
+  exit 0
+fi
 config=$root/data/server/network.json
+if [[ $github_proxy_set == 0 && -f $root/installation.json ]]; then
+  github_proxy=$(python3 - "$root/installation.json" <<'PYSAVEDPROXY'
+import json,sys
+with open(sys.argv[1],encoding='utf-8') as f: value=json.load(f).get('github_proxy','')
+if not isinstance(value,str): raise SystemExit('Invalid saved GitHub proxy')
+print(value)
+PYSAVEDPROXY
+)
+fi
+if [[ $remote_set == 0 && -f $root/installation.json ]]; then
+  saved_remote=$(python3 - "$root/installation.json" <<'PYSAVEDREMOTE'
+import json,sys
+with open(sys.argv[1],encoding='utf-8') as f: value=json.load(f)
+if 'allow_remote_management' not in value: print('default')
+elif type(value['allow_remote_management']) is bool: print(str(value['allow_remote_management']).lower())
+else: raise SystemExit('Invalid saved remote-management override')
+PYSAVEDREMOTE
+)
+  if [[ $saved_remote != default ]]; then allow_remote=$saved_remote; remote_set=1; fi
+fi
+fresh_install=0
+if [[ ! -f $config && ! -e $root/installation.json && ! -L $root/current && ! -L $root/data-program ]]; then fresh_install=1; fi
+if [[ $fresh_install == 0 ]]; then restrict_hostnames=true; fi
 if [[ -z $download_only && -f $root/install-config.json && ! -f $config ]]; then
   die 'run the documented offline network migration before updating this older installation (docs/deployment.md)'
 fi
-unit_dir=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user
-unit=$unit_dir/$service
 ready=$root/run/ready.json
 config_value() {
   python3 - "$config" "$1" "$2" <<'PY'
@@ -111,8 +395,25 @@ if not isinstance(values,list) or any(not isinstance(v,str) or any(ord(c)<32 for
 print(values[0] if values else '')
 PYCFG
 )
-  [[ $remote_set == 1 ]] || allow_remote=$(config_value allow_remote_management false)
+  restrict_hostnames=$(config_value restrict_hostnames true)
 fi
+case $allow_remote in
+  1|t|T|TRUE|True) allow_remote=true ;;
+  0|f|F|FALSE|False) allow_remote=false ;;
+esac
+github_proxy=$(python3 - "$github_proxy" <<'PYPROXY'
+import sys,urllib.parse
+value=sys.argv[1]
+if value:
+    try:
+        parsed=urllib.parse.urlsplit(value)
+        if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or '?' in value or '#' in value or '\\' in value or any(c.isspace() or ord(c)<32 or ord(c)==127 for c in value): raise ValueError()
+        if parsed.port is not None and not 1<=parsed.port<=65535: raise ValueError()
+    except ValueError: raise SystemExit('GitHub proxy must be an HTTPS prefix without credentials, query, fragment or whitespace')
+    value=value.rstrip('/')+'/'
+print(value)
+PYPROXY
+)
 listen=${listen:-0.0.0.0:4545}
 # Validate saved network preferences before any databases are opened.
 python3 - "$root" "$unit_dir" "$listen" "$public_url" "$allow_remote" "$download_only" <<'PY'
@@ -139,15 +440,65 @@ case $(uname -m) in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) 
 if [[ $dry_run == 1 ]]; then
   printf 'No changes made. Plan: Linux %s; GitHub %s release %s\n' "$arch" "$repository" "$tag"
   printf 'Installation root: %s\nListen: %s\nRemote management: %s\n' "$root" "$listen" "$allow_remote"
+  printf 'Hostname restriction: %s\nGitHub downloads: %s\n' "$restrict_hostnames" "${github_proxy:-direct}"
   if [[ -n $download_only ]]; then printf 'Download and verify only: %s\n' "$download_only"; else printf 'User service: %s\nData: %s/data\n' "$unit" "$root"; fi
-  printf 'Requires a published ready release; installation also requires Linux and a running systemd user manager.\n'
+  printf 'Requires a published ready release and Linux with systemd; prepare user lingering and start the user manager only when needed (may require sudo).\n'
   exit 0
 fi
+# BEGIN managed command entry
+command_directory_writable() { [[ -d $1 && -w $1 && -x $1 ]]; }
+authorize_command_registration() {
+  if ! sudo -n true 2>/dev/null; then
+    if ! { exec 8<>/dev/tty; } 2>/dev/null; then die "registering $command_path requires sudo authentication in a terminal; command registration did not complete"; fi
+    sudo -v <&8 || die 'administrator access for command registration was not granted'
+    exec 8>&-
+  fi
+}
+select_command_entry() {
+  local existing directory candidate
+  existing=$(command -v astral || true)
+  if [[ -n $existing ]]; then
+    [[ $existing == /* && -L $existing && $(readlink "$existing") == "$root/current/bin/astral" ]] || die "an unrelated astral command already exists: $existing; installation did not replace it"
+    command_path=$existing
+    return
+  fi
+  local -a directories
+  IFS=: read -r -a directories <<< "${PATH:-}"
+  for directory in "${directories[@]}"; do
+    [[ $directory == /* && $directory != *$'\n'* && $directory != *$'\r'* ]] || continue
+    if command_directory_writable "$directory"; then command_path=${directory%/}/astral; break; fi
+  done
+  if [[ -z $command_path ]]; then
+    for candidate in /usr/local/bin /usr/bin; do
+      for directory in "${directories[@]}"; do
+        if [[ ${directory%/} == "$candidate" && -d $candidate ]]; then command_path=$candidate/astral; command_needs_sudo=1; break 2; fi
+      done
+    done
+    [[ -n $command_path ]] || die 'no writable directory or supported administrator-writable directory exists on the current PATH; ask the administrator to provide command installation access, then retry'
+    command -v sudo >/dev/null 2>&1 || die "registering $command_path requires administrator access, but sudo is unavailable; installation has not started"
+    printf 'Registering astral at %s requires sudo; the Server service will still run as the current user.\n' "$command_path"
+    authorize_command_registration
+  fi
+  if [[ -e $command_path || -L $command_path ]]; then
+    [[ -L $command_path && $(readlink "$command_path") == "$root/current/bin/astral" ]] || die "refusing to overwrite an unrelated command: $command_path"
+  fi
+}
+install_command_entry() {
+  if [[ ! -e $command_path && ! -L $command_path ]]; then
+    if [[ $command_needs_sudo == 1 ]]; then authorize_command_registration; sudo -n ln -s -- "$root/current/bin/astral" "$command_path"
+    else ln -s -- "$root/current/bin/astral" "$command_path"; fi
+    command_created=1
+  fi
+  local actual
+  actual=$(command -v astral || true)
+  [[ -n $actual && -L $actual && $(readlink "$actual") == "$root/current/bin/astral" ]] || die 'the installed astral command is not the command selected by the current PATH'
+  [[ $(astral version) == "$version" ]] || die 'the astral command does not run the newly installed version'
+}
+# END managed command entry
 [[ $(uname -s) == Linux ]] || die 'this installer supports Linux only'
 for command in curl sha256sum awk mktemp mkdir mv ln rm chmod cp; do command -v "$command" >/dev/null 2>&1 || die "required command is missing: $command"; done
 if [[ -z $download_only ]]; then
-  for command in systemctl flock grep readlink find; do command -v "$command" >/dev/null 2>&1 || die "required command is missing: $command"; done
-  systemctl --user show-environment >/dev/null 2>&1 || die 'no systemd user manager is available; use a normal Linux login session with systemd --user (including for root); no system service will be installed'
+  for command in systemctl flock grep readlink find id; do command -v "$command" >/dev/null 2>&1 || die "required command is missing: $command"; done
   mkdir -p "$unit_dir"
   exec 9>"$unit_dir/.astral-server-install.lock"
   flock -n 9 || die 'another Astral Server installer is running for this user'
@@ -155,6 +506,8 @@ if [[ -z $download_only ]]; then
     [[ -f $unit && ! -L $unit ]] || die "refusing to replace an unmanaged service definition: $unit"
     grep -Fqx "# Astral Server installer root: $root" "$unit" || die 'an Astral Server service exists for a different root or was not created by this installer'
   fi
+  prepare_user_service
+  select_command_entry
   [[ ! -e $root/current || -L $root/current ]] || die 'current must be an installer-managed release symlink'
   mkdir -p "$root/releases"
   stage=$(mktemp -d "$root/.install.XXXXXX")
@@ -190,12 +543,19 @@ cleanup() {
     if [[ $config_snapshot == 1 ]]; then
       if [[ $had_config == 1 ]]; then cp "$stage/previous-config.json" "$config" || recovery_failed=1; else rm -f "$config" || recovery_failed=1; fi
     fi
+    if [[ $marker_snapshot == 1 ]]; then
+      if [[ $had_marker == 1 ]]; then cp "$stage/previous-installation.json" "$root/installation.json" || recovery_failed=1; else rm -f "$root/installation.json" || recovery_failed=1; fi
+    fi
     systemctl --user daemon-reload || recovery_failed=1
     if [[ $was_enabled == 1 ]]; then systemctl --user enable "$service" >/dev/null 2>&1 || recovery_failed=1
     else systemctl --user disable "$service" >/dev/null 2>&1 || true; fi
     if [[ $was_active == 1 && $recovery_failed == 0 ]]; then systemctl --user start "$service" && systemctl --user is-active --quiet "$service" || recovery_failed=1; fi
     printf 'Computer files were retained; any attempted data migration was restored before restarting the previous Server.\n' >&2
     if [[ $recovery_failed == 1 ]]; then printf 'Automatic service recovery was incomplete. Backups remain in %s; inspect systemctl --user status %s.\n' "$stage" "$service" >&2; fi
+  fi
+  if [[ $status != 0 && $complete == 0 && $command_created == 1 && -L $command_path && $(readlink "$command_path") == "$root/current/bin/astral" ]]; then
+    if [[ $command_needs_sudo == 1 ]]; then sudo -n rm -- "$command_path" || recovery_failed=1
+    else rm -- "$command_path" || recovery_failed=1; fi
   fi
   [[ -z $unit_temp ]] || rm -f "$unit_temp"
   [[ -z $link_temp ]] || rm -f "$link_temp"
@@ -207,8 +567,11 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 fetch() {
-  curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 1200 --retry 2 "$1" -o "$2"
+  local source=$1
+  [[ $source == "https://api.github.com/repos/$repository/releases/"* || $source == "https://github.com/$repository/releases/download/"* ]] || die 'refusing an unofficial GitHub download source'
+  curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 1200 --retry 2 "${github_proxy}${source}" -o "$2"
 }
+if [[ -n $github_proxy ]]; then printf 'GitHub downloads will use the selected third-party proxy: %s\n' "$github_proxy"; fi
 if [[ $tag == latest ]]; then api=https://api.github.com/repos/$repository/releases/latest; else api=https://api.github.com/repos/$repository/releases/tags/$tag; fi
 fetch "$api" "$stage/release.json" || die "no accessible published release for $tag; the repository may not have a ready release yet"
 requested_tag=$tag
@@ -298,6 +661,20 @@ if 'core_schema' in manifest:
     executable=json.loads(subprocess.check_output([sys.argv[2],'version','--json'],timeout=15))
     if any(executable.get(key)!=manifest.get(key) for key in ('core_schema','storage_migrations')): raise SystemExit('Executable SQLite schema differs from release metadata')
 PYSCHEMA
+# BEGIN required Server capabilities
+require_server_installer_capabilities() {
+  local auth_help hostname_help serve_help
+  # FlagSet help returns before installation discovery, local control, or data
+  # access. Older binaries must never receive new strict network.json fields.
+  auth_help=$("$new_program" auth status --help 2>&1 || true)
+  hostname_help=$("$new_program" config hostnames --help 2>&1 || true)
+  serve_help=$("$new_program" serve --help 2>&1 || true)
+  if [[ $auth_help != *'Usage of auth status:'* || $hostname_help != *'Usage of config hostnames:'* || $serve_help != *'-restrict-hostnames'* ]]; then
+    die 'the selected release does not support this installer; use the installer included with that older release to install it. The existing service and settings were not changed'
+  fi
+}
+require_server_installer_capabilities
+# END required Server capabilities
 old_program=
 if [[ -L $root/current ]]; then
   old_current=$(readlink "$root/current")
@@ -356,28 +733,32 @@ if [[ -f $root/data/server/last-upgrade.json ]]; then previous_upgrade=$(sha256s
 upgrade_baseline_ready=1
 if [[ -f $config ]]; then cp "$config" "$stage/previous-config.json"; had_config=1; fi
 config_snapshot=1
-python3 - "$stage/new-config.json" "$config" "$listen_set" "$listen" "$public_set" "$public_url" "$remote_set" "$allow_remote" <<'PY'
+if [[ -f $root/installation.json ]]; then cp "$root/installation.json" "$stage/previous-installation.json"; had_marker=1; fi
+marker_snapshot=1
+python3 - "$stage/new-config.json" "$config" "$listen_set" "$listen" "$public_set" "$public_url" "$fresh_install" <<'PY'
 import json,os,sys
-output,previous,listen_set,listen,public_set,public,remote_set,remote=sys.argv[1:]
+output,previous,listen_set,listen,public_set,public,fresh=sys.argv[1:]
 value={}
 if os.path.isfile(previous):
     with open(previous,encoding='utf-8') as f: value=json.load(f)
 if listen_set=='1': value['listen']=listen
 if public_set=='1': value['public_urls']=[public] if public else []
-if remote_set=='1': value['allow_remote_management']=remote=='true'
+if fresh=='1': value['restrict_hostnames']=False
 with open(output,'w',encoding='utf-8') as f: json.dump(value,f,ensure_ascii=False)
 PY
 unit_temp=$(mktemp "$unit_dir/.astral-server.service.XXXXXX")
-python3 - "$unit_temp" "$root" <<'PY'
+python3 - "$unit_temp" "$root" "$github_proxy" "$remote_set" "$allow_remote" <<'PY'
 import sys
-target,root=sys.argv[1:]
+target,root,proxy,remote_set,remote=sys.argv[1:]
 # The ':' executable prefix disables environment substitution. In particular,
 # executable paths do not undergo the same '$$' expansion as ordinary arguments.
 # Keep dollars literal in both places; percent specifiers still need escaping.
 def quote(value): return '"'+value.replace('\\','\\\\').replace('"','\\"').replace('%','%%')+'"'
 args=[root+'/current/bin/astral','serve','--installation-root',root,'--data',root+'/data/server','--computers-dir',root+'/data/computers','--distribution-dir',root+'/current/distribution','--ready-file',root+'/run/ready.json']
+environment='Environment='+quote('ASTRAL_GITHUB_PROXY='+proxy)+'\n'
+if remote_set=='1': environment+='Environment='+quote('ASTRAL_ALLOW_REMOTE_MANAGEMENT='+remote)+'\n'
 with open(target,'w',encoding='utf-8') as f:
-    f.write('# Astral Server installer root: '+root+'\n[Unit]\nDescription=Astral Server\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=/\nExecStart=:'+ ' '.join(map(quote,args))+'\nRestart=on-failure\nRestartSec=3\nTimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n')
+    f.write('# Astral Server installer root: '+root+'\n[Unit]\nDescription=Astral Server\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=/\n'+environment+'ExecStart=:'+ ' '.join(map(quote,args))+'\nRestart=on-failure\nRestartSec=3\nTimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n')
 PY
 mkdir -p "$root/data/server" "$root/data/computers" "$root/run"
 rm -f "$ready"
@@ -393,6 +774,7 @@ mv "$unit_temp" "$unit"
 unit_temp=
 systemctl --user daemon-reload
 systemctl --user enable "$service"
+systemctl --user is-enabled --quiet "$service" || die 'Server automatic startup could not be verified'
 systemctl --user start "$service"
 server_url=
 startup_deadline=$((SECONDS+45))
@@ -442,10 +824,12 @@ fi
 systemctl --user is-active --quiet "$service" || die 'Server exited during startup'
 # Capability is explicit and belongs to this user's exact root/unit, never a
 # guessed service name. The marker is outside migrated Server data snapshots.
-python3 - "$stage/installation.json" "$root" "$unit" <<'PYINSTALL'
+python3 - "$stage/installation.json" "$root" "$unit" "$github_proxy" "$remote_set" "$allow_remote" "$command_path" <<'PYINSTALL'
 import json,os,sys
-temporary,root,unit=sys.argv[1:]
-value={'schema':1,'root':root,'data_directory':root+'/data/server','uid':os.getuid(),'service':'astral-server.service','unit_path':unit}
+temporary,root,unit,proxy,remote_set,remote=sys.argv[1:7]
+value={'schema':1,'root':root,'data_directory':root+'/data/server','uid':os.getuid(),'service':'astral-server.service','unit_path':unit,'github_proxy':proxy}
+if remote_set=='1': value['allow_remote_management']=remote=='true'
+if len(sys.argv)>7: value['command_path']=sys.argv[7]
 with open(temporary,'x',encoding='utf-8') as f:
     json.dump(value,f,indent=2)
     f.write('\n')
@@ -453,18 +837,46 @@ with open(temporary,'x',encoding='utf-8') as f:
     os.fsync(f.fileno())
 os.replace(temporary,root+'/installation.json')
 PYINSTALL
-complete=1
-printf '\nAstral Server %s is running: %s\n' "$version" "$server_url"
+install_command_entry
+# BEGIN initial Web account
+ensure_web_account() {
+  local configured status
+  [[ -n $old_program ]] || complete=1
+  if ! status=$("$root/current/bin/astral" auth status --data "$root/data/server"); then
+    die 'the Server is installed, but Web account status could not be checked; inspect the service and rerun this installer'
+  fi
+  configured=$(python3 -c 'import json,sys; v=json.load(sys.stdin).get("configured");
+if type(v) is not bool: raise SystemExit("Invalid Web account status")
+print(str(v).lower())' <<< "$status") || die 'the Server returned invalid Web account status'
+  # Program activation is committed before interactive account setup. An
+  # interrupted setup must leave the installed service available for a retry.
+  complete=1
+  if [[ $configured == false ]]; then
+    printf '\nSet up the Web sign-in account for this Server.\n'
+    if [[ -n ${ASTRAL_ADMIN_USERNAME:-} && -n ${ASTRAL_ADMIN_PASSWORD_FILE:-} ]]; then
+      "$root/current/bin/astral" auth setup --data "$root/data/server" || die 'Web account setup did not complete; the installed Server was retained. Rerun the installer to finish setup'
+    else
+      if ! { exec 8<>/dev/tty; } 2>/dev/null; then die 'Web account setup is incomplete: run the installer in a terminal, or set both ASTRAL_ADMIN_USERNAME and ASTRAL_ADMIN_PASSWORD_FILE, then rerun; the installed Server was retained'; fi
+      if ! "$root/current/bin/astral" auth setup --data "$root/data/server" <&8 >&8 2>&8; then
+        exec 8>&-
+        die 'Web account setup did not complete; the installed Server was retained. Rerun the installer to finish setup'
+      fi
+      exec 8>&-
+    fi
+    status=$("$root/current/bin/astral" auth status --data "$root/data/server") || die 'Web account setup result could not be checked; the installed Server was retained'
+    [[ $(python3 -c 'import json,sys; print(json.load(sys.stdin).get("configured") is True)' <<< "$status") == True ]] || die 'Web account setup is still incomplete; the installed Server was retained'
+  fi
+}
+# END initial Web account
+ensure_web_account
+printf '\nAstral Server %s is ready: %s\n' "$version" "$server_url"
 printf 'Service: systemctl --user status %s\nLogs: journalctl --user -u %s\n' "$service" "$service"
-printf 'Data: %s/data\nSet up Web login: %s/current/bin/astral auth setup --data %s/data/server\n' "$root" "$root" "$root"
-printf 'Local management: forward the Server over SSH, then open its local HTTP address.\n'
-printf 'Default-port example: ssh -N -L 4545:127.0.0.1:4545 USER@VPS\nThen open http://127.0.0.1:4545 in a browser.\n'
-printf 'Direct remote management is disabled unless enabled in Settings, by --allow-remote-management, or by ASTRAL_ALLOW_REMOTE_MANAGEMENT.\n'
-if [[ -n $public_url ]]; then printf 'Configured access address: %s (verify target connectivity; configure HTTPS on your proxy if needed).\n' "$public_url"; fi
-linger=no
-if command -v loginctl >/dev/null 2>&1; then linger=$(loginctl show-user "$(id -u)" --property=Linger --value 2>/dev/null || printf unknown); fi
-if [[ $linger != yes ]]; then
-  printf '\nUser lingering is not enabled or could not be verified. This user service is not guaranteed to survive logout or start after reboot.\n'
-  printf 'Ask the VPS administrator to enable it explicitly: loginctl enable-linger %s\n' "$(id -un)"
-  printf 'The installer did not run that administrator command.\n'
+printf 'Data: %s/data\nCommand: %s\n' "$root" "$command_path"
+printf 'Running in the background as %s. You can close this terminal; the enabled user service starts at boot and user lingering keeps it running after logout.\n' "$(id -un)"
+if [[ $allow_remote == true ]]; then
+  printf 'Open the Server IP or domain on its configured HTTP port and sign in with your Web account.\n'
+else
+  printf 'Remote Web access is disabled by the explicit service startup override; use local or SSH access.\n'
 fi
+printf 'For private SSH access: ssh -N -L 4545:127.0.0.1:4545 USER@VPS, then open http://127.0.0.1:4545.\n'
+if [[ -n $public_url ]]; then printf 'Configured access address: %s (verify target connectivity; configure HTTPS on your proxy if needed).\n' "$public_url"; fi

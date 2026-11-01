@@ -12,9 +12,10 @@ const fixture = vi.hoisted(() => ({
     data: { preferences: {} as { running_input?: 'steer' | 'follow_up' } }, preferences: vi.fn(async () => undefined),
   },
   continueSession: vi.fn(async () => ({ data: { ok: true } })),
-  submitInput: vi.fn(async (options: { body: { text: string; mode: string } }) => ({ data: { ok: true }, options })),
+  submitInput: vi.fn(async (options: { body: { id: string; text: string; mode: string } }) => ({ data: { ok: true }, options })),
+  inputReceipt: vi.fn(async () => ({ data: undefined, response: { status: 404 } })),
   send: undefined as undefined | (() => Promise<void>),
-  handlers: undefined as undefined | { keyboard: (event: KeyboardEvent) => void; composerText: string; toggleQueue: () => Promise<void> },
+  handlers: undefined as undefined | { keyboard: (event: KeyboardEvent) => void; composerText: string; sendLabel: string; error: string; toggleQueue: () => Promise<void> },
 }))
 vi.mock('../stores/app', () => ({ useAppStore: () => reactive(fixture.app) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
@@ -22,7 +23,7 @@ vi.mock('../lib/api', () => ({
   errorText: (error: unknown) => String(error), fileURL: () => '',
   request: async (promise: Promise<{ data: unknown }>) => (await promise).data,
 }))
-vi.mock('@astral/sdk', async (importOriginal) => ({ ...await importOriginal<object>(), continueSession: fixture.continueSession, submitInput: fixture.submitInput }))
+vi.mock('@astral/sdk', async (importOriginal) => ({ ...await importOriginal<object>(), continueSession: fixture.continueSession, submitInput: fixture.submitInput, inputReceipt: fixture.inputReceipt }))
 vi.mock('./ModelSelection.vue', () => ({ default: { render: () => null } }))
 vi.mock('@astral/ui', async () => ({
   ...await import('../../../../packages/ui/src/useDelayedPending'),
@@ -139,6 +140,42 @@ describe('Composer keyboard input', () => {
     const event = await keydown({ ...keys, keyCode: 229 })
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(fixture.submitInput).not.toHaveBeenCalled()
+  })
+})
+describe('Composer slow and failed submissions', () => {
+  it('ignores repeated Enter while awaiting acceptance and does not label the active request as a retry', async () => {
+    let release!: () => void
+    const pending = new Promise<void>(resolve => { release = resolve })
+    fixture.submitInput.mockImplementationOnce(async options => {
+      await pending
+      return { data: { ok: true }, options }
+    })
+    await renderInput()
+    await keydown()
+    await keydown()
+    expect(fixture.submitInput).toHaveBeenCalledOnce()
+    expect(fixture.handlers!.sendLabel).toBe('queueMessage')
+    expect(fixture.app.drafts.session).toMatchObject({ text: 'hello' })
+
+    release()
+    await setImmediate()
+    expect(fixture.app.drafts.session).toMatchObject({ text: '', attempt: undefined })
+  })
+  it('keeps a failed draft and retries it with the same input identity', async () => {
+    fixture.submitInput.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await renderInput()
+    await fixture.send!()
+    const original = fixture.submitInput.mock.calls[0]![0].body
+    expect(fixture.inputReceipt).toHaveBeenCalledOnce()
+    expect(fixture.app.drafts.session).toMatchObject({ text: 'hello', attempt: original })
+    expect(fixture.handlers!.sendLabel).toBe('retry')
+    expect(fixture.handlers!.error).toContain('Failed to fetch')
+
+    await fixture.send!()
+    expect(fixture.submitInput).toHaveBeenCalledTimes(2)
+    expect(fixture.submitInput.mock.calls[1]![0].body.id).toBe(original.id)
+    expect(fixture.app.drafts.session).toMatchObject({ text: '', attempt: undefined })
+    expect(fixture.handlers!.error).toBe('')
   })
 })
 describe.each(['', 'binding'])('Composer running-input preference (binding=%s)', binding => {
