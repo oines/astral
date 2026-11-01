@@ -9,9 +9,9 @@
   "scripts": {
     "dev": "astro dev --host 127.0.0.1 --port 4321",
     "check": "astro check",
-    "build": "astro build",
+    "build": "astro build && node scripts/build-search-index.mjs",
     "preview": "astro preview --host 127.0.0.1 --port 4321",
-    "check:site": "node --test scripts/release-downloads.test.mjs && node scripts/check-site.mjs"
+    "check:site": "node --test scripts/release-downloads.test.mjs scripts/search-input.test.mjs scripts/search-index.test.mjs && node scripts/check-site.mjs"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "7.3.0",
@@ -21,6 +21,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "0.9.12",
+    "pagefind": "1.5.2",
+    "parse5": "7.3.0",
     "typescript": "~6.0.3"
   },
   "license": "AGPL-3.0-only"

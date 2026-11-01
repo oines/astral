@@ -181,6 +181,12 @@ importers:
       '@astrojs/check':
         specifier: 0.9.12
         version: 0.9.12(@emnapi/runtime@1.11.3)(prettier@3.9.10)(typescript@6.0.3)
+      pagefind:
+        specifier: 1.5.2
+        version: 1.5.2
+      parse5:
+        specifier: 7.3.0
+        version: 7.3.0
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
