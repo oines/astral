@@ -115,10 +115,41 @@ function Test-CommandDirectory([string]$Directory) {
 function Test-ManagedCommand([string]$Path) {
   return [IO.File]::Exists($Path) -and [IO.File]::ReadAllText($Path) -eq $commandBody
 }
+function Get-LongInstallerPath([string]$Path) {
+  # Junction targets may use long names even when LOCALAPPDATA contains an 8.3
+  # alias. Expand name spelling only; do not resolve other junctions and loosen
+  # the requirement that the target is a direct SHA256 child of installBase.
+  if (-not ('AstralInstaller.NativePath' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace AstralInstaller {
+  public static class NativePath {
+    [DllImport("kernel32.dll", EntryPoint = "GetLongPathNameW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+    private static extern uint GetLongPathName(string path, StringBuilder buffer, uint capacity);
+    public static string Expand(string path) {
+      StringBuilder buffer = new StringBuilder(260);
+      while (true) {
+        uint length = GetLongPathName(path, buffer, (uint)buffer.Capacity);
+        if (length == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot verify the existing Computer installation path.");
+        if (length < buffer.Capacity) return buffer.ToString();
+        buffer = new StringBuilder(checked((int)length));
+      }
+    }
+  }
+}
+'@
+  }
+  return [AstralInstaller.NativePath]::Expand([IO.Path]::GetFullPath($Path)).TrimEnd('\')
+}
 if (Test-Path -LiteralPath $current) {
   $link = Get-Item -LiteralPath $current -Force
   $targets = @($link.Target)
-  if ($link.LinkType -ne 'Junction' -or $targets.Count -ne 1 -or $targets[0] -notmatch ('^' + [Regex]::Escape($installBase + '\') + '[a-f0-9]{64}$')) { throw 'The Computer current executable must be an installer-managed junction.' }
+  if ($link.LinkType -ne 'Junction' -or $targets.Count -ne 1) { throw 'The Computer current executable must be an installer-managed junction.' }
+  $longInstallBase = Get-LongInstallerPath $installBase
+  $longTarget = Get-LongInstallerPath $targets[0]
+  if ($longTarget -notmatch ('^' + [Regex]::Escape($longInstallBase + '\') + '[a-f0-9]{64}$')) { throw 'The Computer current executable must be an installer-managed junction.' }
 }
 $existingCommand = Get-Command astral -ErrorAction SilentlyContinue
 if ($existingCommand) {

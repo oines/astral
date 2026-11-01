@@ -406,6 +406,88 @@ Reject { Get-OfficialAssetUri '../private' }
   assert.match(stdout, /Public download boundaries passed/)
 })
 
+test('Windows PowerShell recognizes managed junctions through short paths without accepting other targets', { skip: process.platform !== 'win32', timeout: 60000 }, async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'astral-powershell-junction-test-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const localData = path.join(root, 'Local Application Data')
+  const installBase = path.join(localData, 'Astral/bin')
+  const commands = path.join(root, 'commands')
+  await fs.mkdir(installBase, { recursive: true })
+  await fs.mkdir(commands)
+  const longLocalData = await fs.realpath(localData)
+  const longInstallBase = path.join(longLocalData, 'Astral/bin')
+  const current = path.join(longInstallBase, 'current')
+  const managed = path.join(longInstallBase, 'a'.repeat(64))
+  await fs.mkdir(managed)
+  // Build a real 8.3 alias, rather than changing the fixture to use only long
+  // paths and hiding a failure users can also hit through LOCALAPPDATA.
+  const shortPathScript = path.join(root, 'short-path.ps1')
+  await fs.writeFile(shortPathScript, `param([string]$Directory)
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+using System.Text;
+public static class AstralFixtureShortPath {
+  [DllImport("kernel32.dll", EntryPoint = "GetShortPathNameW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+  public static extern uint GetShortPathName(string path, StringBuilder buffer, uint capacity);
+}
+'@
+$buffer = [Text.StringBuilder]::new(32768)
+$length = [AstralFixtureShortPath]::GetShortPathName($Directory, $buffer, $buffer.Capacity)
+if ($length -eq 0 -or $length -ge $buffer.Capacity) { throw 'Cannot create the fixture short path.' }
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::WriteLine($buffer.ToString())
+`)
+  const { stdout } = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', shortPathScript, '-Directory', longLocalData], { timeout: 12000 })
+  const shortLocalData = stdout.trim()
+  const original = await fs.readFile('internal/platform/installers/install.ps1', 'utf8')
+  const fixture = original.replace('[Net.ServicePointManager]::SecurityProtocol =', "function Get-OfficialAsset { throw 'fixture official release reached' }\n[Net.ServicePointManager]::SecurityProtocol =")
+  assert.notEqual(fixture, original)
+  const installer = path.join(root, 'install.ps1')
+  await fs.writeFile(installer, fixture)
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !['LOCALAPPDATA', 'ASTRAL_GITHUB_PROXY', 'PATH'].includes(key.toUpperCase())))
+  const run = selectedLocalData => exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', installer, '-Update'], {
+    env: { ...environment, PATH: `${commands};${process.env.PATH}`, LOCALAPPDATA: selectedLocalData, ASTRAL_GITHUB_PROXY: '' }, timeout: 12000,
+  })
+  await fs.symlink(managed, current, 'junction')
+  for (const [name, selectedLocalData] of [['long path', longLocalData], ['short alias', shortLocalData]]) {
+    await t.test(name, { skip: name === 'short alias' && shortLocalData.toLowerCase() === longLocalData.toLowerCase() ? 'This volume has no 8.3 alias.' : false }, async () => {
+      await assert.rejects(run(selectedLocalData), error => {
+        assert.match(error.stderr, /fixture official release reached/)
+        assert.doesNotMatch(error.stderr, /installer-managed junction/)
+        return true
+      })
+      assert.equal(await fs.realpath(current), managed)
+    })
+  }
+  for (const [name, target] of [
+    ['another installation with the same prefix', path.join(`${longInstallBase}-other`, 'b'.repeat(64))],
+    ['a nested release', path.join(longInstallBase, 'nested', 'c'.repeat(64))],
+    ['a non-SHA256 release name', path.join(longInstallBase, 'not-a-release')],
+  ]) await t.test(name, async () => {
+    await fs.unlink(current)
+    await fs.mkdir(target, { recursive: true })
+    await fs.symlink(target, current, 'junction')
+    await assert.rejects(run(shortLocalData), error => {
+      assert.match(error.stderr, /installer-managed junction/)
+      assert.doesNotMatch(error.stderr, /fixture official release reached/)
+      return true
+    })
+    assert.equal(await fs.realpath(current), target)
+  })
+  await t.test('a regular directory', async () => {
+    await fs.unlink(current)
+    await fs.mkdir(current)
+    await assert.rejects(run(shortLocalData), error => {
+      assert.match(error.stderr, /installer-managed junction/)
+      assert.doesNotMatch(error.stderr, /fixture official release reached/)
+      return true
+    })
+    assert.equal((await fs.lstat(current)).isDirectory(), true)
+    assert.equal((await fs.lstat(current)).isSymbolicLink(), false)
+  })
+})
+
 test('Windows PowerShell keeps astral usable across upgrades, passes the proxy and preserves unrelated commands', { skip: process.platform !== 'win32', timeout: 60000 }, async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'astral-powershell-proxy-child-中文 space $%-'))
   t.after(() => fs.rm(root, { recursive: true, force: true }))

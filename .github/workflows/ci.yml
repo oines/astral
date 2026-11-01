@@ -16,6 +16,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 jobs:
+  windows-installer:
+    name: Windows installer preflight
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26.7.0"
+      - run: node --test scripts/enrollment-installers.test.mjs scripts/desktop-process-identity.test.mjs
   check:
     runs-on: ubuntu-latest
     env:
