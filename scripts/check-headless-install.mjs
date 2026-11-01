@@ -55,6 +55,21 @@ export function retainedFixtureCookie(login) {
 }
 const authenticatedCookie = retainedFixtureCookie(serverURL => webFixtureCookie(path.join(installRoot, 'data/server'), serverURL))
 
+export function startupFailureFixture(executable, recoveryData) {
+  const quote = value => `'${value.replaceAll("'", "'\\''")}'`
+  const program = quote(executable)
+  return `#!/bin/sh
+for argument in "$@"; do
+  if [ "$argument" = --help ]; then exec ${program} "$@"; fi
+done
+case "$1" in
+  ${recoveryData ? 'version|migrate' : 'version'}) exec ${program} "$@" ;;
+${recoveryData ? `  serve) ${program} migrate recover --data ${quote(recoveryData)} || exit $? ;;\n` : ''}esac
+printf 'Deliberate headless CI startup failure${recoveryData ? ' after journal recovery' : ''}.\\n' >&2
+exit 77
+`
+}
+
 async function command(executable, args, options = {}) {
   try {
     return await execute(executable, args, { cwd: repository, encoding: 'utf8', timeout: 20_000, maxBuffer: 2 << 20, ...options })
@@ -398,11 +413,10 @@ async function main() {
     sameIdentity(second, afterReject)
     console.log('Headless bad-checksum rejection kept the original Server process and identity.')
 
-    // A deliberately broken new payload delegates only version queries to the
-    // actual native program. Its serve path exits, exercising installer recovery.
+    // A deliberately broken payload delegates metadata and capability queries
+    // to the native program. Its actual serve path exercises installer recovery.
     // Replace the fixture inode atomically: never modify hard-linked dist files.
-    const quote = value => `'${value.replaceAll("'", "'\\''")}'`
-    await atomicWrite(path.join(payload, nativeName), `#!/bin/sh\nif [ "$1" = version ]; then exec ${quote(nativeBinary)} "$@"; fi\nprintf 'Deliberate headless CI startup failure.\\n' >&2\nexit 77\n`, { mode: 0o700 })
+    await atomicWrite(path.join(payload, nativeName), startupFailureFixture(nativeBinary), { mode: 0o700 })
     await publishFixture()
     const broken = await install(false)
     assert.ok(broken.startupFailure, 'Broken startup failed for an unexpected reason')
@@ -441,7 +455,7 @@ async function main() {
     // record while retaining the later data, which must become this attempt's
     // baseline rather than cause another restore to the older snapshot.
     await writeFile(path.join(data, 'migration-state.json'), `${JSON.stringify({ schema: 1, backup: interruptedUpgrade.backup })}\n`, { mode: 0o600 })
-    await atomicWrite(path.join(payload, nativeName), `#!/bin/sh\ncase "$1" in\n  version|migrate) exec ${quote(nativeBinary)} "$@" ;;\n  serve) ${quote(nativeBinary)} migrate recover --data ${quote(data)} || exit $? ;;\nesac\nprintf 'Deliberate headless CI startup failure after journal recovery.\\n' >&2\nexit 77\n`, { mode: 0o700 })
+    await atomicWrite(path.join(payload, nativeName), startupFailureFixture(nativeBinary, data), { mode: 0o700 })
     await publishFixture()
     const interruptedFailure = await install(false)
     assert.ok(interruptedFailure.startupFailure, 'Interrupted-migration startup failed for an unexpected reason')
