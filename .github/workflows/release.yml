@@ -324,6 +324,18 @@ jobs:
           $env:ASTRAL_PACKAGED_APP_EXECUTABLE = Join-Path $astralExtracted 'Astral.exe'
           pnpm test:packaged-desktop
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # The DEB registers /usr/bin/astral. Verify the Server installer first so
+      # its protection against replacing another installation remains active.
+      - name: Prepare the Linux user manager for final headless acceptance
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo systemctl start user@$(id -u).service
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+      - name: Verify final headless programs with real user-service install and recovery
+        if: runner.os == 'Linux'
+        run: node scripts/check-headless-install.mjs
       - name: Install the final native Linux DEB
         if: runner.os == 'Linux'
         shell: bash
@@ -365,16 +377,6 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
           xvfb-run -a node scripts/check-desktop-update.mjs
-      - name: Prepare the Linux user manager for final headless acceptance
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          sudo systemctl start user@$(id -u).service
-          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
-          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
-      - name: Verify final headless programs with real user-service install and recovery
-        if: runner.os == 'Linux'
-        run: node scripts/check-headless-install.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: candidate-desktop-${{ matrix.name }}
