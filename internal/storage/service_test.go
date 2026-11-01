@@ -355,10 +355,16 @@ func TestReclaimWaitsForIdleRetainsFailureAndRetries(t *testing.T) {
 		t.Fatal("reclaim ran while Bot was active")
 	}
 	busy.Store(false)
-	await(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.reclaim.State == "failed" })
 	var persisted Reclaim
-	if err := store.Maintenance(context.Background(), "storage_reclaim", "owner", &persisted); err != nil || persisted.State != "failed" || persisted.Error == "" {
-		t.Fatalf("failure was not durable: %+v %v", persisted, err)
+	await(t, func() bool {
+		persisted = Reclaim{}
+		if err := store.Maintenance(context.Background(), "storage_reclaim", "owner", &persisted); err != nil {
+			t.Fatal(err)
+		}
+		return persisted.State == "failed"
+	})
+	if persisted.Error != "vacuum failed" {
+		t.Fatalf("failure was not durable: %+v", persisted)
 	}
 	fail.Store(false)
 	s.RequestReclaim()

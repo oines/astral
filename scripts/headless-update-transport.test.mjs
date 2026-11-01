@@ -7,9 +7,54 @@ import test from 'node:test'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { headlessUpdateTransport } from './headless-update-transport.mjs'
-import { prepareHostMigrationFixture, retainedFixtureCookie } from './check-headless-install.mjs'
+import { prepareHostMigrationFixture, retainedFixtureCookie, startupFailureFixture } from './check-headless-install.mjs'
 
 const execute = promisify(execFile)
+
+test('headless startup failure fixtures delegate capability help and metadata but retain runtime failures', { skip: process.platform === 'win32' }, async t => {
+  const temporary = await mkdtemp(path.join(tmpdir(), "astral-headless-argv-中文 space $%'-"))
+  t.after(() => rm(temporary, { recursive: true, force: true }))
+  const executable = path.join(temporary, "native program's stub")
+  const log = path.join(temporary, 'arguments.jsonl')
+  await writeFile(executable, `#!/bin/sh
+exec '${process.execPath.replaceAll("'", "'\\''")}' '${path.join(temporary, 'native.cjs').replaceAll("'", "'\\''")}' "$@"
+`, { mode: 0o700 })
+  await writeFile(path.join(temporary, 'native.cjs'), `const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.ASTRAL_HEADLESS_ARGV_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === 'migrate' && args[1] === 'recover' && process.env.ASTRAL_HEADLESS_RECOVERY_FAIL === '1') process.exit(65);
+console.log('native ' + JSON.stringify(args));
+`)
+  const env = { ...process.env, ASTRAL_HEADLESS_ARGV_LOG: log }
+  const readCalls = async () => (await readFile(log, 'utf8')).trim().split('\n').map(JSON.parse)
+  for (const recovery of [false, true]) await t.test(recovery ? 'interrupted recovery' : 'ordinary startup', async () => {
+    const recoveryData = recovery ? path.join(temporary, "Server data's 中文 $%") : undefined
+    const fixture = path.join(temporary, recovery ? 'recover.sh' : 'startup.sh')
+    await writeFile(fixture, startupFailureFixture(executable, recoveryData))
+    for (const args of [['auth', 'status', '--help'], ['config', 'hostnames', '--help'], ['serve', '--help'], ['version', '--json'], ['version', '--data-formats'], ...(recovery ? [['migrate', '--data', recoveryData]] : [])]) {
+      const { stdout } = await execute('sh', [fixture, ...args], { env, timeout: 5000 })
+      assert.equal(stdout.trim(), `native ${JSON.stringify(args)}`)
+      assert.deepEqual((await readCalls()).at(-1), args)
+    }
+    const beforeStartup = (await readCalls()).length
+    await assert.rejects(execute('sh', [fixture, 'serve', '--data', recoveryData || temporary], { env, timeout: 5000 }), error => {
+      assert.equal(error.code, 77)
+      assert.match(error.stderr, recovery ? /startup failure after journal recovery/ : /startup failure\./)
+      return true
+    })
+    const afterStartup = await readCalls()
+    assert.equal(afterStartup.length, beforeStartup + Number(recovery))
+    if (recovery) {
+      assert.deepEqual(afterStartup.at(-1), ['migrate', 'recover', '--data', recoveryData])
+      await assert.rejects(execute('sh', [fixture, 'serve'], { env: { ...env, ASTRAL_HEADLESS_RECOVERY_FAIL: '1' }, timeout: 5000 }), error => {
+        assert.equal(error.code, 65)
+        assert.doesNotMatch(error.stderr, /Deliberate headless CI startup failure/)
+        return true
+      })
+    }
+  })
+})
+
 test('the CI-only trusted HTTPS transport serves fixed official URLs and restores selected manager variables', { skip: process.platform === 'win32' }, async t => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'astral-headless-transport-'))
   t.after(() => rm(temporary, { recursive: true, force: true }))

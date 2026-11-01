@@ -128,13 +128,18 @@ func main(){pub,key,e:=ed25519.GenerateKey(rand.Reader);if e!=nil{panic(e)};cert
   release = createServer(tls, (request, response) => {
     const url = new URL(request.url, 'https://127.0.0.1')
     feedRequests.push(url.pathname)
-    if (url.pathname === '/latest') {
+    const latestPath = '/repos/oines/astral/releases/latest'
+    const releasePath = `/oines/astral/releases/download/v${newVersion}`
+    if (request.headers.host !== (url.pathname === latestPath ? 'api.github.com' : 'github.com')) {
+      response.writeHead(421); response.end(); return
+    }
+    if (url.pathname === latestPath) {
       response.writeHead(200, { 'Content-Type': 'application/json' })
       response.end(JSON.stringify({ tag_name: `v${newVersion}`, draft: false, prerelease: false }))
-    } else if (url.pathname === `/releases/download/v${newVersion}/checksums.txt`) {
+    } else if (url.pathname === `${releasePath}/checksums.txt`) {
       response.writeHead(200, { 'Content-Type': 'text/plain' })
       response.end(`${checksum}  ${assetName}\n`)
-    } else if (url.pathname === `/releases/download/v${newVersion}/${assetName}`) {
+    } else if (url.pathname === `${releasePath}/${assetName}`) {
       response.writeHead(200, { 'Content-Type': 'application/octet-stream' })
       // Keep the first update active until the second click is acknowledged,
       // so deduplication does not depend on runner or network speed.
@@ -148,7 +153,7 @@ func main(){pub,key,e:=ed25519.GenerateKey(rand.Reader);if e!=nil{panic(e)};cert
     } else { response.writeHead(404); response.end() }
   })
   await new Promise(resolve => release.listen(0, '127.0.0.1', resolve))
-  const releaseOrigin = `https://127.0.0.1:${release.address().port}`
+  const releaseAddress = `127.0.0.1:${release.address().port}`
   await mkdir(source)
   for (const file of ['go.mod', 'go.sum']) await copyFile(path.join(repository, file), path.join(source, file))
   await cp(path.join(repository, 'internal'), path.join(source, 'internal'), { recursive: true, filter: name => !name.endsWith('_test.go') })
@@ -158,10 +163,11 @@ func main(){pub,key,e:=ed25519.GenerateKey(rand.Reader);if e!=nil{panic(e)};cert
   let copied = original
   function replaceOnce(before, after) { assert.equal(copied.split(before).length - 1, 1, `Fixture source contract changed: ${before}`); copied = copied.replace(before, after) }
   replaceOnce('func client() *http.Client {', `func client() *http.Client {\n roots:=x509.NewCertPool();if !roots.AppendCertsFromPEM([]byte(${JSON.stringify(tls.cert)})){panic("invalid fixture CA")} `)
-  replaceOnce('"crypto/sha256"', '"crypto/sha256"\n"crypto/tls"\n"crypto/x509"')
-  replaceOnce('return &http.Client{Timeout:', 'return &http.Client{Transport:&http.Transport{TLSClientConfig:&tls.Config{RootCAs:roots}},Timeout:')
-  replaceOnce('https://api.github.com/repos/oines/astral/releases/latest', `${releaseOrigin}/latest`)
-  replaceOnce('https://github.com/oines/astral/releases/download/v', `${releaseOrigin}/releases/download/v`)
+  replaceOnce('"crypto/sha256"', '"crypto/sha256"\n"crypto/tls"\n"crypto/x509"\n"net"')
+  // Keep the official URLs intact so the real download-source guard runs.
+  // Only this disposable copy's transport connects to the ephemeral TLS
+  // fixture, whose CA and 127.0.0.1 certificate identity remain verified.
+  replaceOnce('return &http.Client{Timeout:', `return &http.Client{Transport:&http.Transport{TLSClientConfig:&tls.Config{RootCAs:roots,ServerName:"127.0.0.1"},DialContext:func(ctx context.Context,network,address string)(net.Conn,error){return (&net.Dialer{}).DialContext(ctx,network,${JSON.stringify(releaseAddress)})}},Timeout:`)
   await writeFile(releaseSource, copied)
   const buildEnvironment = { ...process.env, GOWORK: 'off', CGO_ENABLED: '0' }
   for (const [version, target] of [[oldVersion, oldBinary], [newVersion, newBinary]]) {
@@ -230,6 +236,11 @@ func run()error{var c config;raw,e:=os.ReadFile(os.Args[1]);if e!=nil{return e};
   await writeFile(agentFile, 'Agent files survive a native management update.\n')
   const started = await api(`/computers/maintenance/${identity}/update`, {})
   assert.equal(started.state, 'checking')
+  await waitFor(async () => {
+    const value = await api(`/computers/maintenance/${identity}`)
+    if (value.update.state === 'failed') throw new Error(value.update.error)
+    return feedRequests.includes(`/oines/astral/releases/download/v${newVersion}/${assetName}`)
+  }, 'Native management update did not begin its download')
   const duplicate = await api(`/computers/maintenance/${identity}/update`, {})
   assert.equal(duplicate.started_at, started.started_at, 'Concurrent clicks must share the same update operation')
   allowDownload()
@@ -259,8 +270,9 @@ func run()error{var c config;raw,e:=os.ReadFile(os.Args[1]);if e!=nil{return e};
   await api(`/computers/maintenance/${identity}/update`, {})
   await waitFor(async () => (await api(`/computers/maintenance/${identity}`)).update.state === 'current', 'Same latest version did not become a no-op')
   assert.equal((await status()).boot_id, after.boot_id)
-  assert.equal(feedRequests.filter(url => url === `/releases/download/v${newVersion}/${assetName}`).length, 1, 'Duplicate or current-version request downloaded a second executable')
-  assert.ok(feedRequests.includes(`/releases/download/v${newVersion}/checksums.txt`))
+  assert.equal(feedRequests.filter(url => url === `/oines/astral/releases/download/v${newVersion}/${assetName}`).length, 1, 'Duplicate or current-version request downloaded a second executable')
+  assert.ok(feedRequests.includes(`/oines/astral/releases/download/v${newVersion}/checksums.txt`))
+  assert.ok(feedRequests.includes('/repos/oines/astral/releases/latest'))
   assert.equal(await readFile(path.join(repository, 'internal/releasefeed/releases.go'), 'utf8'), original, 'Acceptance fixture modified production release routing')
   if (rootUser) {
     await run(oldBinary, 'computer', 'service', 'restart', '--root', daemonRoot)

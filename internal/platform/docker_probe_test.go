@@ -40,7 +40,7 @@ func TestDockerProbeFailureClassifiesCauseWithoutLosingIt(t *testing.T) {
 			if !errors.As(err, &problem) || problem.Status != 503 || !strings.Contains(err.Error(), test.cause.Error()) {
 				t.Fatalf("lost HTTP status or Docker diagnostic: %v", err)
 			}
-			if test.status == "permission_denied" && !strings.Contains(err.Error(), failure.user) {
+			if test.status == "permission_denied" && !strings.Contains(err.Error(), strconv.Quote(failure.user)) {
 				t.Fatalf("permission error omitted the process account: %v", err)
 			}
 		})
