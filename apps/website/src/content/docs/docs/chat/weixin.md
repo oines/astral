@@ -1,33 +1,32 @@
 ---
 title: "Connect Weixin"
-description: "Authorize ClawBot / iLink by QR code and connect private chats."
+description: "Understand Weixin authorization, private-chat setup, and expired logins."
 ---
 
-Weixin uses ClawBot / iLink QR authorization. It currently supports **private chats**, not groups. Availability depends on authorization by the Weixin service. You do not need to install OpenClaw on the Astral Server.
+Weixin currently supports **private chats**, not groups. Astral uses ClawBot / iLink QR authorization without a separate OpenClaw installation. Whether an account receives authorization is determined by Weixin.
 
-## Authorize the account
+First [configure Astral's model and computer](/docs/start/first-steps/), then connect at **Settings → Bots → your Bot → Connect a platform → Weixin**. Follow the prompts in Weixin and Astral to confirm authorization or enter a verification code when required.
 
-1. Open **Settings → Bots → your Bot → Connect a platform → Weixin**.
-2. Name the account and request a QR code.
-3. Scan it in Weixin and confirm on your phone.
-4. If a verification code is requested, enter the **digits displayed in Weixin** and continue waiting.
+## Receive a message before adding the chat
 
-Request a new QR code if it expires. Astral stores the confirmed authorization; no manual Bot Token entry is needed.
+Have the person who will use the Bot send it a Weixin message, such as “Hello.” Astral needs that incoming message to obtain the contact context required to reply.
 
-## Connect a private chat
+Then select and add the private chat under the account's **Connected chats** in Astral. Use a new conversation for a first test; an existing conversation continues its earlier work context. Entering a Weixin username or arbitrary identifier does not make someone reachable if they have never messaged this Bot.
 
-Ask the intended user to message the Bot first. Astral needs that incoming chat context to resolve the user and send replies.
+After adding the chat, **send a new message** in Weixin:
 
-Select the discovered chat, or enter its actual received identifier, then [authorize and bind it](/docs/chat/overview/). Inventing or manually entering an arbitrary user identifier does not make that user reachable.
+> Please reply in this Weixin chat with “Connection successful” and tell me which computer you are using.
 
-## Message support
+Check processing in Astral and the actual reply in Weixin. The earlier discovery message does not run as a task after the chat is added.
 
-Text, images, files, video, and voice attachments or transcripts supplied by the platform are supported. Outgoing quoted replies, groups, message editing, and read receipts are not currently supported.
+## Text and attachments
 
-Text and files may be sent separately; check the result of each. File formats and sizes depend on the Weixin service.
+You can send text, images, files, video, and voice content supported by the platform. Say “send it back to this Weixin chat” when you want a result delivered; working notes in Astral are not all forwarded.
 
-## Reauthorize
+Text and files may be sent separately. Test with a small file once the first reply works. File formats and sizes depend on Weixin. Outgoing quoted replies, editing, and read receipts are not currently supported.
 
-Use Reauthorize by QR code on the existing account when login expires. Error `-14` indicates an expired login session and normally requires scanning again.
+## Expired login or missing messages
 
-Reauthorize the same identity to retain the account relationship. Create a new connection for a different Bot identity. If messages are missing, also check the enabled state, chat authorization, and whether the user has sent an initial message.
+If login expires or error `-14` appears, choose **Authorize again** on the existing account. Authorize the same Bot identity to retain the account relationship; create a new account connection for a different identity.
+
+If connected but silent, check that the account is enabled and the private chat is added, then ask the person to send a new message. If Astral processed the task but no result arrived, inspect send errors in its conversation. Check Weixin before repeating a send with an uncertain outcome.

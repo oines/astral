@@ -4,11 +4,12 @@ import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
 import { Button, ConfirmPopover, Modal, SettingsRow, SettingsSection, Switch, useDelayedPending } from '@astral/ui'
 import AuthenticationForm from '../AuthenticationForm.vue'
-import { authAPI, AuthError, createPasskey, passkeySupported, sessionDevice, type AuthSettings, type PasskeyView, type TOTPSetup, type WebSession } from '../../lib/auth'
+import { authAPI, AuthError, createPasskey, passkeyRegistrationState, passkeySupported, sessionDevice, type AuthSettings, type PasskeyView, type TOTPSetup, type WebSession } from '../../lib/auth'
 import { useAuthStore } from '../../stores/auth'
 import { useAppStore } from '../../stores/app'
 import { useAction } from '../../composables/useAction'
 import { useClipboard } from '../../composables/useClipboard'
+import { useWebAccountSettings } from '../../composables/useWebAccountSettings'
 import { formatDateTime } from '../../lib/timezone'
 
 const { t, locale } = useI18n()
@@ -18,22 +19,18 @@ const settings = ref<AuthSettings>()
 const loading = ref(false)
 const loadError = ref('')
 const waiting = useDelayedPending(() => loading.value)
-const accountAction = useAction()
 const factorAction = useAction()
 const passkeyAction = useAction()
 const deviceAction = useAction()
 const passwordlessAction = useAction()
 const passwordlessIntent = ref<boolean>()
-const accountWaiting = useDelayedPending(() => accountAction.busy.value && !changingPassword.value)
 const passwordlessWaiting = useDelayedPending(() => passwordlessAction.busy.value)
 const passkeyTask = ref('')
 const factorTask = ref('')
 const { copy } = useClipboard()
-const username = ref('')
-const usernameDirty = ref(false)
-const password = ref('')
-const confirmPassword = ref('')
-const changingPassword = ref(false)
+const { username, usernameDirty, password, confirmPassword, changingPassword, usernameAction, passwordAction: accountAction, saveUsername, savePassword } = useWebAccountSettings({
+  settings, authenticated: () => auth.authenticated, refreshAuthentication: () => auth.refresh(), refreshSettings: () => refresh(), recent, message: key => t(key),
+})
 const setup = ref<TOTPSetup>()
 const setupCode = ref('')
 const qrImage = ref('')
@@ -47,10 +44,31 @@ let refreshEpoch = 0
 let passkeyController: AbortController | undefined
 const hasFactors = computed(() => settings.value?.totp_enabled || Boolean(settings.value?.passkeys?.length))
 const canPasskey = computed(() => passkeySupported() && auth.status?.passkey_available === true)
-const httpsAddress = computed(() => app.data?.network.public_urls.value.find(url => {
-  const address = new URL(url)
-  return address.protocol === 'https:' && !address.hostname.includes(':') && !/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(address.hostname)
+const httpsAddress = computed(() => {
+  const urls = [...(app.data?.network.addresses.map(address => address.url) || []), ...(app.data?.network.public_urls.value || [])]
+  return urls.find(url => {
+    try {
+      const address = new URL(url)
+      return address.protocol === 'https:' && !address.hostname.includes(':') && !/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(address.hostname)
+    } catch { return false }
+  })
+})
+const passkeyState = computed(() => passkeyRegistrationState(window.location, {
+  desktop: Boolean(settings.value?.desktop), browserSupported: typeof window.PublicKeyCredential === 'function', serverAvailable: auth.status?.passkey_available === true,
 }))
+const passkeyHint = computed(() => {
+  switch (passkeyState.value) {
+    case 'desktop': return t(httpsAddress.value ? 'authPasskeyDesktopOpen' : 'authPasskeyDesktopSetup')
+    case 'http': return t('authPasskeyHTTPPage')
+    case 'ip': return t('authPasskeyNeedsDomain')
+    case 'browser': return t('authPasskeyBrowserUnavailable')
+    default: return t('authPasskeyAddUnavailable')
+  }
+})
+const showHTTPSHelp = computed(() => passkeyState.value === 'http' || passkeyState.value === 'ip' || (passkeyState.value === 'desktop' && !httpsAddress.value))
+const httpsSetupURL = computed(() => locale.value.startsWith('zh')
+  ? 'https://astral.oines.dev/zh-cn/docs/hosting/server/#通过-https-反向代理访问'
+  : 'https://astral.oines.dev/docs/hosting/server/#use-an-https-reverse-proxy')
 function date(value?: string) {
   return formatDateTime(value, locale.value, app.displayTimezone)
 }
@@ -99,37 +117,6 @@ function reauthenticated() {
 function closeReauth(open: boolean) {
   reauthOpen.value = open
   if (!open) { const current = reauth; reauth = undefined; current?.reject(new Error(t('authReauthCancelled'))) }
-}
-async function saveUsername() {
-  if (!settings.value?.configured || accountAction.busy.value || username.value.trim() === settings.value.username) return
-  const submitted = username.value.trim()
-  const applied = await accountAction.run(async () => {
-    const value = submitted
-    if (!value) throw new Error(t('authUsernameRequired'))
-    if (new TextEncoder().encode(value).byteLength > 128 || /[\r\n\0]/.test(value)) throw new Error(t('authUsernameInvalid'))
-    await recent(() => authAPI.account(value))
-    await auth.refresh()
-    if (username.value.trim() === value) { username.value = value; usernameDirty.value = false }
-    if (auth.authenticated) await refresh()
-    return true
-  })
-  if (applied && auth.authenticated && usernameDirty.value && username.value.trim() !== submitted) await saveUsername()
-}
-async function savePassword() {
-  if (accountAction.busy.value || !settings.value) return
-  await accountAction.run(async () => {
-    if (!username.value.trim()) throw new Error(t('authUsernameRequired'))
-    if (!password.value) throw new Error(t('authPasswordRequired'))
-    const length = new TextEncoder().encode(password.value).byteLength
-    if (length < 12 || length > 1024) throw new Error(t('authPasswordLength'))
-    if (new TextEncoder().encode(username.value.trim()).byteLength > 128 || /[\r\n\0]/.test(username.value)) throw new Error(t('authUsernameInvalid'))
-    if (password.value !== confirmPassword.value) throw new Error(t('authPasswordMismatch'))
-    const name = settings.value!.configured ? settings.value!.username : username.value.trim()
-    await recent(() => authAPI.account(name, password.value))
-    password.value = ''; confirmPassword.value = ''; changingPassword.value = false; usernameDirty.value = false
-    await auth.refresh()
-    if (auth.authenticated) await refresh()
-  })
 }
 async function beginTOTP() {
   factorTask.value = 'add'
@@ -209,7 +196,12 @@ async function removeAllSessions() {
 }
 async function logout() { await deviceAction.run(async () => { await authAPI.logout(); await auth.refresh() }) }
 function closeSetup(open: boolean) { if (!open && !factorAction.busy.value) { setup.value = undefined; setupCode.value = ''; qrImage.value = '' } }
-async function openHTTPS() { if (httpsAddress.value) await window.astralDesktop?.openExternal(httpsAddress.value) }
+async function openHTTPS() { if (httpsAddress.value) await window.astralDesktop?.openExternal(new URL('/settings/security', httpsAddress.value).href) }
+function openHTTPSHelp(event: MouseEvent) {
+  if (!window.astralDesktop) return
+  event.preventDefault()
+  void window.astralDesktop.openExternal(httpsSetupURL.value)
+}
 function lastPasskey(key: PasskeyView) { return settings.value?.passkeys.length === 1 && settings.value.passkeys[0]?.id === key.id }
 </script>
 <template>
@@ -223,21 +215,39 @@ function lastPasskey(key: PasskeyView) { return settings.value?.passkeys.length 
           :label="t('authUsername')"
           :description="t('authUsernameChangedHint')"
         >
-          <input
-            v-model="username"
-            :aria-label="t('authUsername')"
-            autocomplete="username"
-            @input="usernameDirty = true"
-            @blur="saveUsername"
-            @keydown.enter.prevent="saveUsername"
+          <form
+            class="auth-inline-form"
+            @submit.prevent="saveUsername"
           >
+            <input
+              v-model="username"
+              :aria-label="t('authUsername')"
+              autocomplete="username"
+              required
+              :disabled="accountAction.busy.value"
+              @input="usernameDirty = true"
+            ><Button
+              type="submit"
+              :busy="usernameAction.busy.value"
+              :disabled="!usernameDirty || accountAction.busy.value"
+            >
+              {{ t('authChangeUsername') }}
+            </Button>
+          </form>
         </SettingsRow>
+        <p
+          v-if="usernameAction.error.value"
+          class="error-box auth-group-error"
+          role="alert"
+        >
+          {{ usernameAction.error.value }}
+        </p>
         <SettingsRow
           :label="t('authPassword')"
           :description="t('authPasswordChangedHint')"
         >
           <Button
-            :disabled="accountAction.busy.value"
+            :disabled="accountAction.busy.value || usernameAction.busy.value"
             @click="changingPassword = !changingPassword"
           >
             {{ t(changingPassword ? 'cancel' : 'authChangePassword') }}
@@ -264,6 +274,7 @@ function lastPasskey(key: PasskeyView) { return settings.value?.passkeys.length 
             :aria-label="t('authUsername')"
             autocomplete="username"
             required
+            :disabled="accountAction.busy.value"
             @input="usernameDirty = true"
           >
         </SettingsRow>
@@ -274,6 +285,7 @@ function lastPasskey(key: PasskeyView) { return settings.value?.passkeys.length 
             type="password"
             autocomplete="new-password"
             required
+            :disabled="accountAction.busy.value || usernameAction.busy.value"
           >
         </SettingsRow>
         <SettingsRow :label="t('authConfirmPassword')">
@@ -283,6 +295,7 @@ function lastPasskey(key: PasskeyView) { return settings.value?.passkeys.length 
             type="password"
             autocomplete="new-password"
             required
+            :disabled="accountAction.busy.value || usernameAction.busy.value"
           >
         </SettingsRow>
         <p
@@ -297,6 +310,7 @@ function lastPasskey(key: PasskeyView) { return settings.value?.passkeys.length 
             type="submit"
             variant="primary"
             :busy="accountAction.busy.value"
+            :disabled="usernameAction.busy.value"
           >
             {{ t(settings.configured ? 'authChangePassword' : 'authCreateAccount') }}
           </Button>
@@ -309,16 +323,6 @@ function lastPasskey(key: PasskeyView) { return settings.value?.passkeys.length 
       >
         {{ accountAction.error.value }}
       </p>
-      <div
-        v-if="accountWaiting"
-        class="settings-feedback"
-        role="status"
-      >
-        <span
-          class="spinner"
-          aria-hidden="true"
-        /><span class="sr-only">{{ t('settingsSaving') }}</span>
-      </div>
     </SettingsSection>
 
     <SettingsSection
@@ -451,7 +455,7 @@ function lastPasskey(key: PasskeyView) { return settings.value?.passkeys.length 
       <SettingsRow
         v-else
         :label="t('authAddPasskey')"
-        :description="t('authPasskeyHTTPSHint')"
+        :description="passkeyHint"
       >
         <Button
           v-if="settings.desktop && httpsAddress"
@@ -459,10 +463,14 @@ function lastPasskey(key: PasskeyView) { return settings.value?.passkeys.length 
         >
           {{ t('authOpenHTTPS') }}
         </Button>
-        <span
-          v-else-if="settings.desktop"
-          class="muted small"
-        >{{ t('authNoHTTPSAddress') }}</span>
+        <a
+          v-else-if="showHTTPSHelp"
+          :href="httpsSetupURL"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="button button-secondary"
+          @click="openHTTPSHelp"
+        >{{ t('authHTTPSHelp') }}</a>
       </SettingsRow>
       <SettingsRow
         :label="t('authPasswordless')"

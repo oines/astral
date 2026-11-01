@@ -68,6 +68,10 @@ func TestFakeDockerProcess(t *testing.T) {
 		if state.Mode == "slow-probe" {
 			time.Sleep(30 * time.Second)
 		}
+		if diagnostic, failed := strings.CutPrefix(state.Mode, "probe-error:"); failed {
+			code, output = 1, diagnostic
+			break
+		}
 		output = state.ServerVersion
 		if output == "" {
 			output = `{"Platform":{"Name":"Test Docker"},"Os":"linux","Arch":"amd64"}`

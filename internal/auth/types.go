@@ -27,6 +27,7 @@ func SessionCookieName(secure bool) string {
 type Config struct {
 	DesktopToken    string
 	WebOrigins      func() []string
+	OriginAllowed   func(string) bool
 	RequestOrigin   func(*http.Request) string
 	SessionLifetime time.Duration
 	Now             func() time.Time

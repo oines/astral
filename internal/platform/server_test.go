@@ -145,8 +145,8 @@ func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) 
 	await(t, ctx, func() bool {
 		return s.Store.Get(ctx, "provisioning", operation.ID, &operation) == nil && operation.State == "failed"
 	})
-	if operation.ComputerID != "" || !strings.Contains(operation.Error, "container") {
-		t.Fatalf("failure invented a Computer: %+v", operation)
+	if operation.ComputerID != "" || !strings.Contains(operation.Error, "Docker could not be checked") || !strings.Contains(operation.Error, "docker version") {
+		t.Fatalf("failed Docker probe registered a Computer or lost its diagnostic: %+v", operation)
 	}
 	s.mu.Lock()
 	active := s.provisioning[operation.ID]

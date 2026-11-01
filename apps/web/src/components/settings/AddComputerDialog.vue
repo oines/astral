@@ -10,8 +10,11 @@ import { useI18n } from 'vue-i18n'
 import type { Computer } from '../../lib/types'
 import { errorText, request } from '../../lib/api'
 import { computerSummary } from '../../lib/computer-info'
+import { computerServerAddresses } from '../../lib/network-access'
 import { useAction } from '../../composables/useAction'
+import { useContainerRuntimeCheck } from '../../composables/useContainerRuntimeCheck'
 import { useAppStore } from '../../stores/app'
+import ContainerRuntimeStatus from './ContainerRuntimeStatus.vue'
 import { useClipboard } from '../../composables/useClipboard'
 import { randomID } from '../../lib/browser'
 import { formatDateTime } from '../../lib/timezone'
@@ -20,6 +23,7 @@ const adding = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ connected: [computer: Computer] }>()
 const { t, locale } = useI18n()
 const app = useAppStore()
+const containerRuntime = useContainerRuntimeCheck(() => app.data?.host)
 const action = useAction()
 const { copy, copied } = useClipboard()
 const list = useQuery(listComputersQuery())
@@ -34,6 +38,7 @@ const connected = computed(() => list.data.value?.find(c => c.id === computerID.
 const intent = ref('')
 const serverAddress = ref('')
 const addressListID = useId()
+const serverAddresses = computed(() => computerServerAddresses(app.data?.network.addresses || [], window.location.origin, Boolean(window.astralDesktop), t('networkBrowserAddress')))
 const displayedCommand = computed(() => commandPlatform.value === 'powershell' ? enrollmentResult.value?.powershell_command || '' : enrollmentResult.value?.command || '')
 const activeOperationKey = 'astral:pending-container'
 let restoring = false
@@ -62,7 +67,7 @@ function add() {
   enrollmentResult.value = undefined
   computerID.value = ''
   copied.value = false
-  serverAddress.value = app.data?.network.public_urls.value[0] || ''
+  serverAddress.value = serverAddresses.value[0]?.url || app.data?.network.public_urls.value[0] || ''
   commandPlatform.value = app.data?.host.os === 'windows' ? 'powershell' : 'shell'
   intent.value = randomID()
   action.error.value = ''
@@ -73,6 +78,7 @@ function chooseMode(value: typeof mode.value) {
   mode.value = value
   computerID.value = value === 'container' ? operation.value?.computer_id || '' : value === 'remote' ? enrollment.value?.computer_id || '' : ''
   action.error.value = ''
+  if (value === 'choose') void containerRuntime.check()
 }
 async function local() {
   if (action.busy.value) return
@@ -152,6 +158,7 @@ watch([serverAddress, container], () => {
 })
 watch(adding, open => {
   if (!open) remoteGeneration++
+  if (open) void containerRuntime.check()
   if (restoring) { restoring = false; return }
   const provisioning = operation.value && !['connected', 'failed'].includes(operation.value.state)
   if (open && !action.busy.value && !provisioning && enrollment.value?.state !== 'waiting') add()
@@ -186,10 +193,17 @@ function finish() {
       </button>
       <button
         class="computer-option"
+        :disabled="containerRuntime.checking.value || !containerRuntime.available.value"
         @click="localContainer"
       >
         <Server /><span><strong>{{ t('localContainer') }}</strong><small>{{ t('containerMachineHint') }}</small></span><ChevronRight />
       </button>
+      <ContainerRuntimeStatus
+        :host="containerRuntime.host.value"
+        :checking="containerRuntime.checking.value"
+        :error="containerRuntime.error.value"
+        @check="containerRuntime.check"
+      />
       <button
         class="computer-option"
         @click="chooseMode('remote')"
@@ -227,7 +241,7 @@ function finish() {
             >
             <datalist :id="addressListID">
               <option
-                v-for="address in app.data?.network.addresses"
+                v-for="address in serverAddresses"
                 :key="address.url"
                 :value="address.url"
               >

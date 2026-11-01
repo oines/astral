@@ -532,6 +532,12 @@ func (s *Service) CheckOrigin(r *http.Request) error {
 	if origin != s.Origin(r) {
 		return problem(403, "cross_origin", "Cross-origin management requests are not allowed.")
 	}
+	if s.config.OriginAllowed != nil {
+		if !s.config.OriginAllowed(origin) {
+			return problem(403, "cross_origin", "This management hostname is not allowed.")
+		}
+		return nil
+	}
 	if s.config.WebOrigins != nil {
 		for _, allowed := range s.config.WebOrigins() {
 			if allowed == origin {
@@ -547,6 +553,9 @@ func (s *Service) PasskeyAvailable(r *http.Request) bool {
 	u, err := url.Parse(origin)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || net.ParseIP(u.Hostname()) != nil {
 		return false
+	}
+	if s.config.OriginAllowed != nil {
+		return s.config.OriginAllowed(origin)
 	}
 	if s.config.WebOrigins == nil {
 		return false

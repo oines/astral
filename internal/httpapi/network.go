@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"net/url"
 
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/httpcontract"
@@ -25,7 +26,7 @@ type NetworkURLsSetting struct {
 type NetworkBoolSetting struct {
 	Value      bool   `json:"value"`
 	SavedValue bool   `json:"saved_value"`
-	Source     string `json:"source" enum:"cli,environment,settings,default"`
+	Source     string `json:"source" enum:"cli,environment,settings,server,default"`
 	Editable   bool   `json:"editable"`
 }
 type NetworkAddress struct {
@@ -34,16 +35,36 @@ type NetworkAddress struct {
 	Kind  string `json:"kind"`
 }
 type NetworkSettings struct {
-	Listen                NetworkStringSetting `json:"listen"`
-	PublicURLs            NetworkURLsSetting   `json:"public_urls"`
-	AllowRemoteManagement NetworkBoolSetting   `json:"allow_remote_management"`
-	Addresses             []NetworkAddress     `json:"addresses"`
-	RestartRequired       bool                 `json:"restart_required"`
+	Listen                NetworkStringSetting    `json:"listen"`
+	PublicURLs            NetworkURLsSetting      `json:"public_urls"`
+	AllowRemoteManagement NetworkBoolSetting      `json:"allow_remote_management"`
+	RestrictHostnames     NetworkBoolSetting      `json:"restrict_hostnames"`
+	AllowedHostnames      NetworkHostnamesSetting `json:"allowed_hostnames"`
+	Addresses             []NetworkAddress        `json:"addresses"`
+	RestartRequired       bool                    `json:"restart_required"`
 }
 type NetworkPatch struct {
 	Listen                *string   `json:"listen,omitempty"`
 	PublicURLs            *[]string `json:"public_urls,omitempty"`
 	AllowRemoteManagement *bool     `json:"allow_remote_management,omitempty"`
+	RestrictHostnames     *bool     `json:"restrict_hostnames,omitempty"`
+	AllowedHostnames      *[]string `json:"allowed_hostnames,omitempty"`
+}
+
+type NetworkHostnamesSetting struct {
+	Value      []string `json:"value"`
+	SavedValue []string `json:"saved_value"`
+	Source     string   `json:"source" enum:"cli,environment,settings,default"`
+	Editable   bool     `json:"editable"`
+}
+
+type networkHostnameKey struct{}
+
+// NetworkRequestHostname identifies the Web entry being edited. Machine-local
+// recovery has no Web entry and deliberately does not carry this context value.
+func NetworkRequestHostname(ctx context.Context) string {
+	value, _ := ctx.Value(networkHostnameKey{}).(string)
+	return value
 }
 
 func (a *API) publicURL() string {
@@ -67,11 +88,11 @@ func (a *API) networkRoutes() {
 		if a.Config.SaveNetworkSettings == nil {
 			return NetworkSettings{}, domain.Offline("Network settings are unavailable.")
 		}
-		if input.PublicURLs != nil && a.Config.ValidateAccessAddresses != nil {
-			if err := a.Config.ValidateAccessAddresses(r, *input.PublicURLs); err != nil {
-				return NetworkSettings{}, err
-			}
+		address, err := url.Parse("//" + r.Host)
+		if err != nil || address.Hostname() == "" {
+			return NetworkSettings{}, domain.Invalid("Invalid management hostname.")
 		}
-		return a.Config.SaveNetworkSettings(r.Context(), input)
+		ctx := context.WithValue(r.Context(), networkHostnameKey{}, address.Hostname())
+		return a.Config.SaveNetworkSettings(ctx, input)
 	})
 }

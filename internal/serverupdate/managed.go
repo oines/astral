@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/releasefeed"
 )
 
@@ -25,12 +26,14 @@ const serviceName = "astral-server.service"
 const jobBudget = 60 * time.Minute
 
 type installation struct {
-	Schema        int    `json:"schema"`
-	Root          string `json:"root"`
-	DataDirectory string `json:"data_directory"`
-	UID           int    `json:"uid"`
-	Service       string `json:"service"`
-	UnitPath      string `json:"unit_path"`
+	Schema                int     `json:"schema"`
+	Root                  string  `json:"root"`
+	DataDirectory         string  `json:"data_directory"`
+	UID                   int     `json:"uid"`
+	Service               string  `json:"service"`
+	UnitPath              string  `json:"unit_path"`
+	GitHubProxy           *string `json:"github_proxy,omitempty"`
+	AllowRemoteManagement *bool   `json:"allow_remote_management,omitempty"`
 }
 type operation struct {
 	Schema int `json:"schema"`
@@ -94,8 +97,15 @@ func (m *managed) validate(ctx context.Context, running bool) error {
 	if !m.deps.owned(markerPath, m.deps.uid) || readJSON(markerPath, &marker) != nil || marker.Schema != 1 || marker.Root != m.root || marker.DataDirectory != m.data || marker.UID != m.deps.uid || marker.Service != serviceName || marker.UnitPath != m.deps.unitPath {
 		return errors.New("the official installation marker does not match this user, root and service")
 	}
+	if marker.GitHubProxy != nil {
+		proxy, proxyErr := githubrelease.NormalizeProxy(*marker.GitHubProxy)
+		if proxyErr != nil || proxy != *marker.GitHubProxy {
+			return errors.New("the official installation marker has an invalid GitHub proxy")
+		}
+	}
+	expectedUnit := unitDefinitionWithEnvironment(m.root, marker.GitHubProxy, marker.AllowRemoteManagement)
 	unit, err := os.ReadFile(marker.UnitPath)
-	if err != nil || !m.deps.owned(marker.UnitPath, m.deps.uid) || string(unit) != unitDefinition(m.root) {
+	if err != nil || !m.deps.owned(marker.UnitPath, m.deps.uid) || string(unit) != expectedUnit {
 		return errors.New("the user service definition is not the matching official installer definition")
 	}
 	expected, err := filepath.EvalSymlinks(filepath.Join(m.root, "current/bin/astral"))
@@ -147,7 +157,15 @@ func sameArguments(a, b []string) bool {
 func installationArguments(root string) []string {
 	return []string{root + "/current/bin/astral", "serve", "--installation-root", root, "--data", root + "/data/server", "--computers-dir", root + "/data/computers", "--distribution-dir", root + "/current/distribution", "--ready-file", root + "/run/ready.json"}
 }
-func unitDefinition(root string) string {
+func unitDefinition(root string, githubProxy ...string) string {
+	var proxy *string
+	if len(githubProxy) > 0 {
+		proxy = &githubProxy[0]
+	}
+	return unitDefinitionWithEnvironment(root, proxy, nil)
+}
+
+func unitDefinitionWithEnvironment(root string, githubProxy *string, allowRemote *bool) string {
 	quote := func(s string) string {
 		s = strings.ReplaceAll(s, "\\", "\\\\")
 		s = strings.ReplaceAll(s, "\"", "\\\"")
@@ -158,7 +176,14 @@ func unitDefinition(root string) string {
 	for i := range args {
 		args[i] = quote(args[i])
 	}
-	return "# Astral Server installer root: " + root + "\n[Unit]\nDescription=Astral Server\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=/\nExecStart=:" + strings.Join(args, " ") + "\nRestart=on-failure\nRestartSec=3\nTimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n"
+	environment := ""
+	if githubProxy != nil {
+		environment = "Environment=" + quote(githubrelease.ProxyEnvironment+"="+*githubProxy) + "\n"
+	}
+	if allowRemote != nil {
+		environment += "Environment=" + quote("ASTRAL_ALLOW_REMOTE_MANAGEMENT="+strconv.FormatBool(*allowRemote)) + "\n"
+	}
+	return "# Astral Server installer root: " + root + "\n[Unit]\nDescription=Astral Server\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=/\n" + environment + "ExecStart=:" + strings.Join(args, " ") + "\nRestart=on-failure\nRestartSec=3\nTimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n"
 }
 func (m *managed) unavailable() State {
 	return State{Phase: "unavailable", CurrentVersion: m.version, Manager: "manual", Unavailable: "unmanaged"}
@@ -353,7 +378,25 @@ func (m *managed) prepare(op operation) {
 		fail(err)
 		return
 	}
-	args := []string{"--user", "--collect", "--unit=" + jobName(op.OperationID), "--description=Astral Server update", "--property=Type=exec", "--property=RuntimeMaxSec=3900", "--property=KillMode=mixed", "--property=TimeoutStopSec=180", "--setenv=HOME=" + os.Getenv("HOME"), "--setenv=XDG_CONFIG_HOME=" + filepath.Dir(filepath.Dir(filepath.Dir(m.deps.unitPath))), "--", executable, "server", "update", "--root", m.root, "--operation", op.OperationID, "--managed-helper"}
+	proxy, err := githubrelease.Proxy()
+	if err != nil {
+		fail(err)
+		return
+	}
+	args := []string{"--user", "--collect", "--unit=" + jobName(op.OperationID), "--description=Astral Server update", "--property=Type=exec", "--property=RuntimeMaxSec=3900", "--property=KillMode=mixed", "--property=TimeoutStopSec=180", "--setenv=HOME=" + os.Getenv("HOME"), "--setenv=XDG_CONFIG_HOME=" + filepath.Dir(filepath.Dir(filepath.Dir(m.deps.unitPath))), "--setenv=" + githubrelease.ProxyEnvironment + "=" + proxy}
+	if raw, configured := os.LookupEnv("ASTRAL_ALLOW_REMOTE_MANAGEMENT"); configured {
+		remote, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			fail(errors.New("ASTRAL_ALLOW_REMOTE_MANAGEMENT must be true or false"))
+			return
+		}
+		args = append(args, "--setenv=ASTRAL_ALLOW_REMOTE_MANAGEMENT="+strconv.FormatBool(remote))
+	} else {
+		// The detached job must not pick up an unrelated override from the user
+		// manager. The installer will preserve any saved explicit marker value.
+		args = append(args, "--property=UnsetEnvironment=ASTRAL_ALLOW_REMOTE_MANAGEMENT")
+	}
+	args = append(args, "--", executable, "server", "update", "--root", m.root, "--operation", op.OperationID, "--managed-helper")
 	if _, err = m.deps.command(ctx, "systemd-run", args...); err != nil {
 		// Launch responses can be lost after the independent process has started.
 		if m.jobStopped(ctx, op.OperationID) {

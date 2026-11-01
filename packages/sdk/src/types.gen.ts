@@ -846,6 +846,8 @@ export type AstralInternalDomainHostInfo = {
     container_available: boolean;
     container_error?: string;
     container_runtime?: string;
+    container_status?: 'available' | 'missing_cli' | 'not_running' | 'permission_denied' | 'error';
+    container_user?: string;
     hostname: string;
     local_error?: string;
     os: string;
@@ -1573,22 +1575,33 @@ export type AstralInternalHttpapiNetworkAddress = {
 export type AstralInternalHttpapiNetworkBoolSetting = {
     editable: boolean;
     saved_value: boolean;
-    source: 'cli' | 'environment' | 'settings' | 'default';
+    source: 'cli' | 'environment' | 'settings' | 'server' | 'default';
     value: boolean;
+};
+
+export type AstralInternalHttpapiNetworkHostnamesSetting = {
+    editable: boolean;
+    saved_value: Array<string>;
+    source: 'cli' | 'environment' | 'settings' | 'default';
+    value: Array<string>;
 };
 
 export type AstralInternalHttpapiNetworkPatch = {
     allow_remote_management?: boolean;
+    allowed_hostnames?: Array<string>;
     listen?: string;
     public_urls?: Array<string>;
+    restrict_hostnames?: boolean;
 };
 
 export type AstralInternalHttpapiNetworkSettings = {
     addresses: Array<AstralInternalHttpapiNetworkAddress>;
     allow_remote_management: AstralInternalHttpapiNetworkBoolSetting;
+    allowed_hostnames: AstralInternalHttpapiNetworkHostnamesSetting;
     listen: AstralInternalHttpapiNetworkStringSetting;
     public_urls: AstralInternalHttpapiNetworkUrlsSetting;
     restart_required: boolean;
+    restrict_hostnames: AstralInternalHttpapiNetworkBoolSetting;
 };
 
 export type AstralInternalHttpapiNetworkStringSetting = {

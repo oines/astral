@@ -34,7 +34,14 @@ func officialFixture(t *testing.T, change func(map[string]any)) (*http.Client, *
 	calls := []string{}
 	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		calls = append(calls, r.URL.String())
-		body, ok := bodies[r.URL.String()]
+		address := r.URL.String()
+		if prefix := os.Getenv("ASTRAL_GITHUB_PROXY"); prefix != "" {
+			if !strings.HasPrefix(address, prefix) {
+				t.Fatalf("update request bypassed selected proxy: %s", address)
+			}
+			address = strings.TrimPrefix(address, prefix)
+		}
+		body, ok := bodies[address]
 		if !ok {
 			t.Fatalf("unexpected official update request: %s", r.URL)
 		}
@@ -43,6 +50,15 @@ func officialFixture(t *testing.T, change func(map[string]any)) (*http.Client, *
 	return client, &calls
 }
 func TestOfficialMetadataIsPinnedAndChecksNeverFetchInstaller(t *testing.T) {
+	for _, prefix := range []string{"", "https://proxy.example/github/"} {
+		t.Run("proxy="+prefix, func(t *testing.T) {
+			t.Setenv("ASTRAL_GITHUB_PROXY", prefix)
+			testOfficialMetadataIsPinnedAndChecksNeverFetchInstaller(t)
+		})
+	}
+}
+
+func testOfficialMetadataIsPinnedAndChecksNeverFetchInstaller(t *testing.T) {
 	client, calls := officialFixture(t, nil)
 	target, err := resolveLatest(context.Background(), client)
 	if err != nil || target.Version != "0.1.2" {

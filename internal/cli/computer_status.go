@@ -25,7 +25,11 @@ func computerStatus(ctx context.Context, args []string, out, stderr io.Writer) e
 	}
 	if *path == "" {
 		if *root == "" {
-			return fmt.Errorf("--root or --credentials is required")
+			installation, err := resolveComputerInstallation(ctx, false, stderr)
+			if err != nil {
+				return err
+			}
+			*root = installation.Root
 		}
 		*path = filepath.Join(*root, "credentials.json")
 	}

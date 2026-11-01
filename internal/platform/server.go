@@ -206,7 +206,7 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 		}
 		return ""
 	}
-	s.Auth, err = auth.New(s.Store, &auth.Config{DesktopToken: config.DesktopToken, WebOrigins: s.WebOrigins, RequestOrigin: s.RequestOrigin, SessionLifetime: config.SessionLifetime})
+	s.Auth, err = auth.New(s.Store, &auth.Config{DesktopToken: config.DesktopToken, OriginAllowed: s.ManagementOriginAllowed, RequestOrigin: s.RequestOrigin, SessionLifetime: config.SessionLifetime})
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	s.Channels.StorageChanged = s.Storage.RequestReclaim
 	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, Auth: s.Auth, Storage: s.Storage, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
 		HostInfo: s.HostInfo, UseLocal: s.UseLocal, CreateContainer: s.CreateContainer,
-		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings, ValidateAccessAddresses: s.ValidateAccessAddresses, Updates: s.updates})
+		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings, Updates: s.updates})
 	mux := http.NewServeMux()
 	mux.Handle("/api/", s.Owner)
 	mux.Handle("/auth/", s.Owner.AuthHandler())
@@ -615,16 +615,21 @@ func (s *Server) HostInfo(ctx context.Context) domain.HostInfo {
 	s.mu.Lock()
 	info.LocalError = s.startupError
 	s.mu.Unlock()
-	// Bootstrap reports optional container availability. Do not give this
-	// background hint the longer budget used for an explicit container action.
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
+	info.ContainerUser = dockerProcessUser()
 	probe, err := ProbeDocker(ctx)
 	if err != nil {
+		info.ContainerStatus = "error"
 		info.ContainerError = err.Error()
+		var failure *dockerProbeError
+		if errors.As(err, &failure) {
+			info.ContainerStatus = failure.status
+			info.ContainerUser = failure.user
+			info.ContainerError = failure.cause.Error()
+		}
 	} else {
 		info.ContainerRuntime = probe.Name
 		info.ContainerAvailable = true
+		info.ContainerStatus = "available"
 	}
 	return info
 }

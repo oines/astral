@@ -32,20 +32,19 @@ import (
 )
 
 type Config struct {
-	Harness                 *harness.Service
-	Channels                *channels.Service
-	Auth                    *auth.Service
-	PublicURL               string
-	DataDirectory           string
-	Version                 string
-	HostInfo                func(context.Context) domain.HostInfo
-	UseLocal                func(context.Context) (domain.ComputerStatus, error)
-	CreateContainer         func(context.Context, string) (domain.Provisioning, error)
-	NetworkSettings         func(context.Context) NetworkSettings
-	SaveNetworkSettings     func(context.Context, NetworkPatch) (NetworkSettings, error)
-	ValidateAccessAddresses func(*http.Request, []string) error
-	Updates                 serverupdate.Controller
-	Storage                 *storage.Service
+	Harness             *harness.Service
+	Channels            *channels.Service
+	Auth                *auth.Service
+	PublicURL           string
+	DataDirectory       string
+	Version             string
+	HostInfo            func(context.Context) domain.HostInfo
+	UseLocal            func(context.Context) (domain.ComputerStatus, error)
+	CreateContainer     func(context.Context, string) (domain.Provisioning, error)
+	NetworkSettings     func(context.Context) NetworkSettings
+	SaveNetworkSettings func(context.Context, NetworkPatch) (NetworkSettings, error)
+	Updates             serverupdate.Controller
+	Storage             *storage.Service
 }
 type API struct {
 	Config       Config
@@ -240,7 +239,11 @@ func (a *API) systemRoutes() {
 			v.Network = a.Config.NetworkSettings(r.Context())
 		}
 		if a.Config.HostInfo != nil {
-			v.Host = a.Config.HostInfo(r.Context())
+			// Docker availability is optional during page startup. An explicit
+			// /computers/host check keeps the longer cold-start probe budget.
+			probeCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+			v.Host = a.Config.HostInfo(probeCtx)
+			cancel()
 		}
 		var err error
 		if v.Onboarding, err = h.Onboarding(r.Context()); err != nil {

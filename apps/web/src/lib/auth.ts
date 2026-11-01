@@ -61,6 +61,15 @@ export function passkeySupported(location: Pick<Location, 'protocol'> = window.l
   // Product policy deliberately excludes the browser's localhost HTTP exception.
   return location.protocol === 'https:' && typeof credentialType === 'function'
 }
+
+export function passkeyRegistrationState(location: Pick<Location, 'protocol' | 'hostname'>, options: { desktop: boolean; browserSupported: boolean; serverAvailable: boolean }): 'available' | 'desktop' | 'http' | 'ip' | 'browser' | 'unavailable' {
+  if (options.desktop) return 'desktop'
+  if (location.protocol !== 'https:') return 'http'
+  const hostname = location.hostname.replace(/^\[|\]$/g, '')
+  if (hostname.includes(':') || /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(hostname)) return 'ip'
+  if (!options.browserSupported) return 'browser'
+  return options.serverAvailable ? 'available' : 'unavailable'
+}
 function decode(value: unknown): ArrayBuffer {
   if (typeof value !== 'string') throw new Error('Invalid WebAuthn binary value.')
   const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/'))

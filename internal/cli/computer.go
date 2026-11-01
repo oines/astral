@@ -39,12 +39,19 @@ func computerService(ctx context.Context, args []string, out, stderr io.Writer) 
 		return fmt.Errorf("usage: astral computer service install|start|stop|restart|status|logs|uninstall --root DIRECTORY")
 	}
 	f := flags("computer service "+args[0], stderr)
-	root := f.String("root", "", "enrolled Daemon data directory")
+	root := f.String("root", "", "enrolled Daemon data directory (automatically find a single installation)")
 	if err := f.Parse(args[1:]); err != nil {
 		return err
 	}
+	if f.NArg() != 0 {
+		return fmt.Errorf("unexpected computer service argument")
+	}
 	if *root == "" {
-		return fmt.Errorf("--root is required; use the data directory shown in Computer details")
+		installation, err := resolveComputerInstallation(ctx, false, stderr)
+		if err != nil {
+			return err
+		}
+		*root = installation.Root
 	}
 	manager, err := daemonservice.New(*root)
 	if err != nil {
@@ -106,8 +113,24 @@ func computerUpdate(ctx context.Context, args []string, out, stderr io.Writer) e
 	container := f.String("container", "", "existing Astral container identity or name")
 	f.Bool("update", false, "installer update operation")
 	managed := f.Bool("managed-helper", false, "one-shot current-user update job")
+	containerEndpoint := ""
 	if err := f.Parse(args); err != nil {
 		return err
+	}
+	if f.NArg() != 0 {
+		return fmt.Errorf("unexpected computer update argument")
+	}
+	if *root == "" && *container == "" {
+		installation, err := resolveComputerInstallation(ctx, true, stderr)
+		if err != nil {
+			return err
+		}
+		if installation.Container != "" {
+			*container = installation.Container
+			containerEndpoint = installation.DockerEndpoint
+		} else {
+			*root = installation.Root
+		}
 	}
 	if *managed {
 		manager, err := daemonservice.New(*root)
@@ -122,7 +145,7 @@ func computerUpdate(ctx context.Context, args []string, out, stderr io.Writer) e
 		defer file.Close()
 		out = io.MultiWriter(out, file)
 	}
-	err := platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, Container: *container, Version: Version}, func(message string) { fmt.Fprintln(out, message) })
+	err := platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, Container: *container, Version: Version, ContainerEndpoint: containerEndpoint}, func(message string) { fmt.Fprintln(out, message) })
 	if err != nil && *managed {
 		fmt.Fprintln(out, "Daemon update failed:", err)
 	}

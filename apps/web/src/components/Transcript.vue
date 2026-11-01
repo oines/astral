@@ -16,6 +16,7 @@ import { createMessageTimeFormatter } from '../lib/message-time'
 import { formatDateTime } from '../lib/timezone'
 import { useAppStore } from '../stores/app'
 import type { TranscriptPosition } from '../lib/transcript-position'
+import { messageAttachments } from '../lib/message-attachments'
 const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean> }>()
 const emit = defineEmits<{ fork: [entryID: string]; position: [state: SessionState, position: TranscriptPosition] }>()
 const { t, locale } = useI18n()
@@ -30,13 +31,14 @@ const durable = computed(() => {
   return durableTranscriptGroups(props.state)
 })
 const groups = computed(() => liveTranscriptGroups(props.state, durable.value))
+const attachmentCache = new WeakMap<Entry, ReturnType<typeof messageAttachments>>()
 const now = useNow({ interval: 60_000 })
 const formatTimestamp = computed(() => createMessageTimeFormatter(locale.value, app.displayTimezone))
 const timestamps = computed(() => Object.fromEntries(groups.value.filter(group => group.role === 'assistant' && !group.active).map(group => [group.key, formatTimestamp.value(group.entries.findLast(entry => messageText(entry))?.time, now.value)])))
 const { copy, copied } = useClipboard()
 const copiedGroup = ref('')
 const copyError = ref('')
-function groupText(group: TranscriptGroup) { return group.entries.map(messageText).filter(Boolean).join('\n\n') }
+function groupText(group: TranscriptGroup) { return group.entries.map(messageText).filter(text => text.trim()).join('\n\n') }
 function statusText(group: TranscriptGroup) {
   const params = { ...group.statusParams }
   if (params.time) params.time = formatDateTime(String(params.time), locale.value, app.displayTimezone, { timeStyle: 'medium' })
@@ -51,15 +53,19 @@ function fork(group: TranscriptGroup) {
   const entry = group.entries.at(-1)
   if (entry) emit('fork', entry.id)
 }
-function files(entry: Entry): FileRef[] {
-  const raw = object(entry.message?.metadata).files
-  return Array.isArray(raw) ? raw as FileRef[] : []
+function attachments(entry: Entry) {
+  let result = attachmentCache.get(entry)
+  if (!result) {
+    result = messageAttachments(entry)
+    attachmentCache.set(entry, result)
+  }
+  return result
 }
+function openFile(file: FileRef) { surface.open({ kind: 'file', id: file.id, sessionID: props.sessionID, ref: file }) }
 function sender(entry: Entry) {
   const meta = object(entry.message?.metadata)
   return meta.source === 'im' ? String(object(meta.sender).name ?? '') : ''
 }
-function images(entry: Entry) { return (entry.message?.content ?? []).filter(p => p.type === 'image') }
 function imageDimensions(image: Content) {
   const metadata = object(image.metadata)
   const width = Number(metadata.width)
@@ -128,7 +134,7 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
             </p>
           </template>
           <article
-            v-for="entry in group.entries.filter(entry => group.role === 'user' || images(entry).length || files(entry).length)"
+            v-for="entry in group.entries.filter(entry => group.role === 'user' || attachments(entry).images.length || attachments(entry).files.length)"
             :key="entry.id"
             :data-scroll-anchor="entry.id"
             :class="['message', group.role === 'user' ? 'message-user' : 'message-attachments']"
@@ -152,44 +158,61 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
               {{ sender(entry) }} · Telegram
             </div>
             <div
-              v-if="group.role === 'user'"
-              class="user-text"
-            >
-              {{ messageText(entry) }}
-            </div>
-            <div
-              v-if="images(entry).length"
+              v-if="attachments(entry).images.length"
               class="message-images"
+              :class="{ 'message-images-multiple': attachments(entry).images.length > 1 }"
             >
-              <a
-                v-for="(image, index) in images(entry)"
-                :key="index"
-                :href="imageURL(sessionID, entry.id, index)"
-                target="_blank"
-                rel="noopener"
+              <div
+                v-for="image in attachments(entry).images"
+                :key="image.index"
+                class="message-image"
               >
-                <img
-                  :src="imageURL(sessionID, entry.id, index)"
-                  :alt="t('historicalImage')"
-                  :width="imageDimensions(image).width"
-                  :height="imageDimensions(image).height"
-                  decoding="async"
-                  loading="lazy"
+                <a
+                  :href="imageURL(sessionID, entry.id, image.index)"
+                  target="_blank"
+                  rel="noopener"
                 >
-              </a>
+                  <img
+                    :src="imageURL(sessionID, entry.id, image.index)"
+                    :alt="image.file?.display_name || t('historicalImage')"
+                    :width="imageDimensions(image.content).width"
+                    :height="imageDimensions(image.content).height"
+                    decoding="async"
+                    loading="lazy"
+                  >
+                </a>
+                <button
+                  v-if="image.file"
+                  type="button"
+                  class="message-image-file"
+                  :aria-label="t('attachmentDetails', { name: image.file.display_name })"
+                  :title="t('attachmentDetails', { name: image.file.display_name })"
+                  @click="openFile(image.file)"
+                >
+                  <File />
+                </button>
+              </div>
             </div>
             <div
-              v-if="files(entry).length"
+              v-if="attachments(entry).files.length"
               class="message-files"
             >
               <button
-                v-for="file in files(entry)"
+                v-for="file in attachments(entry).files"
                 :key="file.id"
+                type="button"
                 class="file-chip"
-                @click="surface.open({ kind: 'file', id: file.id, sessionID, ref: file })"
+                :title="file.display_name"
+                @click="openFile(file)"
               >
-                <File />{{ file.display_name }}
+                <File /><span>{{ file.display_name }}</span>
               </button>
+            </div>
+            <div
+              v-if="group.role === 'user' && messageText(entry).trim()"
+              class="user-text"
+            >
+              {{ messageText(entry) }}
             </div>
           </article>
           <div

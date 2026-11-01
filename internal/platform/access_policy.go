@@ -7,8 +7,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/oines/astral/internal/auth"
-	"github.com/oines/astral/internal/domain"
 	"golang.org/x/net/idna"
 )
 
@@ -82,19 +80,6 @@ func (s *Server) WebOrigins() []string {
 	return s.webOriginsWith(values)
 }
 
-func (s *Server) ValidateAccessAddresses(r *http.Request, values []string) error {
-	if auth.IdentityFromContext(r.Context()).Desktop {
-		return nil
-	}
-	current := s.RequestOrigin(r)
-	for _, origin := range s.webOriginsWith(values) {
-		if origin == current {
-			return nil
-		}
-	}
-	return domain.Invalid("Open Astral through another allowed address before removing the address used by this browser.")
-}
-
 func (s *Server) webOriginsWith(configured []string) []string {
 	values := append([]string{}, configured...)
 	s.network.mu.RLock()
@@ -141,13 +126,10 @@ func (s *Server) managementBoundary(next http.Handler) http.Handler {
 			http.Error(w, "unrecognized management host", http.StatusForbidden)
 			return
 		}
-		host := strings.TrimSuffix(strings.ToLower(requested.Hostname()), ".")
-		for _, origin := range s.WebOrigins() {
-			allowed, _ := url.Parse(origin)
-			if allowed != nil && host != "" && host == strings.TrimSuffix(strings.ToLower(allowed.Hostname()), ".") {
-				next.ServeHTTP(w, r)
-				return
-			}
+		host, err := normalizeHostname(requested.Hostname())
+		if err == nil && s.managementHostnameAllowed(host) {
+			next.ServeHTTP(w, r)
+			return
 		}
 		http.Error(w, "unrecognized management host", http.StatusForbidden)
 	})

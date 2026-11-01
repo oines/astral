@@ -60,7 +60,7 @@ func TestProbeDockerUsesServerVersionWithoutPluginEnumeration(t *testing.T) {
 		{name: "Windows containers", version: `{"Platform":{"Name":"Docker Desktop"},"Os":"windows","Arch":"amd64"}`, failure: "Linux container runtime"},
 		{name: "unsupported architecture", version: `{"Os":"linux","Arch":"arm"}`, failure: "architecture must be arm64 or amd64"},
 		{name: "missing server", version: `null`, failure: "Linux container runtime"},
-		{name: "invalid response", version: `{`, failure: "Linux container runtime"},
+		{name: "invalid response", version: `{`, failure: "invalid Server version"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, statePath, read := containerUpdateFixture(t, "")
@@ -87,11 +87,11 @@ func TestProbeDockerUsesServerVersionWithoutPluginEnumeration(t *testing.T) {
 	}
 }
 
-func TestHostInfoBoundsSlowDockerWithoutExhaustingBootstrap(t *testing.T) {
+func TestHostInfoRespectsCallerProbeBudget(t *testing.T) {
 	_, _, _, _ = containerUpdateFixture(t, "slow-probe")
 	t.Setenv("DOCKER_HOST", "unix:///astral-test.sock")
 	t.Setenv("DOCKER_CONTEXT", "")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	started := time.Now()
 	server := &Server{}
@@ -99,7 +99,7 @@ func TestHostInfoBoundsSlowDockerWithoutExhaustingBootstrap(t *testing.T) {
 	if info.ContainerAvailable || !strings.Contains(info.ContainerError, context.DeadlineExceeded.Error()) {
 		t.Fatalf("slow Docker did not produce an unavailable hint: %+v", info)
 	}
-	if ctx.Err() != nil || time.Since(started) > 8*time.Second {
-		t.Fatalf("optional Docker availability exhausted the bootstrap request: %v", ctx.Err())
+	if time.Since(started) > 3*time.Second {
+		t.Fatalf("Docker availability ignored the caller's deadline: %v", ctx.Err())
 	}
 }

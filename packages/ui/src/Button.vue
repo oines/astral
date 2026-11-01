@@ -28,6 +28,6 @@ const styles = cva('button', {
       class="spinner"
       aria-hidden="true"
     />
-    <slot />
+    <slot v-if="!waiting || size !== 'icon'" />
   </button>
 </template>

@@ -47,22 +47,23 @@ const { t } = useI18n()
       </div>
     </div>
     <div class="composer-area">
-      <div
-        class="composer"
-        aria-hidden="true"
-      >
-        <div class="composer-input-row">
-          <Skeleton class="chat-skeleton-add" />
-          <Skeleton class="chat-skeleton-prompt" />
-          <Skeleton class="chat-skeleton-send" />
+      <div class="composer-stack">
+        <div
+          class="composer-form"
+          aria-hidden="true"
+        >
+          <div class="composer">
+            <div class="composer-input-row">
+              <Skeleton class="chat-skeleton-add" />
+              <Skeleton class="chat-skeleton-prompt" />
+              <Skeleton class="chat-skeleton-send" />
+            </div>
+          </div>
+          <div class="composer-environment">
+            <Skeleton class="chat-skeleton-computer" />
+            <Skeleton class="chat-skeleton-model" />
+          </div>
         </div>
-      </div>
-      <div
-        class="composer-environment"
-        aria-hidden="true"
-      >
-        <Skeleton class="chat-skeleton-computer" />
-        <Skeleton class="chat-skeleton-model" />
       </div>
       <p
         v-if="reconnecting"

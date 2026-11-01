@@ -3,9 +3,10 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { SettingsRow } from '@astral/ui'
 import { adapterInfo } from '../../lib/im-platforms'
+import { feishuAppSettingsURL, feishuSetupGuideURL } from '../../lib/feishu-setup'
 const props = defineProps<{ adapter: string; values: Record<string, string>; token: string; creating?: boolean }>()
 const emit = defineEmits<{ 'update:token': [value: string]; field: [key: string, value: string] }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const info = computed(() => adapterInfo(props.adapter))
 </script>
 <template>
@@ -16,6 +17,24 @@ const info = computed(() => adapterInfo(props.adapter))
     >
       {{ t(info.hint) }}
     </p>
+    <div
+      v-if="adapter === 'feishu.bot'"
+      class="row feishu-setup-links"
+      :class="{ 'feishu-setup-links-editing': !creating }"
+    >
+      <a
+        :href="feishuAppSettingsURL(values.app_id)"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="small"
+      >{{ t('feishuConfigureApp') }}</a>
+      <a
+        :href="feishuSetupGuideURL(locale)"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="small"
+      >{{ t('feishuSetupGuide') }}</a>
+    </div>
     <SettingsRow
       v-if="info.secret"
       :label="t(info.secret)"
@@ -45,3 +64,7 @@ const info = computed(() => adapterInfo(props.adapter))
     </SettingsRow>
   </template>
 </template>
+<style scoped>
+.feishu-setup-links { flex-wrap: wrap; }
+.feishu-setup-links-editing { padding-top: var(--settings-row-padding); }
+</style>

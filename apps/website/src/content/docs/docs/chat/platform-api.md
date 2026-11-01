@@ -1,104 +1,151 @@
 ---
-title: "Platform APIs"
-description: "Use the Gateway to query members and profiles, moderate chats, and manage notices, group files and essence messages."
+title: "Platform API reference"
+description: "Query chats, call platform operations from custom scripts, and handle their results."
 ---
 
-The Bot can use its built-in Gateway API to query members, manage groups, publish notices, and work with group files. Actions use the connected platform account’s permissions, without a separate check of the requester’s group role. Review [safe-use guidance](/docs/start/safe-use/) before connecting a public group.
+This reference is for writing scripts or inspecting the Bot's platform calls. For everyday tasks, ask the Bot directly: “List this QQ group's files” or “Pin the conclusion we just wrote.” You do not need to call an API yourself.
 
-## Discover and invoke operations
+Astral's built-in Gateway API lets the Bot query chats, send files, and manage groups within its authorized scope. Actions use **the connected platform account's permissions**, not the identity of the group member requesting a task. Limit the account's and Bot's [access](/docs/start/safe-use/) before connecting a public group.
 
-Read `local_api.capabilities_url` from the current environment, then open the chats capability document. Every request needs `Authorization: Bearer …`, reading `ASTRAL_API_TOKEN` from the current command's environment. Do not print the token or put it in a URL.
+## Discover APIs in the current environment
 
-1. Use `GET /v1/accounts` to find this Bot's accounts.
-2. Use `GET /v1/conversations` to find an authorized chat, matching its `connection_id` to the selected account, and obtain its Astral `conversation_id`.
-3. Read `GET /v1/accounts/{id}/operations` for supported names, parameters, upload `file_fields` and platform documentation.
-4. Invoke `POST /v1/accounts/{id}/operations/{operation}` with the listed `parameters` and the authorized `conversation_id`. The response preserves the platform result in `result`.
+Read `local_api.capabilities_url` from the Bot's current environment, then open the chat capability document. Use the addresses, request schemas, and platform capabilities returned by that instance. Resolve relative links against `local_api.base_url`.
 
-For example, select NapCat's `get_group_member_list` operation with:
+Requests require `Authorization: Bearer …` using the executing command process's `ASTRAL_API_TOKEN` environment variable. Read it within your program without printing, saving, or putting it in a URL. This is the current command's credential, not a Telegram token or an app secret.
 
-```json
+## Call a platform operation
+
+To read a QQ NapCat group's members:
+
+1. Call `GET /v1/accounts` and record the `id` of the current Bot's NapCat account.
+2. Call `GET /v1/conversations`, find the authorized group, and check its `connection_id` matches that account. Record the chat's `id`.
+3. Call `GET /v1/accounts/{id}/operations`. Find `get_group_member_list` and read its parameters, `file_fields`, and platform documentation link.
+4. Make the following request, replacing the placeholder IDs:
+
+```http
+POST /v1/accounts/<account-id>/operations/get_group_member_list
+Content-Type: application/json
+Authorization: Bearer <current-command-credential>
+
 {
-  "conversation_id": "<Astral conversation ID>",
+  "conversation_id": "<Astral-chat-ID>",
   "parameters": { "no_cache": true }
 }
 ```
 
-Astral derives the group, Telegram chat and Topic identifiers from the authorized conversation. Parameters cannot redirect a request to another group or account. Reading platform resources does not create sessions or import old messages.
+`conversation_id` is the **Astral chat record ID** obtained in step 2, not a QQ group number, Telegram Chat ID, Feishu `oc_…`, or Astral Session ID. Astral derives the platform destination and Topic from it. Do not override the target in `parameters`.
+
+A successful response contains the platform operation's data in `result`. It may be an object, array, or empty object depending on the method. Follow that method's pagination fields when reading lists. A query does not create an Astral conversation or automatically import historical messages into the current task.
+
+The account must belong to the current Bot, and the chat must remain authorized. Access to one Telegram topic does not grant parent-group management. Chats bound to private conversations keep their private-access restrictions.
 
 ## Telegram
 
-Named operations cover chat and member information, restrictions and bans, administrator roles, titles, descriptions, photos, invitations, join requests, pins, Topics, message sending and editing. Inspect the account catalog for exact method names and parameters; see the [Telegram Bot API](https://core.telegram.org/bots/api) for platform details.
+Read exact method names and parameters from the account's catalog. Field definitions are in the corresponding [Telegram Bot API](https://core.telegram.org/bots/api) method.
 
 | Task | Example methods |
 | --- | --- |
-| Chat information, administrators, count and a known member | `getChat`, `getChatAdministrators`, `getChatMemberCount`, `getChatMember` |
-| Restrict, ban, unban and promote | `restrictChatMember`, `banChatMember`, `unbanChatMember`, `promoteChatMember` |
-| Chat settings, invitations and approvals | `setChatTitle`, `setChatDescription`, `setChatPhoto`, `createChatInviteLink`, `approveChatJoinRequest` |
-| Profile photos, audio and personal-chat messages | `getUserProfilePhotos`, `getUserProfileAudios`, `getUserPersonalChatMessages` |
+| Chat information, administrators, member count, and a known member | `getChat`, `getChatAdministrators`, `getChatMemberCount`, `getChatMember` |
+| Restrict, ban, unban, and promote members | `restrictChatMember`, `banChatMember`, `unbanChatMember`, `promoteChatMember` |
+| Chat settings, invitations, and join requests | `setChatTitle`, `setChatDescription`, `setChatPhoto`, `createChatInviteLink`, `approveChatJoinRequest` |
+| Member profile photos, audio, and personal-chat messages | `getUserProfilePhotos`, `getUserProfileAudios`, `getUserPersonalChatMessages` |
+| Other platform capabilities | Sending, editing, deleting, forwarding, pins, forum topics, polls, stickers, and more; select from the catalog |
 
-**The Telegram Bot API cannot enumerate every group member.** It can return administrators, the member count and membership for a known user ID. Checking other members generally requires the Bot to be an administrator.
+Telegram Bot API **cannot enumerate the complete group membership**. Looking up a known member generally requires administrator status. User-profile reads also need an authorized chat: a private chat can query only its peer and defaults `user_id` to that peer; a group requires a verified current member. Topic-only access does not grant parent-group or member-profile access. Linked chats in profile results do not become authorized.
 
-Profile reads remain scoped to an authorized chat. In a private chat, an omitted `user_id` selects its peer and cannot select another person. A group requires an explicit current member's `user_id`. Topic-only access does not grant parent-group or profile access. Profile media returns Telegram metadata and file identifiers; personal-chat messages do not grant access to another chat or become incoming IM observations.
+Copy and forward operations use `source_conversation_id`; source and destination must both be authorized through the same account. Chat-wide editing, deletion, and copying also enforce message ownership.
+
+### Sticker sets and custom emoji
+
+`getStickerSet` and `getCustomEmojiStickers` are marked `account_scoped: true` in the catalog. These resource reads can omit `conversation_id`. For `https://t.me/addstickers/oines1`, use:
+
+```json
+{ "parameters": { "name": "oines1" } }
+```
+
+The result contains sticker metadata and `file_id` values, not downloaded images. Read a selected file through `GET /v1/accounts/{id}/telegram/stickers/content`, or save it with `POST /v1/accounts/{id}/telegram/stickers/download`. Follow the advertised request schema: specify exactly one of `set_name` or `custom_emoji_id`, plus a `file_id` from that result. Saving also requires `path`.
+
+Send an existing sticker with `sendSticker` using the original sticker's `file_id` from the same account, or upload through `files.sticker`. A thumbnail, `file_unique_id`, or `custom_emoji_id` cannot replace the original `file_id`. An animation's thumbnail is not its full animation.
 
 ## QQ NapCat
 
-The following operations are available through QQ NapCat, subject to the installed version and account permissions. The catalog provides short names alongside native operation names.
+Availability depends on the installed NapCat version and QQ account permissions. Use the account catalog for each operation's exact parameters:
 
-| Resource | Operations |
+| Purpose | Operations |
 | --- | --- |
-| Groups, members and profiles | `get_group_info`, `get_group_info_ex`, `get_group_member_list`, `get_group_member_info`, `get_stranger_info`, `get_group_honor_info`, `get_group_at_all_remain`, `get_group_shut_list` |
+| Group information, members, and profiles | `get_group_info`, `get_group_info_ex`, `get_group_member_list`, `get_group_member_info`, `get_stranger_info`, `get_group_honor_info`, `get_group_at_all_remain`, `get_group_shut_list` |
 | Group management | `set_group_ban`, `set_group_kick`, `set_group_whole_ban`, `set_group_admin`, `set_group_card`, `set_group_name`, `set_group_special_title`, `set_group_leave`, `set_group_remark`, `set_group_portrait` |
 | Notices | `_get_group_notice`, `_send_group_notice`, `_del_group_notice` |
-| Files and folders | `get_group_file_system_info`, `get_group_root_files`, `get_group_files_by_folder`, `get_group_file_url`, `upload_group_file`, `create_group_file_folder`, `delete_group_folder`, `delete_group_file`, `rename_group_file`, `move_group_file` |
+| Group files and folders | `get_group_file_system_info`, `get_group_root_files`, `get_group_files_by_folder`, `get_group_file_url`, `upload_group_file`, `create_group_file_folder`, `delete_group_folder`, `delete_group_file`, `rename_group_file`, `move_group_file` |
 | Essence messages | `get_essence_msg_list`, `set_essence_msg`, `delete_essence_msg` |
+| Messages, reactions, and pokes | `get_message`, `delete_message`, `set_reaction`, `poke` |
 
-Prefer strings for identifiers such as `user_id`; switches such as `enable` must be JSON booleans. `set_group_ban` takes `duration` in seconds: `0` unmutes, omission defaults to 1800, and the maximum is 2592000. Profile queries select only the private peer or a verified current group member.
+Use strings for QQ user and message IDs, and JSON booleans for switches such as `enable`. `set_group_ban.duration` is in seconds: `0` unmutes, the default is 1800, and the maximum is 2592000. Profile reads and pokes can target only the current private peer or a verified current group member.
 
-Notices can be listed, posted, and deleted; editing their text is not currently supported. Group files can be renamed, moved, and deleted. Folders can be created, listed, and deleted, but not renamed.
+Message lookup, deletion, and reactions require an archived message in the selected chat and a verified association. Notice text cannot currently be edited, and folders cannot be renamed. Private window shakes can be received but not sent.
 
-### Read and save avatars
+### Upload files, notice images, and group avatars
 
-QQ NapCat chats also provide avatar resources through the Gateway:
+Upload sources are paths on **the computer running the calling command**, or `astral-file://` references. Do not use paths on the NapCat host or arbitrary download URLs. For example:
 
-| Task | Endpoint |
-| --- | --- |
-| Read a group avatar or private peer's avatar | `GET /v1/conversations/{id}/avatar/content` |
-| Save that avatar to the calling Computer | `POST /v1/conversations/{id}/avatar/download` |
-| Read a specific person's avatar | `GET /v1/conversations/{id}/members/{user_id}/avatar/content` |
-| Save that person's avatar to the calling Computer | `POST /v1/conversations/{id}/members/{user_id}/avatar/download` |
+```http
+POST /v1/accounts/<account-id>/operations/upload_group_file
+Content-Type: application/json
+Authorization: Bearer <current-command-credential>
 
-Use an authorized Astral conversation ID for `{id}` and a QQ number for `{user_id}`. A person's avatar is limited to the private chat's peer or a current member verified in the selected group. These endpoints are available for QQ NapCat, not the official QQ Bot integration.
-
-Content requests return image bytes. For either download endpoint, send `{"path":"/path/on/calling/computer/avatar.jpg"}`. The response contains `file` (a FileRef) and its `uri`; the file is saved on the current command's source Computer. The image comes from QQ's avatar service and may reflect its cache. An arbitrary image URL is not accepted.
-
-### Uploads and file operations
-
-Uploads use a path on the calling Computer or an `astral-file://` reference. A NapCat-host path or arbitrary URL in parameters is not accepted. For example, invoke `upload_group_file` with:
-
-```json
 {
-  "conversation_id": "<Astral conversation ID>",
+  "conversation_id": "<Astral-chat-ID>",
   "parameters": { "name": "report.pdf" },
   "files": { "file": "/path/on/calling/computer/report.pdf" }
 }
 ```
 
-For a notice with an image, use `_send_group_notice` with `parameters.content` and `files.image`. A group portrait uses `set_group_portrait` with `files.file`. Bytes stream from the source Computer; selecting a different Computer in the session does not change an existing command's path source.
+For an illustrated notice, use `_send_group_notice` with `parameters.content` and `files.image`. For a group avatar, use `set_group_portrait` with `files.file`. Uploads read from the calling computer; switching the conversation's computer later does not change that command's source.
 
-Read the selected group's notices or directories before using a returned `notice_id`, `file_id` or `folder_id`. For a file inside a folder, URL and deletion operations also take `folder_id`. Renaming uses `current_parent_directory`; moving also takes `target_parent_directory`. The root directory is an empty string or `/`. Astral verifies that each resource belongs to the authorized group before invoking the platform.
+Query the current group's resources before using returned `notice_id`, `file_id`, or `folder_id` values. Downloads and deletion for files in a subfolder require `folder_id`. Renaming uses `current_parent_directory`; moving also needs `target_parent_directory`. Use an empty string or `/` for the root. Astral checks that resources still belong to the selected group.
 
-### Essence messages with images
+### Read and save avatars
 
-Essence results preserve each message's ordered `content`, including text, images and other media actually supplied by the platform, together with its message identity. Images are not flattened into a text summary. Listing does not download every image or import the messages into chat history.
+| Task | Endpoint |
+| --- | --- |
+| Read the group avatar or private peer's avatar | `GET /v1/conversations/{id}/avatar/content` |
+| Save that avatar | `POST /v1/conversations/{id}/avatar/download` |
+| Read a member's avatar | `GET /v1/conversations/{id}/members/{user_id}/avatar/content` |
+| Save that member's avatar | `POST /v1/conversations/{id}/members/{user_id}/avatar/download` |
 
-To inspect an image, read `GET /v1/conversations/{id}/essence/{message_id}/parts`, supplying the entry's `msg_seq` and `msg_random` query parameters together when available. The response keeps content order and provides media `content_url` and `download_url` links. These links retain the stable essence identity even if NapCat later recovers the original and changes its short message ID.
+`{id}` is an Astral chat ID and `{user_id}` is a QQ number. Personal avatars are limited to the private peer or a verified current group member. Content endpoints return image bytes. Download requests use `{"path":"/absolute/path/avatar.jpg"}` and save on the calling computer; `file` in the response is a FileRef and `uri` is its reference address. QQ may cache avatars. These endpoints are NapCat-only and do not accept arbitrary image URLs.
 
-`GET content_url` reads an original on demand. `POST` to `download_url` with `{"path":"/path/on/calling/computer/image.png"}` saves it on the current command's source Computer and returns a FileRef. Always use the complete returned media link: its required `media_digest` parameter verifies the selected source. Do not construct a media link from a part index alone. If recovering the original changes its part order, an old link requires a new parts read instead of downloading a different image.
+### Read images in cards, merged forwards, and essence messages
 
-Each request checks the group's current essence list; the original need not have been archived by Astral. Removed essence entries or revoked access invalidate subsequent reads through old links. Image responses preserve their actual media type instead of labeling every unnamed PNG or GIF as JPEG.
+For an ordinary message, start with `GET /v1/conversations/{id}/messages/{message_id}/parts`, then follow the returned read, expand, or download links. Cards and nested forwards keep their original order. Source metadata does not grant access to other chats. Quoted originals must already be archived in the current chat; a quote cannot retrieve missing content across chats.
 
-Adding essence checks the original message's group. Removing essence checks the selected group's current essence list, including entries from before Astral joined. Removal changes the essence marker and does not delete the original message. There is no separate action to edit an essence message's body.
+For an essence message, use `GET /v1/conversations/{id}/essence/{message_id}/parts`. Include both `msg_seq` and `msg_random` query parameters when available. This can read an existing historical essence entry without a previously archived original message.
 
-## Mutation outcomes
+Results include ordered content and media `content_url` and `download_url` links. `GET content_url` reads the original. `POST download_url` with `{"path":"/absolute/path/image.png"}` saves it on the calling computer and returns a FileRef. Use the complete returned links; do not construct part indexes or omit `media_digest`. Refresh parts when the source changes. Old links stop working if permission is revoked or the essence entry is removed.
 
-Named platform operations make one attempt and do not use the message-send endpoints’ `Idempotency-Key` contract. On `outcome_unknown`, inspect the platform state before repeating a kick, notice, or upload. Follow the returned error for missing permissions, unavailable methods, or platform rejections.
+Removing an essence mark keeps the original message. There is no separate operation to edit the essence message's text.
+
+## Feishu, Weixin, and official QQ Bots
+
+| Platform | Additional operations |
+| --- | --- |
+| Feishu | `get_chat`, `get_message`, `list_messages`, `delete_message`, `list_reactions`, `add_reaction`, `delete_reaction` |
+| Weixin | `set_typing`, with JSON boolean parameter `active` |
+| Official QQ Bot | No additional named operations; use shared send and archive endpoints |
+
+Feishu message operations require an archived message in the authorized chat and verify the chat returned by the platform. Use a string for `message_id`. Grant and publish the app permissions described in [Feishu setup](/docs/chat/feishu/).
+
+## Send messages and handle errors
+
+The Bot should use `send_message` for text or attachments in its currently bound chat. Before using `POST /v1/im/messages` or `/v1/im/files` from a script, read the target chat's `message-tool` capability. These HTTP send endpoints require a stable `Idempotency-Key` and provide send records for outcome checks.
+
+**Named platform operations** on this page make one attempt and do not use that send-idempotency contract. Read `result` on success. On failure, inspect `code` and `message`:
+
+| Result | Action |
+| --- | --- |
+| `invalid` | Check field names, types, and limits against the operation catalog; do not supply a group ID to redirect the target |
+| Insufficient permission, disabled account, or invisible resource | Check Bot ownership, chat access, platform roles, and app permissions |
+| `platform_rejected` | The platform explicitly refused; correct the reported permission or request problem |
+| `outcome_unknown` | The action may have happened; inspect the platform before deciding to repeat it |
+
+Do not immediately retry a ban, notice publication, file upload, or other write with an unknown result. Check current platform state first to avoid duplicate effects.

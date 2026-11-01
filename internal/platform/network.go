@@ -29,6 +29,8 @@ type NetworkValues struct {
 	Listen                *string   `json:"listen,omitempty"`
 	PublicURLs            *[]string `json:"public_urls,omitempty"`
 	AllowRemoteManagement *bool     `json:"allow_remote_management,omitempty"`
+	RestrictHostnames     *bool     `json:"restrict_hostnames,omitempty"`
+	AllowedHostnames      *[]string `json:"allowed_hostnames,omitempty"`
 }
 
 type networkState struct {
@@ -40,10 +42,15 @@ type networkState struct {
 	cli, environment, saved NetworkValues
 	activeListen            httpapi.NetworkStringSetting
 	addresses               []httpapi.NetworkAddress
+	desktop                 bool
 }
 
 func newNetworkState(config Config) (*networkState, error) {
-	n := &networkState{path: filepath.Join(config.DataDirectory, "network.json"), cli: config.NetworkCLI, environment: config.NetworkEnvironment, discover: discoverNetworkAddresses}
+	return loadNetworkState(config, true)
+}
+
+func loadNetworkState(config Config, persistInitialPolicy bool) (*networkState, error) {
+	n := &networkState{path: filepath.Join(config.DataDirectory, "network.json"), cli: config.NetworkCLI, environment: config.NetworkEnvironment, discover: discoverNetworkAddresses, desktop: config.DesktopToken != ""}
 	// Programmatic callers can supply explicit values without parsing CLI flags.
 	if n.cli.Listen == nil && config.Listen != "" {
 		n.cli.Listen = &config.Listen
@@ -65,6 +72,20 @@ func newNetworkState(config Config) (*networkState, error) {
 			return nil, fmt.Errorf("read network settings: %w", err)
 		}
 	}
+	// Freeze the old Host policy before the first upgraded start. New standalone
+	// Servers accept any valid hostname; Desktop keeps its local Host boundary.
+	// Persisting the initial choice makes subsequent restarts unambiguous.
+	var accountMarker accountInitialization
+	freshAccount := ReadJSON(filepath.Join(config.DataDirectory, accountInitializationFile), &accountMarker) == nil && accountMarker.Schema == 1
+	initializeHostPolicy := n.saved.RestrictHostnames == nil
+	if initializeHostPolicy {
+		_, databaseErr := os.Stat(filepath.Join(config.DataDirectory, "astral.db"))
+		if databaseErr != nil && !errors.Is(databaseErr, os.ErrNotExist) {
+			return nil, databaseErr
+		}
+		restricted := config.DesktopToken != "" || err == nil || (databaseErr == nil && !freshAccount)
+		n.saved.RestrictHostnames = &restricted
+	}
 	for _, values := range []NetworkValues{n.saved, n.environment, n.cli} {
 		if values.Listen != nil {
 			if err := validateListen(*values.Listen); err != nil {
@@ -77,6 +98,23 @@ func newNetworkState(config Config) (*networkState, error) {
 				return nil, err
 			}
 			*values.PublicURLs = normalized
+		}
+		if values.AllowedHostnames != nil {
+			normalized, err := normalizeHostnames(*values.AllowedHostnames)
+			if err != nil {
+				return nil, err
+			}
+			*values.AllowedHostnames = normalized
+		}
+	}
+	if initializeHostPolicy && persistInitialPolicy {
+		if err := WriteJSON(n.path, n.saved); err != nil {
+			return nil, err
+		}
+	}
+	if freshAccount && persistInitialPolicy {
+		if err := os.Remove(filepath.Join(config.DataDirectory, accountInitializationFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
 		}
 	}
 	n.activeListen = resolveString(n.cli.Listen, n.environment.Listen, n.saved.Listen, defaultListen, "default")
@@ -135,9 +173,12 @@ func normalizePublicURLs(values []string) ([]string, error) {
 	return result, nil
 }
 func (n *networkState) publicURLsLocked() httpapi.NetworkURLsSetting {
+	return n.publicURLsWithLocked(n.saved)
+}
+func (n *networkState) publicURLsWithLocked(saved NetworkValues) httpapi.NetworkURLsSetting {
 	result := httpapi.NetworkURLsSetting{Value: []string{}, SavedValue: []string{}, Source: "default", Editable: true}
-	if n.saved.PublicURLs != nil {
-		result.SavedValue = append(result.SavedValue, (*n.saved.PublicURLs)...)
+	if saved.PublicURLs != nil {
+		result.SavedValue = append(result.SavedValue, (*saved.PublicURLs)...)
 	}
 	if len(n.addresses) > 0 {
 		result.Value = append(result.Value, n.addresses[0].URL)
@@ -148,7 +189,7 @@ func (n *networkState) publicURLsLocked() httpapi.NetworkURLsSetting {
 	for _, item := range []struct {
 		value  *[]string
 		source string
-	}{{n.cli.PublicURLs, "cli"}, {n.environment.PublicURLs, "environment"}, {n.saved.PublicURLs, "settings"}} {
+	}{{n.cli.PublicURLs, "cli"}, {n.environment.PublicURLs, "environment"}, {saved.PublicURLs, "settings"}} {
 		if item.value == nil {
 			continue
 		}
@@ -161,18 +202,58 @@ func (n *networkState) publicURLsLocked() httpapi.NetworkURLsSetting {
 	return result
 }
 func (n *networkState) remoteLocked() httpapi.NetworkBoolSetting {
+	if !n.desktop {
+		// Standalone Servers use Web as their management entry. Only an explicit
+		// operator startup override can close it; a Web preference cannot strand
+		// a headless installation without its primary interface.
+		value := resolveBool(n.cli.AllowRemoteManagement, n.environment.AllowRemoteManagement, nil)
+		if n.saved.AllowRemoteManagement != nil {
+			value.SavedValue = *n.saved.AllowRemoteManagement
+		}
+		if n.cli.AllowRemoteManagement == nil && n.environment.AllowRemoteManagement == nil {
+			value.Value, value.Source = true, "server"
+		}
+		value.Editable = false
+		return value
+	}
+	return resolveBool(n.cli.AllowRemoteManagement, n.environment.AllowRemoteManagement, n.saved.AllowRemoteManagement)
+}
+func resolveBool(cli, environment, saved *bool) httpapi.NetworkBoolSetting {
 	value := httpapi.NetworkBoolSetting{Source: "default", Editable: true}
-	if n.saved.AllowRemoteManagement != nil {
-		value.SavedValue = *n.saved.AllowRemoteManagement
+	if saved != nil {
+		value.SavedValue = *saved
 	}
 	for _, item := range []struct {
 		value  *bool
 		source string
-	}{{n.cli.AllowRemoteManagement, "cli"}, {n.environment.AllowRemoteManagement, "environment"}, {n.saved.AllowRemoteManagement, "settings"}} {
+	}{{cli, "cli"}, {environment, "environment"}, {saved, "settings"}} {
 		if item.value != nil {
 			value.Value, value.Source, value.Editable = *item.value, item.source, item.source == "settings"
 			break
 		}
+	}
+	return value
+}
+func (n *networkState) restrictHostnamesLocked(saved NetworkValues) httpapi.NetworkBoolSetting {
+	return resolveBool(n.cli.RestrictHostnames, n.environment.RestrictHostnames, saved.RestrictHostnames)
+}
+func (n *networkState) allowedHostnamesLocked(saved NetworkValues) httpapi.NetworkHostnamesSetting {
+	value := httpapi.NetworkHostnamesSetting{Value: []string{}, SavedValue: []string{}, Source: "default", Editable: true}
+	if saved.AllowedHostnames != nil {
+		value.SavedValue = append(value.SavedValue, (*saved.AllowedHostnames)...)
+	}
+	for _, item := range []struct {
+		value  *[]string
+		source string
+	}{{n.cli.AllowedHostnames, "cli"}, {n.environment.AllowedHostnames, "environment"}, {saved.AllowedHostnames, "settings"}} {
+		if item.value != nil {
+			value.Value = append(value.Value, (*item.value)...)
+			value.Source, value.Editable = item.source, item.source == "settings"
+			return value
+		}
+	}
+	if n.restrictHostnamesLocked(saved).Value {
+		value.Value = automaticHostnames(n.publicURLsWithLocked(saved).Value, n.addresses)
 	}
 	return value
 }
@@ -197,7 +278,7 @@ func (n *networkState) snapshotLocked() httpapi.NetworkSettings {
 			seen[address.URL] = true
 		}
 	}
-	return httpapi.NetworkSettings{Listen: listen, PublicURLs: public, AllowRemoteManagement: n.remoteLocked(), Addresses: unique, RestartRequired: desired.Value != n.activeListen.Value}
+	return httpapi.NetworkSettings{Listen: listen, PublicURLs: public, AllowRemoteManagement: n.remoteLocked(), RestrictHostnames: n.restrictHostnamesLocked(n.saved), AllowedHostnames: n.allowedHostnamesLocked(n.saved), Addresses: unique, RestartRequired: desired.Value != n.activeListen.Value}
 }
 func (n *networkState) snapshot() httpapi.NetworkSettings {
 	n.mu.RLock()
@@ -244,7 +325,7 @@ func (s *Server) NetworkSettings(ctx context.Context) httpapi.NetworkSettings {
 	}
 	return n.snapshot()
 }
-func (s *Server) SaveNetworkSettings(_ context.Context, patch httpapi.NetworkPatch) (httpapi.NetworkSettings, error) {
+func (s *Server) SaveNetworkSettings(ctx context.Context, patch httpapi.NetworkPatch) (httpapi.NetworkSettings, error) {
 	n := s.network
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -281,10 +362,46 @@ func (s *Server) SaveNetworkSettings(_ context.Context, patch httpapi.NetworkPat
 
 	if patch.AllowRemoteManagement != nil {
 		if !current.AllowRemoteManagement.Editable {
+			if !n.desktop {
+				return current, domain.Conflict("Standalone Server remote management is controlled by startup configuration. Use --allow-remote-management=false or ASTRAL_ALLOW_REMOTE_MANAGEMENT=false to disable it.")
+			}
 			return current, domain.Conflict("Remote management is controlled by " + current.AllowRemoteManagement.Source + ".")
 		}
 		value := *patch.AllowRemoteManagement
 		next.AllowRemoteManagement = &value
+	}
+	if patch.RestrictHostnames != nil {
+		if !current.RestrictHostnames.Editable {
+			option := "--restrict-hostnames"
+			if current.RestrictHostnames.Source == "environment" {
+				option = "ASTRAL_RESTRICT_HOSTNAMES"
+			}
+			return current, domain.Conflict("Hostname restriction is controlled by " + current.RestrictHostnames.Source + " (" + option + "). Change or remove that Server startup override and restart before editing this setting.")
+		}
+		value := *patch.RestrictHostnames
+		next.RestrictHostnames = &value
+	}
+	if patch.AllowedHostnames != nil {
+		if !current.AllowedHostnames.Editable {
+			return current, domain.Conflict("Allowed hostnames are controlled by " + current.AllowedHostnames.Source + ".")
+		}
+		value, err := normalizeHostnames(*patch.AllowedHostnames)
+		if err != nil {
+			return current, err
+		}
+		next.AllowedHostnames = &value
+	}
+	if n.restrictHostnamesLocked(next).Value && (patch.RestrictHostnames != nil || patch.AllowedHostnames != nil || patch.PublicURLs != nil) {
+		allowed := n.allowedHostnamesLocked(next).Value
+		if len(allowed) == 0 {
+			return current, domain.Invalid("Keep at least one allowed hostname while the restriction is enabled.")
+		}
+		if requested := httpapi.NetworkRequestHostname(ctx); requested != "" {
+			host, err := normalizeHostname(requested)
+			if err != nil || !containsHostname(allowed, host) {
+				return current, domain.Invalid("Keep the hostname used by this browser in the allowed list. Use astral config hostnames disable on the Server if you need to recover access.")
+			}
+		}
 	}
 	if err := WriteJSON(n.path, next); err != nil {
 		return current, err

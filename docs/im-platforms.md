@@ -143,25 +143,28 @@ iLink 成功响应允许省略 `ret` 和服务端消息 ID。有非零平台错�
 
 使用开启 Bot 能力的**企业自建应用**。群自定义 webhook Bot 只能推送通知，不满足接收消息的要求；应用需要在租户内启用、发布，并授予实际用户可见范围。平台背景见 [飞书 Bot 概述](https://open.feishu.cn/document/client-docs/bot-v3/bot-overview)。
 
-1. 创建应用、开启 Bot 能力，取得 **App ID** 与 **App Secret**。
-2. 事件订阅选择**使用长连接接收事件**，订阅 `im.message.receive_v1`；接收表情回应还需 `im.message.reaction.created_v1`、`im.message.reaction.deleted_v1`。Astral 主动建立官方 SDK WebSocket，不需要公开 webhook。
-3. 按需要开通以下应用权限，并发布权限变更：
+1. 在[开发者后台](https://open.feishu.cn/app)创建应用、添加机器人能力，取得 **App ID** 与 **App Secret**。
+2. 在 **开发配置 → 权限管理 → 批量导入/导出权限** 中导入[公开接入文档](../apps/website/src/content/docs/zh-cn/docs/chat/feishu.md)提供的完整 JSON。配置使用 `scopes.tenant` 数组及空的 `scopes.user` 数组；Astral 只使用应用身份凭据。完整配置包含以下七项权限：
 
 | 目的 | 权限 |
 | --- | --- |
 | 接收用户发给 Bot 的私聊 | `im:message.p2p_msg:readonly` |
-| 接收群内 @ Bot 消息 | `im:message.group_at_msg:readonly` |
-| 观察普通群消息 | `im:message.group_msg`，以平台审批结果为准 |
-| 以 Bot 身份发送消息 | `im:message:send_as_bot` |
-| 上传和读取消息资源 | `im:resource` |
+| 接收群内用户消息（含 @ Bot），读取群消息 | `im:message.group_msg`，敏感权限，以平台审批结果为准 |
+| 读取消息、下载入站附件、接收和查询表情回应 | `im:message:readonly` |
+| 以 Bot 身份发送消息、撤回 Bot 自己的消息 | `im:message:send_as_bot` |
+| 上传图片和文件 | `im:resource` |
 | 读取聊天资料/显示群名 | `im:chat:readonly` |
-| 接收、查询消息表情回应 | `im:message.reactions:read` |
 | 添加、移除 Bot 自己的表情回应 | `im:message.reactions:write_only` |
 
-回复对象核对、远端历史、反应和删除等操作还需要飞书对应 API 要求的消息权限。应根据实际需要选择平台可授予的只读或读写范围；连接成功不代表所有操作都已授权。
+`im:message:readonly` 覆盖表情事件和查询所需的读取权限，无需再单独申请 `im:message.reactions:read`；`im:message.group_msg` 已包含群内用户 @ Bot 的消息。只开通 `im:resource` 不足以下载收到的附件。群消息读取和回复前的消息归属核对还依赖 `im:message.group_msg`，不能将它仅理解为主动参与普通群消息的开关。
 
-4. 在 Astral 中选择飞书，填写 App ID 与 App Secret。
-5. 将应用 Bot 加入目标群，或从应用可用范围内的用户发起私聊。群内可发送 `@Bot /chat_id` 获取聊天标识；只有 @ 消息权限时，这仍然可用。
+3. 初次创建版本，将目标用户加入应用可用范围，完成企业要求的审核，发布并启用机器人。
+4. 在 Astral 中选择飞书，填写 App ID 与 App Secret 并连接，保持 Astral 运行。创建和编辑表单共用“配置飞书应用”“查看配置步骤”入口；合法 App ID 直达该应用的权限管理页，空或非法 ID 打开开发者后台首页。
+5. 在飞书 **事件与回调 → 事件配置** 中选择 **使用长连接接收事件** 并保存，再订阅 `im.message.receive_v1`、`im.message.reaction.created_v1`、`im.message.reaction.deleted_v1`。飞书要求已有长连接在线才能保存，故该步骤放在 Astral 连接之后。Astral 主动建立官方 SDK WebSocket，不需要公开 webhook。
+6. 再次创建并发布版本，使事件配置和待发布权限生效。权限导入只追加申请，不代替发布和管理员审核。
+7. 将应用 Bot 加入目标群，或从应用可用范围内的用户发起私聊，再在 Astral 中授权聊天。群内可发送 `@Bot /chat_id` 获取聊天标识；只有 @ 消息权限时，这仍然可用。
+
+以上权限和顺序依据飞书官方[申请 API 权限](https://open.feishu.cn/document/ukTMukTMukTM/uQjN3QjL0YzN04CN2cDN)、[使用长连接接收事件](https://open.feishu.cn/document/ukTMukTMukTM/uYDNxYjL2QTM24iN0EjN/event-subscription-configure-/request-url-configuration-case)、[获取指定消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/get)、[获取消息资源](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-resource/get)和[表情事件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-reaction/events/created)核对。首次发布、连接上线、保存事件配置的完整流程尚未使用真实飞书租户现场验收。
 
 ```json
 {
@@ -279,11 +282,11 @@ NapCat 对自己发出的私聊消息可能不返回 `target_id`；此时仅在�
 | QQ 群只收到 @ 消息 | 核对开放平台实际群消息权限；Astral 无法补出平台没有推送的普通消息 |
 | QQ 已收到消息但发送被拒绝 | 查看实际回执，核对平台回复窗口、额度、媒体类型和发布范围；让用户再次发消息可提供新的入站上下文，但不保证平台额度恢复 |
 | NapCat HTTP 正常，连接验证失败 | 检查事件正向 WS 端点、相同账号和 Token、数组上报格式；不要使用 `/api` |
-| NapCat 图片或文件下载失败 | 检查 URL 是否可达；远程主机本地文件应启用 `enableLocalFile2Url`，并核对 50 MiB 上限 |
+| NapCat 图片或文件下载失败 | 检查 URL 是否可达；远程主机本地文件应启用 `enableLocalFile2Url`，并核对平台自身的大小或传输限制；Astral 不额外设置文件大小上限 |
 | 微信授权失效或返回 `-14` | 在现有账号中重新扫码；二维码过期或验证码被限制时先获取新二维码 |
 | 微信用户无法解析、回复或显示输入状态 | 先让该用户向 Bot 发私聊，再确认聊天已授权；不能手工制造 `context_token` |
 | 飞书 App Secret 验证通过但没有消息 | 检查 Bot 是否激活、事件模式是否为长连接、是否订阅 `im.message.receive_v1`、权限变更是否已发布、Bot 是否在群内 |
-| 飞书收不到表情回应 | 订阅 `im.message.reaction.created_v1`、`im.message.reaction.deleted_v1`，发布 `im:message.reactions:read` 权限；主动添加/移除另需 `im:message.reactions:write_only` |
+| 飞书收不到表情回应 | 订阅 `im.message.reaction.created_v1`、`im.message.reaction.deleted_v1`，发布 `im:message:readonly`（或 `im:message.reactions:read`）权限；主动添加/移除另需 `im:message.reactions:write_only`，消息归属核对仍需读取消息的权限 |
 | 飞书回复/反应/删除被拒绝 | 核对相应消息权限、本地归档和选定聊天归属；不能用别的聊天中取得的 `message_id` |
 | 发送请求中断 | 本次工具或 API 调用返回错误，内部保留请求记录用于防止重复发送 |
 

@@ -37,6 +37,26 @@ type localControl struct {
 	done     chan struct{}
 }
 
+const accountInitializationFile = "account-initialization.json"
+
+type accountInitialization struct {
+	Schema int `json:"schema"`
+}
+
+// Offline account setup can create the database before the first Server starts.
+// Keep that provenance separate from the hostname policy: only the eventual
+// Server knows whether it is a standalone instance or managed by Desktop.
+func markFreshAccountDirectory(directory string) error {
+	for _, name := range []string{"astral.db", "network.json"} {
+		if _, err := os.Stat(filepath.Join(directory, name)); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return WriteJSON(filepath.Join(directory, accountInitializationFile), accountInitialization{Schema: 1})
+}
+
 func RuntimeToken() (string, error) {
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -76,6 +96,9 @@ func (s *Server) startLocalControl() error {
 		w.Header().Set("Cache-Control", "no-store")
 		if !loopbackRequest(r.RemoteAddr) || r.Header.Get("Origin") != "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("LocalControl "+token)) != 1 {
 			http.Error(w, "local administrative authorization required", http.StatusForbidden)
+			return
+		}
+		if s.localConfiguration(w, r) {
 			return
 		}
 		if r.Method != "POST" || (r.URL.Path != "/setup" && r.URL.Path != "/reset") {
@@ -203,6 +226,9 @@ func configureAdministratorOffline(ctx context.Context, directory, username, pas
 	defer lock.Close()
 	// A live Server cannot replace this file while its data lock is ours.
 	if err = os.Remove(filepath.Join(directory, "control.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err = markFreshAccountDirectory(directory); err != nil {
 		return err
 	}
 	store, err := persistence.Open(directory)

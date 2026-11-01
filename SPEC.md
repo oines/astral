@@ -1,14 +1,16 @@
 # Astral 系统规格
 
-版本：1.20
+版本：1.21
 
-日期：2026-10-31，Asia/Singapore
+日期：2026-11-01，Asia/Singapore
 
 状态：V1 实现规范，尚非功能交付声明
 
 Astral 是一个可自托管、持久运行的个人 Agent 平台。一个 Server 管理多个 Agent、持久 Session、模型、搜索服务、IM 连接和 Computer；Agent 在 Session 中理解消息，通过基础工具操作 Computer，通过本地 HTTP API 使用平台能力。
 
 本规格中的技术对象 Agent，在产品界面中称为 Bot；Computer 的中文名称为“电脑”。产品命名、页面关系、统一设计语言、设置生效方式与反馈以 [UI UX 规范](docs/ui-ux-spec.md)为准；代码类型和 API 字段不因显示名称变化而自动重命名。
+
+标题、副标题、按钮、字段说明，以及加载、进度、成功、失败、错误、空状态和确认等所有面向用户的产品文案，均属于 UX 的设计与验收范围。必须使用具体、自然、面向当前任务的语言；必要时说明实际操作后果，功能不可用时解释当前原因并给出下一步，不堆积内部流程、抽象保证或“不代表……”式说明。没有额外信息的副标题应省略。详细规则和反例见 [UI UX 规范：文案、副标题与状态说明](docs/ui-ux-spec.md#文案副标题与状态说明)；自动化检查通过不等于用户能理解这些文案。
 
 本规格汇总 PRD v1.1 与本轮确认的系统决策，并收敛前端工程选型。冲突处采用本规格中的最新行为：IM 支持 Telegram、QQ 官方 Bot、QQ NapCat、微信 ClawBot / iLink 和飞书 Bot，采用显式发送与可选 LLM Probe；文件保留在 Computer、通过本机快捷入口或目标机器上的接入命令添加 Computer、Daemon 提供按 Agent 绑定视图的 localhost API、Bash 直接执行、通过正常结束保持沉默。Core 的实现依据为本地 `../agent-core`，消息表达参考 `../Cahciua`，前端技术与工程组织参考 `../memoh`。
 
@@ -332,21 +334,37 @@ Desktop 三个平台均隐藏独立系统标题栏，使用 44px 的应用顶部
 
 新建容器使用 Ubuntu 24.04 和完整开发、数据、文档、媒体、OCR、中文字体、浏览器测试环境。纯环境镜像由独立 CI 构建并发布 Linux amd64/arm64 多架构产物，仅 Dockerfile 或其他构建输入变化时生成新镜像；应用版本绑定不可变镜像摘要，不随每次应用发版重建环境。客户端只拉取固定摘要、创建数据卷与容器，再通过 Docker copy 将对应架构的统一 Astral 程序放到容器可写层的 `/usr/local/bin/astral`，之后启动已有 supervisor 协议。程序不放在 AgentHome 数据中，不新增宿主机程序目录挂载，保留数据卷与只读配对配置挂载。创建阶段分别反映拉取镜像、创建工作目录、创建容器、安装 Daemon、启动和等待连接；已缓存镜像可直接复用，失败和重试不虚报在线。
 
+本机容器运行环境由实际 Server 进程以自身系统账号、Docker CLI 环境和 context 检测；浏览器账号及当前终端的 sudo 能力不代表 Server 有权使用 Docker。检测区分可用、缺少 CLI、引擎未运行或不可达、权限不足及其他错误，保留原始诊断；权限提示按实际有效 UID 查账号，不能信任继承的 USER。打开添加电脑及用户主动重新检测均读取新的后台结果，不依赖启动时的能力缓存；配置修复后无需仅为刷新检测而重启 Server。检测不安装或启动 Docker、不调整用户组、不重启用户管理器、不拉镜像或创建测试容器，实际创建仍由明确动作发起。
+
 更新应用或 Daemon 不重建已有容器，不替换其镜像、可写层、已安装软件或数据卷。环境镜像选择只作用于新容器；原有容器继续使用其原环境和监督协议。目标兼容范围包括 macOS 的 Docker Desktop、OrbStack、Colima、Docker 后端的 Rancher Desktop，Linux Docker Engine（含 rootless）与 Docker Desktop，以及 Windows Docker Desktop Linux 容器；实际验收须记录运行时、版本、系统和架构，不以兼容目标清单代替逐项实测。Windows 使用原生 Astral 和 PowerShell，不要求用户进入 WSL 或额外开启 host networking。同机 Docker Desktop 容器使用 `http://host.docker.internal:4545`（实际端口随监听配置）等经确认可达的主端口路径，不额外创建 TLS 桥接端口或证书。
 
 ### Server 监听、管理访问与接入地址
 
-Server 仅对外提供 HTTP，默认监听 `0.0.0.0:4545`。Desktop 使用本机 loopback 地址加载界面；管理访问和 Daemon 加密隧道共享主端口。HTTPS 由用户的反向代理或 Tailscale Serve 提供。用户名密码及 TOTP 登录同时允许 HTTP、HTTPS，不增加“不安全登录”开关；Passkey 仅允许当前实际通过 HTTPS 打开的网页使用。Daemon 连接在两种外层协议下均有内层 TLS，不以用户使用 VPN 为安全前提。
+Server 仅对外提供 HTTP，默认监听 `0.0.0.0:4545`。Desktop 使用本机 loopback 地址加载界面；管理访问和 Daemon 加密隧道共享主端口。HTTPS 由反向代理或 Tailscale Serve 提供。用户名密码及 TOTP 登录允许 HTTP、HTTPS；Passkey 仅允许当前实际通过 HTTPS 打开的域名网页。Daemon 在两种外层协议下均使用内层 TLS。
 
-默认关闭“允许远程管理”。loopback 可到达完整管理入口，但仍必须验证 Desktop 身份或网页登录会话；普通浏览器不能因 localhost 而免认证。直接远程连接仅能访问明确列出的健康检查与 Computer tunnel，Web UI、登录、OpenAPI 及全部管理 API 在关闭时不可达。开启只改变路由可达性，不改变认证或 Bot/Computer 授权。来源依据实际 TCP 对端，不采信 Host、Origin、X-Forwarded-For 来冒充本机。用户主动配置的 loopback 反代、SSH 转发或 Tailscale Serve 能暴露本地管理入口；关闭远程管理不撤销这些转发，但转发也不能绕过网页登录。
+没有 Desktop 托管的独立 Server 默认开启远程管理，Web 不提供关闭入口；仅显式 `--allow-remote-management=false` 或 `ASTRAL_ALLOW_REMOTE_MANAGEMENT=false` 可关闭。旧版仅保存在 App 设置中的远程关闭值不再控制独立 Server。Desktop 默认关闭远程管理，仍保留独立自动生效开关；显式启动覆盖优先并使控件只读。关闭直接远程管理时，真实 loopback 对端仍可到达完整管理入口，直接远程请求仅可到达健康检查与 Computer tunnel。所有管理入口继续要求 Desktop 身份或 Web 登录，来源按真实 TCP 对端判断，不采信 Host、Origin 或客户端转发头冒充本机。loopback 反代、SSH 转发和 Tailscale Serve 可以按用户配置暴露本地入口，不授予登录身份。监听范围与远程管理独立，回环监听依然可以限制直接网络可达性。
 
-“访问地址”支持多个完整 HTTP/HTTPS origin，首项用于默认生成接入命令，添加电脑时可选其他发现或自定义地址。列表与监听及远程管理独立，不自动开启管理访问。每个字段的优先级为显式 CLI 参数、环境变量、持久 App 设置、自动发现、默认值；地址列表整体取高优先级来源，不跨来源合并。高优先级覆盖不改写低优先级设置，界面显示来源并禁用受控项。访问地址及远程管理立即生效，监听变更重启生效。
+新独立 Server 默认不限制管理主机名。Desktop 和升级前已有的 Server 保留原 Host 限制，初始化时将该选择持久化，避免新 Server 创建数据库后下次启动又变成旧安装。用户可在 Web 安全与访问页设置“限制访问主机名”和允许的域名/IP。二者为同一草稿配置，点击“保存主机名设置”原子应用；输入、失焦、切换和增删过程中不改变生效入口。只接受具体主机名或 IP，不接受协议、端口、路径或通配符，统一处理大小写、IDNA 和 IP 表达。Web 提交必须保留当前访问主机，校验和保存位于同一互斥边界；兼容地址字段变化也不能间接造成自锁。
 
-CLI 的 `--public-url` 可以重复；环境变量 `ASTRAL_PUBLIC_URLS` 使用 JSON 字符串数组。`--public-url ''` 或 `ASTRAL_PUBLIC_URLS=[]` 明确使用自动发现。监听和管理开关分别对应 `--listen` / `ASTRAL_SERVER_LISTEN` 与 `--allow-remote-management[=false]` / `ASTRAL_ALLOW_REMOTE_MANAGEMENT`，明确 false 必须覆盖低优先级 true。
+主机名限制作用于管理网页、登录、OpenAPI 和管理 API，包含远程 CLI 的管理访问；不作用于 Daemon 的专用 Computer tunnel、注册、状态和 RPC，也不作用于私有本机恢复通道。Daemon 按 Server pin、内层 TLS 和电脑凭据独立认证。允许任意主机名不等于允许其他站点跨站调用：管理 API 始终执行精确 Origin 对比和跨站检查，Cookie 保持 host-only、HttpOnly 和 SameSite 防护。Passkey 始终绑定当前实际 HTTPS 域名、Origin 和一次性挑战，不要求为新 Server 预先登记完整访问 URL。
 
-自动发现依次考虑实际代理到本 Server 的 Tailscale Serve HTTPS 地址、完整 MagicDNS、Tailscale IP、局域网 IP 和 loopback，不虚构 HTTPS 或使用不可达短主机名。所选地址仅决定 Server 目标，安装脚本与程序下载始终来自官方 HTTPS release。已注册 Daemon 保留其存储的地址，设置改变不会静默改写；同一个 Server 身份不因域名/IP 改变而改变。
+不要求安装时登记访问地址，也不在全局设置维护必填访问 URL 列表。添加电脑时直接选择自动发现结果或输入目标电脑可达的地址；Web 优先当前非回环 origin，Desktop 保留发现顺序。已注册 Daemon 保留自己的地址，不随网页入口或设置修改而静默改写。已有 `--public-url`、`ASTRAL_PUBLIC_URLS` 与保存值作为高级兼容和接入候选继续解析，不再充当新独立 Server 的必需白名单；旧安装未保存显式主机名名单时保留此前派生允许项。
 
-管理入口默认执行 Host 白名单及 Origin/跨站请求检查，名单由本机 loopback、真实网卡地址、可靠发现结果和明确配置的访问地址推导。`0.0.0.0` / `::` 是监听通配地址，不是允许的访问主机名；不接受陌生请求自动加入名单，也不采用 `*.ts.net` 等宽泛通配。仅明确可信代理可以报告外层 HTTPS：默认信任 loopback，`--trusted-proxy` 可重复配置 IP/CIDR，`ASTRAL_TRUSTED_PROXIES` 是 JSON 数组，明确空值关闭信任。代理须保留外部 Host；转发 Host 和客户端地址头不授予信任。Computer tunnel 使用独立的 TLS/电脑身份边界，不受管理网页域名选择限制。
+监听与兼容接入地址按显式 CLI、环境变量、App 保存值、发现/默认解析；主机名限制按 CLI、环境变量、保存值解析。`--restrict-hostnames[=false]` / `ASTRAL_RESTRICT_HOSTNAMES` 控制是否限制，重复 `--allowed-hostname` / JSON 数组 `ASTRAL_ALLOWED_HOSTNAMES` 控制名单。明确 false 和空值须保留其含义，不覆盖低优先级保存值。独立 Server 的远程管理不采用 App 保存值。监听修改需重启；Web 保存主机名策略立即生效。
+
+自动发现依次考虑实际代理到本 Server 的 Tailscale Serve HTTPS 地址、完整 MagicDNS、Tailscale IP、局域网 IP 和 loopback，不虚构 HTTPS。仅明确可信代理可以报告外层 HTTPS：默认信任 loopback，`--trusted-proxy` / `ASTRAL_TRUSTED_PROXIES` 可明确配置 IP/CIDR，明确空列表关闭信任。代理保留外部 Host，转发 Host 和客户端地址头不授予信任。不从陌生请求自动学习并持久化主机名。
+
+### Server 安装与本机恢复
+
+官方 Linux 安装器在终端完成首次管理员配置；已有账户升级不重复初始化，未完成配置可重跑继续。没有终端且未提供管理员凭据时不能报告完整安装成功。默认安装后同一终端输入 `astral` 必须能找到稳定命令并运行；优先使用已有 PATH 中可写目录，确需权限时在注册命令入口步骤取得，不改变 Server/Daemon 的运行用户，也不以修改 profile 或要求用户手动 export/source 代替完成安装。已有陌生命令不能静默覆盖，失败要恢复本次更改的入口。程序版本与数据目录分离，入口跟随已校验版本。
+
+官方 Linux Server 使用当前账号的 `systemd --user` 服务。安装在下载、替换程序或停止已有 Server 前核验账号持续运行条件：缺少 linger 时说明其账号级作用并幂等启用；用户服务管理器尚未运行时才启动 `user@UID.service`，不重启已有管理器，并有界等待 D-Bus 可用。普通账号确需管理员权限时仅为这些准备动作请求 sudo，Server 仍以原账号运行；准备失败不得报告部署成功或更改已有 Astral 服务及数据。运行目录和 D-Bus 地址使用当前 UID，不能继承其他账号的会话环境。安装成功核验服务启动与启用，告知后台运行、退出终端、开机启动、访问地址及状态和日志入口。此规则属于 Server 安装，不改变原生 Computer 接入的权限策略。
+
+Linux Server 的启停、重启、状态、日志和开机启动直接使用 `systemctl --user` / `journalctl --user`，不新增 Astral 服务管理命令。卸载位于安装脚本的 `--uninstall` 模式，支持 `--root` 和无修改的 `--dry-run`；先核验当前 UID、安装元数据、精确官方服务文件、实际加载路径及覆盖配置，停止并确认无运行 PID、取消自动启动后才清理。服务被修改、归属不明或无法停止时保留文件并给出具体原因。命令入口仅在属于本安装且未被其他服务、进程或已知入口共享时删除；其他使用者依赖的程序保留。默认保留账户、Bot、历史、电脑连接身份、配置、备份及一份可信恢复发行程序，以支持原目录重装与数据格式核验；不关闭账号 linger，不停止整个用户管理器，不删除 Docker、容器或远程电脑文件。
+
+本机账户命令和 `astral config hostnames show|disable` 自动识别对应安装数据目录；显式路径优先，多实例要求选择，非交互调用须明确路径。恢复走独立的 loopback 私有令牌与 TLS pin 通道，不依赖 Web 可达或网页登录；服务停止时必须取得数据锁才可离线修改。关闭主机名限制保留原名单，不影响账户认证。启动参数或环境覆盖不能被低优先级配置伪装覆盖成功，须指出来源和修正方法。
+
+安装与发行下载默认使用固定官方 GitHub 仓库；用户可显式选择公共 HTTPS 代理，例如 GH-Proxy，不自建镜像。`--github-proxy` / `ASTRAL_GITHUB_PROXY` 覆盖脚本、版本 API、manifest、摘要和程序下载，版本、摘要和发布条件校验不降低；失败不暗中切换第三方。Server 安装保存代理选择，并传给服务与独立更新任务。Server 地址、网页登录、配对与电脑凭据不经下载代理。文档标注其第三方性质，不承诺所有国内网络永久可达。新安装器在修改服务前检查目标程序支持所需 CLI 能力；安装旧版本需使用该版本附带的安装器。
 
 ### Desktop 与网页登录认证
 
@@ -398,7 +416,7 @@ Server 与 Daemon 的内部传输支持请求关联、取消、增量输出、�
 
 ### CLI
 
-CLI 复用 Server 的业务入口，支持服务启动、连接与基本资源/Session 操作、诊断。CLI 不拥有另一套 Agent 状态，也不单独实现模型循环。`astral connect --server URL --username USER` 使用 Web 管理员密码与 TOTP/恢复码登录，私有 `client.session` 保存凭据，`client.json` 指向选中的 Server 和会话文件；受同样的过期与设备撤销约束。CLI 不执行交互式 Passkey 仪式，不使用 Owner Token 或 Desktop 专用身份。`astral computer status --root DIRECTORY` 从已保存的 Computer 凭据及 pin 查询加密通道状态，`computer service status` 单独查询本机进程管理器。
+CLI 复用 Server 的业务入口，支持服务启动、连接与基本资源/Session 操作、诊断。CLI 不拥有另一套 Agent 状态，也不单独实现模型循环。`astral connect --server URL --username USER` 使用 Web 管理员密码与 TOTP/恢复码登录，私有 `client.session` 保存凭据，`client.json` 指向选中的 Server 和会话文件；受同样的过期与设备撤销约束。CLI 不执行交互式 Passkey 仪式，不使用 Owner Token 或 Desktop 专用身份。`astral computer status` 从已保存的 Computer 凭据及 pin 查询加密通道状态，`computer service status` 单独查询本机进程管理器。服务与更新命令自动发现默认目录及本用户登记的安装，单实例直接使用，多实例要求选择；显式 `--root` / `--container` 保留。自动选择容器时保留其原 Docker endpoint，不能更新其他上下文中的同名容器。
 
 不同 Server 部署拥有各自的数据域。桌面与 Linux 使用相同前端，不表示两个 Server 自动同步 Session。
 
@@ -863,7 +881,11 @@ Core 只提供一个 Session 执行实现，SQLite 与 Memory 共用。Host 直�
 
 Composer 在输入框上方展示已接受的驱动输入队列，支持逐条引导、编辑文字、删除和拖拽排序。“引导”将选定输入改为 Steer，在下一安全边界应用；其余输入保持 FollowUp。编辑和排序复用原输入身份，并通过 Core 的单次原子提交持久化。已经冻结的附件与关联上下文不重新读取。输入框支持文件选择、剪贴板图片和文件拖入，图片显示缩略图；所有 Session（包括绑定 IM 的会话）均可切换排队偏好，默认 FollowUp，Command/Ctrl+Enter 可直接引导。输入法组合输入及其确认回车不触发发送，确认结束后的独立回车才按当前模式发送。
 
-输入框默认保持紧凑单行，随正文和附件按需增高；Computer、Agent、模型和上下文选项位于输入框下方。
+驱动输入队列采用紧凑连续行与单一轻边界，行间使用内缩细线；各行保留待处理文字、直接可达的立即补充与删除操作，以及承载编辑和排序等操作的更多菜单。布局收紧不隐藏主要操作，也不改变排队、应用或停止规则。
+
+Composer 以聊天面板容器宽度 600px 为断点。宽于 600px 时保留默认紧凑单行、随内容按需增高的输入框，Computer、Bot、模型和上下文圆环位于框外下方。容器宽度不超过 600px 时，正文在上层，附件／更多、Computer、模型与发送／停止主操作在下层同一外框内保持一行；长名称截断，不迫使操作栏换行。正文随内容增高至约四行后内部滚动，Bot 名称不在窄屏 Composer 重复展示。
+
+窄屏通过附件／更多菜单中的“上下文”入口打开既有用量与压缩浮层，上下文圆环不单独占据操作栏；宽屏保留圆环入口。电脑、模型与推理选择的权限和生效范围沿用已有契约。
 
 Composer 右下角统一显示当前主操作：有草稿时发送，执行中且草稿为空时停止，空闲且 Core 判定可继续时继续。可继续由未完成执行或尚未消费的驱动输入决定，不通过错误标签或队列长度单独推断。退出重开只恢复现场，不自动执行；工作完成且队列为空时不提供继续操作。
 
@@ -1222,7 +1244,7 @@ Settings 使用独立视图、紧凑左侧导航和稳定的单列内容，不�
 | Computers，中文为“电脑” | 使用本机/本机容器快捷入口、复制接入命令及可选“使用容器”、接入进度、名称、连接状态和必要诊断；使用情况链接到 Bot 权限页，不重复提供授权表单 |
 | Bot | Bot 列表进入独立设置，管理身份、资源选择、电脑权限及平台；平台下先选账号，再管理该账号的配置、聊天访问权限与聊天列表 |
 | Data & Storage | 查看当前 Server 的磁盘用量与数据位置，按 Bot 下钻到聊天和其他未绑定会话，管理会话、IM 归档及有明确归属的应用文件 |
-| Security & Access | 网络入口与访问地址、单管理员账户、TOTP/Passkey/免密和已登录 Web/CLI 设备；Desktop 身份不进入可撤销设备列表，不承担 Agent 的 Computer 选择 |
+| Security & Access | 管理入口与主机名限制、单管理员账户、TOTP/Passkey/免密和已登录 Web/CLI 设备；Desktop 身份不进入可撤销设备列表，不承担 Agent 的 Computer 选择 |
 | Advanced | 诊断、版本、连接与执行问题信息；不暴露无产品意义的 Core 内部旋钮 |
 
 数据维护必须说明对象范围；删除一类业务记录不能被表现为同时删除 Computer 工作文件。没有实现的数据管理能力不显示虚假操作入口。
@@ -1467,7 +1489,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A55 | 自动 2FA 与免密 | 确认 TOTP/Passkey 任一后自动第二步，无总开关；免密默认关闭，开启后 Passkey 可跳过用户名/密码/TOTP |
 | A56 | Passkey 与 HTTP | HTTP 允许密码/TOTP/恢复码但禁止 Passkey；HTTPS 验证 RP/Origin/UV 和一次挑战，不静默跳过第二步 |
 | A57 | Computer 加密配对 | 错 pin 与旧明文协议拒绝；注册 Token 并发只消费一次，WS/WSS 内始终 TLS 1.3，外层 HTTPS 校验保持 |
-| A58 | 管理入口与配置 | Host/跨站检查默认启用；代理信任明确，CLI > 环境 > 设置 > 自动发现；多地址与远程管理独立 |
+| A58 | 管理入口与配置 | 独立 Server 默认开启远程管理与放开 Host；显式 CLI/env 可关闭远程管理；Desktop/旧安装保留 Host 限制；名单局部提交、恢复独立；跨站与可信代理检查始终启用，Daemon 隧道独立 |
 
 ## 17 实现时待细化
 

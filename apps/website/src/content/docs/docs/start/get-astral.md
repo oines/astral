@@ -1,13 +1,19 @@
 ---
-title: "Get Astral"
-description: "Download Astral Desktop for macOS, Windows, or Linux, or install Server on a Linux VPS."
+title: "Download and install"
+description: "Install Astral on your own computer, or run it on an always-on Linux server."
 ---
 
-Download Astral Desktop for your computer, or install Astral Server on a Linux VPS.
+**For a first try, install the desktop app.** Download the package for your computer, then open Astral to begin setup.
+
+To keep Astral on a separate Linux server and use it through a browser, follow [Server installation](#install-on-a-linux-vps) below. Choose either approach.
+
+<span id="download-desktop"></span>
+
+## Choose a desktop download
 
 <p><span data-astral-release-status data-fallback-version="0.1.9" data-latest-prefix="Latest release: " aria-live="polite">Available version: v0.1.9</span> · <a data-astral-release-notes href="https://github.com/oines/astral/releases/tag/v0.1.9">Release notes, all assets, and checksums</a> · <a href="https://github.com/oines/astral/releases/latest">Latest on GitHub</a></p>
 
-## Download Desktop
+For a Mac with an Apple M-series chip, choose Apple silicon; for an Intel Mac, choose Intel. Windows and Linux computers with Intel or AMD processors use x64 or x86_64 packages. ARM devices use ARM64.
 
 | Platform | Architecture | Download |
 | --- | --- | --- |
@@ -18,72 +24,41 @@ Download Astral Desktop for your computer, or install Astral Server on a Linux V
 | Linux | x86_64 | <a data-astral-download="linux-x64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-linux-x86_64.AppImage">AppImage</a> · <a data-astral-download="linux-x64-deb" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-linux-amd64.deb">DEB</a> |
 | Linux | ARM64 | <a data-astral-download="linux-arm64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-linux-arm64.AppImage">AppImage</a> · <a data-astral-download="linux-arm64-deb" href="https://github.com/oines/astral/releases/download/v0.1.9/Astral-0.1.9-linux-arm64.deb">DEB</a> |
 
-- **macOS:** open the DMG and move Astral to Applications. Astral 0.1.9 Mac packages are Developer ID signed and notarized by Apple; see the [signing report](https://github.com/oines/astral/releases/download/v0.1.9/mac-signing-report.json).
-- **Windows:** run the EXE to install for the current user. Windows packages are unsigned and may show SmartScreen prompts.
-- **Linux:** make the AppImage executable before opening it, or install the DEB with your package manager. Linux packages are unsigned. AppImage supports in-app updating; install newer DEB packages manually.
+## Install and open Astral
 
-On Windows and Linux, the window controls are in the upper-right corner of the app header. The sidebar button is on the left; press Alt to show the app menu.
+- **macOS:** open the DMG, drag Astral to Applications, then open it there. The v0.1.9 Mac packages are signed and notarized by Apple; see the [signing report](https://github.com/oines/astral/releases/download/v0.1.9/mac-signing-report.json).
+- **Windows:** double-click the EXE and follow the installer. The package is unsigned, so Windows may show a SmartScreen prompt. Check that it came from the official release linked on this page.
+- **Linux:** for an AppImage, allow the file to run as a program in its file properties, then open it. For a Debian/Ubuntu package installer, choose the DEB. AppImage supports in-app updates; DEB users install a newer package manually. Linux packages are unsigned.
 
-Open Astral and follow [First steps](/docs/start/first-steps/) to connect your model and choose a computer. See [Updates and backups](/docs/hosting/maintenance/) for in-app updates and the Host 3 / Core 11 data baseline. Desktop uses `schema-3-core-11/` and preserves older private-version directories without importing them.
+Once Astral opens, follow [Your first task](/docs/start/first-steps/) to connect a model and choose your computer. Desktop opens setup directly, without requiring a Web sign-in account first.
 
-## Install on a Linux VPS
+<span id="install-on-a-linux-vps"></span>
+
+## Run Astral on a server
+
+Prepare a systemd-based Linux x86_64 or ARM64 server. Connect to it over SSH, then run this in **the server's terminal**:
 
 ```sh
 curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
   https://github.com/oines/astral/releases/latest/download/install-server.sh | bash
 ```
 
-Supports Linux x86_64 and ARM64 with a running systemd user manager. The installer registers a current-user service and prints the commands for setting up web sign-in and opening Astral. Follow [Run a Server](/docs/hosting/server/) for requirements and remote access.
+Follow the prompts to create a Web username and password. Once installation finishes, open the displayed address and sign in. You can close SSH while the background service keeps running.
 
-## Build from source
+See [Install Server](/docs/hosting/server/) for requirements, remote access, and daily management. The desktop app above is enough to try Astral on your own laptop.
 
-### Prepare the toolchain
+## When GitHub downloads fail
 
-Use the repository's versions: Go **1.26.3**, Node.js **26.7.0**, and pnpm **10.31.0**. The root `mise.toml` also declares these versions.
+You can use the third-party [GH-Proxy download service](https://gh-proxy.com/en/docs/github-accelerator/). For a desktop package:
 
-```sh
-git clone https://github.com/oines/astral.git
-cd astral
-pnpm install --frozen-lockfile
-```
+1. Copy its complete download link from the table above.
+2. Add `https://gh-proxy.org/` at the beginning, with no space.
+3. Open the resulting address in your browser.
 
-The Core dependency, including its Models packages, is pinned in `go.mod`; a separate Core checkout is not required. `GOWORK=off` prevents a local `go.work` from replacing that dependency. Run the following commands from the Astral repository root.
+A link starting with `https://github.com/` will start with `https://gh-proxy.org/https://github.com/` after this change. The proxy is a third-party service; availability depends on the network.
 
-### Build the Server and product interface
+For Server, use the [complete proxy installation command](/docs/hosting/server/#when-github-is-unreachable) so subsequent program downloads use your chosen proxy too.
 
-On macOS or Linux:
-
-```sh
-GOWORK=off pnpm build:distribution
-```
-
-In Windows PowerShell:
-
-```powershell
-$env:GOWORK = 'off'
-pnpm build:distribution
-```
-
-Executables are written to `dist/bin/`. Select the file matching the target operating system and CPU architecture. `apps/web/dist/` contains the product interface; `apps/website/` contains the public website and this documentation.
-
-Continue with [Run a Server](/docs/hosting/server/) for startup, browser sign-in, and remote access.
-
-### Run Desktop from source
-
-After building the distribution, run:
-
-```sh
-pnpm dev:desktop
-```
-
-Desktop manages its local runtime and opens directly into [first-time setup](/docs/start/first-steps/). To create an installer, run the matching command on that operating system:
-
-| Build system | Command |
-| --- | --- |
-| macOS | `pnpm --filter @astral/desktop package` |
-| Windows | `pnpm --filter @astral/desktop package:windows` |
-| Linux | `pnpm --filter @astral/desktop package:linux` |
-
-Packages appear in `apps/desktop/release/`. Handle signing and notarization separately when distributing your own build.
+Developers who need to compile Astral can follow [Build from source](/docs/hosting/build-from-source/).
 
 <script is:inline type="module" src="/scripts/release-downloads.js"></script>

@@ -1,53 +1,94 @@
 ---
 title: "Models and search"
-description: "Connect a model service, choose a Bot's default model, and set up web search."
+description: "Connect a model account, choose a usable model, and add web search when you need it."
 ---
 
-Astral uses the model service you connect. Connections originate from the Server, so a custom endpoint must be reachable from that machine. Task messages, content read by the Bot, and tool results are sent to the selected service; see [where data goes](/docs/start/safe-use/#know-where-data-goes).
+Connect a model service and select a model before asking a Bot to work. The service provides the model; Astral sends requests using the account or API key you connect.
+
+The Model step in first-time setup uses the same interface as **Settings → Models**. After connecting a service, select an available model before continuing to the computer step.
+
+## Prepare your service account
+
+Start with the service you intend to use. Sign in or create an account on its official website, then check that the account has access to your chosen model and enough quota. Check the provider's terms for the access required here; a subscription to its chat product may have different entitlements.
+
+The connection form tells you what to prepare:
+
+| The form asks for | What you need |
+| --- | --- |
+| **API key** | Create a key in that provider's developer platform or console, then copy it into Astral. Use the form's **Get API key** link when available. This is an API credential, not your account password. |
+| **Continue to sign in / Connect account** | Open the provider's sign-in page and complete authorization with the displayed code. This connection uses that account's permissions and model catalog. |
+| A custom service address | Obtain the Base URL, protocol, and any key from the service administrator or its documentation. Use this for your own service or a compatible API. |
+
+Enter keys in the connection form rather than in a conversation. Task messages, material the Bot reads, and tool results go to the selected model service. See [where data goes](/docs/start/safe-use/#where-does-my-data-go).
 
 ## Add a model service
 
-1. Open **Settings → Models** and add a service.
-2. Choose a preset or compatible API and enter its endpoint and credentials.
-3. Select **Save connection** and fetch its model catalog. If fetching fails, retry or add a model ID manually.
-4. Check the model you want to use and fill in any required context-window and maximum-output limits.
+Use **Add** under **Settings → Models**. Choose the preset matching your account. You can usually keep its prefilled Base URL (API address) and protocol. If it offers regions, match the region used by your account and key.
+
+Key-based connections have **Import models after saving** selected by default. Check the model list after saving. Account-based connections load the catalog after authorization. Start with one enabled model that has no missing-configuration warning.
+
+If there is no matching preset, select **Custom provider**. Enter the address, protocol, and key supplied by the service. Configure advanced fields such as extra headers or reasoning mappings only when its documentation requires them.
+
+Requests originate from Astral's background service, the Server. With Desktop, this is normally the computer running the app. With a standalone Server, it is the deployment host. That machine must be able to reach a custom API address.
+
+### The model you need is missing
+
+Try **Refresh model catalog** and check any error. If the service has no catalog, or you need a manual entry, select Add model and use the **full model ID** supplied by the service. This is the API identifier, which may differ from a model's display name.
+
+Astral fills in known parameters from the connection and public model information. Keep the supplied recommendations when appropriate. If required limits are missing, use the provider's documentation for this exact model:
+
+- **Context window** is the amount of material a request can accommodate, including conversation, source material, and output. It is measured in tokens.
+- **Maximum output tokens** limits the size of a single response.
+
+Tokens are units used by models to measure content, rather than a direct word count. Do not use a placeholder number or another service's similarly named model as a substitute for the actual limits. Complete and save the configuration to make the model selectable.
 
 ## Choose a model for a Bot or session
 
-Choose the default under **Settings → Bots → your Bot → Basic settings**. It applies to new sessions. Existing sessions have their own model and reasoning choices in the input area.
+During first-time setup, select the configured model and proceed to the computer step. Later, choose a default under **Settings → Bots → your Bot → Basic settings**. The default applies to new sessions. Choose a model separately in the input area of an existing session.
 
-Send a small task to check that the model can respond and use tools. If a call fails, use the error to check the API key, model ID, service quota, and the Server's network connection.
+With an online computer selected, try a small task whose result you can check:
 
-Changing a session's model applies to subsequent requests. A request already in progress finishes first; the picker is temporarily unavailable during request preparation and context compaction. If the selected model is removed, disabled, or incomplete, choose another available model. Existing history remains accessible.
+> Read the current working directory and list its filenames without changing anything. Tell me which computer and directory you used.
+
+Check that the Bot actually performs the operation and returns the result. A selectable model has the required configuration; a real task checks the credentials, quota, and ability to use tools. Model requests may incur service charges.
+
+Changing a session's model affects later requests. A request already running completes with its current model. The picker can be temporarily unavailable while preparing a request or summarizing a long conversation. If a model is disabled or removed, choose another available model; the history remains accessible.
 
 ## Set up web search
 
-1. Open **Settings → Web search**, choose a service, and enter its connection details.
-2. Save the connection and run a test query.
-3. Select that service in the Bot's basic settings.
+Add a search connection when you want the Bot to search the web. Search is configured separately from the model service; the model API key is not automatically a search credential.
 
-Search needs its own connection. Test queries use the saved connection and apply only to that test. A self-hosted search endpoint must also be reachable from the Server.
+Add a service under **Settings → Web search**, using credentials from that search provider or your own self-hosted address. After saving, try a simple query such as “Astral GitHub” and inspect the returned titles and links. Then select this connection in the Bot's **Basic settings**.
+
+Tests use the saved connection. The test query does not become a standing task for the Bot. Each Bot uses one selected search service; a missing or failed connection needs attention rather than automatically falling back to another service. Self-hosted search must also be reachable from the Server machine.
+
+## Troubleshoot the connection
+
+| What you see | What to check |
+| --- | --- |
+| A saved service, but setup cannot continue | Enable at least one model, complete its required limits, and select it in the setup step. |
+| An invalid-key or permission error | Check that the key belongs to this service and region, and that its account can use this model. For account authorization, try reconnecting the account. |
+| A quota or rate-limit error | Review the provider's quota and request limits before adding credit, waiting, or choosing another configured model. |
+| A timeout or unreachable address | Check the Server machine's network and the Base URL. Reaching the provider's website in your browser does not test that connection. |
+| Text replies work, but tool use fails | Check that this model supports tools through the selected API protocol. Choose a suitable model if necessary. |
+| A search test works, but the Bot cannot search | Check that this Bot's basic settings select the connection you just tested. |
 
 ## Adjust reasoning
 
-Set default reasoning in the model editor. A session can inherit that default, use the API default, or choose a supported level or budget. Available controls depend on the model and API format.
+Start with the model defaults and adjust them after a basic task works. Models that support reasoning controls can have a default mode in the model editor; sessions can also select a supported level or budget.
 
-After changing a model ID or API format, check whether the reasoning choices still apply. Your entries stay in the draft; complete required limits and resolve validation errors before saving.
-
-Model details come from the connection, the public models.dev catalog, and your manual settings. Missing details remain blank. Calls use the provider's full model ID unchanged.
+**Inherit model default** uses your saved model preference. **API default** lets the service use its own default behavior. Other choices depend on the model's supported controls. After changing the model ID or API protocol, review the reasoning options and resolve any validation errors before saving.
 
 ## Refresh or remove models
 
-Open a provider's model list and select **Refresh model catalog** to synchronize with that connection. Codex and GitHub Copilot use the signed-in account's catalog.
+**Refresh model catalog** synchronizes Astral's list with the current list returned by that connection. It adds newly listed models and removes absent ones, including manual entries. Models still listed retain your edits; unedited parameters receive updated recommendations.
 
-- Newly listed models are added. Models no longer listed are removed from Astral, including models you added or edited manually.
-- Models still listed retain your edits. Unedited models receive updated recommendations.
-- A successful empty catalog clears the current list. A failed or incomplete fetch keeps the previous list.
+A failed or incomplete fetch preserves the old list. A successfully returned empty catalog clears it. Codex and GitHub Copilot catalogs come from the signed-in account.
 
-Deleting one model may be temporary if the next refresh lists it again. Deleting a provider also removes its models. After adding a connection again, select the models your Bots or sessions should use.
+Deleting one model does not prevent a later refresh from adding it again. Deleting a provider removes its models too. If you add the connection again, select a model again for affected Bots and sessions. Their history is preserved.
 
 ## Group participation model
 
-With [proactive participation](/docs/chat/groups/) enabled, Astral uses a model to decide whether ordinary group messages should wake an idle Bot. It uses the session model by default; you can select a separate model for this decision.
+With [proactive group participation](/docs/chat/groups/) enabled, Astral decides whether an ordinary group message should wake an idle Bot. By default it uses the session model; you can select a separate model for this decision in the Bot's settings.
 
-While the Bot is working, the main model reads incoming chat messages directly. The participation model only decides whether to start work; the session model carries out the task.
+This model only decides whether to start work. The session model performs the task and handles new chat content while the Bot is working.

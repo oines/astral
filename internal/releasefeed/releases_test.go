@@ -17,6 +17,15 @@ type roundTrip func(*http.Request) (*http.Response, error)
 func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestLatestPinsTagAndChecksBytes(t *testing.T) {
+	for _, prefix := range []string{"", "https://proxy.example/github/"} {
+		t.Run("proxy="+prefix, func(t *testing.T) {
+			t.Setenv("ASTRAL_GITHUB_PROXY", prefix)
+			testLatestPinsTagAndChecksBytes(t, prefix)
+		})
+	}
+}
+
+func testLatestPinsTagAndChecksBytes(t *testing.T, prefix string) {
 	data := "official release bytes"
 	hash := sha256.Sum256([]byte(data))
 	corrupt := false
@@ -27,7 +36,14 @@ func TestLatestPinsTagAndChecksBytes(t *testing.T) {
 			t.Fatal("non-HTTPS release request")
 		}
 		var body string
-		switch r.URL.String() {
+		address := r.URL.String()
+		if prefix != "" {
+			if !strings.HasPrefix(address, prefix) {
+				t.Fatalf("release request bypassed selected proxy: %s", address)
+			}
+			address = strings.TrimPrefix(address, prefix)
+		}
+		switch address {
 		case "https://api.github.com/repos/oines/astral/releases/latest":
 			latestReads++
 			body = fmt.Sprintf(`{"tag_name":%q,"prerelease":false}`, latestTag)

@@ -47,7 +47,7 @@ pnpm install --frozen-lockfile
 GOWORK=off pnpm build:distribution
 ```
 
-For Windows PowerShell, see the [source-build instructions](https://astral.oines.dev/docs/start/get-astral/#build-from-source). `GOWORK=off` prevents a local workspace from replacing the pinned dependency.
+For Windows PowerShell, see the [source-build instructions](https://astral.oines.dev/docs/hosting/build-from-source/). `GOWORK=off` prevents a local workspace from replacing the pinned dependency.
 
 Choose how to run it:
 

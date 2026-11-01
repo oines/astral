@@ -1,41 +1,38 @@
 ---
-title: "Work in group chats"
-description: "Let members contribute to one task and receive results in the same chat."
+title: "Group collaboration"
+description: "Work on tasks together and choose when the Bot joins a discussion."
 ---
 
-Telegram, QQ, and Feishu support groups; Weixin currently supports private chats. Group members share the chat’s session to request work, add information, and receive results.
+A connected group can give the Bot a task together. One member asks it to organize meeting notes, another adds a missing decision, and the Bot continues in the same Astral conversation before sending the result back.
 
-**For a public group, use a dedicated Bot and a separate container. We strongly recommend keeping your everyday computer out of its permissions.** Any member can request tasks that use the Bot’s authorized computers and platform permissions. Read [Use Astral safely](/docs/start/safe-use/) before connecting.
+Telegram, QQ, and Feishu support groups; Weixin currently supports private chats only. First [connect the account and add your group](/docs/chat/overview/).
 
-## Start with a direct mention
+## What group members share
 
-1. Add the platform Bot to the group and [authorize the chat](/docs/chat/overview/).
-2. Mention the Bot or reply to one of its messages with a task.
-3. Other members can add information. While the Bot is working, newly received messages join its following model steps. Mention or reply to wake it when it is idle.
-4. Ask for the result or file to be sent back, then check the actual send outcome.
+The group shares one Astral conversation and **the Bot's authorized computers and platform accounts**. Members do not get separate operating-system accounts or directories. Group management tasks also use the platform account's own permissions.
 
-For example, one member requests a weekly report from a computer, another adds completed work, and the Bot creates and sends the report in the same session.
+Use a dedicated Bot and a separate environment, such as a container, for public groups. Avoid granting access to an everyday computer with personal files. Groups with different trust levels should use different Bots and execution environments; see [Safe use](/docs/start/safe-use/).
 
-## Ordinary messages and proactive participation
+## Give tasks and add information
 
-Proactive participation is off by default. Ordinary messages delivered for a connected group still enter its context, but do not start a task by themselves while the Bot is idle.
+When the Bot is idle, **mention it** using the messaging app's mention feature, or reply to one of its messages:
 
-While the Bot is working, it reads new messages in subsequent steps and decides how they relate to the task. Private chats follow the same rule.
+> @Bot Please organize the following meeting notes into “Decisions” and “Action items,” then send the result to this group.
 
-Enable proactive participation per group to let Astral decide whether to wake an idle Bot after 10 seconds without a new message, or 60 seconds from the first pending message. It may decide to remain silent. Direct mentions, replies to the Bot, and supported pokes addressed to it wake it without waiting for this check; private messages also wake an idle Bot directly.
+While it works, members can add information such as “The launch date is now next Wednesday.” The Bot reads new messages in later steps and decides how to adjust the task. Say “This adds to the previous task” or “This is a separate task” when that distinction matters.
 
+Telegram privacy mode can restrict delivery. Test by replying to a Bot message first; see [Telegram group setup](/docs/chat/telegram/#use-groups).
 
+## Should it reply to ordinary discussion?
 
-## Available context and permissions
+By default, ordinary group messages do not start a task when the Bot is idle, but messages delivered by the platform are kept as context. The Bot also reads those new messages while working.
 
-Astral only sees messages the platform delivers. Telegram privacy mode, QQ permissions, and Feishu application permissions can limit ordinary group messages. Proactive mode neither expands those permissions nor imports all history from before the Bot joined.
+Choose **Join discussions** for the group in the account's connected-chat list to let it decide when to participate. This optional setting is per group and off by default. It evaluates after 10 seconds without a new message, or after 60 seconds from the first pending message, and can choose to stay quiet. Mentions, replies, and supported pokes addressed to the Bot trigger it directly without waiting for that evaluation.
 
-Members share the chat session. Tasks use the **Bot's authorized computers**; sending a message does not create a separate operating-system account or private directory for each member.
+Proactive participation does not expand the messages Telegram, QQ, or Feishu delivers, or load the group's entire earlier history. Resend source material when context is missing.
 
-## Keep chats separate
+## Different groups and private work
 
-Different chats use separate sessions. The same Bot can still query other non-private sessions through the built-in API, and computer files may be shared. [Make personal work private](/docs/usage/conversations/#private-sessions); use separate Bots and environments for groups with different levels of trust.
+Different groups use different Astral conversations. Telegram forum topics can be connected separately; Feishu threads currently belong to their parent chat.
 
-Telegram forum topics can be connected individually. Feishu threads currently belong to their parent chat.
-
-Replace a group's session in the account's connected-chat settings when needed. Existing histories remain; running tasks in the affected sessions stop.
+The same Bot can query other non-private conversations through built-in APIs, and computer files may be shared. You can [make personal work private](/docs/usage/conversations/#private-sessions), but that does not retract content already copied elsewhere or isolate shared files. Changing a group's bound conversation stops work in both conversations and retains their histories.

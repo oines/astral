@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/releasefeed"
 )
 
@@ -22,26 +23,21 @@ type releaseTarget struct {
 }
 
 func officialClient() *http.Client {
-	return &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error {
-		if len(via) >= 8 || r.URL.Scheme != "https" || r.URL.User != nil {
-			return errors.New("untrusted official update redirect")
-		}
-		switch r.URL.Hostname() {
-		case "github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
-			return nil
-		}
-		return errors.New("unexpected official update host")
-	}}
+	return &http.Client{Timeout: 30 * time.Second, CheckRedirect: githubrelease.CheckRedirect}
 }
 func officialBytes(ctx context.Context, client *http.Client, address string, limit int64) ([]byte, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+	routed, err := githubrelease.Address(address)
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, routed, nil)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("User-Agent", "Astral-Server-Updater")
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, githubrelease.RequestError(err, address)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {

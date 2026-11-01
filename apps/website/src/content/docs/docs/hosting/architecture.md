@@ -1,38 +1,34 @@
 ---
-title: "Choose how to run Astral"
-description: "Understand Desktop, Server, and computers before choosing a deployment."
+title: "Desktop or Server?"
+description: "Choose where to run Astral based on your devices and whether it needs to stay online."
 ---
 
-Astral Server stores Bots, sessions, model connections, and chat accounts, and coordinates work. Computers perform file operations and commands. They may run on the same machine or separate machines.
+To start using Astral on your own computer, [download the desktop app](/docs/start/get-astral/). It includes the services it needs. Install it, open it, and complete the initial setup.
 
-## Start with Desktop
+To keep a Bot receiving messages and running scheduled tasks while your laptop is closed, install Astral on a Linux machine that stays on. This is the **Server** option: you use it through a browser.
 
-Desktop manages a local Server and computer connection. It opens directly without requiring a web account first.
+## Choose for your situation
 
-Keep the machine awake and running for ongoing tasks. Closing a window and fully quitting the application differ according to the background-running preference.
-
-## Use an always-on Server
-
-Run a Server on a persistent machine when you want the same Bots available from several devices or want chat connections to remain online. Access it with a browser.
-
-A browser is an interface; it does not register its device as a computer. Connect your laptop separately if the Bot should work on it.
-
-The Server needs access to your model, search, and chat services. Each connected computer needs an outbound route to the Server.
-
-## Choose execution environments
-
-| Environment | Use |
+| What you want to do | Choose |
 | --- | --- |
-| Server machine | Files and tools on the machine hosting Astral |
-| Remote computer | Another operating system, hardware, or existing project environment |
-| Container computer | A separate, persistent task environment |
+| Try Astral on your Mac, Windows, or Linux computer and work with its files | Desktop |
+| Keep a Bot online and use it from a phone or several computers | Server on a machine that stays on |
+| Add another computer to an Astral installation you already use | Keep that installation and [connect the additional computer](/docs/computers/connect/) |
 
-A session can switch between authorized computers. Files and processes remain on the machine that created them.
+For Desktop to keep working, its computer must stay awake and Astral must remain running. Sleep or quitting Astral interrupts the tasks and chat connections that depend on it.
 
-## How built-in capabilities work
+## Where does the work happen?
 
-The harness advances sessions and tool execution. The Bot uses basic file and command tools to work on computers, and discovers history, scheduling, chat, and file-management APIs as needed. Give it a task; it reads the relevant API instructions when it needs them.
+During Desktop setup, you can select the computer you are using. Once authorized, the Bot can use that computer's files and tools.
 
-Astral keeps context prefixes stable and appends environment changes when needed, helping ongoing work reuse the model service’s prompt cache.
+With Server, the browser displays the interface while work initially happens on the server machine. For example, asking Astral to organize files from your phone means organizing files on the server. To work with files on your laptop, [connect the laptop](/docs/computers/connect/), authorize the Bot to use it, and select it in the conversation.
 
-Continue with [Run a Server](/docs/hosting/server/) and [Sign-in and security](/docs/hosting/security/) for deployment. Read [Use Astral safely](/docs/start/safe-use/) before assigning computers to a group-chat Bot.
+One Astral installation can use several computers. You can switch computers within a conversation, while files remain on their original machines. Ask the Bot to copy files when the task requires it. See [Work across computers](/docs/computers/across-computers/) for an example.
+
+## When would I use a container?
+
+Use a [container computer](/docs/computers/containers/) when a task needs its own files and software environment. For example, you could give a public group-chat Bot a separate environment instead of access to your everyday computer.
+
+Containers require Docker. For your first experience, you can complete a small task on a computer you trust, then add containers when you need them.
+
+If you have chosen a server, continue with [Install Server on Linux](/docs/hosting/server/).

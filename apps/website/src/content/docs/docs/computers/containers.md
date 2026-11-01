@@ -1,45 +1,100 @@
 ---
 title: "Use containers"
-description: "Give a Bot a separate, persistent execution environment."
+description: "Give a Bot a separate Linux environment with persistent files and installed tools."
 ---
 
-A container is an independent computer in Astral, with its own filesystem and identity. For public groups, use a dedicated Bot authorized only for a container or dedicated machine. Read the [environment and access guidance](/docs/start/safe-use/#use-a-separate-environment-for-public-groups) before creating one.
+A container gives a Bot a separate place to work. It appears as another computer in Astral, with its own files and software. For a public group, you can use a dedicated Bot with access only to that container rather than your everyday computer.
 
-## Prepare the host
-
-The host needs a running Linux container engine accessible through its local Docker CLI and context. The account running Astral or the enrollment command must be able to use that engine.
-
-| Host | Container environments targeted |
-| --- | --- |
-| macOS | Docker Desktop, OrbStack, Colima, or Rancher Desktop using its Docker-compatible backend |
-| Linux | Docker Engine, including rootless Docker, or Docker Desktop |
-| Windows | Docker Desktop in Linux-container mode |
-
-Astral and the Windows connection command run natively; you do not need to enter WSL to use them. The runtime manages its own Linux environment. A local Docker context must be selected; the local-container shortcut does not create containers through a remote Docker context.
-
-This is the compatibility scope, not a claim that every provider, version and CPU combination has been tested. Check the release's acceptance evidence for the environments actually exercised.
-
-“Use a local container” uses the container runtime on the **Server machine**, not on the device displaying the browser interface.
+If you want the Bot to use files already on a machine, you can [connect that machine directly](/docs/computers/connect/). Host files do not automatically appear inside a container: upload, copy, or explicitly mount them. The host is the computer running the container. Plan permissions as well as the environment; see [public-group guidance](/docs/start/safe-use/#group-chats-use-a-dedicated-bot).
 
 ## Create a container computer
 
-- On the Server machine: open **Settings → Computers → Add Computer → Use a local container**.
-- On another machine: choose “Connect another machine,” enable “Use a container,” and run the generated command on that host.
+If Docker Desktop, OrbStack, or another compatible runtime is already installed and running, open **Settings → Computers → Add Computer**:
 
-Astral downloads the official prebuilt Ubuntu environment selected by your application version, checks the container's route to the Server, creates the persistent workspace and container, copies the matching Linux Daemon into it, then starts it and waits for the computer to connect. Follow these stages and their logs in the dialog. The first image download can take time; Docker reuses the cached image for later creations.
+- Choose **Use a local container** to create it on the Astral Server host, including the Server bundled with Desktop. This is not necessarily the device displaying the browser.
+- Choose **Connect another machine**, enable **Run in a container**, and run the generated command on that machine to create it elsewhere.
 
-Your computer does not build the image or install its toolchain from scratch. If preparation fails, check that the runtime is running, your account can access it, and the official image registry and release downloads are reachable.
+Astral downloads a prepared Ubuntu environment and starts the container. The first download can take time; the dialog or target terminal shows progress and errors. Later creations can reuse the downloaded image.
 
-After it comes online, grant your Bot access and select it in a session.
+Once online, grant access in the Bot's **Computer access** settings and select the container in a session. Try a small task to confirm the environment:
+
+> Create container-trial.md on the current computer with today's date. Give me a file link and its directory. Leave other files unchanged.
+
+Open the result, then use [Files and results](/docs/usage/files/) to provide your own material. The Ubuntu 24.04 environment includes common development, data, document, media, OCR, and browser tools, plus Chinese and emoji fonts. The Bot can install additional software as needed.
+
+## Prepare the host
+
+If you do not have a runtime yet, install and start an appropriate one on **the computer that will run the container**:
+
+| Host | Runtime choices |
+| --- | --- |
+| macOS | Docker Desktop, OrbStack, Colima, or Rancher Desktop with a Docker-compatible backend |
+| Linux | Docker Engine, including Rootless Docker, or Docker Desktop |
+| Windows | Docker Desktop in Linux-container mode |
+
+Astral uses the local Docker command to access the runtime. The system account running Astral or the enrollment command must have access. Select a local Docker context, which is a connection configuration for the container engine. The local-container shortcut does not create containers through a remote Docker context.
+
+On Windows, use Astral and the PowerShell connection command directly; you do not need to enter WSL. The container runtime manages its own Linux environment.
+
+Opening Add Computer checks Docker on the Server host. After fixing an environment problem, select **Check again**. A successful check enables creation; the check itself does not download an image or create a container.
+
+## Container creation fails
+
+| Message or symptom | Next step |
+| --- | --- |
+| Docker command missing | Install the runtime on the container host and ensure the Astral account can find its Docker command. |
+| Engine unreachable | Start Docker Desktop or the relevant service and check that a local engine is selected. |
+| Permission denied | Identify the Server's actual system account in the error. For a Linux Server, use the instructions below. |
+| Image or program download fails | Check access to the official image registry and release downloads from that machine. |
+| Docker works on the browser device but the option is unavailable | The check runs on the Server host. Use the other-machine container command to create one on the browser device. |
+
+Expand **Error details** for other Docker diagnostics. You can still connect a native computer while the container environment is unavailable.
+
+### Docker access for a Linux Server
+
+Use this section for a Linux Server whose installed Docker environment is not accessible to Astral. Astral uses existing Docker; it does not install the engine, start its system service, or add users to groups. If Docker is not installed, follow the [official installation guide](https://docs.docker.com/engine/install/) first.
+
+Sign in as **the operating-system account running Astral Server** and check:
+
+```sh
+id -un
+id -nG
+docker context show
+docker info
+```
+
+The key result is that `docker info` works without sudo. This system account is separate from your Astral web username. A successful test under a different administrator account does not establish Server access.
+
+If only `sudo docker info` succeeds, an administrator can grant docker-group access or choose Rootless Docker below. **The docker group gives host root-level privileges.** If that scope is acceptable, replace `SERVER_USER` with the actual Server account:
+
+```sh
+sudo usermod -aG docker SERVER_USER
+```
+
+Follow [Docker's post-installation guidance](https://docs.docker.com/engine/install/linux-postinstall/) to log in again after the group change. Running background processes may retain their old permissions: `newgrp docker` affects a new shell, and restarting Astral alone can still inherit the old groups.
+
+If the account's systemd user manager was already running, have an administrator restart its `user@UID.service` during maintenance, or reboot the host. `UID` is the number returned by `id -u`. This interrupts the account's other services and tasks, so arrange downtime first. Check `docker info` again, start Astral, and select **Check again** in the interface.
+
+### Rootless Docker
+
+To avoid docker-group access, follow the [Rootless Docker guide](https://docs.docker.com/engine/security/rootless/) under the Server's system account, including its host prerequisites. Then select the local engine and enable its user service:
+
+```sh
+docker context use rootless
+systemctl --user enable --now docker.service
+docker info
+```
+
+Replace `rootless` if your context has another name. Check that `docker info` includes `rootless` under security options. Test as the Server user, which owns the configuration and service.
+
+Lingering is needed to keep this user's services running after SSH logout and at boot. The official Astral Server installer prepares it; for a custom deployment, an administrator can run `loginctl enable-linger SERVER_USER`. The background Server must use the same Docker context as your terminal. Pass any explicit `DOCKER_HOST` or `DOCKER_CONTEXT` settings to that service too.
 
 ## Environment and persistence
 
-The Ubuntu 24.04 environment includes common development, data, document, media, OCR and browser tools, with Chinese and emoji fonts. Your Bot can install additional software. Host project files do not appear inside automatically; copy or mount them explicitly.
+The container keeps working files and installed software between uses. Back up important files separately, especially before removing a container or data volume.
 
-The environment image and Astral program have separate lifecycles. Each application version selects an exact image digest. The image is rebuilt only when its Dockerfile or other build inputs change; an application release can reuse the same environment. Astral copies its program into the container's writable layer before starting it, outside the persistent work-data directory. It does not add a host-mounted program directory. The existing data-volume and read-only pairing-configuration mounts remain.
+**Update Daemon** updates Astral's program inside the container and restarts the service, interrupting running tasks. It preserves the container, files, and installed software without upgrading the Ubuntu base environment. Run the fallback update command on the Docker host; it restarts the existing container.
 
-“Update Daemon” downloads and verifies the official program, then restarts the Daemon inside the same container. The container ID, writable layer, files and installed software remain; running tasks stop. The same Astral binary supervises the update, with no Docker socket access. This does not upgrade the base image. The fallback update command runs on the Docker host and restarts the existing container.
+Updating Desktop or Server does not recreate existing containers either. The environment image selected by an application version is used for new containers. Create another container and transfer your work carefully when you need a new base environment.
 
-Updating Desktop or Server does not recreate existing container computers or replace their environment. A different environment image applies to newly created containers; keep the original container and its work when preparing another environment.
-
-Disconnecting a computer or revoking access does not delete its container or volumes. Back up work before removing those resources. Containers do not replace careful permission choices.
+Revoking a Bot's access, disconnecting a computer, or deleting its Astral registration keeps the host's container and volumes. Remove those through the host's container manager when needed, after confirming that important files are backed up.

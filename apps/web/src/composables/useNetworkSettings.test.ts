@@ -1,128 +1,159 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
+import { settingsUxEn, settingsUxZh } from '../i18n/settings-ux'
 import { useNetworkSettings } from './useNetworkSettings'
 import { useSettingsSave } from './useSettingsSave'
 
+type NetworkPatch = { allowed_hostnames?: string[]; restrict_hostnames?: boolean; allow_remote_management?: boolean }
 const state = vi.hoisted(() => ({ app: {} as Record<string, unknown> }))
 vi.mock('../stores/app', () => ({ useAppStore: () => state.app }))
 vi.mock('@pinia/colada', async importOriginal => ({ ...await importOriginal<typeof import('@pinia/colada')>(), useQueryCache: () => ({}) }))
 
-function setup() {
+function setup(locale: 'en' | 'zh' = 'en') {
   const network = reactive({
     public_urls: { value: ['http://astral.example:4545'], saved_value: [] as string[], source: 'discovery', editable: true },
+    allowed_hostnames: { value: [] as string[], saved_value: [] as string[], source: 'default', editable: true },
+    restrict_hostnames: { value: false, saved_value: false, source: 'default', editable: true },
     allow_remote_management: { value: false, saved_value: false, source: 'default', editable: true },
   })
-  const save = vi.fn(async (patch: { public_urls?: string[]; allow_remote_management?: boolean }) => {
-    if (patch.public_urls !== undefined) {
-      network.public_urls.saved_value = patch.public_urls
-      network.public_urls.value = patch.public_urls.length ? patch.public_urls : ['http://astral.example:4545']
-    }
+  const apply = (patch: NetworkPatch) => {
+    if (patch.allowed_hostnames !== undefined) network.allowed_hostnames.saved_value = network.allowed_hostnames.value = patch.allowed_hostnames
+    if (patch.restrict_hostnames !== undefined) network.restrict_hostnames.value = patch.restrict_hostnames
     if (patch.allow_remote_management !== undefined) network.allow_remote_management.value = patch.allow_remote_management
     return network
-  })
+  }
+  const save = vi.fn(async (patch: NetworkPatch) => apply(patch))
   const refresh = vi.fn(async () => network)
   state.app = reactive({ data: { network }, networkSettings: save, refreshNetwork: refresh })
-  return { editor: useNetworkSettings(), network, save, refresh }
+  const dictionary = locale === 'zh' ? settingsUxZh : settingsUxEn
+  const message = (key: string, values: Record<string, string> = {}) => Object.entries(values).reduce((text, [key, value]) => text.replace(`{${key}}`, value), String(dictionary[key as keyof typeof dictionary] || key))
+  return { editor: useNetworkSettings(message), network, save, refresh, apply }
 }
-afterEach(() => { useSettingsSave().discardForm('network/public_urls') })
+beforeEach(() => { vi.stubGlobal('window', { location: { hostname: 'astral.example' } }) })
+afterEach(() => { useSettingsSave().discardForm('network/hostnames'); vi.unstubAllGlobals() })
 
-describe('network address list editor', () => {
-  it('preserves priority order and saves addresses without enabling remote management', async () => {
+describe('hostname settings draft', () => {
+  it('does not apply editing, adding, removing or toggling until the entire group is explicitly saved', async () => {
     const { editor, save, network } = setup()
-    editor.addAddress(); editor.setAddress(0, ' https://astral.example/ ')
-    editor.addAddress(); editor.setAddress(1, 'http://100.90.80.70:4545')
-    await editor.saveAddresses()
-    expect(save).toHaveBeenCalledWith({ public_urls: ['https://astral.example', 'http://100.90.80.70:4545'] })
+    editor.setRestrictHostnames(true)
+    editor.addHostname(); editor.setHostname(1, ' extra.example ')
+    editor.addHostname(); editor.setHostname(2, 'temporary.example'); editor.removeHostname(2)
+    await Promise.resolve()
+    expect(editor.restrictHostnames.value).toBe(true)
+    expect(editor.hostnames.value).toEqual(['astral.example', ' extra.example '])
+    expect(network.restrict_hostnames.value).toBe(false)
+    expect(network.allowed_hostnames.value).toEqual([])
+    expect(save).not.toHaveBeenCalled()
+    await editor.saveHostnameSettings()
+    expect(save).toHaveBeenCalledExactlyOnceWith({ restrict_hostnames: true, allowed_hostnames: ['astral.example', 'extra.example'] })
+    expect(editor.hasHostnameDraft.value).toBe(false)
+    expect(network.restrict_hostnames.value).toBe(true)
+    expect(network.allowed_hostnames.value).toEqual(['astral.example', 'extra.example'])
     expect(network.allow_remote_management.value).toBe(false)
-    await editor.removeAddress(0)
-    expect(network.public_urls.saved_value).toEqual(['http://100.90.80.70:4545'])
-    await editor.removeAddress(0)
-    expect(save).toHaveBeenLastCalledWith({ public_urls: [] })
     expect(network.public_urls.value).toEqual(['http://astral.example:4545'])
   })
 
-  it('keeps rejected list edits and restores the confirmed toggle state', async () => {
+  it('can save disabling the restriction and clearing its list as one change', async () => {
     const { editor, save, network } = setup()
-    save.mockRejectedValue({ code: 'validation', message: 'Invalid address' })
-    editor.addAddress(); editor.setAddress(0, 'invalid URL')
-    await editor.saveAddresses()
-    expect(editor.addresses.value).toEqual(['invalid URL'])
-    expect(network.public_urls.saved_value).toEqual([])
-    await editor.setAllowRemote(true)
-    expect(editor.allowRemote.value).toBe(false)
+    network.restrict_hostnames.value = true
+    network.allowed_hostnames.value = ['astral.example']
+    editor.setRestrictHostnames(false); editor.removeHostname(0)
+    expect(network.restrict_hostnames.value).toBe(true)
+    expect(network.allowed_hostnames.value).toEqual(['astral.example'])
+    expect(save).not.toHaveBeenCalled()
+    await editor.saveHostnameSettings()
+    expect(save).toHaveBeenCalledExactlyOnceWith({ restrict_hostnames: false, allowed_hostnames: [] })
   })
 
-  it('reconciles a lost response before reporting a committed toggle as failed', async () => {
-    const { editor, network, save, refresh } = setup()
-    save.mockImplementation(async () => { network.allow_remote_management.value = true; throw new TypeError('connection lost') })
-    await editor.setAllowRemote(true)
-    expect(refresh).toHaveBeenCalledOnce()
-    expect(editor.allowRemote.value).toBe(true)
-    expect(save).toHaveBeenCalledOnce()
+  it.each([
+    { values: [] as string[], part: '至少一个' },
+    { values: ['other.example'], part: 'astral.example' },
+    { values: ['https://astral.example/path'], part: '不要包含协议、端口或路径' },
+  ])('keeps the entire rejected group draft and gives a local explanation for $values', async ({ values, part }) => {
+    const { editor, save, network } = setup('zh')
+    editor.setRestrictHostnames(true)
+    editor.removeHostname(0)
+    for (const [index, value] of values.entries()) { editor.addHostname(); editor.setHostname(index, value) }
+    await editor.saveHostnameSettings()
+    expect(save).not.toHaveBeenCalled()
+    expect(editor.restrictHostnames.value).toBe(true)
+    expect(editor.hostnames.value).toEqual(values)
+    expect(editor.hasHostnameDraft.value).toBe(true)
+    expect(network.restrict_hostnames.value).toBe(false)
+    expect(network.allowed_hostnames.value).toEqual([])
+    expect(editor.hostnameSaveState.value).toMatchObject({ status: 'error', error: expect.stringContaining(part) })
   })
 
-  it('recognizes the normalized list after a committed response is lost', async () => {
-    const { editor, network, save, refresh } = setup()
-    save.mockImplementationOnce(async () => {
-      network.public_urls.saved_value = network.public_urls.value = ['https://custom.example']
+  it('preserves a Server-rejected group and translates its known hostname format error', async () => {
+    const { editor, save, network } = setup('zh')
+    editor.setRestrictHostnames(true)
+    editor.addHostname(); editor.setHostname(1, 'invalid_label.example')
+    save.mockRejectedValueOnce({ code: 'validation', message: 'Enter a hostname or IP address without a protocol, port, path or wildcard.' })
+    await editor.saveHostnameSettings()
+    expect(editor.hostnames.value).toEqual(['astral.example', 'invalid_label.example'])
+    expect(editor.restrictHostnames.value).toBe(true)
+    expect(network.restrict_hostnames.value).toBe(false)
+    expect(editor.hostnameSaveState.value.error).toContain('请填写域名或 IP')
+  })
+
+  it('reconciles both fields after a committed group response is lost without resubmitting', async () => {
+    const { editor, network, save, refresh, apply } = setup()
+    editor.setRestrictHostnames(true)
+    editor.addHostname(); editor.setHostname(1, 'BÜCHER.example.')
+    save.mockImplementationOnce(async patch => {
+      apply({ ...patch, allowed_hostnames: ['astral.example', 'xn--bcher-kva.example'] })
       throw new TypeError('connection lost')
     })
-    editor.addAddress(); editor.setAddress(0, 'https://custom.example/')
-    await editor.saveAddresses()
+    await editor.saveHostnameSettings()
     expect(refresh).toHaveBeenCalledOnce()
-    expect(editor.addresses.value).toEqual(['https://custom.example'])
-    expect(useSettingsSave().state('network/public_urls').status).toBe('saved')
+    expect(save).toHaveBeenCalledOnce()
+    expect(editor.hasHostnameDraft.value).toBe(false)
+    expect(editor.restrictHostnames.value).toBe(true)
+    expect(editor.hostnames.value).toEqual(network.allowed_hostnames.value)
+    expect(editor.hostnameSaveState.value.status).toBe('saved')
   })
 
-  it('does not send edits for command-line or environment controlled fields', async () => {
-    const { editor, network, save } = setup()
-    network.public_urls.editable = false
-    network.public_urls.source = 'environment'
-    network.allow_remote_management.editable = false
-    network.allow_remote_management.source = 'cli'
-    expect(editor.addresses.value).toEqual(network.public_urls.value)
-    editor.addAddress()
-    await editor.saveAddresses(); await editor.removeAddress(0); await editor.setAllowRemote(true)
-    expect(save).not.toHaveBeenCalled()
-  })
-
-  it('keeps newer typing when an earlier list save completes', async () => {
-    const { editor, network, save } = setup()
+  it('keeps newer edits after a save finishes and waits for another explicit save', async () => {
+    const { editor, network, save, apply } = setup()
     let finish!: () => void
     const pending = new Promise<void>(resolve => { finish = resolve })
-    save.mockImplementationOnce(async patch => {
-      await pending
-      network.public_urls.saved_value = network.public_urls.value = patch.public_urls!
-      return network
-    })
-    editor.addAddress(); editor.setAddress(0, 'http://first.example:4545')
-    const saving = editor.saveAddresses()
+    save.mockImplementationOnce(async patch => { await pending; return apply(patch) })
+    editor.setRestrictHostnames(true); editor.addHostname(); editor.setHostname(1, 'first.example')
+    const saving = editor.saveHostnameSettings()
     await Promise.resolve()
-    editor.setAddress(0, 'http://newer.example:4545')
+    editor.setHostname(1, 'newer.example')
     finish(); await saving
-    expect(editor.addresses.value).toEqual(['http://newer.example:4545'])
-    expect(network.public_urls.value).toEqual(['http://first.example:4545'])
-    await editor.saveAddresses()
-    expect(network.public_urls.value).toEqual(['http://newer.example:4545'])
+    expect(editor.hostnames.value).toEqual(['astral.example', 'newer.example'])
+    expect(network.allowed_hostnames.value).toEqual(['astral.example', 'first.example'])
+    expect(save).toHaveBeenCalledOnce()
+    await editor.saveHostnameSettings()
+    expect(save).toHaveBeenCalledTimes(2)
+    expect(network.allowed_hostnames.value).toEqual(['astral.example', 'newer.example'])
   })
 
-  it('keeps the latest toggle intent while reconciling an earlier lost response', async () => {
-    const { editor, network, save, refresh } = setup()
-    let finish!: () => void
-    const pending = new Promise<void>(resolve => { finish = resolve })
-    save.mockImplementationOnce(async () => {
-      network.allow_remote_management.value = true
-      await pending
-      throw new TypeError('lost response')
-    })
-    const enabling = editor.setAllowRemote(true)
-    await Promise.resolve()
-    const disabling = editor.setAllowRemote(false)
-    expect(editor.allowRemote.value).toBe(false)
-    finish(); await Promise.all([enabling, disabling])
-    expect(refresh).toHaveBeenCalledOnce()
-    expect(network.allow_remote_management.value).toBe(false)
-    expect(editor.allowRemote.value).toBe(false)
-    expect(save).toHaveBeenLastCalledWith({ allow_remote_management: false })
+  it('keeps controlled fields read-only and submits only editable members of the group', async () => {
+    const { editor, network, save } = setup()
+    network.allowed_hostnames.editable = false
+    network.allowed_hostnames.value = ['astral.example']
+    network.restrict_hostnames.editable = false
+    editor.addHostname(); editor.setHostname(0, 'other.example'); editor.removeHostname(0); editor.setRestrictHostnames(true)
+    await editor.saveHostnameSettings()
+    expect(editor.hasHostnameDraft.value).toBe(false)
+    expect(save).not.toHaveBeenCalled()
+    network.restrict_hostnames.editable = true
+    editor.setRestrictHostnames(true)
+    await editor.saveHostnameSettings()
+    expect(save).toHaveBeenCalledExactlyOnceWith({ restrict_hostnames: true })
+  })
+
+  it('leaves Desktop remote management automatic and separate from the hostname draft', async () => {
+    const { editor, network, save } = setup()
+    editor.setRestrictHostnames(true)
+    await editor.setAllowRemote(true)
+    expect(save).toHaveBeenCalledExactlyOnceWith({ allow_remote_management: true })
+    expect(network.restrict_hostnames.value).toBe(false)
+    expect(editor.hasHostnameDraft.value).toBe(true)
+    await editor.saveHostnameSettings()
+    expect(save).toHaveBeenLastCalledWith({ restrict_hostnames: true, allowed_hostnames: ['astral.example'] })
   })
 })
