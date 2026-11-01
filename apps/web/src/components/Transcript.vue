@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { Button, Popover } from '@astral/ui'
 import { ArrowDown, Check, Clock3, Copy, Ellipsis, File, GitBranch } from '@astral/icons'
 import type { Content, Entry, FileRef } from '../lib/types'
-import { errorText, imageURL, object } from '../lib/api'
+import { errorText, fileURL, imageURL, object } from '../lib/api'
 import { durableTranscriptGroups, liveTranscriptGroups, messageText, scheduledMessage, type SessionState, type TranscriptGroup } from '../lib/session-state'
 import { useSurfaceStore } from '../stores/surface'
 import Markdown from './Markdown.vue'
@@ -17,10 +17,12 @@ import { formatDateTime } from '../lib/timezone'
 import { useAppStore } from '../stores/app'
 import type { TranscriptPosition } from '../lib/transcript-position'
 import { messageAttachments } from '../lib/message-attachments'
+import { useImagePreviewStore } from '../stores/image-preview'
 const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean> }>()
 const emit = defineEmits<{ fork: [entryID: string]; position: [state: SessionState, position: TranscriptPosition] }>()
 const { t, locale } = useI18n()
 const surface = useSurfaceStore()
+const imagePreview = useImagePreviewStore()
 const app = useAppStore()
 const scroller = ref<HTMLElement>()
 const content = ref<HTMLElement>()
@@ -61,7 +63,19 @@ function attachments(entry: Entry) {
   }
   return result
 }
-function openFile(file: FileRef) { surface.open({ kind: 'file', id: file.id, sessionID: props.sessionID, ref: file }) }
+function openFile(file: FileRef) {
+  if (file.media_type.startsWith('image/')) {
+    imagePreview.show([{ src: fileURL(file.id, props.sessionID), downloadUrl: fileURL(file.id, props.sessionID, true), name: file.display_name }])
+  } else surface.open({ kind: 'file', id: file.id, sessionID: props.sessionID, ref: file })
+}
+function openImage(entry: Entry, index: number) {
+  imagePreview.show(attachments(entry).images.map(image => ({
+    src: imageURL(props.sessionID, entry.id, image.index),
+    originalSrc: image.file ? fileURL(image.file.id, props.sessionID) : undefined,
+    downloadUrl: image.file ? fileURL(image.file.id, props.sessionID, true) : imageURL(props.sessionID, entry.id, image.index),
+    name: image.file?.display_name || t('imagePreviewTitle'),
+  })), index)
+}
 function sender(entry: Entry) {
   const meta = object(entry.message?.metadata)
   return meta.source === 'im' ? String(object(meta.sender).name ?? '') : ''
@@ -167,10 +181,11 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
                 :key="image.index"
                 class="message-image"
               >
-                <a
-                  :href="imageURL(sessionID, entry.id, image.index)"
-                  target="_blank"
-                  rel="noopener"
+                <button
+                  type="button"
+                  class="message-image-trigger"
+                  :aria-label="t('previewImage', { name: image.file?.display_name || t('imagePreviewTitle') })"
+                  @click="openImage(entry, image.index)"
                 >
                   <img
                     :src="imageURL(sessionID, entry.id, image.index)"
@@ -180,16 +195,6 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
                     decoding="async"
                     loading="lazy"
                   >
-                </a>
-                <button
-                  v-if="image.file"
-                  type="button"
-                  class="message-image-file"
-                  :aria-label="t('attachmentDetails', { name: image.file.display_name })"
-                  :title="t('attachmentDetails', { name: image.file.display_name })"
-                  @click="openFile(image.file)"
-                >
-                  <File />
                 </button>
               </div>
             </div>

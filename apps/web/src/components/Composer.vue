@@ -12,10 +12,15 @@ import ModelSelection from './ModelSelection.vue'
 import ComposerContext from './ComposerContext.vue'
 import type { ModelSelection as Selection } from '../lib/model-reasoning'
 import { modelUnavailableLabel } from '../lib/model-availability'
+import { useImagePreviewStore } from '../stores/image-preview'
+import { useSurfaceStore } from '../stores/surface'
+import type { FileRef } from '../lib/types'
 const props = defineProps<{ view: SessionView; live: boolean }>()
 const showConnection = useDelayedPending(() => !props.live)
 const emit = defineEmits<{ compact: []; started: [id: string] }>()
 const app = useAppStore()
+const images = useImagePreviewStore()
+const surface = useSurfaceStore()
 const { t } = useI18n()
 const draftKey = props.view.id || `new:${props.view.agent_id}`
 if (!app.drafts[draftKey]) app.drafts[draftKey] = { text: '', files: [] }
@@ -65,6 +70,12 @@ const contextUsage = computed(() => view.value.context_usage)
 const ratio = computed(() => contextUsage.value?.context_window ? Math.min(100, Math.round(contextUsage.value.input_tokens / contextUsage.value.context_window * 100)) : undefined)
 const computer = computed(() => computers.value.find(c => c.id === view.value.computer_id))
 const modelBusy = ref(false)
+function previewAttachment(file: FileRef) {
+  if (file.media_type.startsWith('image/')) {
+    const imageFiles = attachments.value.filter(item => item.media_type.startsWith('image/'))
+    images.show(imageFiles.map(item => ({ src: fileURL(item.id, view.value.id), downloadUrl: fileURL(item.id, view.value.id, true), name: item.display_name })), imageFiles.findIndex(item => item.id === file.id))
+  } else surface.open({ kind: 'file', id: file.id, sessionID: view.value.id, ref: file })
+}
 async function action(fn: () => Promise<unknown>) {
   error.value = ''
   try { await fn() } catch (e) { error.value = errorText(e) }
@@ -411,15 +422,28 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
               class="attachment-chip"
               :class="{ 'attachment-image': file.media_type.startsWith('image/') }"
             >
-              <img
+              <button
                 v-if="file.media_type.startsWith('image/')"
-                :src="fileURL(file.id, view.id)"
-                :alt="file.display_name"
+                type="button"
+                class="attachment-preview-image"
+                :aria-label="t('previewImage', { name: file.display_name })"
+                @click="previewAttachment(file)"
               >
-              <template v-else><File /><span>{{ file.display_name }}</span></template>
+                <img
+                  :src="fileURL(file.id, view.id)"
+                  :alt="file.display_name"
+                >
+              </button>
+              <button
+                v-else
+                type="button"
+                class="attachment-preview-file"
+                @click="previewAttachment(file)"
+              ><File /><span>{{ file.display_name }}</span></button>
               <button
                 v-if="!busy && !editing"
                 type="button"
+                class="attachment-remove"
                 :aria-label="t('delete')"
                 @click="files.splice(i, 1)"
               ><X /></button>

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setImmediate } from 'node:timers/promises'
 import { createSSRApp, defineComponent, getCurrentInstance, h, reactive } from 'vue'
 import { renderToString } from 'vue/server-renderer'
+import { createPinia, setActivePinia } from 'pinia'
 import type { SessionView } from '../lib/types'
 import Composer from './Composer.vue'
 
@@ -43,6 +44,7 @@ function view(canContinue: boolean): SessionView {
     can_continue: canContinue, model_available: false, model_unavailable_reason: 'model_missing', pending: [], approvals: [], unresolved: [] }
 }
 beforeEach(() => {
+  setActivePinia(createPinia())
   fixture.app.drafts = {}; fixture.app.models = []; fixture.app.data.preferences = {}
   fixture.send = undefined; fixture.handlers = undefined; vi.clearAllMocks()
 })

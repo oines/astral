@@ -6,7 +6,7 @@ export {
   Lock, Maximize2, Menu, MessageCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen,
   Paperclip, Pencil, Pin, Play, Plus, Search, Send, Server, Settings2, Shield,
   SlidersHorizontal, Sparkle, Square, Sun, Terminal, Trash2, TriangleAlert,
-  Unplug, Upload, User, X, ListEnd, CornerDownRight,
+  Unplug, Upload, User, X, ListEnd, CornerDownRight, ZoomIn, ZoomOut,
 } from 'lucide-vue-next'
 
 export { default as ProviderIcon } from './ProviderIcon.vue'

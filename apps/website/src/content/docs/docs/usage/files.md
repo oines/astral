@@ -17,7 +17,7 @@ If a file is already on the computer, provide its full path, such as `/home/mei/
 
 ## Open results
 
-Open a returned file link to preview or download it. Images can display in the conversation; other previews depend on the file format. Download a copy to your own device or back it up on the source computer when you need to keep it.
+Click an image in the conversation to open the full-screen viewer, where you can zoom and download it. Other files open in the file sidebar; available previews depend on the file format. Download a copy to your own device or back it up on the source computer when you need to keep it.
 
 If the Bot reports completion without a link, ask:
 

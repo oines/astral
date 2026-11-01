@@ -6,6 +6,7 @@ import SettingsPage from './pages/SettingsPage.vue'
 import OnboardingPage from './pages/OnboardingPage.vue'
 import ChatPageSkeleton from './components/ChatPageSkeleton.vue'
 import ManualCopyDialog from './components/ManualCopyDialog.vue'
+import ImagePreviewHost from './components/ImagePreviewHost.vue'
 import { useI18n } from 'vue-i18n'
 import { Button, useDelayedPending } from '@astral/ui'
 import { AstralLogo } from '@astral/icons'
@@ -14,9 +15,11 @@ import { errorText } from './lib/api'
 
 import LoginPage from './pages/LoginPage.vue'
 import { useAuthStore } from './stores/auth'
+import { useImagePreviewStore } from './stores/image-preview'
 
 const auth = useAuthStore()
 const app = useAppStore()
+const images = useImagePreviewStore()
 void auth.refresh()
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +30,8 @@ const showInitialLoading = useDelayedPending(() => app.authorized && !app.data &
 watch(() => route.path, path => {
   if (!path.startsWith('/settings')) app.lastChatPath = path
 }, { immediate: true })
+watch(() => route.fullPath, () => images.close())
+watch(() => app.authorized, authorized => { if (!authorized) images.close() })
 const { t } = useI18n()
 </script>
 <template>
@@ -86,4 +91,5 @@ const { t } = useI18n()
     </div>
   </div>
   <ManualCopyDialog />
+  <ImagePreviewHost v-if="app.authorized" />
 </template>

@@ -198,12 +198,9 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .message-images-multiple { width: 328px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .message-user .message-images-multiple > .message-image:last-child:nth-child(odd) { grid-column: 2; }
 .message-image { position: relative; min-width: 0; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
-.message-image > a { display: block; width: 100%; height: 100%; }
+.message-image-trigger { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: inherit; background: transparent; }
+.message-image-trigger:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -3px; }
 .message-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.message-image-file { position: absolute; right: 6px; bottom: 6px; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--muted); opacity: 0; transition: opacity .12s; }
-.message-image:hover .message-image-file, .message-image:focus-within .message-image-file { opacity: 1; }
-.message-image-file svg { width: 14px; height: 14px; }
-@media (hover: none) { .message-image-file { opacity: 1; } }
 .message-files { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; }
 .message-images + .message-files, .message-attachments + .message-attachments { margin-top: 8px; }
 .message-user .message-images + .message-files { margin-top: 0; }
@@ -347,6 +344,10 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .attachment-chip > span:not(.spinner) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .attachment-chip button { display: grid; place-items: center; border: 0; background: transparent; padding: 0; color: var(--muted); }
 .attachment-chip button svg { width: 13px; height: 13px; }
+.attachment-chip .attachment-preview-file { display: flex; gap: 8px; min-width: 0; text-align: left; color: inherit; }
+.attachment-preview-file > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.attachment-preview-file > svg { flex-shrink: 0; }
+.attachment-chip .attachment-preview-image { display: block; width: 100%; height: 100%; }
 .takeover { padding: 18px; border-radius: 16px; background: var(--raised); box-shadow: var(--composer-shadow); gap: 14px; }
 .composer-stack { width: 100%; }
 .composer-form.file-drag .composer { border-color: var(--ink); background: var(--surface); }
@@ -355,7 +356,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .composer-editing svg { width: 14px; height: 14px; }
 .attachment-chip.attachment-image { position: relative; width: 112px; height: 112px; padding: 0; overflow: hidden; border: 1px solid var(--field-line); border-radius: 12px; }
 .attachment-image img { width: 100%; height: 100%; object-fit: cover; }
-.attachment-image button { position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%; background: var(--raised); box-shadow: var(--shadow); }
+.attachment-image .attachment-remove { position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%; background: var(--raised); box-shadow: var(--shadow); }
 .pending-inputs { margin: 0 8px -1px; padding: 2px 4px; max-height: min(132px, 20dvh); overflow-y: auto; border: 1px solid var(--field-line); border-bottom: 0; border-radius: 10px 10px 0 0; }
 .pending-input { position: relative; display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 1px 3px; font-size: 12px; cursor: grab; border-radius: 4px; }
 .pending-input:not(:last-child)::after { content: ''; position: absolute; left: 3px; right: 3px; bottom: 0; height: 1px; background: var(--field-line); pointer-events: none; }
