@@ -541,7 +541,7 @@ function focusClose(event: Event) {
 .image-viewer-count, .image-viewer-zoom-value { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
 .image-viewer-count { min-width: 44px; }
 .image-viewer-zoom-value { width: 48px; }
-:global(:root[data-desktop]) .image-viewer { padding-top: var(--desktop-titlebar-height); }
+:root[data-desktop] .image-viewer { padding-top: var(--desktop-titlebar-height); }
 @media (max-width: 600px) {
   .image-viewer-header { padding-left: max(16px, env(safe-area-inset-left)); }
   .image-viewer-viewport { margin-left: max(12px, env(safe-area-inset-left)); margin-right: max(12px, env(safe-area-inset-right)); }

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Vue from 'vue'
 import { createRenderer, defineComponent, h, nextTick, reactive, ssrContextKey, type Component, type RenderFunction } from 'vue'
-import { compileScript, compileTemplate, parse } from 'vue/compiler-sfc'
+import { compileScript, compileStyle, compileTemplate, parse } from 'vue/compiler-sfc'
 import Button from './Button.vue'
 import ImageViewer from './ImageViewer.vue'
 import type { ImageViewerItem, ImageViewerLabels } from './image-viewer-types'
@@ -174,6 +174,24 @@ async function mount(items: ImageViewerItem[] = [{ src: '/preview' }]) {
   const wheel = (fields: Record<string, unknown>) => fire(stage(), 'wheel', { clientX: 440, clientY: 360, deltaMode: 0, deltaX: 0, deltaY: 0, ctrlKey: false, metaKey: false, ...fields })
   return { props, root, byClass, stage, image, pose, load, pointer, wheel, updateOpen, updateIndex }
 }
+
+describe('ImageViewer desktop layout', () => {
+  it('keeps the compiled titlebar inset on the viewer instead of the document root', () => {
+    const filename = 'ImageViewer.vue'
+    const { descriptor } = parse(readFileSync(new URL('./ImageViewer.vue', import.meta.url), 'utf8'))
+    const selectors: string[] = []
+    for (const style of descriptor.styles) {
+      const result = compileStyle({ filename, source: style.content, id: 'data-v-viewer-layout', scoped: style.scoped })
+      expect(result.errors).toEqual([])
+      result.rawResult?.root.walkRules(rule => {
+        rule.walkDecls('padding-top', declaration => {
+          if (declaration.value === 'var(--desktop-titlebar-height)') selectors.push(rule.selector)
+        })
+      })
+    }
+    expect(selectors).toEqual([':root[data-desktop] .image-viewer[data-v-viewer-layout]'])
+  })
+})
 
 describe('ImageViewer blank backdrop dismissal', () => {
   it('protects actual control surfaces while allowing blank header, footer and feedback gaps to close', async () => {

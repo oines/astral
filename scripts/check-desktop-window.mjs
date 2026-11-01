@@ -21,6 +21,7 @@ function windowGeometry(page, origin) {
   }
   const native = navigator.windowControlsOverlay
   const toggle = layout.querySelector('button.sidebar-toggle')
+  const toggleStyle = toggle && getComputedStyle(toggle)
   const sidebar = layout.querySelector('#chat-sidebar')
   // This is the one real control intentionally placed inside the titlebar.
   const controls = [...layout.querySelectorAll('button, a, input, textarea, select, [role="combobox"]')].filter(element => element !== toggle && visible(element))
@@ -31,13 +32,21 @@ function windowGeometry(page, origin) {
     platform: window.astralDesktop?.platform,
     desktop: document.documentElement.dataset.desktop,
     theme: document.documentElement.dataset.theme,
+    fonts: { status: document.fonts?.status },
     titlebarHeight: Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-titlebar-height')),
     viewport: { width: innerWidth, height: innerHeight },
     overlay: native && { visible: native.visible, ...rect({ getBoundingClientRect: () => native.getTitlebarAreaRect() }) },
     content: rect(content),
     controls: controls.map(element => ({ ...rect(element), drag: getComputedStyle(element).getPropertyValue('-webkit-app-region') })),
     drag: getComputedStyle(layout, '::before').getPropertyValue('-webkit-app-region'),
-    toggle: toggle && visible(toggle) ? { ...rect(toggle), drag: getComputedStyle(toggle).getPropertyValue('-webkit-app-region'), expanded: toggle.getAttribute('aria-expanded') } : null,
+    toggle: toggle && visible(toggle) ? {
+      ...rect(toggle), drag: toggleStyle.getPropertyValue('-webkit-app-region'), expanded: toggle.getAttribute('aria-expanded'), class: toggle.className,
+      computed: {
+        top: toggleStyle.top, height: toggleStyle.height, minHeight: toggleStyle.minHeight,
+        transform: toggleStyle.transform, margin: toggleStyle.margin, position: toggleStyle.position,
+        paddingTop: toggleStyle.paddingTop, paddingBottom: toggleStyle.paddingBottom, boxSizing: toggleStyle.boxSizing,
+      },
+    } : null,
     sidebarVisible: Boolean(sidebar && visible(sidebar)),
     sidebarAnimating: Boolean(sidebar?.getAnimations().some(animation => animation.playState === 'running')),
   }
@@ -70,11 +79,23 @@ function assertGeometry(state, platform) {
   }
 }
 
+function assertGeometryWithDiagnostics(state, platform) {
+  try { assertGeometry(state, platform) }
+  catch (error) {
+    // This snapshot contains layout/style metadata only, never DOM text,
+    // credentials, request bodies, or a user profile's contents.
+    console.error('Actual Desktop window geometry at assertion failure:', JSON.stringify(state, null, 2))
+    throw error
+  }
+}
+
 async function geometry(endpoint, page, origin, theme, sidebarExpanded) {
   const deadline = Date.now() + 30_000
+  let lastState
   while (Date.now() < deadline) {
     try {
       const state = await evaluateRenderer(endpoint, `(${windowGeometry})(${JSON.stringify(page)}, ${JSON.stringify(origin)})`)
+      lastState = state
       const sidebarReady = sidebarExpanded === undefined || state.toggle?.expanded === String(sidebarExpanded) && state.sidebarVisible === sidebarExpanded && !state.sidebarAnimating
       if (state.ready && state.theme === theme && sidebarReady) return state
     } catch (error) {
@@ -82,7 +103,7 @@ async function geometry(endpoint, page, origin, theme, sidebarExpanded) {
     }
     await delay(150)
   }
-  throw new Error(`The actual ${page} page did not become visible with the ${theme} theme.`)
+  throw new Error(`The actual ${page} page did not become visible with the ${theme} theme.\nLast geometry state: ${JSON.stringify(lastState ?? { ready: false })}`)
 }
 
 async function screenshot(endpoint, state, name) {
@@ -157,7 +178,7 @@ export async function checkDesktopWindow(profile, serverURL) {
     assert.ok(!navigation.errorText, 'The managed window could not open its fixture page')
     const state = await geometry(endpoint, page, origin, theme)
     await screenshot(endpoint, state, `${page}-${theme}`)
-    assertGeometry(state, process.platform)
+    assertGeometryWithDiagnostics(state, process.platform)
     // A fulfilled IPC round trip proves both supported appearance values can be
     // applied by the real main process, including under a packaged sandbox.
     await evaluateRenderer(endpoint, `(async () => {
@@ -170,13 +191,13 @@ export async function checkDesktopWindow(profile, serverURL) {
   const navigation = await rendererCommand(endpoint, 'Page.navigate', { url: new URL('/', origin).href })
   assert.ok(!navigation.errorText, 'The managed window could not open its real chat homepage')
   let state = await geometry(endpoint, 'chat', origin, 'dark', true)
-  assertGeometry(state, process.platform)
   await screenshot(endpoint, state, 'chat-dark-expanded')
+  assertGeometryWithDiagnostics(state, process.platform)
   for (const expanded of [false, true]) {
     await clickSidebar(endpoint, state)
     state = await geometry(endpoint, 'chat', origin, 'dark', expanded)
-    assertGeometry(state, process.platform)
     await screenshot(endpoint, state, `chat-dark-${expanded ? 'reopened' : 'collapsed'}`)
+    assertGeometryWithDiagnostics(state, process.platform)
   }
   console.log('Actual packaged renderer titlebar safe area, onboarding/Settings/chat clearance, required sidebar toggle position and renderer clicks to collapse/reopen, non-draggable controls, and light/dark native appearance passed. The chat fixture created only local configuration; no Session or Agent run was requested. Cropped screenshots show renderer layout; physical drag/double-click and OS caption pixels require native interaction review.')
 }
