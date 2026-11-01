@@ -75,6 +75,14 @@ pnpm dlx wrangler@4.152.0 pages deploy apps/website/dist --project-name astral-w
 
 本地可运行 `pnpm check:website` 验证预览产物，或带上正式 `SITE_URL` 验证生产产物。部署后检查 Cloudflare 的实际部署状态和正式域名，不能仅凭构建通过判断上线成功。
 
+## 中文搜索索引兼容
+
+Pagefind 1.5.2 的索引构建与浏览器查询使用不同的中文分词器，可能出现正文有“源码”但用“源码”搜索不到的情况。官网构建在 Astro 生成页面后，使用 Pagefind 的公开 Node API 重建搜索索引：仅在中文索引用的内存 HTML 副本中，按 `Intl.Segmenter('zh-CN')` 为普通正文的汉字片段插入分词边界。实际发布的 HTML 字节不变，英文正文、代码、URL 和标题元数据保持原文，现有搜索界面与查询词也不改写。
+
+这是临时兼容处理，依据上游的[中文复现与索引侧处理方案](https://github.com/Pagefind/pagefind/issues/1237#issuecomment-5894851971)。分词变细可能扩大中文召回；Node 与不同浏览器的 ICU 字典也可能有差异，因此不能据此保证所有浏览器的所有词都完全一致。`pnpm check:website` 会实际查询两种语言的生成索引，覆盖全部文档标题、常用中文词、单字与代码词；部署后仍需检查真实中文搜索。
+
+上游已经[合并使用 ICU4X 的修复](https://github.com/Pagefind/pagefind/commit/20317bb8cddc149be9a82605b440bd79d3299888)。当包含该修复的正式 Pagefind 版本发布后，应先用相同查询回归验证，再移除 `scripts/build-search-index.mjs` 与对应的构建后处理，恢复 Starlight 默认索引；保留真实查询回归。
+
 ## 官方参考
 
 - [Monorepo 配置](https://developers.cloudflare.com/pages/configuration/monorepos/)
