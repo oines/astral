@@ -1,4 +1,6 @@
 export const searchEn = {
+  searchDeleteHint: 'Deleting this service turns off web search for every Bot that uses it. Existing sessions and messages are kept.',
+  searchUnavailable: 'Search service unavailable',
   searchField_api_key: 'API Key', searchField_cx: 'Search engine ID (cx)',
   searchField_secret_id: 'SecretId', searchField_secret_key: 'SecretKey',
   searchField_folder_id: 'Folder ID', searchField_search_type: 'Search region',
@@ -15,6 +17,8 @@ export const searchEn = {
   searchNotice_yandex: 'Requires Yandex Search API access for this folder.',
 }
 export const searchZh = {
+  searchDeleteHint: '删除后，所有使用此服务的 Bot 都会关闭搜索服务。已有会话和消息保留。',
+  searchUnavailable: '搜索服务不可用',
   searchField_api_key: 'API Key', searchField_cx: '搜索引擎 ID（cx）',
   searchField_secret_id: 'SecretId', searchField_secret_key: 'SecretKey',
   searchField_folder_id: '文件夹 ID', searchField_search_type: '搜索区域',

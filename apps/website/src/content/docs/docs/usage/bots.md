@@ -11,6 +11,8 @@ Create another Bot when you need different behavior or access. A personal assist
 
 Open **Settings → Bots → your Bot → Basic settings**. The default model applies to new sessions; existing sessions keep their own selections. Model and search connections live in the [global settings](/docs/usage/models/), where you manage credentials once and choose a connection for each Bot.
 
+Deleting a search service turns off web search for every Bot that uses it. The confirmation lists the affected Bots; existing sessions and messages are kept. You can choose another search service later.
+
 Use the persona for preferences that should apply across tasks. For example:
 
 > Help me organize my daily work. Start with practical recommendations. If a source does not specify an owner or date, mark it as “To confirm” rather than filling it in.

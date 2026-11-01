@@ -160,6 +160,8 @@ Narrow chat panels use a two-layer Composer with one frame, directly accessible 
 
 Slow network sends show a centered spinner in place of the button icon only after 300ms. Repeated Enter does not submit again while the request is pending. A failed send retains the draft, and an unchanged retry reuses the original input identity.
 
+Deleting a search service turns off web search for all Bots that reference it, with the affected Bots shown before confirmation. Old unavailable search references no longer block unrelated Bot settings, while newly selected search services must exist.
+
 Official Server and Computer downloads and updates consistently use the configured HTTPS GitHub release proxy. This does not redirect unrelated API traffic or the Desktop updater.
 
 The bilingual documentation is rewritten around user tasks, external preparation, platform setup and troubleshooting. It removes button-by-button instructions already expressed by the UI and separates advanced deployment and API reference material.
