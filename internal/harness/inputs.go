@@ -181,6 +181,13 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 // Deliver keeps idle direct triggers atomic. During a running turn, all IM
 // messages are observations for its next request rather than another driver.
 func (s *Service) Deliver(ctx context.Context, id string, observation core.Message, trigger *core.Message, bindingID ...string) (InputReceipt, error) {
+	var target domain.Session
+	if err := s.Store.Get(ctx, "sessions", id, &target); err != nil {
+		return InputReceipt{}, err
+	}
+	if target.SubagentParentID != "" {
+		return InputReceipt{}, domain.Forbidden("new IM context is only delivered to user-facing root Sessions")
+	}
 	r, err := s.open(ctx, id)
 	if err != nil {
 		return InputReceipt{}, err

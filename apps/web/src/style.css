@@ -227,6 +227,15 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .activity-details { margin-top: 4px; padding: 0 0 2px 12px; display: flex; flex-direction: column; gap: 4px; }
 .tool-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-call-detail { min-width: 0; margin: 4px 0 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.subagent-bubble { display: flex; align-items: center; gap: 12px; width: min(100%, 360px); padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); text-align: left; }
+.subagent-bubble:hover:not(:disabled) { background: var(--hover); }
+.subagent-bubble:disabled { opacity: 1; color: var(--muted); cursor: default; }
+.subagent-bubble:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.subagent-bubble > svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--muted); }
+.subagent-bubble > svg:last-child { width: 14px; margin-left: auto; }
+.subagent-bubble-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.subagent-bubble-copy strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.subagent-bubble-copy > span { font-size: 12px; color: var(--muted); }
 .tool-command { margin: 0; font-size: 12px; line-height: 1.65; color: var(--muted); }
 .tool-output { min-width: 0; }
 .tool-plain-output { margin: 0; max-height: 300px; overflow: auto; line-height: 1.65; }
@@ -380,6 +389,22 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .surface-heading h2 { font-size: 14px; overflow-wrap: anywhere; }
 .surface-heading h2:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: 4px; border-radius: 3px; }
 .surface-body { padding: 14px 20px 24px; overflow: auto; min-height: 0; flex: 1; gap: 20px; }
+.subagent-surface-body { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.subagent-navigation { display: flex; align-items: center; gap: 4px; padding: 0 12px 8px; }
+.subagent-navigation ol { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; list-style: none; padding: 0; margin: 0; min-width: 0; font-size: 12px; }
+.subagent-navigation li { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.subagent-navigation li > svg { width: 12px; height: 12px; flex-shrink: 0; color: var(--subtle); }
+.subagent-navigation li > button, .subagent-navigation li > span { color: var(--muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subagent-navigation li > button { border: 0; border-radius: 4px; background: transparent; padding: 3px; text-align: left; }
+.subagent-navigation li > button:hover { color: var(--ink); background: var(--hover); }
+.subagent-navigation [aria-current='page'] { color: var(--ink); }
+.subagent-surface-status { padding: 0 20px 8px; }
+.subagent-surface-error { padding: 12px 20px; display: flex; align-items: flex-start; gap: 12px; }
+.subagent-surface-error > p { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.subagent-surface-loading { display: grid; place-items: center; flex: 1; min-height: 160px; }
+.subagent-surface-body .transcript-scroll { padding: 12px 20px 32px; }
+.subagent-surface-body .transcript { padding: 0; }
+.subagent-surface-body .transcript-viewport::after { display: none; }
 .file-preview-image { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 10px; }
 .pdf-preview { width: 100%; height: 70vh; border: 0; }
 .code-viewer { height: 430px; min-height: 160px; border-radius: 9px; overflow: hidden; }

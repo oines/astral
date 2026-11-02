@@ -47,6 +47,8 @@ github.com/oines/astral-core v0.0.0-20261030151646-599f61a0055d h1:pjtJTaP9ZtYD/
 github.com/oines/astral-core v0.0.0-20261030151646-599f61a0055d/go.mod h1:5MNj0S+DXD9MLtFH0QZv36UcasR65hUIHHpRt9Kul60=
 github.com/oines/astral-core v0.0.0-20261031013620-4673e4410747 h1:nq2NKdPPYUTU3L1kr3fj+Xx8N+eqUp9J2CZTBm3tRTE=
 github.com/oines/astral-core v0.0.0-20261031013620-4673e4410747/go.mod h1:5MNj0S+DXD9MLtFH0QZv36UcasR65hUIHHpRt9Kul60=
+github.com/oines/astral-core v0.0.0-20261102133800-0139c33cb755 h1:p7nuZfnEHnf6aRueWaCYpXNpaQBuAtEYS+FhoZqxhkA=
+github.com/oines/astral-core v0.0.0-20261102133800-0139c33cb755/go.mod h1:5MNj0S+DXD9MLtFH0QZv36UcasR65hUIHHpRt9Kul60=
 github.com/philhofer/fwd v1.2.0 h1:e6DnBTl7vGY+Gz322/ASL4Gyp1FspeMvx1RNDoToZuM=
 github.com/philhofer/fwd v1.2.0/go.mod h1:RqIHx9QI14HlwKwm98g9Re5prTQ6LdeRQn+gXJFxsJM=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

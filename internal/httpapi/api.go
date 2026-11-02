@@ -190,8 +190,29 @@ func New(config Config) *API {
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.handler.ServeHTTP(w, r) }
 func route[Request, Response any](a *API, method, path, id, tag string, handler func(*http.Request, Request) (Response, error), query ...httpcontract.Parameter) {
 	httpcontract.Register(a.Contract, a.mux, httpcontract.Operation{Method: method, Path: "/api/v1" + path, ID: id, Tag: tag, Auth: true, Query: query}, func(w http.ResponseWriter, r *http.Request, request Request) (Response, error) {
+		if method != http.MethodGet && strings.HasPrefix(path, "/sessions/{id}") {
+			if err := a.requireOwnerManagedSession(r); err != nil {
+				if method != http.MethodDelete || path != "/sessions/{id}" || !domain.IsMissing(err) {
+					var empty Response
+					return empty, err
+				}
+			}
+		}
 		return handler(r, request)
 	})
+}
+
+// Internal Sessions retain the complete Owner read surface, but all task
+// control belongs to their direct parent through agent_control.
+func (a *API) requireOwnerManagedSession(r *http.Request) error {
+	var session domain.Session
+	if err := a.Config.Harness.Store.Get(r.Context(), "sessions", r.PathValue("id"), &session); err != nil {
+		return err
+	}
+	if session.SubagentParentID != "" {
+		return domain.Forbidden("Subagent Sessions are managed by their direct parent")
+	}
+	return nil
 }
 func readAll[T any](ctx context.Context, store *persistence.Store, kind string) ([]T, error) {
 	records, err := store.List(ctx, kind)

@@ -5,7 +5,7 @@ import { useSession } from './useSession'
 
 type Action = { name: string; args: unknown[]; after: (callback: () => void) => void }
 const stores = vi.hoisted(() => ({
-  app: undefined as unknown as { authorized: boolean; sessionViews: Record<string, SessionView>; $onAction: (callback: (action: Action) => void) => void },
+  app: undefined as unknown as { authorized: boolean; sessionViews: Record<string, SessionView>; deletedSessions: Set<string>; $onAction: (callback: (action: Action) => void) => void },
   auth: undefined as unknown as { refresh: () => void; status: { username: string; desktop: boolean } },
 }))
 vi.mock('../stores/app', () => ({ useAppStore: () => stores.app }))
@@ -35,7 +35,7 @@ let scope: EffectScope | undefined
 let actionHandlers: Array<(action: Action) => void>
 beforeEach(() => {
   actionHandlers = []
-  stores.app = reactive({ authorized: true, sessionViews: {}, $onAction: (callback: (action: Action) => void) => { actionHandlers.push(callback) } })
+  stores.app = reactive({ authorized: true, sessionViews: {}, deletedSessions: new Set<string>(), $onAction: (callback: (action: Action) => void) => { actionHandlers.push(callback) } })
   stores.auth = reactive({ refresh: vi.fn(), status: { username: 'owner', desktop: false } })
 })
 afterEach(() => {
@@ -53,6 +53,56 @@ function connect(id = 'one') {
   return { sessionID, ...connection }
 }
 describe('recovering a session connection', () => {
+  it('erases an active deleted descendant, evicts its cached parent, and rejects late snapshots without an action callback', async () => {
+    const panel = connect('child')
+    const child = snapshot('child', 'server')
+    child.view.subagent_parent_id = 'root'
+    Stream.instances[0]!.send('snapshot', child)
+    panel.sessionID.value = 'grandchild'
+    const grandchild = snapshot('grandchild', 'server')
+    grandchild.view.subagent_parent_id = 'child'
+    const active = Stream.instances[1]!
+    active.send('snapshot', grandchild)
+    stores.app.deletedSessions = new Set(['root', 'child', 'grandchild'])
+    expect(panel.state.value.view).toBeUndefined()
+    expect(panel.connection.value).toBe('disconnected')
+    expect(active.closed).toBe(true)
+    active.send('snapshot', grandchild)
+    active.fail()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(panel.state.value.view).toBeUndefined()
+    panel.sessionID.value = 'child'
+    expect(panel.state.value.view).toBeUndefined()
+    expect(panel.connection.value).toBe('disconnected')
+    expect(Stream.instances).toHaveLength(2)
+    expect(stores.app.sessionViews.child).toBeUndefined()
+    expect(stores.app.sessionViews.grandchild).toBeUndefined()
+  })
+  it('keeps the main conversation live while the side panel visits descendants and restores each reading position', () => {
+    const main = connect('root')
+    const mainStream = Stream.instances[0]!
+    mainStream.send('snapshot', snapshot('root', 'server'))
+    main.state.value.scrollPosition = { following: false, top: 120, anchor: { key: 'main-message', offset: -10 } }
+    const mainState = main.state.value
+    const childID = ref('child')
+    const panel = scope!.run(() => useSession(childID))!
+    const childSnapshot = snapshot('child', 'server')
+    childSnapshot.view = { ...childSnapshot.view, subagent_parent_id: 'root' } as Snapshot['view']
+    Stream.instances[1]!.send('snapshot', childSnapshot)
+    panel.state.value.scrollPosition = { following: false, top: 430, anchor: { key: 'child-message', offset: -20 } }
+    const childState = panel.state.value
+    childID.value = 'grandchild'
+    Stream.instances[2]!.send('snapshot', snapshot('grandchild', 'server'))
+    panel.state.value.scrollPosition = { following: false, top: 80 }
+    childID.value = 'child'
+    expect(panel.state.value).toBe(childState)
+    expect(panel.state.value.scrollPosition?.top).toBe(430)
+    expect(main.state.value).toBe(mainState)
+    expect(main.state.value.scrollPosition?.top).toBe(120)
+    expect(mainStream.closed).toBe(false)
+    expect(stores.app.sessionViews.root?.id).toBe('root')
+    expect(stores.app.sessionViews.child?.id).toBe('child')
+  })
   it('keeps the last Core usage while waiting and restores it from a reconnect snapshot without polling', async () => {
     const fetch = vi.fn(() => { throw new Error('usage must come from the Core subscription') })
     vi.stubGlobal('fetch', fetch)

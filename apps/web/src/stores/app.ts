@@ -12,6 +12,7 @@ import type { FileRef, SessionView } from '../lib/types'
 import { scheduleAPI, type Schedule, type ScheduleInput } from '../lib/schedules'
 import { sessionWithMetadata } from '../lib/session-presentation'
 import { timezoneSupported } from '../lib/timezone'
+import { createSessionCatalog } from '../lib/session-removal'
 
 export const useAppStore = defineStore('app', () => {
   const auth = useAuthStore()
@@ -27,6 +28,8 @@ export const useAppStore = defineStore('app', () => {
   const timezoneCompatible = computed(() => !!data.value?.timezone.browser_compatible && timezoneSupported(timezone.value))
   const displayTimezone = computed(() => data.value?.timezone.browser_compatible === false ? '__astral_unknown_server_timezone__' : timezone.value)
   const sessionViews = ref<Record<string, SessionView>>({})
+  const deletedSessions = ref(new Set<string>())
+  const sessionCatalog = createSessionCatalog()
   const sidebar = ref(window.matchMedia('(min-width: 760px)').matches && localStorage.getItem('astral:sidebar') !== 'closed')
   const prefersDark = usePreferredDark()
   const theme = ref(localStorage.getItem('astral:theme') || 'system')
@@ -40,7 +43,19 @@ export const useAppStore = defineStore('app', () => {
   const computers = computed(() => computerQuery.data.value ?? data.value?.computers ?? [])
   const models = computed(() => data.value?.models ?? [])
   const availableModels = computed(() => models.value.filter(model => model.available))
-  const sessions = computed(() => (sessionQuery.data.value ?? data.value?.sessions ?? []).map(s => sessionWithMetadata(s, sessionViews.value[s.id])))
+  const sessions = computed(() => (sessionQuery.data.value ?? data.value?.sessions ?? []).filter(session => !deletedSessions.value.has(session.id)).map(s => sessionWithMetadata(s, sessionViews.value[s.id])))
+  watch(() => authorized.value ? `${auth.status?.desktop ? 'desktop' : 'web'}:${auth.status?.username || ''}` : '', () => {
+    sessionCatalog.clear()
+    deletedSessions.value = new Set()
+  }, { flush: 'sync' })
+  watch(() => Object.values(sessionViews.value), views => {
+    if (authorized.value) sessionCatalog.remember(views.filter(view => !deletedSessions.value.has(view.id)))
+  }, { flush: 'sync' })
+  watch(() => sessionQuery.data.value ?? data.value?.sessions, rows => {
+    if (!authorized.value || !rows) return
+    const removed = sessionCatalog.observe(rows.filter(session => !deletedSessions.value.has(session.id)))
+    for (const id of removed) if (!deletedSessions.value.has(id)) forgetSession(id)
+  }, { immediate: true })
   const schedules = ref<Schedule[]>([])
   const schedulesReady = ref(false)
   const schedulesError = ref('')
@@ -155,22 +170,31 @@ export const useAppStore = defineStore('app', () => {
     await refresh().catch(() => undefined)
   }
   function forgetSession(id: string) {
-    delete sessionViews.value[id]
-    delete drafts.value[id]
-    schedules.value = schedules.value.filter(schedule => schedule.session_id !== id)
-    if (lastChatPath.value === `/sessions/${id}`) lastChatPath.value = '/'
-    cache.setQueryData(listSessionsQueryKey(), (sessionQuery.data.value ?? []).filter(session => session.id !== id))
-    if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, sessions: data.value.sessions.filter(session => session.id !== id) })
+    if (deletedSessions.value.has(id)) return
+    sessionCatalog.remember([...(data.value?.sessions || []), ...(sessionQuery.data.value || []), ...Object.values(sessionViews.value), ...Object.values(drafts.value).flatMap(draft => draft.session ? [draft.session] : [])].filter(session => !deletedSessions.value.has(session.id)))
+    const ids = sessionCatalog.tree(id)
+    sessionCatalog.forget(ids)
+    deletedSessions.value = new Set([...deletedSessions.value, ...ids])
+    for (const sessionID of ids) {
+      delete sessionViews.value[sessionID]
+      delete drafts.value[sessionID]
+      if (lastChatPath.value === `/sessions/${sessionID}`) lastChatPath.value = '/'
+    }
+    schedules.value = schedules.value.filter(schedule => !schedule.session_id || !ids.has(schedule.session_id))
+    const listed = sessionQuery.data.value
+    if (listed?.some(session => ids.has(session.id))) cache.setQueryData(listSessionsQueryKey(), listed.filter(session => !ids.has(session.id)))
+    if (data.value?.sessions.some(session => ids.has(session.id))) cache.setQueryData(bootstrapQueryKey(), { ...data.value, sessions: data.value.sessions.filter(session => !ids.has(session.id)) })
   }
   function forgetAgent(id: string) {
     schedules.value = schedules.value.filter(schedule => schedule.agent_id !== id)
     const owned = [...sessions.value, ...Object.values(sessionViews.value), ...Object.values(drafts.value).flatMap(draft => draft.session ? [draft.session] : [])]
-    for (const session of owned) if (session.agent_id === id) forgetSession(session.id)
+    const ids = new Set([...owned.filter(session => session.agent_id === id).map(session => session.id), ...sessionCatalog.agent(id)])
+    for (const sessionID of ids) if (!deletedSessions.value.has(sessionID)) forgetSession(sessionID)
     delete drafts.value[`new:${id}`]
     if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, agents: data.value.agents.filter(agent => agent.id !== id) })
   }
-  const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).map(s => [s.id, sessionWithMetadata(s, sessionViews.value[s.id])])))
-  return { authorized, lastChatPath, drafts, data, timezone, timezoneCompatible, displayTimezone, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, statuses, sidebar, dark, query, refresh, preferences, refreshNetwork, networkSettings, presentation, forgetSession, forgetAgent, schedules, schedulesReady, schedulesError, refreshSchedules, saveSchedule, deleteSchedule }
+  const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).filter(session => !deletedSessions.value.has(session.id)).map(s => [s.id, sessionWithMetadata(s, sessionViews.value[s.id])])))
+  return { authorized, lastChatPath, drafts, data, timezone, timezoneCompatible, displayTimezone, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, deletedSessions, statuses, sidebar, dark, query, refresh, preferences, refreshNetwork, networkSettings, presentation, forgetSession, forgetAgent, schedules, schedulesReady, schedulesError, refreshSchedules, saveSchedule, deleteSchedule }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAppStore, import.meta.hot))

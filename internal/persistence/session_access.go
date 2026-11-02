@@ -30,8 +30,11 @@ func CheckSessionAccess(ctx context.Context, session domain.Session) error {
 	if session.Deletion != nil {
 		return domain.Missing("Session", session.ID)
 	}
-	if scope, ok := CurrentSessionScope(ctx); ok && (scope.AgentID != session.AgentID || session.Private && scope.SessionID != session.ID) {
-		return domain.Missing("Session", session.ID)
+	if scope, ok := CurrentSessionScope(ctx); ok {
+		directParent := session.SubagentParentID != "" && scope.SessionID == session.SubagentParentID
+		if scope.AgentID != session.AgentID || session.Private && scope.SessionID != session.ID && !directParent {
+			return domain.Missing("Session", session.ID)
+		}
 	}
 	return nil
 }

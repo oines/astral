@@ -52,7 +52,7 @@ With an online computer selected, try a small task whose result you can check:
 
 Check that the Bot actually performs the operation and returns the result. A selectable model has the required configuration; a real task checks the credentials, quota, and ability to use tools. Model requests may incur service charges.
 
-Changing a session's model affects later requests. A request already running completes with its current model. The picker can be temporarily unavailable while preparing a request or summarizing a long conversation. If a model is disabled or removed, choose another available model; the history remains accessible.
+Changing the model or reasoning settings in a conversation's input area also updates all its existing subagents, including deeper levels and subagents previously assigned another model. A request already sent completes with its original settings; later requests use the new choice. Other conversations and ordinary Fork copies keep their settings. See [background work](/docs/usage/conversations/#delegate-background-work) for following subagent activity and model selection for newly created subagents. The picker can be temporarily unavailable while preparing a request or summarizing a long conversation. If a model is disabled or removed, choose another available model; the history remains accessible.
 
 ## Set up web search
 
@@ -78,6 +78,8 @@ Tests use the saved connection. The test query does not become a standing task f
 Start with the model defaults and adjust them after a basic task works. Models that support reasoning controls can have a default mode in the model editor; sessions can also select a supported level or budget.
 
 **Inherit model default** uses your saved model preference. **API default** lets the service use its own default behavior. Other choices depend on the model's supported controls. After changing the model ID or API protocol, review the reasoning options and resolve any validation errors before saving.
+
+For a subagent that needs a different model, ask in the original conversation and name the subtask. The Bot can select another available model and its supported reasoning settings for a new or existing subagent. Choosing a model without a separate reasoning choice uses that model's saved default; API default remains a separate explicit choice. Changing one subagent leaves its descendants unchanged, while changing the original conversation's picker updates every existing subagent. See [delegate background work](/docs/usage/conversations/#delegate-background-work).
 
 ## Refresh or remove models
 

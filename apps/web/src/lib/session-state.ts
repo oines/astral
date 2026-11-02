@@ -3,6 +3,7 @@ import type { Entry, SessionEvent, SessionView, Snapshot } from './types'
 import type { TranscriptPosition } from './transcript-position'
 import { carryTranscriptIdentity, reconcileTranscriptGroups } from './transcript-identity'
 import { object } from './api'
+import { spawnedSubagent } from './subagents'
 
 export interface PreviewPart { type: string; text: string }
 export interface Preview { runID: string; parts: Record<number, PreviewPart>; interrupted?: boolean }
@@ -155,7 +156,7 @@ function conversationMessage(entry: Entry) {
   const message = entry.message
   // Role describes model input, not UI visibility. Passive context and internal
   // activation prompts stay in history without becoming conversation bubbles.
-  if (entry.kind !== 'message' || !message || message.context_kind || object(message.metadata).source === 'im.trigger') return
+  if (entry.kind !== 'message' || !message || message.context_kind && message.context_kind !== 'astral.subagent_instruction' || object(message.metadata).source === 'im.trigger') return
   return message
 }
 export function visibleEntry(entry: Entry) {
@@ -191,6 +192,7 @@ export type ProcessItem =
   | { kind: 'tool'; key: string; entry: Entry }
 export type TranscriptBlock =
   | { kind: 'text'; key: string; text: string; streaming?: boolean }
+  | { kind: 'subagent'; key: string; entry: Entry }
   | { kind: 'process'; key: string; items: ProcessItem[]; active?: boolean }
 export interface TranscriptGroup {
   key: string
@@ -245,7 +247,7 @@ export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] 
     const last = group.blocks.at(-1)
     const block: Extract<TranscriptBlock, { kind: 'process' }> = last?.kind === 'process' ? last : {
       kind: 'process' as const,
-      key: `${group.key}:process:${group.blocks.filter(block => block.kind === 'text').length}`,
+      key: `${group.key}:process:${group.blocks.filter(block => block.kind !== 'process').length}`,
       items: [],
     }
     if (block !== last) group.blocks.push(block)
@@ -256,7 +258,9 @@ export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] 
     const invocation = entry.tool!.invocation
     if (shownTools.has(invocation.execution_id)) return
     shownTools.add(invocation.execution_id)
-    process(assistant(invocation.run_id, `run:${invocation.run_id}:${entry.id}`), { kind: 'tool', key: invocation.execution_id, entry })
+    const group = assistant(invocation.run_id, `run:${invocation.run_id}:${entry.id}`)
+    if (spawnedSubagent(entry)) group.blocks.push({ kind: 'subagent', key: invocation.execution_id, entry })
+    else process(group, { kind: 'tool', key: invocation.execution_id, entry })
   }
   for (const entry of entries) {
     const message = conversationMessage(entry)
@@ -300,7 +304,7 @@ export function liveTranscriptGroups(state: SessionState, durable: TranscriptGro
   }
   function process(group: TranscriptGroup, item?: ProcessItem) {
     const last = group.blocks.at(-1)
-    const block: Extract<TranscriptBlock, { kind: 'process' }> = last?.kind === 'process' ? last : { kind: 'process', key: `${group.key}:process:${group.blocks.filter(block => block.kind === 'text').length}`, items: [] }
+    const block: Extract<TranscriptBlock, { kind: 'process' }> = last?.kind === 'process' ? last : { kind: 'process', key: `${group.key}:process:${group.blocks.filter(block => block.kind !== 'process').length}`, items: [] }
     if (block !== last) group.blocks.push(block)
     if (item) block.items.push(item)
     return block

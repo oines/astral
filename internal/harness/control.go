@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 
@@ -136,6 +137,18 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 	if err := r.service.agentAvailable(ctx, record.AgentID); err != nil {
 		return err
 	}
+	if r.subagent != nil {
+		if err := r.syncSubagentModel(ctx); err != nil {
+			return err
+		}
+		configuration := r.core.Load().Configuration()
+		next := r.subagent.Configuration
+		next.Selection = configuration.Selection
+		if configuration.SystemPrompt != next.SystemPrompt || !jsonEqual(configuration.Tools, next.Tools) {
+			return r.core.Load().Configure(ctx, next)
+		}
+		return nil
+	}
 	if err := r.syncBindingConfig(ctx, record); err != nil {
 		return err
 	}
@@ -159,24 +172,11 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 func jsonEqual(a, b any) bool { return string(encode(a)) == string(encode(b)) }
 
 func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoning ...*core.ReasoningOptions) error {
-	r, err := s.open(ctx, id)
-	if err != nil {
-		return err
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	selection := core.ModelSelection{ID: profileID}
 	if len(reasoning) > 0 {
 		selection.Reasoning = reasoning[0]
 	}
-	if _, err = s.Models.ResolveSelection(ctx, selection); err != nil {
-		return err
-	}
-	err = r.core.Load().SelectModel(ctx, selection)
-	if err == nil {
-		s.notify(id)
-	}
-	return err
+	return s.selectSubagentModels(ctx, id, selection)
 }
 
 func (s *Service) SelectComputer(ctx context.Context, id, computerID, cwd string) error {
@@ -295,6 +295,10 @@ func (s *Service) DecideApproval(ctx context.Context, id, approvalID string, dec
 }
 
 func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (domain.Session, error) {
+	if err := lockSubagentContext(ctx, &s.subagentMu); err != nil {
+		return domain.Session{}, err
+	}
+	defer s.subagentMu.Unlock()
 	var source domain.Session
 	if err := s.Store.Get(ctx, "sessions", id, &source); err != nil {
 		return domain.Session{}, err
@@ -313,6 +317,12 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 	var record domain.Session
 	if err = s.Store.Get(ctx, "sessions", id, &record); err != nil {
 		return record, err
+	}
+	if record.Deletion != nil {
+		return record, domain.Missing("Session", id)
+	}
+	if record.SubagentParentID != "" {
+		return record, domain.Forbidden("subagent history is read-only; its parent manages delegation")
 	}
 	if newID == "" {
 		return record, domain.Invalid("a stable target Session ID is required for Fork retries")
@@ -381,6 +391,9 @@ func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id strin
 		if err := persistence.CheckSessionAccess(ctx, record); err != nil {
 			return err
 		}
+		if record.SubagentParentID != "" {
+			return domain.Forbidden("subagents are managed through agent_control")
+		}
 	}
 	r, err := s.open(ctx, id)
 	if err != nil {
@@ -420,7 +433,52 @@ func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id strin
 	if private != nil {
 		record.Private = *private
 	}
-	err = s.Store.Save(ctx, "sessions", &record.Meta, &record)
+	err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
+		if err := tx.Save(ctx, "sessions", &record.Meta, &record); err != nil {
+			return err
+		}
+		if private == nil {
+			return nil
+		}
+		rows, err := tx.List(ctx, "sessions")
+		if err != nil {
+			return err
+		}
+		owned := map[string]bool{id: true}
+		remaining := make([]domain.Session, 0, len(rows))
+		for _, row := range rows {
+			var child domain.Session
+			if err = json.Unmarshal(row.Data, &child); err != nil {
+				return err
+			}
+			if child.AgentID == record.AgentID && child.Deletion == nil && child.SubagentParentID != "" {
+				remaining = append(remaining, child)
+			}
+		}
+		for len(remaining) > 0 {
+			next := remaining[:0]
+			changed := false
+			for _, child := range remaining {
+				if !owned[child.SubagentParentID] {
+					next = append(next, child)
+					continue
+				}
+				owned[child.ID] = true
+				changed = true
+				if child.Private != record.Private {
+					child.Private = record.Private
+					if err := tx.Save(ctx, "sessions", &child.Meta, &child); err != nil {
+						return err
+					}
+				}
+			}
+			if !changed {
+				break
+			}
+			remaining = next
+		}
+		return nil
+	})
 	s.notify(id)
 	return err
 }

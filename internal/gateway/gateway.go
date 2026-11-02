@@ -92,6 +92,7 @@ type DownloadRequest struct {
 func New(h *harness.Service, c *channels.Service) *Service {
 	s := &Service{Harness: h, Channels: c, Contract: httpcontract.New(), mux: http.NewServeMux()}
 	s.scheduleRoutes()
+	s.modelRoutes()
 	register[httpcontract.Empty, Context](s, "GET", "/v1/context", "agentContext", func(r *http.Request, _ httpcontract.Empty) (Context, error) {
 		b := binding(r)
 		value := Context{SourceComputerID: b.ComputerID, CWD: b.CWD, AgentHome: b.AgentHome, CapabilitiesURL: "/v1/capabilities"}

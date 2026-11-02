@@ -10,6 +10,19 @@ function task(sessionID: string, extra: Partial<Schedule> = {}): Schedule {
   return { id: `task-${sessionID}`, agent_id: 'bot', session_mode: 'existing', session_id: sessionID, title: sessionID, prompt: 'Prompt', enabled: true, timing: { kind: 'cron', cron: '0 9 * * *' }, next_run_at: '2026-11-01T09:00:00Z', revision: 1, created_at: '', updated_at: '', ...extra }
 }
 describe('sidebar conversation groups', () => {
+  it('hides every subagent even when selected, running or scheduled, while retaining ordinary forks', () => {
+    const sessions = [
+      session('root'),
+      session('shared-child', { subagent_parent_id: 'root', parent_session_id: 'root' }),
+      session('detached-child', { subagent_parent_id: 'root' }),
+      session('nested-child', { subagent_parent_id: 'shared-child' }),
+      session('fork', { parent_session_id: 'root' }),
+    ]
+    const plans = [task('detached-child')]
+    const active = (value: Session) => value.id === 'shared-child'
+    expect(visibleSidebarSessions(sessions, plans, active, 'nested-child').map(value => value.id)).toEqual(['root', 'fork'])
+    expect(sidebarGroups(sessions, plans, active).flatMap(group => group.items.map(value => value.id))).toEqual(['root', 'fork'])
+  })
   it('does not treat a new-session task or its latest generated session as a fixed planned conversation', () => {
     const tasks = [task('', { session_mode: 'new', session_id: undefined, last_session_id: 'latest' })]
     const sessions = [session('latest'), session('archived-latest', { archived: true })]

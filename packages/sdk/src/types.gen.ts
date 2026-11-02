@@ -1109,6 +1109,7 @@ export type AstralInternalDomainSession = {
     private?: boolean;
     revision: number;
     source: string;
+    subagent_parent_id?: string;
     title: string;
     title_source?: string;
     updated_at: string;
@@ -1116,6 +1117,7 @@ export type AstralInternalDomainSession = {
 
 export type AstralInternalDomainSessionDeletion = {
     rollout_id: string;
+    tree_root_id?: string;
 };
 
 export type AstralInternalDomainStickerMetadata = {
@@ -1137,6 +1139,19 @@ export type AstralInternalDomainTextQuote = {
      */
     position: number;
     text: string;
+};
+
+export type AstralInternalGatewayAvailableModel = {
+    context_window: number;
+    default_reasoning: AstralCoreReasoningOptions;
+    id: string;
+    images: string;
+    max_input_tokens?: number;
+    max_output_tokens: number;
+    model_id: string;
+    name: string;
+    provider_name: string;
+    reasoning_controls: AstralCoreModelsReasoningControls;
 };
 
 export type AstralInternalGatewayCapabilities = {
@@ -1442,6 +1457,7 @@ export type AstralInternalHarnessView = {
     selection: AstralCoreModelSelection;
     source: string;
     status: string;
+    subagent_parent_id?: string;
     title: string;
     title_source?: string;
     unresolved: Array<AstralCoreToolRecord>;
@@ -6595,6 +6611,31 @@ export type AgentSendReceiptResponses = {
 };
 
 export type AgentSendReceiptResponse = AgentSendReceiptResponses[keyof AgentSendReceiptResponses];
+
+export type AgentModelsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/models';
+};
+
+export type AgentModelsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentModelsError = AgentModelsErrors[keyof AgentModelsErrors];
+
+export type AgentModelsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalGatewayAvailableModel>;
+};
+
+export type AgentModelsResponse = AgentModelsResponses[keyof AgentModelsResponses];
 
 export type AgentSchedulesData = {
     body?: never;

@@ -18,7 +18,8 @@ import { useAppStore } from '../stores/app'
 import type { TranscriptPosition } from '../lib/transcript-position'
 import { messageAttachments } from '../lib/message-attachments'
 import { useImagePreviewStore } from '../stores/image-preview'
-const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean> }>()
+import SubagentBubble from './SubagentBubble.vue'
+const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean>; readonly?: boolean }>()
 const emit = defineEmits<{ fork: [entryID: string]; position: [state: SessionState, position: TranscriptPosition] }>()
 const { t, locale } = useI18n()
 const surface = useSurfaceStore()
@@ -132,11 +133,17 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
                 @expand="scroll.pause"
               />
               <Markdown
-                v-else
+                v-else-if="block.kind === 'text'"
                 class="message message-assistant"
                 :content="block.text"
                 :streaming="block.streaming"
                 :session-i-d="sessionID"
+              />
+              <SubagentBubble
+                v-else-if="block.kind === 'subagent'"
+                :entry="block.entry"
+                :session-i-d="sessionID"
+                @open="scroll.pause"
               />
             </div>
             <p
@@ -235,7 +242,7 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
               <Check v-if="copied && copiedGroup === group.key" /><Copy v-else />
             </Button>
             <Popover
-              v-if="group.role === 'assistant'"
+              v-if="group.role === 'assistant' && !readonly"
               :label="t('common.more')"
             >
               <template #trigger>

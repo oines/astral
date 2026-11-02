@@ -19,6 +19,9 @@ import (
 )
 
 func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
+	if err := s.requireIMBackground(ctx, b); err != nil {
+		return
+	}
 	position := cursor{Meta: domain.Meta{ID: b.ID}, Sequence: b.StartSequence}
 	if err := s.Store.Get(ctx, "inbox_cursors", b.ID, &position); err != nil && !domain.IsMissing(err) {
 		return
@@ -171,6 +174,9 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 			_ = s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "blocked", Error: err.Error()})
 		}
 	}()
+	if err := s.requireIMBackground(ctx, b); err != nil {
+		return err
+	}
 	deliveryID := event.ID
 	if event.Trigger != "" && !event.Self {
 		deliveryID += ":trigger"

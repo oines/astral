@@ -64,6 +64,15 @@ func (s *Service) InitializeSession(ctx context.Context, id string) error {
 // changes do not replace the Computer environment. After compaction, the full
 // snapshot carries the effective model even if a prior notice was summarized.
 func (r *runtime) collectContext(ctx context.Context, boundary core.ContextBoundary) ([]core.Message, error) {
+	identity, err := r.identityContext(ctx, boundary)
+	if err != nil {
+		return nil, err
+	}
+	environment, err := r.collectEnvironmentContext(ctx, boundary)
+	return append(identity, environment...), err
+}
+
+func (r *runtime) collectEnvironmentContext(ctx context.Context, boundary core.ContextBoundary) ([]core.Message, error) {
 	r.environmentMu.Lock()
 	defer r.environmentMu.Unlock()
 	snapshot, err := r.collectEnvironment(ctx)

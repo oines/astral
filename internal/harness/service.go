@@ -25,27 +25,30 @@ import (
 )
 
 type Service struct {
-	Store          *persistence.Store
-	CoreStore      core.Store
-	Models         *modelbridge.Bridge
-	Hub            *computers.Hub
-	Files          *filestream.Service
-	Search         *search.Service
-	Recall         *recall.Service
-	Schedules      *schedule.Service
-	Timezone       *timezone.Service
-	RuntimeID      string
-	IM             Messenger
-	StorageChanged func()
-	ctx            context.Context
-	cancel         context.CancelFunc
-	mu             sync.Mutex
-	deleteMu       sync.Mutex
-	agentMu        sync.RWMutex
-	runtimes       map[string]*runtime
-	closed         bool
-	changes        chan string
-	workers        sync.WaitGroup
+	Store           *persistence.Store
+	CoreStore       core.Store
+	Models          *modelbridge.Bridge
+	Hub             *computers.Hub
+	Files           *filestream.Service
+	Search          *search.Service
+	Recall          *recall.Service
+	Schedules       *schedule.Service
+	Timezone        *timezone.Service
+	RuntimeID       string
+	IM              Messenger
+	StorageChanged  func()
+	ctx             context.Context
+	cancel          context.CancelFunc
+	mu              sync.Mutex
+	deleteMu        sync.Mutex
+	agentMu         sync.RWMutex
+	runtimes        map[string]*runtime
+	closed          bool
+	changes         chan string
+	workers         sync.WaitGroup
+	subagentMu      sync.Mutex
+	subagentWake    chan struct{}
+	subagentWorkers sync.WaitGroup
 }
 
 type runtime struct {
@@ -66,6 +69,7 @@ type runtime struct {
 	contextUsage     *ContextUsage
 	titleCancel      context.CancelFunc
 	titleDone        chan struct{}
+	subagent         *subagentSettings
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
@@ -73,9 +77,11 @@ func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bri
 	s := &Service{Store: store, CoreStore: coreStore, Models: models, Hub: hub,
 		Files: &filestream.Service{Store: store, Hub: hub}, Search: &search.Service{Store: store},
 		Recall:    recall.New(store, coreStore),
-		RuntimeID: domain.ID("server"), ctx: ctx, cancel: cancel, runtimes: map[string]*runtime{}, changes: make(chan string, 256)}
+		RuntimeID: domain.ID("server"), ctx: ctx, cancel: cancel, runtimes: map[string]*runtime{}, changes: make(chan string, 256), subagentWake: make(chan struct{}, 1)}
 	s.Timezone = timezone.New(store)
 	s.Schedules = schedule.New(store, s.deliverSchedule, s.scheduleAccepted, func() { s.notify("") }, s.Timezone)
+	s.subagentWorkers.Add(1)
+	go s.subagentWorker()
 	return s
 }
 func (s *Service) Changes() <-chan string { return s.changes }
@@ -138,6 +144,13 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		return domain.Missing("Session", r.id)
 	}
 	r.agentID = record.AgentID
+	if record.SubagentParentID != "" {
+		var settings subagentSettings
+		if err = s.Store.Get(ctx, "subagent_settings", r.id, &settings); err != nil {
+			return err
+		}
+		r.subagent = &settings
+	}
 	r.compactionPrompt = compactionPromptFor(record)
 	r.messageTool, err = r.messageToolFor(ctx, record)
 	if err != nil {
@@ -168,7 +181,20 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	session, err := core.OpenSession(ctx, config, r.id)
 	created := errors.Is(err, core.ErrNotFound)
 	if errors.Is(err, core.ErrNotFound) {
-		if record.ParentSessionID != "" {
+		if r.subagent != nil && r.subagent.InheritContext {
+			parent, openErr := s.open(ctx, record.SubagentParentID)
+			if openErr != nil {
+				return openErr
+			}
+			child, forkErr := parent.core.Load().Fork(ctx, r.subagent.ForkEntryID, core.ForkOptions{ID: r.id, Mode: core.ForkShared})
+			if forkErr != nil {
+				return forkErr
+			}
+			if err = child.Close(ctx); err != nil {
+				return err
+			}
+			session, err = core.OpenSession(ctx, config, r.id)
+		} else if record.ParentSessionID != "" {
 			parent, openErr := s.open(ctx, record.ParentSessionID)
 			if openErr != nil {
 				return openErr
@@ -182,7 +208,9 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 			}
 			session, err = core.OpenSession(ctx, config, r.id)
 		} else {
-			config.Selection = core.ModelSelection{ID: agent.DefaultModelID, Reasoning: agent.DefaultReasoning}
+			if r.subagent == nil {
+				config.Selection = core.ModelSelection{ID: agent.DefaultModelID, Reasoning: agent.DefaultReasoning}
+			}
 			session, err = core.NewSession(ctx, config, core.SessionOptions{ID: r.id})
 		}
 	}
@@ -195,19 +223,45 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	// snapshot for inspection; execution reconciles the current selection in
 	// continueLocked/Compact. Only a newly created Session needs initial setup.
 	if err == nil && created {
+		if r.subagent != nil {
+			err = r.core.Load().Configure(ctx, r.subagent.Configuration)
+		}
+	}
+	if err == nil && created {
 		err = r.syncBusinessConfig(ctx)
+	}
+	if err == nil && created && r.subagent != nil {
+		view, readErr := r.core.Load().ReadContext(ctx)
+		if readErr != nil {
+			return readErr
+		}
+		identity, identityErr := r.identityContext(ctx, core.ContextBoundary{SessionID: r.id, Reason: "created", Context: view})
+		if identityErr != nil {
+			return identityErr
+		}
+		if len(identity) > 0 {
+			_, err = r.core.Load().InjectContext(ctx, core.Input{ID: "subagent_identity_" + r.id, Digest: digest(identity), Contexts: identity})
+		}
+	}
+	if err == nil && r.subagent != nil {
+		s.wakeSubagents()
 	}
 	return err
 }
 
 func (r *runtime) coreConfig(record domain.Session) core.Config {
 	s := r.service
-	return core.Config{
+	config := core.Config{
 		Store: s.CoreStore, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokens: modelbridge.EstimateTokens,
 		SystemPrompt: systemPromptFor(record), Tools: r.hostTools(),
 		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContext: r.collectContext,
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
 	}
+	if r.subagent != nil {
+		config.SystemPrompt = r.subagent.Configuration.SystemPrompt
+		config.Selection = r.subagent.Configuration.Selection
+	}
+	return config
 }
 
 func (r *runtime) resolveModel(ctx context.Context, selection core.ModelSelection) (core.ResolvedModel, error) {
@@ -343,7 +397,7 @@ func (s *Service) Close(ctx context.Context) error {
 		}
 	}
 	done := make(chan struct{})
-	go func() { s.workers.Wait(); close(done) }()
+	go func() { s.workers.Wait(); s.subagentWorkers.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-ctx.Done():

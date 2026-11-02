@@ -37,6 +37,7 @@ func (r *runtime) hostTools() []core.Tool {
 		tools = append(tools, hostTool{Tool: tool, runtime: r})
 	}
 	tools = append(tools,
+		spawnAgentTool{runtime: r}, agentControlTool{runtime: r},
 		sendMessageTool{runtime: r},
 		core.ToolFunc{Spec: core.ToolDefinition{Name: "switch_computer", Version: "astral-1", Description: "Select an allowed Computer for subsequent file and command calls. Call alone. Empty cwd uses this Agent's home on the target. Existing process and file references keep their original Computer.", Exclusive: true,
 			Parameters: json.RawMessage(`{"type":"object","properties":{"computer_id":{"type":"string","minLength":1},"cwd":{"type":"string"}},"required":["computer_id"],"additionalProperties":false}`)},

@@ -135,6 +135,10 @@ func TestNewSessionPlansKeepGatewaySourcePrivacy(t *testing.T) {
 func TestPrivateResultDoesNotHideOrLockPublicSourcePlan(t *testing.T) {
 	ctx := context.Background()
 	s, now := fixture(t, nil)
+	reader := domain.Session{Meta: domain.Meta{ID: "another-session"}, AgentID: "a"}
+	if err := s.store.Save(ctx, "sessions", &reader.Meta, &reader); err != nil {
+		t.Fatal(err)
+	}
 	input := once(now.Add(time.Minute))
 	input.SessionMode, input.SessionID = "new", ""
 	source := persistence.WithSessionScope(ctx, "a", "session_a")

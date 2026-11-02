@@ -8,12 +8,13 @@ export function platformGroup(platform?: string) {
 }
 export function visibleSidebarSessions(sessions: Session[], schedules: Schedule[], isActive: (session: Session) => boolean, selectedID = '') {
   const planned = new Set(schedules.filter(hasScheduledSession).map(schedule => schedule.session_id))
-  return sessions.filter(session => !session.archived || session.id === selectedID || isActive(session) || planned.has(session.id))
+  return sessions.filter(session => !session.subagent_parent_id && (!session.archived || session.id === selectedID || isActive(session) || planned.has(session.id)))
 }
 export function sidebarGroups(sessions: Session[], schedules: Schedule[], isActive: (session: Session) => boolean) {
   const planned = new Set(schedules.filter(hasScheduledSession).map(schedule => schedule.session_id))
   const groups = ['now', 'planned', ...platformGroups.map(platform => `platform_${platform}`), 'pinned', 'recent'].map(title => ({ title, items: [] as Session[] }))
   for (const session of sessions) {
+    if (session.subagent_parent_id) continue
     const platform = session.binding_id ? platformGroup(session.channel_platform) : undefined
     const title = isActive(session) ? 'now' : planned.has(session.id) ? 'planned' : platform ? `platform_${platform}` : session.pinned ? 'pinned' : 'recent'
     groups.find(group => group.title === title)!.items.push(session)
