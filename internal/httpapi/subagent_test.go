@@ -22,6 +22,10 @@ func TestOwnerSubagentSessionIsReadableButCannotBeControlled(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.Idle(t, child.ID)
+	before, err := p.CoreStore.LoadState(p.Context, child.ID)
+	if err != nil || before.LastRun == nil {
+		t.Fatalf("child did not finish its initial work: state=%+v error=%v", before, err)
+	}
 	if err := p.Store.Get(p.Context, "sessions", child.ID, &child); err != nil {
 		t.Fatal(err)
 	}
@@ -79,8 +83,12 @@ func TestOwnerSubagentSessionIsReadableButCannotBeControlled(t *testing.T) {
 			}
 		})
 	}
-	if p.Requests.Load() != 1 {
-		t.Fatalf("Owner actions started child work: requests=%d", p.Requests.Load())
+	// Converting the completed fixture into a subagent legitimately wakes its
+	// parent. Verify the target child's durable state rather than counting all
+	// model requests, which also includes that asynchronous parent response.
+	after, err := p.CoreStore.LoadState(p.Context, child.ID)
+	if err != nil || after.LastRun == nil || after.LastRun.ID != before.LastRun.ID || after.Version != before.Version {
+		t.Fatalf("Owner actions changed child work: before=%+v after=%+v error=%v", before, after, err)
 	}
 	if _, err := p.Harness.Receipt(p.Context, child.ID, "owner-bypass"); err == nil {
 		t.Fatal("rejected Owner input was durably accepted")
