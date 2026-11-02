@@ -57,7 +57,9 @@ func Await(t *testing.T, ctx context.Context, check func() bool) {
 }
 func New(t *testing.T, computerCount int, generate func(context.Context, int, map[string]any) any) *Platform {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	// The fixture budget includes database/identity setup and multiple real
+	// platform operations, which are substantially slower under native -race.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	p := &Platform{Context: ctx, Directory: t.TempDir()}
 	var err error
 	p.Store, err = persistence.Open(filepath.Join(p.Directory, "data"))
