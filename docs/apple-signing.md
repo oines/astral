@@ -41,6 +41,8 @@ The Mac job installs dependencies and builds Desktop sources before it imports c
 
 The keychain password is generated for each job. The original keychain search list is saved and restored; the encrypted P12 import file and temporary keychain are deleted on setup failure and by an `always()` cleanup step. Cleanup failures fail the job. Hosted runners are disposable, including when a workflow is forcibly cancelled.
 
+The native Mac jobs use GitHub's standard Intel `macos-15-intel` runner, which is free for public repositories; see the [official runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories). Native startup, renderer, service lifecycle and Desktop update acceptance therefore run as x64, and the signing report records `native_tested_arch: "x64"`. Both Darwin program architectures and both App architectures still pass signing, Apple submission and final DMG/ZIP verification, including stapling and Gatekeeper checks when notarization is accepted. This runner does not provide native execution evidence for arm64 packages.
+
 The signing and packaging order is:
 
 1. Sign both standalone Darwin Go programs with Hardened Runtime and a secure timestamp; regenerate checksums for all six distribution programs.
