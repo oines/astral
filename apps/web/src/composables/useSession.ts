@@ -21,7 +21,10 @@ function sessionCache(app: ReturnType<typeof useAppStore>, auth: ReturnType<type
   const owned = cache
   // The app/account outlive ChatPage. Invalidate even if logout happens from a
   // settings page after the last session component has been disposed.
-  effectScope(true).run(() => watch(() => accountIdentity(app, auth), () => owned.clear(), { flush: 'sync' }))
+  effectScope(true).run(() => {
+    watch(() => accountIdentity(app, auth), () => owned.clear(), { flush: 'sync' })
+    watch(() => app.deletedSessions, ids => { for (const id of ids ?? []) owned.remove(id) }, { deep: true, flush: 'sync' })
+  })
   app.$onAction?.(({ name, args, after }) => after(() => {
     if (name === 'forgetSession') owned.remove(args[0] as string)
     if (name === 'forgetAgent') owned.removeAgent(args[0] as string)
@@ -161,14 +164,20 @@ export function useSession(sessionID: Ref<string>) {
   let activeID = ''
   let owner = accountIdentity(app, auth)
   let retainCurrent = true
+  function forgetActive() {
+    retainCurrent = false
+    leave(false)
+    historyBoundary = undefined
+    state.value = emptyState()
+    connection.value = 'disconnected'
+    error.value = ''
+  }
+  watch(() => app.deletedSessions?.has(sessionID.value), deleted => {
+    if (deleted && activeID === sessionID.value) forgetActive()
+  }, { flush: 'sync' })
   app.$onAction?.(({ name, args, after }) => after(() => {
     if ((name === 'forgetSession' && args[0] === activeID) || (name === 'forgetAgent' && args[0] === state.value.view?.agent_id)) {
-      retainCurrent = false
-      leave(false)
-      historyBoundary = undefined
-      state.value = emptyState()
-      connection.value = 'disconnected'
-      error.value = ''
+      forgetActive()
     }
   }))
   function leave(retain: boolean) {
@@ -185,13 +194,13 @@ export function useSession(sessionID: Ref<string>) {
     leave(!!owner && owner === nextOwner)
     owner = nextOwner
     activeID = id
-    retainCurrent = true
+    retainCurrent = !app.deletedSessions?.has(id)
     historyBoundary = undefined
-    const restored = owner && id ? cache.take(id) : undefined
+    const restored = owner && id && retainCurrent ? cache.take(id) : undefined
     state.value = restored?.state ?? emptyState()
     historyBoundary = restored?.historyBoundary
     error.value = ''
-    connection.value = 'connecting'
+    connection.value = retainCurrent ? 'connecting' : 'disconnected'
     if (state.value.view) app.sessionViews[id] = state.value.view
     connect()
   }, { immediate: true, flush: 'sync' })

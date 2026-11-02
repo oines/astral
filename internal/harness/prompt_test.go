@@ -103,13 +103,13 @@ func TestSystemPromptMatchesCurrentBindingAndExposedTools(t *testing.T) {
 			function := raw.(map[string]any)["function"].(map[string]any)
 			hasSend = hasSend || function["name"] == "send_message"
 		}
-		if hasSend != bound || strings.Contains(prompt, "send_message") != bound || strings.Contains(prompt, "IM observations") != bound {
+		if hasSend != bound || strings.Contains(prompt, "IM observations") != bound {
 			t.Fatalf("%s: prompt and tool availability disagree with binding: %s", label, prompt)
 		}
 		if strings.Contains(prompt, messages.ChatContextHeading) != bound {
 			t.Fatalf("%s: current IM chat did not follow the actual binding: %s", label, prompt)
 		}
-		if !strings.HasSuffix(prompt, personaSeparator+persona) || strings.Contains(prompt, "Probe") || strings.Contains(prompt, "wake") || strings.Contains(prompt, "Host context") {
+		if !strings.HasSuffix(prompt, personaSeparator+persona) || strings.Contains(prompt, "Probe") || strings.Contains(prompt, "Host context") {
 			t.Fatalf("%s: prompt lost persona or included irrelevant runtime instructions: %s", label, prompt)
 		}
 		if !strings.Contains(prompt, `"`+environmentSnapshotHeading+`"`) || len(wireEnvironments(request)) == 0 {

@@ -48,3 +48,13 @@ func (s *Store) PendingMaintenance(ctx context.Context, kind string) ([]json.Raw
 	}
 	return result, rows.Err()
 }
+
+// DeleteMaintenance participates in the same transaction as resource removal.
+func (tx *Tx) DeleteMaintenance(ctx context.Context, kind, id string) error {
+	_, err := tx.tx.ExecContext(ctx, "DELETE FROM operations WHERE kind=? AND id=?", kind, kind+":"+id)
+	return err
+}
+
+func (s *Store) DeleteMaintenance(ctx context.Context, kind, id string) error {
+	return s.Update(ctx, func(tx *Tx) error { return tx.DeleteMaintenance(ctx, kind, id) })
+}

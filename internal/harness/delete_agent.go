@@ -164,26 +164,70 @@ func (s *Service) checkAgentDeletion(ctx context.Context, id string, revision in
 	return nil
 }
 
-// SessionDeleter cannot erase a Rollout that another Session still references.
-// Reject known shared history before recording an irreversible Bot intent;
-// otherwise every restart would resume a deletion that can never finish.
+// Ordinary shared-history Sessions still cannot be deleted independently.
+// Delegated branches are different: the Host knows their complete ownership
+// tree and deletes it recursively, including descendants in other Rollouts.
+// Check that ownership before recording an irreversible Bot deletion intent.
 func (s *Service) checkPrivateAgentRollouts(ctx context.Context, id string) error {
 	items, err := s.Store.List(ctx, "sessions")
 	if err != nil {
 		return err
 	}
 	sessions := make([]domain.Session, 0, len(items))
+	byID := make(map[string]domain.Session, len(items))
 	for _, item := range items {
 		var session domain.Session
 		if err := json.Unmarshal(item.Data, &session); err != nil {
 			return err
 		}
 		sessions = append(sessions, session)
+		byID[session.ID] = session
 	}
-	rollouts := map[string]bool{}
+	// ParentSessionID only records a user Fork's historical origin. Only the
+	// explicit SubagentParentID relationship grants recursive deletion ownership.
+	roots := map[string]string{}
+	rootFor := func(session domain.Session) (string, error) {
+		path := []string{}
+		seen := map[string]bool{}
+		root := ""
+		for {
+			if session.AgentID != id || seen[session.ID] {
+				return "", domain.Conflict("子代理归属关系无效，暂时不能永久删除此 Bot。")
+			}
+			if known := roots[session.ID]; known != "" {
+				root = known
+				break
+			}
+			path = append(path, session.ID)
+			seen[session.ID] = true
+			if session.SubagentParentID == "" {
+				root = session.ID
+				break
+			}
+			parent, ok := byID[session.SubagentParentID]
+			if !ok {
+				return "", domain.Conflict("子代理的父会话不可用，暂时不能永久删除此 Bot。")
+			}
+			session = parent
+		}
+		for _, member := range path {
+			roots[member] = root
+		}
+		return root, nil
+	}
+	rollouts := map[string]string{}
 	for _, session := range sessions {
 		if session.AgentID != id {
 			continue
+		}
+		root, err := rootFor(session)
+		if err != nil {
+			return err
+		}
+		if session.SubagentParentID != "" {
+			if _, ok := s.CoreStore.(core.BranchDeleter); !ok {
+				return domain.Conflict("this history store does not support recursive subagent deletion")
+			}
 		}
 		state, err := s.CoreStore.LoadState(ctx, session.ID)
 		if errors.Is(err, core.ErrNotFound) {
@@ -192,10 +236,10 @@ func (s *Service) checkPrivateAgentRollouts(ctx context.Context, id string) erro
 		if err != nil {
 			return err
 		}
-		if rollouts[state.RolloutID] {
+		if owner, shared := rollouts[state.RolloutID]; shared && owner != root {
 			return domain.Conflict("此 Bot 的会话与其他会话共享历史，暂时不能永久删除。")
 		}
-		rollouts[state.RolloutID] = true
+		rollouts[state.RolloutID] = root
 	}
 	if len(rollouts) == 0 {
 		return nil
@@ -211,7 +255,7 @@ func (s *Service) checkPrivateAgentRollouts(ctx context.Context, id string) erro
 		if err != nil {
 			return err
 		}
-		if rollouts[state.RolloutID] {
+		if _, shared := rollouts[state.RolloutID]; shared {
 			return domain.Conflict("此 Bot 的会话与其他会话共享历史，暂时不能永久删除。")
 		}
 	}

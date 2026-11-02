@@ -274,7 +274,7 @@ func (s *Service) authorize(ctx context.Context, agentID, id string) (domain.Ses
 	if agentID == "" || session.AgentID != agentID {
 		return domain.Session{}, domain.Forbidden("Session is outside the current Agent view")
 	}
-	if err := persistence.CheckSessionAccess(ctx, session); err != nil {
+	if err := persistence.CheckSessionAccess(ctx, session, s.store); err != nil {
 		return domain.Session{}, err
 	}
 	return session, nil

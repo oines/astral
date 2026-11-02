@@ -184,6 +184,9 @@ func (s *Service) Get(ctx context.Context, agentID, id string) (domain.Schedule,
 }
 
 func (s *Service) Create(ctx context.Context, agentID string, input Input) (domain.Schedule, error) {
+	if err := requireScheduleController(ctx, s.store); err != nil {
+		return domain.Schedule{}, err
+	}
 	now := s.now().UTC()
 	input, err := normalize(input)
 	if err != nil {
@@ -205,7 +208,7 @@ func (s *Service) Create(ctx context.Context, agentID string, input Input) (doma
 		plan.CalculatedTimezone = location.String()
 	}
 	err = s.store.Update(ctx, func(tx *persistence.Tx) error {
-		if err := target(ctx, tx, agentID, input.SessionMode, input.SessionID); err != nil {
+		if err := planTarget(ctx, tx, plan.Schedule); err != nil {
 			return err
 		}
 		if err := authorizePlan(ctx, tx, plan.Schedule); err != nil {
@@ -221,6 +224,9 @@ func (s *Service) Create(ctx context.Context, agentID string, input Input) (doma
 }
 
 func (s *Service) Update(ctx context.Context, agentID, id string, input Input, revision int64) (domain.Schedule, error) {
+	if err := requireScheduleController(ctx, s.store); err != nil {
+		return domain.Schedule{}, err
+	}
 	input, err := normalize(input)
 	if err != nil {
 		return domain.Schedule{}, err
@@ -267,6 +273,9 @@ func (s *Service) Update(ctx context.Context, agentID, id string, input Input, r
 			return err
 		}
 		plan.CalculatedTimezone = ""
+		if err := planTarget(ctx, tx, plan.Schedule); err != nil {
+			return err
+		}
 		if plan.Timing.Kind == "cron" {
 			plan.CalculatedTimezone = location.String()
 		}
@@ -280,6 +289,9 @@ func (s *Service) Update(ctx context.Context, agentID, id string, input Input, r
 }
 
 func (s *Service) Delete(ctx context.Context, agentID, id string, revision int64) error {
+	if err := requireScheduleController(ctx, s.store); err != nil {
+		return err
+	}
 	unlock, err := s.lock(ctx, id)
 	if err != nil {
 		return err
@@ -374,7 +386,13 @@ func target(ctx context.Context, store getter, agentID, mode, sessionID string) 
 	if session.AgentID != agentID || session.Deletion != nil {
 		return domain.Missing("Session", sessionID)
 	}
-	return persistence.CheckSessionAccess(ctx, session)
+	if err := persistence.CheckSessionAccess(ctx, session); err != nil {
+		return err
+	}
+	if session.SubagentParentID != "" {
+		return errSubagentSchedule
+	}
+	return nil
 }
 
 var parser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
@@ -728,8 +746,8 @@ func (s *Service) dispatch(ctx context.Context, id string, now time.Time) error 
 		if !plan.Enabled || plan.NextRunAt == nil || plan.NextRunAt.After(now) {
 			return nil
 		}
-		if err := target(ctx, tx, plan.AgentID, plan.SessionMode, plan.SessionID); err != nil {
-			if !domain.IsMissing(err) {
+		if err := planTarget(ctx, tx, plan.Schedule); err != nil {
+			if !domain.IsMissing(err) && !errors.Is(err, errSubagentSchedule) {
 				return err
 			}
 			plan.Enabled, plan.NextRunAt, plan.LastStatus, plan.LastError = false, nil, "failed", err.Error()

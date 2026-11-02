@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -191,6 +192,25 @@ func (s *Service) Snapshot(ctx context.Context, agentID string) (Snapshot, error
 			bySession[v.ID] = v
 		}
 	}
+	// Delegation belongs to the ordinary root Session even when descendants
+	// start independent Rollouts. Fork provenance is a separate relationship.
+	sessionGroups := map[string][]string{}
+	for id, session := range bySession {
+		root := session
+		seen := map[string]bool{id: true}
+		for root.SubagentParentID != "" {
+			parent, ok := bySession[root.SubagentParentID]
+			if !ok || parent.AgentID != session.AgentID || seen[parent.ID] {
+				root.ID = ""
+				break
+			}
+			seen[parent.ID] = true
+			root = parent
+		}
+		if root.ID != "" {
+			sessionGroups[root.ID] = append(sessionGroups[root.ID], id)
+		}
+	}
 	byConnection := map[string]domain.Connection{}
 	for _, v := range connections {
 		byConnection[v.ID] = v
@@ -207,14 +227,14 @@ func (s *Service) Snapshot(ctx context.Context, agentID string) (Snapshot, error
 		}
 		row := Agent{AgentID: agent.ID, Name: agent.Name, Chats: []Chat{}, Sessions: []Session{}}
 		bound := map[string]bool{}
-		seenRollout := map[string]bool{}
-		add := func(e sessionEstimate) {
-			row.LogicalBytes += e.Extra
-			if !seenRollout[e.Rollout] {
-				row.LogicalBytes += e.Entries
-				seenRollout[e.Rollout] = true
+		var owned []string
+		for id, session := range bySession {
+			if session.AgentID == agent.ID {
+				owned = append(owned, id)
 			}
 		}
+		agentEstimate := estimateSessionGroup(owned, cache)
+		row.LogicalBytes = agentEstimate.Entries + agentEstimate.Extra
 		for _, chat := range conversations {
 			connection, ok := byConnection[chat.ConnectionID]
 			if !ok || connection.AgentID != agent.ID {
@@ -225,16 +245,12 @@ func (s *Service) Snapshot(ctx context.Context, agentID string) (Snapshot, error
 			v.RetentionDays, v.ArchiveCount, v.ArchiveOldest, v.ArchiveNewest = retentions[chat.ID], info.Count, info.Oldest, info.Newest
 			if binding, ok := byConversation[chat.ID]; ok && binding.AgentID == agent.ID {
 				v.BindingID, v.BindingRevision = binding.ID, binding.Revision
-				if session, ok := bySession[binding.SessionID]; ok && session.AgentID == agent.ID {
+				if session, ok := bySession[binding.SessionID]; ok && session.AgentID == agent.ID && session.SubagentParentID == "" {
 					bound[session.ID] = true
 					v.SessionID, v.SessionRevision = session.ID, session.Revision
-					if e, ok := cache[session.ID]; ok {
-						v.RolloutBytes = e.Entries + e.Extra
-						v.EstimateState, v.Error = e.State, e.Error
-						add(e)
-					} else {
-						v.EstimateState = "pending"
-					}
+					e := estimateSessionGroup(sessionGroups[session.ID], cache)
+					v.RolloutBytes = e.Entries + e.Extra
+					v.EstimateState, v.Error = e.State, e.Error
 				}
 			}
 			if !archiveReady {
@@ -245,15 +261,13 @@ func (s *Service) Snapshot(ctx context.Context, agentID string) (Snapshot, error
 			row.Chats = append(row.Chats, v)
 		}
 		for _, session := range sessions {
-			if session.AgentID != agent.ID || session.Deletion != nil || bound[session.ID] {
+			if session.AgentID != agent.ID || session.Deletion != nil || session.SubagentParentID != "" || bound[session.ID] {
 				continue
 			}
 			v := Session{SessionID: session.ID, Title: session.Title, Revision: session.Revision, Archived: session.Archived, EstimateState: "pending"}
-			if e, ok := cache[session.ID]; ok {
-				v.LogicalBytes = e.Entries + e.Extra
-				v.EstimateState, v.Error = e.State, e.Error
-				add(e)
-			}
+			e := estimateSessionGroup(sessionGroups[session.ID], cache)
+			v.LogicalBytes = e.Entries + e.Extra
+			v.EstimateState, v.Error = e.State, e.Error
 			row.Sessions = append(row.Sessions, v)
 		}
 		sort.Slice(row.Chats, func(i, j int) bool { return row.Chats[i].Title < row.Chats[j].Title })
@@ -276,6 +290,50 @@ func (s *Service) Snapshot(ctx context.Context, agentID string) (Snapshot, error
 	}
 	return out, nil
 }
+
+// Each cache item measures the whole Rollout, plus Session-local state and
+// Attempts. Sum a shared Rollout only once while keeping every Session's Extra.
+// Estimates made at different times can differ; the largest observed count is
+// the known lower bound, regardless of which Session happens to sort first.
+func estimateSessionGroup(ids []string, cache map[string]sessionEstimate) sessionEstimate {
+	sort.Strings(ids)
+	result := sessionEstimate{State: "complete"}
+	rollouts := map[string]int64{}
+	seenErrors := map[string]bool{}
+	var messages []string
+	pending, incomplete := false, false
+	for _, id := range ids {
+		e, ok := cache[id]
+		if !ok {
+			pending = true
+			continue
+		}
+		result.Extra += e.Extra
+		if e.Entries > rollouts[e.Rollout] {
+			result.Entries += e.Entries - rollouts[e.Rollout]
+			rollouts[e.Rollout] = e.Entries
+		}
+		switch e.State {
+		case "complete":
+		case "pending", "running", "idle", "":
+			pending = true
+		default:
+			incomplete = true
+		}
+		if e.Error != "" && !seenErrors[e.Error] {
+			seenErrors[e.Error] = true
+			messages = append(messages, e.Error)
+		}
+	}
+	if pending {
+		result.State = "pending"
+	} else if incomplete {
+		result.State = "partial"
+	}
+	result.Error = strings.Join(messages, "\n")
+	return result
+}
+
 func (s *Service) Refresh(cancel bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

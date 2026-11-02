@@ -13,14 +13,14 @@ function sameParams(a: TranscriptGroup['statusParams'], b: TranscriptGroup['stat
   return a === b || (!!a && !!b && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => a[key] === b[key]))
 }
 function itemIdentity(group: TranscriptGroup) {
-  return [...group.entries.map(entry => `entry:${entry.id}`), ...group.blocks.flatMap(block => block.kind === 'text' ? [`text:${block.key}`] : block.items.map(item => `item:${item.key}`))]
+  return [...group.entries.map(entry => `entry:${entry.id}`), ...group.blocks.flatMap(block => block.kind === 'process' ? block.items.map(item => `item:${item.key}`) : [`${block.kind}:${block.key}`])]
 }
 function sameItem(a: ProcessItem, b: ProcessItem | undefined) {
   return b && a.kind === b.kind && a.key === b.key && (a.kind === 'tool' && b.kind === 'tool' ? a.entry === b.entry : a.kind === 'reasoning' && b.kind === 'reasoning' && a.text === b.text && a.streaming === b.streaming)
 }
 function processBoundaries(blocks: TranscriptBlock[]) {
   let boundary = 'start'
-  return blocks.map(block => { if (block.kind === 'text') boundary = block.key; return boundary })
+  return blocks.map(block => { if (block.kind !== 'process') boundary = block.key; return boundary })
 }
 
 function reconcileBlocks(group: TranscriptGroup, previous: TranscriptGroup | undefined, newKey: (key: string) => string) {
@@ -47,7 +47,12 @@ function reconcileBlocks(group: TranscriptGroup, previous: TranscriptGroup | und
   const available = oldProcesses.filter(block => !used.has(block))
   if (remaining.length === 1 && available.length === 1 && (!remaining[0]!.items.length || !available[0]!.items.length)) matches.set(remaining[0]!, available[0]!)
   const textByKey = new Map(previous.blocks.filter(block => block.kind === 'text').map(block => [block.key, block]))
+  const subagentsByKey = new Map(previous.blocks.filter(block => block.kind === 'subagent').map(block => [block.key, block]))
   return group.blocks.map(block => {
+    if (block.kind === 'subagent') {
+      const old = subagentsByKey.get(block.key)
+      return old?.entry === block.entry ? old : block
+    }
     if (block.kind === 'text') {
       const old = textByKey.get(block.key)
       return old && old.text === block.text && old.streaming === block.streaming ? old : block

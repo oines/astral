@@ -87,7 +87,7 @@ func (s *Service) catalog(ctx context.Context, agentID string, ids []string) ([]
 			return nil, err
 		}
 		if session.AgentID == agentID && session.Deletion == nil {
-			if err := persistence.CheckSessionAccess(ctx, session); domain.IsMissing(err) {
+			if err := persistence.CheckSessionAccess(ctx, session, s.store); domain.IsMissing(err) {
 				continue
 			} else if err != nil {
 				return nil, err

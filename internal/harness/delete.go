@@ -35,6 +35,41 @@ func (s *Service) DeleteSession(ctx context.Context, id string, revision int64) 
 }
 
 func (s *Service) deleteSession(ctx context.Context, id string, revision int64, deletingAgent bool) error {
+	if err := lockSubagentContext(ctx, &s.subagentMu); err != nil {
+		return err
+	}
+	defer s.subagentMu.Unlock()
+	var target domain.Session
+	if err := s.Store.Get(ctx, "sessions", id, &target); domain.IsMissing(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if target.Deletion != nil && target.Deletion.TreeRootID != "" {
+		return s.deleteSubagentTree(ctx, target.Deletion.TreeRootID, 0, deletingAgent)
+	}
+	items, err := s.Store.List(ctx, "sessions")
+	if err != nil {
+		return err
+	}
+	hasChildren := target.SubagentParentID != ""
+	for _, item := range items {
+		var record domain.Session
+		if err = json.Unmarshal(item.Data, &record); err != nil {
+			return err
+		}
+		if record.SubagentParentID == id {
+			hasChildren = true
+			break
+		}
+	}
+	if hasChildren {
+		return s.deleteSubagentTree(ctx, id, revision, deletingAgent)
+	}
+	return s.deleteOneSession(ctx, id, revision, deletingAgent)
+}
+
+func (s *Service) deleteOneSession(ctx context.Context, id string, revision int64, deletingAgent bool) error {
 	deleter, ok := s.CoreStore.(core.SessionDeleter)
 	if !ok {
 		return domain.Conflict("this history store does not support permanent Session deletion")
@@ -111,6 +146,9 @@ func (s *Service) deleteSession(ctx context.Context, id string, revision int64, 
 			return err
 		}
 		if err := schedule.PurgeSession(ctx, tx, id); err != nil {
+			return err
+		}
+		if err := tx.DeleteMaintenance(ctx, subagentModelChangeKind, id); err != nil {
 			return err
 		}
 		if err := tx.Purge(ctx, "sessions", id, current.Revision); err != nil {

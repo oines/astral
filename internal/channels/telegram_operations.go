@@ -70,6 +70,11 @@ func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBindi
 		return TelegramResult{}, domain.Invalid("unknown chat operation; inspect the account's operations catalog")
 	}
 	operation := telegramOperations[index]
+	if !strings.HasPrefix(method, "get") {
+		if err := s.requireExternalMessaging(ctx, b.AgentID, b.SessionID); err != nil {
+			return TelegramResult{}, err
+		}
+	}
 	if operation.AccountScoped {
 		return s.telegramResourceOperation(ctx, b, accountID, method, request)
 	}

@@ -72,6 +72,9 @@ func (s *Service) bindExpected(ctx context.Context, conversationID, sessionID st
 		if record.AgentID != agent.ID {
 			return domain.ConversationBinding{}, domain.Forbidden("Session belongs to a different Agent")
 		}
+		if record.SubagentParentID != "" {
+			return domain.ConversationBinding{}, domain.Forbidden("Subagent Sessions cannot be bound to IM chats")
+		}
 		if record.BindingID != "" {
 			return domain.ConversationBinding{}, domain.Conflict("Session is already bound to another chat")
 		}
@@ -129,6 +132,9 @@ func (s *Service) bindExpected(ctx context.Context, conversationID, sessionID st
 				}
 				if record.Deletion != nil {
 					return domain.Conflict("Session is being permanently deleted")
+				}
+				if record.SubagentParentID != "" {
+					return domain.Forbidden("Subagent Sessions cannot be bound to IM chats")
 				}
 			}
 			record.ConversationID, record.BindingID, record.ChannelPlatform = conversationID, binding.ID, connection.Platform

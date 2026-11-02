@@ -3539,6 +3539,9 @@
           "source": {
             "type": "string"
           },
+          "subagent_parent_id": {
+            "type": "string"
+          },
           "title": {
             "type": "string"
           },
@@ -3566,6 +3569,9 @@
       "astral_internal_domain_SessionDeletion": {
         "properties": {
           "rollout_id": {
+            "type": "string"
+          },
+          "tree_root_id": {
             "type": "string"
           }
         },
@@ -3629,6 +3635,52 @@
           "text",
           "position",
           "manual"
+        ],
+        "type": "object"
+      },
+      "astral_internal_gateway_AvailableModel": {
+        "properties": {
+          "context_window": {
+            "type": "integer"
+          },
+          "default_reasoning": {
+            "$ref": "#/components/schemas/astral_core_ReasoningOptions"
+          },
+          "id": {
+            "type": "string"
+          },
+          "images": {
+            "type": "string"
+          },
+          "max_input_tokens": {
+            "type": "integer"
+          },
+          "max_output_tokens": {
+            "type": "integer"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider_name": {
+            "type": "string"
+          },
+          "reasoning_controls": {
+            "$ref": "#/components/schemas/astral_core_models_ReasoningControls"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "model_id",
+          "provider_name",
+          "context_window",
+          "max_output_tokens",
+          "images",
+          "default_reasoning",
+          "reasoning_controls"
         ],
         "type": "object"
       },
@@ -4616,6 +4668,9 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          },
+          "subagent_parent_id": {
             "type": "string"
           },
           "title": {
@@ -15736,6 +15791,45 @@
         ]
       }
     },
+    "/v1/models": {
+      "get": {
+        "description": "List currently available model profiles without contacting a provider.",
+        "operationId": "agentModels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/astral_internal_gateway_AvailableModel"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
     "/v1/schedules": {
       "get": {
         "description": "List this Bot's schedules.",
@@ -16167,7 +16261,7 @@
     },
     "/v1/sessions/{id}/history": {
       "get": {
-        "description": "Read normalized history text with roles, tool names, provenance and stable character offsets. With no location, returns recent text parts. With around, returns the hit and its requested neighbors. Items are chronological; follow older_cursor or newer_cursor to navigate. Page cursors keep the original head while the Session grows. References remain usable after restart/index rebuild. This Agent API returns text parts; the Owner history API retains raw Core entries. It reads persistent data without loading a model or running a Session.",
+        "description": "Read normalized history text with roles, tool names, provenance and stable character offsets. With no location, returns recent text parts. With around, returns the hit and its requested neighbors. Items are chronological; follow older_cursor or newer_cursor to navigate. Page cursors keep the original head while the Session grows. References remain usable after restart/index rebuild. This endpoint returns text parts; use the rollout endpoint for raw Core entries. It reads persistent data without loading a model or running a Session.",
         "operationId": "agentHistory",
         "parameters": [
           {
@@ -16248,6 +16342,79 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_recall_HistoryPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/sessions/{id}/rollout": {
+      "get": {
+        "description": "Read raw persisted Core entries, newest first, without opening a Session runtime or loading a model. Default follows the captured history branch and never includes shared Rollout siblings. trace=true reads only the target Session writer's records and includes Run failures with their errors. Images retain metadata but omit embedded pixel data. Pagination returns a fixed head_id and an opaque next_cursor. Sessions without committed Core state return an empty array.",
+        "operationId": "agentRollout",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Opaque next_cursor from this Session and the same trace mode. Keeps the original branch head and trace snapshot across new writes and Server restarts.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Raw entries per page, default 50; 1–200.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Default false: original history on this Session's branch, including inherited ancestors. true: this Session writer's own raw records, including Run status/errors, queued inputs and tool lifecycle; excludes other writers.",
+            "in": "query",
+            "name": "trace",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_gateway_HistoryPage"
                 }
               }
             },

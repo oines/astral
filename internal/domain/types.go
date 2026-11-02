@@ -45,27 +45,29 @@ type Agent struct {
 
 type Session struct {
 	Meta
-	AgentID         string           `json:"agent_id"`
-	Title           string           `json:"title"`
-	TitleSource     string           `json:"title_source,omitempty"`
-	Source          string           `json:"source"`
-	ComputerID      string           `json:"computer_id,omitempty"`
-	CWD             string           `json:"cwd,omitempty"`
-	ConversationID  string           `json:"conversation_id,omitempty"`
-	BindingID       string           `json:"binding_id,omitempty"`
-	ChannelPlatform string           `json:"channel_platform,omitempty"`
-	ParentSessionID string           `json:"parent_session_id,omitempty"`
-	ForkEntryID     string           `json:"fork_entry_id,omitempty"`
-	Pinned          bool             `json:"pinned"`
-	Archived        bool             `json:"archived"`
-	Private         bool             `json:"private,omitempty"`
-	Deletion        *SessionDeletion `json:"deletion,omitempty"`
+	AgentID          string           `json:"agent_id"`
+	Title            string           `json:"title"`
+	TitleSource      string           `json:"title_source,omitempty"`
+	Source           string           `json:"source"`
+	ComputerID       string           `json:"computer_id,omitempty"`
+	CWD              string           `json:"cwd,omitempty"`
+	ConversationID   string           `json:"conversation_id,omitempty"`
+	BindingID        string           `json:"binding_id,omitempty"`
+	ChannelPlatform  string           `json:"channel_platform,omitempty"`
+	ParentSessionID  string           `json:"parent_session_id,omitempty"`
+	ForkEntryID      string           `json:"fork_entry_id,omitempty"`
+	SubagentParentID string           `json:"subagent_parent_id,omitempty"`
+	Pinned           bool             `json:"pinned"`
+	Archived         bool             `json:"archived"`
+	Private          bool             `json:"private,omitempty"`
+	Deletion         *SessionDeletion `json:"deletion,omitempty"`
 }
 
 // SessionDeletion is a durable maintenance intent, retained until every store
 // has removed the Session's data. It is not a recoverable archive state.
 type SessionDeletion struct {
-	RolloutID string `json:"rollout_id"`
+	RolloutID  string `json:"rollout_id"`
+	TreeRootID string `json:"tree_root_id,omitempty"`
 }
 
 const (

@@ -308,6 +308,10 @@ func (a *API) exportRollout(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (a *API) upload(w http.ResponseWriter, r *http.Request) {
+	if err := a.requireOwnerManagedSession(r); err != nil {
+		httpcontract.Failure(w, r, err)
+		return
+	}
 	h := a.Config.Harness
 	var session domain.Session
 	if err := h.Store.Get(r.Context(), "sessions", r.PathValue("id"), &session); err != nil {

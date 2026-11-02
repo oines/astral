@@ -129,6 +129,9 @@ func (s *Service) existing(ctx context.Context, key, hash string) ([]domain.Outb
 	return s.group(ctx, key)
 }
 func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, request SendRequest) ([]domain.Outbox, error) {
+	if err := s.requireExternalMessaging(ctx, agentID, sessionID); err != nil {
+		return nil, err
+	}
 	ctx = persistence.WithSessionScope(ctx, agentID, sessionID)
 	if request.IntentID == "" || len(request.IntentID) > 200 {
 		return nil, domain.Invalid("a stable send intent is required")
@@ -323,6 +326,9 @@ func (s *Service) dispatchPending() {
 	}
 }
 func (s *Service) authorizeOutbound(ctx context.Context, r domain.Outbox) (domain.Connection, error) {
+	if err := s.requireExternalMessaging(ctx, r.AgentID, r.SessionID); err != nil {
+		return domain.Connection{}, err
+	}
 	ctx = persistence.WithSessionScope(ctx, r.AgentID, r.SessionID)
 	if _, _, _, err := s.target(ctx, r.AgentID, r.SessionID, r.ConversationID); err != nil {
 		return domain.Connection{}, err

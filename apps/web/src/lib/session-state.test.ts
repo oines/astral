@@ -92,6 +92,14 @@ describe('reconciling live previews with durable history', () => {
 })
 
 describe('transcript facts', () => {
+  it('shows delegated task instructions in the child transcript while keeping passive identity and reports hidden', () => {
+    const task = entry('task', 1, { message: { role: 'user', context_kind: 'astral.subagent_instruction', content: [{ type: 'text', text: 'Check recovery without modifying files.' }] } })
+    expect(visibleEntry(task)).toBe(true)
+    const state = emptyState()
+    addEntry(state, task)
+    for (const [index, kind] of ['astral.identity', 'astral.subagent'].entries()) addEntry(state, entry(kind, index + 2, { kind: 'context', message: { role: 'user', context_kind: kind, content: [{ type: 'text', text: 'Internal context' }] } }))
+    expect(transcriptGroups(state)).toMatchObject([{ role: 'user', entries: [task] }])
+  })
   it('shows scheduled prompts as right-side inputs with explicit task provenance and their original text', () => {
     const scheduled = entry('schedule-input', 1, { message: { role: 'user', metadata: { source: 'schedule', display_text: 'Inspect <project>', schedule: { id: 'task', title: 'Daily check', scheduled_at: '2026-10-20T00:00:00Z' } }, content: [{ type: 'text', text: '<message source="schedule">Inspect &lt;project&gt;</message>' }] } })
     expect(visibleEntry(scheduled)).toBe(true)
@@ -217,7 +225,7 @@ describe('ordered transcript process', () => {
     addEntry(state, entry('commentary', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'The command is still running; checking another file.' }] } }))
     addEntry(state, toolEntry('new-start', 3, 'second', 'new-shell', 'tool_started'))
     const before = transcriptGroups(state)[0]!.blocks
-    expect(before.map(block => block.kind === 'process' ? block.items.map(item => item.key) : block.text)).toEqual([
+    expect(before.map(block => block.kind === 'process' ? block.items.map(item => item.key) : block.kind === 'text' ? block.text : block.entry.id)).toEqual([
       ['old-shell'], 'The command is still running; checking another file.', ['new-shell'],
     ])
     applyEvent(state, event(4, { type: 'tool_execution_update', execution_id: 'old-shell', progress: { text: 'Command is making progress\n' } }))
@@ -246,7 +254,7 @@ describe('ordered transcript process', () => {
     ] } }))
     addEntry(state, toolEntry('result-2', 6, 'second', 'exec-2'))
     const blocks = transcriptGroups(state)[0]!.blocks
-    expect(blocks.map(block => block.kind === 'text' ? block.text : block.items.map(item => item.kind === 'reasoning' ? item.text : item.entry.id))).toEqual([
+    expect(blocks.map(block => block.kind === 'text' ? block.text : block.kind === 'process' ? block.items.map(item => item.kind === 'reasoning' ? item.text : item.entry.id) : block.entry.id)).toEqual([
       ['First thought'], 'Checking now.', ['result', 'Next thought', 'result-2'], 'Done.',
     ])
   })

@@ -72,6 +72,11 @@ func (s *Service) AccountOperation(ctx context.Context, b domain.ExecutionBindin
 		result, err := s.TelegramOperation(ctx, b, accountID, name, request)
 		return ChatOperationResult(result), err
 	}
+	if !chatOperationReads(a, name) {
+		if err := s.requireExternalMessaging(ctx, b.AgentID, b.SessionID); err != nil {
+			return ChatOperationResult{}, err
+		}
+	}
 	if request.SourceConversationID != "" {
 		return ChatOperationResult{}, domain.Invalid("this operation does not accept source chats")
 	}

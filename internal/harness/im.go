@@ -46,6 +46,9 @@ func DefaultMessageTool() core.ToolDefinition {
 }
 
 func (r *runtime) messageToolFor(ctx context.Context, record domain.Session) (core.ToolDefinition, error) {
+	if r.subagent != nil {
+		return r.subagent.MessageTool, nil
+	}
 	if record.BindingID == "" || r.service.IM == nil {
 		return DefaultMessageTool(), nil
 	}
@@ -77,6 +80,9 @@ func (r *runtime) syncBindingConfig(ctx context.Context, record domain.Session) 
 
 func (t sendMessageTool) Bind(ctx context.Context, inv core.Invocation) (json.RawMessage, error) {
 	r := t.runtime
+	if r.subagent != nil {
+		return nil, notExecuted("subagent_forbidden", domain.Forbidden("only the user-facing root Session can send messages"))
+	}
 	var record domain.Session
 	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
 		return nil, err
@@ -122,6 +128,9 @@ func (t sendMessageTool) Execute(ctx context.Context, inv core.Invocation, _ fun
 		return core.ToolExecution{}, err
 	}
 	r := t.runtime
+	if r.subagent != nil {
+		return core.ToolExecution{}, notExecuted("subagent_forbidden", domain.Forbidden("only the user-facing root Session can send messages"))
+	}
 	if r.service.IM == nil {
 		return core.ToolExecution{}, notExecuted("im_unavailable", domain.Offline("IM service is unavailable"))
 	}

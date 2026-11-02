@@ -29,6 +29,7 @@ watch(() => route.path, path => { if (!path.startsWith('/settings')) id.value = 
 const live = useSession(id)
 function rememberPosition(state: SessionState, position: TranscriptPosition) { state.scrollPosition = position }
 const view = computed(() => live.state.value.view)
+const readonly = computed(() => !!view.value?.subagent_parent_id)
 const showChatLoading = useDelayedPending(() => id.value && !view.value && !live.error.value ? id.value : '')
 const error = ref('')
 const busy = ref(false)
@@ -179,16 +180,27 @@ watch(id, () => { surface.close(); error.value = '' })
           :state="live.state.value"
           :session-i-d="id"
           :load-older="live.older"
+          :readonly="readonly"
           @fork="fork"
           @position="rememberPosition"
         />
         <Composer
+          v-if="!readonly"
           :key="id"
           :view="view"
           :live="live.connection.value === 'connected'"
           @compact="compact = true"
         />
       </template>
+      <div
+        v-else-if="route.path !== '/schedules' && app.deletedSessions.has(id)"
+        class="chat-load-error"
+        role="status"
+      >
+        <p class="muted">
+          {{ t('conversationDeleted') }}
+        </p>
+      </div>
       <div
         v-else-if="route.path !== '/schedules' && live.error.value"
         class="chat-load-error"
