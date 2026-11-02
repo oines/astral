@@ -383,6 +383,17 @@ func (s *Service) Close(ctx context.Context) error {
 	if s.Schedules != nil {
 		errs = append(errs, s.Schedules.Close(ctx))
 	}
+	// A cancelled reconciler can still be finishing durable parent admission.
+	// Join it before Close clears any Core window it may inspect. Runtime runs
+	// remain alive until the ordinary shutdown below, so this wait cannot race
+	// a closed parent handle or strand a tool behind a closed Session.
+	subagentsDone := make(chan struct{})
+	go func() { s.subagentWorkers.Wait(); close(subagentsDone) }()
+	select {
+	case <-subagentsDone:
+	case <-ctx.Done():
+		return errors.Join(append(errs, ctx.Err())...)
+	}
 	for _, r := range all {
 		select {
 		case <-r.ready:
