@@ -25,7 +25,9 @@ func TestForwardImagesReuseNativePreviewWithoutSavingOriginals(t *testing.T) {
 		return testkit.Text("received forwarded text and pictures")
 	})
 	s := New(p.Store, p.Harness)
-	image := observationPNG(t, 1200, 800)
+	// Keep this routing and receipt test within the real optional preview
+	// budget. Large-image resizing has its own coverage in im_images_test.go.
+	image := observationPNG(t, 64, 48)
 	source := &inboxImageAdapter{download: func(_ context.Context, attachment domain.Attachment) (Download, error) {
 		if attachment.Kind != "image" {
 			t.Errorf("reception fetched an original non-image attachment: %+v", attachment)
