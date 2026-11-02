@@ -139,7 +139,7 @@ jobs:
   mac-programs:
     name: Sign Mac unified programs
     needs: [validate, distribution]
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 20
     environment: mac-signing
     env:
@@ -181,7 +181,7 @@ jobs:
   mac:
     name: Sign Mac packages and report notarization
     needs: [validate, mac-programs]
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 60
     environment: mac-signing
     env:
@@ -498,7 +498,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
+          - os: macos-15-intel
             platform: mac
           - os: windows-2022
             platform: win
