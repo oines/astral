@@ -7,7 +7,7 @@ import (
 	"github.com/oines/astral/internal/domain"
 )
 
-func TestPrivateSubagentAccessIsLimitedToItselfAndItsDirectParent(t *testing.T) {
+func TestPrivateSubagentAccessWithoutReaderRetainsDirectParentScope(t *testing.T) {
 	child := domain.Session{Meta: domain.Meta{ID: "child"}, AgentID: "bot", Private: true, SubagentParentID: "parent"}
 	for _, test := range []struct {
 		name, agent, caller string

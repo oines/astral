@@ -58,7 +58,7 @@ func (s *Service) recallRoutes() {
 		{Name: "length", Type: "integer", Description: "Characters per text part, default 4000; 1–16384. start/end/total_chars describe each returned slice; this is not a total response budget."},
 	}
 	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: "GET", Path: "/v1/sessions/{id}/history", ID: "agentHistory", Tag: "Agent Gateway", CommandAuth: true, Query: readParameters,
-		Description: "Read normalized history text with roles, tool names, provenance and stable character offsets. With no location, returns recent text parts. With around, returns the hit and its requested neighbors. Items are chronological; follow older_cursor or newer_cursor to navigate. Page cursors keep the original head while the Session grows. References remain usable after restart/index rebuild. This Agent API returns text parts; the Owner history API retains raw Core entries. It reads persistent data without loading a model or running a Session."},
+		Description: "Read normalized history text with roles, tool names, provenance and stable character offsets. With no location, returns recent text parts. With around, returns the hit and its requested neighbors. Items are chronological; follow older_cursor or newer_cursor to navigate. Page cursors keep the original head while the Session grows. References remain usable after restart/index rebuild. This endpoint returns text parts; use the rollout endpoint for raw Core entries. It reads persistent data without loading a model or running a Session."},
 		func(_ http.ResponseWriter, r *http.Request, _ httpcontract.Empty) (recall.HistoryPage, error) {
 			if err := validateRecallQuery(r, readParameters); err != nil {
 				return recall.HistoryPage{}, err

@@ -79,7 +79,7 @@ Start with the model defaults and adjust them after a basic task works. Models t
 
 **Inherit model default** uses your saved model preference. **API default** lets the service use its own default behavior. Other choices depend on the model's supported controls. After changing the model ID or API protocol, review the reasoning options and resolve any validation errors before saving.
 
-For a subagent that needs a different model, ask in the original conversation and name the subtask. The Bot can select another available model and its supported reasoning settings for a new or existing subagent. Choosing a model without a separate reasoning choice uses that model's saved default; API default remains a separate explicit choice. Changing one subagent leaves its descendants unchanged, while changing the original conversation's picker updates every existing subagent. See [delegate background work](/docs/usage/conversations/#delegate-background-work).
+For a subagent that needs a different model, ask in the original conversation and name the subtask. The Bot can select another available model and its supported reasoning settings for a new or existing subagent. If a subagent's run fails, its parent is notified and can decide to change models or retry; changing the model alone does not start another run. Choosing a model without a separate reasoning choice uses that model's saved default; API default remains a separate explicit choice. Changing one subagent leaves its descendants unchanged, while changing the original conversation's picker updates every existing subagent. See [delegate background work](/docs/usage/conversations/#delegate-background-work).
 
 ## Refresh or remove models
 

@@ -24,15 +24,62 @@ func CurrentSessionScope(ctx context.Context) (SessionScope, bool) {
 	return scope, ok
 }
 
-// CheckSessionAccess deliberately reads the current Host record at each
-// resource boundary. Old identifiers and paging snapshots are not grants.
-func CheckSessionAccess(ctx context.Context, session domain.Session) error {
+// SessionAccessReader supplies current delegation ancestry at read boundaries.
+// A transaction must pass its Tx rather than the enclosing Store, which owns
+// the same single database connection.
+type SessionAccessReader interface {
+	Get(context.Context, string, string, any) error
+}
+
+// CheckSessionAccess checks the current Host record at each resource boundary.
+// Read boundaries may supply their Store or Tx to allow delegation ancestors
+// to read descendants. Without a reader, the existing self/direct-parent scope
+// remains unchanged; this does not grant ancestors child management rights.
+// Old identifiers, Fork origins and paging snapshots are never grants.
+func CheckSessionAccess(ctx context.Context, session domain.Session, readers ...SessionAccessReader) error {
 	if session.Deletion != nil {
 		return domain.Missing("Session", session.ID)
 	}
 	if scope, ok := CurrentSessionScope(ctx); ok {
-		directParent := session.SubagentParentID != "" && scope.SessionID == session.SubagentParentID
-		if scope.AgentID != session.AgentID || session.Private && scope.SessionID != session.ID && !directParent {
+		if scope.AgentID != session.AgentID {
+			return domain.Missing("Session", session.ID)
+		}
+		// Privacy belongs to the target. A private caller can still read public
+		// Sessions of its Bot, as well as itself.
+		if !session.Private || scope.SessionID == session.ID {
+			return nil
+		}
+		if scope.SessionID == "" || session.SubagentParentID == "" {
+			return domain.Missing("Session", session.ID)
+		}
+		if len(readers) == 0 || readers[0] == nil {
+			if scope.SessionID == session.SubagentParentID {
+				return nil
+			}
+			return domain.Missing("Session", session.ID)
+		}
+		seen := map[string]bool{session.ID: true}
+		ancestor := session
+		allowed := false
+		for ancestor.SubagentParentID != "" {
+			id := ancestor.SubagentParentID
+			if seen[id] {
+				return domain.Missing("Session", session.ID)
+			}
+			seen[id] = true
+			var parent domain.Session
+			if err := readers[0].Get(ctx, "sessions", id, &parent); domain.IsMissing(err) {
+				return domain.Missing("Session", session.ID)
+			} else if err != nil {
+				return err
+			}
+			if parent.AgentID != scope.AgentID || parent.Deletion != nil {
+				return domain.Missing("Session", session.ID)
+			}
+			allowed = allowed || parent.ID == scope.SessionID
+			ancestor = parent
+		}
+		if !allowed {
 			return domain.Missing("Session", session.ID)
 		}
 	}

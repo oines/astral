@@ -2,7 +2,7 @@
 
 版本：1.22
 
-日期：2026-11-02，Asia/Singapore
+日期：2026-11-03，Asia/Singapore
 
 状态：V1 实现规范，尚非功能交付声明
 
@@ -53,7 +53,7 @@ Session 的历史与工作状态持久保存。关闭窗口、浏览器断线或
 | 执行 | Go Server、Go Computer Daemon、接入本地 agent-core |
 | Agent | 多 Agent，独立资源选择与 Conversation 绑定 |
 | Session | 持久历史、流式生成、运行中输入、Stop、Compaction、Fork |
-| Subagent | 由普通会话委派的持久、可复用异步子会话；最多创建两层子代理，直属控制、被动进度及自然结束通知 |
+| Subagent | 由普通会话委派的持久、可复用异步子会话；最多创建两层子代理，直属控制、被动进度及正常结束或运行出错通知 |
 | Computer | Local macOS/Linux、Container、Remote macOS/Linux；使用本机/本机容器快捷入口、复制命令接入及可选容器模式、AgentHome、运行中由 Agent 切换 |
 | 模型 | Provider 配置、可编辑 Model Profile、直接使用、Session 临时选模 |
 | 搜索 | 全局搜索 Provider，每个 Agent 单选一个统一 `web_search` 后端 |
@@ -640,11 +640,11 @@ Allowed Computers 约束平台的目标路由；需要更窄的实际执行环�
 
 两个工具的 `model` 均使用 Gateway `GET /v1/models` 返回的 Profile `id`，不是服务商原始 `model_id`。`reasoning` 只能在同一次调用显式提供 `model` 时指定。两者均省略时，Spawn 继承父会话当前完整选择，Control 保持现有选择；显式 `model` 而省略 `reasoning` 时采用该 Profile 的有效推理默认值，显式 `reasoning={}` 则采用接口默认。其他推理值须来自返回的完整 `reasoning_controls.options[].value`，或使用该模型给出的预算范围，不根据选项显示 ID 猜造参数。
 
-子代理工作中的 Assistant Text 由 Host 转成带子会话、消息和 Run 来源标识的 User Role Context，交付直接父会话的 `InjectContext`，不独立唤醒父代理。子代理自然结束一轮 Run 就通知直接父代理：父空闲时 FollowUp 并 Continue，父运行时 Steer。系统不判断业务任务是否成功或已经完成；本轮 Run 结束不销毁子会话，也不表示其后代全部结束。报告和通知不广播给兄弟或祖先；每个子会话的消息保持顺序，最后报告先于结束通知消费。Host 持久化关系及交付水位，以稳定输入身份对账恢复，避免重复报告或重复唤醒。报告与自然结束通知使用各自源 `Entry.Time`，首次交付时按全局时区以 RFC3339Nano 渲染，不能使用投递或恢复时刻替代。输入收据以源事件事实去重；已有收据重放直接对账，不因时区变化重新渲染，也不补改旧输入、已保存 System 或历史。
+子代理工作中的 Assistant Text 由 Host 转成带子会话、消息和 Run 来源标识的 User Role Context，交付直接父会话的 `InjectContext`，不独立唤醒父代理。子代理一轮 Run 正常结束（`completed`）或运行出错（`failed`）时，均向直接父代理投递驱动通知：父空闲时 FollowUp 并 Continue，父运行时 Steer。通知保留实际运行状态及错误，由父代理决定查看结果、更换模型、重试或安排其他工作；运行出错本身不自动重试该子会话。系统不判断业务任务是否成功或已经完成；本轮 Run 结束不销毁子会话，也不表示其后代全部结束。用户主动停止仍按原停止语义处理。报告和通知不广播给兄弟或祖先；每个子会话的消息保持顺序，最后报告先于结束通知消费。Host 持久化关系及交付水位，以稳定输入身份对账恢复，避免重复报告或重复唤醒。报告与正常结束或运行出错通知使用各自源 `Entry.Time`，首次交付时按全局时区以 RFC3339Nano 渲染，不能使用投递或恢复时刻替代。输入收据以源事件事实去重；已有收据重放直接对账，不因时区变化重新渲染，也不补改旧输入、已保存 System 或历史。
 
 只有面向用户的根代理能执行 `send_message`；所有子代理，包括管理下级的中间父代理，执行时均被拒绝，沿 Gateway 和 IM 出站边界同样校验。新 IM 观察和绑定仅面向普通根会话；Spawn 继承的历史 IM 消息原样保留，不重写为新观察，也不继续订阅父聊天。子代理的进度和结束通知只进入父上下文，由根代理决定如何向用户回复。
 
-子代理的私密设置跟随所属普通根，切换根会话私密状态时在同一 Host 事务更新全部后代；普通独立用户 Fork 不随之修改。Spawn 在创建事务中读取父会话当时的私密状态，避免并发切换造成未受保护的新子会话。
+子代理的私密设置跟随所属普通根，切换根会话私密状态时在同一 Host 事务更新全部后代；普通独立用户 Fork 不随之修改。Spawn 在创建事务中读取父会话当时的私密状态，`inherit_context=true` 的共享 Fork 和 `false` 的独立 NewSession 两种路径均继承，避免独立历史或并发切换造成未受保护的新子会话。
 
 Host 删除按委派树递归，覆盖共享枝与独立 Rollout，先持久化范围并停止、关闭受影响会话，再调用 Core 可选 `BranchDeleter.DeleteBranch`。Core 只理解 Rollout 历史树：删除起点及后代，根节点表示整 Rollout，保留祖先和其他枝；共享 Fork 的祖先分叉点不属于子枝。同步清理受影响 Session、Attempt、输入、队列、回执与无引用 payload；存活持久引用继续受保护，删除原子且幂等。Host 另行清理关系、Recall、计划与交付记录，并恢复中断的同一删除意图。Core 不认识 Subagent，逻辑格式和 SQLite schema 不变。
 
@@ -886,9 +886,9 @@ IMStore 默认无限期保留收到的消息、已接受的发送及平台实际
 
 Telegram 以原生 Rich Message 顺序混排文字、数字 ID 提及、图片和文档，文件通过 multipart 流式上传。NapCat 群聊使用原生 at，按每条最多一个媒体分片；飞书使用 post，图片独占段落，Markdown 使用同一 md 节点的原生提及与图片引用，普通文件另发。QQ 官方与微信按实际能力顺序拆成文字/媒体消息，不支持的原生提及在发送前明确拒绝。平台要求的媒体段落边界由适配器生成。每个实际消息片段独立持久记录回执，失败停止后续片段，未知结果不自动重发；自身归档保留内容顺序。
 
-Host `Session.private` 由 Owner 在侧栏菜单切换，Owner 始终可见，Fork 继承来源私密状态。Gateway 使用已验证的命令绑定确定调用 Session；私密会话仅对自身开放，对同 Bot 的其他会话也隐藏。目录、搜索、历史、修改、旧游标和已知 ID 每次重新鉴权，拒绝以不存在返回。绑定 IM 的聊天随当前绑定私密化，`all` 不绕过；消息、附件、转发、发送、回应、平台操作与回执沿统一授权链检查。解绑/换绑按当前关系重新判断，不增加独立聊天隐私状态。
+Host `Session.private` 由 Owner 在侧栏菜单切换，Owner 始终可见，Fork 继承来源私密状态。Gateway 使用已验证的命令绑定确定调用 Session。读取范围包括自身、同 Bot 的其他非私密 Session，以及由调用会话委派的完整子代理树；私密孙辈、共享 Fork 和独立 NewSession 的全部实际委派后代均可读取。调用会话自身设为私密不缩小这些读取范围，无关私密会话仍隐藏。目录、搜索、历史、旧游标和已知 ID 每次重新鉴权，拒绝以不存在返回。读取权限不授予跨层管理权限，`agent_control` 仍只控制直属子代理，其他修改和发送动作沿用各自授权。绑定 IM 的聊天随当前绑定私密化，`all` 不绕过；消息、附件、转发、发送、回应、平台操作与回执沿统一授权链检查。解绑/换绑按当前关系重新判断，不增加独立聊天隐私状态。
 
-固定目标的计划任务随目标 Session 权限隐藏。Gateway 创建的每次新建模式计划记录可信来源 Session，生成会话继承来源在执行时的私密状态；来源可持续管理自己的计划，但不因此获得私密子会话历史的访问权。上次结果会话不决定计划可见性，Gateway 只在调用会话可访问结果时返回 `last_session_id`；Owner 管理所有计划并保留结果入口。此隔离不清洗已复制的历史，不改变 Computer 文件的共享权限。Host format 5 通过 Goose 将旧 Session 初始化为非私密并追加业务 revision；format 6 将 Outbox 当前及历史业务记录统一为只有快照引用的 `parts`，保留发送状态、回执、幂等标识和历史 revision，同时追加修正 revision 恢复仅被步骤 5 初始化改变的会话活动时间。既有 Session 历史版本、IM 事件和 Core 不改写。
+固定目标的计划任务随目标 Session 权限隐藏。Gateway 创建的每次新建模式计划记录可信来源 Session，生成会话继承来源在执行时的私密状态；来源可持续管理自己的计划，但计划来源关系本身不授予生成的私密会话历史读取权。上次结果会话不决定计划可见性，Gateway 只在调用会话可访问结果时返回 `last_session_id`；Owner 管理所有计划并保留结果入口。此隔离不清洗已复制的历史，不改变 Computer 文件的共享权限。Host format 5 通过 Goose 将旧 Session 初始化为非私密并追加业务 revision；format 6 将 Outbox 当前及历史业务记录统一为只有快照引用的 `parts`，保留发送状态、回执、幂等标识和历史 revision，同时追加修正 revision 恢复仅被步骤 5 初始化改变的会话活动时间。既有 Session 历史版本、IM 事件和 Core 不改写。
 
 Outbox 的持久内容只使用 `Parts`，纯文字也保存为文字 Part。准备、派发和自身消息归档都从同一份内容读取，平台适配器局部转换原生请求；顶层不再重复保存文字或单文件引用。正常运行只读取当前格式，旧记录在升级时由 Goose 转换。
 
@@ -981,6 +981,7 @@ Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用�
 | 计划任务 | `GET/POST /v1/schedules`、`GET/PATCH/DELETE /v1/schedules/{id}` | 同 Bot 的持久计划任务，与 Owner UI 共用数据和业务校验 |
 | 历史搜索 | `POST /v1/sessions/search` | 跨 Session 或限定 Session 的关键词命中片段，每个命中可直接展开 |
 | 历史读取 | `GET /v1/sessions/{id}/history` | 分页读取文本，或围绕搜索位置展开前后文与长文本范围 |
+| 原始运行记录 | `GET /v1/sessions/{id}/rollout` | 读取原始分支历史；`trace=true` 查看目标 Session 的操作记录，包含 Run 状态与错误 |
 | 可用 Computer | `GET /v1/computers` | 当前 Agent 的允许集合和状态 |
 | 可用模型 | `GET /v1/models` | 仅列出当前 `available` 的 Profile，提供选择 ID、有效限制、推理默认值与完整推理 controls；不返回连接凭据 |
 | 主动发文本 | `POST /v1/im/messages` | 向指定的可用 Conversation 发送文本 |
@@ -1015,6 +1016,9 @@ Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用�
 | `GET /v1/sessions` | `source`、`conversation_id`、`archived`、标题子串 `title`；`limit` 默认 50、最大 200；返回 `items` 与 `next_cursor`。元数据包含标题、来源、归档状态、创建时间、最近活动时间和当前 `head_id`。 |
 | `POST /v1/sessions/search` | JSON 中传 `query`，可限定 `session_ids`、来源、聊天、归档状态、`roles`、`kinds` 和原记录时间 `after`（包含）/`before`（不包含）；返回扁平 `hits` 与 `next_cursor`。`limit` 默认 50、最大 200，单位是片段。 |
 | `GET /v1/sessions/{id}/history` | 默认返回最近 20 个文本部分；`limit` 最大 200。`around=<ref>` 精确定位，并用 `before`/`after` 指定前后各多少个文本部分（默认各 2、最大各 100）。返回按时间顺序的 `items`、`older_cursor`、`newer_cursor`。 |
+| `GET /v1/sessions/{id}/rollout` | 默认按目标分支读取原始 Core 持久记录，包含继承的祖先历史，不混入兄弟分支；`trace=true` 改读目标 Session 自身的操作记录，保留 Run 状态与错误。按新到旧返回 `HistoryPage {entries: Core.Entry[], next_cursor?: string, head_id: string}`；`limit` 默认 50，范围 1–200，使用不透明 `cursor` 继续分页。未初始化 Session 返回空 `entries` 和空 `head_id`。 |
+
+原始 Rollout 读取供代理核查子代理的消息、工具执行及运行错误，不经过文本投影、摘要或搜索索引。它直接读取持久记录，不打开 Session 运行时、不解析或调用模型、不采集环境，也不触发重试。默认分支历史和 `trace=true` 的 Session 操作轨迹是不同视图。签名不透明游标固定目标 Session、Rollout、head、读取模式及版本快照，跨服务重启可继续；后续请求保持相同 trace 模式，可调整 `limit`。调用方原样回传游标，不解析或将其当作记录序号。两种视图均执行同一读取授权：允许自身、同 Bot 非私密 Session 和调用会话委派的完整子代理树，包括私密后代；共享 Rollout 不扩大到无关私密会话。读取委派后代不改变 `agent_control` 仅可管理直属子代理的范围。
 
 目录按最后一条实际消息或工具结果的时间倒序；纯重命名、配置更新和环境快照不改变活动时间。没有消息的新会话以创建时间为准。目录只读取必要的末尾记录，不为列出会话建立全文索引。
 

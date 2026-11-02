@@ -452,10 +452,13 @@ func (r *runtime) identityContext(ctx context.Context, boundary core.ContextBoun
 }
 
 type subagentCheckpoint struct {
+	Protocol int    `json:"protocol,omitempty"`
 	Version  uint64 `json:"version"`
 	Sequence uint64 `json:"sequence"`
 	Cursor   string `json:"cursor,omitempty"`
 }
+
+const subagentDeliveryProtocol = 1
 
 func (s *Service) wakeSubagents() {
 	select {
@@ -515,6 +518,20 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	if _, err := s.subagentRecord(ctx, record.SubagentParentID, record.ID); err != nil {
 		return err
 	}
+	// Deliver persisted facts independently of opening or reconfiguring this
+	// runtime. A now-unavailable desired model must not hide an earlier failure
+	// from its parent, or hold ordinary progress behind a busy model switch.
+	state, stateErr := s.CoreStore.LoadState(ctx, record.ID)
+	if stateErr == nil {
+		if err := s.deliverSubagentHistoryLocked(ctx, record, state); err != nil && !errors.Is(err, errSubagentReportsPending) {
+			return err
+		}
+		// A parent's unapplied report must not hold up recovery of an already
+		// accepted new instruction for the child. Retry that terminal delivery
+		// after reconciling activation below.
+	} else if !errors.Is(stateErr, core.ErrNotFound) {
+		return stateErr
+	}
 	r, err := s.open(ctx, record.ID)
 	if err != nil {
 		return err
@@ -541,8 +558,9 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	// without resuming a deliberately cancelled or failed Run.
 	snapshot := r.core.Load().Snapshot()
 	initial, initialErr := r.core.Load().LookupInput(ctx, "subagent_initial_"+record.ID)
-	shouldActivate := initialErr == nil && initial.State == core.InputPending
-	shouldActivate = shouldActivate || snapshot.State.LastRun != nil && snapshot.State.LastRun.Status == "started"
+	lastRun := snapshot.State.LastRun
+	shouldActivate := initialErr == nil && initial.State == core.InputPending && lastRun == nil
+	shouldActivate = shouldActivate || lastRun != nil && lastRun.Status == "started"
 	if shouldActivate && !snapshot.Running && !snapshot.Maintenance && !snapshot.Stopping {
 		r.mu.Lock()
 		err = r.continueLocked(ctx)
@@ -551,10 +569,19 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 			return err
 		}
 	}
-	state := r.core.Load().State()
+	return s.deliverSubagentHistoryLocked(ctx, record, r.core.Load().State())
+}
+
+func (s *Service) deliverSubagentHistoryLocked(ctx context.Context, record domain.Session, state core.RuntimeState) error {
 	var checkpoint subagentCheckpoint
-	if err = s.Store.Maintenance(ctx, "subagent_delivery", record.ID, &checkpoint); err != nil && !domain.IsMissing(err) {
+	if err := s.Store.Maintenance(ctx, "subagent_delivery", record.ID, &checkpoint); err != nil && !domain.IsMissing(err) {
 		return err
+	}
+	if checkpoint.Protocol != subagentDeliveryProtocol {
+		// Earlier builds advanced past failed Runs without notifying the parent.
+		// Rescan once on upgrade; authoritative input receipts deduplicate reports
+		// and completed Runs that were already delivered.
+		checkpoint = subagentCheckpoint{Protocol: subagentDeliveryProtocol}
 	}
 	if checkpoint.Version == state.Version {
 		return nil
@@ -673,7 +700,9 @@ func (s *Service) deliverSubagentEntry(ctx context.Context, child domain.Session
 func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.Session, entry core.Entry) error {
 	text := assistantText(entry.Message)
 	natural := entry.Run != nil && entry.Run.Status == "completed"
-	if text == "" && !natural {
+	failed := entry.Run != nil && entry.Run.Status == "failed"
+	terminal := natural || failed
+	if text == "" && !terminal {
 		return nil
 	}
 	if _, err := s.subagentRecord(ctx, child.SubagentParentID, child.ID); err != nil {
@@ -690,7 +719,7 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 	message := core.User(fmt.Sprintf("Subagent %s (%s) reports:\n%s", child.ID, child.Title, text))
 	message.ContextKind = subagentUpdateKind
 	message.Metadata = encode(metadata)
-	if natural {
+	if terminal {
 		inputID = "subagent_run_end_" + child.ID + "_" + entry.RunID
 		message = core.User(fmt.Sprintf("Subagent %s (%s) naturally ended Run %s. Review its reports and decide what to do next. This is a runtime event; no business task outcome has been classified.", child.ID, child.Title, entry.RunID))
 		message.ContextKind = subagentUpdateKind
@@ -699,6 +728,9 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 	// Deduplicate the source fact before rendering in the current display zone.
 	// An accepted message remains byte-identical after timezone changes or replay.
 	hash := digest([]any{child.ID, entry.ID, entry.RunID, entry.Time.UTC(), text, natural})
+	if failed {
+		hash = digest([]any{child.ID, entry.ID, entry.RunID, entry.Time.UTC(), text, entry.Run.Status, entry.Run.Error})
+	}
 	receipt, lookupErr := parent.core.Load().LookupInput(ctx, inputID)
 	if lookupErr == nil {
 		// Earlier development builds hashed the untimestamped rendered message.
@@ -706,8 +738,8 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 			return domain.Conflict("subagent event input ID was already used for different content")
 		}
 		// Acceptance and Continue are separate durable boundaries. A retry after a
-		// crash must still reconcile activation for this natural-end event.
-		if natural && receipt.State == core.InputPending {
+		// crash must still reconcile activation for this terminal event.
+		if terminal && receipt.State == core.InputPending {
 			err = parent.continueLocked(ctx)
 			if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
 				return nil
@@ -724,7 +756,11 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 		return err
 	}
 	at := entry.Time.In(location).Format(time.RFC3339Nano)
-	if natural {
+	if failed {
+		message.Content = core.Text(fmt.Sprintf("Subagent %s (%s) failed Run %s at %s.\nError: %s\nReview the error and its reports, then decide what to do next. This is a runtime failure; no business task outcome has been classified.", child.ID, child.Title, entry.RunID, at, entry.Run.Error))
+		metadata["run_status"] = entry.Run.Status
+		metadata["run_error"] = entry.Run.Error
+	} else if natural {
 		message.Content = core.Text(fmt.Sprintf("Subagent %s (%s) naturally ended Run %s at %s. Review its reports and decide what to do next. This is a runtime event; no business task outcome has been classified.", child.ID, child.Title, entry.RunID, at))
 	} else {
 		message.Content = core.Text(fmt.Sprintf("Subagent %s (%s) reports [%s]:\n%s", child.ID, child.Title, at, text))
@@ -732,7 +768,7 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 	metadata["event_time"] = entry.Time.UTC().Format(time.RFC3339Nano)
 	message.Metadata = encode(metadata)
 	input := core.Input{ID: inputID, Digest: hash, Message: message}
-	if !natural {
+	if !terminal {
 		input.Message = core.Message{}
 		input.Contexts = []core.Message{message}
 		_, err = parent.accept(ctx, input, core.InputContext)

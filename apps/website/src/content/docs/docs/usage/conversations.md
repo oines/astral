@@ -34,11 +34,11 @@ You can ask the Bot to name subagents, such as “Source check” and “Fronten
 
 New subagents can be created at most two levels below the original conversation: original conversation → subagent → next-level subagent. The second level cannot create further subagents. Existing deeper subagents are kept and remain accessible at their recorded positions in the tree; model changes and session cleanup still include them according to their actual relationships.
 
-You continue using the original conversation while the subagents work. The Bot can also delegate partway through a task. When a subagent naturally finishes a round of work, its parent is notified and can review the result, assign a follow-up, or report back to you. Progress reports reach the parent without interrupting it for every update.
+You continue using the original conversation while the subagents work. The Bot can also delegate partway through a task. When a subagent finishes a round normally or encounters a run error, its parent is notified and prompted to act. The parent can review the result or error, choose another model, retry, assign a follow-up, or report back to you. The notification preserves what happened during the run; the parent assesses whether the task itself succeeded. Progress reports reach the parent without interrupting it for every update.
 
 Each created subagent appears as a clickable bubble in the conversation. Select it to open its full conversation and tool activity in the right-hand panel. If it creates another subagent, select that bubble to view the next level in the same panel. Use the breadcrumbs or back button to return; the panel retains each reading position, and your original conversation and draft stay in place.
 
-Subagent conversations are read-only and do not appear in the main sidebar. Send corrections, follow-up requests, or instructions to stop a subtask in the original conversation; the Bot manages its own subagents. Stopping the original conversation alone does not stop every subagent working in the background.
+Subagent conversations are read-only and do not appear in the main sidebar. A parent can read the conversations, tool activity and run errors throughout its delegated subagent tree to investigate a problem before deciding how to continue. Managing a subagent still goes through its direct parent. Send corrections, follow-up requests, or instructions to stop a subtask in the original conversation; the Bot manages its own subagents. Stopping the original conversation alone does not stop every subagent working in the background.
 
 To change the model or reasoning settings for this work, use the picker in the original conversation's input area. The choice updates all existing subagents, including deeper levels, and replaces any model they were previously assigned. Requests already sent keep their original settings; following requests and subtasks that have not started use the new choice. The selection survives a restart. New subagents inherit the latest choice by default; the Bot can still choose another model for a new subagent, and your next change in the original conversation updates it again. Other conversations and ordinary copies made with **Fork from here** keep their own settings.
 
@@ -68,9 +68,9 @@ If one Bot handles both personal work and group chats, make personal sessions pr
 
 Choose **Make private** in the sidebar session menu. You can still open and manage it through Desktop or a browser.
 
-Other sessions cannot discover, read, or change a private session through the built-in API. This also protects its currently bound chat and schedules targeting it. The private session can access its own resources, and forks inherit its private setting. When a chat is rebound, access follows the new session relationship.
+Other sessions cannot discover, read, or change an ordinary private session through the built-in API. This also protects its currently bound chat and schedules targeting it. The private session can still read its own resources, other non-private sessions of the same Bot, and its complete delegated subagent tree. Ordinary forks inherit its private setting. When a chat is rebound, access follows the new session relationship.
 
-Subagents follow their original conversation’s private setting. Changing it updates existing subagents and their descendants too.
+Subagents inherit their original conversation’s private setting whether they copy existing context or start with an independent history. Changing that setting updates existing subagents and their descendants too. A private subagent can be read by itself and every parent above it in its delegation chain, so they can review all levels of their work; other sessions cannot look it up or read it.
 
 Private sessions still retain history and send task context to the selected model service. Files shared on a computer and information already copied elsewhere need separate protection. Read [Use Astral safely](/docs/start/safe-use/) before working with sensitive material.
 

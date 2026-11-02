@@ -44,3 +44,35 @@ func TestRootPrivacyFollowsDelegatedSubtreeButNotOrdinaryForks(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivateRootCreatesPrivateSharedAndIndependentSubagents(t *testing.T) {
+	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("Private evidence recorded.") })
+	parent := subagentTestSeed(t, f)
+	private := true
+	if err := f.service.SaveSessionPresentation(f.ctx, parent.id, nil, nil, nil, &private); err != nil {
+		t.Fatal(err)
+	}
+	for _, inherited := range []bool{true, false} {
+		execution := "private-new"
+		if inherited {
+			execution = "private-fork"
+		}
+		child := subagentTestSpawn(t, f, parent, execution, "Keep this work private.", inherited)
+		subagentTestFinished(t, f, child.SessionID)
+		var record domain.Session
+		if err := f.store.Get(f.ctx, "sessions", child.SessionID, &record); err != nil {
+			t.Fatal(err)
+		}
+		if !record.Private {
+			t.Fatalf("private root created a public child (inherit_context=%v)", inherited)
+		}
+		unrelated := persistence.WithSessionScope(f.ctx, f.agent.ID, "unrelated-session")
+		if err := persistence.CheckSessionAccess(unrelated, record); !domain.IsMissing(err) {
+			t.Fatalf("private child is readable by an unrelated Session: %v", err)
+		}
+		directParent := persistence.WithSessionScope(f.ctx, f.agent.ID, parent.id)
+		if err := persistence.CheckSessionAccess(directParent, record); err != nil {
+			t.Fatalf("private child's direct parent lost read access: %v", err)
+		}
+	}
+}

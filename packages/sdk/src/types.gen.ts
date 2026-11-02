@@ -6927,3 +6927,43 @@ export type AgentHistoryResponses = {
 };
 
 export type AgentHistoryResponse = AgentHistoryResponses[keyof AgentHistoryResponses];
+
+export type AgentRolloutData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Opaque next_cursor from this Session and the same trace mode. Keeps the original branch head and trace snapshot across new writes and Server restarts.
+         */
+        cursor?: string;
+        /**
+         * Raw entries per page, default 50; 1–200.
+         */
+        limit?: number;
+        /**
+         * Default false: original history on this Session's branch, including inherited ancestors. true: this Session writer's own raw records, including Run status/errors, queued inputs and tool lifecycle; excludes other writers.
+         */
+        trace?: boolean;
+    };
+    url: '/v1/sessions/{id}/rollout';
+};
+
+export type AgentRolloutErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentRolloutError = AgentRolloutErrors[keyof AgentRolloutErrors];
+
+export type AgentRolloutResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayHistoryPage;
+};
+
+export type AgentRolloutResponse = AgentRolloutResponses[keyof AgentRolloutResponses];

@@ -16261,7 +16261,7 @@
     },
     "/v1/sessions/{id}/history": {
       "get": {
-        "description": "Read normalized history text with roles, tool names, provenance and stable character offsets. With no location, returns recent text parts. With around, returns the hit and its requested neighbors. Items are chronological; follow older_cursor or newer_cursor to navigate. Page cursors keep the original head while the Session grows. References remain usable after restart/index rebuild. This Agent API returns text parts; the Owner history API retains raw Core entries. It reads persistent data without loading a model or running a Session.",
+        "description": "Read normalized history text with roles, tool names, provenance and stable character offsets. With no location, returns recent text parts. With around, returns the hit and its requested neighbors. Items are chronological; follow older_cursor or newer_cursor to navigate. Page cursors keep the original head while the Session grows. References remain usable after restart/index rebuild. This endpoint returns text parts; use the rollout endpoint for raw Core entries. It reads persistent data without loading a model or running a Session.",
         "operationId": "agentHistory",
         "parameters": [
           {
@@ -16342,6 +16342,79 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_recall_HistoryPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/sessions/{id}/rollout": {
+      "get": {
+        "description": "Read raw persisted Core entries, newest first, without opening a Session runtime or loading a model. Default follows the captured history branch and never includes shared Rollout siblings. trace=true reads only the target Session writer's records and includes Run failures with their errors. Images retain metadata but omit embedded pixel data. Pagination returns a fixed head_id and an opaque next_cursor. Sessions without committed Core state return an empty array.",
+        "operationId": "agentRollout",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Opaque next_cursor from this Session and the same trace mode. Keeps the original branch head and trace snapshot across new writes and Server restarts.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Raw entries per page, default 50; 1–200.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Default false: original history on this Session's branch, including inherited ancestors. true: this Session writer's own raw records, including Run status/errors, queued inputs and tool lifecycle; excludes other writers.",
+            "in": "query",
+            "name": "trace",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_gateway_HistoryPage"
                 }
               }
             },
