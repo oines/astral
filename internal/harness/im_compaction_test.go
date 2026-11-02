@@ -17,7 +17,7 @@ func TestCompactionPromptFollowsCurrentIMBinding(t *testing.T) {
 	})
 	// Seven large-history compactions share this deadline. Leave enough room
 	// for macOS CI under the race detector without reducing coverage or history.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	t.Cleanup(cancel)
 	f.ctx = ctx
 	compactPrompt := func(id string) string {

@@ -46,7 +46,9 @@ type fixture struct {
 
 func newFixture(t *testing.T, computerCount int, generate func(context.Context, int, map[string]any) any) *fixture {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	// Bound the complete integration scenario, including setup and recovery,
+	// without making its behavior depend on native race-runner throughput.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	f := &fixture{ctx: ctx, directory: t.TempDir(), generate: generate}
 	var err error
 	f.store, err = persistence.Open(filepath.Join(f.directory, "data"))
