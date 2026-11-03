@@ -23,11 +23,13 @@ export function validateTag(tag, version) {
   return tag
 }
 
-export async function readReleaseVersion(root = repositoryRoot) {
+export async function readReleaseVersion(root = repositoryRoot, environment = process.env) {
   const entries = await Promise.all(manifests.map(async name => JSON.parse(await readFile(path.join(root, name), 'utf8'))))
   const version = validateVersion(entries[0].version)
   if (entries.some(entry => entry.version !== version)) throw new Error('Root and Desktop package versions differ. Use release-version.mjs set MAJOR.MINOR.PATCH.')
-  return version
+  // Source manifests share a development baseline. A release freezes its own
+  // version before building; never let an empty/invalid override fall back.
+  return environment.ASTRAL_RELEASE_VERSION === undefined ? version : validateVersion(environment.ASTRAL_RELEASE_VERSION)
 }
 
 export async function setReleaseVersion(version, root = repositoryRoot) {
@@ -43,7 +45,7 @@ export async function setReleaseVersion(version, root = repositoryRoot) {
     await writeFile(temporary, `${JSON.stringify({ ...value, version }, null, 2)}\n`, { flag: 'wx' })
     await rename(temporary, target)
   }
-  return readReleaseVersion(root)
+  return readReleaseVersion(root, {})
 }
 
 export function validateStorageMigrations(metadata) {

@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Official update (${{ matrix.platform }})
+    name: Official update (${{ matrix.platform }}/${{ matrix.arch }})
     if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner
     strategy:
       fail-fast: false
@@ -31,15 +31,23 @@ jobs:
         include:
           - os: macos-15-intel
             platform: mac
+            arch: x64
+          - os: macos-15
+            platform: mac
+            arch: arm64
           - os: windows-2022
             platform: win
+            arch: x64
           - os: ubuntu-24.04
             platform: linux
+            arch: x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
       RELEASE_TAG: ${{ inputs.tag }}
       PREVIOUS_RELEASE_TAG: ${{ inputs.previous_tag }}
+      NATIVE_ARCH: ${{ matrix.arch }}
+      NATIVE_PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Validate version-tag inputs before checkout
         shell: bash
@@ -73,8 +81,53 @@ jobs:
           cache: pnpm
       - name: Install the frozen verification dependencies without lifecycle scripts
         # Older published checkers import TypeScript while loading the module.
-        # Install their own lockfile; keep every checked-out source file intact.
+        # Install their own lockfile before the temporary version-only overlay.
         run: pnpm install --frozen-lockfile --ignore-scripts --filter astral
+      - name: Require the expected native runner
+        run: node --input-type=module -e "import assert from 'node:assert/strict'; assert.equal(process.arch,process.env.NATIVE_ARCH); assert.equal(process.platform,{mac:'darwin',win:'win32',linux:'linux'}[process.env.NATIVE_PLATFORM])"
+      - name: Load and validate the published effective version
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict'
+          import { createHash } from 'node:crypto'
+          import { execFileSync } from 'node:child_process'
+          import { appendFile, readFile, writeFile } from 'node:fs/promises'
+          const repository = process.env.GITHUB_REPOSITORY
+          const tag = process.env.RELEASE_TAG
+          const base = `https://github.com/${repository}/releases/download/${tag}`
+          const read = async name => {
+            const response = await fetch(`${base}/${name}`, { signal: AbortSignal.timeout(60_000) })
+            assert.ok(response.ok, `Published ${name} could not be read (HTTP ${response.status}).`)
+            return Buffer.from(await response.arrayBuffer())
+          }
+          const [sumBytes, manifestBytes] = await Promise.all([read('SHA256SUMS'), read('release-manifest.json')])
+          const sums = sumBytes.toString('utf8').trim().split('\n').map(line => /^([a-f0-9]{64})  ([A-Za-z0-9._-]+)$/.exec(line))
+          assert.ok(sums.every(Boolean), 'Invalid published checksum inventory.')
+          assert.equal(new Set(sums.map(item => item[2])).size, sums.length, 'Duplicate published checksum entry.')
+          assert.equal(createHash('sha256').update(manifestBytes).digest('hex'), sums.find(item => item[2] === 'release-manifest.json')?.[1], 'Published manifest checksum mismatch.')
+          const metadata = JSON.parse(manifestBytes)
+          const source = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+          assert.equal(metadata.schema_version, 1)
+          assert.equal(metadata.purpose, 'release')
+          assert.equal(metadata.public_release_ready, true)
+          assert.equal(metadata.repository, repository)
+          assert.equal(metadata.source_sha, source)
+          assert.equal(metadata.tag, tag)
+          assert.match(metadata.version, /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/)
+          assert.equal(`v${metadata.version}`, tag)
+          if (metadata.build_provenance) {
+            const { validateBuildMetadata } = await import('./scripts/rolling-release-version.mjs')
+            validateBuildMetadata(metadata.build_provenance, { version: metadata.version, sourceSHA: source, repository })
+          }
+          const names = ['package.json', 'apps/desktop/package.json']
+          const manifests = await Promise.all(names.map(async name => JSON.parse(await readFile(name, 'utf8'))))
+          assert.match(manifests[0].version, /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/)
+          assert.equal(manifests[0].version, manifests[1].version, 'Development manifest versions differ.')
+          for (const [index, name] of names.entries()) await writeFile(name, `${JSON.stringify({ ...manifests[index], version: metadata.version }, null, 2)}\n`)
+          await appendFile(process.env.GITHUB_ENV, `ASTRAL_RELEASE_VERSION=${metadata.version}\n`)
+          JS
       - name: Check the published version contract
         shell: bash
         run: node scripts/release-version.mjs check --tag "$RELEASE_TAG"
@@ -93,13 +146,28 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: xvfb-run -a node scripts/check-desktop-update.mjs --published-from "$PREVIOUS_RELEASE_TAG"
-      - name: Require verification to leave the published source intact
-        run: git diff --exit-code
+      - name: Require only the frozen version overlay in the published source
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict'
+          import { execFileSync } from 'node:child_process'
+          import { readFile } from 'node:fs/promises'
+          const names = ['package.json', 'apps/desktop/package.json']
+          const changed = execFileSync('git', ['diff', '--name-only', '-z', 'HEAD', '--'], { encoding: 'utf8' }).split('\0').filter(Boolean)
+          assert.ok(changed.every(name => names.includes(name)), 'Verification modified published source beyond the version overlay.')
+          assert.equal(execFileSync('git', ['diff', '--summary', 'HEAD', '--'], { encoding: 'utf8' }).trim(), '', 'Verification changed tracked paths or file modes.')
+          for (const name of names) {
+            const committed = JSON.parse(execFileSync('git', ['show', `HEAD:${name}`], { encoding: 'utf8' }))
+            const current = JSON.parse(await readFile(name, 'utf8'))
+            assert.deepEqual(current, { ...committed, version: process.env.ASTRAL_RELEASE_VERSION }, `Unexpected non-version manifest change: ${name}`)
+          }
+          JS
       - name: Preserve actual published-update evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: published-update-${{ matrix.platform }}-${{ inputs.tag }}
+          name: published-update-${{ matrix.platform }}-${{ matrix.arch }}-${{ inputs.tag }}
           path: |
             ${{ runner.temp }}/astral-published-desktop-update.json
             ${{ runner.temp }}/astral-update-acceptance.log

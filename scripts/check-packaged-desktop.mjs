@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
 import { rendererAuthentication } from './desktop-renderer-auth.mjs'
 import { checkDesktopWindow } from './check-desktop-window.mjs'
+import { verifyDesktopVersion } from './desktop-version-acceptance.mjs'
+import { readReleaseVersion } from './release-version.mjs'
 import { execFile, spawn } from 'node:child_process'
 import { access, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -18,6 +20,7 @@ if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../', import.meta.url))
 const release = path.join(repository, 'apps/desktop/release')
+const version = await readReleaseVersion()
 const arch = process.arch
 const unpacked = process.platform === 'darwin' ? (arch === 'arm64' ? 'mac-arm64' : 'mac') : `${process.platform === 'win32' ? 'win' : 'linux'}${arch === 'x64' ? '' : `-${arch}`}-unpacked`
 const executable = process.env.ASTRAL_PACKAGED_APP_EXECUTABLE || (process.platform === 'darwin' ? path.join(release, unpacked, 'Astral.app/Contents/MacOS/Astral') : path.join(release, unpacked, process.platform === 'win32' ? 'Astral.exe' : 'astral'))
@@ -165,6 +168,8 @@ try {
     return rendererAuthentication(electronProfile, running.url, { diagnose: message => { rendererDiagnostic = message } })
   }, () => `The actual Desktop renderer did not authenticate with its native identity.\nLast renderer state: ${rendererDiagnostic}`, 30_000)
   console.log('Actual Desktop renderer /auth/status confirms authenticated=true and desktop=true.')
+  await verifyDesktopVersion(running.url, await webFixtureCookie(path.join(data, 'server'), running.url), version)
+  console.log(`Actual Electron and Go Server both report frozen release version ${version}.`)
   await checkDesktopWindow(electronProfile, running.url)
   await assert.rejects(readFile(path.join(data, 'computers/local/service/spec.json')), { code: 'ENOENT' })
   console.log(`Requesting ${process.platform === 'win32' ? 'crash cleanup' : 'normal App quit'} with SIGTERM (App PID ${app.pid}, Server PID ${running.pid}).`)

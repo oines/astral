@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import test from 'node:test'
-import { acceptedSubmission, staple, submit, verifyNotarizedApp } from './mac-notarize.mjs'
+import { acceptedSubmission, combineNotarizationReports, finalize, resumeSubmission, staple, submit, verifyNotarizedApp, waitForSubmission } from './mac-notarize.mjs'
 
 const submissionID = '12345678-1234-4234-8234-123456789abc'
 const otherSubmissionID = '87654321-4321-4321-8321-cba987654321'
 const configuration = { profile: 'private-profile', keychain: '/private/signing.keychain-db' }
-const completedUpload = { upload_status: 'completed', submit_exit_code: 0 }
+const artifactSHA = 'a'.repeat(64)
+const completedUpload = { artifact_sha256: artifactSHA, upload_status: 'completed', submit_exit_code: 0 }
 
 function submissionHarness(responses) {
   const calls = []
@@ -15,6 +20,9 @@ function submissionHarness(responses) {
   return {
     calls, records, logs, events,
     dependencies: {
+      fingerprint: async () => artifactSHA,
+      attempts: 1,
+      pause: async () => {},
       run: async (program, args, options) => {
         calls.push({ program, args, options })
         events.push(args[1])
@@ -61,13 +69,13 @@ test('upload saves its ID before a separate bounded native wait and only records
   assert.doesNotMatch(JSON.stringify([harness.records, harness.logs]), /private|profile|keychain|message|path/)
 })
 
-test('a wait timeout queries only the original ID once and reports In Progress without calling it rejection', async () => {
+test('a wait timeout records In Progress for the original ID and blocks release without calling it rejection', async () => {
   const harness = submissionHarness([
     { id: submissionID },
     new Error('private wait error with auth arguments'),
     { id: submissionID, name: 'Astral.dmg', status: 'In Progress', createdDate: '2026-10-24T08:00:00Z' },
   ])
-  assert.deepEqual(await submit('/private/Astral.dmg', configuration, harness.dependencies), { id: submissionID, status: 'In Progress' })
+  await assert.rejects(submit('/private/Astral.dmg', configuration, harness.dependencies), /not Accepted after the bounded wait/)
   assert.deepEqual(harness.calls.map(call => call.args[1]), ['submit', 'wait', 'info'])
   assert.equal(harness.calls[2].args[2], submissionID)
   assert.equal(harness.records.at(-1).status, 'In Progress')
@@ -84,13 +92,13 @@ test('the same submission confirmed Accepted by info can complete after an inter
   assert.deepEqual(harness.records.at(-1), { id: submissionID, name: 'Astral.dmg', ...completedUpload, status: 'Accepted' })
 })
 
-test('a failed status query retains the upload ID without leaking child errors or credentials', async () => {
+test('a failed status query retains the upload ID but blocks approval without leaking credentials', async () => {
   const harness = submissionHarness([
     { id: submissionID, createdDate: 'not a date', status: 'private-unknown-status' },
     Object.assign(new Error('private wait arguments'), { stdout: 'private malformed output', stderr: configuration.profile }),
     Object.assign(new Error(`private info arguments ${configuration.keychain}`), { stdout: 'private output' }),
   ])
-  assert.deepEqual(await submit('/private/Astral.dmg', configuration, harness.dependencies), { id: submissionID, status: 'Unknown' })
+  await assert.rejects(submit('/private/Astral.dmg', configuration, harness.dependencies), /not Accepted after the bounded wait/)
   assert.deepEqual(harness.records, [{ id: submissionID, name: 'Astral.dmg', ...completedUpload }])
   assert.deepEqual(harness.calls.map(call => call.args[1]), ['submit', 'wait', 'info'])
   assert.doesNotMatch(JSON.stringify([harness.records, harness.logs]), /private|profile|keychain/)
@@ -149,7 +157,7 @@ test('a failed upload with an ID records only unconfirmed evidence and never wai
     })
     assert.deepEqual(harness.calls.map(call => call.args[1]), ['submit'])
     assert.deepEqual(harness.events, ['submit', 'record', 'log'])
-    assert.deepEqual(harness.records, [{ id: submissionID, name: 'Astral.dmg', upload_status: 'unconfirmed', submit_exit_code: failure.expectedCode }])
+    assert.deepEqual(harness.records, [{ id: submissionID, name: 'Astral.dmg', artifact_sha256: artifactSHA, upload_status: 'unconfirmed', submit_exit_code: failure.expectedCode }])
     assert.deepEqual(harness.logs, [`Apple notarization ${submissionID}: upload unconfirmed; submit command failed`])
     assert.doesNotMatch(JSON.stringify([harness.records, harness.logs]), /private|In Progress|createdDate|signal|killed/)
   }
@@ -163,7 +171,7 @@ test('even an Accepted response and a numeric zero on a rejected upload cannot a
   const harness = submissionHarness([uploadError])
   await assert.rejects(submit('/private/Astral.dmg', configuration, harness.dependencies), /upload was not confirmed/)
   assert.deepEqual(harness.calls.map(call => call.args[1]), ['submit'])
-  assert.deepEqual(harness.records, [{ id: submissionID, name: 'Astral.dmg', upload_status: 'unconfirmed', submit_exit_code: 0 }])
+  assert.deepEqual(harness.records, [{ id: submissionID, name: 'Astral.dmg', artifact_sha256: artifactSHA, upload_status: 'unconfirmed', submit_exit_code: 0 }])
   assert.doesNotMatch(JSON.stringify([harness.records, harness.logs]), /Accepted|private/)
 })
 
@@ -435,4 +443,142 @@ test('a terminal rejection returned by a successful upload is fatal before waiti
     await assert.rejects(submit('/private/Astral.dmg', configuration, harness.dependencies), /not Accepted/)
     assert.deepEqual(harness.calls.map(call => call.args[1]), ['submit'])
   }
+})
+
+test('pending and interrupted waits query the same Apple ID until Accepted without another upload', async () => {
+  const harness = submissionHarness([
+    { id: submissionID },
+    { id: submissionID, status: 'In Progress' },
+    { id: submissionID, status: 'In Progress' },
+    new Error('temporary wait failure'),
+    { id: submissionID, status: 'In Progress' },
+    { id: submissionID, status: 'Accepted' },
+  ])
+  const pauses = []
+  assert.deepEqual(await submit('/private/Astral.dmg', configuration, { ...harness.dependencies, attempts: 3, pause: async time => { pauses.push(time) } }), { id: submissionID, status: 'Accepted' })
+  assert.deepEqual(harness.calls.map(call => call.args[1]), ['submit', 'wait', 'info', 'wait', 'info', 'wait'])
+  assert.ok(harness.calls.slice(1).every(call => call.args[2] === submissionID))
+  assert.deepEqual(pauses, [1_000, 2_000])
+  assert.equal(harness.records.at(-1).status, 'Accepted')
+})
+
+test('pending submissions exhaust their budget without being approved or uploaded again', async () => {
+  const harness = submissionHarness([
+    { id: submissionID },
+    { id: submissionID, status: 'In Progress' },
+    { id: submissionID, status: 'In Progress' },
+  ])
+  await assert.rejects(submit('/private/Astral.dmg', configuration, harness.dependencies), /saved submission and input remain available for resume/)
+  assert.deepEqual(harness.calls.map(call => call.args[1]), ['submit', 'wait', 'info'])
+  assert.equal(harness.records.at(-1).status, 'In Progress')
+})
+
+test('the elapsed wait deadline bounds command timeouts and prevents another query', async () => {
+  let time = 0
+  const calls = []
+  await assert.rejects(waitForSubmission(submissionID, configuration, {
+    timeout: 150_000, now: () => time, pause: async milliseconds => { time += milliseconds }, log: () => {},
+    run: async (_program, args, options) => {
+      calls.push({ args, timeout: options.timeout })
+      time += Math.min(60_000, options.timeout)
+      return { stdout: JSON.stringify({ id: submissionID, status: 'In Progress' }) }
+    },
+  }), /not Accepted after the bounded wait/)
+  assert.deepEqual(calls.map(call => call.args[1]), ['wait', 'info', 'wait'])
+  assert.equal(calls.at(-1).timeout, 29_000)
+  assert.equal(time, 150_000)
+})
+
+test('resume accepts only the identical confirmed input and never issues submit', async () => {
+  const receipt = { id: submissionID, name: 'Astral.dmg', ...completedUpload, status: 'In Progress', private: 'not copied' }
+  const harness = submissionHarness([{ id: submissionID, status: 'Accepted', private: 'not copied' }])
+  assert.deepEqual(await resumeSubmission('/private/Astral.dmg', receipt, configuration, harness.dependencies), { id: submissionID, status: 'Accepted' })
+  assert.deepEqual(harness.calls.map(call => call.args[1]), ['wait'])
+  assert.deepEqual(harness.records, [{ id: submissionID, name: 'Astral.dmg', ...completedUpload, status: 'Accepted' }])
+  for (const change of [
+    value => { value.upload_status = 'unconfirmed' },
+    value => { value.name = 'another.dmg' },
+    value => { value.artifact_sha256 = 'b'.repeat(64) },
+    value => { value.source_sha = 'b'.repeat(40) },
+  ]) {
+    const changed = JSON.parse(JSON.stringify(receipt))
+    change(changed)
+    const rejected = submissionHarness([])
+    await assert.rejects(resumeSubmission('/private/Astral.dmg', changed, configuration, rejected.dependencies), /Resume requires|input changed/)
+    assert.deepEqual(rejected.calls, [])
+  }
+})
+
+function notarizationReports() {
+  const common = { version: '0.1.14', source_sha: 'a'.repeat(40), team_id: '6N6W6Z6739', certificate_expires_at: '2030-01-01T00:00:00.000Z' }
+  const asset = name => ({ name, size: 100, sha256: 'b'.repeat(64) })
+  return [
+    { ...common, notarizations: [{ kind: 'binaries', id: submissionID, status: 'Accepted' }], assets: ['astral-darwin-amd64', 'astral-darwin-arm64'].map(asset) },
+    ...['x64', 'arm64'].map((arch, index) => ({
+      ...common, arch, native_tested: true,
+      notarizations: [{ kind: 'dmg', arch, id: `${index ? 'd' : 'c'}2345678-1234-4234-8234-123456789abc`, status: 'Accepted' }],
+      assets: ['zip', 'dmg'].map(extension => asset(`Astral-0.1.14-mac-${arch}.${extension}`)),
+    })),
+  ]
+}
+
+test('parallel native Mac evidence produces one deterministic report without signing credentials', () => {
+  const reports = notarizationReports()
+  const configuration = { version: '0.1.14', sourceSHA: 'a'.repeat(40), now: Date.parse('2026-11-03') }
+  const combined = combineNotarizationReports(reports, configuration)
+  assert.equal(combined.schema_version, 3)
+  assert.deepEqual(combined.native_tested_arches, ['x64', 'arm64'])
+  assert.equal(combined.notarization_status, 'accepted')
+  assert.equal(combined.native_tested_arch, undefined)
+  assert.equal(combined.notarizations.length, 3)
+  assert.equal(combined.assets.length, 6)
+  assert.deepEqual(combineNotarizationReports(reports.toReversed(), configuration), combined)
+})
+
+test('aggregation rejects partial native coverage, pending Apple status and conflicting evidence', () => {
+  const configuration = { version: '0.1.14', sourceSHA: 'a'.repeat(40), now: Date.parse('2026-11-03') }
+  for (const mutate of [
+    values => { values[2].native_tested = false },
+    values => { values[2].arch = 'x64' },
+    values => { values[2].source_sha = 'b'.repeat(40) },
+    values => { values[2].version = '0.1.15' },
+    values => { values[2].team_id = 'OTHERTEAM1' },
+    values => { values[2].certificate_expires_at = '2029-01-01T00:00:00Z' },
+    values => { values.forEach(value => { value.certificate_expires_at = '2020-01-01T00:00:00Z' }) },
+    values => { values[2].notarizations[0].status = 'In Progress' },
+    values => { values[2].notarizations[0].status = 'Unknown' },
+    values => { values[2].notarizations[0].id = submissionID },
+    values => { values[2].notarizations[0].arch = 'x64' },
+    values => { values[2].assets[0].name = values[1].assets[0].name },
+    values => { values[2].assets.pop() },
+  ]) {
+    const reports = notarizationReports()
+    mutate(reports)
+    assert.throws(() => combineNotarizationReports(reports, configuration))
+  }
+})
+
+test('final aggregation verifies the transferred bytes without Apple credentials and rejects package tampering', async t => {
+  const temporary = await mkdtemp(path.join(tmpdir(), 'astral-parallel-mac-reports-'))
+  t.after(() => rm(temporary, { recursive: true, force: true }))
+  const directory = path.join(temporary, 'release')
+  const programs = path.join(temporary, 'programs')
+  await mkdir(path.join(directory, 'notarization'), { recursive: true })
+  await mkdir(programs)
+  const reports = notarizationReports()
+  for (const [index, report] of reports.entries()) {
+    for (const record of report.assets) {
+      const bytes = Buffer.from(record.name)
+      record.size = bytes.length
+      record.sha256 = createHash('sha256').update(bytes).digest('hex')
+      await writeFile(path.join(index === 0 ? programs : directory, record.name), bytes)
+    }
+    await writeFile(path.join(directory, 'notarization', `${['binaries', 'x64', 'arm64'][index]}.json`), JSON.stringify(report))
+  }
+  const options = { directory, programs, version: '0.1.14', sourceSHA: 'a'.repeat(40) }
+  const combined = await finalize(options)
+  assert.deepEqual(JSON.parse(await readFile(path.join(directory, 'mac-signing-report.json'), 'utf8')), combined)
+  assert.deepEqual(combined.native_tested_arches, ['x64', 'arm64'])
+  await writeFile(path.join(directory, 'Astral-0.1.14-mac-arm64.zip'), 'different bytes')
+  await assert.rejects(finalize(options), /does not match final artifact bytes/)
 })

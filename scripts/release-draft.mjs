@@ -1,9 +1,10 @@
 import { createReadStream } from 'node:fs'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { lstat, readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { digest, desktopNames, distributionNames, macSigningReportName, validateMacSigningReport, validateDataFormats } from './release-assets.mjs'
 import { desktopUpdateFeeds, validateDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { isDirectInvocation, readReleaseVersion, validateTag, validateVersion } from './release-version.mjs'
+import { validateBuildMetadata } from './rolling-release-version.mjs'
 
 export function compareVersions(left, right) {
   const a = validateVersion(left).split('.').map(Number)
@@ -14,22 +15,22 @@ export function compareVersions(left, right) {
   return 0
 }
 
-// Candidate mode always leaves a draft. Public mode is an explicit CI-only
-// operation; publishing is its final mutation, after the complete asset check.
-export async function createDraft(directory, { publicRelease = false, environment = process.env, fetch: request = globalThis.fetch, log = console.log } = {}) {
+async function inspectReleaseBundle(directory, { publicRelease, environment, requireSeal }) {
   if (typeof publicRelease !== 'boolean') throw new Error('Public release mode must be selected explicitly.')
-  const token = environment.GH_TOKEN || environment.GITHUB_TOKEN
-  if (!token) throw new Error('A job-scoped GITHUB_TOKEN with contents:write is required.')
   const repository = environment.GITHUB_REPOSITORY
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository || '')) throw new Error('GITHUB_REPOSITORY is required.')
   const manifest = JSON.parse(await readFile(path.join(directory, 'release-manifest.json'), 'utf8'))
-  const version = await readReleaseVersion()
+  const version = await readReleaseVersion(undefined, environment)
   validateTag(manifest.tag, version)
   const macSigned = publicRelease || manifest.purpose === 'mac-signed-candidate'
   const validPurpose = publicRelease ? manifest.purpose === 'release' && manifest.public_release_ready === true : ['unsigned-candidate', 'mac-signed-candidate'].includes(manifest.purpose) && manifest.public_release_ready === false
   if (manifest.schema_version !== 1 || manifest.version !== version || manifest.repository !== repository || !validPurpose || !/^[a-f0-9]{40}$/.test(manifest.source_sha) ||
       !(macSigned ? ['signed-and-notarized', 'signed-notarization-pending'] : ['not-signed-or-notarized']).includes(manifest.signing?.macos) || manifest.signing?.windows !== 'not-signed' || manifest.signing?.linux !== 'not-signed' ||
       manifest.migration_status !== 'goose' || manifest.desktop_updater !== 'electron-updater') throw new Error(publicRelease ? 'Public releases require a matching release manifest and complete Mac signing claims.' : 'Only matching review-only candidate manifests can create a draft; public releases and incomplete signing claims are forbidden.')
+  if (manifest.build_provenance !== undefined) {
+    validateBuildMetadata(manifest.build_provenance, { version, sourceSHA: manifest.source_sha, repository })
+    if (!publicRelease || manifest.ci_run_url !== manifest.build_provenance.build_run_url || manifest.packaging_run_url !== manifest.candidate_run_url) throw new Error('Rolling release provenance does not match its frozen producer and packaging run.')
+  }
   if (publicRelease) {
     const runPrefix = `https://github.com/${repository}/actions/runs/`
     if (environment.CI !== 'true' || environment.GITHUB_ACTIONS !== 'true' || !/^\d+$/.test(environment.GITHUB_RUN_ID || '') ||
@@ -49,6 +50,10 @@ export async function createDraft(directory, { publicRelease = false, environmen
   if (sums.size !== requiredNames.length || requiredNames.some(name => !sums.has(name))) throw new Error('Checksum inventory does not describe the complete candidate.')
   const files = (await readdir(directory)).sort()
   if (files.length !== requiredNames.length + 1 || files.some(name => name !== 'SHA256SUMS' && !sums.has(name))) throw new Error('Unexpected or missing files in candidate upload directory.')
+  for (const name of files) {
+    const entry = await lstat(path.join(directory, name))
+    if (!entry.isFile() || entry.isSymbolicLink()) throw new Error('A sealed release bundle contains a non-regular file.')
+  }
   for (const [name, expected] of sums) {
     if (await digest(path.join(directory, name)) !== expected) throw new Error(`Checksum mismatch before uploading ${name}.`)
   }
@@ -66,11 +71,35 @@ export async function createDraft(directory, { publicRelease = false, environmen
   if (macSigned) {
     const report = JSON.parse(await readFile(path.join(directory, macSigningReportName), 'utf8'))
     await validateMacSigningReport(report, { version, sourceSHA: manifest.source_sha, files: new Map(requiredNames.map(name => [name, path.join(directory, name)])) })
+    if (manifest.build_provenance !== undefined && (report.schema_version !== 3 || report.notarization_status !== 'accepted')) throw new Error('Rolling releases require both native Mac architectures and every Apple notarization accepted before publishing.')
     if (manifest.signing.macos !== (report.notarization_status === 'accepted' ? 'signed-and-notarized' : 'signed-notarization-pending')) throw new Error('Mac signing manifest must match the actual notarization report.')
   }
   await validateDesktopUpdateFeeds(directory, version)
   const expectedAssets = new Map()
   for (const name of files) expectedAssets.set(name, { size: (await stat(path.join(directory, name))).size, digest: `sha256:${sums.get(name) || await digest(path.join(directory, name))}` })
+  const marker = `<!-- astral-${manifest.purpose}:${manifest.source_sha} -->`
+  const notes = await readFile(path.join(directory, 'RELEASE_NOTES.md'), 'utf8')
+  if (!notes.includes(marker)) throw new Error('Candidate release notes do not match the source.')
+  const sealSHA256 = await digest(path.join(directory, 'SHA256SUMS'))
+  const expectedSeal = environment.ASTRAL_RELEASE_BUNDLE_SHA256
+  if (expectedSeal !== undefined && (!/^[a-f0-9]{64}$/.test(expectedSeal) || sealSHA256 !== expectedSeal)) throw new Error('The sealed release bundle differs from the verified producer SHA256SUMS digest.')
+  if (requireSeal && manifest.build_provenance !== undefined && expectedSeal === undefined) throw new Error('Rolling publication requires the verified producer bundle digest.')
+  return { manifest, version, repository, files, expectedAssets, marker, notes, sealSHA256, macSigned }
+}
+
+// This verification reads final bytes only. It does not regenerate manifests,
+// checksums, feeds, signatures, archives, or contact GitHub.
+export async function verifyReleaseBundle(directory, { publicRelease = true, environment = process.env, requireSeal = false } = {}) {
+  return inspectReleaseBundle(directory, { publicRelease, environment, requireSeal })
+}
+
+// Publishing consumes the exact frozen bundle accepted by the native jobs.
+// Its only mutations are GitHub draft uploads and the final visibility switch.
+export async function createDraft(directory, { publicRelease = false, environment = process.env, fetch: request = globalThis.fetch, log = console.log } = {}) {
+  if (typeof publicRelease !== 'boolean') throw new Error('Public release mode must be selected explicitly.')
+  const token = environment.GH_TOKEN || environment.GITHUB_TOKEN
+  if (!token) throw new Error('A job-scoped GITHUB_TOKEN with contents:write is required.')
+  const { manifest, version, repository, files, expectedAssets, marker, notes, macSigned } = await verifyReleaseBundle(directory, { publicRelease, environment, requireSeal: publicRelease })
   const apiBase = environment.GITHUB_API_URL || 'https://api.github.com'
   if (apiBase !== 'https://api.github.com') throw new Error('This candidate publisher is configured only for github.com.')
   const headers = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'Astral-release-candidate' }
@@ -105,9 +134,6 @@ export async function createDraft(directory, { publicRelease = false, environmen
     for (const asset of assets) verifyAsset(asset)
     return assets
   }
-  const marker = `<!-- astral-${manifest.purpose}:${manifest.source_sha} -->`
-  const notes = await readFile(path.join(directory, 'RELEASE_NOTES.md'), 'utf8')
-  if (!notes.includes(marker)) throw new Error('Candidate release notes do not match the source.')
   let tagObject = (await api(`/git/ref/tags/${encodeURIComponent(manifest.tag)}`)).object
   for (let depth = 0; tagObject.type === 'tag' && depth < 8; depth++) tagObject = (await api(`/git/tags/${tagObject.sha}`)).object
   if (tagObject.type !== 'commit' || tagObject.sha !== manifest.source_sha) throw new Error('The existing release tag no longer identifies the validated source commit.')
@@ -199,8 +225,11 @@ export async function createDraft(directory, { publicRelease = false, environmen
 
 if (await isDirectInvocation(import.meta.url)) {
   const args = process.argv.slice(2)
-  const publicRelease = args[0] === '--public'
+  const verifyOnly = args[0] === '--verify'
+  const publicRelease = verifyOnly || args[0] === '--public'
   const directory = publicRelease ? args[1] : args[0]
-  if (!directory || directory.startsWith('--') || args.length !== (publicRelease ? 2 : 1)) { console.error('Usage: release-draft.mjs [--public] RELEASE_DIRECTORY'); process.exitCode = 1 }
-  else createDraft(directory, { publicRelease }).catch(error => { console.error(error.message); process.exitCode = 1 })
+  if (!directory || directory.startsWith('--') || args.length !== (publicRelease ? 2 : 1)) { console.error('Usage: release-draft.mjs [--verify|--public] RELEASE_DIRECTORY'); process.exitCode = 1 }
+  else (verifyOnly
+    ? verifyReleaseBundle(directory).then(value => console.log(JSON.stringify({ version: value.version, source_sha: value.manifest.source_sha, assets: value.files.length, bundle_sha256: value.sealSHA256 })))
+    : createDraft(directory, { publicRelease })).catch(error => { console.error(error.message); process.exitCode = 1 })
 }

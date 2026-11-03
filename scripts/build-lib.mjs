@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { buildNotices } from './build-notices.mjs'
+import { readReleaseVersion } from './release-version.mjs'
 
 export const root = fileURLToPath(new URL('../', import.meta.url))
 export function run(command, args, options = {}) {
@@ -29,12 +30,13 @@ export async function embedWeb() {
   }
   await cp(source, target, { recursive: true })
 }
-export async function buildServer(system, arch) {
-  const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
-  const output = path.join(root, 'dist/bin', `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`)
+export async function buildServer(system, arch, { buildRoot = root, environment = process.env } = {}) {
+  const version = await readReleaseVersion(buildRoot, environment)
+  const output = path.join(buildRoot, 'dist/bin', `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`)
   await mkdir(path.dirname(output), { recursive: true })
-  run('go', ['build', '-trimpath', '-ldflags', `-s -w -X github.com/oines/astral/internal/cli.Version=${manifest.version}`, '-o', output, './cmd/astral'], {
-    env: { ...process.env, GOWORK: process.env.GOWORK || 'auto', CGO_ENABLED: '0', GOOS: system, GOARCH: arch },
+  run('go', ['build', '-trimpath', '-ldflags', `-s -w -X github.com/oines/astral/internal/cli.Version=${version}`, '-o', output, './cmd/astral'], {
+    cwd: buildRoot,
+    env: { ...environment, GOWORK: environment.GOWORK || 'auto', CGO_ENABLED: '0', GOOS: system, GOARCH: arch },
   })
   return output
 }

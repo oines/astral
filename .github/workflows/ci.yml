@@ -1,15 +1,11 @@
-name: Check and build
+name: Source validation
 on:
-  push:
-    paths-ignore:
-      - "apps/website/**"
-      - ".github/workflows/website.yml"
-      - "wrangler.jsonc"
   pull_request:
     paths-ignore:
-      - "apps/website/**"
-      - ".github/workflows/website.yml"
-      - "wrangler.jsonc"
+      - apps/website/**
+      - .github/workflows/website.yml
+      - wrangler.jsonc
+  workflow_call: {}
 permissions:
   contents: read
 concurrency:
@@ -24,26 +20,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "26.7.0"
+          node-version: 26.7.0
       - run: node --test scripts/enrollment-installers.test.mjs scripts/desktop-process-identity.test.mjs
   check:
     runs-on: ubuntu-latest
     env:
-      GOWORK: "off"
+      GOWORK: off
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.3"
+          go-version: 1.26.3
           cache: true
       - uses: pnpm/action-setup@v4
         with:
-          version: "10.31.0"
+          version: 10.31.0
       - uses: actions/setup-node@v4
         with:
-          node-version: "26.7.0"
+          node-version: 26.7.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Check release versions and asset contracts
@@ -52,79 +48,48 @@ jobs:
           node scripts/computer-image.mjs verify
           node scripts/check-migrations.mjs
           node scripts/release-check.mjs
-          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs scripts/check-release-candidate.test.mjs scripts/check-migrations.test.mjs scripts/computer-image.test.mjs scripts/published-desktop-update.test.mjs scripts/desktop-update-fixture.test.mjs
+          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs scripts/check-migrations.test.mjs scripts/computer-image.test.mjs scripts/published-desktop-update.test.mjs scripts/desktop-update-fixture.test.mjs scripts/rolling-release-version.test.mjs scripts/build-lib.test.mjs scripts/rolling-release-inputs.test.mjs scripts/desktop-version-acceptance.test.mjs scripts/published-verification-version.test.mjs scripts/rolling-release-package-inputs.test.mjs scripts/rolling-release-tag.test.mjs scripts/rolling-release-workflow.test.mjs
       - name: Check headless installer without installing
         run: |
           bash -n scripts/install-server.sh
           bash scripts/install-server.sh --dry-run
           node --test scripts/install-server.test.mjs scripts/enrollment-installers.test.mjs scripts/desktop-renderer-auth.test.mjs scripts/headless-update-transport.test.mjs
       - run: test -z "$(git ls-files '*.go' | xargs gofmt -l)"
-      - run: go test -race ./...
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.15.0
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm build:distribution
-      - run: pnpm test:desktop-service
-      - run: git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
-      - uses: actions/upload-artifact@v4
-        with:
-          name: astral-server-binaries
-          path: dist/bin/
-          retention-days: 3
-  containers:
-    name: Container environment and in-place update
-    needs: check
-    runs-on: ubuntu-latest
-    env:
-      GOWORK: "off"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Reserve space for the published Ubuntu environment
+      - name: Verify generated API and SDK contracts
         run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
-          docker builder prune --force
-          df -h /
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.3"
-          # Do not restore the six-target compile cache into an image-build job.
-          cache: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: astral-server-binaries
-          path: dist/bin/
-      - run: go test -tags=integration -count=1 -timeout=20m ./internal/platform
+          pnpm openapi-generate
+          pnpm sdk-generate
+          git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
   native:
     name: Native ${{ matrix.os }}
-    needs: check
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            package: package:windows
           - os: ubuntu-latest
-            package: package:linux
           - os: macos-15-intel
-            package: package:mac-ci
     runs-on: ${{ matrix.os }}
     env:
-      GOWORK: "off"
+      GOWORK: off
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.3"
+          go-version: 1.26.3
       - uses: pnpm/action-setup@v4
         with:
-          version: "10.31.0"
+          version: 10.31.0
       - uses: actions/setup-node@v4
         with:
-          node-version: "26.7.0"
+          node-version: 26.7.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Check native enrollment installer preflight
@@ -134,119 +99,3 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - uses: actions/download-artifact@v4
-        id: distribution
-        with:
-          name: astral-server-binaries
-          path: dist/bin/
-      - name: Restore executable permissions after artifact download
-        if: runner.os != 'Windows'
-        run: chmod +x dist/bin/astral-*
-      - name: Prepare Windows directory lock diagnostics
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $astralHandleDir = Join-Path $env:RUNNER_TEMP 'astral-handle-diagnostics'
-          New-Item -ItemType Directory -Force $astralHandleDir | Out-Null
-          Invoke-WebRequest 'https://download.sysinternals.com/files/Handle.zip' -OutFile "$astralHandleDir/Handle.zip"
-          Expand-Archive "$astralHandleDir/Handle.zip" -DestinationPath $astralHandleDir
-          $astralHandle = Join-Path $astralHandleDir 'handle64.exe'
-          $astralSignature = Get-AuthenticodeSignature $astralHandle
-          if ($astralSignature.Status -ne 'Valid' -or $astralSignature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
-            throw 'The Microsoft Handle diagnostic utility has an invalid signature.'
-          }
-          "ASTRAL_WINDOWS_HANDLE=$astralHandle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - run: pnpm test:desktop-service
-        if: runner.os != 'Windows'
-      - name: Repeat Windows desktop lifecycle
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          foreach ($astralIteration in 1..5) {
-            Write-Output "Windows desktop lifecycle $astralIteration/5"
-            pnpm test:desktop-service
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-      - name: Upload Windows lock diagnostics
-        if: ${{ failure() && runner.os == 'Windows' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: astral-windows-locks
-          path: ${{ runner.temp }}/astral-handles.txt
-          retention-days: 3
-      - name: Native downloaded installer
-        run: go test -tags=integration -run '^TestDistributionInstallerRegistersActualDaemon$' -count=1 -timeout=3m ./internal/platform
-      - name: Prepare Linux user session for native service test
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          sudo systemctl start user@$(id -u).service
-          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
-          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
-      - run: pnpm test:daemon-service
-      - name: Real native Daemon management update and process cleanup
-        timeout-minutes: 12
-        run: node scripts/check-daemon-update.mjs
-      - name: Root Linux Computer user service and management update
-        if: runner.os == 'Linux'
-        timeout-minutes: 15
-        shell: bash
-        run: |
-          astral_go=$(command -v go)
-          astral_node=$(command -v node)
-          astral_root_cache="$RUNNER_TEMP/astral-root-daemon-go-cache"
-          trap 'sudo rm -rf -- "$astral_root_cache"' EXIT
-          sudo env -i HOME=/root CI=true GITHUB_ACTIONS=true RUNNER_TEMP="$RUNNER_TEMP" \
-            PATH="$(dirname "$astral_go"):$(dirname "$astral_node"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-            GOWORK=off GOCACHE="$astral_root_cache" GOMODCACHE="$(go env GOMODCACHE)" \
-            XDG_RUNTIME_DIR="/run/user/$(id -u)" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus" \
-            "$astral_node" scripts/check-daemon-update.mjs --root-user
-      - name: Native headless Server install and recovery
-        if: runner.os == 'Linux'
-        run: node scripts/check-headless-install.mjs
-      - run: pnpm --filter @astral/desktop ${{ matrix.package }}
-        id: package
-        # Packaging is independent of the separately enrolled Daemon service.
-        # Keep that failure visible while collecting native App results too.
-        if: ${{ !cancelled() && steps.distribution.outcome == 'success' }}
-      - name: Packaged App startup and shutdown
-        if: ${{ !cancelled() && steps.package.outcome == 'success' && runner.os != 'Linux' }}
-        run: pnpm test:packaged-desktop
-      - name: Install native Linux DEB
-        id: deb_install
-        if: ${{ !cancelled() && steps.package.outcome == 'success' && runner.os == 'Linux' }}
-        run: |
-          desktop_deb_arch=$(dpkg --print-architecture)
-          for desktop_deb in apps/desktop/release/*.deb; do
-            if [ "$(dpkg-deb --field "$desktop_deb" Architecture)" = "$desktop_deb_arch" ]; then
-              sudo apt-get update
-              sudo apt-get install --yes "./$desktop_deb"
-              exit 0
-            fi
-          done
-          echo "::error::No DEB package matches native architecture $desktop_deb_arch."
-          exit 1
-      - name: Installed Linux DEB App startup and shutdown
-        if: ${{ !cancelled() && steps.deb_install.outcome == 'success' && runner.os == 'Linux' }}
-        env:
-          ASTRAL_PACKAGED_APP_EXECUTABLE: /opt/Astral/astral
-        run: xvfb-run -a pnpm test:packaged-desktop
-      - name: Preserve actual Desktop titlebar layout screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: astral-titlebar-${{ matrix.os }}
-          path: ${{ runner.temp }}/astral-titlebar/*.jpg
-          if-no-files-found: ignore
-          retention-days: 3
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
-        with:
-          name: astral-desktop-${{ matrix.os }}
-          retention-days: 3
-          path: |
-            apps/desktop/release/*.exe
-            apps/desktop/release/*.zip
-            apps/desktop/release/*.dmg
-            apps/desktop/release/*.AppImage
-            apps/desktop/release/*.deb

@@ -127,8 +127,6 @@ func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) 
 	t.Setenv("PATH", bin)
 	t.Setenv("DOCKER_HOST", "unix:///unavailable-astral-test.sock")
 	t.Setenv("DOCKER_CONTEXT", "")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	root := t.TempDir()
 	s, err := newAuthenticatedTestServer(Config{Listen: "127.0.0.1:0", DataDirectory: filepath.Join(root, "server"), ComputerDirectory: filepath.Join(root, "computers"), NoLocal: true})
 	if err != nil {
@@ -138,6 +136,10 @@ func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) 
 	if err = s.Start(); err != nil {
 		t.Fatal(err)
 	}
+	// Start the operation budget after fixture initialization. ProbeDocker may
+	// use 15 seconds, followed by a separate 5-second persistence context.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	operation, err := s.CreateContainer(ctx, "retryable-create")
 	if err != nil {
 		t.Fatal(err)
