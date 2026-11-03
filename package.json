@@ -42,7 +42,8 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10",
-    "vue-eslint-parser": "^10.4.1"
+    "vue-eslint-parser": "^10.4.1",
+    "yaml": "2.9.1"
   },
   "lint-staged": {
     "*.{vue,js,mjs,ts}": "eslint --fix"

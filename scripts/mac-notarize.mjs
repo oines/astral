@@ -5,8 +5,8 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { desktopNames, digest, validateMacSigningReport } from './release-assets.mjs'
-import { darwinNames, signingEnvironment, verifyApp, verifyBinaries } from './mac-signing.mjs'
-import { isDirectInvocation, readReleaseVersion, repositoryRoot } from './release-version.mjs'
+import { darwinNames, personalTeam, signingEnvironment, verifyApp, verifyBinaries } from './mac-signing.mjs'
+import { isDirectInvocation, readReleaseVersion, repositoryRoot, validateVersion } from './release-version.mjs'
 
 const execute = promisify(execFile)
 const releaseDirectory = path.join(repositoryRoot, 'apps/desktop/release')
@@ -20,6 +20,7 @@ async function command(program, args, options = {}) {
 }
 
 function context() {
+  if (process.platform !== 'darwin' || process.env.CI !== 'true') throw new Error('Notarization runs only on a disposable macOS CI runner.')
   const signing = signingEnvironment()
   const sourceSHA = process.env.RELEASE_SOURCE_SHA
   const profile = process.env.ASTRAL_NOTARY_PROFILE
@@ -48,8 +49,46 @@ async function writeSubmissionDiagnostic(value) {
   await writeFile(path.join(reportDirectory, `${value.id}.json`), `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
 }
 
-export async function submit(file, configuration, { run = command, record = writeSubmissionDiagnostic, log = console.log } = {}) {
+export async function waitForSubmission(id, configuration, { run = command, record = async () => {}, log = console.log, pause = delay, now = Date.now, attempts = 15, timeout = 30 * 60_000 } = {}) {
+  if (!uuid.test(id || '') || !Number.isSafeInteger(attempts) || attempts < 1 || attempts > 15 || !Number.isSafeInteger(timeout) || timeout < 1 || timeout > 30 * 60_000) throw new Error('A valid submission ID and a bounded notarization wait are required.')
+  id = id.toLowerCase()
   const auth = ['--keychain-profile', configuration.profile, '--keychain', configuration.keychain]
+  const deadline = now() + timeout
+  for (let attempt = 0; attempt < attempts && now() < deadline; attempt++) {
+    let response
+    try {
+      const remaining = deadline - now()
+      if (remaining <= 0) break
+      const result = await run('xcrun', ['notarytool', 'wait', id, ...auth, '--timeout', '2m', '--output-format', 'json'], { timeout: Math.min(180_000, remaining) })
+      response = submissionResponse(result, id, true)
+    } catch (error) {
+      if (error?.code === 'ERR_NOTARY_ID') throw error
+      // An expired wait or an interrupted status query does not authorize a
+      // second upload. Every subsequent query stays bound to this exact ID.
+    }
+    if ((!response || response.status === 'In Progress') && now() < deadline) {
+      try {
+        const result = await run('xcrun', ['notarytool', 'info', id, ...auth, '--output-format', 'json'], { timeout: Math.min(120_000, deadline - now()) })
+        response = submissionResponse(result, id, true)
+      } catch (error) {
+        if (error?.code === 'ERR_NOTARY_ID') throw error
+      }
+    }
+    if (response) {
+      await record(response)
+      log(`Apple notarization ${id}: ${response.status}`)
+      if (response.status !== 'In Progress') return acceptedSubmission({ id, status: response.status })
+    }
+    if (attempt + 1 < attempts && now() < deadline) await pause(Math.min((attempt + 1) * 1_000, 15_000, deadline - now()))
+  }
+  throw new Error(`Apple notarization ${id} is not Accepted after the bounded wait; the saved submission and input remain available for resume. No release is approved.`)
+}
+
+export async function submit(file, configuration, { run = command, record = writeSubmissionDiagnostic, log = console.log, fingerprint = digest, ...waitOptions } = {}) {
+  const auth = ['--keychain-profile', configuration.profile, '--keychain', configuration.keychain]
+  let artifactSHA256
+  try { artifactSHA256 = await fingerprint(file) } catch { throw new Error('The notarization input could not be fingerprinted.') }
+  if (!/^[a-f0-9]{64}$/.test(artifactSHA256 || '')) throw new Error('The notarization input must have a valid SHA256.')
   let uploaded
   let submitSucceeded = false
   let submitExitCode = null
@@ -67,7 +106,8 @@ export async function submit(file, configuration, { run = command, record = writ
   try { uploadResponse = submissionResponse(uploaded) }
   catch { throw new Error('Apple notarization upload did not return a valid submission ID; no artifacts are approved.') }
   const id = uploadResponse.id.toLowerCase()
-  const diagnostic = { id, name: path.basename(file), upload_status: submitSucceeded ? 'completed' : 'unconfirmed', submit_exit_code: submitExitCode }
+  const diagnostic = { id, name: path.basename(file), artifact_sha256: artifactSHA256, upload_status: submitSucceeded ? 'completed' : 'unconfirmed', submit_exit_code: submitExitCode }
+  if (/^[a-f0-9]{40}$/.test(configuration.sourceSHA || '')) diagnostic.source_sha = configuration.sourceSHA
   const save = async response => {
     if (submitSucceeded) {
       if (submissionStatuses.has(response.status)) diagnostic.status = response.status
@@ -87,31 +127,30 @@ export async function submit(file, configuration, { run = command, record = writ
   log(`Apple notarization ${id}: upload CLI completed (exit 0)`)
   if (['Invalid', 'Rejected'].includes(uploadResponse.status)) return acceptedSubmission({ id, status: uploadResponse.status })
 
-  let response
-  try {
-    const result = await run('xcrun', ['notarytool', 'wait', id, ...auth, '--timeout', '2m', '--output-format', 'json'], { timeout: 180_000 })
-    response = submissionResponse(result, id, true)
-  } catch (error) {
-    if (error?.code === 'ERR_NOTARY_ID') throw error
-    // Query this exact submission once after an interrupted or unusable wait.
+  return waitForSubmission(id, configuration, { ...waitOptions, run, record: save, log })
+}
+
+export async function resumeSubmission(file, receipt, configuration, { fingerprint = digest, record = writeSubmissionDiagnostic, ...options } = {}) {
+  if (!uuid.test(receipt?.id || '') || receipt.upload_status !== 'completed' || receipt.submit_exit_code !== 0 ||
+      receipt.name !== path.basename(file) || !/^[a-f0-9]{64}$/.test(receipt.artifact_sha256 || '') || receipt.source_sha !== configuration.sourceSHA) {
+    throw new Error('Resume requires the confirmed upload receipt for this source and input file.')
   }
-  if (!response || response.status === 'In Progress') {
-    try {
-      const result = await run('xcrun', ['notarytool', 'info', id, ...auth, '--output-format', 'json'])
-      response = submissionResponse(result, id, true)
-    } catch (error) {
-      if (error?.code === 'ERR_NOTARY_ID') throw error
-      // The saved upload ID remains available for a later read-only query.
-    }
+  let actual
+  try { actual = await fingerprint(file) } catch { throw new Error('The saved notarization input could not be fingerprinted.') }
+  if (actual !== receipt.artifact_sha256) throw new Error('The notarization input changed; refusing to reuse its Apple submission ID.')
+  const diagnostic = {
+    id: receipt.id.toLowerCase(), name: receipt.name, artifact_sha256: actual,
+    upload_status: 'completed', submit_exit_code: 0,
+    ...(receipt.source_sha === undefined ? {} : { source_sha: receipt.source_sha }),
   }
-  if (!response) {
-    log(`Apple notarization ${id}: status unknown after confirmed upload; releasing signed artifacts with notarization pending`)
-    return { id, status: 'Unknown' }
-  }
-  await save(response)
-  log(`Apple notarization ${id}: ${response.status}`)
-  if (response.status === 'In Progress') return { id, status: 'In Progress' }
-  return acceptedSubmission({ id, status: response.status })
+  return waitForSubmission(diagnostic.id, configuration, {
+    ...options,
+    record: async response => {
+      diagnostic.status = response.status
+      if (typeof response.createdDate === 'string' && response.createdDate.length < 128 && Number.isFinite(Date.parse(response.createdDate))) diagnostic.createdDate = new Date(response.createdDate).toISOString()
+      try { await record({ ...diagnostic }) } catch { throw new Error('Could not save the Apple submission diagnostic; no artifacts are approved.') }
+    },
+  })
 }
 
 async function runStapler(target, phases, { run = command, pause = delay, log = console.log } = {}) {
@@ -179,11 +218,15 @@ async function notarizeBinaries(directory) {
       await copyFile(path.join(directory, name), path.join(source, name))
       await chmod(path.join(source, name), 0o755)
     }
-    const archive = path.join(temporary, 'astral-darwin.zip')
+    // Keep the exact submitted archive beside its receipt when Apple remains
+    // unavailable. A later explicit resume must use these bytes, not a rebuilt ZIP.
+    await mkdir(reportDirectory, { recursive: true })
+    const archive = path.join(reportDirectory, 'astral-darwin.zip')
     await command('/usr/bin/ditto', ['-c', '-k', '--keepParent', source, archive])
     const notarization = { kind: 'binaries', ...await submit(archive, configuration) }
     await writeReport('binaries', {
       version: await readReleaseVersion(), source_sha: configuration.sourceSHA,
+      team_id: configuration.team, certificate_expires_at: configuration.expiration,
       notarizations: [notarization], assets: await Promise.all(darwinNames.map(name => asset(path.join(directory, name)))),
     })
   } finally { await rm(temporary, { recursive: true, force: true }) }
@@ -241,31 +284,55 @@ async function notarizeApp(app, arch) {
     finally { await command('/usr/bin/hdiutil', ['detach', mount]) }
     await writeReport(arch, {
       version, source_sha: configuration.sourceSHA, arch, native_tested: nativeTested,
+      team_id: configuration.team, certificate_expires_at: configuration.expiration,
       notarizations: [dmgSubmission], assets: [await asset(zip), await asset(dmg)],
     })
   } finally { await rm(temporary, { recursive: true, force: true }) }
 }
 
-async function finalize() {
-  const configuration = context()
-  const version = await readReleaseVersion()
-  const reports = await Promise.all(['binaries', 'x64', 'arm64'].map(async name => JSON.parse(await readFile(path.join(reportDirectory, `${name}.json`), 'utf8'))))
-  if (reports.some(report => report.version !== version || report.source_sha !== configuration.sourceSHA)) throw new Error('Notarization reports do not describe the current source/version.')
-  if (reports.filter(report => report.native_tested === true).length !== 1 || !reports.some(report => report.arch === process.arch && report.native_tested)) throw new Error('The final native ZIP App has not passed startup/shutdown acceptance.')
-  const notarized = reports.flatMap(report => report.notarizations).every(item => item.status === 'Accepted')
-  const report = {
-    schema_version: 2, version, source_sha: configuration.sourceSHA, team_id: configuration.team,
-    certificate_expires_at: configuration.expiration, status: 'signed', notarization_status: notarized ? 'accepted' : 'pending', native_tested_arch: process.arch,
-    checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: notarized, gatekeeper: notarized, packaged_app_startup_shutdown: true },
-    notarizations: reports.flatMap(report => report.notarizations), assets: reports.flatMap(report => report.assets),
+export function combineNotarizationReports(reports, { version, sourceSHA, now = Date.now() }) {
+  validateVersion(version)
+  if (!/^[a-f0-9]{40}$/.test(sourceSHA || '') || !Array.isArray(reports) || reports.length !== 3 || reports.some(report => !report || report.version !== version || report.source_sha !== sourceSHA)) throw new Error('Notarization reports do not describe the current source/version.')
+  const binaries = reports.filter(report => report.arch === undefined)
+  const appReports = ['x64', 'arm64'].map(arch => {
+    const matching = reports.filter(report => report.arch === arch)
+    if (matching.length !== 1 || matching[0].native_tested !== true) throw new Error(`The final ${arch} ZIP App has not passed native startup/shutdown acceptance.`)
+    return matching[0]
+  })
+  if (binaries.length !== 1 || binaries[0].native_tested !== undefined) throw new Error('Exactly one independent binary notarization report is required.')
+  const ordered = [...binaries, ...appReports]
+  const expiration = binaries[0].certificate_expires_at
+  if (!Number.isFinite(Date.parse(expiration)) || Date.parse(expiration) <= now || ordered.some(report => report.team_id !== personalTeam || report.certificate_expires_at !== expiration)) throw new Error('Notarization reports must use the same current Developer ID certificate and personal team.')
+  const submissions = ordered.flatMap(report => report.notarizations || [])
+  if (submissions.length !== 3 || new Set(submissions.map(item => item.id?.toLowerCase())).size !== 3 ||
+      submissions[0].kind !== 'binaries' || submissions[0].arch !== undefined || appReports.some((report, index) => report.notarizations?.length !== 1 || submissions[index + 1].kind !== 'dmg' || submissions[index + 1].arch !== report.arch)) throw new Error('Exactly one binary and two architecture-specific DMG notarizations are required.')
+  for (const submission of submissions) acceptedSubmission(submission)
+  const expectedNames = [...darwinNames, ...desktopNames(version).filter(name => name.includes('-mac-'))]
+  const assets = ordered.flatMap(report => report.assets || [])
+  if (assets.length !== expectedNames.length || new Set(assets.map(item => item.name)).size !== expectedNames.length || assets.some(item => !expectedNames.includes(item.name) || !Number.isSafeInteger(item.size) || item.size <= 0 || !/^[a-f0-9]{64}$/.test(item.sha256 || ''))) throw new Error('Mac notarization asset inventory is incomplete or ambiguous.')
+  for (const [report, expected] of [[binaries[0], darwinNames], ...appReports.map(report => [report, expectedNames.filter(name => name.includes(`-mac-${report.arch}.`))])]) {
+    if (report.assets?.length !== expected.length || report.assets.some(item => !expected.includes(item.name))) throw new Error('A notarization report contains another architecture’s assets.')
   }
+  return {
+    schema_version: 3, version, source_sha: sourceSHA, team_id: personalTeam,
+    certificate_expires_at: expiration, status: 'signed', notarization_status: 'accepted', native_tested_arches: ['x64', 'arm64'],
+    checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: true, gatekeeper: true, packaged_app_startup_shutdown: true },
+    notarizations: submissions, assets,
+  }
+}
+
+export async function finalize({ directory = releaseDirectory, programs = path.join(repositoryRoot, 'dist/bin'), sourceSHA = process.env.RELEASE_SOURCE_SHA, version } = {}) {
+  version ??= await readReleaseVersion()
+  const reports = await Promise.all(['binaries', 'x64', 'arm64'].map(async name => JSON.parse(await readFile(path.join(directory, 'notarization', `${name}.json`), 'utf8'))))
+  const report = combineNotarizationReports(reports, { version, sourceSHA })
   const files = new Map([
-    ...darwinNames.map(name => [name, path.join(repositoryRoot, 'dist/bin', name)]),
-    ...desktopNames(version).filter(name => name.includes('-mac-')).map(name => [name, path.join(releaseDirectory, name)]),
+    ...darwinNames.map(name => [name, path.join(programs, name)]),
+    ...desktopNames(version).filter(name => name.includes('-mac-')).map(name => [name, path.join(directory, name)]),
   ])
-  await validateMacSigningReport(report, { version, sourceSHA: configuration.sourceSHA, files })
-  await writeFile(path.join(releaseDirectory, 'mac-signing-report.json'), `${JSON.stringify(report, null, 2)}\n`)
+  await validateMacSigningReport(report, { version, sourceSHA, files })
+  await writeFile(path.join(directory, 'mac-signing-report.json'), `${JSON.stringify(report, null, 2)}\n`)
   console.log(`Mac signatures, final DMG/ZIP checks and native App startup/shutdown passed. Apple notarization: ${report.notarization_status}.`)
+  return report
 }
 
 async function main() {
@@ -273,8 +340,12 @@ async function main() {
   if (extra.length) throw new Error('Unexpected notarization arguments.')
   if (operation === 'binaries' && target && !arch) await notarizeBinaries(path.resolve(target))
   else if (operation === 'app' && target && arch) await notarizeApp(path.resolve(target), arch)
-  else if (operation === 'finalize' && !target) await finalize()
-  else throw new Error('Usage: mac-notarize.mjs binaries DIST | app APP x64|arm64 | finalize')
+  else if (operation === 'resume-submission' && target && uuid.test(arch || '')) {
+    const receipt = JSON.parse(await readFile(path.join(reportDirectory, `${arch.toLowerCase()}.json`), 'utf8'))
+    await resumeSubmission(path.resolve(target), receipt, context())
+  }
+  else if (operation === 'finalize' && !arch) await finalize(target ? { programs: path.resolve(target) } : {})
+  else throw new Error('Usage: mac-notarize.mjs binaries DIST | app APP x64|arm64 | resume-submission INPUT SUBMISSION_ID | finalize [PROGRAMS]')
 }
 
 if (await isDirectInvocation(import.meta.url)) {

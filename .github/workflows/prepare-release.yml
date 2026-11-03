@@ -1,0 +1,80 @@
+name: Prepare Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'apps/website/**'
+      - '.github/workflows/website.yml'
+      - 'wrangler.jsonc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only the disposable source checks and unsigned build are replaceable.
+concurrency:
+  group: astral-release-prepare-main
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+    with:
+      source_only: true
+
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.3'
+          cache: true
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '10.31.0'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '26.7.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Freeze this build's source, version and producer identity
+        run: node scripts/rolling-release-version.mjs freeze --output release-build-metadata/release-build.json
+      - name: Apply the frozen version in the runner checkout
+        run: node scripts/rolling-release-version.mjs apply --metadata release-build-metadata/release-build.json
+      - name: Build the six release programs once
+        run: pnpm build:distribution
+      - name: Read Host and Core migration metadata from the built program
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: node scripts/release-version.mjs formats --binary dist/bin/astral-linux-amd64 --sha "$SOURCE_SHA" > dist/bin/release-formats.json
+      - name: Include the pinned installers
+        shell: bash
+        run: |
+          cp scripts/install-server.sh dist/bin/install-server.sh
+          cp internal/platform/installers/install.sh dist/bin/install-computer.sh
+          cp internal/platform/installers/install.ps1 dist/bin/install-computer.ps1
+      - name: Require generated contracts to match the source
+        run: git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-metadata-${{ github.run_attempt }}
+          path: release-build-metadata/release-build.json
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-distribution-${{ github.run_attempt }}
+          path: dist/bin/
+          if-no-files-found: error
+          retention-days: 14

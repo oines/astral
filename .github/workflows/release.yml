@@ -1,198 +1,213 @@
-name: Release
+name: Rolling Release
 
 on:
+  workflow_run:
+    workflows: [Prepare Release]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
-      tag:
-        description: Existing version tag; leave empty to verify all platform packages and native updates without publishing
-        required: false
+      build_run_id:
+        description: Successful Prepare run before tag creation; use Rerun failed jobs after tagging
+        required: true
         type: string
-  push:
-    tags:
-      - 'v[0-9]*'
 
-# Mac signing is restricted to the protected mac-signing environment and trusted
-# main history. Tagged runs publish only after final package and asset checks.
 permissions:
   contents: read
+  actions: read
 
+# Protect signing, notarization, upload and public-update acceptance together.
+# A single pending slot coalesces intermediate requests; no FIFO build backlog.
 concurrency:
-  group: release-candidate-${{ inputs.tag || github.ref_name }}
+  group: astral-rolling-release
   cancel-in-progress: false
 
 jobs:
   validate:
-    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-      sha: ${{ steps.version.outputs.sha }}
-      ci_url: ${{ steps.ci.outputs.url }}
+      eligible: ${{ steps.resolve.outputs.eligible }}
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      build_run_id: ${{ steps.producer.outputs.id }}
+      build_metadata_artifact_id: ${{ steps.resolve.outputs.build_metadata_artifact_id }}
+      unsigned_artifact_id: ${{ steps.resolve.outputs.unsigned_artifact_id }}
     steps:
+      # Resolve using trusted current main before checking out producer code.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.tag || github.sha }}
+          ref: main
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '26.7.0'
-      - name: Validate existing tag, release version and trusted main history
-        id: version
-        shell: bash
+      - name: Select the producer without evaluating shell input
+        id: producer
         env:
-          RELEASE_TAG: ${{ inputs.tag || (github.event_name == 'push' && github.ref_name) || '' }}
+          ASTRAL_BUILD_RUN_ID: ${{ github.event.workflow_run.id || inputs.build_run_id }}
         run: |
-          set -euo pipefail
-          if [[ -n "$RELEASE_TAG" && ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo '::error::Release tag must be vMAJOR.MINOR.PATCH without leading zeroes or suffixes.'
-            exit 1
-          fi
-          release_sha=$(git rev-parse HEAD)
-          if [ -n "$RELEASE_TAG" ]; then
-            git show-ref --verify "refs/tags/$RELEASE_TAG"
-            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$release_sha"
-          fi
-          git merge-base --is-ancestor "$release_sha" origin/main
-          # No script from the selected tag runs before the trusted-history check.
-          if [ -n "$RELEASE_TAG" ]; then
-            release_version=$(node scripts/release-version.mjs check --tag "$RELEASE_TAG")
-          else
-            release_version=$(node scripts/release-version.mjs check)
-          fi
-          echo "version=$release_version" >> "$GITHUB_OUTPUT"
-          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
-      - name: Check candidate gate regression tests
-        run: node --test scripts/check-release-candidate.test.mjs
-      - name: Verify the pinned public multi-architecture Computer environment
-        run: node scripts/computer-image.mjs verify
-      - name: Require successful ordinary CI for this exact source commit
-        id: ci
+          node --input-type=module <<'JS'
+          import { appendFileSync } from 'node:fs'
+          const value = process.env.ASTRAL_BUILD_RUN_ID
+          if (!/^[1-9]\d*$/.test(value || '') || !Number.isSafeInteger(Number(value))) throw new Error('A valid Prepare run ID is required')
+          appendFileSync(process.env.GITHUB_OUTPUT, `id=${value}\n`)
+          JS
+      - name: Resolve trusted source and immutable inputs; discard superseded requests
+        id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ steps.version.outputs.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ci_url=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --commit "$SOURCE_SHA" --event push --status success --limit 1 --json url --jq '.[0].url // empty')
-          if [ -z "$ci_url" ]; then
-            echo '::error::No successful main/push CI exists for this source commit. Finish native acceptance before building a candidate.'
-            exit 1
-          fi
-          echo "url=$ci_url" >> "$GITHUB_OUTPUT"
-      - name: Require a successful no-tag candidate for this exact release source
-        if: steps.version.outputs.tag != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ steps.version.outputs.sha }}
-        run: node scripts/check-release-candidate.mjs
-
-  distribution:
-    needs: validate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      GOWORK: 'off'
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ needs.validate.outputs.sha }}
-          persist-credentials: false
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version: '1.26.3'
-          cache: true
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-        with:
-          version: '10.31.0'
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '26.7.0'
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Build six unsigned unified binaries
-        run: pnpm build:distribution
-      - name: Read current data formats from the built native executable
-        env:
-          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
-        run: node scripts/release-version.mjs formats --binary dist/bin/astral-linux-amd64 --sha "$SOURCE_SHA" > dist/bin/release-formats.json
-      - name: Include Server and pinned Computer installers
-        run: |
-          cp scripts/install-server.sh dist/bin/install-server.sh
-          cp internal/platform/installers/install.sh dist/bin/install-computer.sh
-          cp internal/platform/installers/install.ps1 dist/bin/install-computer.ps1
-      - name: Require generated contracts to match committed sources
-        run: git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: unsigned-distribution
-          path: dist/bin/
-          if-no-files-found: error
-          retention-days: 7
+          ASTRAL_BUILD_RUN_ID: ${{ steps.producer.outputs.id }}
+        run: node scripts/rolling-release-inputs.mjs resolve --output-dir .release-resolution
 
   mac-programs:
-    name: Sign Mac unified programs
-    needs: [validate, distribution]
+    name: Sign unified Mac programs
+    if: needs.validate.outputs.eligible == 'true'
+    needs: validate
     runs-on: macos-15-intel
     timeout-minutes: 20
     environment: mac-signing
     env:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-      RELEASE_SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+      RELEASE_SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+      GOWORK: 'off'
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.validate.outputs.sha }}
+          ref: ${{ needs.validate.outputs.source_sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/release-source
         with:
-          node-version: '26.7.0'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: unsigned-distribution
-          path: dist/bin/
+          metadata-artifact-id: ${{ needs.validate.outputs.build_metadata_artifact_id }}
+          build-run-id: ${{ needs.validate.outputs.build_run_id }}
+          source-sha: ${{ needs.validate.outputs.source_sha }}
+      - name: Download the once-built unsigned distribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.validate.outputs.unsigned_artifact_id }}
+          BUILD_RUN_ID: ${{ needs.validate.outputs.build_run_id }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+        run: node scripts/rolling-release-inputs.mjs download --artifact-id "$ARTIFACT_ID" --run-id "$BUILD_RUN_ID" --source-sha "$SOURCE_SHA" --output dist/bin
       - run: chmod +x dist/bin/astral-*
-      - name: Import personal Developer ID
+      - name: Import Developer ID and Apple credentials
         env:
           MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
           MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: node scripts/mac-credentials.mjs setup
-      - name: Sign standalone Mac programs and refresh all six checksums
+      - name: Sign Darwin programs once and freeze their checksums
         run: node scripts/mac-signing.mjs sign-binaries dist/bin
-      - name: Always remove signing credentials
+      - name: Always remove signing and Apple credentials
+        if: always()
+        timeout-minutes: 5
+        run: node scripts/mac-credentials.mjs cleanup
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
+        with:
+          name: signed-distribution
+          path: dist/bin/
+          if-no-files-found: error
+          retention-days: 14
+
+  mac-binaries-notary:
+    name: Notarize unified Mac programs
+    needs: [validate, mac-programs]
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    environment: mac-signing
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      RELEASE_SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/release-source
+        with:
+          metadata-artifact-id: ${{ needs.validate.outputs.build_metadata_artifact_id }}
+          build-run-id: ${{ needs.validate.outputs.build_run_id }}
+          source-sha: ${{ needs.validate.outputs.source_sha }}
+      - name: Download the exact signed unified programs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.mac-programs.outputs.artifact_id }}
+          BUILD_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: node scripts/rolling-release-inputs.mjs download --artifact-id "$ARTIFACT_ID" --run-id "$BUILD_RUN_ID" --output dist/bin
+      - name: Restore executable modes
+        if: runner.os != 'Windows'
+        run: chmod +x dist/bin/astral-*
+      - name: Import Developer ID and Apple credentials
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: node scripts/mac-credentials.mjs setup
+      - name: Submit the signed program archive once and wait for its Apple receipt
+        run: node scripts/mac-notarize.mjs binaries dist/bin
+      - name: Always remove signing and Apple credentials
         if: always()
         timeout-minutes: 5
         run: node scripts/mac-credentials.mjs cleanup
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: candidate-distribution
-          path: dist/bin/
+          name: mac-notary-binaries
+          path: apps/desktop/release/notarization/binaries.json
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
+      - name: Preserve Apple receipts and original submission bytes on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: failed-notary-binaries
+          path: apps/desktop/release/notarization/
+          if-no-files-found: ignore
+          retention-days: 14
 
   mac:
-    name: Sign Mac packages and report notarization
+    name: Native signed Mac (${{ matrix.arch }})
     needs: [validate, mac-programs]
-    runs-on: macos-15-intel
-    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 70
     environment: mac-signing
     env:
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
-      RELEASE_SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+      RELEASE_SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+      GOWORK: 'off'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.validate.outputs.sha }}
+          ref: ${{ needs.validate.outputs.source_sha }}
+          fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/release-source
+        with:
+          metadata-artifact-id: ${{ needs.validate.outputs.build_metadata_artifact_id }}
+          build-run-id: ${{ needs.validate.outputs.build_run_id }}
+          source-sha: ${{ needs.validate.outputs.source_sha }}
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: '10.31.0'
@@ -201,77 +216,76 @@ jobs:
           node-version: '26.7.0'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: candidate-distribution
-          path: dist/bin/
-      - run: chmod +x dist/bin/astral-*
-      - name: Build Desktop sources before loading credentials
+      - name: Download the exact signed unified programs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.mac-programs.outputs.artifact_id }}
+          BUILD_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: node scripts/rolling-release-inputs.mjs download --artifact-id "$ARTIFACT_ID" --run-id "$BUILD_RUN_ID" --output dist/bin
+      - name: Restore executable modes
+        if: runner.os != 'Windows'
+        run: chmod +x dist/bin/astral-*
+      - name: Require the requested native architecture
+        env:
+          NATIVE_ARCH: ${{ matrix.arch }}
+        run: node --input-type=module -e 'if (process.arch !== process.env.NATIVE_ARCH) throw new Error("Native Mac architecture differs")'
+      - name: Build Desktop sources
         run: |
           node scripts/build-icons.mjs
           pnpm --filter @astral/desktop exec electron-vite build
-      - name: Import personal Developer ID and validate notarization credentials
+      - name: Import Developer ID and Apple credentials
         env:
           MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
           MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: node scripts/mac-credentials.mjs setup
-      - name: Notarize standalone Mac programs
-        run: node scripts/mac-notarize.mjs binaries dist/bin
-      - name: Package and sign Intel App
-        run: pnpm --filter @astral/desktop exec electron-builder --config electron-builder.release.cjs --mac --dir --x64 --publish never
-      - name: Notarize and verify final Intel DMG and ZIP
-        run: node scripts/mac-notarize.mjs app "$GITHUB_WORKSPACE/apps/desktop/release/mac/Astral.app" x64
-      - name: Package and sign Apple Silicon App
-        run: pnpm --filter @astral/desktop exec electron-builder --config electron-builder.release.cjs --mac --dir --arm64 --publish never
-      - name: Notarize and verify final Apple Silicon DMG and ZIP
-        run: node scripts/mac-notarize.mjs app "$GITHUB_WORKSPACE/apps/desktop/release/mac-arm64/Astral.app" arm64
-      - name: Verify signed final bytes and record accepted or pending Apple status
-        run: node scripts/mac-notarize.mjs finalize
-      - name: Verify actual signed App renderer and titlebar layout
+      - name: Package and sign this native App once
+        env:
+          MAC_ARCH: ${{ matrix.arch }}
+        run: pnpm --filter @astral/desktop exec electron-builder --config electron-builder.release.cjs --mac --dir --"$MAC_ARCH" --publish never
+      - name: Notarize and verify the original DMG and ZIP bytes
+        env:
+          MAC_ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          astral_app_dir=mac
+          if [ "$MAC_ARCH" = arm64 ]; then astral_app_dir=mac-arm64; fi
+          node scripts/mac-notarize.mjs app "$GITHUB_WORKSPACE/apps/desktop/release/$astral_app_dir/Astral.app" "$MAC_ARCH"
+      - uses: ./.github/actions/native-release-checks
+      - name: Verify the actual signed renderer and Electron/Server versions
         run: pnpm test:packaged-desktop
-      - name: Verify actual signed Desktop replacement and retained data
+      - name: Verify native signed replacement and retained data
         run: node scripts/check-desktop-update.mjs
-      - name: Always remove signing and notarization credentials
+      - name: Always remove signing and Apple credentials
         if: always()
         timeout-minutes: 5
         run: node scripts/mac-credentials.mjs cleanup
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: candidate-desktop-mac
+          name: desktop-mac-${{ matrix.arch }}
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
-            apps/desktop/release/mac-signing-report.json
+            apps/desktop/release/notarization/${{ matrix.arch }}.json
           if-no-files-found: error
-          retention-days: 7
-      - name: Preserve public Apple submission diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: mac-notarization-diagnostics
-          path: apps/desktop/release/notarization/*.json
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Preserve native update acceptance output on failure
+          retention-days: 14
+      - name: Preserve Apple receipts, submission bytes and native diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: desktop-update-acceptance-mac
-          path: ${{ runner.temp }}/astral-update-acceptance.log
+          name: failed-mac-${{ matrix.arch }}
+          path: |
+            apps/desktop/release/notarization/
+            apps/desktop/release/*.dmg
+            ${{ runner.temp }}/astral-update-acceptance.log
+            ${{ runner.temp }}/astral-titlebar/*.jpg
           if-no-files-found: ignore
-          retention-days: 7
-      - name: Preserve actual Mac titlebar layout screenshots
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: titlebar-layout-mac
-          path: ${{ runner.temp }}/astral-titlebar/*.jpg
-          if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 14
 
   desktop:
+    name: Native Desktop (${{ matrix.platform }})
     needs: [validate, mac-programs]
     strategy:
       fail-fast: false
@@ -279,20 +293,26 @@ jobs:
         include:
           - os: windows-2022
             package: package:windows
-            name: win
+            platform: win
           - os: ubuntu-24.04
             package: package:linux
-            name: linux
+            platform: linux
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 55
     env:
       GOWORK: 'off'
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.validate.outputs.sha }}
+          ref: ${{ needs.validate.outputs.source_sha }}
+          fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/release-source
+        with:
+          metadata-artifact-id: ${{ needs.validate.outputs.build_metadata_artifact_id }}
+          build-run-id: ${{ needs.validate.outputs.build_run_id }}
+          source-sha: ${{ needs.validate.outputs.source_sha }}
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: '10.31.0'
@@ -301,42 +321,38 @@ jobs:
           node-version: '26.7.0'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: candidate-distribution
-          path: dist/bin/
-      - name: Restore executable permissions after artifact download
+      - name: Download the exact signed unified programs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.mac-programs.outputs.artifact_id }}
+          BUILD_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: node scripts/rolling-release-inputs.mjs download --artifact-id "$ARTIFACT_ID" --run-id "$BUILD_RUN_ID" --output dist/bin
+      - name: Restore executable modes
         if: runner.os != 'Windows'
         run: chmod +x dist/bin/astral-*
-      - name: Package Windows and Linux Desktop files without publishing
-        run: pnpm --filter @astral/desktop ${{ matrix.package }} --publish never
-      - name: Verify the final Windows ZIP starts and cleans up its processes
+      - name: Package the final Windows or Linux Desktop files once
+        env:
+          PACKAGE_SCRIPT: ${{ matrix.package }}
+        shell: bash
+        run: pnpm --filter @astral/desktop "$PACKAGE_SCRIPT" --publish never
+      - uses: ./.github/actions/native-release-checks
+      - name: Verify the final Windows ZIP lifecycle and versions
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
         run: |
           $astralArch = node -p 'process.arch'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $astralArchive = Join-Path $env:GITHUB_WORKSPACE "apps/desktop/release/Astral-${env:RELEASE_VERSION}-win-$astralArch.zip"
+          $astralArchive = Join-Path $env:GITHUB_WORKSPACE "apps/desktop/release/Astral-${env:ASTRAL_RELEASE_VERSION}-win-$astralArch.zip"
           $astralExtracted = Join-Path $env:RUNNER_TEMP 'astral-release-zip'
           Expand-Archive -LiteralPath $astralArchive -DestinationPath $astralExtracted
           $env:ASTRAL_PACKAGED_APP_EXECUTABLE = Join-Path $astralExtracted 'Astral.exe'
           pnpm test:packaged-desktop
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      # The DEB registers /usr/bin/astral. Verify the Server installer first so
-      # its protection against replacing another installation remains active.
-      - name: Prepare the Linux user manager for final headless acceptance
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          sudo systemctl start user@$(id -u).service
-          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
-          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
-      - name: Verify final headless programs with real user-service install and recovery
+      - name: Verify headless installation and recovery before registering the DEB
         if: runner.os == 'Linux'
         run: node scripts/check-headless-install.mjs
-      - name: Install the final native Linux DEB
+      - name: Install the final native DEB
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -349,150 +365,203 @@ jobs:
               exit 0
             fi
           done
-          echo "::error::No DEB package matches native architecture $astral_deb_arch."
           exit 1
-      - name: Verify the installed Linux DEB starts and quits
+      - name: Verify the installed Linux DEB lifecycle and versions
         if: runner.os == 'Linux'
         env:
           ASTRAL_PACKAGED_APP_EXECUTABLE: /opt/Astral/astral
         run: xvfb-run -a pnpm test:packaged-desktop
-      - name: Preserve actual Desktop titlebar layout screenshots
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: titlebar-layout-${{ matrix.name }}
-          path: ${{ runner.temp }}/astral-titlebar/*.jpg
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Verify actual native Windows NSIS update and retained data
+      - name: Verify native Windows NSIS replacement and retained data
         if: runner.os == 'Windows'
         run: node scripts/check-desktop-update.mjs
-      - name: Verify actual native Linux AppImage update and retained data
+      - name: Verify native Linux AppImage replacement and retained data
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          # The disposable Ubuntu runner must permit the AppImage's Chromium
-          # user-namespace sandbox on both launches, including updater relaunch.
           if sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
           xvfb-run -a node scripts/check-desktop-update.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: candidate-desktop-${{ matrix.name }}
+          name: desktop-${{ matrix.platform }}
           path: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.zip
-            apps/desktop/release/*.dmg
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
           if-no-files-found: error
-          retention-days: 7
-      - name: Preserve native update acceptance output on failure
+          retention-days: 14
+      - name: Preserve native acceptance diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: desktop-update-acceptance-${{ matrix.name }}
-          path: ${{ runner.temp }}/astral-update-acceptance.log
+          name: failed-desktop-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/astral-update-acceptance.log
+            ${{ runner.temp }}/astral-titlebar/*.jpg
+            ${{ runner.temp }}/astral-handles.txt
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 14
 
-  verify-assets:
-    name: Verify complete preview inventory and update feeds
-    if: needs.validate.outputs.tag == ''
-    needs: [validate, mac, desktop]
+  containers:
+    name: Real container environment and in-place update
+    needs: [validate, mac-programs]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
+    timeout-minutes: 30
+    env:
+      GOWORK: 'off'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.validate.outputs.sha }}
+          ref: ${{ needs.validate.outputs.source_sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/release-source
         with:
-          node-version: '26.7.0'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: candidate-*
-          path: candidate-inputs/
-      - name: Verify signed candidate bytes, migration metadata and all six update feeds
+          metadata-artifact-id: ${{ needs.validate.outputs.build_metadata_artifact_id }}
+          build-run-id: ${{ needs.validate.outputs.build_run_id }}
+          source-sha: ${{ needs.validate.outputs.source_sha }}
+      - name: Download the exact signed unified programs
         env:
-          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
-          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
-          CI_URL: ${{ needs.validate.outputs.ci_url }}
-        run: >-
-          node scripts/release-assets.mjs candidate --mac-signed
-          --input candidate-inputs --output candidate-preview
-          --sha "$SOURCE_SHA" --tag "v$RELEASE_VERSION"
-          --repository "$GITHUB_REPOSITORY"
-          --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          --ci-run-url "$CI_URL"
-      - name: Retain the verified preview metadata without publishing
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.mac-programs.outputs.artifact_id }}
+          BUILD_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: node scripts/rolling-release-inputs.mjs download --artifact-id "$ARTIFACT_ID" --run-id "$BUILD_RUN_ID" --output dist/bin
+      - name: Restore executable modes
+        if: runner.os != 'Windows'
+        run: chmod +x dist/bin/astral-*
+      - name: Reserve space for the pinned environment
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker builder prune --force
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          name: release-preview-validation
-          path: |
-            candidate-preview/release-manifest.json
-            candidate-preview/release-formats.json
-            candidate-preview/mac-signing-report.json
-            candidate-preview/latest-*.yml
-            candidate-preview/checksums.txt
-            candidate-preview/SHA256SUMS
-            candidate-preview/RELEASE_NOTES.md
+          go-version: '1.26.3'
+          cache: false
+      - run: go test -tags=integration -count=1 -timeout=20m ./internal/platform
+
+  seal:
+    name: Seal the verified final bytes
+    needs: [validate, mac-programs, mac-binaries-notary, mac, desktop, containers]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RELEASE_SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      bundle_sha256: ${{ steps.seal.outputs.bundle_sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/release-source
+        with:
+          metadata-artifact-id: ${{ needs.validate.outputs.build_metadata_artifact_id }}
+          build-run-id: ${{ needs.validate.outputs.build_run_id }}
+          source-sha: ${{ needs.validate.outputs.source_sha }}
+      - name: Download only the exact successful package artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/rolling-release-package-inputs.mjs
+      - name: Gather both native Mac reports without accessing signing credentials
+        run: |
+          node scripts/mac-notarize.mjs finalize release-inputs/signed-distribution
+          cp apps/desktop/release/mac-signing-report.json release-inputs/mac-signing-report.json
+      - name: Assemble the complete release bundle once
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          BUILD_RUN_ID: ${{ needs.validate.outputs.build_run_id }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: >-
+          node scripts/release-assets.mjs public --mac-signed
+          --input release-inputs --output sealed-release
+          --build-metadata .release-metadata/release-build.json
+          --sha "$SOURCE_SHA" --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY"
+          --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          --ci-run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID"
+      - name: Verify and seal the complete bundle
+        id: seal
+        run: |
+          node scripts/release-draft.mjs --verify sealed-release > "$RUNNER_TEMP/astral-release-seal.json"
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs'
+          import path from 'node:path'
+          const report = JSON.parse(readFileSync(path.join(process.env.RUNNER_TEMP, 'astral-release-seal.json'), 'utf8'))
+          if (!/^[a-f0-9]{64}$/.test(report.bundle_sha256 || '')) throw new Error('Missing final bundle seal')
+          appendFileSync(process.env.GITHUB_OUTPUT, `bundle_sha256=${report.bundle_sha256}\n`)
+          JS
+      - name: Sign the immutable release index using the CI identity
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: sealed-release/SHA256SUMS
+          predicate-type: https://astral.oines.dev/attestations/release/v1
+          predicate-path: sealed-release/release-manifest.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
+        with:
+          name: sealed-release
+          path: sealed-release/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
   publish:
-    if: needs.validate.outputs.tag != ''
-    needs: [validate, mac, desktop]
+    name: Promote the sealed release
+    needs: [validate, seal]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
-    # Different tags can build concurrently, but Latest is selected while this
-    # final publication job is serialized and after comparing numeric versions.
+      actions: read
+      attestations: read
     concurrency:
       group: astral-release-publication
       cancel-in-progress: false
-      queue: max
+    env:
+      ASTRAL_RELEASE_BUNDLE_SHA256: ${{ needs.seal.outputs.bundle_sha256 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.validate.outputs.sha }}
+          ref: ${{ needs.validate.outputs.source_sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/release-source
         with:
-          node-version: '26.7.0'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: candidate-*
-          path: candidate-inputs/
-      - name: Assemble the complete public release and final-byte checksums
-        env:
-          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
-          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
-          CI_URL: ${{ needs.validate.outputs.ci_url }}
-        run: >-
-          node scripts/release-assets.mjs public --mac-signed
-          --input candidate-inputs --output candidate-release
-          --sha "$SOURCE_SHA" --tag "$RELEASE_TAG"
-          --repository "$GITHUB_REPOSITORY"
-          --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          --ci-run-url "$CI_URL"
-      - name: Upload and verify every asset before publishing
+          metadata-artifact-id: ${{ needs.validate.outputs.build_metadata_artifact_id }}
+          build-run-id: ${{ needs.validate.outputs.build_run_id }}
+          source-sha: ${{ needs.validate.outputs.source_sha }}
+      - name: Download the sealed bundle by its immutable ID
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/release-draft.mjs --public candidate-release
-      - name: Record release capabilities
-        run: |
-          echo '### Published Astral release' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Mac Developer ID signatures, final package bytes and native startup/shutdown are verified. Apple notarization may be pending; see the attached signing report for exact status. Native Windows ZIP and installed Linux DEB passed process lifecycle checks. Windows/Linux packages are unsigned. Desktop update feeds use final-byte SHA-512 and separate architecture channels. Versioned Goose migrations are bundled with the binary.' >> "$GITHUB_STEP_SUMMARY"
+          ARTIFACT_ID: ${{ needs.seal.outputs.artifact_id }}
+        run: node scripts/rolling-release-inputs.mjs download --artifact-id "$ARTIFACT_ID" --run-id "$GITHUB_RUN_ID" --output sealed-release
+      - name: Verify the CI signature on the exact release index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh attestation verify sealed-release/SHA256SUMS
+          --repo "$GITHUB_REPOSITORY"
+          --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          --predicate-type https://astral.oines.dev/attestations/release/v1
+      - name: Create the source tag without starting another build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/rolling-release-tag.mjs sealed-release
+      - name: Upload, verify and atomically publish these same bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-draft.mjs --public sealed-release
 
   published-desktop-update:
-    name: Published Desktop update (${{ matrix.platform }})
-    if: needs.validate.outputs.tag != ''
+    name: Published Desktop update (${{ matrix.platform }}, ${{ matrix.arch }})
     needs: [validate, publish]
     strategy:
       fail-fast: false
@@ -500,22 +569,36 @@ jobs:
         include:
           - os: macos-15-intel
             platform: mac
+            arch: x64
+          - os: macos-15
+            platform: mac
+            arch: arm64
           - os: windows-2022
             platform: win
+            arch: x64
           - os: ubuntu-24.04
             platform: linux
+            arch: x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.validate.outputs.sha }}
+          ref: ${{ needs.validate.outputs.source_sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/release-source
         with:
-          node-version: '26.7.0'
+          metadata-artifact-id: ${{ needs.validate.outputs.build_metadata_artifact_id }}
+          build-run-id: ${{ needs.validate.outputs.build_run_id }}
+          source-sha: ${{ needs.validate.outputs.source_sha }}
+      - name: Require the native verification architecture
+        env:
+          NATIVE_ARCH: ${{ matrix.arch }}
+        run: node --input-type=module -e 'if (process.arch !== process.env.NATIVE_ARCH) throw new Error("Published update architecture differs")'
       - name: Select the preceding public release by numeric version
         id: previous
         shell: bash
@@ -561,7 +644,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: published-desktop-update-${{ matrix.platform }}
+          name: published-desktop-update-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/astral-published-desktop-update.json
             ${{ runner.temp }}/astral-update-acceptance.log
@@ -570,18 +653,20 @@ jobs:
 
   published-install:
     name: Verify public VPS installation
-    if: needs.validate.outputs.tag != ''
     needs: [validate, publish]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.validate.outputs.sha }}
+          ref: ${{ needs.validate.outputs.source_sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: ./.github/actions/release-source
         with:
-          node-version: '26.7.0'
+          metadata-artifact-id: ${{ needs.validate.outputs.build_metadata_artifact_id }}
+          build-run-id: ${{ needs.validate.outputs.build_run_id }}
+          source-sha: ${{ needs.validate.outputs.source_sha }}
       - name: Prepare a disposable user manager
         shell: bash
         run: |

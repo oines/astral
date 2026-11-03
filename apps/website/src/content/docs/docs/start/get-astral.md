@@ -26,7 +26,7 @@ For a Mac with an Apple M-series chip, choose Apple silicon; for an Intel Mac, c
 
 ## Install and open Astral
 
-- **macOS:** open the DMG, drag Astral to Applications, then open it there. The v0.1.13 Mac packages are signed and notarized by Apple; see the [signing report](https://github.com/oines/astral/releases/download/v0.1.13/mac-signing-report.json).
+- **macOS:** open the DMG, drag Astral to Applications, then open it there. Official Mac packages use Developer ID signatures and are published after Apple accepts their notarization. The release page linked above includes the signing report.
 - **Windows:** double-click the EXE and follow the installer. The package is unsigned, so Windows may show a SmartScreen prompt. Check that it came from the official release linked on this page.
 - **Linux:** for an AppImage, allow the file to run as a program in its file properties, then open it. For a Debian/Ubuntu package installer, choose the DEB. AppImage supports in-app updates; DEB users install a newer package manually. Linux packages are unsigned.
 

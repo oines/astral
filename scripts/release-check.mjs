@@ -15,9 +15,11 @@ export async function checkReleaseTools() {
   const realManifests = await Promise.all(['package.json', 'apps/desktop/package.json'].map(name => readFile(path.join(repositoryRoot, name), 'utf8')))
   try {
     for (const name of ['scripts', 'apps/desktop', 'input', 'internal/platform/computer-image']) await mkdir(path.join(temporary, name), { recursive: true })
-    for (const name of ['release-version.mjs', 'release-assets.mjs', 'release-draft.mjs', 'desktop-update-feeds.mjs', 'computer-image-contract.mjs']) await copyFile(path.join(repositoryRoot, 'scripts', name), path.join(temporary, 'scripts', name))
+    for (const name of ['release-version.mjs', 'rolling-release-version.mjs', 'release-assets.mjs', 'release-draft.mjs', 'desktop-update-feeds.mjs', 'computer-image-contract.mjs']) await copyFile(path.join(repositoryRoot, 'scripts', name), path.join(temporary, 'scripts', name))
     for (const name of ['package.json', 'apps/desktop/package.json']) await writeFile(path.join(temporary, name), JSON.stringify({ name: 'fixture', version: '0.0.0' }))
-    const invoke = (script, args = []) => execFileSync(process.execPath, [path.join(temporary, 'scripts', script), ...args], { cwd: temporary, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000, maxBuffer: 64 << 10 })
+    const fixtureEnvironment = { ...process.env }
+    delete fixtureEnvironment.ASTRAL_RELEASE_VERSION
+    const invoke = (script, args = []) => execFileSync(process.execPath, [path.join(temporary, 'scripts', script), ...args], { cwd: temporary, env: fixtureEnvironment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000, maxBuffer: 64 << 10 })
     const rejects = (script, args, message) => assert.throws(() => invoke(script, args), error => error.status !== 0 && error.stderr.toString().includes(message))
     for (const value of ['0.0.0', '0.1.0', '0.1.1', '0.1.100', '1.0.0', '1.14.2', '9007199254740991.0.0']) assert.equal(validateTag(`v${value}`, validateVersion(value)), `v${value}`)
     for (const value of [undefined, null, 0, '0.01.0', '01.1.0', '0.1.00', '0.1.-1', 'v0.1.0', '0.1.0-beta', '0.1.0+build', '9007199254740992.0.0', '0.9007199254740992.0', '0.1.9007199254740992']) assert.throws(() => validateVersion(value))
@@ -253,7 +255,7 @@ export async function checkReleaseTools() {
     // An invalid API origin proves draft validation completed without making any network request.
     const draftPreflight = directory => execFileSync(process.execPath, [path.join(temporary, 'scripts', 'release-draft.mjs'), directory], {
       cwd: temporary, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15_000,
-      env: { ...process.env, GH_TOKEN: 'fixture-no-network', GITHUB_REPOSITORY: 'oines/astral', GITHUB_API_URL: 'https://fixtures.invalid' },
+      env: { ...fixtureEnvironment, GH_TOKEN: 'fixture-no-network', GITHUB_REPOSITORY: 'oines/astral', GITHUB_API_URL: 'https://fixtures.invalid' },
     })
     for (const directory of ['complete-output', 'signed-output']) assert.throws(() => draftPreflight(directory), error => error.stderr.toString().includes('configured only for github.com'))
     assert.throws(() => draftPreflight('public-output'), error => error.stderr.toString().includes('public releases and incomplete signing claims are forbidden'))

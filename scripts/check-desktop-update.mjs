@@ -18,6 +18,7 @@ import { desktopArtifactName, desktopUpdateFeeds } from './desktop-update-feeds.
 import { readReleaseVersion } from './release-version.mjs'
 import { publishedUpdateInputs } from './published-desktop-update.mjs'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
+import { verifyDesktopVersion } from './desktop-version-acceptance.mjs'
 import { assertWindowsProcessOwner, sameWindowsProcess, stopWindowsProcessTree, windowsManagedProcessIdentity, windowsProcessIdentity } from './desktop-process-identity.mjs'
 
 if (process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true' || !process.env.RUNNER_TEMP) throw new Error('Real Desktop update acceptance requires a disposable GitHub Actions user; never run on a developer account.')
@@ -333,6 +334,7 @@ try {
     assert.ok(packageRequests > 0 && completedPackages > 0, 'The explicit update did not finish serving the final installer bytes.')
   }
   assert.equal(newServer.healthVersion, version, 'The replacement did not launch the target Server version.')
+  const installedVersions = await verifyDesktopVersion(newServer.url, await webFixtureCookie(path.join(data, 'server'), newServer.url), version)
   updatedAppPID = process.platform === 'win32' ? newWindowsApp.pid : await parentPID(newServer.pid)
   if (process.platform !== 'win32') assert.notEqual(updatedAppPID, app.pid, 'The original Desktop process survived the replacement')
   await waitFor(() => app.exitCode !== null || app.signalCode !== null, 'The original Desktop process did not exit after installation.')
@@ -366,6 +368,7 @@ try {
     if (process.platform === 'darwin') await verifyMacSignature(installedRoot)
     const report = {
       platform: process.platform, architecture, from_version: fromVersion, version,
+      ...installedVersions,
       old_source_sha: published.previous.manifest.source_sha, source_sha: published.target.manifest.source_sha,
       old_package: path.basename(published.oldPackage), old_package_sha256: published.previous.assets.get(path.basename(published.oldPackage)).sha256,
       target_package: targetName, target_package_sha256: published.target.assets.get(targetName).sha256,

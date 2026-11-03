@@ -5,6 +5,7 @@ import path from 'node:path'
 import { desktopArtifactName, desktopUpdateFeeds, writeDesktopUpdateFeeds, validateDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { validateStorageMigrations, isDirectInvocation, readReleaseVersion, validateTag } from './release-version.mjs'
 import { recipeHash, recipePath, validateLock } from './computer-image-contract.mjs'
+import { validateBuildMetadata } from './rolling-release-version.mjs'
 
 export const distributionNames = ['darwin', 'linux', 'windows'].flatMap(system => ['amd64', 'arm64'].map(arch => `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`))
 
@@ -37,9 +38,13 @@ export async function validateMacSigningReport(report, { version, sourceSHA, fil
   const expiryDate = typeof expires === 'string' ? new Date(expires) : new Date(NaN)
   const validExpiry = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(expires || '') &&
     Number.isFinite(expiryDate.getTime()) && expiryDate.toISOString() === (expires.includes('.') ? expires : expires.replace('Z', '.000Z')) && expiryDate.getTime() > Date.now()
-  if (report?.schema_version !== 2 || report.version !== version || report.source_sha !== sourceSHA ||
+  const nativeEvidence = report?.schema_version === 2
+    ? ['arm64', 'x64'].includes(report.native_tested_arch)
+    : report?.schema_version === 3 && Array.isArray(report.native_tested_arches) && report.native_tested_arches.length === 2 &&
+      new Set(report.native_tested_arches).size === 2 && ['arm64', 'x64'].every(arch => report.native_tested_arches.includes(arch)) && !Object.hasOwn(report, 'native_tested_arch')
+  if (!nativeEvidence || report.version !== version || report.source_sha !== sourceSHA ||
       report.team_id !== '6N6W6Z6739' || report.status !== 'signed' || !validExpiry ||
-      !['arm64', 'x64'].includes(report.native_tested_arch)) throw new Error('Mac signing report metadata does not match the candidate source/version, personal team or valid certificate contract.')
+      ![2, 3].includes(report.schema_version)) throw new Error('Mac signing report metadata does not match the candidate source/version, personal team or valid certificate contract.')
   if (!report.checks || Object.keys(report.checks).length !== signingChecks.length + 2 || signingChecks.some(name => report.checks[name] !== true)) throw new Error('Mac signing report must pass every required signature and native acceptance check.')
   const notarizations = report.notarizations
   const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
@@ -79,14 +84,18 @@ async function walk(directory) {
   return files
 }
 
-export async function collectCandidate({ input, output, sourceSHA, repository, runURL, ciRunURL, tag, macSigned = false, publicRelease = false }) {
+export async function collectCandidate({ input, output, sourceSHA, repository, runURL, ciRunURL, tag, buildMetadata, macSigned = false, publicRelease = false, environment = process.env }) {
   if (publicRelease) macSigned = true
-  const version = await readReleaseVersion()
+  const version = await readReleaseVersion(undefined, environment)
   validateTag(tag, version)
   if (!/^[a-f0-9]{40}$/.test(sourceSHA || '')) throw new Error('A full source commit SHA is required.')
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository || '')) throw new Error('A GitHub owner/repository is required.')
   for (const url of [runURL, ciRunURL]) {
     if (!url?.startsWith(`https://github.com/${repository}/actions/runs/`) || !/^\d+$/.test(url.split('/').at(-1))) throw new Error('Candidate and successful CI run URLs must identify this repository.')
+  }
+  if (buildMetadata !== undefined) {
+    validateBuildMetadata(buildMetadata, { version, sourceSHA, repository })
+    if (!publicRelease || ciRunURL !== buildMetadata.build_run_url) throw new Error('Rolling release collection requires final public metadata and the frozen producer CI run.')
   }
   if (path.resolve(input) === path.resolve(output) || path.resolve(output).startsWith(`${path.resolve(input)}${path.sep}`)) throw new Error('Output must be outside the input artifact directory.')
   await mkdir(output, { recursive: true })
@@ -110,6 +119,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   validateDataFormats(formats, { version, sourceSHA })
   const signingReport = macSigned ? JSON.parse(await readFile(inputs.get(macSigningReportName), 'utf8')) : undefined
   if (macSigned) await validateMacSigningReport(signingReport, { version, sourceSHA, files: inputs })
+  if (buildMetadata !== undefined && (signingReport?.schema_version !== 3 || signingReport.notarization_status !== 'accepted')) throw new Error('Rolling releases require both native Mac architectures and every Apple notarization accepted before sealing.')
   const notarized = signingReport?.notarization_status === 'accepted'
   for (const name of required) await copyFile(inputs.get(name), path.join(output, name))
   await writeDesktopUpdateFeeds(output, version)
@@ -129,6 +139,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
     repository,
     candidate_run_url: runURL,
     ci_run_url: ciRunURL,
+    ...(buildMetadata === undefined ? {} : { build_provenance: buildMetadata, packaging_run_url: runURL }),
     data_formats: formats.data_formats,
     host_schema: formats.host_schema,
     core_format: formats.core_format,
@@ -225,8 +236,9 @@ ${capabilities}
 async function main() {
   const [command, ...args] = process.argv.slice(2)
   const option = name => { const index = args.indexOf(name); return index < 0 ? undefined : args[index + 1] }
-  if (!['candidate', 'public'].includes(command) || !option('--input') || !option('--output')) throw new Error('Usage: release-assets.mjs <candidate|public> --input DIR --output EMPTY_DIR --sha COMMIT --repository OWNER/REPO --tag vMAJOR.MINOR.PATCH --run-url URL --ci-run-url URL [--mac-signed (candidate only; public always requires Mac signing)]')
-  const manifest = await collectCandidate({ input: option('--input'), output: option('--output'), sourceSHA: option('--sha'), repository: option('--repository'), tag: option('--tag'), runURL: option('--run-url'), ciRunURL: option('--ci-run-url'), macSigned: args.includes('--mac-signed'), publicRelease: command === 'public' })
+  if (!['candidate', 'public'].includes(command) || !option('--input') || !option('--output')) throw new Error('Usage: release-assets.mjs <candidate|public> --input DIR --output EMPTY_DIR --sha COMMIT --repository OWNER/REPO --tag vMAJOR.MINOR.PATCH --run-url URL --ci-run-url URL [--build-metadata FILE] [--mac-signed (candidate only; public always requires Mac signing)]')
+  const buildMetadata = option('--build-metadata') === undefined ? undefined : JSON.parse(await readFile(option('--build-metadata'), 'utf8'))
+  const manifest = await collectCandidate({ input: option('--input'), output: option('--output'), sourceSHA: option('--sha'), repository: option('--repository'), tag: option('--tag'), runURL: option('--run-url'), ciRunURL: option('--ci-run-url'), buildMetadata, macSigned: args.includes('--mac-signed'), publicRelease: command === 'public' })
   console.log(`Collected ${manifest.assets.length} assets for ${manifest.tag}; public_release_ready=${manifest.public_release_ready}.`)
 }
 

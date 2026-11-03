@@ -1,0 +1,32 @@
+name: Frozen release source
+description: Verify the producer metadata and apply its version in this disposable checkout
+inputs:
+  metadata-artifact-id:
+    required: true
+    description: Immutable Prepare metadata artifact ID
+  build-run-id:
+    required: true
+    description: Successful Prepare run ID
+  source-sha:
+    required: true
+    description: Exact source commit verified by the release resolver
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: '26.7.0'
+    - name: Download and verify frozen build metadata
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        METADATA_ARTIFACT_ID: ${{ inputs.metadata-artifact-id }}
+        BUILD_RUN_ID: ${{ inputs.build-run-id }}
+        RELEASE_SOURCE_SHA: ${{ inputs.source-sha }}
+      run: >-
+        node scripts/rolling-release-inputs.mjs download
+        --artifact-id "$METADATA_ARTIFACT_ID" --run-id "$BUILD_RUN_ID"
+        --source-sha "$RELEASE_SOURCE_SHA" --output .release-metadata
+    - name: Apply the frozen version without changing Git history
+      shell: bash
+      run: node scripts/rolling-release-version.mjs apply --metadata .release-metadata/release-build.json

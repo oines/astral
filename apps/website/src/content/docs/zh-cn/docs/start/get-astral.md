@@ -26,7 +26,7 @@ description: "在自己的电脑上安装 Astral，或选择在长期运行的�
 
 ## 安装并打开
 
-- **macOS**：打开下载的 DMG，把 Astral 拖进“应用程序”，再从“应用程序”打开。v0.1.13 的 Mac 安装包已签名并通过 Apple 公证，可查看[签名报告](https://github.com/oines/astral/releases/download/v0.1.13/mac-signing-report.json)。
+- **macOS**：打开下载的 DMG，把 Astral 拖进“应用程序”，再从“应用程序”打开。官方 Mac 安装包使用 Developer ID 签名，通过 Apple 公证后才会发布；上方对应的发行页提供签名报告。
 - **Windows**：双击 EXE，按安装向导完成安装。安装包尚未签名，系统可能显示 SmartScreen 提示；核对下载来自本页链接的官方发行版。
 - **Linux**：使用 AppImage 时，先在文件属性中允许它作为程序执行，再打开；使用 Debian/Ubuntu 的软件安装器时，可选择 DEB。AppImage 支持应用内更新，DEB 需要安装新的软件包。Linux 安装包尚未签名。
 

@@ -1,0 +1,72 @@
+name: Native release program checks
+description: Exercise the final unified programs and installed service lifecycle on the native runner
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      with:
+        go-version: '1.26.3'
+        cache: true
+    - name: Prepare Windows directory lock diagnostics
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $astralHandleDir = Join-Path $env:RUNNER_TEMP 'astral-handle-diagnostics'
+        New-Item -ItemType Directory -Force $astralHandleDir | Out-Null
+        Invoke-WebRequest 'https://download.sysinternals.com/files/Handle.zip' -OutFile "$astralHandleDir/Handle.zip"
+        Expand-Archive "$astralHandleDir/Handle.zip" -DestinationPath $astralHandleDir
+        $astralHandle = Join-Path $astralHandleDir 'handle64.exe'
+        $astralSignature = Get-AuthenticodeSignature $astralHandle
+        if ($astralSignature.Status -ne 'Valid' -or $astralSignature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+          throw 'The Microsoft Handle diagnostic utility has an invalid signature.'
+        }
+        "ASTRAL_WINDOWS_HANDLE=$astralHandle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+    - name: Verify Desktop Server lifecycle
+      if: runner.os != 'Windows'
+      shell: bash
+      run: pnpm test:desktop-service
+    - name: Repeat Windows Desktop lifecycle
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        foreach ($astralIteration in 1..5) {
+          Write-Output "Windows desktop lifecycle $astralIteration/5"
+          pnpm test:desktop-service
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+    - name: Native downloaded installer
+      shell: bash
+      run: go test -tags=integration -run '^TestDistributionInstallerRegistersActualDaemon$' -count=1 -timeout=3m ./internal/platform
+    - name: Prepare Linux user service session
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo systemctl start user@$(id -u).service
+        echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+        echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+    - name: Native Daemon service install and cleanup
+      shell: bash
+      run: pnpm test:daemon-service
+    - name: Real native Daemon management update and process cleanup
+      shell: bash
+      run: node scripts/check-daemon-update.mjs
+    - name: Root Linux Computer user service and management update
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        astral_go=$(command -v go)
+        astral_node=$(command -v node)
+        astral_root_cache="$RUNNER_TEMP/astral-root-daemon-go-cache"
+        trap 'sudo rm -rf -- "$astral_root_cache"' EXIT
+        sudo env -i HOME=/root CI=true GITHUB_ACTIONS=true RUNNER_TEMP="$RUNNER_TEMP" \
+          PATH="$(dirname "$astral_go"):$(dirname "$astral_node"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+          GOWORK=off GOCACHE="$astral_root_cache" GOMODCACHE="$(go env GOMODCACHE)" \
+          XDG_RUNTIME_DIR="/run/user/$(id -u)" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus" \
+          "$astral_node" scripts/check-daemon-update.mjs --root-user
+    - name: Preserve Windows lock diagnostics
+      if: ${{ failure() && runner.os == 'Windows' }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: native-windows-locks-${{ github.job }}
+        path: ${{ runner.temp }}/astral-handles.txt
+        retention-days: 7
