@@ -38,7 +38,7 @@ assert.ok(appData, 'Missing native application data location')
 const data = path.join(appData, 'astral/schema-3-core-11')
 const profile = path.join(appData, 'Astral')
 for (const existing of [data, profile]) {
-  try { await access(existing); throw new Error('Existing Astral data/profile is present; refusing to run the replacement test.') } catch (error) { if (error.code !== 'ENOENT') throw error }
+  try { await access(existing); throw new Error(`Existing Astral data/profile is present at ${existing}; refusing to run the replacement test.`) } catch (error) { if (error.code !== 'ENOENT') throw error }
 }
 // electron-builder's safe-path policy explicitly permits the native temp root.
 const temporary = await realpath(await mkdtemp(path.join(tmpdir(), 'astral-update-acceptance-')))
