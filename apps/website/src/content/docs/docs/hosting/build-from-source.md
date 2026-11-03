@@ -76,7 +76,9 @@ The website is a separate static site. Documentation changes do not require rebu
 
 ## Contribute and publish
 
-Submit a pull request with the relevant tests and update the public documentation when behavior changes. Changes merged into `main` enter Astral's single rolling release pipeline automatically. Maintainers do not bump package versions, create a local release tag or run a second candidate build for each release.
+Submit a pull request with the relevant tests and update the public documentation when behavior changes. Product changes merged into `main` enter Astral's single rolling release pipeline automatically. Maintainers do not bump package versions, create a local release tag or run a second candidate build for each release.
+
+Automatic releases are triggered by product code, packaged resources, installers, shared dependencies and build or signing inputs. README, documentation, website, test and CI-only changes keep their checks without starting an application release. Shared root manifests and dependency locks still count as build inputs; embedded prompts and packaged license notices count as product resources.
 
 The preparation workflow freezes the source commit, build identity and application version before compiling. Versions use `MAJOR.MINOR.PATCH`; the current `0.1.x` series derives its patch number from the preparation run number. Cancelled or failed preparations can leave gaps, and rerunning the same preparation retains its version. The version in a local source checkout is a development baseline; CI applies its frozen version to Go and Electron in its disposable checkout.
 
@@ -84,6 +86,6 @@ Tests and the unified program build run in parallel. After preparation succeeds,
 
 The pipeline then seals the final packages, manifest, update feeds, release notes and checksums. Publishing uploads those exact files; it does not rebuild or re-sign them. CI creates the version's annotated tag at the verified source commit and records an OIDC-authenticated provenance attestation for the sealed inventory. The public release includes the source and build evidence. After publication, separate checks download the real release, install Server and upgrade untouched previous official desktop installations.
 
-New merges replace obsolete preparation work and the latest waiting release request. A release already signing, verifying or publishing is allowed to finish. A failed required check blocks publication; a failure after publication remains visible in Actions and does not replace an already public version's files. Use the [Actions runs](https://github.com/oines/astral/actions) to identify the failing stage and its retained diagnostics before retrying it.
+New product changes replace obsolete preparation work and the latest waiting release request. A release already signing, verifying or publishing is allowed to finish. A failed required check blocks publication; a failure after publication remains visible in Actions and does not replace an already public version's files. Use the [Actions runs](https://github.com/oines/astral/actions) to identify the failing stage and its retained diagnostics before retrying it.
 
 Automatic publication does not choose when your installed Astral restarts. Desktop checks for new versions and you decide when to install; see [Updates and backups](/docs/hosting/maintenance/). The download page checks GitHub Latest automatically. If that check is unavailable, its labelled, previously verified downloads remain usable without requiring a website edit for every new release.

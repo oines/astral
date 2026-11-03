@@ -3,10 +3,52 @@ name: Prepare Release
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'apps/website/**'
-      - '.github/workflows/website.yml'
-      - 'wrangler.jsonc'
+    # Only product inputs allocate a version and supersede preparation work.
+    # Keep this list aligned with the release-trigger scenarios in CI. Pure
+    # documentation, website, test and workflow changes keep their PR checks.
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'apps/web/**'
+      - 'apps/desktop/**'
+      - 'packages/**'
+      - 'spec/openapi/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.json'
+      - 'openapi-ts.config.ts'
+      - '.npmrc'
+      - '.gitattributes'
+      - 'LICENSE'
+      - 'THIRD_PARTY.md'
+      - 'scripts/build-distribution.mjs'
+      - 'scripts/build-lib.mjs'
+      - 'scripts/build-icons.mjs'
+      - 'scripts/build-notices.mjs'
+      - 'scripts/install-server.sh'
+      - 'scripts/release-version.mjs'
+      - 'scripts/release-assets.mjs'
+      - 'scripts/desktop-update-feeds.mjs'
+      - 'scripts/mac-signing.mjs'
+      - 'scripts/mac-notarize.mjs'
+      - '!**/*_test.go'
+      - '!**/*.test.ts'
+      - '!**/*.test.tsx'
+      - '!**/*.test.js'
+      - '!**/*.test.mjs'
+      - '!**/*.spec.ts'
+      - '!**/*.spec.tsx'
+      - '!**/*.spec.js'
+      - '!**/*.spec.mjs'
+      - '!**/__tests__/**'
+      - '!**/tests/**'
+      - '!**/testdata/**'
+      - '!internal/testkit/**'
+      - '!**/README*.md'
+      - '!**/AGENTS.md'
   workflow_dispatch:
 
 permissions:

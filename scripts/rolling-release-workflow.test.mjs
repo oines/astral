@@ -14,6 +14,75 @@ const native = parse(await read('.github/actions/native-release-checks/action.ym
 const script = job => (job.steps || []).map(step => step.run || '').join('\n')
 const needs = job => new Set(Array.isArray(job.needs) ? job.needs : [job.needs])
 
+// Evaluate the actual ordered workflow rules for representative changed paths.
+// These patterns use only literals, * and **, without platform-specific paths.
+function preparesRelease(changedPaths) {
+  return changedPaths.some(file => {
+    let included = false
+    for (const pattern of prepare.on.push.paths) {
+      const excluded = pattern.startsWith('!')
+      if (path.posix.matchesGlob(file, excluded ? pattern.slice(1) : pattern)) included = !excluded
+    }
+    return included
+  })
+}
+
+test('documentation, website, workflow and test-only changes do not prepare a release', () => {
+  assert.equal(prepare.on.push['paths-ignore'], undefined)
+  assert.ok(Object.hasOwn(prepare.on, 'workflow_dispatch'), 'Explicit recovery remains available')
+  for (const file of [
+    'README.md', 'README.zh-CN.md', 'CONTRIBUTING.md', 'SECURITY.md', 'AGENTS.md', 'SPEC.md',
+    'docs/releasing.md', 'docs/new-guide.md',
+    'apps/website/src/content/docs/docs/start/get-astral.md', 'apps/website/src/pages/index.astro',
+    'apps/website/astro.config.mjs', 'apps/website/package.json', 'wrangler.jsonc',
+    '.github/workflows/ci.yml', '.github/workflows/prepare-release.yml', '.github/workflows/release.yml',
+    '.github/actions/release-source/action.yml', '.github/actions/native-release-checks/action.yml',
+    'scripts/check-desktop-update.mjs', 'scripts/desktop-version-acceptance.mjs',
+    'scripts/release-draft.mjs', 'scripts/mac-credentials.mjs', 'scripts/build-server.mjs',
+    'scripts/rolling-release-inputs.mjs', 'scripts/rolling-release-workflow.test.mjs',
+    'internal/harness/subagent_legacy_test.go', 'internal/testkit/shell/shell.go',
+    'internal/harness/testdata/history.json', 'apps/web/src/example.test.ts',
+    'apps/desktop/src/main/updates.test.ts', 'packages/ui/src/Button.test.ts',
+    'packages/ui/tests/fixture.ts', 'packages/sdk/README.md', 'apps/web/AGENTS.md',
+    'scripts/build-lib.test.mjs', 'vitest.config.ts', 'eslint.config.mjs',
+  ]) assert.equal(preparesRelease([file]), false, file)
+})
+
+test('production code, packaged Markdown and build inputs still prepare a release', () => {
+  for (const file of [
+    'cmd/astral/main.go', 'internal/harness/subagents.go',
+    'internal/harness/prompts/im-compaction.md', 'internal/persistence/migrations/00006.sql',
+    'internal/platform/installers/install.sh', 'internal/platform/installers/install.ps1',
+    'internal/platform/computer-image/image-lock.json', 'internal/platform/computer-image/Dockerfile',
+    'internal/platform/web/README.txt', 'internal/timezone/system_windows_LICENSE.txt',
+    'apps/web/src/App.vue', 'apps/web/public/favicon.svg', 'apps/web/index.html', 'apps/web/vite.config.ts',
+    'apps/desktop/src/main/index.ts', 'apps/desktop/resources/entitlements.mac.plist',
+    'apps/desktop/electron-builder.release.cjs', 'apps/desktop/electron-builder.yml',
+    'apps/desktop/electron.vite.config.ts', 'apps/desktop/package.json',
+    'packages/ui/src/Button.vue', 'packages/sdk/src/client.gen.ts', 'packages/config/tsconfig.json',
+    'packages/icons/src/assets/NOTICE.md', 'packages/icons/src/assets/LICENSE-Memoh.txt',
+    'packages/icons/assets/astral-mark.svg', 'spec/openapi/astral.json',
+    'go.mod', 'go.sum', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
+    'tsconfig.json', 'openapi-ts.config.ts', '.npmrc', '.gitattributes', 'LICENSE', 'THIRD_PARTY.md',
+    'scripts/build-distribution.mjs', 'scripts/build-lib.mjs', 'scripts/build-icons.mjs',
+    'scripts/build-notices.mjs', 'scripts/install-server.sh', 'scripts/release-version.mjs',
+    'scripts/release-assets.mjs', 'scripts/desktop-update-feeds.mjs',
+    'scripts/mac-signing.mjs', 'scripts/mac-notarize.mjs',
+  ]) assert.equal(preparesRelease([file]), true, file)
+})
+
+test('a mixed change or product deletion still prepares a release', () => {
+  assert.equal(preparesRelease(['README.md', 'docs/releasing.md', 'internal/harness/subagents.go']), true)
+  assert.equal(preparesRelease(['apps/website/package.json', 'pnpm-lock.yaml']), true, 'The shared lock remains a product build input')
+  // Deleted paths match just like added/modified paths; a move out of a product
+  // directory must retain the removed product path in the changed-file set.
+  assert.equal(preparesRelease(['internal/harness/removed.go']), true)
+  assert.equal(preparesRelease(['docs/removed.md']), false)
+  assert.equal(preparesRelease(['internal/harness/removed.go', 'docs/archived-example.go']), true)
+  assert.equal(preparesRelease(['docs/example.go', 'internal/harness/new.go']), true)
+  assert.equal(preparesRelease(['docs/old.md', 'docs/new.md']), false)
+})
+
 // These are architectural acceptance conditions: the expensive release bytes
 // have one producer and a checked, immutable path to publication.
 test('Main preparation starts checks and the one distribution build independently', () => {
