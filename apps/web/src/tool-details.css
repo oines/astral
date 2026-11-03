@@ -1,0 +1,16 @@
+.tool-call .tool-call-detail { padding: 2px 0 4px 12px; border: 0; border-radius: 0; background: transparent; }
+.tool-semantic-detail { display: flex; flex-direction: column; gap: 10px; min-width: 0; color: var(--ink); line-height: 1.65; }
+.tool-semantic-detail p { margin: 0; }
+.tool-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; margin: 0; }
+.tool-facts dt, .tool-detail-label, .tool-detail-secondary { color: var(--muted); }
+.tool-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.tool-detail-label { margin-bottom: 3px !important; font-size: 12px; }
+.tool-detail-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-agent-result { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; margin-top: 4px; }
+.tool-agent-result .tool-facts, .tool-agent-result > p { flex-basis: 100%; }
+.tool-identifiers { color: var(--muted); font-size: 12px; }
+.tool-identifiers summary { width: fit-content; cursor: pointer; }
+.tool-identifiers .tool-facts { margin-top: 6px; }
+.tool-message-parts { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-message-file { display: block; padding: 3px 0; }
+.tool-attachment-list { display: flex; flex-direction: column; gap: 3px; margin: 0; padding-left: 16px; overflow-wrap: anywhere; }

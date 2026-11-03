@@ -69,6 +69,32 @@ func TestTimelineProjectionRemovesOpaquePayloadWithoutMutatingSource(t *testing.
 	}
 }
 
+func TestTimelineSendTargetUsesFrozenIdentifiersAndOmitsPrivateBindingData(t *testing.T) {
+	for _, kind := range []core.EntryKind{core.EntryToolStarted, core.EntryToolResult} {
+		t.Run(string(kind), func(t *testing.T) {
+			binding := json.RawMessage(`{"binding_id":"original-binding","conversation_id":"original-chat","source":{"computer_id":"private-computer","cwd":"private-directory"},"credential":"private-credential","other":"private-data"}`)
+			original := core.Entry{Kind: kind, Tool: &core.ToolRecord{Invocation: core.Invocation{Call: core.ToolCall{Name: "send_message"}, Binding: binding}}}
+			projected := timelineEntry(original)
+			if string(projected.Tool.Invocation.Binding) != `{"binding_id":"original-binding","conversation_id":"original-chat"}` {
+				t.Fatalf("historical target was lost or private binding data leaked: %s", projected.Tool.Invocation.Binding)
+			}
+			if string(original.Tool.Invocation.Binding) != string(binding) {
+				t.Fatal("timeline projection changed the persisted target")
+			}
+			original.Tool.Invocation.Call.Name = "read_file"
+			if timelineEntry(original).Tool.Invocation.Binding != nil {
+				t.Fatal("another tool's opaque binding leaked")
+			}
+		})
+	}
+	for _, binding := range []string{`{`, `{"conversation_id":5}`, `{"binding_id":"unresolved"}`, `null`} {
+		inv := core.Invocation{Call: core.ToolCall{Name: "send_message"}, Binding: json.RawMessage(binding)}
+		if timelineToolTarget(inv) != nil {
+			t.Fatalf("invalid or unresolved send target was presented: %s", binding)
+		}
+	}
+}
+
 // Deliberately raw-record pagination: this catches regressions where hidden
 // context records count as visible conversation units.
 type timelineFixtureStore struct {

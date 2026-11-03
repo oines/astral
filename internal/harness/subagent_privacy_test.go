@@ -17,7 +17,7 @@ func TestRootPrivacyFollowsDelegatedSubtreeButNotOrdinaryForks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grandchild := subagentTestSpawn(t, f, childRuntime, "private-grandchild", "Verify this independent result.", false)
+	grandchild := subagentTestLegacySpawn(t, f, childRuntime, "private-grandchild", "Existing independent result.", false)
 	subagentTestFinished(t, f, grandchild.SessionID)
 	ordinary, err := f.service.Fork(f.ctx, parent.id, parent.core.Load().Head(), "Independent user fork", "ordinary-privacy-fork")
 	if err != nil {

@@ -12,4 +12,11 @@ describe('catalog and live session presentation', () => {
     const newer = { ...live, revision: 3, title: 'Newest' }
     expect(sessionWithMetadata({ ...live, revision: 2 }, newer).title).toBe('Newest')
   })
+  it('keeps delegation ownership when a newer live view omits it, without hiding an ordinary user fork', () => {
+    const child = { ...live, subagent_parent_id: 'root' }
+    const newer = { ...live, revision: 2, title: 'Updated child' }
+    expect(sessionWithMetadata(child, newer)).toMatchObject({ title: 'Updated child', subagent_parent_id: 'root', status: 'running' })
+    expect(sessionWithMetadata({ ...newer, revision: 3 }, child).subagent_parent_id).toBe('root')
+    expect(sessionWithMetadata({ ...newer, parent_session_id: 'root' }, live).subagent_parent_id).toBeUndefined()
+  })
 })

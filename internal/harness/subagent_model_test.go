@@ -98,7 +98,7 @@ func TestComposerModelAndReasoningSelectionPropagatesOnlyToDelegatedTree(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	grandchild := subagentTestSpawn(t, f, sharedRuntime, "sync-grandchild", "Recursive delegated work.", false)
+	grandchild := subagentTestLegacySpawn(t, f, sharedRuntime, "sync-grandchild", "Existing recursive delegated work.", false)
 	subagentTestFinished(t, f, grandchild.SessionID)
 	outside, err := f.service.CreateSession(f.ctx, f.agent.ID, "Another ordinary root")
 	if err != nil {
@@ -238,7 +238,7 @@ func TestHostSubagentModelSelectionPropagatesOnlyBelowSelectedSession(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	grandchild := subagentTestSpawn(t, f, selectedRuntime, "selected-model-grandchild", "Nested model target.", false)
+	grandchild := subagentTestLegacySpawn(t, f, selectedRuntime, "selected-model-grandchild", "Existing nested model target.", false)
 	subagentTestFinished(t, f, grandchild.SessionID)
 	sibling := subagentTestSpawn(t, f, parent, "unselected-model-sibling", "Sibling outside the selected subtree.", false)
 	subagentTestFinished(t, f, sibling.SessionID)

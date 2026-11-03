@@ -28,7 +28,7 @@ func TestDeleteAgentRemovesDelegatedTreesAcrossRolloutsAndKeepsFilesAndOtherBots
 	if err != nil {
 		t.Fatal(err)
 	}
-	grandchild := subagentTestSpawn(t, f, sharedRuntime, "bot-fresh-grandchild", "Fresh-context grandchild work.", false)
+	grandchild := subagentTestLegacySpawn(t, f, sharedRuntime, "bot-fresh-grandchild", "Fresh-context grandchild work.", false)
 	grandchildState := subagentTestFinished(t, f, grandchild.SessionID)
 	if grandchildState.RolloutID == sharedState.RolloutID {
 		t.Fatal("fixture did not create a descendant in an independent Rollout")

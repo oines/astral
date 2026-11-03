@@ -12,6 +12,7 @@ export function sessionWithMetadata<T extends Session>(catalog: T, live?: T): T 
     title: source.title, title_source: source.title_source, source: source.source, pinned: source.pinned, archived: source.archived, private: source.private,
     binding_id: source.binding_id, conversation_id: source.conversation_id, channel_platform: source.channel_platform,
     computer_id: source.computer_id, cwd: source.cwd, deletion: source.deletion, parent_session_id: source.parent_session_id, fork_entry_id: source.fork_entry_id,
-    subagent_parent_id: source.subagent_parent_id,
+    // Delegation cannot be cleared by an omitted field in a cached/live view.
+    subagent_parent_id: source.subagent_parent_id || catalog.subagent_parent_id || live.subagent_parent_id,
   }
 }

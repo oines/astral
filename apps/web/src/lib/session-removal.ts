@@ -6,7 +6,7 @@ export function createSessionCatalog() {
   const known = new Map<string, Relationship>()
   let listed = new Set<string>()
   function remember(sessions: Iterable<Relationship>) {
-    for (const session of sessions) known.set(session.id, { id: session.id, agent_id: session.agent_id, subagent_parent_id: session.subagent_parent_id })
+    for (const session of sessions) known.set(session.id, { id: session.id, agent_id: session.agent_id, subagent_parent_id: session.subagent_parent_id || known.get(session.id)?.subagent_parent_id })
   }
   return {
     remember,

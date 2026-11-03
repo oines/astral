@@ -123,7 +123,7 @@ func TestSubagentModelChangeRetainsIntentAfterCommittedWriteLosesBothAcknowledge
 	})
 }
 
-func TestSubagentSpawnReconcilesPendingModelChangeBeforeInheritingSelection(t *testing.T) {
+func TestRootSpawnReconcilesPendingModelChangeBeforeInheritingSelection(t *testing.T) {
 	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("Inherited current model selection.") })
 	parent := subagentTestSeed(t, f)
 	child := subagentTestSpawn(t, f, parent, "pending-model-parent", "Create a descendant later.", false)
@@ -146,7 +146,7 @@ func TestSubagentSpawnReconcilesPendingModelChangeBeforeInheritingSelection(t *t
 		t.Fatal(err)
 	}
 	// Stop exactly between the root's Core commit and the Host fan-out. No
-	// worker can reconcile it before the old child tries to create a new child.
+	// worker can reconcile it before the root creates another direct child.
 	if err := parent.core.Load().SelectModel(f.ctx, wanted); err != nil {
 		t.Fatal(err)
 	}
@@ -154,8 +154,8 @@ func TestSubagentSpawnReconcilesPendingModelChangeBeforeInheritingSelection(t *t
 	if err := f.store.Get(f.ctx, "subagent_settings", child.SessionID, &before); err != nil || !reflect.DeepEqual(before.Configuration.Selection, original) {
 		t.Fatalf("fixture already propagated child settings: %+v %v", before.Configuration.Selection, err)
 	}
-	grandchild := subagentTestSpawn(t, f, childRuntime, "spawn-before-model-worker", "Inherit the latest model and reasoning.", false)
-	for _, id := range []string{child.SessionID, grandchild.SessionID} {
+	newChild := subagentTestSpawn(t, f, parent, "spawn-before-model-worker", "Inherit the latest model and reasoning.", false)
+	for _, id := range []string{child.SessionID, newChild.SessionID} {
 		var settings subagentSettings
 		if err := f.store.Get(f.ctx, "subagent_settings", id, &settings); err != nil || !reflect.DeepEqual(settings.Configuration.Selection, wanted) {
 			t.Fatalf("spawn inherited stale settings for %s: %+v %v", id, settings.Configuration.Selection, err)
@@ -168,10 +168,10 @@ func TestSubagentSpawnReconcilesPendingModelChangeBeforeInheritingSelection(t *t
 	if got := childRuntime.core.Load().Configuration().Selection; !reflect.DeepEqual(got, original) {
 		t.Fatalf("fixture no longer exercises an old live child selection: %+v", got)
 	}
-	if _, err := f.coreStore.LoadState(f.ctx, grandchild.SessionID); !errors.Is(err, core.ErrNotFound) {
-		t.Fatalf("spawn initialized the queued grandchild before worker recovery: %v", err)
+	if _, err := f.coreStore.LoadState(f.ctx, newChild.SessionID); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("spawn initialized the queued child before worker recovery: %v", err)
 	}
 	f.restart(t)
-	subagentWaitTreeSelection(t, f, []string{parent.id, child.SessionID, grandchild.SessionID}, wanted)
-	subagentTestFinished(t, f, grandchild.SessionID)
+	subagentWaitTreeSelection(t, f, []string{parent.id, child.SessionID, newChild.SessionID}, wanted)
+	subagentTestFinished(t, f, newChild.SessionID)
 }
