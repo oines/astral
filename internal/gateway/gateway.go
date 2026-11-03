@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -145,24 +144,15 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		return MessageObservation(observation), err
 	})
 	const contentPath = "/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content"
-	s.Contract.Describe(httpcontract.Operation{Method: "GET", Path: contentPath, ID: "agentAttachmentContent", Tag: "Agent Gateway", CommandAuth: true, ContentType: "application/octet-stream"})
+	s.describeContent(httpcontract.Operation{Method: "GET", Path: contentPath, ID: "agentAttachmentContent", Tag: "Agent Gateway", CommandAuth: true, ContentType: "application/octet-stream"})
 	s.mux.HandleFunc("GET "+contentPath, func(w http.ResponseWriter, r *http.Request) {
 		download, mediaType, err := c.AttachmentContent(r.Context(), binding(r), r.PathValue("id"), r.PathValue("message_id"), r.PathValue("ref"))
 		if err != nil {
 			httpcontract.Failure(w, r, err)
 			return
 		}
-		if mediaType == "" {
-			mediaType = "application/octet-stream"
-		}
-		w.Header().Set("Content-Type", mediaType)
-		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": download.Name}))
-		if download.Size > 0 {
-			w.Header().Set("Content-Length", strconv.FormatInt(download.Size, 10))
-		}
-		w.Header().Set("Cache-Control", "private, no-store")
-		w.WriteHeader(http.StatusOK)
-		w.(*responseWriter).stream = download.Body
+		download.MediaType = mediaType
+		serveContent(w, r, download)
 	})
 	register[httpcontract.Empty, []domain.Conversation](s, "GET", "/v1/conversations", "agentConversations", func(r *http.Request, _ httpcontract.Empty) ([]domain.Conversation, error) {
 		return c.VisibleConversations(r.Context(), binding(r).AgentID)
@@ -302,6 +292,7 @@ func (s *Service) Handle(ctx context.Context, request computers.GatewayRequest) 
 	}
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Idempotency-Key", request.Intent)
+	r.Header.Set("Range", request.Range)
 	w := &responseWriter{header: http.Header{}}
 	s.mux.ServeHTTP(w, r)
 	if w.stream == nil && !json.Valid(w.body.Bytes()) {

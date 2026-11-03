@@ -16,6 +16,8 @@ If Docker Desktop, OrbStack, or another compatible runtime is already installed 
 
 Astral downloads a prepared Ubuntu environment and starts the container. The first download can take time; the dialog or target terminal shows progress and errors. Later creations can reuse the downloaded image.
 
+**Use a local container** connects to the Server through the container runtime's host access, rather than through your public web address or reverse proxy. Astral tests that route from the actual container environment and checks the Server's identity before using it. If local access fails, creation reports that problem instead of falling back to the public address. This applies to new local containers; existing container connections are not changed automatically. The other-machine command continues to use the Server address you selected for that machine.
+
 Once online, grant access in the Bot's **Computer access** settings and select the container in a session. Try a small task to confirm the environment:
 
 > Create container-trial.md on the current computer with today's date. Give me a file link and its directory. Leave other files unchanged.
@@ -46,6 +48,7 @@ Opening Add Computer checks Docker on the Server host. After fixing an environme
 | Engine unreachable | Start Docker Desktop or the relevant service and check that a local engine is selected. |
 | Permission denied | Identify the Server's actual system account in the error. For a Linux Server, use the instructions below. |
 | Image or program download fails | Check access to the official image registry and release downloads from that machine. |
+| The container cannot reach the local Server | Check the Server's listening address and local firewall, and whether the container runtime can reach the Server host's port. A public web address does not replace this local route. |
 | Docker works on the browser device but the option is unavailable | The check runs on the Server host. Use the other-machine container command to create one on the browser device. |
 
 Expand **Error details** for other Docker diagnostics. You can still connect a native computer while the container environment is unavailable.

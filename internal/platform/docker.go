@@ -185,6 +185,9 @@ type DockerOptions struct {
 	EnrollmentFile string
 	Runtime        *DockerInfo
 	ServerURLs     []string
+	// LocalServerURL is set only by the Server's local-container shortcut. It
+	// excludes public/LAN enrollment routes without changing remote CLI setup.
+	LocalServerURL string
 	// RefreshEnrollment remounts an atomically replaced enrollment file in an
 	// existing container. Starting an already running container is a no-op.
 	RefreshEnrollment bool
@@ -365,9 +368,20 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 	if report != nil {
 		report("checking_network", "Checking container access to the Server.")
 	}
-	network, serverURL, err := containerRoute(ctx, image, probe.Arch, options.Binary, enrollment, options.ServerURLs, reportLine("checking_network"))
-	if err != nil {
-		return "", err
+	var network, serverURL string
+	addHostGateway := false
+	if options.LocalServerURL != "" {
+		route, routeErr := localContainerRoute(ctx, image, probe.Arch, options.Binary, options.LocalServerURL, enrollment.ServerPin, reportLine("checking_network"))
+		if routeErr != nil {
+			return "", routeErr
+		}
+		network, serverURL, addHostGateway = route.network, route.serverURL, route.addHostGateway
+	} else {
+		network, serverURL, err = containerRoute(ctx, image, probe.Arch, options.Binary, enrollment, options.ServerURLs, reportLine("checking_network"))
+		if err != nil {
+			return "", err
+		}
+		addHostGateway = network == "bridge"
 	}
 	if serverURL != enrollment.ServerURL {
 		enrollment.ServerURL = serverURL
@@ -401,7 +415,7 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 		"--mount", "type=volume,src=" + volume + ",dst=/var/lib/astral",
 		"--mount", dockerBindMount(options.EnrollmentFile, "/run/astral-enrollment.json"),
 		image, "computer", "supervise", "--enrollment-file", "/run/astral-enrollment.json", "--root", "/var/lib/astral"}
-	if network == "bridge" {
+	if addHostGateway {
 		args = append([]string{"create", "--add-host", "astral.host.internal:host-gateway"}, args[1:]...)
 	}
 	if report != nil {
@@ -528,6 +542,17 @@ func (s *Server) provision(operation domain.Provisioning) {
 			return
 		}
 		alreadyRegistered = record.State == "registered"
+		if !alreadyRegistered && !isLocalContainerAddress(enrollment.ServerURL, s.URL) {
+			existing, findErr := findExistingContainer(ctx, operation.ID)
+			if findErr != nil {
+				fail(findErr)
+				return
+			}
+			if existing != "" {
+				fail(domain.Conflict("this existing container uses a non-local Server address; update its connection explicitly before retrying"))
+				return
+			}
+		}
 		if !alreadyRegistered && time.Now().After(record.ExpiresAt) {
 			operation.EnrollmentID = ""
 			refreshEnrollment = true
@@ -535,7 +560,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 	}
 	if operation.EnrollmentID == "" {
 		localURL := s.URL
-		if refreshEnrollment && enrollment.ServerURL != "" {
+		if refreshEnrollment && isLocalContainerAddress(enrollment.ServerURL, s.URL) {
 			// The original container retains its network. Keep its previously
 			// selected reachable route when replacing only the pairing token.
 			localURL = enrollment.ServerURL
@@ -559,12 +584,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 			return
 		}
 	}
-	network := s.network.snapshot()
-	serverURLs := append([]string{}, network.PublicURLs.Value...)
-	for _, address := range network.Addresses {
-		serverURLs = append(serverURLs, address.URL)
-	}
-	id, err := LaunchContainer(ctx, DockerOptions{Identity: operation.ID, Binary: binary, EnrollmentFile: enrollmentPath, Runtime: &probe, ServerURLs: serverURLs, RefreshEnrollment: refreshEnrollment}, report)
+	id, err := LaunchContainer(ctx, DockerOptions{Identity: operation.ID, Binary: binary, EnrollmentFile: enrollmentPath, Runtime: &probe, LocalServerURL: s.URL, RefreshEnrollment: refreshEnrollment}, report)
 	operation.ContainerID = id
 	if err != nil {
 		fail(err)

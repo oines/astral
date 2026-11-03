@@ -4,11 +4,9 @@ package filestream
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/url"
-	"path"
 	"strings"
 
 	core "github.com/oines/astral-core"
@@ -147,46 +145,6 @@ func (s *Service) FreezeImages(ctx context.Context, agentID, sessionID string, m
 		image := processed.Content[1]
 		image.URL = part.URL
 		*part = image
-	}
-	return nil
-}
-
-// PersistToolImages freezes derived image bytes on the invocation's source
-// Computer before Core can commit the tool result.
-func (s *Service) PersistToolImages(ctx context.Context, b domain.ExecutionBinding, result *core.ToolResult) error {
-	for i := range result.Content {
-		part := &result.Content[i]
-		if part.Type != "image" {
-			continue
-		}
-		if part.URL != "" {
-			if _, err := s.Get(ctx, b.AgentID, part.URL); err != nil {
-				return err
-			}
-			if len(part.Data) == 0 {
-				message := core.Message{Content: []core.Content{*part}}
-				if err := s.FreezeImages(ctx, b.AgentID, b.SessionID, &message); err != nil {
-					return err
-				}
-				*part = message.Content[0]
-			}
-			continue
-		}
-		var encoded string
-		if json.Unmarshal(part.Data, &encoded) != nil {
-			return domain.Invalid("tool image did not contain encoded image bytes")
-		}
-		suffix := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}[part.MediaType]
-		if suffix == "" {
-			return domain.Invalid("unsupported tool image media type")
-		}
-		ref, err := s.Upload(ctx, b, path.Base(domain.ID("image")+suffix), base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded)))
-		if err != nil {
-			return err
-		}
-		// Keep the original tool-produced bytes in rollout. The attachment copy
-		// provides a URI for file tools, not the replay source.
-		part.URL = URL(ref)
 	}
 	return nil
 }

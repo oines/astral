@@ -39,6 +39,16 @@ A successful response contains the platform operation's data in `result`. It may
 
 The account must belong to the current Bot, and the chat must remain authorized. Access to one Telegram topic does not grant parent-group management. Chats bound to private conversations keep their private-access restrictions.
 
+## Read original file byte ranges
+
+The `.../content` endpoints stream original bytes without saving a file. They accept one `Range` header when the source has a known positive size, for example `bytes=1048576-2097151`, `bytes=1048576-`, or `bytes=-65536`. A valid range returns **206**, `Accept-Ranges: bytes`, and the matching `Content-Range` and `Content-Length`. An invalid, multiple, or unsatisfiable range returns **416** with `Content-Range: bytes */<size>`.
+
+Range support is needed in both the Server and the calling computer's Daemon, so update them together. An older Daemon does not forward the Range header; updating only the Server does not enable resuming downloads.
+
+Without a usable known size, the endpoint ignores Range and returns the complete stream with **200**. Verify **206** and the returned range before appending to a partial download; download the complete file again if the source has changed. When using curl, reject non-2xx statuses with `--fail-with-body` or an explicit status check, and check its exit code for body-read failures too.
+
+Astral does not cache the source file for these requests. It may reopen the source and read and discard the preceding bytes, so a Range request does not guarantee that the platform CDN itself supports resume.
+
 ## Telegram
 
 Read exact method names and parameters from the account's catalog. Field definitions are in the corresponding [Telegram Bot API](https://core.telegram.org/bots/api) method.

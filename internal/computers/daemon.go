@@ -387,7 +387,7 @@ func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (domain.ExecutionBindi
 			http.Error(w, "gateway expects a small JSON body", http.StatusBadRequest)
 			return
 		}
-		call := GatewayRequest{Binding: b, APIToken: apiToken, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: raw, Intent: r.Header.Get("Idempotency-Key")}
+		call := GatewayRequest{Binding: b, APIToken: apiToken, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Range: r.Header.Get("Range"), Body: raw, Intent: r.Header.Get("Idempotency-Key")}
 		var response GatewayResponse
 		meta, body, err := peer.Call(r.Context(), "gateway", call, nil)
 		if err == nil {
