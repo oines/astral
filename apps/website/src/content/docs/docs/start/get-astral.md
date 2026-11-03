@@ -11,22 +11,22 @@ To keep Astral on a separate Linux server and use it through a browser, follow [
 
 ## Choose a desktop download
 
-<p><span data-astral-release-status data-fallback-version="0.1.12" data-latest-prefix="Latest release: " aria-live="polite">Available version: v0.1.12</span> · <a data-astral-release-notes href="https://github.com/oines/astral/releases/tag/v0.1.12">Release notes, all assets, and checksums</a> · <a href="https://github.com/oines/astral/releases/latest">Latest on GitHub</a></p>
+<p><span data-astral-release-status data-fallback-version="0.1.13" data-latest-prefix="Latest release: " aria-live="polite">Available version: v0.1.13</span> · <a data-astral-release-notes href="https://github.com/oines/astral/releases/tag/v0.1.13">Release notes, all assets, and checksums</a> · <a href="https://github.com/oines/astral/releases/latest">Latest on GitHub</a></p>
 
 For a Mac with an Apple M-series chip, choose Apple silicon; for an Intel Mac, choose Intel. Windows and Linux computers with Intel or AMD processors use x64 or x86_64 packages. ARM devices use ARM64.
 
 | Platform | Architecture | Download |
 | --- | --- | --- |
-| macOS | Apple silicon | <a data-astral-download="mac-arm64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.12/Astral-0.1.12-mac-arm64.dmg">DMG</a> |
-| macOS | Intel | <a data-astral-download="mac-x64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.12/Astral-0.1.12-mac-x64.dmg">DMG</a> |
-| Windows | x64 | <a data-astral-download="win-x64-exe" href="https://github.com/oines/astral/releases/download/v0.1.12/Astral-0.1.12-win-x64.exe">EXE installer</a> |
-| Windows | ARM64 | <a data-astral-download="win-arm64-exe" href="https://github.com/oines/astral/releases/download/v0.1.12/Astral-0.1.12-win-arm64.exe">EXE installer</a> |
-| Linux | x86_64 | <a data-astral-download="linux-x64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.12/Astral-0.1.12-linux-x86_64.AppImage">AppImage</a> · <a data-astral-download="linux-x64-deb" href="https://github.com/oines/astral/releases/download/v0.1.12/Astral-0.1.12-linux-amd64.deb">DEB</a> |
-| Linux | ARM64 | <a data-astral-download="linux-arm64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.12/Astral-0.1.12-linux-arm64.AppImage">AppImage</a> · <a data-astral-download="linux-arm64-deb" href="https://github.com/oines/astral/releases/download/v0.1.12/Astral-0.1.12-linux-arm64.deb">DEB</a> |
+| macOS | Apple silicon | <a data-astral-download="mac-arm64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-mac-arm64.dmg">DMG</a> |
+| macOS | Intel | <a data-astral-download="mac-x64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-mac-x64.dmg">DMG</a> |
+| Windows | x64 | <a data-astral-download="win-x64-exe" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-win-x64.exe">EXE installer</a> |
+| Windows | ARM64 | <a data-astral-download="win-arm64-exe" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-win-arm64.exe">EXE installer</a> |
+| Linux | x86_64 | <a data-astral-download="linux-x64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-x86_64.AppImage">AppImage</a> · <a data-astral-download="linux-x64-deb" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-amd64.deb">DEB</a> |
+| Linux | ARM64 | <a data-astral-download="linux-arm64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-arm64.AppImage">AppImage</a> · <a data-astral-download="linux-arm64-deb" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-arm64.deb">DEB</a> |
 
 ## Install and open Astral
 
-- **macOS:** open the DMG, drag Astral to Applications, then open it there. The v0.1.12 Mac packages are signed and notarized by Apple; see the [signing report](https://github.com/oines/astral/releases/download/v0.1.12/mac-signing-report.json).
+- **macOS:** open the DMG, drag Astral to Applications, then open it there. The v0.1.13 Mac packages are signed and notarized by Apple; see the [signing report](https://github.com/oines/astral/releases/download/v0.1.13/mac-signing-report.json).
 - **Windows:** double-click the EXE and follow the installer. The package is unsigned, so Windows may show a SmartScreen prompt. Check that it came from the official release linked on this page.
 - **Linux:** for an AppImage, allow the file to run as a program in its file properties, then open it. For a Debian/Ubuntu package installer, choose the DEB. AppImage supports in-app updates; DEB users install a newer package manually. Linux packages are unsigned.
 
