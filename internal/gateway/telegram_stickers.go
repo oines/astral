@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"mime"
 	"net/http"
-	"strconv"
 
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/httpcontract"
@@ -16,7 +14,7 @@ type TelegramStickerDownloadRequest struct {
 
 func (s *Service) telegramStickerRoutes() {
 	const contentPath = "/v1/accounts/{id}/telegram/stickers/content"
-	s.Contract.Describe(httpcontract.Operation{
+	s.describeContent(httpcontract.Operation{
 		Method: "GET", Path: contentPath, ID: "agentTelegramStickerContent", Tag: "Agent Gateway", CommandAuth: true,
 		ContentType: "application/octet-stream",
 		Query: []httpcontract.Parameter{
@@ -34,18 +32,7 @@ func (s *Service) telegramStickerRoutes() {
 			httpcontract.Failure(w, r, err)
 			return
 		}
-		mediaType := download.MediaType
-		if mediaType == "" {
-			mediaType = "application/octet-stream"
-		}
-		w.Header().Set("Content-Type", mediaType)
-		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": download.Name}))
-		if download.Size > 0 {
-			w.Header().Set("Content-Length", strconv.FormatInt(download.Size, 10))
-		}
-		w.Header().Set("Cache-Control", "private, no-store")
-		w.WriteHeader(http.StatusOK)
-		w.(*responseWriter).stream = download.Body
+		serveContent(w, r, download)
 	})
 	register[TelegramStickerDownloadRequest, ReferenceResponse](s, "POST", "/v1/accounts/{id}/telegram/stickers/download", "agentDownloadTelegramSticker", func(r *http.Request, request TelegramStickerDownloadRequest) (ReferenceResponse, error) {
 		ref, err := s.Channels.DownloadTelegramSticker(r.Context(), binding(r), r.PathValue("id"), request.TelegramStickerSource, request.Path)

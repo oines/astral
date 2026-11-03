@@ -34,6 +34,10 @@ type provisioningDockerState struct {
 	FailInjection  bool
 	ProbeNetwork   string
 	ProbeURLs      []string
+	ProbePin       string
+	ProbeGateway   bool
+	ProbeResult    string
+	RejectGateway  bool
 }
 
 // The subprocess records Docker operations without invoking Docker or building
@@ -128,6 +132,7 @@ func TestProvisioningDockerProcess(t *testing.T) {
 		}
 	case "create":
 		probe := false
+		state.ProbeGateway = false
 		for i, arg := range args {
 			if arg == "--name" && strings.HasPrefix(args[i+1], "astral-network-check-") {
 				probe = true
@@ -135,11 +140,19 @@ func TestProvisioningDockerProcess(t *testing.T) {
 			if arg == "--network" {
 				state.ProbeNetwork = args[i+1]
 			}
+			if arg == "--add-host" {
+				state.ProbeGateway = args[i+1] == "astral.host.internal:host-gateway"
+			}
 			if arg == "astral-network-check" {
+				state.ProbePin = args[i+1]
 				state.ProbeURLs = args[i+2:]
 			}
 		}
 		if probe {
+			if state.RejectGateway && state.ProbeGateway {
+				exitCode = 1
+				break
+			}
 			output = "network-check-container"
 			break
 		}
@@ -170,7 +183,18 @@ func TestProvisioningDockerProcess(t *testing.T) {
 		output = state.ContainerID
 	case "start", "restart":
 		if len(args) == 3 && args[1] == "--attach" && args[2] == "network-check-container" {
-			if state.ProbeNetwork == "host" && len(state.ProbeURLs) > 0 {
+			plan := "host"
+			if state.ProbeNetwork == "bridge" {
+				plan = "native_bridge"
+				if state.ProbeGateway {
+					plan = "mapped_bridge"
+				}
+			}
+			want := state.ProbeResult
+			if want == "" {
+				want = "host"
+			}
+			if plan == want && len(state.ProbeURLs) > 0 {
 				output = state.ProbeURLs[0]
 			} else {
 				exitCode = 1
@@ -563,5 +587,42 @@ func TestServerContainerRegisteredRetryKeepsCredentialsAndConsumedEnrollment(t *
 	records, err := server.Store.List(ctx, "enrollments")
 	if err != nil || len(records) != 1 {
 		t.Fatal("registered retry issued a new pairing")
+	}
+}
+
+func TestServerContainerUnregisteredLegacyPublicRetryRequiresExplicitMaintenance(t *testing.T) {
+	server, ctx, statePath, read := provisioningFixture(t)
+	previous, options, _ := seedProvisioningRetry(t, ctx, server, statePath, "legacy-public-retry", false)
+	options.ServerURL = "https://legacy-public.example.com"
+	path := read().EnrollmentFile
+	if err := WriteJSON(path, options); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, err := server.CreateContainer(ctx, previous.IntentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	await(t, ctx, func() bool {
+		return server.Store.Get(ctx, "provisioning", operation.ID, &operation) == nil && operation.State == "failed"
+	})
+	if !strings.Contains(operation.Error, "update its connection explicitly") || read().Starts != 0 {
+		t.Fatalf("legacy public container was implicitly rerouted or started: %+v", operation)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(after) != string(before) {
+		t.Fatal("legacy public retry rewrote its enrollment")
+	}
+	for _, command := range read().Commands {
+		if command[0] == "create" || command[0] == "start" || command[0] == "restart" {
+			t.Fatalf("legacy public retry changed the container: %v", command)
+		}
+	}
+	records, err := server.Store.List(ctx, "enrollments")
+	if err != nil || len(records) != 1 {
+		t.Fatal("legacy public retry issued a new pairing")
 	}
 }

@@ -68,6 +68,7 @@ type GatewayRequest struct {
 	Method   string                  `json:"method"`
 	Path     string                  `json:"path"`
 	Query    string                  `json:"query,omitempty"`
+	Range    string                  `json:"range,omitempty"`
 	Body     json.RawMessage         `json:"body,omitempty"`
 	Intent   string                  `json:"intent,omitempty"`
 }

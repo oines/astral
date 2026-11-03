@@ -1,10 +1,8 @@
 package gateway
 
 import (
-	"mime"
 	"net/http"
 	"net/url"
-	"strconv"
 
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/domain"
@@ -74,7 +72,7 @@ func (s *Service) napcatEssenceRoutes() {
 		return MessagePartResponse{Part: napcatEssenceViews(r.PathValue("id"), source, []domain.MessagePart{part})[0]}, nil
 	}, query...)
 	mediaQuery := append(append([]httpcontract.Parameter{}, query...), httpcontract.Parameter{Name: "media_digest", Type: "string", Required: true, Description: "Opaque media locator fingerprint from the returned part link; not a file checksum. Refresh parts if it conflicts."})
-	s.Contract.Describe(httpcontract.Operation{Method: "GET", Path: selected + "/content", ID: "agentNapCatEssenceContent", Tag: "Agent Gateway", CommandAuth: true, ContentType: "application/octet-stream", Query: mediaQuery})
+	s.describeContent(httpcontract.Operation{Method: "GET", Path: selected + "/content", ID: "agentNapCatEssenceContent", Tag: "Agent Gateway", CommandAuth: true, ContentType: "application/octet-stream", Query: mediaQuery})
 	s.mux.HandleFunc("GET "+selected+"/content", func(w http.ResponseWriter, r *http.Request) {
 		source, err := napcatEssenceSource(r, true)
 		if err != nil {
@@ -86,18 +84,7 @@ func (s *Service) napcatEssenceRoutes() {
 			httpcontract.Failure(w, r, err)
 			return
 		}
-		mediaType := download.MediaType
-		if mediaType == "" {
-			mediaType = "application/octet-stream"
-		}
-		w.Header().Set("Content-Type", mediaType)
-		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": download.Name}))
-		if download.Size > 0 {
-			w.Header().Set("Content-Length", strconv.FormatInt(download.Size, 10))
-		}
-		w.Header().Set("Cache-Control", "private, no-store")
-		w.WriteHeader(http.StatusOK)
-		w.(*responseWriter).stream = download.Body
+		serveContent(w, r, download)
 	})
 	register[MessagePartDownloadRequest, ReferenceResponse](s, "POST", selected+"/download", "agentDownloadNapCatEssencePart", func(r *http.Request, request MessagePartDownloadRequest) (ReferenceResponse, error) {
 		source, err := napcatEssenceSource(r, true)

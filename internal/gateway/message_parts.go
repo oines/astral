@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"encoding/json"
-	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -161,25 +160,14 @@ func (s *Service) messagePartRoutes() {
 		return s.Channels.MessagePartRaw(r.Context(), binding(r), r.PathValue("id"), r.PathValue("message_id"), r.PathValue("ref"))
 	})
 	const content = selected + "/content"
-	s.Contract.Describe(httpcontract.Operation{Method: "GET", Path: content, ID: "agentMessagePartContent", Tag: "Agent Gateway", CommandAuth: true, ContentType: "application/octet-stream"})
+	s.describeContent(httpcontract.Operation{Method: "GET", Path: content, ID: "agentMessagePartContent", Tag: "Agent Gateway", CommandAuth: true, ContentType: "application/octet-stream"})
 	s.mux.HandleFunc("GET "+content, func(w http.ResponseWriter, r *http.Request) {
 		download, err := s.Channels.MessagePartContent(r.Context(), binding(r), r.PathValue("id"), r.PathValue("message_id"), r.PathValue("ref"))
 		if err != nil {
 			httpcontract.Failure(w, r, err)
 			return
 		}
-		mediaType := download.MediaType
-		if mediaType == "" {
-			mediaType = "application/octet-stream"
-		}
-		w.Header().Set("Content-Type", mediaType)
-		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": download.Name}))
-		if download.Size > 0 {
-			w.Header().Set("Content-Length", strconv.FormatInt(download.Size, 10))
-		}
-		w.Header().Set("Cache-Control", "private, no-store")
-		w.WriteHeader(http.StatusOK)
-		w.(*responseWriter).stream = download.Body
+		serveContent(w, r, download)
 	})
 	register[MessagePartDownloadRequest, ReferenceResponse](s, "POST", selected+"/download", "agentDownloadMessagePart", func(r *http.Request, request MessagePartDownloadRequest) (ReferenceResponse, error) {
 		ref, err := s.Channels.DownloadMessagePart(r.Context(), binding(r), r.PathValue("id"), r.PathValue("message_id"), r.PathValue("ref"), request.Path)

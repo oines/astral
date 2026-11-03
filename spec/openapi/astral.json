@@ -14059,6 +14059,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.",
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -14072,6 +14081,53 @@
               }
             },
             "description": "OK"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "bytes",
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "default": {
             "content": {
@@ -14466,6 +14522,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.",
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -14479,6 +14544,53 @@
               }
             },
             "description": "OK"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "bytes",
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "default": {
             "content": {
@@ -14764,6 +14876,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.",
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -14777,6 +14898,53 @@
               }
             },
             "description": "OK"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "bytes",
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "default": {
             "content": {
@@ -14918,6 +15086,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.",
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -14931,6 +15108,53 @@
               }
             },
             "description": "OK"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "bytes",
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "default": {
             "content": {
@@ -15215,6 +15439,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.",
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -15228,6 +15461,53 @@
               }
             },
             "description": "OK"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "bytes",
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "default": {
             "content": {
@@ -15412,6 +15692,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.",
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -15425,6 +15714,53 @@
               }
             },
             "description": "OK"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "bytes",
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "default": {
             "content": {

@@ -25,6 +25,8 @@ If the Bot reports completion without a link, ask:
 
 The link retains its original computer. Selecting a different computer later does not move the file or change where an older link points.
 
+Images returned directly by a tool are retained in the conversation and remain available when you reopen its history. Displaying them does not require an extra file copy on the computer.
+
 ### A file will not open
 
 Check these in order:

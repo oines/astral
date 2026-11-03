@@ -5727,6 +5727,12 @@ export type AgentTelegramOperationsResponse = AgentTelegramOperationsResponses[k
 
 export type AgentTelegramStickerContentData = {
     body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
     path: {
         id: string;
     };
@@ -5740,6 +5746,10 @@ export type AgentTelegramStickerContentData = {
 
 export type AgentTelegramStickerContentErrors = {
     /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
+    /**
      * Operation error
      */
     default: AstralInternalHttpcontractError;
@@ -5752,6 +5762,10 @@ export type AgentTelegramStickerContentResponses = {
      * OK
      */
     200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
 };
 
 export type AgentTelegramStickerContentResponse = AgentTelegramStickerContentResponses[keyof AgentTelegramStickerContentResponses];
@@ -5965,6 +5979,12 @@ export type AgentConversationsResponse = AgentConversationsResponses[keyof Agent
 
 export type AgentNapCatAvatarContentData = {
     body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
     path: {
         id: string;
     };
@@ -5973,6 +5993,10 @@ export type AgentNapCatAvatarContentData = {
 };
 
 export type AgentNapCatAvatarContentErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
     /**
      * Operation error
      */
@@ -5986,6 +6010,10 @@ export type AgentNapCatAvatarContentResponses = {
      * OK
      */
     200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
 };
 
 export type AgentNapCatAvatarContentResponse = AgentNapCatAvatarContentResponses[keyof AgentNapCatAvatarContentResponses];
@@ -6094,6 +6122,12 @@ export type AgentNapCatEssencePartResponse = AgentNapCatEssencePartResponses[key
 
 export type AgentNapCatEssenceContentData = {
     body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
     path: {
         id: string;
         message_id: string;
@@ -6118,6 +6152,10 @@ export type AgentNapCatEssenceContentData = {
 
 export type AgentNapCatEssenceContentErrors = {
     /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
+    /**
      * Operation error
      */
     default: AstralInternalHttpcontractError;
@@ -6130,6 +6168,10 @@ export type AgentNapCatEssenceContentResponses = {
      * OK
      */
     200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
 };
 
 export type AgentNapCatEssenceContentResponse = AgentNapCatEssenceContentResponses[keyof AgentNapCatEssenceContentResponses];
@@ -6178,6 +6220,12 @@ export type AgentDownloadNapCatEssencePartResponse = AgentDownloadNapCatEssenceP
 
 export type AgentNapCatMemberAvatarContentData = {
     body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
     path: {
         id: string;
         user_id: string;
@@ -6187,6 +6235,10 @@ export type AgentNapCatMemberAvatarContentData = {
 };
 
 export type AgentNapCatMemberAvatarContentErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
     /**
      * Operation error
      */
@@ -6200,6 +6252,10 @@ export type AgentNapCatMemberAvatarContentResponses = {
      * OK
      */
     200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
 };
 
 export type AgentNapCatMemberAvatarContentResponse = AgentNapCatMemberAvatarContentResponses[keyof AgentNapCatMemberAvatarContentResponses];
@@ -6320,6 +6376,12 @@ export type AgentMessageResponse = AgentMessageResponses[keyof AgentMessageRespo
 
 export type AgentAttachmentContentData = {
     body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
     path: {
         id: string;
         message_id: string;
@@ -6330,6 +6392,10 @@ export type AgentAttachmentContentData = {
 };
 
 export type AgentAttachmentContentErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
     /**
      * Operation error
      */
@@ -6343,6 +6409,10 @@ export type AgentAttachmentContentResponses = {
      * OK
      */
     200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
 };
 
 export type AgentAttachmentContentResponse = AgentAttachmentContentResponses[keyof AgentAttachmentContentResponses];
@@ -6415,6 +6485,12 @@ export type AgentMessagePartResponse = AgentMessagePartResponses[keyof AgentMess
 
 export type AgentMessagePartContentData = {
     body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
     path: {
         id: string;
         message_id: string;
@@ -6425,6 +6501,10 @@ export type AgentMessagePartContentData = {
 };
 
 export type AgentMessagePartContentErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
     /**
      * Operation error
      */
@@ -6438,6 +6518,10 @@ export type AgentMessagePartContentResponses = {
      * OK
      */
     200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
 };
 
 export type AgentMessagePartContentResponse = AgentMessagePartContentResponses[keyof AgentMessagePartContentResponses];

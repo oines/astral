@@ -39,6 +39,16 @@ Authorization: Bearer <当前命令的调用凭据>
 
 账号必须属于当前 Bot，聊天必须仍在授权范围内。仅获准一个 Telegram Topic，不能据此执行父群管理；私密会话对应聊天仍受私密访问限制。
 
+## 按字节范围读取原件
+
+`.../content` 接口流式返回原件字节，不保存文件。来源大小已知且大于零时，支持一个 `Range` 请求头，例如 `bytes=1048576-2097151`、`bytes=1048576-` 或 `bytes=-65536`。有效范围返回 **206**、`Accept-Ranges: bytes`，以及对应的 `Content-Range` 和 `Content-Length`。格式错误、多段或无法满足的范围返回 **416**，并带 `Content-Range: bytes */<size>`。
+
+断点读取需要 Server 和发起调用的电脑 Daemon 都支持此功能，更新时应同步升级两者。较旧的 Daemon 不会转发 Range 请求头，单独更新 Server 不能开启断点续传。
+
+没有可用已知大小的来源会忽略 Range，返回 **200** 和完整流。向已有部分文件追加前，必须核对 **206** 和实际返回的范围；来源已变化时应重新下载完整文件。使用 curl 时，通过 `--fail-with-body` 或显式检查状态码拒绝非 2xx 响应，并检查退出码，以发现正文读取中断。
+
+Astral 不为这些请求缓存源文件，可能重新打开来源，读取并丢弃范围之前的字节。因此，Range 请求不保证平台 CDN 本身支持断点续传。
+
 ## Telegram
 
 从账号操作目录获取准确方法名与参数；字段含义见对应的 [Telegram Bot API](https://core.telegram.org/bots/api) 方法。

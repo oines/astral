@@ -261,6 +261,7 @@ func TestSessionImagesRemainSelfContainedAcrossDeletionReopenAndFork(t *testing.
 		t.Fatal(err)
 	}
 	input := InputRequest{ID: "image-input", Text: "Describe this", Files: []string{filestream.URL(ref)}}
+	assertToolImageFileCount(t, f, 1)
 	receipt, err := f.service.Submit(f.ctx, f.session.ID, input)
 	if err != nil {
 		t.Fatal(err)
@@ -298,6 +299,9 @@ func TestSessionImagesRemainSelfContainedAcrossDeletionReopenAndFork(t *testing.
 	if f.count() != 3 {
 		t.Fatalf("expected three actual generations, got %d", f.count())
 	}
+	// This is the original explicit user upload, not an extra image copy made
+	// while freezing, replaying or forking the image-bearing conversation.
+	assertToolImageFileCount(t, f, 1)
 	coreSession, _ := f.service.Core(f.ctx, child.ID)
 	page, err := coreSession.Attempts().Scan(f.ctx, sessions.AttemptQuery{MaxBytes: 128 << 20})
 	if err != nil {

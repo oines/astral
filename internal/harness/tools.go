@@ -12,7 +12,6 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral-core/standardtools"
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/messages"
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/search"
 )
@@ -179,9 +178,9 @@ func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(co
 		return execution, callErr
 	}
 	result := execution.Result
-	persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
 	if t.Definition().Name == "exec_command" || t.Definition().Name == "write_stdin" {
+		persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
 		var command standardtools.CommandResult
 		if json.Unmarshal(result.Details, &command) == nil {
 			if command.SessionID > 0 {
@@ -215,23 +214,6 @@ func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(co
 				}
 			}
 		}
-	}
-	if err = r.service.Files.PersistToolImages(persist, binding, result); err != nil {
-		return core.ToolExecution{Result: &core.ToolResult{Content: core.Text("The tool ran, but its image attachment could not be recorded: " + err.Error()), Outcome: result.Outcome, IsError: true, Code: "image_delivery_failed"}}, callErr
-	}
-	var files []domain.FileRef
-	for _, part := range result.Content {
-		if part.Type == "image" {
-			file, getErr := r.service.Files.Get(persist, r.agentID, part.URL)
-			if getErr != nil {
-				return execution, getErr
-			}
-			files = append(files, file)
-		}
-	}
-	if len(files) > 0 {
-		description, _ := messages.AttachmentParts(files)
-		result.Content = append(core.Text(description), result.Content...)
 	}
 	return execution, callErr
 }
