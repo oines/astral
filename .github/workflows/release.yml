@@ -25,7 +25,7 @@ concurrency:
 jobs:
   validate:
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'workflow_run' ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     outputs:
@@ -33,7 +33,7 @@ jobs:
       source_sha: ${{ steps.resolve.outputs.source_sha }}
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
-      build_run_id: ${{ steps.producer.outputs.id }}
+      build_run_id: ${{ steps.resolve.outputs.build_run_id }}
       build_metadata_artifact_id: ${{ steps.resolve.outputs.build_metadata_artifact_id }}
       unsigned_artifact_id: ${{ steps.resolve.outputs.unsigned_artifact_id }}
     steps:
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '26.7.0'
-      - name: Select the producer without evaluating shell input
+      - name: Validate the wake-up hint without evaluating shell input
         id: producer
         env:
           ASTRAL_BUILD_RUN_ID: ${{ github.event.workflow_run.id || inputs.build_run_id }}
@@ -62,7 +62,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ASTRAL_BUILD_RUN_ID: ${{ steps.producer.outputs.id }}
+          ASTRAL_RELEASE_SELECT_LATEST: ${{ github.event_name == 'workflow_run' && 'true' || 'false' }}
         run: node scripts/rolling-release-inputs.mjs resolve --output-dir .release-resolution
+      - name: Record the selected source or skip reason
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync, readFileSync } from 'node:fs'
+          const result = JSON.parse(readFileSync('.release-resolution/resolution.json', 'utf8'))
+          const state = result.eligible ? `Selected ${result.tag}` : `Skipped: ${result.reason || 'superseded'}`
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${state}\n\nPrepare run: ${result.build_run_id}\n\nSource: ${result.source_sha}\n`)
+          JS
 
   mac-programs:
     name: Sign unified Mac programs

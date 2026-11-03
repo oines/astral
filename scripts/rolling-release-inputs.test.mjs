@@ -32,20 +32,20 @@ function zip(entries) {
 }
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 const clone = value => JSON.parse(JSON.stringify(value))
-async function fixture(t, { runAttempt = 1, metadataAttempt = 1, entries, incompleteAttempt = false } = {}) {
+async function fixture(t, { runID = 501, runNumber = 1, runAttempt = 1, metadataAttempt = 1, entries, incompleteAttempt = false } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'astral-input-fixture-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const environment = { GITHUB_REPOSITORY: 'oines/astral', GH_TOKEN: 'fixture-only-not-a-credential', GITHUB_OUTPUT: path.join(root, 'outputs') }
-  const run = { id: 501, repository: { full_name: 'oines/astral' }, head_repository: { full_name: 'oines/astral' }, path: '.github/workflows/prepare-release.yml', head_branch: 'main', event: 'push', head_sha: 'a'.repeat(40), run_number: 1, run_attempt: runAttempt, status: 'completed', conclusion: 'success' }
-  const metadata = { schema_version: 1, repository: 'oines/astral', source_sha: run.head_sha, version: '0.1.14', build_run_id: 501, build_run_attempt: metadataAttempt, build_run_number: 1, build_run_url: 'https://github.com/oines/astral/actions/runs/501', workflow_path: '.github/workflows/prepare-release.yml' }
+  const run = { id: runID, repository: { full_name: 'oines/astral' }, head_repository: { full_name: 'oines/astral' }, path: '.github/workflows/prepare-release.yml', head_branch: 'main', event: 'push', head_sha: 'a'.repeat(40), run_number: runNumber, run_attempt: runAttempt, status: 'completed', conclusion: 'success' }
+  const metadata = { schema_version: 1, repository: 'oines/astral', source_sha: run.head_sha, version: `0.1.${13 + runNumber}`, build_run_id: runID, build_run_attempt: metadataAttempt, build_run_number: runNumber, build_run_url: `https://github.com/oines/astral/actions/runs/${runID}`, workflow_path: '.github/workflows/prepare-release.yml' }
   const bytes = zip(entries || [{ name: 'release-build.json', value: JSON.stringify(metadata) }])
   const payloads = new Map([[101, bytes], [102, zip([{ name: 'astral-linux-amd64', value: 'Fixture binary' }])]])
   const artifacts = [
-    { id: 101, name: `build-metadata-${metadataAttempt}`, expired: false, size_in_bytes: bytes.length, digest: `sha256:${sha256(bytes)}`, workflow_run: { id: 501, head_sha: run.head_sha } },
-    { id: 102, name: `unsigned-distribution-${metadataAttempt}`, expired: false, size_in_bytes: payloads.get(102).length, digest: `sha256:${sha256(payloads.get(102))}`, workflow_run: { id: 501, head_sha: run.head_sha } },
+    { id: 101, name: `build-metadata-${metadataAttempt}`, expired: false, size_in_bytes: bytes.length, digest: `sha256:${sha256(bytes)}`, workflow_run: { id: runID, head_sha: run.head_sha } },
+    { id: 102, name: `unsigned-distribution-${metadataAttempt}`, expired: false, size_in_bytes: payloads.get(102).length, digest: `sha256:${sha256(payloads.get(102))}`, workflow_run: { id: runID, head_sha: run.head_sha } },
   ]
   if (incompleteAttempt) artifacts.push({ ...clone(artifacts[0]), id: 103, name: `build-metadata-${runAttempt}` })
-  const requests = [], recent = [run], ancestry = []
+  const requests = [], recent = [run], ancestry = [], tagState = {}
   const request = async (input, options = {}) => {
     const url = new URL(input)
     requests.push({ url: url.href, options })
@@ -58,22 +58,25 @@ async function fixture(t, { runAttempt = 1, metadataAttempt = 1, entries, incomp
     assert.equal(options.redirect, 'manual')
     const route = url.pathname.replace('/repos/oines/astral', '')
     let value
-    if (route === '/actions/runs/501') value = run
+    if (route === `/actions/runs/${runID}`) value = run
     else if (route === '/actions/workflows/prepare-release.yml/runs') value = { workflow_runs: recent }
-    else if (route === '/actions/runs/501/artifacts') value = { artifacts }
+    else if (route === `/actions/runs/${runID}/artifacts`) value = { artifacts }
     else if (/^\/actions\/artifacts\/\d+$/.test(route)) value = artifacts.find(item => item.id === Number(route.split('/').at(-1)))
     else if (/^\/actions\/artifacts\/\d+\/zip$/.test(route)) return new globalThis.Response(null, { status: 302, headers: { location: `https://artifact-store.example.test/${route.split('/').at(-2)}` } })
+    else if (route === `/git/ref/tags/v${metadata.version}`) return new globalThis.Response(JSON.stringify(tagState.reference || {}), { status: tagState.reference ? 200 : 404 })
+    else if (tagState.object && route === `/git/tags/${tagState.reference.object.sha}`) value = tagState.object
     else assert.fail('Unexpected API route: ' + route)
     return new globalThis.Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
   }
-  const options = { runID: 501, outputDirectory: path.join(root, 'resolution'), environment, fetch: request, verifySource: source => ancestry.push(source) }
-  return { root, run, metadata, artifacts, payloads, requests, recent, ancestry, options, request, environment }
+  const options = { runID, outputDirectory: path.join(root, 'resolution'), environment, fetch: request, verifySource: source => ancestry.push(source) }
+  return { root, run, metadata, artifacts, payloads, requests, recent, ancestry, options, request, environment, tagState }
 }
 
 test('resolve binds immutable artifact IDs and frozen metadata to its exact successful main producer', async t => {
   const f = await fixture(t)
   const result = await resolveInputs(f.options)
   assert.equal(result.eligible, true)
+  assert.equal(result.build_run_id, 501)
   assert.equal(result.version, '0.1.14')
   assert.equal(result.tag, 'v0.1.14')
   assert.equal(result.build_metadata_artifact_id, 101)
@@ -82,7 +85,7 @@ test('resolve binds immutable artifact IDs and frozen metadata to its exact succ
   assert.deepEqual(result.build_metadata, f.metadata)
   assert.deepEqual(f.ancestry, [f.run.head_sha])
   assert.deepEqual(JSON.parse(await readFile(path.join(f.options.outputDirectory, 'resolution.json'), 'utf8')), result)
-  assert.match(await readFile(f.environment.GITHUB_OUTPUT, 'utf8'), /^eligible=true\nsource_sha=/)
+  assert.match(await readFile(f.environment.GITHUB_OUTPUT, 'utf8'), /^eligible=true\nbuild_run_id=501\nsource_sha=/)
 })
 
 test('a newer Prepare request supersedes queued older input without downloading artifacts', async t => {
@@ -211,4 +214,87 @@ test('Windows extraction passes paths as environment data to fixed PowerShell pr
   await downloadArtifact({ artifactID: 102, runID: 501, output, expectedSHA: f.run.head_sha, environment: f.environment, fetch: f.request, platform: 'win32', execute })
   assert.equal(commands.length, 2)
   assert.equal(await readFile(path.join(output, 'astral-linux-amd64'), 'utf8'), 'Fixture binary')
+})
+
+
+test('out-of-order success, cancelled and failed wake hints select the latest Prepare after the lock', async t => {
+  for (const hintConclusion of ['success', 'cancelled', 'failure']) {
+    const f = await fixture(t, { runID: 503, runNumber: 3 })
+    f.options.runID = 501
+    f.environment.ASTRAL_RELEASE_SELECT_LATEST = 'true'
+    const old = { ...f.run, id: 501, run_number: 1, conclusion: hintConclusion }
+    const middle = { ...f.run, id: 502, run_number: 2, conclusion: 'success' }
+    f.recent.splice(0, f.recent.length, middle, old, f.run)
+    const result = await resolveInputs(f.options)
+    assert.equal(result.eligible, true)
+    assert.equal(result.build_run_id, 503)
+    assert.equal(result.version, '0.1.16')
+    assert.equal(result.build_metadata.build_run_id, 503)
+    assert.match(f.requests[0].url, /prepare-release\.yml\/runs\?/)
+    assert.match(f.requests[1].url, /actions\/runs\/503$/)
+    assert.ok(!f.requests.some(item => item.url.includes('/actions/runs/501')))
+    assert.match(await readFile(f.environment.GITHUB_OUTPUT, 'utf8'), /^eligible=true\nbuild_run_id=503\n/)
+  }
+})
+
+test('an unfinished or failed latest Prepare blocks publication instead of falling back to older success', async t => {
+  for (const [status, conclusion] of [['in_progress', null], ['completed', 'failure'], ['completed', 'cancelled'], ['completed', 'timed_out']]) {
+    const f = await fixture(t, { runID: 503, runNumber: 3 })
+    f.environment.ASTRAL_RELEASE_SELECT_LATEST = 'true'
+    f.options.runID = 501
+    f.run.status = status; f.run.conclusion = conclusion
+    f.recent.push({ ...f.run, id: 502, run_number: 2, status: 'completed', conclusion: 'success' })
+    const result = await resolveInputs(f.options)
+    assert.equal(result.eligible, false)
+    assert.equal(result.reason, 'not_ready')
+    assert.equal(result.build_run_id, 503)
+    assert.equal(f.requests.length, 2)
+    assert.ok(!f.requests.some(item => item.url.includes('/artifacts')))
+  }
+})
+
+function alreadyTagged(f) {
+  f.tagState.reference = { ref: `refs/tags/v${f.metadata.version}`, object: { type: 'tag', sha: 'e'.repeat(40) } }
+  f.tagState.object = { tag: `v${f.metadata.version}`, sha: 'e'.repeat(40), object: { type: 'commit', sha: f.run.head_sha } }
+}
+
+test('duplicate wakes and manual requests retain the exact existing source tag without a second publication', async t => {
+  for (const selectLatest of [false, true]) {
+    const f = await fixture(t)
+    if (selectLatest) f.environment.ASTRAL_RELEASE_SELECT_LATEST = 'true'
+    alreadyTagged(f)
+    const result = await resolveInputs(f.options)
+    assert.equal(result.eligible, false)
+    assert.equal(result.reason, 'already_tagged')
+    assert.equal(result.build_run_id, 501)
+    assert.equal(result.tag, 'v0.1.14')
+    assert.ok(f.requests.every(item => (item.options.method || 'GET') === 'GET'))
+    assert.match(await readFile(f.environment.GITHUB_OUTPUT, 'utf8'), /^eligible=false\nreason=already_tagged\nbuild_run_id=501\n/)
+  }
+})
+
+test('existing lightweight or different-source tags cannot silently deduplicate a release', async t => {
+  for (const change of [
+    f => { f.tagState.reference.object.type = 'commit' },
+    f => { f.tagState.object.object.sha = 'b'.repeat(40) },
+    f => { f.tagState.object.object.type = 'tag' },
+    f => { f.tagState.object.tag = 'v0.1.15' },
+    f => { f.tagState.object.sha = 'b'.repeat(40) },
+  ]) {
+    const f = await fixture(t)
+    f.environment.ASTRAL_RELEASE_SELECT_LATEST = 'true'
+    alreadyTagged(f); change(f)
+    await assert.rejects(resolveInputs(f.options), /conflicting tag|conflicts with/)
+    assert.ok(f.requests.every(item => (item.options.method || 'GET') === 'GET'))
+  }
+})
+
+test('latest selection still rejects an untrusted newest producer and never chooses the trusted hint', async t => {
+  const f = await fixture(t, { runID: 503, runNumber: 3 })
+  f.environment.ASTRAL_RELEASE_SELECT_LATEST = 'true'
+  f.options.runID = 501
+  f.run.head_repository.full_name = 'fork/astral'
+  f.recent.push({ ...f.run, id: 501, run_number: 1, head_repository: { full_name: 'oines/astral' } })
+  await assert.rejects(resolveInputs(f.options), /trusted main Prepare/)
+  assert.equal(f.requests.length, 2)
 })

@@ -21,8 +21,6 @@ jobs:
   checks:
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/ci.yml
-    with:
-      source_only: true
 
   build:
     if: github.ref == 'refs/heads/main'

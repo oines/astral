@@ -124,17 +124,33 @@ export async function downloadArtifact({ artifactID, runID, output, expectedSHA,
 }
 
 export async function resolveInputs({ runID, outputDirectory, environment = process.env, fetch: request = globalThis.fetch, verifySource = sha => execFileSync('git', ['merge-base', '--is-ancestor', sha, 'origin/main'], { cwd: repositoryRoot, stdio: 'pipe', timeout: 15_000 }) }) {
-  const id = positive(runID, 'Producer run ID')
   const ctx = context(environment, request)
+  const selectLatest = environment.ASTRAL_RELEASE_SELECT_LATEST === 'true'
+  let recent, id
+  async function recentRequests() {
+    const value = await ctx.api('/actions/workflows/prepare-release.yml/runs?branch=main&per_page=100')
+    requireValue(Array.isArray(value.workflow_runs), 'Prepare request inventory is missing.')
+    return value.workflow_runs.filter(item => item.head_branch === 'main' && ['push', 'workflow_dispatch'].includes(item.event))
+  }
+  if (selectLatest) {
+    // A completion event is only a wake-up. An older or cancelled event can
+    // replace a pending workflow, so select again after acquiring the lock.
+    recent = await recentRequests()
+    for (const item of recent) { positive(item.id, 'Prepare request ID'); positive(item.run_number, 'Prepare request number') }
+    const latest = recent.reduce((current, item) => !current || item.run_number > current.run_number ? item : current, undefined)
+    requireValue(latest, 'No main Prepare request is available.')
+    id = latest.id
+  } else id = positive(runID, 'Producer run ID')
   const run = await ctx.api(`/actions/runs/${id}`)
   trustedRun(run, ctx.repository)
-  requireValue(run.id === id && run.status === 'completed' && run.conclusion === 'success', 'Prepare must complete successfully before entering the protected release stage.')
+  requireValue(run.id === id, 'The selected Prepare run ID differs from the API response.')
+  const ready = run.status === 'completed' && run.conclusion === 'success'
+  if (!selectLatest) requireValue(ready, 'Prepare must complete successfully before entering the protected release stage.')
   await verifySource(run.head_sha)
-  const recent = await ctx.api('/actions/workflows/prepare-release.yml/runs?branch=main&per_page=100')
-  requireValue(Array.isArray(recent.workflow_runs), 'Prepare request inventory is missing.')
-  const newer = recent.workflow_runs.some(item => item.head_branch === 'main' && ['push', 'workflow_dispatch'].includes(item.event) && Number.isSafeInteger(item.run_number) && item.run_number > run.run_number)
-  let resolution = { eligible: false, source_sha: run.head_sha }
-  if (!newer) {
+  recent ??= await recentRequests()
+  const newer = recent.some(item => Number.isSafeInteger(item.run_number) && item.run_number > run.run_number)
+  let resolution = { eligible: false, build_run_id: id, source_sha: run.head_sha, reason: !ready ? 'not_ready' : 'superseded' }
+  if (ready && !newer) {
     const artifacts = []
     for (let page = 1; page <= 100; page++) {
       const result = await ctx.api(`/actions/runs/${id}/artifacts?per_page=100&page=${page}`)
@@ -161,7 +177,16 @@ export async function resolveInputs({ runID, outputDirectory, environment = proc
       metadata = validateBuildMetadata(JSON.parse(await readFile(path.join(output, 'release-build.json'), 'utf8')), { sourceSHA: run.head_sha, repository: ctx.repository })
       requireValue(metadata.build_run_id === id && metadata.build_run_number === run.run_number && metadata.build_run_attempt === pair.attempt, 'Frozen metadata does not match the selected Prepare run and artifact attempt.')
     } finally { await rm(temporary, { recursive: true, force: true }) }
-    resolution = { eligible: true, source_sha: run.head_sha, version: metadata.version, tag: `v${metadata.version}`,
+    const tag = `v${metadata.version}`
+    const tagResponse = await ctx.api(`/git/ref/tags/${encodeURIComponent(tag)}`, true)
+    if (tagResponse.status !== 404) {
+      requireValue(tagResponse.ok, `Release tag lookup failed (HTTP ${tagResponse.status}).`)
+      const reference = await tagResponse.json()
+      requireValue(reference.ref === `refs/tags/${tag}` && reference.object?.type === 'tag' && /^[a-f0-9]{40}$/.test(reference.object.sha || ''), 'The selected release version already has a lightweight or conflicting tag.')
+      const object = await ctx.api(`/git/tags/${reference.object.sha}`)
+      requireValue(object.sha === reference.object.sha && object.tag === tag && object.object?.type === 'commit' && object.object.sha === metadata.source_sha, 'The existing annotated tag conflicts with the selected release source.')
+      resolution = { eligible: false, reason: 'already_tagged', build_run_id: id, source_sha: run.head_sha, version: metadata.version, tag }
+    } else resolution = { eligible: true, build_run_id: id, source_sha: run.head_sha, version: metadata.version, tag,
       build_metadata_artifact_id: pair.metadata.id, build_metadata_artifact_digest: pair.metadata.digest,
       unsigned_artifact_id: pair.unsigned.id, unsigned_artifact_digest: pair.unsigned.digest, build_metadata: metadata }
   }

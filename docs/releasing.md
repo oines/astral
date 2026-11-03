@@ -20,7 +20,7 @@ This stage is cancellable: a new main change supersedes obsolete preparation wor
 
 ### Signing, packaging and publication
 
-A successful preparation starts `release.yml` automatically. This stage is protected from cancellation by later merges: at most one release runs, with only the latest pending release request retained. A superseded request is checked before entering the protected work. New merges do not interrupt a release already signing, verifying or uploading.
+A successful preparation starts `release.yml` automatically. This stage is protected from cancellation by later merges: at most one release runs, with only the latest pending release request retained. Completion events are wake-up hints, not the chosen release source: after acquiring the protected lock, the controller selects the newest Main preparation. An unfinished or failed newest preparation blocks publication rather than falling back to older success. Existing exact source tags deduplicate repeated wake-ups. This also prevents a late cancelled event from displacing the newest ready version. New merges do not interrupt a release already signing, verifying or uploading.
 
 The protected stage performs these operations once:
 
