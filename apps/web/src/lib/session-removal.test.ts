@@ -32,4 +32,16 @@ describe('reconciling deleted session trees', () => {
     expect(catalog.observe([])).toEqual(['root', 'child'])
     expect([...catalog.tree('root')]).toEqual(['root', 'child', 'grandchild'])
   })
+
+  it('does not erase confirmed ownership when a live view or refreshed catalog omits it', () => {
+    const catalog = createSessionCatalog()
+    catalog.observe([
+      { id: 'root', agent_id: 'bot' },
+      { id: 'child', agent_id: 'bot', subagent_parent_id: 'root' },
+      { id: 'grandchild', agent_id: 'bot', subagent_parent_id: 'child' },
+    ])
+    catalog.remember([{ id: 'child', agent_id: 'bot' }])
+    catalog.observe([{ id: 'root', agent_id: 'bot' }, { id: 'child', agent_id: 'bot' }, { id: 'grandchild', agent_id: 'bot' }])
+    expect([...catalog.tree('root')]).toEqual(['root', 'child', 'grandchild'])
+  })
 })

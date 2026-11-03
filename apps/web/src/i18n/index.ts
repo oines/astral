@@ -14,7 +14,9 @@ import { updatesEn, updatesZh } from './updates'
 import { schedulesEn, schedulesZh } from './schedules'
 import { storageEn, storageZh } from './storage'
 import { imagesEn, imagesZh } from './images'
+import { toolDetailsEn, toolDetailsZh } from './tool-details'
 const en = {
+  ...toolDetailsEn,
   ...imagesEn,
   ...storageEn,
   ...schedulesEn,
@@ -56,6 +58,7 @@ const en = {
   disconnect: 'Sign out', loading: 'Loading…', empty: 'Nothing here yet.', inspect: 'Inspect', result: 'Result', source: 'Source', terminal: 'Terminal output',
 }
 const zh: typeof en = {
+  ...toolDetailsZh,
   ...imagesZh,
   ...storageZh,
   ...schedulesZh,

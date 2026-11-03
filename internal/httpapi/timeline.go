@@ -52,7 +52,7 @@ func timelineEntry(entry core.Entry) core.Entry {
 	}
 	if entry.Tool != nil {
 		tool := *entry.Tool
-		tool.Invocation.Binding = nil
+		tool.Invocation.Binding = timelineToolTarget(tool.Invocation)
 		tool.Invocation.Call.Metadata = nil
 		// Arguments and Host/tool-owned Details are actual execution UI data,
 		// including output, patch, search results and exit status. Do not truncate.
@@ -64,6 +64,24 @@ func timelineEntry(entry core.Entry) core.Entry {
 		entry.Tool = &tool
 	}
 	return entry
+}
+
+// A send's frozen destination belongs to the historical invocation, even if the
+// Session is later rebound. Keep only its two display identifiers; Computer
+// routing, credentials and other tools' opaque bindings stay out of the UI.
+func timelineToolTarget(inv core.Invocation) json.RawMessage {
+	if inv.Call.Name != "send_message" {
+		return nil
+	}
+	var target struct {
+		BindingID      string `json:"binding_id,omitempty"`
+		ConversationID string `json:"conversation_id"`
+	}
+	if json.Unmarshal(inv.Binding, &target) != nil || target.ConversationID == "" {
+		return nil
+	}
+	visible, _ := json.Marshal(target)
+	return visible
 }
 
 func timelineContent(content []core.Content) []core.Content {

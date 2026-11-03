@@ -24,6 +24,16 @@ Choose how soon the Bot should handle the new message:
 
 Web input defaults to Queue. Choose the mode in the input area, or use Command/Ctrl+Enter to Steer directly. You can also send instructions from Astral to sessions connected to messaging platforms. For messages sent on those platforms, see [Groups and proactive participation](/docs/chat/groups/).
 
+## Inspect tool activity
+
+Expand an activity line, then select a tool call to see what the Bot did and its result:
+
+- **Image reads:** view thumbnails in the expanded result and select an image to open the larger preview.
+- **Subagent controls:** see which subagent was queried, given another instruction, assigned a model, stopped, or deleted, together with the returned status or error.
+- **Message sends:** review the destination, text, attachments, reply target, and send result. An unconfirmed result stays unconfirmed until there is a definite outcome.
+
+The same details are available when reading a subagent's conversation. Expanding a historical operation only displays its record; it does not run it again.
+
 ## Delegate background work
 
 For a longer task or work that can proceed in parallel, the Bot can delegate parts to **subagents**. You can ask for this explicitly, for example:
@@ -32,13 +42,13 @@ For a longer task or work that can proceed in parallel, the Bot can delegate par
 
 You can ask the Bot to name subagents, such as “Source check” and “Frontend review.” If it leaves the name blank, Astral assigns a short code that stays the same. The initial task text is not used as the name, and follow-up instructions do not rename the subagent.
 
-New subagents can be created at most two levels below the original conversation: original conversation → subagent → next-level subagent. The second level cannot create further subagents. Existing deeper subagents are kept and remain accessible at their recorded positions in the tree; model changes and session cleanup still include them according to their actual relationships.
+Only the root Bot in the original conversation can create subagents: original conversation → subagent. Subagents cannot delegate further. Subagents created at deeper levels in an earlier version remain available in their original positions; model changes and session cleanup still include their complete tree.
 
-You continue using the original conversation while the subagents work. The Bot can also delegate partway through a task. When a subagent finishes a round normally or encounters a run error, its parent is notified and prompted to act. The parent can review the result or error, choose another model, retry, assign a follow-up, or report back to you. The notification preserves what happened during the run; the parent assesses whether the task itself succeeded. Progress reports reach the parent without interrupting it for every update.
+You continue using the original conversation while the subagents work. The Bot can also delegate partway through a task. It can finish its current round while waiting for results and resume when a subagent finishes or encounters a run error. It can then review the result or error, choose another model, retry, assign a follow-up, or report back to you. The notification preserves what happened during the run; the parent assesses whether the task itself succeeded. Subagents are instructed to report useful progress as they work and to end their round after reporting a blocker that needs outside action. Progress reports reach the parent without interrupting it for every update.
 
-Each created subagent appears as a clickable bubble in the conversation. Select it to open its full conversation and tool activity in the right-hand panel. If it creates another subagent, select that bubble to view the next level in the same panel. Use the breadcrumbs or back button to return; the panel retains each reading position, and your original conversation and draft stay in place.
+Each created subagent appears as a clickable bubble in the conversation. Select it to open its full conversation and tool activity in the right-hand panel. For deeper subagents created in an earlier version, select their bubbles to view the next level in the same panel. Use the breadcrumbs or back button to return; the panel retains each reading position, and your original conversation and draft stay in place.
 
-Subagent conversations are read-only and do not appear in the main sidebar. A parent can read the conversations, tool activity and run errors throughout its delegated subagent tree to investigate a problem before deciding how to continue. Managing a subagent still goes through its direct parent. Send corrections, follow-up requests, or instructions to stop a subtask in the original conversation; the Bot manages its own subagents. Stopping the original conversation alone does not stop every subagent working in the background.
+Subagent conversations belong to the original conversation. They are read-only and do not appear as separate conversations in the main sidebar. A parent can read the conversations, tool activity and run errors throughout its delegated subagent tree to investigate a problem before deciding how to continue. Managing a subagent still goes through its direct parent. Send corrections, follow-up requests, or instructions to stop a subtask in the original conversation; the Bot manages its own subagents. Stopping the original conversation alone does not stop every subagent working in the background. Permanently deleting it also removes all of its subagents, including those that started with independent histories and any deeper subagents from earlier versions.
 
 To change the model or reasoning settings for this work, use the picker in the original conversation's input area. The choice updates all existing subagents, including deeper levels, and replaces any model they were previously assigned. Requests already sent keep their original settings; following requests and subtasks that have not started use the new choice. The selection survives a restart. New subagents inherit the latest choice by default; the Bot can still choose another model for a new subagent, and your next change in the original conversation updates it again. Other conversations and ordinary copies made with **Fork from here** keep their own settings.
 

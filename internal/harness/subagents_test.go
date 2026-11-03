@@ -429,10 +429,43 @@ func TestRootDeletionRemovesSharedAndIndependentSubagentDescendants(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	grandchild := subagentTestSpawn(t, f, sharedRuntime, "independent-grandchild", "Independent descendant of a shared child.", false)
+	grandchild := subagentTestLegacySpawn(t, f, sharedRuntime, "independent-grandchild", "Independent descendant of a shared child.", false)
 	subagentTestFinished(t, f, grandchild.SessionID)
 	if _, err := f.service.controlSubagent(f.ctx, parent.id, "skip-generation", AgentControlInput{AgentID: grandchild.SessionID, Input: "Bypass the direct parent"}); err == nil {
 		t.Fatal("root controlled a grandchild directly")
+	}
+	// A user Fork has historical provenance, not delegated ownership. Its
+	// independent history and its own delegated tree must survive this deletion.
+	f.idle(t, parent.id)
+	fork, err := f.service.Fork(f.ctx, parent.id, parent.core.Load().Head(), "Independent ordinary fork", "retained-ordinary-fork")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forkRuntime, err := f.service.open(f.ctx, fork.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forkChild := subagentTestSpawn(t, f, forkRuntime, "retained-fork-child", "Work owned by the independent ordinary fork.", false)
+	subagentTestFinished(t, f, forkChild.SessionID)
+	f.idle(t, fork.ID)
+	subagentRecoveryStopWorker(f)
+	f.idle(t, parent.id)
+	f.idle(t, fork.ID)
+	retained := map[string]core.RuntimeState{}
+	for _, id := range []string{fork.ID, forkChild.SessionID} {
+		state, err := f.coreStore.LoadState(f.ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		retained[id] = state
+	}
+	deletedRollouts := map[string]bool{}
+	for _, id := range []string{parent.id, shared.SessionID, independent.SessionID, grandchild.SessionID} {
+		state, err := f.coreStore.LoadState(f.ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		deletedRollouts[state.RolloutID] = true
 	}
 	archived := true
 	if err := f.service.SaveSessionPresentation(f.ctx, parent.id, nil, nil, &archived, nil); err != nil {
@@ -456,6 +489,22 @@ func TestRootDeletionRemovesSharedAndIndependentSubagentDescendants(t *testing.T
 		var settings subagentSettings
 		if err := f.store.Get(f.ctx, "subagent_settings", id, &settings); !domain.IsMissing(err) {
 			t.Fatalf("deleted tree retained settings %s: %v", id, err)
+		}
+	}
+	for rollout := range deletedRollouts {
+		page, err := f.coreStore.Scan(f.ctx, rollout, core.Query{Limit: 1})
+		if err != nil && !errors.Is(err, core.ErrNotFound) || len(page.Records) != 0 {
+			t.Fatalf("deleted tree retained Rollout %s: %+v %v", rollout, page, err)
+		}
+	}
+	for id, before := range retained {
+		var record domain.Session
+		if err := f.store.Get(f.ctx, "sessions", id, &record); err != nil || record.Deletion != nil {
+			t.Fatalf("ordinary Fork tree lost Host Session %s: %+v %v", id, record, err)
+		}
+		after, err := f.coreStore.LoadState(f.ctx, id)
+		if err != nil || !reflect.DeepEqual(before, after) {
+			t.Fatalf("ordinary Fork tree changed Core Session %s: before=%+v after=%+v error=%v", id, before, after, err)
 		}
 	}
 }

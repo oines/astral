@@ -96,7 +96,7 @@ func TestSubagentControlModelChangesOnlyDirectTargetAndDoesNotStartRun(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	grand := subagentTestSpawn(t, f, childRuntime, "direct-select-grand", "Grandchild keeps its choice.", false)
+	grand := subagentTestLegacySpawn(t, f, childRuntime, "direct-select-grand", "Existing grandchild keeps its choice.", false)
 	subagentTestFinished(t, f, grand.SessionID)
 	sibling := subagentTestSpawn(t, f, root, "direct-select-sibling", "Sibling keeps its choice.", true)
 	subagentTestFinished(t, f, sibling.SessionID)
