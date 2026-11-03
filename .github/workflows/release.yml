@@ -262,11 +262,14 @@ jobs:
           astral_app_dir=mac
           if [ "$MAC_ARCH" = arm64 ]; then astral_app_dir=mac-arm64; fi
           node scripts/mac-notarize.mjs app "$GITHUB_WORKSPACE/apps/desktop/release/$astral_app_dir/Astral.app" "$MAC_ARCH"
-      - uses: ./.github/actions/native-release-checks
-      - name: Verify the actual signed renderer and Electron/Server versions
-        run: pnpm test:packaged-desktop
+      # Replacement acceptance requires an untouched native profile. The
+      # service checks write the CLI's lowercase astral installation index,
+      # which aliases the Astral profile on case-insensitive file systems.
       - name: Verify native signed replacement and retained data
         run: node scripts/check-desktop-update.mjs
+      - name: Verify the actual signed renderer and Electron/Server versions
+        run: pnpm test:packaged-desktop
+      - uses: ./.github/actions/native-release-checks
       - name: Always remove signing and Apple credentials
         if: always()
         timeout-minutes: 5
@@ -346,6 +349,12 @@ jobs:
         shell: bash
         run: pnpm --filter @astral/desktop "$PACKAGE_SCRIPT" --publish never
       - uses: ./.github/actions/native-release-checks
+        if: runner.os == 'Linux'
+      # The CLI installation index aliases the native profile on Windows.
+      # Complete replacement acceptance before running the service checks.
+      - name: Verify native Windows NSIS replacement and retained data
+        if: runner.os == 'Windows'
+        run: node scripts/check-desktop-update.mjs
       - name: Verify the final Windows ZIP lifecycle and versions
         if: runner.os == 'Windows'
         shell: pwsh
@@ -358,6 +367,8 @@ jobs:
           $env:ASTRAL_PACKAGED_APP_EXECUTABLE = Join-Path $astralExtracted 'Astral.exe'
           pnpm test:packaged-desktop
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: ./.github/actions/native-release-checks
+        if: runner.os == 'Windows'
       - name: Verify headless installation and recovery before registering the DEB
         if: runner.os == 'Linux'
         run: node scripts/check-headless-install.mjs
@@ -380,9 +391,6 @@ jobs:
         env:
           ASTRAL_PACKAGED_APP_EXECUTABLE: /opt/Astral/astral
         run: xvfb-run -a pnpm test:packaged-desktop
-      - name: Verify native Windows NSIS replacement and retained data
-        if: runner.os == 'Windows'
-        run: node scripts/check-desktop-update.mjs
       - name: Verify native Linux AppImage replacement and retained data
         if: runner.os == 'Linux'
         shell: bash
