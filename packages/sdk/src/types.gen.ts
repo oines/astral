@@ -1423,37 +1423,6 @@ export type AstralInternalHarnessPendingInput = {
     metadata: AstralInternalMessagesMetadata;
 };
 
-export type AstralInternalHarnessSessionSummary = {
-    agent_id: string;
-    archived: boolean;
-    binding_id?: string;
-    channel_platform?: string;
-    computer_id?: string;
-    conversation_id?: string;
-    created_at: string;
-    cwd?: string;
-    deletion?: AstralInternalDomainSessionDeletion;
-    error?: string;
-    fork_entry_id?: string;
-    id: string;
-    model_available: boolean;
-    model_unavailable_reason?: string;
-    parent_session_id?: string;
-    pinned: boolean;
-    private?: boolean;
-    profile_id?: string;
-    reasoning?: AstralCoreReasoningOptions;
-    revision: number;
-    run_id?: string;
-    selection: AstralCoreModelSelection;
-    source: string;
-    status: string;
-    subagent_parent_id?: string;
-    title: string;
-    title_source?: string;
-    updated_at: string;
-};
-
 export type AstralInternalHarnessView = {
     agent_id: string;
     approvals: Array<AstralCorePendingApproval>;
@@ -4159,7 +4128,7 @@ export type ListSessionsResponses = {
     /**
      * OK
      */
-    200: Array<AstralInternalHarnessSessionSummary>;
+    200: Array<AstralInternalHarnessView>;
 };
 
 export type ListSessionsResponse = ListSessionsResponses[keyof ListSessionsResponses];

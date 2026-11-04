@@ -619,21 +619,21 @@ func (a *API) resources() {
 }
 func (a *API) sessionRoutes() {
 	h := a.Config.Harness
-	route[httpcontract.Empty, []harness.SessionSummary](a, "GET", "/sessions", "listSessions", "Sessions", func(r *http.Request, _ httpcontract.Empty) ([]harness.SessionSummary, error) {
+	route[httpcontract.Empty, []harness.View](a, "GET", "/sessions", "listSessions", "Sessions", func(r *http.Request, _ httpcontract.Empty) ([]harness.View, error) {
 		records, err := readAll[domain.Session](r.Context(), h.Store, "sessions")
 		if err != nil {
 			return nil, err
 		}
-		views := make([]harness.SessionSummary, 0, len(records))
+		views := make([]harness.View, 0, len(records))
 		for _, record := range records {
 			if record.Deletion != nil {
 				continue
 			}
-			view, viewErr := h.Summary(r.Context(), record.ID)
+			view, viewErr := h.View(r.Context(), record.ID)
 			if viewErr != nil {
 				// One unavailable historical configuration must not prevent
 				// the Owner from reaching their other Sessions or Settings.
-				view = harness.SessionSummary{Session: record, Status: "needs_attention",
+				view = harness.View{Session: record, Status: "needs_attention",
 					Error: "This Session could not be opened. Check its Agent and model configuration."}
 			}
 			views = append(views, view)

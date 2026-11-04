@@ -566,37 +566,6 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	} else if !errors.Is(stateErr, core.ErrNotFound) {
 		return stateErr
 	}
-	if stateErr == nil {
-		needed, err := s.subagentNeedsRuntime(ctx, record, state)
-		if err != nil {
-			return err
-		}
-		if !needed {
-			// An existing instance still adopts a deferred model selection. A
-			// dormant child does not need a new instance merely to apply it.
-			s.mu.Lock()
-			r := s.runtimes[record.ID]
-			s.mu.Unlock()
-			if r == nil {
-				return nil
-			}
-			select {
-			case <-r.ready:
-				if r.openErr != nil {
-					return r.openErr
-				}
-			default:
-				return nil
-			}
-			r.mu.Lock()
-			err = r.syncSubagentModel(ctx)
-			r.mu.Unlock()
-			if err != nil {
-				return err
-			}
-			return s.deliverSubagentHistoryLocked(ctx, record, r.core.Load().State())
-		}
-	}
 	r, err := s.open(ctx, record.ID)
 	if err != nil {
 		return err
@@ -635,35 +604,6 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 		}
 	}
 	return s.deliverSubagentHistoryLocked(ctx, record, r.core.Load().State())
-}
-
-// Persisted delivery and activation facts decide whether a dormant child needs
-// an execution instance. A terminal child can still have a newly journaled
-// instruction, so its last Run alone is not a sufficient recovery decision.
-func (s *Service) subagentNeedsRuntime(ctx context.Context, record domain.Session, state core.RuntimeState) (bool, error) {
-	var settings subagentSettings
-	if err := s.Store.Get(ctx, "subagent_settings", record.ID, &settings); err != nil {
-		return false, err
-	}
-	if !settings.Started || state.LastRun == nil || state.LastRun.Status == "started" || state.CurrentAttemptID != "" || !state.Branch.Complete() || state.PendingInputs[core.InputContext] > 0 {
-		return true, nil
-	}
-	configuration, err := core.ReadConfiguration(ctx, s.CoreStore, record.ID)
-	if err != nil {
-		return false, err
-	}
-	if !jsonEqual(configuration.Selection, settings.Configuration.Selection) {
-		// A desired selection still needs its original durable Core update.
-		// This is actual pending work, even when the prior Run is terminal.
-		return true, nil
-	}
-	var activation subagentActivation
-	if err := s.Store.Maintenance(ctx, "subagent_activation", record.ID, &activation); err == nil {
-		return !activation.Complete, nil
-	} else if !domain.IsMissing(err) {
-		return false, err
-	}
-	return false, nil
 }
 
 func (s *Service) deliverSubagentHistoryLocked(ctx context.Context, record domain.Session, state core.RuntimeState) error {

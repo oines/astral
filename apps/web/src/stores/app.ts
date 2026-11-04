@@ -27,8 +27,6 @@ export const useAppStore = defineStore('app', () => {
   const timezone = computed(() => data.value?.timezone.name || 'UTC')
   const timezoneCompatible = computed(() => !!data.value?.timezone.browser_compatible && timezoneSupported(timezone.value))
   const displayTimezone = computed(() => data.value?.timezone.browser_compatible === false ? '__astral_unknown_server_timezone__' : timezone.value)
-  // The directory query returns summaries. Complete pending/approval/context
-  // state belongs to the selected Session's view and must survive list refresh.
   const sessionViews = ref<Record<string, SessionView>>({})
   const deletedSessions = ref(new Set<string>())
   const sessionCatalog = createSessionCatalog()

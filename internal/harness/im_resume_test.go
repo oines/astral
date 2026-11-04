@@ -34,7 +34,7 @@ func (p *pausedIMFixture) ResumeIMSession(context.Context, string) error {
 	return nil
 }
 
-func TestPausedIMDeliveryIsVisibleWithoutOpeningExecution(t *testing.T) {
+func TestPausedIMDeliveryIsVisibleAndExplicitlyResumableAfterRestart(t *testing.T) {
 	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("Explicitly resumed.") })
 	pause := &pausedIMFixture{}
 	pause.paused.Store(true)
@@ -46,9 +46,9 @@ func TestPausedIMDeliveryIsVisibleWithoutOpeningExecution(t *testing.T) {
 	f.restart(t)
 	subagentRecoveryStopWorker(f)
 	f.service.IM = pause
-	summary, err := f.service.Summary(f.ctx, f.session.ID)
-	if err != nil || summary.Status != "needs_attention" || summary.Error != view.Error || len(f.service.runtimes) != 0 {
-		t.Fatalf("paused directory lost the failure or opened execution: %+v runtimes=%d err=%v", summary, len(f.service.runtimes), err)
+	reopened, err := f.service.View(f.ctx, f.session.ID)
+	if err != nil || reopened.Status != "needs_attention" || reopened.Error != view.Error {
+		t.Fatalf("reopened Session lost the paused IM failure: %+v err=%v", reopened, err)
 	}
 	if _, err = f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: "resume-paused-im", Text: "Retry after topping up the provider."}); err != nil {
 		t.Fatal(err)

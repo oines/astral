@@ -147,14 +147,9 @@ func (m sessionModel) Stream(ctx context.Context, request core.Request, emit fun
 }
 
 func (m sessionModel) PrepareRequest(ctx context.Context, request core.Request) (core.Request, error) {
-	// Core owns and validates this optional preparation boundary. Delegate to
-	// the next preparer directly instead of copying the complete request again.
-	var err error
-	if preparer, ok := m.Model.(core.RequestPreparer); ok {
-		request, err = preparer.PrepareRequest(ctx, request)
-		if err != nil {
-			return request, err
-		}
+	request, err := core.PrepareRequest(ctx, m.Model, request)
+	if err != nil {
+		return request, err
 	}
 	if m.runtime.subagent != nil {
 		return request, nil

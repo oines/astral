@@ -4562,111 +4562,6 @@
         ],
         "type": "object"
       },
-      "astral_internal_harness_SessionSummary": {
-        "properties": {
-          "agent_id": {
-            "type": "string"
-          },
-          "archived": {
-            "type": "boolean"
-          },
-          "binding_id": {
-            "type": "string"
-          },
-          "channel_platform": {
-            "type": "string"
-          },
-          "computer_id": {
-            "type": "string"
-          },
-          "conversation_id": {
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "cwd": {
-            "type": "string"
-          },
-          "deletion": {
-            "$ref": "#/components/schemas/astral_internal_domain_SessionDeletion"
-          },
-          "error": {
-            "type": "string"
-          },
-          "fork_entry_id": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "model_available": {
-            "type": "boolean"
-          },
-          "model_unavailable_reason": {
-            "type": "string"
-          },
-          "parent_session_id": {
-            "type": "string"
-          },
-          "pinned": {
-            "type": "boolean"
-          },
-          "private": {
-            "type": "boolean"
-          },
-          "profile_id": {
-            "type": "string"
-          },
-          "reasoning": {
-            "$ref": "#/components/schemas/astral_core_ReasoningOptions"
-          },
-          "revision": {
-            "type": "integer"
-          },
-          "run_id": {
-            "type": "string"
-          },
-          "selection": {
-            "$ref": "#/components/schemas/astral_core_ModelSelection"
-          },
-          "source": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "subagent_parent_id": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "title_source": {
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "revision",
-          "created_at",
-          "updated_at",
-          "agent_id",
-          "title",
-          "source",
-          "pinned",
-          "archived",
-          "selection",
-          "status",
-          "model_available"
-        ],
-        "type": "object"
-      },
       "astral_internal_harness_View": {
         "properties": {
           "agent_id": {
@@ -10894,7 +10789,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/astral_internal_harness_SessionSummary"
+                    "$ref": "#/components/schemas/astral_internal_harness_View"
                   },
                   "type": "array"
                 }
