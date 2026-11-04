@@ -235,8 +235,12 @@ func (s *Service) Continue(ctx context.Context, id string) error {
 		return err
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.continueLocked(ctx)
+	err = r.continueLocked(ctx)
+	r.mu.Unlock()
+	if err == nil {
+		err = s.resumeIMSession(ctx, id)
+	}
+	return err
 }
 func (s *Service) Stop(ctx context.Context, id string) error {
 	r, err := s.open(ctx, id)
@@ -262,6 +266,9 @@ func (s *Service) Compact(ctx context.Context, id, instructions string) error {
 	// may wait, while the operation is tied to the service rather than its client.
 	_, err = r.core.Load().Compact(s.ctx, instructions)
 	s.notify(id)
+	if err == nil {
+		err = s.resumeIMSession(ctx, id)
+	}
 	return err
 }
 func (s *Service) ClearPending(ctx context.Context, id, kind string) error {

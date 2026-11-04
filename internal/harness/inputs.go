@@ -131,7 +131,7 @@ func (r *runtime) existingReceipt(ctx context.Context, id, hash string) (InputRe
 	}
 	return InputReceipt{}, false, err
 }
-func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (InputReceipt, error) {
+func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (receipt InputReceipt, err error) {
 	if input.ID == "" || len(input.ID) > 200 {
 		return InputReceipt{}, domain.Invalid("a stable input ID is required")
 	}
@@ -149,7 +149,13 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 		return InputReceipt{}, err
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	resume := false
+	defer func() {
+		r.mu.Unlock()
+		if err == nil && resume {
+			err = s.resumeIMSession(ctx, id)
+		}
+	}()
 	hash := digest(input)
 	if receipt, exists, err := r.existingReceipt(ctx, input.ID, hash); err != nil || exists {
 		return receipt, err
@@ -171,9 +177,10 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 	if err = s.Files.FreezeImages(ctx, r.agentID, id, &message); err != nil {
 		return InputReceipt{}, err
 	}
-	receipt, err := r.accept(ctx, core.Input{ID: input.ID, Digest: hash, Message: message}, kind)
+	receipt, err = r.accept(ctx, core.Input{ID: input.ID, Digest: hash, Message: message}, kind)
 	if err == nil {
 		r.maybeGenerateSessionTitle(input.Text)
+		resume = true
 	}
 	return receipt, err
 }

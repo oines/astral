@@ -98,7 +98,14 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	if resolved {
 		view.Error = ""
 	}
-	if len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && (!view.ModelAvailable || !resolved && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started")))) {
+	deliveryPaused := false
+	if !snapshot.Running && !snapshot.Maintenance && view.Error == "" {
+		if view.Error, err = s.imDeliveryError(ctx, id); err != nil {
+			return view, err
+		}
+		deliveryPaused = view.Error != ""
+	}
+	if deliveryPaused || len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && (!view.ModelAvailable || !resolved && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started")))) {
 		view.Status = "needs_attention"
 	}
 	pending, err := r.core.Load().PeekQueuedInputs(ctx)

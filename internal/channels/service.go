@@ -29,6 +29,7 @@ type Service struct {
 	workers        sync.WaitGroup
 	pollers        map[string]poller
 	inboxes        map[string]context.CancelFunc
+	inboxWake      map[string]chan struct{}
 	sending        map[string]bool
 	statuses       map[string]Status
 	weixinLogins   map[string]*weixinLogin
