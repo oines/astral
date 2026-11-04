@@ -158,6 +158,10 @@ func IMInputStopped(ctx context.Context, session *core.Session, store core.Store
 // Core has no active generation to race this audit; all Host starts share that
 // lock. Maintenance racing from an existing Host operation is checked again.
 func AdmitIMWakeup(ctx context.Context, session *core.Session, store core.Store, input core.Input, dependencies []string, allowQueued bool) (IMWakeStatus, error) {
+	return admitIMWakeup(ctx, session, store, input, dependencies, allowQueued, NewIMInspector(session, store))
+}
+
+func admitIMWakeup(ctx context.Context, session *core.Session, store core.Store, input core.Input, dependencies []string, allowQueued bool, inspector *IMInspector) (IMWakeStatus, error) {
 	if existing, err := session.LookupInput(ctx, input.ID); err == nil {
 		stopped, err := IMInputStopped(ctx, session, store, input.ID)
 		if err != nil {
@@ -177,7 +181,6 @@ func AdmitIMWakeup(ctx context.Context, session *core.Session, store core.Store,
 	if IMWorking(session) || !allowQueued && !IMCanProbe(session) {
 		return IMWakeBusy, nil
 	}
-	inspector := NewIMInspector(session, store)
 	for _, dependency := range dependencies {
 		handled, err := inspector.Handled(ctx, dependency)
 		if err != nil {

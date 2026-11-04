@@ -272,23 +272,49 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 	return receipt, err
 }
 
-// WakeObservation only hands off a direct observation missed by the main run.
-// It uses the same Host lock as Web/IM input and normal Continue operations.
-func (s *Service) WakeObservation(ctx context.Context, id, inputID string, trigger core.Message, bindingID string) (IMWakeStatus, error) {
+type IMWakeup struct {
+	InputID string
+	Message core.Message
+}
+
+// WakeObservations hands off a page of direct observations under the same Host
+// admission lock. Frozen request evidence is shared across the page, rather
+// than reconstructing the same history separately for every recovered message.
+// A busy observation ends the batch so the caller can retain its scan position.
+func (s *Service) WakeObservations(ctx context.Context, id string, inputs []IMWakeup, bindingID string) ([]IMWakeStatus, error) {
 	r, err := s.open(ctx, id)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var record domain.Session
 	if err = s.Store.Get(ctx, "sessions", id, &record); err != nil {
-		return "", err
+		return nil, err
 	}
 	if record.BindingID != bindingID {
-		return "", domain.Conflict("the inbound binding is no longer active")
+		return nil, domain.Conflict("the inbound binding is no longer active")
 	}
 	inspector := NewIMInspector(r.core.Load(), s.CoreStore)
+	statuses := make([]IMWakeStatus, 0, len(inputs))
+	for _, input := range inputs {
+		// Starting work can reopen Core when the binding configuration changes.
+		if inspector.session != r.core.Load() {
+			inspector = NewIMInspector(r.core.Load(), s.CoreStore)
+		}
+		status, err := r.wakeObservation(ctx, input.InputID, input.Message, inspector)
+		if err != nil {
+			return statuses, err
+		}
+		statuses = append(statuses, status)
+		if status == IMWakeBusy {
+			break
+		}
+	}
+	return statuses, nil
+}
+
+func (r *runtime) wakeObservation(ctx context.Context, inputID string, trigger core.Message, inspector *IMInspector) (IMWakeStatus, error) {
 	handled, err := inspector.Handled(ctx, inputID)
 	if err != nil || handled {
 		return IMWakeCovered, err
@@ -300,7 +326,7 @@ func (s *Service) WakeObservation(ctx context.Context, id, inputID string, trigg
 	}
 	metadata.DeliveryID = wakeupID
 	trigger.Metadata = encode(metadata)
-	status, err := AdmitIMWakeup(ctx, r.core.Load(), s.CoreStore, core.Input{ID: wakeupID, Message: trigger}, []string{inputID}, true)
+	status, err := admitIMWakeup(ctx, r.core.Load(), r.service.CoreStore, core.Input{ID: wakeupID, Message: trigger}, []string{inputID}, true, inspector)
 	if err != nil {
 		return "", err
 	}
