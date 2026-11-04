@@ -345,7 +345,13 @@ func (s *Service) run() {
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 	s.reconcile()
-	s.dispatchPending()
+	outboxPending := s.dispatchPending()
+	poll := func() {
+		s.reconcile()
+		if outboxPending {
+			outboxPending = s.dispatchPending()
+		}
+	}
 	for {
 		// An unrelated Harness notification may arrive continuously. Check
 		// cancellation and the periodic outbox deadline before reconciling it.
@@ -357,8 +363,7 @@ func (s *Service) run() {
 		}
 		select {
 		case <-ticker.C:
-			s.reconcile()
-			s.dispatchPending()
+			poll()
 		default:
 		}
 		select {
@@ -366,10 +371,9 @@ func (s *Service) run() {
 			s.workers.Wait()
 			return
 		case <-ticker.C:
-			s.reconcile()
-			s.dispatchPending()
+			poll()
 		case <-s.outboxWake:
-			s.dispatchPending()
+			outboxPending = s.dispatchPending()
 		case <-s.Harness.Changes():
 			s.reconcile()
 		}

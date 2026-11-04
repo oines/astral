@@ -36,7 +36,9 @@ func TestOutboxDoesNotScanOrSendDuringUnrelatedReconcile(t *testing.T) {
 	default:
 		t.Fatal("newly persisted send did not wake the outbox")
 	}
-	s.dispatchPending()
+	if !s.dispatchPending() {
+		t.Fatal("pending work did not retain the periodic retry")
+	}
 	testkit.Await(t, p.Context, func() bool {
 		var record domain.Outbox
 		return p.Store.Get(p.Context, "outbox", queued[0].ID, &record) == nil && record.Status == "accepted"
@@ -44,6 +46,31 @@ func TestOutboxDoesNotScanOrSendDuringUnrelatedReconcile(t *testing.T) {
 	if bot.sends.Load() != 1 {
 		t.Fatalf("outbox sent %d times", bot.sends.Load())
 	}
+	testkit.Await(t, p.Context, func() bool {
+		select {
+		case <-s.outboxWake:
+			return true
+		default:
+			return false
+		}
+	})
+	if s.dispatchPending() {
+		t.Fatal("confirmed history kept the idle periodic scan active")
+	}
+	// After the queue becomes idle, a later enqueue must still wake it without
+	// relying on the periodic scan that has just been disabled.
+	if _, err = s.Enqueue(p.Context, p.Agent.ID, b.SessionID, SendRequest{IntentID: "new-send-after-idle", Text: "Later fixture reply."}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-s.outboxWake:
+	default:
+		t.Fatal("later enqueue did not wake the idle outbox")
+	}
+	if !s.dispatchPending() {
+		t.Fatal("later pending work did not reactivate retries")
+	}
+	testkit.Await(t, p.Context, func() bool { return bot.sends.Load() == 2 })
 }
 
 func TestOutboxFailedDispatchDoesNotWakeItself(t *testing.T) {
@@ -61,7 +88,9 @@ func TestOutboxFailedDispatchDoesNotWakeItself(t *testing.T) {
 		return nil, errors.New("fixture adapter is temporarily unavailable")
 	}
 	s.ctx = p.Context
-	s.dispatchPending()
+	if !s.dispatchPending() {
+		t.Fatal("pending adapter failure lost its periodic retry")
+	}
 	s.workers.Wait()
 	select {
 	case <-s.outboxWake:

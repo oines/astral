@@ -265,15 +265,19 @@ func presentText(text string) string {
 	text = internalFileLink.ReplaceAllString(text, `$1 (file available in Astral)`)
 	return bareFileLink.ReplaceAllString(text, "[file available in Astral]")
 }
-func (s *Service) dispatchPending() {
+
+// The worker needs its periodic retry only while pending work remains (or a
+// query failed). New work and committed completions have their own wakeup.
+func (s *Service) dispatchPending() bool {
 	rows, err := s.Store.OutboxWork(s.ctx)
 	if err != nil {
-		return
+		return true
 	}
 	all, err := decodeRecords[domain.Outbox](rows)
 	if err != nil {
-		return
+		return true
 	}
+	retry := slices.ContainsFunc(all, func(record domain.Outbox) bool { return record.Status == "pending" })
 	slices.SortStableFunc(all, func(a, b domain.Outbox) int {
 		if a.GroupID == b.GroupID {
 			return a.Fragment - b.Fragment
@@ -313,7 +317,7 @@ func (s *Service) dispatchPending() {
 		}
 		if len(s.sending) >= 4 {
 			s.mu.Unlock()
-			return
+			return retry
 		}
 		if s.sending[bucket] {
 			s.mu.Unlock()
@@ -339,6 +343,7 @@ func (s *Service) dispatchPending() {
 			completed, _ = s.dispatchOutcome(group.ctx, record.ID)
 		}()
 	}
+	return retry
 }
 
 func (s *Service) wakeOutbox() {
