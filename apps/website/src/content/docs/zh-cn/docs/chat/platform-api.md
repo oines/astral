@@ -1,17 +1,17 @@
 ---
 title: "平台 API 参考"
-description: "为自定义脚本查询聊天、调用平台操作，并检查返回结果。"
+description: "为自定义脚本查询聊天、下载电脑文件及调用平台操作。"
 ---
 
 这页供需要编写脚本或检查 Bot 平台调用的人使用。日常任务可以直接告诉 Bot，例如“列出这个 QQ 群的文件”或“把刚才的结论置顶”，不必自己调用 API。
 
-Astral 的内置 Gateway API 让 Bot 在已授权范围内查询聊天、发送文件、管理群聊。操作使用**连接的平台账号权限**，不会改用发任务的群成员身份。接入公开群前，应先限制这个账号和 Bot 的[权限范围](/zh-cn/docs/start/safe-use/)。
+Astral 的内置 Gateway API 让 Bot 在已授权范围内查询聊天、下载电脑文件、发送文件、管理群聊。聊天操作使用**连接的平台账号权限**，不会改用发任务的群成员身份。接入公开群前，应先限制这个账号和 Bot 的[权限范围](/zh-cn/docs/start/safe-use/)。
 
 ## 从当前运行环境发现接口
 
-从 Bot 当前环境中的 `local_api.capabilities_url` 读取能力目录，再打开聊天能力文档。地址、完整请求结构和平台能力以该运行实例返回的文档为准；相对链接相对于 `local_api.base_url`。
+从 Bot 当前环境中的 `local_api.capabilities_url` 读取能力目录，再按当前任务打开聊天或文件能力文档。地址、完整请求结构和平台能力以该运行实例返回的文档为准；相对链接相对于 `local_api.base_url`。
 
-请求需要 `Authorization: Bearer …`，凭据来自执行命令进程的 `ASTRAL_API_TOKEN` 环境变量。在程序中读取变量，不要打印、保存或把它写入 URL。这是当前命令的调用凭据，不是 Telegram Token、App Secret 等平台密钥。
+请求需要 `Authorization: Bearer …`，凭据来自执行命令进程的 `ASTRAL_API_TOKEN` 环境变量。在程序中读取变量，不要打印、保存，或把展开后的凭据写入 URL、其他程序的命令行参数。这是当前命令的调用凭据，不是 Telegram Token、App Secret 等平台密钥。
 
 ## 调用一个平台操作
 
@@ -39,6 +39,29 @@ Authorization: Bearer <当前命令的调用凭据>
 
 账号必须属于当前 Bot，聊天必须仍在授权范围内。仅获准一个 Telegram Topic，不能据此执行父群管理；私密会话对应聊天仍受私密访问限制。
 
+## 下载授权电脑上的文件
+
+先通过 `GET /v1/computers` 找到来源电脑的 `id`，再调用 `GET /v1/computers/{id}/files/content?path=…`。每次请求都会检查来源电脑仍在当前 Bot 的允许集合中、已连接且未撤销，文件也必须能被该电脑上的 Daemon 账号读取。
+
+`path` 需要 URL 编码，由来源电脑按自己的文件系统规则解析：绝对路径指向那台电脑，相对路径以 Bot 在那台电脑上的 AgentHome 为基准。`~/` 等用户目录展开与符号链接沿用相同规则，不另设目录白名单。接口读取普通文件，不自动打包目录。
+
+例如在 Bash 中，将前两个值替换为当前环境中的 `local_api.base_url`，以及 `/v1/computers` 返回的电脑 ID：
+
+```bash
+base_url='<local_api.base_url>'
+computer_id='<computer-id>'
+curl --fail-with-body --config - \
+  --get --data-urlencode 'path=reports/report.zip' \
+  --output /tmp/report.zip \
+  "${base_url%/}/v1/computers/$computer_id/files/content" <<EOF
+header = "Authorization: Bearer $ASTRAL_API_TOKEN"
+EOF
+```
+
+响应就是原始文件字节。上例的 `/tmp/report.zip` 位于运行 curl 的电脑上，`reports/report.zip` 则位于指定的来源电脑。凭据通过 curl 的标准输入传递，不进入命令行参数。请求不创建 FileRef、快照或 Server 副本，也不切换 Session 当前选择的电脑。
+
+接口不设置文件大小或整次传输时间上限；请求取消或连接断开时，传输随之停止。单段 `Range` 请求直接由来源 Daemon 从指定偏移读取，不将范围之前的字节传到 Server。
+
 ## 按字节范围读取原件
 
 `.../content` 接口流式返回原件字节，不保存文件。来源大小已知且大于零时，支持一个 `Range` 请求头，例如 `bytes=1048576-2097151`、`bytes=1048576-` 或 `bytes=-65536`。有效范围返回 **206**、`Accept-Ranges: bytes`，以及对应的 `Content-Range` 和 `Content-Length`。格式错误、多段或无法满足的范围返回 **416**，并带 `Content-Range: bytes */<size>`。
@@ -47,7 +70,7 @@ Authorization: Bearer <当前命令的调用凭据>
 
 没有可用已知大小的来源会忽略 Range，返回 **200** 和完整流。向已有部分文件追加前，必须核对 **206** 和实际返回的范围；来源已变化时应重新下载完整文件。使用 curl 时，通过 `--fail-with-body` 或显式检查状态码拒绝非 2xx 响应，并检查退出码，以发现正文读取中断。
 
-Astral 不为这些请求缓存源文件，可能重新打开来源，读取并丢弃范围之前的字节。因此，Range 请求不保证平台 CDN 本身支持断点续传。
+Astral 不为这些请求缓存源文件。电脑文件请求在来源 Daemon seek；平台媒体则可能重新打开来源，读取并丢弃范围之前的字节。因此，Range 请求不保证平台 CDN 本身支持断点续传。
 
 ## Telegram
 

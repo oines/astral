@@ -182,9 +182,11 @@ var capabilitySpecs = []capabilitySpec{
 		},
 	},
 	{
-		id: "files", description: "Read or download IM attachments and Telegram sticker resources, create Web file links and send files to authorized chats.",
+		id: "files", description: "Download files from allowed Computers, read IM attachments and Telegram sticker resources, create Web file links and send files to authorized chats.",
 		notes: []string{
-			"Paths refer to this API listener's source Computer. astral-file:// references retain their source Computer. Web attachments already have a Computer path and URI; IM reception does not create files on a Computer.",
+			"Local file references, IM sends and download destinations use this API listener's source Computer. GET /v1/computers/{id}/files/content instead reads its path on the explicitly selected Computer. astral-file:// references retain their source Computer. Web attachments already have a Computer path and URI; IM reception does not create files on a Computer.",
+			"To download a file from another allowed Computer, obtain its id from GET /v1/computers and call GET /v1/computers/{id}/files/content?path=<URL-encoded-source-path>. The target Daemon resolves the path; relative paths start at that Bot's AgentHome on the target Computer, and home expansion and symlinks follow its existing filesystem rules. There is no additional directory allowlist; the target Daemon's OS permissions apply. Only regular files are supported, not directories.",
+			"Computer file content is an original-byte stream that a caller can save with curl --output or another streaming client. The request does not create a FileRef, snapshot or Server file copy and does not change the Session's selected Computer. Each request rechecks the calling Bot's allowed Computers and the target's current access and connection. There is no file-size or total-transfer-time limit. A single Range is sought on the source Daemon instead of reading and discarding its prefix on the Server; a canceled request or disconnected connection stops the stream.",
 			"IM attachment download-url values are relative to local_api.base_url and return original bytes. Download an original to an explicit path when file tools need it. POST /v1/attachments/download returns the saved file reference.",
 			"Prepared images are native multimodal input. Attachment metadata or an Image preview omitted note alone does not provide pixels. Original downloads remain available even when a preview is omitted. Rollout retains the actual image payload supplied to the model.",
 			"A message part's content_url streams a selected original, including media inside a merged forward. Its download_url accepts only an explicit destination path and returns the saved file reference on the calling Computer. Source authorization always follows the archived enclosing message; nested source chat IDs and arbitrary forward IDs cannot select other chats. No listing or read automatically saves attachments.",
@@ -195,6 +197,7 @@ var capabilitySpecs = []capabilitySpec{
 			"For the bound IM chat, use send_message attachments when available. For HTTP file sends, read /v1/capabilities/chats first: the stable Idempotency-Key, format discovery and receipt rules apply equally to /v1/im/files. Supply exactly one of file_uri or path.",
 		},
 		examples: []CapabilityExample{
+			{Description: "Download a regular file from an explicitly selected allowed Computer; relative paths start at its AgentHome. Save the raw response on the calling Computer.", Method: "GET", Path: "/v1/computers/{id}/files/content?path=reports%2Freport.zip"},
 			{Description: "Create a Web link to an existing file on the source Computer; render the returned uri in Markdown.", Method: "POST", Path: "/v1/files/reference", Body: map[string]any{"path": "/absolute/path/report.pdf", "snapshot": true}},
 			{Description: "Download an IM original using IDs and attachment ref from an archived message.", Method: "POST", Path: "/v1/attachments/download", Body: map[string]any{"conversation_id": "<conversation-id>", "event_id": "<observation-id>", "attachment_ref": "<attachment-ref>", "path": "/absolute/path/original.png"}},
 			{Description: "Stream a selected original or thumbnail from getStickerSet results; URL-encode the file_id value.", Method: "GET", Path: "/v1/accounts/{id}/telegram/stickers/content?set_name=oines1&file_id=<file-id-from-result>"},
@@ -202,6 +205,7 @@ var capabilitySpecs = []capabilitySpec{
 			{Description: "Send a real file reference to an authorized chat using the HTTP send contract.", Method: "POST", Path: "/v1/im/files", Headers: map[string]string{"Idempotency-Key": "<unique-file-send-intent>"}, Body: map[string]any{"conversation_id": "<conversation-id>", "file_uri": "<returned-astral-file-uri>"}},
 		},
 		routes: []capabilityRoute{
+			{"GET", "/v1/computers/{id}/files/content", "Stream a regular file from an explicitly selected allowed Computer. Its Daemon resolves path relative to AgentHome and seeks a requested byte range; no FileRef, snapshot, Server copy or Computer switch is created."},
 			{"GET", "/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content", "Stream original attachment bytes; this does not save them on a Computer."},
 			{"GET", "/v1/conversations/{id}/messages/{message_id}/parts/{ref}/content", "Stream the selected part's original attachment bytes, including nested forward media."},
 			{"POST", "/v1/conversations/{id}/messages/{message_id}/parts/{ref}/download", "Write one selected part's original to an explicit calling-Computer path and return its file reference."},

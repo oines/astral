@@ -954,7 +954,7 @@ Server 在派发每条 `exec_command` 前生成独立的高熵随机凭据，仅
 
 `GET /v1/capabilities` 是统一发现入口，返回调用与身份范围说明、按用途组织的能力及其 `read_url`，并链接完整 OpenAPI。`GET /v1/capabilities/{id}` 按需提供历史、会话管理、计划任务、聊天、文件或环境能力的用途、作用范围、行为与错误规则、请求示例及该能力的 OpenAPI 子集。子集直接取实际注册的路由、请求／响应 schema 及其传递引用，不能另维护一份参数定义；完整契约与每个能力子集均声明独立的 command Bearer 安全方案，并包含其定义。平台能力按账号继续发现，不将某个平台的能力泛化到所有账号。
 
-发送规则明确区分直接工具和 HTTP：绑定聊天优先使用当前 `send_message` schema 支持的文字与附件；其执行标识由 Host 提供。`Idempotency-Key` 仅是 HTTP 发送接口的必需请求头，在发现文档及 OpenAPI 中声明。文件文档同时说明 Web 文件引用、IM 原件下载及图片预览省略的区别。
+发送规则明确区分直接工具和 HTTP：绑定聊天优先使用当前 `send_message` schema 支持的文字与附件；其执行标识由 Host 提供。`Idempotency-Key` 仅是 HTTP 发送接口的必需请求头，在发现文档及 OpenAPI 中声明。文件文档同时说明授权电脑文件读取、Web 文件引用、IM 原件下载及图片预览省略的区别。
 
 平台具名操作统一通过账号的 `/v1/accounts/{id}/operations` 发现并调用，目录声明参数、上传 `file_fields` 和官方文档。Telegram 覆盖群管理、指定成员/管理员/人数查询与用户资料读取；Bot API 不支持完整群成员枚举。用户资料限于当前授权私聊对方或经平台证明的群成员，Topic 权限不扩大为父群授权。NapCat 覆盖成员和资料卡、群管理、公告、群文件及精华；原生群号由当前授权聊天确定。公告、文件及目录等不透明 ID 由当前群实时列表证明后才操作。文件、头像和公告图片上传使用来源 Computer 路径或 FileRef 流式读取，不解释为适配器宿主机路径或任意 URL。平台不提供的公告编辑、文件夹改名等能力不通过删建模拟。
 
@@ -1001,6 +1001,7 @@ Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用�
 | 历史读取 | `GET /v1/sessions/{id}/history` | 分页读取文本，或围绕搜索位置展开前后文与长文本范围 |
 | 原始运行记录 | `GET /v1/sessions/{id}/rollout` | 读取原始分支历史；`trace=true` 查看目标 Session 的操作记录，包含 Run 状态与错误 |
 | 可用 Computer | `GET /v1/computers` | 当前 Agent 的允许集合和状态 |
+| Computer 文件内容 | `GET /v1/computers/{id}/files/content?path=…` | 从明确指定的授权 Computer 流式读取普通文件；路径由目标 Daemon 解析，支持源端 seek 的单段 Range |
 | 可用模型 | `GET /v1/models` | 仅列出当前 `available` 的 Profile，提供选择 ID、有效限制、推理默认值与完整推理 controls；不返回连接凭据 |
 | 主动发文本 | `POST /v1/im/messages` | 向指定的可用 Conversation 发送文本 |
 | 发文件 | `POST /v1/im/files` | 从来源 Computer 读取并上传文件，可带说明文字 |
@@ -1105,6 +1106,8 @@ HTTP 接收成功、平台接收上传、最终送达是不同事实。send_mess
 ### 存储原则
 
 工作文件、输入附件的本地副本、生成的图像或文档、需要历史一致性的文件版本保留在来源 Computer。Server 保存引用与元数据，按需以有界内存缓冲透传内容，不建立工作文件资产库，不将下载或 IM 上传的中间文件落到 Server 磁盘。
+
+Gateway 可直接读取当前 Bot 允许的其他 Computer 文件：从 `GET /v1/computers` 选择明确的目标 ID，再调用 `GET /v1/computers/{id}/files/content?path=…`。源路径由目标 Daemon 按其系统规则解析，相对路径以该 Bot 在目标 Computer 的 AgentHome 为基准；`~/` 与符号链接沿用既有文件系统语义，不增加目录白名单，实际访问服从目标 Daemon 的 OS 权限。仅支持普通文件，不自动打包目录。响应为原始字节，调用方可通过 `curl --output` 等流式保存；接口不创建 FileRef、源端快照或 Server 副本，也不切换 Session 的当前 Computer。身份来自原命令绑定，每次请求重新校验 Bot 的允许集合、目标未撤销且在线；不设置文件大小或整次传输时间上限，请求取消或连接断开时终止传输。单段 Range 在源 Daemon seek 后读取，不由 Server 下载并丢弃前缀。
 
 平台配置、消息文本、工具输出和 Core Rollout 属于业务数据。Rollout 保存模型当时实际收到的多模态内容，例如图片 base64；经过缩放或裁剪时保存处理后实际输入的版本，同时保留来源 URI。内容一经提交不随原文件变化，历史展示、恢复和重放不依赖附件目录或来源 Computer 在线。这是执行记录，不作为 Server 工作文件资产库或原附件下载的替代来源。
 

@@ -1,17 +1,17 @@
 ---
 title: "Platform API reference"
-description: "Query chats, call platform operations from custom scripts, and handle their results."
+description: "Query chats, download computer files, and call platform operations from custom scripts."
 ---
 
 This reference is for writing scripts or inspecting the Bot's platform calls. For everyday tasks, ask the Bot directly: “List this QQ group's files” or “Pin the conclusion we just wrote.” You do not need to call an API yourself.
 
-Astral's built-in Gateway API lets the Bot query chats, send files, and manage groups within its authorized scope. Actions use **the connected platform account's permissions**, not the identity of the group member requesting a task. Limit the account's and Bot's [access](/docs/start/safe-use/) before connecting a public group.
+Astral's built-in Gateway API lets the Bot query chats, download files from allowed computers, send files, and manage groups within its authorized scope. Chat actions use **the connected platform account's permissions**, not the identity of the group member requesting a task. Limit the account's and Bot's [access](/docs/start/safe-use/) before connecting a public group.
 
 ## Discover APIs in the current environment
 
-Read `local_api.capabilities_url` from the Bot's current environment, then open the chat capability document. Use the addresses, request schemas, and platform capabilities returned by that instance. Resolve relative links against `local_api.base_url`.
+Read `local_api.capabilities_url` from the Bot's current environment, then open the chat or file capability document for your task. Use the addresses, request schemas, and platform capabilities returned by that instance. Resolve relative links against `local_api.base_url`.
 
-Requests require `Authorization: Bearer …` using the executing command process's `ASTRAL_API_TOKEN` environment variable. Read it within your program without printing, saving, or putting it in a URL. This is the current command's credential, not a Telegram token or an app secret.
+Requests require `Authorization: Bearer …` using the executing command process's `ASTRAL_API_TOKEN` environment variable. Read it within your program without printing, saving, or putting it in a URL or another program's command-line arguments. This is the current command's credential, not a Telegram token or an app secret.
 
 ## Call a platform operation
 
@@ -39,6 +39,29 @@ A successful response contains the platform operation's data in `result`. It may
 
 The account must belong to the current Bot, and the chat must remain authorized. Access to one Telegram topic does not grant parent-group management. Chats bound to private conversations keep their private-access restrictions.
 
+## Download a file from an allowed computer
+
+Call `GET /v1/computers` to find the source computer's `id`, then request `GET /v1/computers/{id}/files/content?path=…`. Each request checks that the source is still allowed for the current Bot, connected, and not revoked. The file must be readable by that computer's Daemon account.
+
+URL-encode `path`. The source computer resolves it using its own filesystem rules: an absolute path refers to that computer, and a relative path starts at the Bot's AgentHome there. Home expansion such as `~/` and symbolic links follow those same rules. There is no additional directory allowlist. The endpoint reads regular files; it does not package directories.
+
+For example, in Bash, replace the first two values with `local_api.base_url` from the current environment and an ID returned by `/v1/computers`:
+
+```bash
+base_url='<local_api.base_url>'
+computer_id='<computer-id>'
+curl --fail-with-body --config - \
+  --get --data-urlencode 'path=reports/report.zip' \
+  --output /tmp/report.zip \
+  "${base_url%/}/v1/computers/$computer_id/files/content" <<EOF
+header = "Authorization: Bearer $ASTRAL_API_TOKEN"
+EOF
+```
+
+The response contains the original bytes. Here, `/tmp/report.zip` is on the computer running curl; `reports/report.zip` is on the selected source computer. The credential passes through curl's standard input rather than its command-line arguments. The request creates no FileRef, snapshot, or Server copy and does not switch the Session's selected computer.
+
+There is no file-size or total-transfer-time limit. A canceled request or disconnected connection stops the transfer. A single `Range` request reads from the selected offset on the source Daemon, without transferring the preceding bytes to the Server.
+
 ## Read original file byte ranges
 
 The `.../content` endpoints stream original bytes without saving a file. They accept one `Range` header when the source has a known positive size, for example `bytes=1048576-2097151`, `bytes=1048576-`, or `bytes=-65536`. A valid range returns **206**, `Accept-Ranges: bytes`, and the matching `Content-Range` and `Content-Length`. An invalid, multiple, or unsatisfiable range returns **416** with `Content-Range: bytes */<size>`.
@@ -47,7 +70,7 @@ Range support is needed in both the Server and the calling computer's Daemon, so
 
 Without a usable known size, the endpoint ignores Range and returns the complete stream with **200**. Verify **206** and the returned range before appending to a partial download; download the complete file again if the source has changed. When using curl, reject non-2xx statuses with `--fail-with-body` or an explicit status check, and check its exit code for body-read failures too.
 
-Astral does not cache the source file for these requests. It may reopen the source and read and discard the preceding bytes, so a Range request does not guarantee that the platform CDN itself supports resume.
+Astral does not cache the source file for these requests. Computer file requests seek on the source Daemon. For platform media, Astral may reopen the source and read and discard the preceding bytes, so a Range request does not guarantee that the platform CDN itself supports resume.
 
 ## Telegram
 
