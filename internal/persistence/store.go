@@ -24,7 +24,7 @@ type Store struct {
 }
 
 // FormatVersion is the current Astral Host database schema version.
-const FormatVersion = 7
+const FormatVersion = 6
 
 var schema = fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS documents(kind TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,data BLOB NOT NULL,PRIMARY KEY(kind,id));
@@ -35,9 +35,6 @@ CREATE INDEX IF NOT EXISTS observation_conversation ON observations(conversation
 CREATE TABLE IF NOT EXISTS deliveries(event_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,state TEXT NOT NULL,error TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,kind TEXT NOT NULL,state TEXT NOT NULL,data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox_keys(intent_key TEXT PRIMARY KEY,outbox_id TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS outbox_dispatch_status ON documents(json_extract(data,'$.status'),json_extract(data,'$.created_at'),id) WHERE kind='outbox';
-CREATE INDEX IF NOT EXISTS outbox_dispatch_group ON documents(json_extract(data,'$.group_id'),json_extract(data,'$.status'),json_extract(data,'$.fragment')) WHERE kind='outbox';
-CREATE INDEX IF NOT EXISTS outbox_dispatch_bucket ON documents(json_extract(data,'$.binding_id'),json_extract(data,'$.conversation_id'),json_extract(data,'$.status')) WHERE kind='outbox';
 PRAGMA user_version=%d;
 `, FormatVersion)
 

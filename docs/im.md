@@ -206,8 +206,6 @@ Telegram Markdown/HTML use Rich Messages rather than MarkdownV2. Feishu Markdown
 
 Every actual Outbox fragment persists only prepared `parts`, including text-only fragments. Media parts contain a frozen `file_ref_id`, never a source path. Convenience inputs can also freeze native video/audio delivery in the internal `media_kind`; explicit public `file` parts remain documents. Dispatch and self-message archival consume those same parts; there is no parallel top-level text/file representation. Host migration 6 converts earlier current and historical Outbox records before runtime opens them, retaining send outcomes and idempotency identity.
 
-Outbox scheduling reads pending fragments and their group/bucket dependencies through Host indexes instead of decoding accepted history. Earlier pending or terminally failed fragments still prevent later fragments of the same group from overtaking them, while a dispatching fragment blocks concurrent sends in that chat. Host migration 7 adds these indexes without rewriting message bodies, outcomes or idempotency records.
-
 - Telegram uses one Rich Message for mixed parts, with native numeric-ID mentions and streamed multipart media, including documents embedded between text blocks. No public media URL is required.
 - NapCat supports native numeric QQ mentions in groups, literal text, and ordered media. Each actual send contains at most one media source and has its own receipt.
 - Feishu supports application `open_id` mentions and image uploads in posts. Images occupy their own paragraphs. Markdown uses one `md` node with native mention/image references; generic files are separate messages.

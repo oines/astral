@@ -1,6 +1,6 @@
 # Host 性能验证记录（2026-11）
 
-本次改动减少只读查询意外打开执行实例的开销、阻止模型持续不可用时每条 IM 消息重新触发维护，并将 Outbox 调度限制在待处理工作集。以下是隔离 fixture 的结果，不是生产升级后的 CPU 或 RSS 验收。
+本报告保留本轮隔离实验的原始数字。最终实现收敛到模型不可用时的 IM 暂停／退避，以及直接触发恢复的跨页证据复用和持久水位；目录查询与 Outbox 索引实验从最终范围撤出。以下实验数字不等于生产升级后的 CPU 或 RSS 验收。
 
 ## 环境和比较方式
 
@@ -86,9 +86,9 @@ ASTRAL_IM_RECOVERY_WORKLOAD=1 go test ./internal/channels -run '^TestInboxLargeB
 
 紧窗口会使这个 fixture 频繁 compact。不能把 20.03s 全部解释成普通消息投递成本，也不能从中推断生产环境每条消息都 compact。先前把整个 95 条恢复放进常规 `-race` 测试时触及 fixture 的 120s 预算；因此将 64 条故障压力、较小的完整恢复正确性和显式大积压 workload 分开，而没有提高全局超时或修改 Core。
 
-## Outbox：1435 条历史加 1 条待发送
+## Outbox：未采用的索引实验
 
-运行命令：
+以下是撤回前执行的实验命令；最终源码不保留该专属 benchmark、SQL 查询或索引迁移：
 
 ```sh
 go test ./internal/persistence -run '^$' -bench '^BenchmarkOutbox1435AcceptedOnePending$' -benchtime=3x -count=1
@@ -104,7 +104,16 @@ Fixture 为 1,435 条 accepted 和 1 条 pending Outbox，均带普通文本 par
 
 旧侧是同一二进制内保留的 `Store.List` 加逐条解码子路径，**不包含旧调度器的排序和完整控制流程**，因此是这部分历史读取成本的保守对照。新侧包含 pending 筛选、同组前置片段依赖、同聊天 dispatching 排斥、每个聊天队首选择及返回记录解码。两侧都不发送平台消息，不测量平台网络延迟。
 
-Host 格式 7 新增三个表达式索引，迁移不改写 Outbox 内容、结果或 intent key。测试用 `EXPLAIN QUERY PLAN` 验证 pending 状态索引被使用，并检查前序失败片段阻止同组后续片段、不同发送组不被错误阻塞、同聊天在途发送不并发、分片不越序。
+实验曾新增三个表达式索引，并用 `EXPLAIN QUERY PLAN` 验证查询路径。这些查询和索引已经撤出，最终 Host 目标保持格式 6，Outbox 调度恢复原实现。本段只保留实验记录，不作为最终性能收益。
+
+后续小 fixture 审查了写入代价：使用原 `Store.Open` 的 WAL 和 `synchronous=FULL`，每个新库先放入 50 条 accepted，再清空 WAL；随后 20 次发送分别写入 pending、dispatching、accepted，共 60 次真实 `Store.Save`。索引有无的顺序交错，执行三轮，无生产数据或迁移账本变更。
+
+| 每 20 次发送／60 次 Save | 无三个实验索引 | 有三个实验索引 |
+| --- | ---: | ---: |
+| 墙钟时间中位数 | 12.906ms | 14.769ms |
+| WAL 追加字节 | 1,112,432 B | 1,854,032 B |
+
+本 fixture 每次发送额外追加 37,080 B WAL，等于每次 Save 多 12,360 B（3 个页面 frame）。这是逻辑 WAL 追加量，不是设备物理写量；小树、短时墙钟数字不能外推生产写入延迟。原始三轮记录和临时测试源码在测量机器的 `/tmp/astral-outbox-index-write-audit.txt` 与 `/tmp/astral-outbox-index-write-audit_test.go`。已确认的生产主热点是直接触发恢复的冻结请求重建，不应以 Outbox 读基准替代这一根因。
 
 ## 尚未测量和保持不变的边界
 
@@ -114,9 +123,11 @@ Host 格式 7 新增三个表达式索引，迁移不改写 Outbox 内容、结�
 
 ## 已完成的验证
 
+下列包含收窄前的实验验证记录。已经撤回的目录／Outbox 实验不代表最终提交仍包含相应实现；最终修复另以收窄后的测试验收。
+
 - `go test ./internal/channels ./internal/persistence`：最终通过，34.373s / 0.850s。
 - 新 IM 暂停、重启恢复、SDK 错误分类／RetryAfter、配置恢复、迟到旧错误，以及 64 条故障 workload 的定向 `-race`：通过，33.350s。
-- Outbox 工作集、顺序和格式 6→7 不改写内容／receipt／幂等身份的定向 `-race`：通过，4.603s。
+- 已撤回 Outbox 实验的工作集、顺序和格式 6→7 定向 `-race` 当时通过，4.603s；该实验迁移及专属测试现已移除。
 - 显式 95 条原 32k 恢复 workload：通过，测试总计 20.74s。
 - 主分支与修复后 IM workload、冷查询受控比较、Outbox benchmark：按上述命令实际执行，数值见各表。
 - 同轮协作验证的 `GOWORK=off go test -race ./internal/harness ./internal/httpapi -count=1 -timeout=8m`：通过，292.821s / 31.054s；新的 deferred/model recovery 定向回归另行通过，10.270s。
