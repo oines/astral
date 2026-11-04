@@ -222,3 +222,38 @@ func TestCanceledReclaimPersistencePreservesFailureForShutdownFlush(t *testing.T
 		t.Fatalf("shutdown lost the original failure after a canceled write: %+v", retained)
 	}
 }
+
+func TestLateReclaimWorkerCannotReplaceFailureAfterShutdown(t *testing.T) {
+	s, store := fixture(t, &historyStore{})
+	if err := s.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	token := markReclaim(t, store)
+	s.mu.Lock()
+	s.reclaim = Reclaim{State: "failed", Error: "vacuum failed"}
+	s.reclaimObserved = token
+	s.reclaimDirty = true
+	generation := s.reclaimGeneration
+	s.mu.Unlock()
+	// Model a worker that captured its generation before Close canceled it,
+	// then received cancellation from Snapshot or attempted its next state.
+	for _, late := range []Reclaim{{State: "failed", Error: context.Canceled.Error()}, {State: "running"}, {State: "complete"}} {
+		s.reclaimState(generation, late.State, late.Error)
+		s.mu.Lock()
+		state, dirty := s.reclaim, s.reclaimDirty
+		s.mu.Unlock()
+		if state.State != "failed" || state.Error != "vacuum failed" || !dirty {
+			t.Fatalf("late worker replaced the shutdown state with %+v: got %+v dirty=%v", late, state, dirty)
+		}
+	}
+	if err := s.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var retained reclaimRecord
+	if err := store.Maintenance(context.Background(), "storage_reclaim", "owner", &retained); err != nil {
+		t.Fatal(err)
+	}
+	if retained.State != "failed" || retained.Error != "vacuum failed" || retained.ObservedDirtyToken != token {
+		t.Fatalf("shutdown did not flush the original state after a late worker: %+v", retained)
+	}
+}

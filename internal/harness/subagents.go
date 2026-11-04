@@ -555,7 +555,28 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	// Deliver persisted facts independently of opening or reconfiguring this
 	// runtime. A now-unavailable desired model must not hide an earlier failure
 	// from its parent, or hold ordinary progress behind a busy model switch.
-	state, stateErr := s.CoreStore.LoadState(ctx, record.ID)
+	s.mu.Lock()
+	r := s.runtimes[record.ID]
+	s.mu.Unlock()
+	if r != nil {
+		select {
+		case <-r.ready:
+			if r.openErr != nil {
+				return r.openErr
+			}
+		default:
+			r = nil
+		}
+	}
+	var state core.RuntimeState
+	var stateErr error
+	if r != nil {
+		r.mu.Lock()
+		state = r.core.Load().State()
+		r.mu.Unlock()
+	} else {
+		state, stateErr = s.CoreStore.LoadState(ctx, record.ID)
+	}
 	if stateErr == nil {
 		if err := s.deliverSubagentHistoryLocked(ctx, record, state); err != nil && !errors.Is(err, errSubagentReportsPending) {
 			return err
@@ -566,12 +587,21 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	} else if !errors.Is(stateErr, core.ErrNotFound) {
 		return stateErr
 	}
-	r, err := s.open(ctx, record.ID)
-	if err != nil {
-		return err
+	if r == nil {
+		if stateErr == nil {
+			needed, err := s.subagentNeedsRuntime(ctx, record, state)
+			if err != nil || !needed {
+				return err
+			}
+		}
+		var err error
+		r, err = s.open(ctx, record.ID)
+		if err != nil {
+			return err
+		}
 	}
 	r.mu.Lock()
-	err = r.syncSubagentModel(ctx)
+	err := r.syncSubagentModel(ctx)
 	if err == nil {
 		err = r.startSubagentLocked(ctx)
 	}
@@ -590,20 +620,52 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	// A process can stop after durable admission but before Continue starts a
 	// Run. Reconcile the stable initial receipt, and interrupted started Runs,
 	// without resuming a deliberately cancelled or failed Run.
-	snapshot := r.core.Load().Snapshot()
+	r.mu.Lock()
 	initial, initialErr := r.core.Load().LookupInput(ctx, "subagent_initial_"+record.ID)
+	if initialErr != nil && !errors.Is(initialErr, core.ErrNotFound) {
+		r.mu.Unlock()
+		return initialErr
+	}
+	// Use one snapshot for both the durable lifecycle and execution flags. A
+	// fast failure between separate reads must not revive the retained input.
+	snapshot := r.core.Load().Snapshot()
 	lastRun := snapshot.State.LastRun
 	shouldActivate := initialErr == nil && initial.State == core.InputPending && lastRun == nil
 	shouldActivate = shouldActivate || lastRun != nil && lastRun.Status == "started"
 	if shouldActivate && !snapshot.Running && !snapshot.Maintenance && !snapshot.Stopping {
-		r.mu.Lock()
 		err = r.continueLocked(ctx)
-		r.mu.Unlock()
-		if err != nil && !errors.Is(err, core.ErrBusy) && !errors.Is(err, core.ErrNotContinuable) {
-			return err
-		}
+	}
+	r.mu.Unlock()
+	if err != nil && !errors.Is(err, core.ErrBusy) && !errors.Is(err, core.ErrNotContinuable) {
+		return err
 	}
 	return s.deliverSubagentHistoryLocked(ctx, record, r.core.Load().State())
+}
+
+// Only a cold child needs durable admission checks. Hot children already own
+// their execution state and retain the ordinary synchronization path above.
+func (s *Service) subagentNeedsRuntime(ctx context.Context, record domain.Session, state core.RuntimeState) (bool, error) {
+	settings, err := s.childMetadata(ctx, record.ID)
+	if err != nil {
+		return false, err
+	}
+	if !settings.started || state.LastRun == nil || state.LastRun.Status == "started" || state.CurrentAttemptID != "" || !state.Branch.Complete() || state.PendingInputs[core.InputContext] > 0 {
+		return true, nil
+	}
+	selection, err := s.selectionAtState(ctx, record.ID, state)
+	if err != nil {
+		return false, err
+	}
+	if selection.fingerprint != settings.fingerprint {
+		return true, nil
+	}
+	var activation subagentActivation
+	if err := s.Store.Maintenance(ctx, "subagent_activation", record.ID, &activation); err == nil {
+		return !activation.Complete, nil
+	} else if !domain.IsMissing(err) {
+		return false, err
+	}
+	return false, nil
 }
 
 func (s *Service) deliverSubagentHistoryLocked(ctx context.Context, record domain.Session, state core.RuntimeState) error {
@@ -659,6 +721,10 @@ type subagentActivation struct {
 }
 
 func (r *runtime) startSubagentLocked(ctx context.Context) error {
+	metadata, err := r.service.childMetadata(ctx, r.id)
+	if err != nil || metadata.started {
+		return err
+	}
 	var settings subagentSettings
 	if err := r.service.Store.Get(ctx, "subagent_settings", r.id, &settings); err != nil {
 		return err

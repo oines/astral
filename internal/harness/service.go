@@ -43,6 +43,9 @@ type Service struct {
 	deleteMu        sync.Mutex
 	agentMu         sync.RWMutex
 	runtimes        map[string]*runtime
+	headTimes       map[string]sessionHeadTime
+	selections      map[string]configurationSelection
+	childSettings   map[string]subagentMetadata
 	closed          bool
 	changes         chan string
 	workers         sync.WaitGroup
@@ -70,6 +73,7 @@ type runtime struct {
 	titleCancel      context.CancelFunc
 	titleDone        chan struct{}
 	subagent         *subagentSettings
+	imInspector      *IMInspector
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
@@ -252,9 +256,9 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 func (r *runtime) coreConfig(record domain.Session) core.Config {
 	s := r.service
 	config := core.Config{
-		Store: s.CoreStore, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokens: modelbridge.EstimateTokens,
+		Store: s.CoreStore, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokensReadOnly: modelbridge.EstimateTokens,
 		SystemPrompt: systemPromptFor(record), Tools: r.hostTools(),
-		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContext: r.collectContext,
+		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContextReadOnly: r.collectContext,
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
 	}
 	if r.subagent != nil {

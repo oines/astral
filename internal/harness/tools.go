@@ -245,7 +245,7 @@ func (r *runtime) registerHandle(ctx context.Context, internalID int, b domain.E
 	err := r.service.Store.Update(ctx, func(tx *persistence.Tx) error {
 		var counter struct {
 			domain.Meta
-			Value int `json:"value"`
+			Value int64 `json:"value"`
 		}
 		err := tx.Get(ctx, "counters", "process", &counter)
 		if err != nil && !domain.IsMissing(err) {
@@ -259,7 +259,7 @@ func (r *runtime) registerHandle(ctx context.Context, internalID int, b domain.E
 		if err = tx.Save(ctx, "counters", &counter.Meta, &counter); err != nil {
 			return err
 		}
-		handle.ID = strconv.Itoa(counter.Value)
+		handle.ID = strconv.FormatInt(counter.Value, 10)
 		return tx.Save(ctx, "process_handles", &handle.Meta, &handle)
 	})
 	return handle, err

@@ -1,3 +1,5 @@
+github.com/MoeForge/moego v0.1.0-alpha.1.0.20261104092832-8aa874cd38e3 h1:8F5DImhPQ4cf9TsqDw04gloDzyePTXGzzSV7+FDhh08=
+github.com/MoeForge/moego v0.1.0-alpha.1.0.20261104092832-8aa874cd38e3/go.mod h1:SBNiQjCpWC3IEBMKFBOwOyhhQ3jywMrISqCwJTdr4aA=
 github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc h1:biVzkmvwrH8WK8raXaxBx6fRVTlJILwEwQGL1I/ByEI=
 github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
@@ -41,14 +43,8 @@ github.com/mfridman/interpolate v0.0.2 h1:pnuTK7MQIxxFz1Gr+rjSIx9u7qVjf5VOoM/u6B
 github.com/mfridman/interpolate v0.0.2/go.mod h1:p+7uk6oE07mpE/Ik1b8EckO0O4ZXiGAfshKBWLUM9Xg=
 github.com/ncruces/go-strftime v0.1.9 h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdhx/f4=
 github.com/ncruces/go-strftime v0.1.9/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
-github.com/oines/astral-core v0.0.0-20261029093209-79316a328810 h1:kvp29rMH1ud5/DQc9eBFmpPmLZSegokust7GvmabeRU=
-github.com/oines/astral-core v0.0.0-20261029093209-79316a328810/go.mod h1:5MNj0S+DXD9MLtFH0QZv36UcasR65hUIHHpRt9Kul60=
-github.com/oines/astral-core v0.0.0-20261030151646-599f61a0055d h1:pjtJTaP9ZtYD/3cb/tPfy2Ud1ojlvdIzT0NffFCAL6M=
-github.com/oines/astral-core v0.0.0-20261030151646-599f61a0055d/go.mod h1:5MNj0S+DXD9MLtFH0QZv36UcasR65hUIHHpRt9Kul60=
-github.com/oines/astral-core v0.0.0-20261031013620-4673e4410747 h1:nq2NKdPPYUTU3L1kr3fj+Xx8N+eqUp9J2CZTBm3tRTE=
-github.com/oines/astral-core v0.0.0-20261031013620-4673e4410747/go.mod h1:5MNj0S+DXD9MLtFH0QZv36UcasR65hUIHHpRt9Kul60=
-github.com/oines/astral-core v0.0.0-20261102133800-0139c33cb755 h1:p7nuZfnEHnf6aRueWaCYpXNpaQBuAtEYS+FhoZqxhkA=
-github.com/oines/astral-core v0.0.0-20261102133800-0139c33cb755/go.mod h1:5MNj0S+DXD9MLtFH0QZv36UcasR65hUIHHpRt9Kul60=
+github.com/oines/astral-core v0.0.0-20261104193014-7c7ea56d4b17 h1:B9fppzr4uCMGkaJuirCtZcer8k6WvfhRuEppGqfvW0c=
+github.com/oines/astral-core v0.0.0-20261104193014-7c7ea56d4b17/go.mod h1:esTBo4mDEKdP6/hgCUB2sM87xivAlYaSUqNuOFxd7eo=
 github.com/philhofer/fwd v1.2.0 h1:e6DnBTl7vGY+Gz322/ASL4Gyp1FspeMvx1RNDoToZuM=
 github.com/philhofer/fwd v1.2.0/go.mod h1:RqIHx9QI14HlwKwm98g9Re5prTQ6LdeRQn+gXJFxsJM=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

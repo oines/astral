@@ -26,18 +26,62 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	if err := s.Store.Get(ctx, "inbox_cursors", b.ID, &position); err != nil && !domain.IsMissing(err) {
 		return
 	}
-	if err := s.Harness.ResumeContext(ctx, b.SessionID); err != nil && ctx.Err() == nil {
-		slog.WarnContext(ctx, "IM passive recovery failed", "session_id", b.SessionID, "error", err)
+	wake := make(chan struct{}, 1)
+	s.mu.Lock()
+	if s.inboxWake == nil {
+		s.inboxWake = map[string]chan struct{}{}
 	}
+	s.inboxWake[b.ID] = wake
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		if s.inboxWake[b.ID] == wake {
+			delete(s.inboxWake, b.ID)
+		}
+		s.mu.Unlock()
+	}()
+	resumeContext := true
 	results := make(chan probeResult, 1)
 	probing := false
 	var pendingResult *probeResult
-	defer func() {
-		s.mu.Lock()
-		delete(s.handoffs, b.ID)
-		s.mu.Unlock()
-	}()
 	for ctx.Err() == nil {
+		paused, pauseErr := s.pausedInbox(ctx, b)
+		if pauseErr != nil || paused {
+			resumeContext = true
+			select {
+			case <-ctx.Done():
+				return
+			case <-wake:
+			case <-time.After(time.Second):
+			}
+			continue
+		}
+		if resumeContext {
+			resumeContext = false
+			boundary, boundaryErr := s.inboxBoundary(ctx, b)
+			if boundaryErr != nil {
+				resumeContext = true
+				if !delay(ctx, time.Second) {
+					return
+				}
+				continue
+			}
+			if err := s.Harness.ResumeContext(ctx, b.SessionID); err != nil && ctx.Err() == nil {
+				pauseErr := s.pauseInboxFailure(ctx, b, boundary, err)
+				slog.WarnContext(ctx, "IM passive recovery failed", "session_id", b.SessionID, "error", errors.Join(err, pauseErr))
+				if !delay(ctx, time.Second) {
+					return
+				}
+				continue
+			}
+			if err := s.clearInboxFailure(ctx, b, boundary); err != nil {
+				if !delay(ctx, time.Second) {
+					return
+				}
+				resumeContext = true
+				continue
+			}
+		}
 		events, err := s.Store.Observations(ctx, b.ConversationID, position.Sequence, 100)
 		if err != nil {
 			if !delay(ctx, time.Second) {
@@ -123,16 +167,14 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	}
 }
 
-// This scan position is only an in-memory optimization. On restart, existing
-// input receipts and request audits reconstruct whether a direct input needs a
-// handoff; no new database record or storage format is introduced.
+// The durable position contains only confirmed handoffs. It never skips a
+// passive direct input whose conditional wakeup was merely accepted.
 func (s *Service) handoffDirectObservations(ctx context.Context, b domain.ConversationBinding, delivered int64) error {
-	s.mu.Lock()
-	after, exists := s.handoffs[b.ID]
-	s.mu.Unlock()
-	if !exists {
-		after = b.StartSequence
+	after, err := s.handoffPosition(ctx, b)
+	if err != nil {
+		return err
 	}
+	previous := after
 	// Reconcile at most one page before yielding to newly archived messages.
 	// Recovery of a long chat must not monopolize the inbox worker.
 	if after < delivered {
@@ -169,22 +211,37 @@ func (s *Service) handoffDirectObservations(ctx context.Context, b domain.Conver
 			if event.Trigger != "" && !event.Self {
 				status := statuses[nextStatus]
 				nextStatus++
-				if status == harness.IMWakeBusy {
+				if status != harness.IMWakeCovered {
 					break
 				}
 			}
 			after = item.Sequence
 		}
 	}
-	s.mu.Lock()
-	if s.handoffs == nil {
-		s.handoffs = map[string]int64{}
+	if after > previous {
+		if err := s.saveHandoffPosition(ctx, b, after); err != nil {
+			return err
+		}
 	}
-	s.handoffs[b.ID] = max(s.handoffs[b.ID], after)
-	s.mu.Unlock()
+	if after >= delivered {
+		s.Harness.ReleaseIMRecovery(b.SessionID)
+	}
 	return nil
 }
 func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, event domain.Observation) (err error) {
+	if paused, pauseErr := s.pausedInbox(ctx, b); pauseErr != nil {
+		return pauseErr
+	} else if paused {
+		var pause inboxPause
+		if err := s.Store.Maintenance(ctx, inboxPauseKind, b.ID, &pause); err != nil {
+			return err
+		}
+		return errors.New(pause.Error)
+	}
+	boundary, err := s.inboxBoundary(ctx, b)
+	if err != nil {
+		return err
+	}
 	defer func() {
 		if err != nil && ctx.Err() == nil {
 			_ = s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "blocked", Error: err.Error()})
@@ -294,6 +351,9 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 	}
 	_, err = s.Harness.Deliver(ctx, b.SessionID, observation, trigger, b.ID)
 	if err != nil {
+		if ctx.Err() == nil {
+			return errors.Join(err, s.pauseInboxFailure(ctx, b, boundary, err))
+		}
 		return err
 	}
 	return s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "routed"})
