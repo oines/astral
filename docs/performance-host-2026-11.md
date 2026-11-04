@@ -70,6 +70,18 @@
 
 这些结果证明窗口不再被这些入口打开，但也揭示仍会重复解码配置；不能将“没有历史扫描”表述成“没有 CPU 或分配成本”。Head 时间只缓存每 Session 一个不可变 ID／时间，变化后重新读取、删除时清除；不保留记录正文。没有引入 idle eviction。
 
+后续同二进制对照保留旧读法，使用 131,320 B 的真实冻结配置，三轮各执行五次查询。大文本只放在 Core／子代理配置中，普通 Bot 元数据保持小；不请求外部模型。新实现每 Session 仅记录配置 ID 对应的小 Selection，以及子代理 settings revision 对应的 Started／Selection，配置与 revision 变化后重新核对，不缓存 system prompt 或工具定义。
+
+| 稳定第 2／3 轮，每次查询 | 旧累计分配 | 新累计分配 | 旧进程 CPU | 新进程 CPU |
+| --- | ---: | ---: | ---: | ---: |
+| 冷 Summary | 1.83–1.92 MB | 23.3–24.2 KB | 4.00–4.26 ms | 0.145 ms |
+| 冷子代理是否需运行 | 2.37–2.59 MB | 7.03 KB | 5.08–5.31 ms | 0.088–0.100 ms |
+| 热子代理元数据检查 | 2.71–2.93 MB | 7.90 KB | 4.62–5.68 ms | 0.064–0.066 ms |
+
+冷查询的完整配置读取从每轮五次变为三轮分别 1／0／0 次。第一轮包含首次读取，不能省略后冒充冷启动成本；完整三轮原始记录见测量机 `/tmp/astral-configuration-memo-performance.json`。热子代理一行只测模型同步、Started 与状态读取，不是整个 worker；Summary 为保留 Running／Maintenance／Stopping 状态仍调用必要 Snapshot，不声称所有查询零分配。这些是开发 M2 上的局部对照，不是 M4 整进程 CPU 改善倍数。
+
+IM 探测检查也使用同一关闭后的 Host／Core 数据库字节副本比较旧新顺序：无 Probe 但有 Owner Steer、已完成 Probe 两种情况，旧路径均打开一个窗口、扫描一次 Path，并在无工作 `pendingProbe` 后发送一次 Changes；新路径三项均为零，Core 版本和模型调用数均不变。真正已接受但未完成的 Probe，两侧仍打开一个窗口、读取五次 Path、恰好执行一次离线模型，再调用恢复不重复执行。该对照验证检查前置减少加载和无意义通知，同时保留真实恢复，不以游标猜测 Core 是否已经执行。
+
 ## Outbox：不新增索引的实现
 
 `ba5caeb` 在现有 documents 表查询中先用 `json_extract(data,'$.status') IS NOT 'accepted'` 过滤，再将非 accepted 记录复制到 Go。仍遍历 kind=outbox 的候选行，不声称数据库物理上完全不读取历史。排序、失败分片依赖和并发互斥保持原规则；仅原周期 tick 或 Outbox 自身变化触发扫描，无关 Harness 通知不再触发它。
