@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,18 +32,29 @@ import (
 )
 
 type fixture struct {
-	ctx       context.Context
-	service   *Service
-	store     *persistence.Store
-	coreStore *sqlite.Store
-	hub       *computers.Hub
-	daemons   []*computers.Daemon
-	agent     domain.Agent
-	session   domain.Session
-	directory string
-	mu        sync.Mutex
-	requests  []json.RawMessage
-	generate  func(context.Context, int, map[string]any) any
+	ctx             context.Context
+	service         *Service
+	store           *persistence.Store
+	coreStore       *sqlite.Store
+	hub             *computers.Hub
+	daemons         []*computers.Daemon
+	agent           domain.Agent
+	session         domain.Session
+	directory       string
+	mu              sync.Mutex
+	requests        []json.RawMessage
+	generate        func(context.Context, int, map[string]any) any
+	providerClosing atomic.Bool
+}
+
+// A fixture shutdown can cancel a model upload before its JSON body arrives.
+// Only that cancellation is expected; malformed or truncated live requests
+// must still fail the test that produced them.
+func fixtureProviderRequestError(ctx context.Context, closing bool, err error) error {
+	if closing && ctx.Err() != nil && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
+		return nil
+	}
+	return err
 }
 
 func newFixture(t *testing.T, computerCount int, generate func(context.Context, int, map[string]any) any) *fixture {
@@ -71,6 +84,9 @@ func newFixture(t *testing.T, computerCount int, generate func(context.Context, 
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			if fixtureProviderRequestError(r.Context(), f.providerClosing.Load(), err) == nil {
+				return
+			}
 			t.Error(err)
 			http.Error(w, "invalid", 400)
 			return
@@ -99,6 +115,7 @@ func newFixture(t *testing.T, computerCount int, generate func(context.Context, 
 	}
 	f.service = New(f.store, f.coreStore, bridge, f.hub)
 	t.Cleanup(func() {
+		f.providerClosing.Store(true)
 		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
 		defer done()
 		if err := f.service.Close(cleanup); err != nil {
@@ -199,6 +216,8 @@ func (f *fixture) idle(t *testing.T, id string) View {
 }
 func (f *fixture) restart(t *testing.T) {
 	t.Helper()
+	f.providerClosing.Store(true)
+	defer f.providerClosing.Store(false)
 	if err := f.service.Close(f.ctx); err != nil {
 		t.Fatal(err)
 	}
