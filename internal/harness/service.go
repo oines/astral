@@ -256,9 +256,9 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 func (r *runtime) coreConfig(record domain.Session) core.Config {
 	s := r.service
 	config := core.Config{
-		Store: s.CoreStore, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokens: modelbridge.EstimateTokens,
+		Store: s.CoreStore, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokensReadOnly: modelbridge.EstimateTokens,
 		SystemPrompt: systemPromptFor(record), Tools: r.hostTools(),
-		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContext: r.collectContext,
+		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContextReadOnly: r.collectContext,
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
 	}
 	if r.subagent != nil {

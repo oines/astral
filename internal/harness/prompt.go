@@ -128,6 +128,12 @@ type sessionModel struct {
 }
 
 func (m sessionModel) Stream(ctx context.Context, request core.Request, emit func(core.ModelEvent)) (core.Reply, error) {
+	return m.stream(ctx, request, emit, func(ctx context.Context, emit func(core.ModelEvent)) (core.Reply, error) {
+		return m.Model.Stream(ctx, request, emit)
+	})
+}
+
+func (m sessionModel) stream(ctx context.Context, request core.Request, emit func(core.ModelEvent), invoke func(context.Context, func(core.ModelEvent)) (core.Reply, error)) (core.Reply, error) {
 	if m.runtime.subagent != nil && request.SystemPrompt == m.runtime.subagent.Configuration.SystemPrompt {
 		// Preparation can temporarily refuse SelectModel. Once this request is
 		// frozen, apply the saved selection for its successor before sending it.
@@ -143,14 +149,50 @@ func (m sessionModel) Stream(ctx context.Context, request core.Request, emit fun
 			return core.Reply{}, err
 		}
 	}
-	return m.Model.Stream(ctx, request, emit)
+	return invoke(ctx, emit)
+}
+
+func (m sessionModel) PrepareExecution(ctx context.Context, request core.Request) (core.RequestExecution, error) {
+	preparer, ok := m.Model.(core.RequestExecutionPreparer)
+	if !ok {
+		return nil, nil
+	}
+	execution, err := preparer.PrepareExecution(ctx, request)
+	if err != nil || execution == nil {
+		return execution, err
+	}
+	return core.RequestExecutionFunc(func(ctx context.Context, emit func(core.ModelEvent)) (core.Reply, error) {
+		return m.stream(ctx, request, emit, execution.Stream)
+	}), nil
 }
 
 func (m sessionModel) PrepareRequest(ctx context.Context, request core.Request) (core.Request, error) {
-	request, err := core.PrepareRequest(ctx, m.Model, request)
-	if err != nil {
-		return request, err
+	var err error
+	if preparer, ok := m.Model.(core.RequestPreparer); ok {
+		request, err = preparer.PrepareRequest(ctx, request)
+		if err != nil {
+			return request, err
+		}
 	}
+	return m.preparePrompt(ctx, request)
+}
+
+func (m sessionModel) ProjectRequest(ctx context.Context, request core.Request) (core.Request, error) {
+	var projected core.Request
+	var err error
+	if projector, ok := m.Model.(core.RequestProjector); ok {
+		projected, err = projector.ProjectRequest(ctx, request)
+	} else {
+		projected, err = core.PrepareRequest(ctx, m.Model, request)
+	}
+	if err != nil {
+		return core.Request{}, err
+	}
+	return m.preparePrompt(ctx, projected)
+}
+
+func (m sessionModel) preparePrompt(ctx context.Context, request core.Request) (core.Request, error) {
+	var err error
 	if m.runtime.subagent != nil {
 		return request, nil
 	}
@@ -173,6 +215,13 @@ func (m sessionModel) EstimateTokens(ctx context.Context, request core.Request) 
 }
 
 func (m sessionModel) ValidateRequest(ctx context.Context, request core.Request) error {
+	if validator, ok := m.Model.(core.RequestValidator); ok {
+		return validator.ValidateRequest(ctx, request)
+	}
+	return nil
+}
+
+func (m sessionModel) ValidateRequestReadOnly(ctx context.Context, request core.Request) error {
 	return core.ValidateRequest(ctx, m.Model, request)
 }
 

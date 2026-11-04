@@ -528,13 +528,34 @@ func (m *boundModel) PrepareRequest(ctx context.Context, req core.Request) (core
 			return core.Request{}, err
 		}
 	}
+	if preparer, ok := m.adapter.(core.RequestPreparer); ok {
+		return preparer.PrepareRequest(ctx, req)
+	}
+	return req, nil
+}
+
+func (m *boundModel) ProjectRequest(ctx context.Context, req core.Request) (core.Request, error) {
+	if m.validate != nil {
+		if err := m.validate(ctx); err != nil {
+			return core.Request{}, err
+		}
+	}
+	if projector, ok := m.adapter.(core.RequestProjector); ok {
+		return projector.ProjectRequest(ctx, req)
+	}
 	return core.PrepareRequest(ctx, m.adapter, req)
 }
 func (m *boundModel) Stream(ctx context.Context, req core.Request, emit func(core.ModelEvent)) (core.Reply, error) {
+	return m.stream(ctx, emit, func(ctx context.Context, emit func(core.ModelEvent)) (core.Reply, error) {
+		return m.adapter.Stream(ctx, req, emit)
+	})
+}
+
+func (m *boundModel) stream(ctx context.Context, emit func(core.ModelEvent), invoke func(context.Context, func(core.ModelEvent)) (core.Reply, error)) (core.Reply, error) {
 	if m.sessionID != "" {
 		ctx = models.WithRequestHeaders(ctx, integration.SessionHeaders(m.presetID, m.sessionID))
 	}
-	reply, err := m.adapter.Stream(ctx, req, emit)
+	reply, err := invoke(ctx, emit)
 	if err != nil {
 		err = safeProviderError(err)
 		if reply.Message.Role != "" {
@@ -544,6 +565,20 @@ func (m *boundModel) Stream(ctx context.Context, req core.Request, emit func(cor
 	return reply, err
 }
 
+func (m *boundModel) PrepareExecution(ctx context.Context, request core.Request) (core.RequestExecution, error) {
+	preparer, ok := m.adapter.(core.RequestExecutionPreparer)
+	if !ok {
+		return nil, nil
+	}
+	execution, err := preparer.PrepareExecution(ctx, request)
+	if err != nil || execution == nil {
+		return execution, err
+	}
+	return core.RequestExecutionFunc(func(ctx context.Context, emit func(core.ModelEvent)) (core.Reply, error) {
+		return m.stream(ctx, emit, execution.Stream)
+	}), nil
+}
+
 func (m *boundModel) RecoverRequest(ctx context.Context, req core.Request, cause error) (core.Request, bool, error) {
 	if recoverer, ok := m.adapter.(core.ModelRequestRecoverer); ok {
 		return recoverer.RecoverRequest(ctx, req, cause)
@@ -551,6 +586,13 @@ func (m *boundModel) RecoverRequest(ctx context.Context, req core.Request, cause
 	return core.Request{}, false, nil
 }
 func (m *boundModel) ValidateRequest(ctx context.Context, req core.Request) error {
+	if validator, ok := m.adapter.(core.RequestValidator); ok {
+		return validator.ValidateRequest(ctx, req)
+	}
+	return nil
+}
+
+func (m *boundModel) ValidateRequestReadOnly(ctx context.Context, req core.Request) error {
 	return core.ValidateRequest(ctx, m.adapter, req)
 }
 func (m *boundModel) EstimateTokens(ctx context.Context, req core.Request) (int, error) {

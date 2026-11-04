@@ -3,11 +3,12 @@ module github.com/oines/astral
 go 1.26.0
 
 require (
+	github.com/MoeForge/moego v0.1.0-alpha.1.0.20261104092832-8aa874cd38e3
 	github.com/coder/websocket v1.8.15
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
-	github.com/oines/astral-core v0.0.0-20261102133800-0139c33cb755
+	github.com/oines/astral-core v0.0.0-20261104183314-cc66dd9ec30b
 	github.com/pquerna/otp v1.5.0
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/robfig/cron/v3 v3.0.1
