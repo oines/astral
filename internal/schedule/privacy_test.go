@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -60,10 +61,13 @@ func TestPrivateTargetPlansReauthorizeEveryOperation(t *testing.T) {
 
 func TestNewSessionPlansKeepGatewaySourcePrivacy(t *testing.T) {
 	var delivered []Occurrence
+	var deliveredMu sync.Mutex
 	var s *Service
 	var now *time.Time
 	s, now = fixture(t, func(ctx context.Context, o Occurrence) error {
+		deliveredMu.Lock()
 		delivered = append(delivered, o)
+		deliveredMu.Unlock()
 		child := domain.Session{Meta: domain.Meta{ID: o.SessionID}, AgentID: o.AgentID, Private: o.Private}
 		return s.store.Save(ctx, "sessions", &child.Meta, &child)
 	})
