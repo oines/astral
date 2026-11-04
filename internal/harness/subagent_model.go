@@ -237,14 +237,22 @@ func (s *Service) reconcileSubagentModelChangesLocked(ctx context.Context) error
 // Called with the tree or runtime lock. Only the selection is mutable; the
 // child's saved System and tool definitions retain the parent's exact prefix.
 func (r *runtime) syncSubagentModel(ctx context.Context) error {
-	var settings subagentSettings
-	if err := r.service.Store.Get(ctx, "subagent_settings", r.id, &settings); err != nil {
+	settings, err := r.service.childMetadata(ctx, r.id)
+	if err != nil {
 		return err
 	}
-	if jsonEqual(r.core.Load().Configuration().Selection, settings.Configuration.Selection) {
+	current, err := r.service.selectionAtState(ctx, r.id, r.core.Load().State())
+	if err != nil {
+		return err
+	}
+	if current.fingerprint == settings.fingerprint {
 		return nil
 	}
-	if err := r.core.Load().SelectModel(ctx, settings.Configuration.Selection); err != nil {
+	var selection core.ModelSelection
+	if err := json.Unmarshal(settings.selection, &selection); err != nil {
+		return err
+	}
+	if err := r.core.Load().SelectModel(ctx, selection); err != nil {
 		return err
 	}
 	r.service.notify(r.id)

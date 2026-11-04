@@ -887,9 +887,7 @@ func TestExistingDirectDriverWithLaggingHostCursorIsNotDrivenAgain(t *testing.T)
 	if err := s.handoffDirectObservations(p.Context, binding, through); err != nil {
 		t.Fatal(err)
 	}
-	s.mu.Lock()
-	position := s.handoffs[binding.ID]
-	s.mu.Unlock()
+	position := inboxRecoveryPosition(t, s, binding)
 	if position != through {
 		t.Fatalf("the already accepted direct driver blocked Host handoff recovery: %d want %d", position, through)
 	}

@@ -209,6 +209,9 @@ func (s *Service) closeDeletedRuntime(ctx context.Context, id string) error {
 func (s *Service) removeDeletedRuntime(id string) {
 	s.mu.Lock()
 	delete(s.runtimes, id)
+	delete(s.headTimes, id)
+	delete(s.selections, id)
+	delete(s.childSettings, id)
 	s.mu.Unlock()
 }
 

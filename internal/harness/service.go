@@ -43,6 +43,9 @@ type Service struct {
 	deleteMu        sync.Mutex
 	agentMu         sync.RWMutex
 	runtimes        map[string]*runtime
+	headTimes       map[string]sessionHeadTime
+	selections      map[string]configurationSelection
+	childSettings   map[string]subagentMetadata
 	closed          bool
 	changes         chan string
 	workers         sync.WaitGroup
@@ -70,6 +73,7 @@ type runtime struct {
 	titleCancel      context.CancelFunc
 	titleDone        chan struct{}
 	subagent         *subagentSettings
+	imInspector      *IMInspector
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {

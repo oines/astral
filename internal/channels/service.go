@@ -30,12 +30,12 @@ type Service struct {
 	pollers        map[string]poller
 	inboxes        map[string]context.CancelFunc
 	inboxWake      map[string]chan struct{}
+	outboxWake     chan struct{}
 	sending        map[string]bool
 	statuses       map[string]Status
 	weixinLogins   map[string]*weixinLogin
 	probeQuiet     time.Duration
 	probeMaxWait   time.Duration
-	handoffs       map[string]int64
 	agentWorkers   map[string]*agentWorkers
 	deletingAgents map[string]bool
 	StorageChanged func()
@@ -62,7 +62,7 @@ type cursor struct {
 
 func New(store *persistence.Store, service *harness.Service) *Service {
 	s := &Service{Store: store, Harness: service, Registry: DefaultRegistry(), Client: http.DefaultClient,
-		pollers: map[string]poller{}, inboxes: map[string]context.CancelFunc{}, sending: map[string]bool{}, statuses: map[string]Status{}, probeQuiet: 10 * time.Second, probeMaxWait: time.Minute,
+		pollers: map[string]poller{}, inboxes: map[string]context.CancelFunc{}, outboxWake: make(chan struct{}, 1), sending: map[string]bool{}, statuses: map[string]Status{}, probeQuiet: 10 * time.Second, probeMaxWait: time.Minute,
 		agentWorkers: map[string]*agentWorkers{}, deletingAgents: map[string]bool{}}
 	service.IM = s
 	return s
@@ -300,7 +300,11 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	// A committed dispatch without a receipt may have reached the platform.
 	// Recovery never converts that uncertainty into another send.
-	records, err := list[domain.Outbox](ctx, s.Store, "outbox")
+	rows, err := s.Store.OutboxWork(ctx)
+	if err != nil {
+		return err
+	}
+	records, err := decodeRecords[domain.Outbox](rows)
 	if err != nil {
 		return err
 	}
@@ -340,14 +344,38 @@ func (s *Service) run() {
 	defer close(s.done)
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
-	for {
+	s.reconcile()
+	outboxPending := s.dispatchPending()
+	poll := func() {
 		s.reconcile()
+		if outboxPending {
+			outboxPending = s.dispatchPending()
+		}
+	}
+	for {
+		// An unrelated Harness notification may arrive continuously. Check
+		// cancellation and the periodic outbox deadline before reconciling it.
+		select {
+		case <-s.ctx.Done():
+			s.workers.Wait()
+			return
+		default:
+		}
+		select {
+		case <-ticker.C:
+			poll()
+		default:
+		}
 		select {
 		case <-s.ctx.Done():
 			s.workers.Wait()
 			return
 		case <-ticker.C:
+			poll()
+		case <-s.outboxWake:
+			outboxPending = s.dispatchPending()
 		case <-s.Harness.Changes():
+			s.reconcile()
 		}
 	}
 }
@@ -411,7 +439,6 @@ func (s *Service) reconcile() {
 		}
 	}
 	s.mu.Unlock()
-	s.dispatchPending()
 }
 func (s *Service) setStatus(status Status) {
 	s.mu.Lock()

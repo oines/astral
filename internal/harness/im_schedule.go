@@ -28,8 +28,11 @@ func IMCanProbe(session *core.Session) bool {
 	return !IMWorking(session) && state.PendingInputs[core.InputSteer]+state.PendingInputs[core.InputFollowUp] == 0
 }
 
-// IMInspector reads existing execution evidence. Its cache lasts only for one
-// Host scheduling operation; it adds no receipt fields or persisted state.
+// IMInspector retains only evidence derived from immutable attempt
+// inputs. Receipt and latest-attempt discovery are always read again, so it
+// never caches a decision that a newly received observation is unhandled.
+// The owning runtime serializes access, releases it once recovery catches up,
+// and replaces it when Core is reopened. No request bodies are retained.
 type IMInspector struct {
 	session *core.Session
 	store   core.Store
@@ -43,6 +46,20 @@ type imAudit struct {
 
 func NewIMInspector(session *core.Session, store core.Store) *IMInspector {
 	return &IMInspector{session: session, store: store, audits: map[string]imAudit{}}
+}
+
+// ReleaseIMRecovery drops transient audit evidence after the caller's durable
+// covered-input cursor reaches its delivered archive boundary. It must never
+// open a cold Session or query its history just to clear a cache.
+func (s *Service) ReleaseIMRecovery(id string) {
+	s.mu.Lock()
+	r := s.runtimes[id]
+	s.mu.Unlock()
+	if r != nil {
+		r.mu.Lock()
+		r.imInspector = nil
+		r.mu.Unlock()
+	}
 }
 
 func (i *IMInspector) Handled(ctx context.Context, inputID string) (bool, error) {
@@ -104,6 +121,7 @@ func (i *IMInspector) readAttempt(ctx context.Context, attempt core.ModelAttempt
 	if err != nil {
 		return audit, err
 	}
+	var summaryView *core.Context
 	for _, message := range request.Messages {
 		var metadata messages.Metadata
 		if message.ContextKind == "im.observation" && json.Unmarshal(message.Metadata, &metadata) == nil && metadata.Source == "im" {
@@ -112,15 +130,18 @@ func (i *IMInspector) readAttempt(ctx context.Context, attempt core.ModelAttempt
 		if message.ContextKind != "summary" {
 			continue
 		}
-		view, err := core.ReadContext(ctx, i.store, attempt.Input.RolloutID, attempt.Input.HeadID, 64<<20)
-		if err != nil {
-			return audit, err
+		if summaryView == nil {
+			view, err := core.ReadContext(ctx, i.store, attempt.Input.RolloutID, attempt.Input.HeadID, 64<<20)
+			if err != nil {
+				return audit, err
+			}
+			summaryView = &view
 		}
-		for at, original := range view.Request.Messages {
-			if original.ContextKind != "summary" || digest(original.Content) != digest(message.Content) || at >= len(view.Sources) {
+		for at, original := range summaryView.Request.Messages {
+			if original.ContextKind != "summary" || digest(original.Content) != digest(message.Content) || at >= len(summaryView.Sources) {
 				continue
 			}
-			checkpoint, err := i.store.Get(ctx, attempt.Input.RolloutID, view.Sources[at])
+			checkpoint, err := i.store.Get(ctx, attempt.Input.RolloutID, summaryView.Sources[at])
 			if err != nil {
 				return audit, err
 			}
