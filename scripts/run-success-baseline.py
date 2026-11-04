@@ -253,6 +253,8 @@ def local_run(args):
     require_anchor = os.environ.get("ASTRAL_SUCCESS_REPLAY_REQUIRE_ANCHOR") == "1"
     if require_anchor and (args.suite != "lifecycle" or args.scenario != "captured"):
         raise ValueError("strict usage anchor requires lifecycle captured")
+    if args.receiver == "process" and not require_anchor:
+        raise ValueError("process lifecycle receiver requires strict captured anchor mode")
     identity = {"schema": "astral-success-run-v1", "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "build": build, "runtime_hardware": hardware(), "inputs": file_ids, "suite": args.suite, "scenario": args.scenario,
         "head_override": args.head, "source_attempt_id": args.attempt, "test": test_name, "rounds_requested": args.rounds,
@@ -352,7 +354,7 @@ def main():
     parser.add_argument("--suite", choices=("lifecycle", "host"), default="lifecycle")
     parser.add_argument("--scenario", "--mode", choices=("control", "captured", "text", "tool", "compact"), default="captured")
     parser.add_argument("--profile", action="store_true", help="enable test-owned CPU profile; record its overhead")
-    parser.add_argument("--receiver", choices=("full", "fast"), default="full", help="offline verification receiver; full preserves the original baseline")
+    parser.add_argument("--receiver", choices=("full", "fast", "process"), default="full", help="offline receiver; process isolates strict captured model validation, full preserves baseline")
     parser.add_argument("--fixture-dir", type=Path)
     parser.add_argument("--target", type=Path)
     parser.add_argument("--providers", type=Path)

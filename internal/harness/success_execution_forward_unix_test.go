@@ -8,6 +8,7 @@ import (
 )
 
 func init() {
+	successLifecycleStartProcess = startSuccessLifecycleProcess
 	successLifecycleConfigure = func(config *core.Config) {
 		config.EstimateTokensReadOnly, config.EstimateTokens = config.EstimateTokens, nil
 	}

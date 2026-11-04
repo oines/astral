@@ -88,7 +88,7 @@ func successScaledHostCPU(t *testing.T) int64 {
 	if err := unix.Getrusage(unix.RUSAGE_SELF, &usage); err != nil {
 		t.Fatal(err)
 	}
-	return usage.Utime.Sec*1e9 + int64(usage.Utime.Usec)*1000 + usage.Stime.Sec*1e9 + int64(usage.Stime.Usec)*1000
+	return int64(usage.Utime.Sec)*1e9 + int64(usage.Utime.Usec)*1000 + int64(usage.Stime.Sec)*1e9 + int64(usage.Stime.Usec)*1000
 }
 
 func (r *scaledHostReceiver) RoundTrip(request *http.Request) (*http.Response, error) {

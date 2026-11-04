@@ -38,6 +38,14 @@ const successLifecycleReply = "Offline success lifecycle reply."
 // A build-tagged helper enables it only for candidate builds.
 var successLifecycleConfigure = func(*core.Config) {}
 
+type successLifecycleProcessReceiver struct {
+	Transport http.RoundTripper
+	Snapshot  func() ([]successLifecycleWire, int64, map[string]any)
+	Metadata  map[string]any
+}
+
+var successLifecycleStartProcess func(*testing.T, string, provider.Model, *successLifecycleTransport) successLifecycleProcessReceiver
+
 type successLifecycleWire struct {
 	Bytes      int    `json:"bytes"`
 	SHA256     string `json:"sha256"`
@@ -213,6 +221,10 @@ func TestSuccessLifecycleReplay(t *testing.T) {
 	requireAnchor := os.Getenv("ASTRAL_SUCCESS_REPLAY_REQUIRE_ANCHOR") == "1"
 	if requireAnchor && scenario != "captured" {
 		t.Fatal("strict historical usage anchor requires captured scenario")
+	}
+	receiverMode := os.Getenv("ASTRAL_SUCCESS_REPLAY_RECEIVER")
+	if receiverMode == "process" && !requireAnchor {
+		t.Fatal("captured process receiver requires strict historical anchor mode")
 	}
 	caseDir, err := filepath.EvalSymlinks(os.Getenv("ASTRAL_HOST_REPLAY_CASE"))
 	if err != nil || caseDir == "." || strings.Contains(caseDir, "Library/Application Support/astral") || strings.HasSuffix(caseDir, "-original") {
@@ -516,6 +528,15 @@ func TestSuccessLifecycleReplay(t *testing.T) {
 	if err := os.Mkdir(output, 0700); err != nil {
 		t.Fatal("new output directory required: ", err)
 	}
+	var processReceiver successLifecycleProcessReceiver
+	if receiverMode == "process" {
+		if successLifecycleStartProcess == nil {
+			t.Fatal("process receiver requires candidate test build tag")
+		}
+		processReceiver = successLifecycleStartProcess(t, output, adapter, transport)
+		credentials.HTTPClient.Transport = processReceiver.Transport
+		metadata["receiver_process"] = processReceiver.Metadata
+	}
 	successLifecycleWrite(t, filepath.Join(output, "metadata.json"), metadata)
 	var cpuProfile *os.File
 	if os.Getenv("ASTRAL_SUCCESS_REPLAY_PROFILES") == "1" {
@@ -557,6 +578,11 @@ func TestSuccessLifecycleReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	var processRoundTripNS int64
+	var processDetails map[string]any
+	if processReceiver.Snapshot != nil {
+		transport.wires, processRoundTripNS, processDetails = processReceiver.Snapshot()
+	}
 	stateAfter := session.Snapshot().State
 	attempts, inspectErr := session.Attempts().Scan(ctx, core.AttemptQuery{Purpose: "generation", Reverse: true, Limit: 1, MaxBytes: 128 << 20})
 	if operationErr == nil {
@@ -576,6 +602,7 @@ func TestSuccessLifecycleReplay(t *testing.T) {
 		operationErr = errors.New("incomplete success lifecycle")
 	}
 	finalRequestVerified := false
+	finalWireVerified := false
 	var finalRequest core.Request
 	if operationErr == nil {
 		// RebuildRequest applies the persisted recipe and verifies the original
@@ -583,6 +610,25 @@ func TestSuccessLifecycleReplay(t *testing.T) {
 		// replace or exclude Core's timed production freeze/digest work.
 		finalRequest, operationErr = core.RebuildRequest(ctx, store, attempts.Attempts[0].Input, 64<<20)
 		finalRequestVerified = operationErr == nil
+	}
+	if operationErr == nil && requireAnchor {
+		body, err := adapter.RequestBody(finalRequest)
+		if err != nil {
+			operationErr = err
+		} else {
+			raw, err := json.Marshal(body)
+			if err != nil {
+				operationErr = err
+			} else {
+				digest := sha256.Sum256(raw)
+				streaming, _ := body["stream"].(bool)
+				if len(raw) != transport.wires[0].Bytes || hex.EncodeToString(digest[:]) != transport.wires[0].SHA256 || streaming != transport.wires[0].Streaming {
+					operationErr = errors.New("strict captured public SDK body differs from complete transmitted body/stream acknowledgement")
+				} else {
+					finalWireVerified = true
+				}
+			}
+		}
 	}
 	if operationErr == nil {
 		receipt, err := session.LookupInput(ctx, "success-lifecycle-input")
@@ -608,6 +654,9 @@ func TestSuccessLifecycleReplay(t *testing.T) {
 		"wire_requests": transport.wires, "http_calls": len(transport.wires), "tool_executions": toolExecutions.Load(), "run_status": runResult.Status, "version_before": stateBefore.Version, "version_after": stateAfter.Version,
 		"pending_before": stateBefore.PendingInputs, "pending_after": stateAfter.PendingInputs, "profiles_enabled": cpuProfile != nil}
 	result["new_compaction_attempts"], result["final_request_digest_verified"] = len(compactions.Attempts), finalRequestVerified
+	if requireAnchor {
+		result["final_wire_rebuild_verified"] = finalWireVerified
+	}
 	result["strict_historical_usage_anchor"], result["historical_usage_anchor_verified"], result["new_reply_usage_omitted"] = requireAnchor, requireAnchor && operationErr == nil, requireAnchor
 	if requireAnchor {
 		result["historical_usage_anchor"], result["timed_sdk_estimator_calls"] = anchorFacts, timedEstimates
@@ -619,6 +668,12 @@ func TestSuccessLifecycleReplay(t *testing.T) {
 	result["mock_receiver_read_validate_hash_ns"] = sinkNS
 	result["local_wall_excluding_receiver_sink_ns"] = wallNS - sinkNS
 	result["local_wall_definition"] = "derived original wall minus measured receiver read/JSON/SHA intervals; response construction remains included; receiver-induced GC may remain outside those intervals"
+	if processReceiver.Snapshot != nil {
+		result["process_receiver"] = processDetails
+		result["model_roundtrip_wall_ns"] = processRoundTripNS
+		result["local_wall_excluding_model_roundtrip_ns"] = wallNS - processRoundTripNS
+		result["process_local_wall_definition"] = "original Prompt-to-Run.Wait wall minus complete real loopback HTTP RoundTrip to response headers; server full-body validation/GC and upload are isolated; body_read_ns is acknowledgement receipt upper bound"
+	}
 	result["final_max_output_tokens"] = finalRequest.MaxOutputTokens
 	if len(transport.wires) != 0 {
 		result["first_body_read_ns"] = transport.wires[0].BodyReadNS
