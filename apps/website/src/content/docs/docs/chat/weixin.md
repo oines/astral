@@ -29,4 +29,4 @@ Text and files may be sent separately. Test with a small file once the first rep
 
 If login expires or error `-14` appears, choose **Authorize again** on the existing account. Authorize the same Bot identity to retain the account relationship; create a new account connection for a different identity.
 
-If connected but silent, check that the account is enabled and the private chat is added, then ask the person to send a new message. If Astral processed the task but no result arrived, inspect send errors in its conversation. Check Weixin before repeating a send with an uncertain outcome.
+If connected but silent, check that the account is enabled and the private chat is added, then ask the person to send a new message. Existing chats continue in their original conversations after restarting Astral; you do not need to remove and add them again. If Astral processed the task but no result arrived, inspect send errors in its conversation. Check Weixin before repeating a send with an uncertain outcome.

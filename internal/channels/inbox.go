@@ -133,27 +133,43 @@ func (s *Service) handoffDirectObservations(ctx context.Context, b domain.Conver
 	if !exists {
 		after = b.StartSequence
 	}
-	blocked := false
-	for after < delivered && !blocked {
+	// Reconcile at most one page before yielding to newly archived messages.
+	// Recovery of a long chat must not monopolize the inbox worker.
+	if after < delivered {
 		page, err := s.Store.Observations(ctx, b.ConversationID, after, 100)
 		if err != nil {
 			return err
 		}
 		if len(page) == 0 {
-			break
+			return nil
 		}
+		var inputs []harness.IMWakeup
 		for _, item := range page {
 			if item.Sequence > delivered {
 				break
 			}
 			event := item.Observation
 			if event.Trigger != "" && !event.Self {
-				status, err := s.Harness.WakeObservation(ctx, b.SessionID, event.ID+":trigger", messages.Trigger(event), b.ID)
-				if err != nil {
-					return err
-				}
+				inputs = append(inputs, harness.IMWakeup{InputID: event.ID + ":trigger", Message: messages.Trigger(event)})
+			}
+		}
+		var statuses []harness.IMWakeStatus
+		if len(inputs) > 0 {
+			statuses, err = s.Harness.WakeObservations(ctx, b.SessionID, inputs, b.ID)
+			if err != nil {
+				return err
+			}
+		}
+		nextStatus := 0
+		for _, item := range page {
+			if item.Sequence > delivered {
+				break
+			}
+			event := item.Observation
+			if event.Trigger != "" && !event.Self {
+				status := statuses[nextStatus]
+				nextStatus++
 				if status == harness.IMWakeBusy {
-					blocked = true
 					break
 				}
 			}
