@@ -56,14 +56,14 @@ func (s *Service) Summary(ctx context.Context, id string) (SessionSummary, error
 		select {
 		case <-r.ready:
 			if r.openErr == nil {
-				r.mu.Lock()
+				// The handle is atomically published and Snapshot owns its Core
+				// lock. Directory reads must not wait for Host admission/compaction.
 				session := r.core.Load()
 				value := session.Snapshot()
 				if value.State.SessionID != "" {
 					snapshot = &value
 					state = value.State
 				}
-				r.mu.Unlock()
 			}
 		default:
 		}
