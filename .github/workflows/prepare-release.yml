@@ -54,16 +54,13 @@ on:
 permissions:
   contents: read
 
-# Only the disposable source checks and unsigned build are replaceable.
+# Only the disposable unsigned producer is replaceable. Selected source checks
+# run beside packaging inside the protected release workflow.
 concurrency:
   group: astral-release-prepare-main
   cancel-in-progress: true
 
 jobs:
-  checks:
-    if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/ci.yml
-
   build:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04

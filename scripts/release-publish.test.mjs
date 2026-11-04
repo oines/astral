@@ -104,6 +104,7 @@ async function fixture(t, { rolling = false, candidate = false, unsigned = false
     schema_version: 1, purpose, public_release_ready: !candidate, version, tag, source_sha: sourceSHA, repository,
     candidate_run_url: `https://github.com/${repository}/actions/runs/123`, ci_run_url: `https://github.com/${repository}/actions/runs/122`,
     ...(rolling ? {
+      ci_run_url: `https://github.com/${repository}/actions/runs/123`,
       packaging_run_url: `https://github.com/${repository}/actions/runs/123`,
       build_provenance: {
         schema_version: 1, repository, source_sha: sourceSHA, version,
@@ -202,6 +203,58 @@ test('public publishing verifies every upload before its final publication mutat
   assert.deepEqual(mutations.at(-1), { method: 'PATCH', path: '/repos/oines/astral/releases/17', body: { draft: false, make_latest: 'true' } })
   assert.equal(mutations.filter(call => call.method === 'PATCH').length, 1)
   assert.ok(value.remote.output[0].includes('Published Astral'))
+})
+
+test('uploads overlap within a fixed bound and publication waits for every verified asset', { timeout: 5000 }, async t => {
+  const value = await fixture(t)
+  const request = value.options.fetch
+  let active = 0, peak = 0, started = 0
+  let releaseFirstWave
+  const firstWave = new Promise(resolve => { releaseFirstWave = resolve })
+  value.options.fetch = async (input, options) => {
+    const url = new URL(input)
+    if (url.hostname !== 'uploads.github.com') {
+      if (options.method === 'PATCH') assert.equal(active, 0)
+      return request(input, options)
+    }
+    active++
+    peak = Math.max(peak, active)
+    if (++started === 4) releaseFirstWave()
+    try {
+      await firstWave
+      return await request(input, options)
+    } finally { active-- }
+  }
+  await createDraft(value.directory, value.options)
+  assert.equal(peak, 4)
+  assert.equal(active, 0)
+  assert.equal(value.remote.release.draft, false)
+})
+
+test('a failed upload stops new admissions and joins the remaining uploads without publishing', { timeout: 5000 }, async t => {
+  const value = await fixture(t)
+  const request = value.options.fetch
+  let started = 0, active = 0
+  let releaseWave
+  const wave = new Promise(resolve => { releaseWave = resolve })
+  value.options.fetch = async (input, options) => {
+    if (new URL(input).hostname !== 'uploads.github.com') return request(input, options)
+    const index = ++started
+    active++
+    if (started === 4) releaseWave()
+    try {
+      await wave
+      // All four failures finish before the helper returns. Each body must
+      // still be consumed, as a real transport owns its request stream.
+      for await (const chunk of options.body) assert.ok(chunk.length)
+      return json({ failed: index }, 500)
+    } finally { active-- }
+  }
+  await assert.rejects(createDraft(value.directory, value.options), /upload .*failed/)
+  assert.equal(started, 4)
+  assert.equal(active, 0)
+  assert.equal(value.remote.release.draft, true)
+  assert.ok(value.remote.calls.every(call => call.method !== 'PATCH'))
 })
 
 test('older releases publish without taking Latest, including a newer release on the second API page', async t => {

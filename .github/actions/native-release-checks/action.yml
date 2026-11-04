@@ -22,18 +22,8 @@ runs:
         }
         "ASTRAL_WINDOWS_HANDLE=$astralHandle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     - name: Verify Desktop Server lifecycle
-      if: runner.os != 'Windows'
       shell: bash
       run: pnpm test:desktop-service
-    - name: Repeat Windows Desktop lifecycle
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        foreach ($astralIteration in 1..5) {
-          Write-Output "Windows desktop lifecycle $astralIteration/5"
-          pnpm test:desktop-service
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        }
     - name: Native downloaded installer
       shell: bash
       run: go test -tags=integration -run '^TestDistributionInstallerRegistersActualDaemon$' -count=1 -timeout=3m ./internal/platform

@@ -55,6 +55,7 @@ test('gathers six exact artifacts and keeps partial reports out of final collect
   assert.equal(result.source_sha, f.source)
   assert.equal(result.notarization_partials, 3)
   assert.equal(f.downloaded.length, 6)
+  assert.deepEqual(JSON.parse(await readFile(path.join(f.root, '.release-metadata/package-inputs.json'), 'utf8')), result.references)
   assert.deepEqual((await readdir(path.join(f.root, 'release-inputs'))).sort(), ['desktop-linux', 'desktop-mac-arm64', 'desktop-mac-x64', 'desktop-win', 'signed-distribution'])
   const partials = await readdir(path.join(f.root, 'apps/desktop/release/notarization'))
   assert.deepEqual(partials.sort(), ['arm64.json', 'binaries.json', 'x64.json'])
@@ -62,6 +63,50 @@ test('gathers six exact artifacts and keeps partial reports out of final collect
     assert.ok(!(await readdir(path.join(f.root, 'release-inputs', `desktop-mac-${arch}`))).includes('notarization'))
     for (const name of desktopNames(f.version).filter(value => value.includes(`-mac-${arch}.`))) assert.equal(await readFile(path.join(f.root, 'apps/desktop/release', name), 'utf8'), `Fixture ${name}`)
   }
+})
+
+test('sealed references restore only original IDs without selecting same-name replacement artifacts', async t => {
+  const f = await fixture(t)
+  const sealed = await gatherPackageInputs(f.options)
+  f.downloaded.length = 0
+  const result = await gatherPackageInputs({ ...f.options, references: sealed.references, output: path.join(f.root, 'restored-inputs'), copyNotarization: false,
+    fetch: () => assert.fail('Restoration must not select artifacts from a mutable name inventory.') })
+  assert.deepEqual(result.references, sealed.references)
+  assert.deepEqual(f.downloaded.map(value => value.artifactID), sealed.artifact_ids)
+  assert.ok(f.downloaded.every(value => value.expectedSHA === undefined))
+})
+
+test('sealed package identities reject replaced digests, source envelopes, IDs, expiry and actual selected-source claims', async t => {
+  for (const change of [
+    f => { f.artifacts[0].digest = `sha256:${'f'.repeat(64)}` },
+    f => { f.artifacts[0].workflow_run.head_sha = 'c'.repeat(40) },
+    f => { f.artifacts[0].workflow_run.id = 901 },
+    f => { f.artifacts[0].expired = true },
+    f => { f.payloads.get('signed-distribution')['release-formats.json'] = JSON.stringify({ schema_version: 1, version: f.version, source_sha: 'c'.repeat(40) }) },
+  ]) {
+    const f = await fixture(t)
+    const sealed = await gatherPackageInputs(f.options)
+    change(f)
+    await assert.rejects(gatherPackageInputs({ ...f.options, references: sealed.references, output: path.join(f.root, 'restored-inputs'), copyNotarization: false }), /changed between|frozen release/)
+    await assert.rejects(readdir(path.join(f.root, 'restored-inputs')), /ENOENT/)
+  }
+})
+
+test('failed concurrent package downloads are all joined before their private directory is removed', async t => {
+  const f = await fixture(t)
+  const download = f.options.download
+  let active = 0, completed = 0
+  const result = gatherPackageInputs({ ...f.options, download: async args => {
+    active++
+    try {
+      if (args.artifactID === f.artifacts[0].id) throw new Error('synthetic first download failure')
+      await new Promise(resolve => setTimeout(resolve, 20))
+      return await download(args)
+    } finally { active--; completed++ }
+  } })
+  await assert.rejects(result, /synthetic first download failure/)
+  assert.equal(active, 0)
+  assert.equal(completed, 6)
 })
 
 test('missing, duplicate, expired and foreign-run artifacts are rejected before download', async t => {

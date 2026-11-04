@@ -5,19 +5,45 @@ on:
       - apps/website/**
       - .github/workflows/website.yml
       - wrangler.jsonc
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Exact source selected by the protected release workflow
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
+env:
+  ASTRAL_CI_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
-  cancel-in-progress: true
+  # A later merge must not cancel the checks for an already selected release.
+  # Disposable PR checks still replace earlier checks on the same PR branch.
+  group: ${{ github.event_name == 'pull_request' && !inputs.source_sha && format('astral-source-pr-{0}-{1}', github.event.pull_request.number, github.head_ref) || format('astral-source-{0}-{1}-{2}', github.workflow, inputs.source_sha || github.sha, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && !inputs.source_sha }}
 jobs:
   windows-installer:
     name: Windows installer preflight
     runs-on: windows-latest
     timeout-minutes: 5
     steps:
+      - name: Validate the selected source SHA
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          const source = process.env.ASTRAL_CI_SOURCE_SHA || ''
+          if (source.length !== 40 || !/^[a-f0-9]{40}$/.test(source)) throw new Error('A full source SHA is required')
+          JS
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ASTRAL_CI_SOURCE_SHA }}
+      - name: Require the checked-out source to match
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process'
+          if (execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() !== process.env.ASTRAL_CI_SOURCE_SHA) throw new Error('Checked-out source differs from the selected SHA')
+          JS
       - uses: actions/setup-node@v4
         with:
           node-version: 26.7.0
@@ -27,9 +53,24 @@ jobs:
     env:
       GOWORK: off
     steps:
+      - name: Validate the selected source SHA
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          const source = process.env.ASTRAL_CI_SOURCE_SHA || ''
+          if (source.length !== 40 || !/^[a-f0-9]{40}$/.test(source)) throw new Error('A full source SHA is required')
+          JS
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.ASTRAL_CI_SOURCE_SHA }}
           fetch-depth: 0
+      - name: Require the checked-out source to match
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process'
+          if (execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() !== process.env.ASTRAL_CI_SOURCE_SHA) throw new Error('Checked-out source differs from the selected SHA')
+          JS
       - uses: actions/setup-go@v5
         with:
           go-version: 1.26.3
@@ -48,7 +89,7 @@ jobs:
           node scripts/computer-image.mjs verify
           node scripts/check-migrations.mjs
           node scripts/release-check.mjs
-          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs scripts/check-migrations.test.mjs scripts/computer-image.test.mjs scripts/published-desktop-update.test.mjs scripts/desktop-update-fixture.test.mjs scripts/rolling-release-version.test.mjs scripts/build-lib.test.mjs scripts/rolling-release-inputs.test.mjs scripts/desktop-version-acceptance.test.mjs scripts/published-verification-version.test.mjs scripts/rolling-release-package-inputs.test.mjs scripts/rolling-release-tag.test.mjs scripts/rolling-release-workflow.test.mjs
+          node --test scripts/mac-signing.test.mjs scripts/mac-notarize.test.mjs scripts/mac-credentials.test.mjs scripts/mac-notary-status.test.mjs scripts/release-publish.test.mjs scripts/check-migrations.test.mjs scripts/computer-image.test.mjs scripts/published-desktop-update.test.mjs scripts/desktop-update-fixture.test.mjs scripts/rolling-release-version.test.mjs scripts/build-lib.test.mjs scripts/rolling-release-inputs.test.mjs scripts/desktop-version-acceptance.test.mjs scripts/published-verification-version.test.mjs scripts/rolling-release-package-inputs.test.mjs scripts/rolling-release-tag.test.mjs scripts/rolling-release-workflow.test.mjs scripts/test-go-shard.test.mjs scripts/mac-release-acceptance.test.mjs scripts/release-verification-scope.test.mjs scripts/sealed-release-inputs.test.mjs
       - name: Check headless installer without installing
         run: |
           bash -n scripts/install-server.sh
@@ -67,35 +108,47 @@ jobs:
           pnpm sdk-generate
           git diff --exit-code -- spec/openapi/astral.json packages/sdk/src
   native:
-    name: Native ${{ matrix.os }}
+    name: Native ${{ matrix.os }} (race ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-          - os: ubuntu-latest
-          - os: macos-15-intel
+        os: [windows-latest, ubuntu-latest, macos-15-intel]
+        shard: [0, 1, 2, 3]
     runs-on: ${{ matrix.os }}
     env:
       GOWORK: off
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
+      - name: Validate the selected source SHA
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          const source = process.env.ASTRAL_CI_SOURCE_SHA || ''
+          if (source.length !== 40 || !/^[a-f0-9]{40}$/.test(source)) throw new Error('A full source SHA is required')
+          JS
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ASTRAL_CI_SOURCE_SHA }}
+      - name: Require the checked-out source to match
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process'
+          if (execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() !== process.env.ASTRAL_CI_SOURCE_SHA) throw new Error('Checked-out source differs from the selected SHA')
+          JS
       - uses: actions/setup-go@v5
         with:
           go-version: 1.26.3
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.31.0
       - uses: actions/setup-node@v4
         with:
           node-version: 26.7.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
       - name: Check native enrollment installer preflight
+        if: matrix.shard == 0 && runner.os != 'Windows'
         run: node --test scripts/enrollment-installers.test.mjs scripts/desktop-process-identity.test.mjs
-      - run: go test -race -timeout=20m ./...
-      - run: go test -v github.com/oines/astral-core/standardtools/... -timeout 4m
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
+      - name: Run the native race shard
+        env:
+          TEST_SHARD: ${{ matrix.shard }}
+        run: node scripts/test-go-shard.mjs "$TEST_SHARD" 4
+        shell: bash
+      - if: matrix.shard == 0
+        run: go test -v github.com/oines/astral-core/standardtools/... -timeout 4m
