@@ -29,7 +29,7 @@ async function inspectReleaseBundle(directory, { publicRelease, environment, req
       manifest.migration_status !== 'goose' || manifest.desktop_updater !== 'electron-updater') throw new Error(publicRelease ? 'Public releases require a matching release manifest and complete Mac signing claims.' : 'Only matching review-only candidate manifests can create a draft; public releases and incomplete signing claims are forbidden.')
   if (manifest.build_provenance !== undefined) {
     validateBuildMetadata(manifest.build_provenance, { version, sourceSHA: manifest.source_sha, repository })
-    if (!publicRelease || manifest.ci_run_url !== manifest.build_provenance.build_run_url || manifest.packaging_run_url !== manifest.candidate_run_url) throw new Error('Rolling release provenance does not match its frozen producer and packaging run.')
+    if (!publicRelease || manifest.ci_run_url !== manifest.packaging_run_url || manifest.packaging_run_url !== manifest.candidate_run_url) throw new Error('Rolling release provenance does not match its frozen producer and packaging run.')
   }
   if (publicRelease) {
     const runPrefix = `https://github.com/${repository}/actions/runs/`
@@ -171,15 +171,14 @@ export async function createDraft(directory, { publicRelease = false, environmen
   })
   verifyRelease(release)
   if (release.draft !== true) throw new Error('The upload target is not the expected draft.')
-  let existingAssets = await listAssets(release.id)
-  for (const name of files) {
-    release = await api(`/releases/${release.id}`)
-    verifyRelease(release)
-    if (release.draft !== true) throw new Error('Release is no longer the expected draft. Upload stopped.')
+  const existingAssets = await listAssets(release.id)
+  const pending = files.filter(name => !existingAssets.some(asset => asset.name === name))
+  async function upload(name) {
+    const current = await api(`/releases/${release.id}`)
+    verifyRelease(current)
+    if (current.draft !== true) throw new Error('Release is no longer the expected draft. Upload stopped.')
     const file = path.join(directory, name)
-    const existing = existingAssets.find(asset => asset.name === name)
-    if (existing) continue
-    const uploadURL = new URL(release.upload_url.replace(/\{.*$/, ''))
+    const uploadURL = new URL(current.upload_url.replace(/\{.*$/, ''))
     if (uploadURL.protocol !== 'https:' || uploadURL.hostname !== 'uploads.github.com') throw new Error('Unexpected GitHub upload origin.')
     uploadURL.searchParams.set('name', name)
     let response
@@ -189,8 +188,20 @@ export async function createDraft(directory, { publicRelease = false, environmen
     const uploaded = await response.json()
     if (uploaded.name !== name) throw new Error(`GitHub returned an unexpected uploaded asset name for ${name}.`)
     verifyAsset(uploaded)
-    existingAssets = [...existingAssets, uploaded]
   }
+  // Assets are independent immutable files. Limit concurrency, stop admitting
+  // new uploads on the first error, and join every in-flight upload before
+  // returning or checking the complete draft inventory.
+  let next = 0
+  let failure
+  async function worker() {
+    while (!failure && next < pending.length) {
+      const name = pending[next++]
+      try { await upload(name) } catch (error) { failure ??= error }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker))
+  if (failure) throw failure
   release = await api(`/releases/${release.id}`)
   verifyRelease(release)
   if (release.draft !== true) throw new Error('Release changed state while uploading. No publish operation was requested by this helper.')

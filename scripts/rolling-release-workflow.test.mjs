@@ -85,12 +85,14 @@ test('a mixed change or product deletion still prepares a release', () => {
 
 // These are architectural acceptance conditions: the expensive release bytes
 // have one producer and a checked, immutable path to publication.
-test('Main preparation starts checks and the one distribution build independently', () => {
+test('Main preparation builds immediately; exact-source checks overlap protected packaging', () => {
   assert.deepEqual(prepare.on.push.branches, ['main'])
   assert.equal(prepare.concurrency['cancel-in-progress'], true)
-  assert.equal(prepare.jobs.checks.uses, './.github/workflows/ci.yml')
-  assert.equal(prepare.jobs.checks.with, undefined)
-  assert.equal(prepare.jobs.checks.needs, undefined)
+  assert.equal(prepare.jobs.checks, undefined)
+  assert.equal(release.jobs.checks.uses, './.github/workflows/ci.yml')
+  assert.equal(release.jobs.checks.needs, 'validate')
+  assert.equal(release.jobs.checks.if, "needs.validate.outputs.eligible == 'true'")
+  assert.equal(release.jobs.checks.with.source_sha, '${{ needs.validate.outputs.source_sha }}')
   assert.equal(prepare.jobs.build.needs, undefined)
   assert.equal(script(prepare.jobs.build).match(/pnpm build:distribution/g)?.length, 1)
   assert.ok(script(prepare.jobs.build).indexOf('freeze --output') < script(prepare.jobs.build).indexOf('pnpm build:distribution'))
@@ -114,7 +116,7 @@ test('protected release coalesces waiting requests and cannot be canceled by a n
 })
 
 test('all Desktop platforms use the same signed programs without waiting for Apple DMG notarization', () => {
-  for (const name of ['mac', 'desktop', 'containers', 'mac-binaries-notary']) {
+  for (const name of ['mac', 'desktop', 'native', 'containers', 'mac-binaries-notary']) {
     assert.ok(needs(release.jobs[name]).has('mac-programs'))
     assert.ok(!needs(release.jobs[name]).has('mac-binaries-notary'))
     const download = release.jobs[name].steps.find(step => step.env?.ARTIFACT_ID === '${{ needs.mac-programs.outputs.artifact_id }}')
@@ -128,35 +130,45 @@ test('all Desktop platforms use the same signed programs without waiting for App
 })
 
 test('no seal or publisher can bypass any native or container acceptance result', () => {
-  for (const dependency of ['validate', 'mac-programs', 'mac-binaries-notary', 'mac', 'desktop', 'containers']) assert.ok(needs(release.jobs.seal).has(dependency))
+  for (const dependency of ['validate', 'checks', 'mac-programs', 'mac-binaries-notary', 'mac', 'desktop', 'native', 'containers']) assert.ok(needs(release.jobs.seal).has(dependency))
   assert.deepEqual([...needs(release.jobs.publish)].sort(), ['seal', 'validate'])
   assert.equal(release.jobs.seal.if, undefined, 'Default success gating must remain effective')
   assert.equal(release.jobs.publish.if, undefined)
-  assert.match(script(release.jobs.seal), /release-draft\.mjs --verify sealed-release/)
+  assert.match(script(release.jobs.seal), /sealed-release-inputs\.mjs seal sealed-release sealed-metadata/)
   const attest = release.jobs.seal.steps.find(step => step.uses?.startsWith('actions/attest@'))
-  assert.equal(attest.with['subject-path'], 'sealed-release/SHA256SUMS')
-  assert.equal(attest.with['predicate-path'], 'sealed-release/release-manifest.json')
+  assert.deepEqual(attest.with['subject-path'].trim().split('\n'), ['sealed-metadata/SHA256SUMS', 'sealed-metadata/package-inputs.json'])
+  assert.equal(attest.with['predicate-path'], 'sealed-metadata/release-manifest.json')
   assert.equal(release.jobs.seal.permissions['id-token'], 'write')
   assert.equal(release.jobs.seal.env.RELEASE_SOURCE_SHA, '${{ needs.validate.outputs.source_sha }}')
   assert.equal(release.jobs.publish.env.ASTRAL_RELEASE_BUNDLE_SHA256, '${{ needs.seal.outputs.bundle_sha256 }}')
+  assert.equal(release.jobs.publish.env.ASTRAL_RELEASE_INPUTS_SHA256, '${{ needs.seal.outputs.inputs_sha256 }}')
   const publishing = script(release.jobs.publish)
   const download = release.jobs.publish.steps.find(step => step.env?.ARTIFACT_ID === '${{ needs.seal.outputs.artifact_id }}')
   assert.match(download?.run || '', /--artifact-id "\$ARTIFACT_ID"/)
-  assert.ok(publishing.indexOf('gh attestation verify') < publishing.indexOf('rolling-release-tag.mjs'))
+  assert.ok(publishing.indexOf('gh attestation verify') < publishing.indexOf('sealed-release-inputs.mjs restore'))
+  assert.ok(publishing.indexOf('sealed-release-inputs.mjs restore') < publishing.indexOf('rolling-release-tag.mjs'))
+  assert.match(publishing, /SHA256SUMS package-inputs\.json/)
   assert.ok(publishing.indexOf('rolling-release-tag.mjs') < publishing.indexOf('release-draft.mjs --public'))
   assert.doesNotMatch(publishing, /release-assets|electron-builder|mac-notarize|sign-binaries|build:/)
 })
 
 test('source validation runs in parallel without making packages while release retains native lifecycle checks', () => {
   assert.equal(ci.on.push, undefined)
-  assert.deepEqual(ci.on.workflow_call, {})
+  assert.equal(ci.on.workflow_call.inputs.source_sha.type, 'string')
+  assert.equal(ci.on.workflow_call.inputs.source_sha.default, '')
   assert.equal(ci.jobs.native.needs, undefined)
   assert.doesNotMatch(Object.values(ci.jobs).map(script).join('\n'), /build:distribution|package:mac|package:windows|package:linux/)
   assert.match(script(ci.jobs.check), /openapi-generate[\s\S]*sdk-generate[\s\S]*git diff --exit-code/)
-  assert.match(script(ci.jobs.native), /go test -race -timeout=20m \.\/\.\.\./)
+  assert.deepEqual(ci.jobs.native.strategy.matrix.shard, [0, 1, 2, 3])
+  assert.match(script(ci.jobs.native), /test-go-shard\.mjs/)
+  for (const check of ['pnpm lint', 'pnpm typecheck', 'pnpm test']) {
+    assert.ok(script(ci.jobs.check).includes(check))
+    assert.ok(!script(ci.jobs.native).includes(check))
+  }
   const runtime = native.runs.steps.map(step => step.run || '').join('\n')
   for (const check of ['TestDistributionInstallerRegistersActualDaemon', 'pnpm test:desktop-service', 'pnpm test:daemon-service', 'scripts/check-daemon-update.mjs', '--root-user']) assert.ok(runtime.includes(check), check)
-  for (const name of ['mac', 'desktop']) assert.ok(release.jobs[name].steps.some(step => step.uses === './.github/actions/native-release-checks'))
+  assert.ok(release.jobs.native.steps.some(step => step.uses === './.github/actions/native-release-checks'))
+  for (const name of ['mac', 'desktop']) assert.ok(!release.jobs[name].steps.some(step => step.uses === './.github/actions/native-release-checks'))
   assert.match(script(release.jobs.containers), /go test -tags=integration -count=1 -timeout=20m/)
   assert.match(script(release.jobs.desktop), /scripts\/check-headless-install\.mjs/)
 })

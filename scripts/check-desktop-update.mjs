@@ -20,13 +20,16 @@ import { publishedUpdateInputs } from './published-desktop-update.mjs'
 import { webFixtureCookie } from './web-auth-fixture.mjs'
 import { verifyDesktopVersion } from './desktop-version-acceptance.mjs'
 import { assertWindowsProcessOwner, sameWindowsProcess, stopWindowsProcessTree, windowsManagedProcessIdentity, windowsProcessIdentity } from './desktop-process-identity.mjs'
+import { notarizationGate } from './mac-release-acceptance.mjs'
 
 if (process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true' || !process.env.RUNNER_TEMP) throw new Error('Real Desktop update acceptance requires a disposable GitHub Actions user; never run on a developer account.')
 if (!['darwin', 'win32', 'linux'].includes(process.platform) || !['arm64', 'x64'].includes(process.arch)) throw new Error('Unsupported native update platform.')
 const args = process.argv.slice(2)
-assert.ok(args.length === 0 || args.length === 2 && args[0] === '--published-from', 'Usage: check-desktop-update.mjs [--published-from vMAJOR.MINOR.PATCH]')
-if (args.length) assert.match(args[1], /^v\d+\.\d+\.\d+$/, 'Pass a nonempty published version tag.')
-const publishedFrom = args[1]
+const awaitNotarization = args.length === 1 && args[0] === '--await-notarization'
+assert.ok(args.length === 0 || awaitNotarization || args.length === 2 && args[0] === '--published-from', 'Usage: check-desktop-update.mjs [--published-from vMAJOR.MINOR.PATCH | --await-notarization]')
+if (args[0] === '--published-from') assert.match(args[1], /^v\d+\.\d+\.\d+$/, 'Pass a nonempty published version tag.')
+if (awaitNotarization) assert.ok(process.platform === 'darwin' && process.connected, 'Parallel notarization requires a native Mac and its owning IPC channel.')
+const publishedFrom = args[0] === '--published-from' ? args[1] : undefined
 const execute = promisify(execFile)
 const repository = fileURLToPath(new URL('../', import.meta.url))
 const desktop = path.join(repository, 'apps/desktop')
@@ -47,10 +50,10 @@ const output = path.join(temporary, 'fixture-packages')
 const installed = path.join(temporary, 'installed')
 const targetName = desktopArtifactName(version, platform, architecture, process.platform === 'darwin' ? 'zip' : process.platform === 'win32' ? 'exe' : 'AppImage')
 const target = path.join(desktop, 'release', targetName)
-const targetBytes = publishedFrom ? undefined : await readFile(target)
+let targetBytes = publishedFrom || awaitNotarization ? undefined : await readFile(target)
 const feedName = desktopUpdateFeeds(version).find(feed => feed.asset === targetName)?.name
 assert.ok(feedName, 'No native update metadata contract')
-const checksum = targetBytes && createHash('sha512').update(targetBytes).digest('base64')
+let checksum = targetBytes && createHash('sha512').update(targetBytes).digest('base64')
 const logs = []
 let app
 let oldServer
@@ -70,9 +73,12 @@ let rendererDiagnostic = 'The managed renderer has not been discovered.'
 let feedRequests = 0
 let packageRequests = 0
 let completedPackages = 0
-const command = (program, args, options = {}) => execute(program, args, { cwd: repository, encoding: 'utf8', timeout: 600_000, maxBuffer: 2 << 20, ...options })
+let gate
+let cleaningUp = false
+const command = (program, args, options = {}) => execute(program, args, { cwd: repository, encoding: 'utf8', timeout: 600_000, maxBuffer: 2 << 20, signal: cleaningUp ? undefined : gate?.signal, ...options })
 const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { if (error.code === 'ESRCH') return false; throw error } }
 const server = publishedFrom ? undefined : createServer((request, response) => {
+  if (!targetBytes) { response.writeHead(503); response.end(); return }
   const name = new URL(request.url, 'http://127.0.0.1').pathname.slice(1)
   if (name === feedName) {
     feedRequests++
@@ -91,6 +97,7 @@ const fixtureFeed = server && `http://127.0.0.1:${server.address().port}/`
 async function waitFor(read, message, timeout = 120_000) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
+    if (!cleaningUp) gate?.signal.throwIfAborted()
     const value = await read()
     if (value) return value
     await delay(300)
@@ -196,6 +203,7 @@ async function retainedSession(ready, previous) {
 }
 
 try {
+  if (awaitNotarization) gate = notarizationGate()
   let oldPackage
   let oldAppDirectory
   if (publishedFrom) {
@@ -233,8 +241,16 @@ try {
     // reinterpret quoted paths and resolve pnpm relative to the wrong directory.
     const require = createRequire(new URL('../apps/desktop/package.json', import.meta.url))
     await command(process.execPath, [require.resolve('electron-builder/cli.js'), ...builder], { cwd: desktop })
+    if (gate) console.log('Signed Mac update fixture prepared; waiting for final App notarization.')
     oldAppDirectory = path.join(output, architecture === 'arm64' ? 'mac-arm64/Astral.app' : 'mac/Astral.app')
     if (process.platform !== 'darwin') oldPackage = path.join(output, desktopArtifactName(fromVersion, platform, architecture, process.platform === 'win32' ? 'exe' : 'AppImage'))
+  }
+  if (gate) {
+    await gate.wait()
+    console.log('Final App notarization succeeded; reading final ZIP bytes and starting real update acceptance.')
+    targetBytes = await readFile(target)
+    checksum = createHash('sha512').update(targetBytes).digest('base64')
+    gate.signal.throwIfAborted()
   }
   if (process.platform === 'darwin') {
     installedRoot = path.join(installed, 'Astral.app')
@@ -256,6 +272,7 @@ try {
   for (const key of ['ELECTRON_RUN_AS_NODE', 'ASTRAL_DESKTOP_DATA_DIR', 'ASTRAL_PUBLIC_URLS', 'ASTRAL_ALLOW_REMOTE_MANAGEMENT']) delete environment[key]
   if (process.platform === 'linux') environment.APPIMAGE_EXTRACT_AND_RUN = '1'
   // Use the same native profile on both launches, including its instance lock.
+  gate?.signal.throwIfAborted()
   app = spawn(executable, ['--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1'], { cwd: repository, env: environment, stdio: ['ignore', 'pipe', 'pipe'] })
   app.stdout.on('data', chunk => logs.push(String(chunk)))
   app.stderr.on('data', chunk => logs.push(String(chunk)))
@@ -389,34 +406,37 @@ try {
   await writeFile(path.join(process.env.RUNNER_TEMP, 'astral-update-acceptance.log'), `Fixture: ${temporary}\nLast renderer state: ${rendererDiagnostic}\n${logs.join('').slice(-20_000)}`)
   throw error
 } finally {
-  const ready = await running().catch(() => undefined)
-  if (process.platform === 'win32') {
-    try {
-      await cleanupWindowsProcesses(ready)
-    } catch (error) {
-      retain = true
-      console.error(`Windows identity-preserving cleanup failed: ${error.message}`)
-      process.exitCode = 1
+  cleaningUp = true
+  try {
+    const ready = await running().catch(() => undefined)
+    if (process.platform === 'win32') {
+      try {
+        await cleanupWindowsProcesses(ready)
+      } catch (error) {
+        retain = true
+        console.error(`Windows identity-preserving cleanup failed: ${error.message}`)
+        process.exitCode = 1
+      }
+    } else {
+      const cleanupAppPID = updatedAppPID || (ready ? await parentPID(ready.pid).catch(() => undefined) : undefined)
+      // Every program belongs to this initially-empty disposable CI data root.
+      if (cleanupAppPID && alive(cleanupAppPID)) process.kill(cleanupAppPID, 'SIGTERM')
+      if (app?.pid && alive(app.pid)) app.kill('SIGTERM')
     }
-  } else {
-    const cleanupAppPID = updatedAppPID || (ready ? await parentPID(ready.pid).catch(() => undefined) : undefined)
-    // Every program belongs to this initially-empty disposable CI data root.
-    if (cleanupAppPID && alive(cleanupAppPID)) process.kill(cleanupAppPID, 'SIGTERM')
-    if (app?.pid && alive(app.pid)) app.kill('SIGTERM')
-  }
-  if (process.platform !== 'win32' && ready && alive(ready.pid)) {
-    const alreadyFailed = retain
-    try { await waitFor(() => !alive(ready.pid), 'The update fixture Server did not stop during cleanup.', 30_000) }
-    catch (error) {
-      retain = true
-      if (!alreadyFailed) { console.error(error.message); process.exitCode = 1 }
+    if (process.platform !== 'win32' && ready && alive(ready.pid)) {
+      const alreadyFailed = retain
+      try { await waitFor(() => !alive(ready.pid), 'The update fixture Server did not stop during cleanup.', 30_000) }
+      catch (error) {
+        retain = true
+        if (!alreadyFailed) { console.error(error.message); process.exitCode = 1 }
+      }
     }
-  }
-  if (server) await new Promise(resolve => server.close(resolve))
-  if (!retain) {
-    await delay(1500)
-    await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
-    await rm(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
-    await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
-  }
+    if (server) await new Promise(resolve => server.close(resolve))
+    if (!retain) {
+      await delay(1500)
+      await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
+      await rm(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
+      await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
+    }
+  } finally { gate?.dispose() }
 }

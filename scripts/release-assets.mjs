@@ -95,7 +95,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   }
   if (buildMetadata !== undefined) {
     validateBuildMetadata(buildMetadata, { version, sourceSHA, repository })
-    if (!publicRelease || ciRunURL !== buildMetadata.build_run_url) throw new Error('Rolling release collection requires final public metadata and the frozen producer CI run.')
+    if (!publicRelease || ciRunURL !== runURL) throw new Error('Rolling release collection requires final public metadata and the protected source-check and packaging run.')
   }
   if (path.resolve(input) === path.resolve(output) || path.resolve(output).startsWith(`${path.resolve(input)}${path.sep}`)) throw new Error('Output must be outside the input artifact directory.')
   await mkdir(output, { recursive: true })
