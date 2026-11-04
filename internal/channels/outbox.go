@@ -263,42 +263,22 @@ func presentText(text string) string {
 	return bareFileLink.ReplaceAllString(text, "[file available in Astral]")
 }
 func (s *Service) dispatchPending() {
-	all, err := list[domain.Outbox](s.ctx, s.Store, "outbox")
+	s.mu.Lock()
+	slots := 4 - len(s.sending)
+	s.mu.Unlock()
+	if slots <= 0 {
+		return
+	}
+	rows, err := s.Store.OutboxDispatchCandidates(s.ctx, slots)
 	if err != nil {
 		return
 	}
-	slices.SortStableFunc(all, func(a, b domain.Outbox) int {
-		if a.GroupID == b.GroupID {
-			return a.Fragment - b.Fragment
-		}
-		if v := a.CreatedAt.Compare(b.CreatedAt); v != 0 {
-			return v
-		}
-		return strings.Compare(a.ID, b.ID)
-	})
-	blocked := map[string]bool{}
-	failedGroups := map[string]bool{}
+	all, err := decodeRecords[domain.Outbox](rows)
+	if err != nil {
+		return
+	}
 	for _, record := range all {
-		if record.Status == "accepted" {
-			continue
-		}
-		// Terminal errors stop dependent fragments, not unrelated later sends.
-		// Unknown effects are never retried by the scheduler.
-		if record.Status == "failed" || record.Status == "blocked" || record.Status == "unknown" {
-			failedGroups[record.GroupID] = true
-			continue
-		}
-		if failedGroups[record.GroupID] {
-			continue
-		}
 		bucket := record.BindingID + ":" + record.ConversationID
-		if blocked[bucket] {
-			continue
-		}
-		blocked[bucket] = true
-		if record.Status != "pending" {
-			continue
-		}
 		s.mu.Lock()
 		if s.deletingAgents[record.AgentID] {
 			s.mu.Unlock()

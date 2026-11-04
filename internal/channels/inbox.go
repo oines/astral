@@ -26,9 +26,21 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	if err := s.Store.Get(ctx, "inbox_cursors", b.ID, &position); err != nil && !domain.IsMissing(err) {
 		return
 	}
-	if err := s.Harness.ResumeContext(ctx, b.SessionID); err != nil && ctx.Err() == nil {
-		slog.WarnContext(ctx, "IM passive recovery failed", "session_id", b.SessionID, "error", err)
+	wake := make(chan struct{}, 1)
+	s.mu.Lock()
+	if s.inboxWake == nil {
+		s.inboxWake = map[string]chan struct{}{}
 	}
+	s.inboxWake[b.ID] = wake
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		if s.inboxWake[b.ID] == wake {
+			delete(s.inboxWake, b.ID)
+		}
+		s.mu.Unlock()
+	}()
+	resumeContext := true
 	results := make(chan probeResult, 1)
 	probing := false
 	var pendingResult *probeResult
@@ -38,6 +50,43 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 		s.mu.Unlock()
 	}()
 	for ctx.Err() == nil {
+		paused, pauseErr := s.pausedInbox(ctx, b)
+		if pauseErr != nil || paused {
+			resumeContext = true
+			select {
+			case <-ctx.Done():
+				return
+			case <-wake:
+			case <-time.After(time.Second):
+			}
+			continue
+		}
+		if resumeContext {
+			resumeContext = false
+			boundary, boundaryErr := s.inboxBoundary(ctx, b)
+			if boundaryErr != nil {
+				resumeContext = true
+				if !delay(ctx, time.Second) {
+					return
+				}
+				continue
+			}
+			if err := s.Harness.ResumeContext(ctx, b.SessionID); err != nil && ctx.Err() == nil {
+				pauseErr := s.pauseInboxFailure(ctx, b, boundary, err)
+				slog.WarnContext(ctx, "IM passive recovery failed", "session_id", b.SessionID, "error", errors.Join(err, pauseErr))
+				if !delay(ctx, time.Second) {
+					return
+				}
+				continue
+			}
+			if err := s.clearInboxFailure(ctx, b, boundary); err != nil {
+				if !delay(ctx, time.Second) {
+					return
+				}
+				resumeContext = true
+				continue
+			}
+		}
 		events, err := s.Store.Observations(ctx, b.ConversationID, position.Sequence, 100)
 		if err != nil {
 			if !delay(ctx, time.Second) {
@@ -185,6 +234,19 @@ func (s *Service) handoffDirectObservations(ctx context.Context, b domain.Conver
 	return nil
 }
 func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, event domain.Observation) (err error) {
+	if paused, pauseErr := s.pausedInbox(ctx, b); pauseErr != nil {
+		return pauseErr
+	} else if paused {
+		var pause inboxPause
+		if err := s.Store.Maintenance(ctx, inboxPauseKind, b.ID, &pause); err != nil {
+			return err
+		}
+		return errors.New(pause.Error)
+	}
+	boundary, err := s.inboxBoundary(ctx, b)
+	if err != nil {
+		return err
+	}
 	defer func() {
 		if err != nil && ctx.Err() == nil {
 			_ = s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "blocked", Error: err.Error()})
@@ -294,6 +356,9 @@ func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, eve
 	}
 	_, err = s.Harness.Deliver(ctx, b.SessionID, observation, trigger, b.ID)
 	if err != nil {
+		if ctx.Err() == nil {
+			return errors.Join(err, s.pauseInboxFailure(ctx, b, boundary, err))
+		}
 		return err
 	}
 	return s.Store.SaveDelivery(ctx, persistence.Delivery{EventID: event.ID, SessionID: b.SessionID, State: "routed"})
