@@ -620,21 +620,24 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	// A process can stop after durable admission but before Continue starts a
 	// Run. Reconcile the stable initial receipt, and interrupted started Runs,
 	// without resuming a deliberately cancelled or failed Run.
-	state = r.core.Load().State()
+	r.mu.Lock()
 	initial, initialErr := r.core.Load().LookupInput(ctx, "subagent_initial_"+record.ID)
-	lastRun := state.LastRun
+	if initialErr != nil && !errors.Is(initialErr, core.ErrNotFound) {
+		r.mu.Unlock()
+		return initialErr
+	}
+	// Use one snapshot for both the durable lifecycle and execution flags. A
+	// fast failure between separate reads must not revive the retained input.
+	snapshot := r.core.Load().Snapshot()
+	lastRun := snapshot.State.LastRun
 	shouldActivate := initialErr == nil && initial.State == core.InputPending && lastRun == nil
 	shouldActivate = shouldActivate || lastRun != nil && lastRun.Status == "started"
-	if shouldActivate {
-		snapshot := r.core.Load().Snapshot()
-		if !snapshot.Running && !snapshot.Maintenance && !snapshot.Stopping {
-			r.mu.Lock()
-			err = r.continueLocked(ctx)
-			r.mu.Unlock()
-			if err != nil && !errors.Is(err, core.ErrBusy) && !errors.Is(err, core.ErrNotContinuable) {
-				return err
-			}
-		}
+	if shouldActivate && !snapshot.Running && !snapshot.Maintenance && !snapshot.Stopping {
+		err = r.continueLocked(ctx)
+	}
+	r.mu.Unlock()
+	if err != nil && !errors.Is(err, core.ErrBusy) && !errors.Is(err, core.ErrNotContinuable) {
+		return err
 	}
 	return s.deliverSubagentHistoryLocked(ctx, record, r.core.Load().State())
 }
