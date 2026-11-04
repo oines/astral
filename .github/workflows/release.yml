@@ -423,6 +423,13 @@ jobs:
       - name: Restore executable modes
         if: runner.os != 'Windows'
         run: chmod +x dist/bin/astral-*
+      # The locked builder otherwise uses LZMA level 9 for each NSIS payload,
+      # including the disposable old-version fixture. Keep the same installer
+      # format and verification, but prioritize release latency over size.
+      - name: Select fast Windows package compression
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo 'ELECTRON_BUILDER_COMPRESSION_LEVEL=1' >> "$GITHUB_ENV"
       - name: Package the final Windows or Linux Desktop files once
         env:
           PACKAGE_SCRIPT: ${{ matrix.package }}
