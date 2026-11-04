@@ -285,8 +285,8 @@ type IMWakeup struct {
 }
 
 // WakeObservations hands off a page of direct observations under the same Host
-// admission lock. Frozen request evidence is shared across the page, rather
-// than reconstructing the same history separately for every recovered message.
+// admission lock. Frozen request evidence is shared across recovery pages,
+// rather than reconstructing the same history for every recovered message.
 // A busy observation ends the batch so the caller can retain its scan position.
 func (s *Service) WakeObservations(ctx context.Context, id string, inputs []IMWakeup, bindingID string) ([]IMWakeStatus, error) {
 	r, err := s.open(ctx, id)
@@ -302,12 +302,13 @@ func (s *Service) WakeObservations(ctx context.Context, id string, inputs []IMWa
 	if record.BindingID != bindingID {
 		return nil, domain.Conflict("the inbound binding is no longer active")
 	}
-	inspector := NewIMInspector(r.core.Load(), s.CoreStore)
+	inspector := r.imInspector
 	statuses := make([]IMWakeStatus, 0, len(inputs))
 	for _, input := range inputs {
 		// Starting work can reopen Core when the binding configuration changes.
-		if inspector.session != r.core.Load() {
+		if inspector == nil || inspector.session != r.core.Load() {
 			inspector = NewIMInspector(r.core.Load(), s.CoreStore)
+			r.imInspector = inspector
 		}
 		status, err := r.wakeObservation(ctx, input.InputID, input.Message, inspector)
 		if err != nil {

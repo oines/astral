@@ -70,6 +70,7 @@ type runtime struct {
 	titleCancel      context.CancelFunc
 	titleDone        chan struct{}
 	subagent         *subagentSettings
+	imInspector      *IMInspector
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
