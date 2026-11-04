@@ -35,6 +35,7 @@ mac:
     NSHumanReadableCopyright: Astral contributors
 dmg:
   title: Astral
+  format: ULFO
 win:
   icon: resources/icon.ico
   executableName: Astral

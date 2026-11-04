@@ -222,7 +222,7 @@ async function notarizeBinaries(directory) {
     // unavailable. A later explicit resume must use these bytes, not a rebuilt ZIP.
     await mkdir(reportDirectory, { recursive: true })
     const archive = path.join(reportDirectory, 'astral-darwin.zip')
-    await command('/usr/bin/ditto', ['-c', '-k', '--keepParent', source, archive])
+    await command('/usr/bin/ditto', ['-c', '-k', '--zlibCompressionLevel', '1', '--keepParent', source, archive])
     const notarization = { kind: 'binaries', ...await submit(archive, configuration) }
     await writeReport('binaries', {
       version: await readReleaseVersion(), source_sha: configuration.sourceSHA,
@@ -259,8 +259,9 @@ async function notarizeApp(app, arch) {
       await staple(app)
       await command('/usr/sbin/spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=2', dmg])
     }
-    await verifyNotarizedApp(app, arch, { notarized })
-    await command('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', app, zip])
+    // staple(app) already validated this exact ticket. Validate the final ZIP
+    // copy below instead of repeating the same Apple network check here.
+    await command('/usr/bin/ditto', ['-c', '-k', '--zlibCompressionLevel', '1', '--sequesterRsrc', '--keepParent', app, zip])
 
     // Re-open the bytes users download. This also catches packaging an old App
     // despite successful validation of the unpacked build directory.
