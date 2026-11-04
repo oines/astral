@@ -137,7 +137,10 @@ func (s *Service) observeReclaimDirty(ctx context.Context) error {
 }
 func (s *Service) reclaimState(generation uint64, state, message string) {
 	s.mu.Lock()
-	if generation != s.reclaimGeneration {
+	// Close cancels under this same lock. A worker completing a canceled
+	// Snapshot or maintenance step cannot replace the last observed state
+	// that the shutdown owner must flush with its own live context.
+	if generation != s.reclaimGeneration || s.ctx.Err() != nil {
 		s.mu.Unlock()
 		return
 	}
