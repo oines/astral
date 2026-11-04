@@ -64,7 +64,7 @@ func (r *hostSuccessReceiver) RoundTrip(req *http.Request) (*http.Response, erro
 	r.wires = append(r.wires, hostSuccessWire{Bytes: len(raw), SHA256: hex.EncodeToString(sum[:]), ConsumedNS: time.Since(r.start).Nanoseconds(), Messages: len(body.Messages)})
 	n := len(r.wires)
 	r.mu.Unlock()
-	var reply any = textReply("Successful offline Host baseline response.")
+	reply := textReply("Successful offline Host baseline response.")
 	if r.toolPath != "" && n == 1 {
 		reply = toolReply("baseline-read", "read", map[string]any{"path": r.toolPath})
 	}
@@ -207,7 +207,7 @@ func TestHostSuccessBaseline(t *testing.T) {
 		if a.Purpose == "compaction" {
 			summaryAttempts++
 		}
-		if (a.Purpose != "generation" && !(mode == "compact" && a.Purpose == "compaction")) || a.Outcome == nil || a.Outcome.Status != "completed" {
+		if (a.Purpose != "generation" && (mode != "compact" || a.Purpose != "compaction")) || a.Outcome == nil || a.Outcome.Status != "completed" {
 			t.Fatalf("not a completed ordinary request: %s", a.ID)
 		}
 		request, rebuildErr := core.RebuildRequest(f.ctx, f.coreStore, a.Input, 64<<20)

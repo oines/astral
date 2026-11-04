@@ -360,7 +360,7 @@ func TestSuccessLifecycleReplay(t *testing.T) {
 	var view core.Context
 	var anchorTokens int
 	var anchorFacts map[string]any
-	var model provider.Model = adapter
+	model := adapter
 	if scenario == "captured" {
 		state, err := store.LoadState(ctx, sessionID)
 		if err != nil {
