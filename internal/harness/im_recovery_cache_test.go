@@ -135,7 +135,6 @@ func TestIMRecoveryLargeFrozenRequestCrossPageMeasurement(t *testing.T) {
 		t.Fatal(err)
 	}
 	requestBytes := len(encode(request))
-	request = core.Request{}
 	results := []map[string]any{}
 	for _, legacy := range []bool{true, false} {
 		f.service.ReleaseIMRecovery(f.session.ID())
