@@ -77,8 +77,8 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 		return view, err
 	}
 	if view.HeadID != "" {
-		if head, readErr := r.core.Load().History().Get(ctx, view.HeadID); readErr == nil && head.Time.After(view.UpdatedAt) {
-			view.UpdatedAt = head.Time
+		if stamp, readErr := s.sessionHeadTime(ctx, id, state.RolloutID, view.HeadID); readErr == nil && stamp.After(view.UpdatedAt) {
+			view.UpdatedAt = stamp
 		}
 	}
 	view.Error, view.Attempt = snapshot.Error, snapshot.Attempt

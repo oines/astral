@@ -43,6 +43,7 @@ type Service struct {
 	deleteMu        sync.Mutex
 	agentMu         sync.RWMutex
 	runtimes        map[string]*runtime
+	headTimes       map[string]sessionHeadTime
 	closed          bool
 	changes         chan string
 	workers         sync.WaitGroup

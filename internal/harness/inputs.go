@@ -387,20 +387,26 @@ func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputK
 	return value, nil
 }
 func (s *Service) Receipt(ctx context.Context, sessionID, inputID string) (InputReceipt, error) {
-	r, err := s.open(ctx, sessionID)
-	if err != nil {
+	if _, err := s.storedSession(ctx, sessionID); err != nil {
 		return InputReceipt{}, err
 	}
-	receipt, err := r.core.Load().LookupInput(ctx, inputID)
+	receipt, err := s.CoreStore.LookupInput(ctx, sessionID, inputID)
 	if errors.Is(err, core.ErrNotFound) {
 		return InputReceipt{}, domain.Missing("inputs", inputID)
 	}
-	return r.receiptView(receipt), err
+	return InputReceipt{InputID: receipt.ID, SessionID: sessionID, Digest: receipt.Digest, AcceptedAt: receipt.AcceptedAt, EntryID: receipt.EntryID, State: string(receipt.State)}, err
 }
 
 // ResumeContext re-admits an already durable item to resume Core's passive
 // maintenance after Host recovery. It neither reconstructs media nor drives a turn.
 func (s *Service) ResumeContext(ctx context.Context, id string) error {
+	if _, err := s.storedSession(ctx, id); err != nil {
+		return err
+	}
+	state, err := s.CoreStore.LoadState(ctx, id)
+	if err != nil || state.PendingInputs[core.InputContext] == 0 {
+		return err
+	}
 	return s.WithSession(ctx, id, func(session *core.Session) error {
 		if session.State().PendingInputs[core.InputContext] == 0 {
 			return nil
