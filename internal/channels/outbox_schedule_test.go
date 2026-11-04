@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/oines/astral/internal/domain"
@@ -100,5 +102,85 @@ func TestOutboxFailedDispatchDoesNotWakeItself(t *testing.T) {
 	var record domain.Outbox
 	if err = p.Store.Get(p.Context, "outbox", queued[0].ID, &record); err != nil || record.Status != "pending" {
 		t.Fatalf("failed pending send changed outcome: %s %v", record.Status, err)
+	}
+}
+
+func TestOutboxTerminalPredecessorDoesNotKeepPeriodicRetryAlive(t *testing.T) {
+	for _, terminal := range []string{"failed", "blocked", "unknown"} {
+		t.Run(terminal, func(t *testing.T) {
+			bot := newBot(t)
+			p := testkit.New(t, 0, func(context.Context, int, map[string]any) any {
+				t.Error("outbox scheduling called a model")
+				return nil
+			})
+			s := New(p.Store, p.Harness)
+			c := bot.connection(t, s, p.Agent.ID)
+			binding := createBinding(t, p, s, c, "-100", "")
+			s.ctx = p.Context
+			defer s.workers.Wait()
+			fragments, err := s.Enqueue(p.Context, p.Agent.ID, binding.SessionID, SendRequest{IntentID: "terminal-predecessor", Text: strings.Repeat("a", 5000)})
+			if err != nil || len(fragments) != 2 {
+				t.Fatalf("two-fragment fixture: count=%d err=%v", len(fragments), err)
+			}
+			<-s.outboxWake
+			fragments[0].Status = terminal
+			if err := p.Store.Save(p.Context, "outbox", &fragments[0].Meta, &fragments[0]); err != nil {
+				t.Fatal(err)
+			}
+			readFragments := func() []domain.Outbox {
+				t.Helper()
+				result := make([]domain.Outbox, len(fragments))
+				for i, fragment := range fragments {
+					if err := p.Store.Get(p.Context, "outbox", fragment.ID, &result[i]); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return result
+			}
+			before := readFragments()
+			if s.dispatchPending() {
+				t.Error("terminal-dependent pending fragment kept periodic retry alive")
+			}
+			s.workers.Wait()
+			if bot.sends.Load() != 0 || !reflect.DeepEqual(before, readFragments()) {
+				t.Fatal("terminal-dependent scan sent or changed the blocked fragments")
+			}
+			select {
+			case <-s.outboxWake:
+				t.Fatal("terminal-dependent scan woke itself")
+			default:
+			}
+			// A new group in the same chat still owns a real enqueue wakeup and
+			// must be delivered without reviving the terminal-dependent fragment.
+			later, err := s.Enqueue(p.Context, p.Agent.ID, binding.SessionID, SendRequest{IntentID: "new-group-after-idle", Text: "Independent new message."})
+			if err != nil || len(later) != 1 {
+				t.Fatalf("independent enqueue: count=%d err=%v", len(later), err)
+			}
+			select {
+			case <-s.outboxWake:
+			default:
+				t.Fatal("independent enqueue did not wake the idle outbox")
+			}
+			if !s.dispatchPending() {
+				t.Error("independent pending group lost its periodic retry")
+			}
+			s.workers.Wait()
+			var delivered domain.Outbox
+			if err := p.Store.Get(p.Context, "outbox", later[0].ID, &delivered); err != nil || delivered.Status != "accepted" || bot.sends.Load() != 1 {
+				t.Fatalf("independent group was not delivered exactly once: status=%s sends=%d err=%v", delivered.Status, bot.sends.Load(), err)
+			}
+			select {
+			case <-s.outboxWake:
+			default:
+				t.Fatal("committed independent send did not wake its completion scan")
+			}
+			if s.dispatchPending() {
+				t.Error("terminal-dependent fragment kept retries alive after independent completion")
+			}
+			s.workers.Wait()
+			if bot.sends.Load() != 1 || !reflect.DeepEqual(before, readFragments()) {
+				t.Fatal("idle scan changed or retried the terminal-dependent group")
+			}
+		})
 	}
 }

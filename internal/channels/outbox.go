@@ -277,7 +277,7 @@ func (s *Service) dispatchPending() bool {
 	if err != nil {
 		return true
 	}
-	retry := slices.ContainsFunc(all, func(record domain.Outbox) bool { return record.Status == "pending" })
+	retry := false
 	slices.SortStableFunc(all, func(a, b domain.Outbox) int {
 		if a.GroupID == b.GroupID {
 			return a.Fragment - b.Fragment
@@ -301,6 +301,9 @@ func (s *Service) dispatchPending() bool {
 		}
 		if failedGroups[record.GroupID] {
 			continue
+		}
+		if record.Status == "pending" {
+			retry = true
 		}
 		bucket := record.BindingID + ":" + record.ConversationID
 		if blocked[bucket] {
