@@ -45,4 +45,8 @@ Check both the processing in Astral and the reply in the original chat. Next, se
 - **Pausing an account:** turn off **Enabled** to stop reception and keep history. Stop any computer task already in progress separately in its conversation.
 - **Changing the bound conversation:** stops work in both the original and target conversations and retains their histories. Previously accepted sends keep their original destination.
 
+If the model runs out of quota, rejects its credentials, or denies access, Astral keeps the error in the corresponding conversation and pauses processing while continuing to receive and archive platform messages. After restoring quota or correcting the credentials, open that conversation in Astral and send a new input to retry; waiting messages will resume processing. Rate limits, temporary service failures, and network errors retry at intervals. Sending more chat messages does not make them retry sooner.
+
+Processing also pauses if the conversation reports that its summary input exceeds the model's context window. Waiting messages are retained. Choose a model that can accommodate that summary input or correct its window configuration before retrying; service recovery or more chat messages do not remove this limit. Changing the model or connection configuration triggers another processing attempt. Work continues after compaction succeeds and the complete context passes its budget checks.
+
 Ask the Bot directly to look up members or manage group files. Read the [Platform API reference](/docs/chat/platform-api/) only when you need custom calls.
