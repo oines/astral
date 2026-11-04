@@ -168,7 +168,10 @@ func (s *Service) persistReclaimContext(ctx context.Context) error {
 	}
 	if err := s.config.Store.SaveMaintenance(ctx, "storage_reclaim", "owner", state.State, state); err != nil {
 		s.mu.Lock()
-		if generation == s.reclaimGeneration {
+		// Shutdown cancels the worker before the owner flushes with its own
+		// live context. Keep the business failure and dirty state for that
+		// flush instead of replacing the failure with normal cancellation.
+		if generation == s.reclaimGeneration && ctx.Err() == nil {
 			s.reclaim.Error = "Could not persist reclamation progress; retrying: " + err.Error()
 		}
 		s.mu.Unlock()

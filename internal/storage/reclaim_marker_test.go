@@ -188,3 +188,37 @@ func TestClosePersistsObservedFailureWithShutdownContext(t *testing.T) {
 		t.Fatalf("normal restart automatically retried an observed failure: %s", state)
 	}
 }
+
+func TestCanceledReclaimPersistencePreservesFailureForShutdownFlush(t *testing.T) {
+	s, store := fixture(t, &historyStore{})
+	// Stop the worker before arranging its final in-memory state, then exercise
+	// the canceled worker write and the live shutdown-owner flush explicitly.
+	if err := s.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	token := markReclaim(t, store)
+	s.mu.Lock()
+	s.reclaim = Reclaim{State: "failed", Error: "vacuum failed"}
+	s.reclaimObserved = token
+	s.reclaimDirty = true
+	s.mu.Unlock()
+	if err := s.persistReclaim(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled worker persistence: %v", err)
+	}
+	s.mu.Lock()
+	state, dirty := s.reclaim, s.reclaimDirty
+	s.mu.Unlock()
+	if state.State != "failed" || state.Error != "vacuum failed" || !dirty {
+		t.Fatalf("canceled worker replaced the business failure or lost its pending flush: %+v dirty=%v", state, dirty)
+	}
+	if err := s.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var retained reclaimRecord
+	if err := store.Maintenance(context.Background(), "storage_reclaim", "owner", &retained); err != nil {
+		t.Fatal(err)
+	}
+	if retained.State != "failed" || retained.Error != "vacuum failed" || retained.ObservedDirtyToken != token {
+		t.Fatalf("shutdown lost the original failure after a canceled write: %+v", retained)
+	}
+}
