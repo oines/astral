@@ -391,11 +391,9 @@ func (s *Service) pruneStorageArchiveBatch(ctx context.Context, op *StorageOpera
 		if err = s.Store.Get(ctx, "inbox_cursors", binding.ID, &position); err != nil && !domain.IsMissing(err) {
 			return 0, err
 		}
-		s.mu.Lock()
-		handoff, ok := s.handoffs[binding.ID]
-		s.mu.Unlock()
-		if !ok {
-			handoff = binding.StartSequence
+		handoff, err := s.handoffPosition(ctx, binding)
+		if err != nil {
+			return 0, err
 		}
 		through = min(position.Sequence, handoff)
 		if chat.ProactiveEnabled && chat.Kind != "private" {

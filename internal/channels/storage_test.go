@@ -160,7 +160,9 @@ func TestStorageArchiveProtectsPendingWatermarksAndKeepsRollout(t *testing.T) {
 	if err = p.Store.Save(p.Context, "probe_cursors", &c.Meta, &c); err != nil {
 		t.Fatal(err)
 	}
-	s.handoffs = map[string]int64{b.ID: through}
+	if err = s.saveHandoffPosition(p.Context, b, through); err != nil {
+		t.Fatal(err)
+	}
 	before := time.Now().UTC()
 	op, err := s.StartStorageOperation(p.Context, chat.ID, "archive", StorageRequest{OperationID: "archive_cleanup_1", Before: &before})
 	if err != nil {
@@ -275,7 +277,9 @@ func TestStorageArchiveClearsProcessedPassiveMessagesWithoutProbe(t *testing.T) 
 	if err = p.Store.Save(p.Context, "inbox_cursors", &c.Meta, &c); err != nil {
 		t.Fatal(err)
 	}
-	s.handoffs = map[string]int64{b.ID: through}
+	if err = s.saveHandoffPosition(p.Context, b, through); err != nil {
+		t.Fatal(err)
+	}
 	before := time.Now().UTC()
 	op, err := s.StartStorageOperation(p.Context, chat.ID, "archive", StorageRequest{OperationID: "cleanup_passive_archive", Before: &before})
 	if err != nil {

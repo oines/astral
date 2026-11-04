@@ -14,10 +14,13 @@ import (
 	"github.com/oines/astral/internal/testkit"
 )
 
-func inboxRecoveryPosition(s *Service, bindingID string) int64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.handoffs[bindingID]
+func inboxRecoveryPosition(t *testing.T, s *Service, binding domain.ConversationBinding) int64 {
+	t.Helper()
+	position, err := s.handoffPosition(context.Background(), binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return position
 }
 
 func inboxRecoveryArchive(t *testing.T, p *testkit.Platform, b domain.ConversationBinding, id, trigger string, self bool) (domain.Observation, int64) {
@@ -71,9 +74,12 @@ func TestInboxRecoveryYieldsAfterOnePageForNewDelivery(t *testing.T) {
 	if err := s.handoffDirectObservations(p.Context, binding, sequences[historical-1]); err != nil {
 		t.Fatal(err)
 	}
-	if position := inboxRecoveryPosition(s, binding.ID); position != sequences[99] {
+	if position := inboxRecoveryPosition(t, s, binding); position != sequences[99] {
 		t.Fatalf("one recovery call passed its first page: position=%d want=%d", position, sequences[99])
 	}
+	// Lose every in-memory Service field between pages. Only the confirmed
+	// archive prefix may be resumed; it must not replay the first hundred.
+	s = New(p.Store, p.Harness)
 
 	// The normal inbox loop delivers new archive entries before its next
 	// recovery page. That delivery must remain possible while old handoffs lag.
@@ -84,16 +90,23 @@ func TestInboxRecoveryYieldsAfterOnePageForNewDelivery(t *testing.T) {
 	if receipt, err := session.LookupInput(p.Context, fresh.ID); err != nil || receipt.State != core.InputApplied {
 		t.Fatalf("new observation could not enter context between recovery pages: %+v %v", receipt, err)
 	}
-	if position := inboxRecoveryPosition(s, binding.ID); position != sequences[99] {
+	if position := inboxRecoveryPosition(t, s, binding); position != sequences[99] {
 		t.Fatalf("new delivery incorrectly advanced historical handoffs: %d", position)
 	}
 	for _, want := range []int64{sequences[199], through} {
 		if err := s.handoffDirectObservations(p.Context, binding, through); err != nil {
 			t.Fatal(err)
 		}
-		if position := inboxRecoveryPosition(s, binding.ID); position != want {
+		if position := inboxRecoveryPosition(t, s, binding); position != want {
 			t.Fatalf("recovery did not advance by one bounded page: position=%d want=%d", position, want)
 		}
+	}
+	s = New(p.Store, p.Harness)
+	if err := s.handoffDirectObservations(p.Context, binding, through); err != nil {
+		t.Fatal(err)
+	}
+	if position := inboxRecoveryPosition(t, s, binding); position != through {
+		t.Fatalf("completed recovery was scanned again after restart: %d", position)
 	}
 	if p.Requests.Load() != 0 || session.State().PendingInputs[core.InputSteer] != historical {
 		t.Fatalf("recovery changed the accepted driver queue: requests=%d pending=%d", p.Requests.Load(), session.State().PendingInputs[core.InputSteer])
@@ -146,7 +159,7 @@ func TestInboxRecoveryBusyRetainsProcessedPrefix(t *testing.T) {
 		if err := s.handoffDirectObservations(p.Context, binding, through); err != nil {
 			t.Fatal(err)
 		}
-		if position := inboxRecoveryPosition(s, binding.ID); position != prefixSequence {
+		if position := inboxRecoveryPosition(t, s, binding); position != prefixSequence {
 			t.Fatalf("busy recovery skipped an unseen observation or lost its processed prefix: position=%d want=%d", position, prefixSequence)
 		}
 	}
