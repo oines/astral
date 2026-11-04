@@ -44,6 +44,8 @@ type Service struct {
 	agentMu         sync.RWMutex
 	runtimes        map[string]*runtime
 	headTimes       map[string]sessionHeadTime
+	selections      map[string]configurationSelection
+	childSettings   map[string]subagentMetadata
 	closed          bool
 	changes         chan string
 	workers         sync.WaitGroup

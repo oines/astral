@@ -134,6 +134,7 @@ func (s *Service) ModelSelection(ctx context.Context, id string) (sessions.Model
 	s.mu.Lock()
 	r := s.runtimes[id]
 	s.mu.Unlock()
+	var state sessions.RuntimeState
 	if r != nil {
 		select {
 		case <-ctx.Done():
@@ -143,8 +144,21 @@ func (s *Service) ModelSelection(ctx context.Context, id string) (sessions.Model
 		if r.openErr != nil {
 			return sessions.ModelSelection{}, r.openErr
 		}
-		return r.core.Load().Configuration().Selection, nil
+		r.mu.Lock()
+		state = r.core.Load().State()
+		r.mu.Unlock()
+	} else {
+		var err error
+		state, err = s.CoreStore.LoadState(ctx, id)
+		if err != nil {
+			return sessions.ModelSelection{}, err
+		}
 	}
-	configuration, err := sessions.ReadConfiguration(ctx, s.CoreStore, id)
-	return configuration.Selection, err
+	selection, err := s.selectionAtState(ctx, id, state)
+	if err != nil {
+		return sessions.ModelSelection{}, err
+	}
+	var value sessions.ModelSelection
+	err = json.Unmarshal(selection.value, &value)
+	return value, err
 }

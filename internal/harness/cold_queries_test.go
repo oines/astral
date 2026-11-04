@@ -16,6 +16,7 @@ type coldQueryStore struct {
 	pathReads    atomic.Int64
 	stateReads   atomic.Int64
 	nodeReads    atomic.Int64
+	configReads  atomic.Int64
 	pendingReads atomic.Int64
 }
 
@@ -26,7 +27,11 @@ func (s *coldQueryStore) LoadState(ctx context.Context, id string) (core.Runtime
 
 func (s *coldQueryStore) Get(ctx context.Context, rollout, id string) (core.Record, error) {
 	s.nodeReads.Add(1)
-	return s.Store.Get(ctx, rollout, id)
+	record, err := s.Store.Get(ctx, rollout, id)
+	if err == nil && record.Entry.Kind == core.EntryConfiguration {
+		s.configReads.Add(1)
+	}
+	return record, err
 }
 
 func (s *coldQueryStore) Pending(ctx context.Context, id string, query core.PendingQuery) (core.Page, error) {
@@ -37,6 +42,7 @@ func (s *coldQueryStore) Pending(ctx context.Context, id string, query core.Pend
 func (s *coldQueryStore) resetReads() {
 	s.stateReads.Store(0)
 	s.nodeReads.Store(0)
+	s.configReads.Store(0)
 	s.pathReads.Store(0)
 	s.pendingReads.Store(0)
 }
@@ -57,8 +63,8 @@ func TestSummaryKeepsHistoryColdAndUsesMemoryForHotSessions(t *testing.T) {
 			t.Fatalf("cold summary changed selection or activity: %+v err=%v", summary, err)
 		}
 	}
-	if counted.stateReads.Load() != 3 || counted.nodeReads.Load() != 4 || counted.pathReads.Load() != 0 || len(f.service.runtimes) != 0 {
-		t.Fatalf("cold summary must read one state/config per query and the unchanged head only once: states=%d nodes=%d paths=%d runtimes=%d", counted.stateReads.Load(), counted.nodeReads.Load(), counted.pathReads.Load(), len(f.service.runtimes))
+	if counted.stateReads.Load() != 3 || counted.nodeReads.Load() != 2 || counted.pathReads.Load() != 0 || len(f.service.runtimes) != 0 {
+		t.Fatalf("cold summary must read one state per query and unchanged configuration/head only once: states=%d nodes=%d paths=%d runtimes=%d", counted.stateReads.Load(), counted.nodeReads.Load(), counted.pathReads.Load(), len(f.service.runtimes))
 	}
 	t.Logf("COLD_SUMMARY repeats=3 state_reads=%d node_reads=%d history_paths=%d loaded_runtimes=%d", counted.stateReads.Load(), counted.nodeReads.Load(), counted.pathReads.Load(), len(f.service.runtimes))
 	if _, err := f.service.View(f.ctx, f.session.ID); err != nil {
@@ -206,10 +212,10 @@ func TestSettledSubagentRecoveryStaysColdButNewInstructionActivates(t *testing.T
 			t.Fatal(err)
 		}
 	}
-	if len(f.service.runtimes) != 0 || counted.stateReads.Load() != 3 || counted.nodeReads.Load() != 3 || counted.pathReads.Load() != 0 {
+	if len(f.service.runtimes) != 0 || counted.stateReads.Load() != 3 || counted.nodeReads.Load() != 1 || counted.pathReads.Load() != 0 {
 		t.Fatalf("cold settled recovery should read metadata, not execution windows: runtimes=%d states=%d nodes=%d paths=%d", len(f.service.runtimes), counted.stateReads.Load(), counted.nodeReads.Load(), counted.pathReads.Load())
 	}
-	t.Log("COLD_CHILD repeats=3 state_reads=3 configuration_reads=3 history_paths=0 loaded_runtimes=0")
+	t.Log("COLD_CHILD repeats=3 state_reads=3 configuration_reads=1 history_paths=0 loaded_runtimes=0")
 	activation := subagentActivation{Input: core.Input{ID: "cold-child-new-instruction", Message: core.User("Now do a different task.")}}
 	if err := f.store.SaveMaintenance(f.ctx, "subagent_activation", child.SessionID, "running", activation); err != nil {
 		t.Fatal(err)

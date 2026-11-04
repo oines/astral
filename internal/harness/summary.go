@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -51,7 +52,6 @@ func (s *Service) Summary(ctx context.Context, id string) (SessionSummary, error
 	s.mu.Unlock()
 	var state core.RuntimeState
 	var snapshot *core.SessionSnapshot
-	var configuration core.Configuration
 	if r != nil {
 		select {
 		case <-r.ready:
@@ -62,7 +62,6 @@ func (s *Service) Summary(ctx context.Context, id string) (SessionSummary, error
 				if value.State.SessionID != "" {
 					snapshot = &value
 					state = value.State
-					configuration = session.Configuration()
 				}
 				r.mu.Unlock()
 			}
@@ -74,12 +73,14 @@ func (s *Service) Summary(ctx context.Context, id string) (SessionSummary, error
 		if err != nil {
 			return view, err
 		}
-		configuration, err = s.configurationAtState(ctx, id, state)
-		if err != nil {
-			return view, err
-		}
 	}
-	view.Selection = configuration.Selection
+	selection, err := s.selectionAtState(ctx, id, state)
+	if err != nil {
+		return view, err
+	}
+	if err := json.Unmarshal(selection.value, &view.Selection); err != nil {
+		return view, err
+	}
 	if state.Branch.HeadID != "" {
 		headTime, readErr := s.sessionHeadTime(ctx, id, state.RolloutID, state.Branch.HeadID)
 		if readErr != nil {
@@ -143,6 +144,7 @@ type configurationStateStore struct {
 	core.Store
 	id    string
 	state core.RuntimeState
+	stamp *time.Time
 }
 
 func (s configurationStateStore) LoadState(ctx context.Context, id string) (core.RuntimeState, error) {
@@ -155,8 +157,60 @@ func (s configurationStateStore) LoadState(ctx context.Context, id string) (core
 	return s.Store.LoadState(ctx, id)
 }
 
+func (s configurationStateStore) Get(ctx context.Context, rollout, id string) (core.Record, error) {
+	record, err := s.Store.Get(ctx, rollout, id)
+	if err == nil && s.stamp != nil && rollout == s.state.RolloutID && id == s.state.Branch.ConfigurationID {
+		*s.stamp = record.Entry.Time
+	}
+	return record, err
+}
+
 func (s *Service) configurationAtState(ctx context.Context, id string, state core.RuntimeState) (core.Configuration, error) {
-	return core.ReadConfiguration(ctx, configurationStateStore{Store: s.CoreStore, id: id, state: state}, id)
+	var stamp time.Time
+	value, err := core.ReadConfiguration(ctx, configurationStateStore{Store: s.CoreStore, id: id, state: state, stamp: &stamp}, id)
+	if err == nil && state.Branch.HeadID == state.Branch.ConfigurationID {
+		s.mu.Lock()
+		if s.headTimes == nil {
+			s.headTimes = map[string]sessionHeadTime{}
+		}
+		s.headTimes[id] = sessionHeadTime{head: state.Branch.HeadID, time: stamp}
+		s.mu.Unlock()
+	}
+	return value, err
+}
+
+// One small immutable selection per Session. Never retain the configuration's
+// SystemPrompt or tools. Callers decode their own Selection value so response
+// mutation cannot change the memo used by another query or reconciler.
+type configurationSelection struct {
+	rollout, configuration string
+	value                  json.RawMessage
+	fingerprint            string
+}
+
+func (s *Service) selectionAtState(ctx context.Context, id string, state core.RuntimeState) (configurationSelection, error) {
+	s.mu.Lock()
+	cached, ok := s.selections[id]
+	s.mu.Unlock()
+	if ok && core.SupportsFormat(state.FormatVersion) && cached.rollout == state.RolloutID && cached.configuration == state.Branch.ConfigurationID {
+		return cached, nil
+	}
+	configuration, err := s.configurationAtState(ctx, id, state)
+	if err != nil {
+		return configurationSelection{}, err
+	}
+	value, err := json.Marshal(configuration.Selection)
+	if err != nil {
+		return configurationSelection{}, err
+	}
+	cached = configurationSelection{rollout: state.RolloutID, configuration: state.Branch.ConfigurationID, value: value, fingerprint: digest(configuration.Selection)}
+	s.mu.Lock()
+	if s.selections == nil {
+		s.selections = map[string]configurationSelection{}
+	}
+	s.selections[id] = cached
+	s.mu.Unlock()
+	return cached, nil
 }
 
 type sessionHeadTime struct {
