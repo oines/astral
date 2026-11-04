@@ -49,8 +49,7 @@ func serveContent(w http.ResponseWriter, r *http.Request, download channels.Down
 		httpcontract.Failure(w, r, fmt.Errorf("attachment content is unavailable"))
 		return
 	}
-	body := &contentBody{Reader: download.Body, source: download.Body}
-	body.stop = context.AfterFunc(r.Context(), func() { body.closeSource() })
+	body := newContentBody(r.Context(), download.Body)
 	keep := false
 	defer func() {
 		if !keep {
@@ -84,17 +83,20 @@ func serveContent(w http.ResponseWriter, r *http.Request, download channels.Down
 			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, offset+length-1, download.Size))
 		}
 	}
-	mediaType := download.MediaType
-	if mediaType == "" {
-		mediaType = "application/octet-stream"
-	}
-	w.Header().Set("Content-Type", mediaType)
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": download.Name}))
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
+	contentHeaders(w.Header(), download.Name, download.MediaType)
 	w.WriteHeader(status)
 	w.(*responseWriter).stream = body
 	keep = true
+}
+
+func contentHeaders(header http.Header, name, mediaType string) {
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	header.Set("Content-Type", mediaType)
+	header.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	header.Set("Cache-Control", "private, no-store")
+	header.Set("X-Content-Type-Options", "nosniff")
 }
 
 type contentBody struct {
@@ -103,6 +105,12 @@ type contentBody struct {
 	stop     func() bool
 	once     sync.Once
 	closeErr error
+}
+
+func newContentBody(ctx context.Context, source io.ReadCloser) *contentBody {
+	body := &contentBody{Reader: source, source: source}
+	body.stop = context.AfterFunc(ctx, body.closeSource)
+	return body
 }
 
 func (b *contentBody) Close() error {

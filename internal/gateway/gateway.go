@@ -93,6 +93,7 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	s.scheduleRoutes()
 	s.modelRoutes()
 	s.rolloutRoutes()
+	s.computerFileRoutes()
 	register[httpcontract.Empty, Context](s, "GET", "/v1/context", "agentContext", func(r *http.Request, _ httpcontract.Empty) (Context, error) {
 		b := binding(r)
 		value := Context{SourceComputerID: b.ComputerID, CWD: b.CWD, AgentHome: b.AgentHome, CapabilitiesURL: "/v1/capabilities"}

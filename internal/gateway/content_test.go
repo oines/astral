@@ -271,7 +271,7 @@ func TestAllContentRoutesDeclareRangeContract(t *testing.T) {
 			t.Fatalf("content range contract incomplete: %s %+v", path, operation)
 		}
 	}
-	if contentRoutes != 6 {
+	if contentRoutes != 7 {
 		t.Fatalf("unexpected content route coverage: %d", contentRoutes)
 	}
 }

@@ -5927,6 +5927,52 @@ export type AgentComputersResponses = {
 
 export type AgentComputersResponse = AgentComputersResponses[keyof AgentComputersResponses];
 
+export type AgentComputerFileContentData = {
+    body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
+    path: {
+        id: string;
+    };
+    query: {
+        /**
+         * Source file path on the selected Computer, not the calling Computer.
+         */
+        path: string;
+    };
+    url: '/v1/computers/{id}/files/content';
+};
+
+export type AgentComputerFileContentErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentComputerFileContentError = AgentComputerFileContentErrors[keyof AgentComputerFileContentErrors];
+
+export type AgentComputerFileContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
+};
+
+export type AgentComputerFileContentResponse = AgentComputerFileContentResponses[keyof AgentComputerFileContentResponses];
+
 export type AgentContextData = {
     body?: never;
     path?: never;

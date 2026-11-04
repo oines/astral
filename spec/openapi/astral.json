@@ -14435,6 +14435,118 @@
         ]
       }
     },
+    "/v1/computers/{id}/files/content": {
+      "get": {
+        "description": "Stream a regular file from an explicitly selected Computer currently allowed for this Bot. Paths use the target Computer's OS; relative paths use its AgentHome. No directory allowlist, file-size cap or total transfer timeout is imposed. Does not switch Computers, create a file reference, snapshot the file or save a Server copy. Byte ranges seek on the source Computer.",
+        "operationId": "agentComputerFileContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Source file path on the selected Computer, not the calling Computer.",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.",
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "bytes",
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
     "/v1/context": {
       "get": {
         "description": "Inspect this listener's bound Bot, Session, source Computer, working directory and AgentHome.",
