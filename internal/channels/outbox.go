@@ -252,6 +252,9 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 	if err == nil && len(out) == 0 {
 		return s.existing(ctx, key, hash)
 	}
+	if err == nil {
+		s.wakeOutbox()
+	}
 	return out, err
 }
 
@@ -263,7 +266,11 @@ func presentText(text string) string {
 	return bareFileLink.ReplaceAllString(text, "[file available in Astral]")
 }
 func (s *Service) dispatchPending() {
-	all, err := list[domain.Outbox](s.ctx, s.Store, "outbox")
+	rows, err := s.Store.OutboxWork(s.ctx)
+	if err != nil {
+		return
+	}
+	all, err := decodeRecords[domain.Outbox](rows)
 	if err != nil {
 		return
 	}
@@ -320,9 +327,24 @@ func (s *Service) dispatchPending() {
 		go func() {
 			defer s.workers.Done()
 			defer group.workers.Done()
-			defer func() { s.mu.Lock(); delete(s.sending, bucket); s.mu.Unlock() }()
-			_ = s.dispatch(group.ctx, record.ID)
+			completed := false
+			defer func() {
+				s.mu.Lock()
+				delete(s.sending, bucket)
+				s.mu.Unlock()
+				if completed {
+					s.wakeOutbox()
+				}
+			}()
+			completed, _ = s.dispatchOutcome(group.ctx, record.ID)
 		}()
+	}
+}
+
+func (s *Service) wakeOutbox() {
+	select {
+	case s.outboxWake <- struct{}{}:
+	default:
 	}
 }
 func (s *Service) authorizeOutbound(ctx context.Context, r domain.Outbox) (domain.Connection, error) {
@@ -367,24 +389,31 @@ func (s *Service) authorizeOutbound(ctx context.Context, r domain.Outbox) (domai
 	return connection, nil
 }
 func (s *Service) dispatch(ctx context.Context, id string) error {
+	_, err := s.dispatchOutcome(ctx, id)
+	return err
+}
+
+// The outcome flag records a committed terminal transition, not a successful
+// no-op or a failed attempt. Only that transition wakes the next fragment.
+func (s *Service) dispatchOutcome(ctx context.Context, id string) (bool, error) {
 	s.gate.Lock()
 	var record domain.Outbox
 	err := s.Store.Get(ctx, "outbox", id, &record)
 	if err != nil || record.Status != "pending" {
 		s.gate.Unlock()
-		return err
+		return false, err
 	}
 	connection, err := s.authorizeOutbound(ctx, record)
 	if err != nil {
 		record.Status, record.Error = "blocked", err.Error()
 		err = s.Store.Save(ctx, "outbox", &record.Meta, &record)
 		s.gate.Unlock()
-		return err
+		return err == nil, err
 	}
 	adapter, err := s.adapter(ctx, connection)
 	if err != nil {
 		s.gate.Unlock()
-		return err
+		return false, err
 	}
 	// Commit dispatch before any external operation. A crash from here onwards
 	// requires a receipt check, including before a source stream is opened.
@@ -392,7 +421,7 @@ func (s *Service) dispatch(ctx context.Context, id string) error {
 	err = s.Store.Save(ctx, "outbox", &record.Meta, &record)
 	s.gate.Unlock()
 	if err != nil {
-		return err
+		return false, err
 	}
 	send := Send{MessageOptions: record.MessageOptions, Target: domain.Conversation{ConnectionID: record.ConnectionID, ExternalID: record.ExternalID, TopicID: record.TopicID}, ReplyTo: record.ReplyTo}
 	for _, part := range record.Parts {
@@ -400,7 +429,8 @@ func (s *Service) dispatch(ctx context.Context, id string) error {
 		if part.FileRefID != "" {
 			var file domain.FileRef
 			if err = s.Store.Get(ctx, "files", part.FileRefID, &file); err != nil {
-				return s.finish(ctx, &record, Receipt{}, &SendError{Message: err.Error()})
+				err = s.finish(ctx, &record, Receipt{}, &SendError{Message: err.Error()})
+				return err == nil, err
 			}
 			prepared.FileName, prepared.MediaType, prepared.Size = file.DisplayName, file.MediaType, file.Size
 			prepared.OpenFile = func(openCtx context.Context) (io.ReadCloser, error) {
@@ -411,7 +441,8 @@ func (s *Service) dispatch(ctx context.Context, id string) error {
 		send.Parts = append(send.Parts, prepared)
 	}
 	receipt, sendErr := adapter.Send(ctx, send)
-	return s.finish(ctx, &record, receipt, sendErr)
+	err = s.finish(ctx, &record, receipt, sendErr)
+	return err == nil, err
 }
 func (s *Service) finish(ctx context.Context, record *domain.Outbox, receipt Receipt, sendErr error) error {
 	persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
