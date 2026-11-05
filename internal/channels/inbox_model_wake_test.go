@@ -52,6 +52,29 @@ func TestPausedInboxWakesForActualComposerModelChange(t *testing.T) {
 							if e != nil || state.LastRun == nil || state.LastRun.Status != "completed" || state.CurrentAttemptID != "" {
 								return false
 							}
+							// A completed child can still deliver its terminal report and
+							// start another parent Run. Wait for durable delivery and
+							// application before checking the parent's idle boundary.
+							var checkpoint struct {
+								Protocol int    `json:"protocol"`
+								Version  uint64 `json:"version"`
+								Sequence uint64 `json:"sequence"`
+							}
+							if p.Store.Maintenance(p.Context, "subagent_delivery", record.ID, &checkpoint) != nil || checkpoint.Protocol != 1 || checkpoint.Version != state.Version {
+								return false
+							}
+							page, e := p.CoreStore.Scan(p.Context, state.RolloutID, core.Query{SessionID: record.ID, Kind: core.EntryRun, Reverse: true, Limit: 1, MaxBytes: 1 << 20})
+							if e != nil || len(page.Records) != 1 {
+								return false
+							}
+							terminal := page.Records[0].Entry
+							if terminal.Run == nil || terminal.Run.ID != state.LastRun.ID || terminal.Run.Status != "completed" || checkpoint.Sequence < terminal.Sequence {
+								return false
+							}
+							receipt, e := p.CoreStore.LookupInput(p.Context, binding.SessionID, "subagent_run_end_"+record.ID+"_"+state.LastRun.ID)
+							if e != nil || receipt.State != core.InputApplied {
+								return false
+							}
 						}
 					}
 					return found && !p.Harness.StorageBusy()
