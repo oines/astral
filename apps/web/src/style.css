@@ -236,6 +236,10 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .subagent-bubble-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .subagent-bubble-copy strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
 .subagent-bubble-copy > span { font-size: 12px; color: var(--muted); }
+.subagent-bubble-status { gap: 8px; width: fit-content; max-width: 100%; padding: 3px 0; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 13px; line-height: 21px; }
+.subagent-bubble-status:hover:not(:disabled) { background: transparent; color: var(--ink); }
+.subagent-bubble-status > svg { width: 16px; height: 16px; }
+.subagent-status-copy { min-width: 0; overflow-wrap: anywhere; }
 .tool-command { margin: 0; font-size: 12px; line-height: 1.65; color: var(--muted); }
 .tool-output { min-width: 0; }
 .tool-plain-output { margin: 0; max-height: 300px; overflow: auto; line-height: 1.65; }

@@ -1,4 +1,5 @@
 import type { Entry } from './types'
+import type { AstralInternalDomainSubagentActivity } from '@astral/sdk'
 import { object } from './api'
 
 export interface SubagentReference {
@@ -6,6 +7,15 @@ export interface SubagentReference {
   parentSessionID: string
   title: string
   status: string
+}
+
+export type SubagentActivity = AstralInternalDomainSubagentActivity
+
+export function subagentActivityStatus(status: string) {
+  if (status === 'started') return 'subagentStartedWorking'
+  if (status === 'completed') return 'subagentCompletedWork'
+  if (status === 'failed') return 'subagentWorkFailed'
+  if (status === 'cancelled') return 'subagentWorkStopped'
 }
 
 export function spawnedSubagent(entry: Entry): SubagentReference | undefined {

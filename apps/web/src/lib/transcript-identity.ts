@@ -48,7 +48,12 @@ function reconcileBlocks(group: TranscriptGroup, previous: TranscriptGroup | und
   if (remaining.length === 1 && available.length === 1 && (!remaining[0]!.items.length || !available[0]!.items.length)) matches.set(remaining[0]!, available[0]!)
   const textByKey = new Map(previous.blocks.filter(block => block.kind === 'text').map(block => [block.key, block]))
   const subagentsByKey = new Map(previous.blocks.filter(block => block.kind === 'subagent').map(block => [block.key, block]))
+  const statusesByKey = new Map(previous.blocks.filter(block => block.kind === 'subagent-status').map(block => [block.key, block]))
   return group.blocks.map(block => {
+    if (block.kind === 'subagent-status') {
+      const old = statusesByKey.get(block.key)
+      return old?.activity === block.activity ? old : block
+    }
     if (block.kind === 'subagent') {
       const old = subagentsByKey.get(block.key)
       return old?.entry === block.entry ? old : block

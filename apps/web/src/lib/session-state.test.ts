@@ -11,7 +11,7 @@ const view: SessionView = {
   status: 'running', can_continue: false, model_available: true, run_id: 'run', selection: { id: 'model' }, approvals: [], pending: [], unresolved: [], event_sequence: 0,
 }
 function snapshot(history: Entry[] = [], trace: Entry[] = []): Snapshot {
-  return { epoch: 'server-a', view, history: { entries: history, head_id: 'head' }, trace: { entries: trace, head_id: 'head' } }
+  return { epoch: 'server-a', view, history: { entries: history, head_id: 'head' }, trace: { entries: trace, head_id: 'head' }, subagent_activity: [], subagent_activity_cursor: '0' }
 }
 function event(sequence: number, rest: Partial<CoreEvent>) {
   return { epoch: 'server-a', core: { sequence, session_id: 'session', run_id: 'run', type: 'message_update', attempt_id: 'attempt', ...rest } }
@@ -225,7 +225,7 @@ describe('ordered transcript process', () => {
     addEntry(state, entry('commentary', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'The command is still running; checking another file.' }] } }))
     addEntry(state, toolEntry('new-start', 3, 'second', 'new-shell', 'tool_started'))
     const before = transcriptGroups(state)[0]!.blocks
-    expect(before.map(block => block.kind === 'process' ? block.items.map(item => item.key) : block.kind === 'text' ? block.text : block.entry.id)).toEqual([
+    expect(before.map(block => block.kind === 'process' ? block.items.map(item => item.key) : block.kind === 'text' ? block.text : block.kind === 'subagent' ? block.entry.id : block.activity.id)).toEqual([
       ['old-shell'], 'The command is still running; checking another file.', ['new-shell'],
     ])
     applyEvent(state, event(4, { type: 'tool_execution_update', execution_id: 'old-shell', progress: { text: 'Command is making progress\n' } }))
@@ -254,7 +254,7 @@ describe('ordered transcript process', () => {
     ] } }))
     addEntry(state, toolEntry('result-2', 6, 'second', 'exec-2'))
     const blocks = transcriptGroups(state)[0]!.blocks
-    expect(blocks.map(block => block.kind === 'text' ? block.text : block.kind === 'process' ? block.items.map(item => item.kind === 'reasoning' ? item.text : item.entry.id) : block.entry.id)).toEqual([
+    expect(blocks.map(block => block.kind === 'text' ? block.text : block.kind === 'process' ? block.items.map(item => item.kind === 'reasoning' ? item.text : item.entry.id) : block.kind === 'subagent' ? block.entry.id : block.activity.id)).toEqual([
       ['First thought'], 'Checking now.', ['result', 'Next thought', 'result-2'], 'Done.',
     ])
   })

@@ -42,7 +42,7 @@ class Stream extends EventTarget {
   fail() { this.onerror?.() }
 }
 function snapshot(view: SessionView, epoch = 'server'): Snapshot {
-  return { epoch, view, history: { entries: [], head_id: '' }, trace: { entries: [], head_id: '' } }
+  return { epoch, view, history: { entries: [], head_id: '' }, trace: { entries: [], head_id: '' }, subagent_activity: [], subagent_activity_cursor: '0' }
 }
 let app: ReturnType<typeof useAppStore> | undefined
 let sessionScope: EffectScope | undefined

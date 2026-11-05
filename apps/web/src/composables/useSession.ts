@@ -1,7 +1,7 @@
 import { effectScope, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { client } from '@astral/sdk/client'
 import type { SessionHistoryResponses, SessionHistoryErrors } from '@astral/sdk'
-import { addEntry, applyEvent, emptyState, interruptPreviews, reconcileSnapshot } from '../lib/session-state'
+import { addEntry, addSubagentActivity, applyEvent, emptyState, interruptPreviews, reconcileSnapshot } from '../lib/session-state'
 import { errorText, request } from '../lib/api'
 import type { SessionEvent, Snapshot } from '../lib/types'
 import { useAppStore } from '../stores/app'
@@ -53,8 +53,8 @@ export function useSession(sessionID: Ref<string>) {
     } catch (e) { error.value = errorText(e); reconnect() }
   })
   function resetHistoryRequest() { historyEpoch++; historyRequest?.abort(); historyRequest = undefined; olderPending = undefined; loadingHistory.value = false }
-  function history(cursor: string, trace: boolean, signal?: AbortSignal) {
-    return request(client.get<SessionHistoryResponses, SessionHistoryErrors>({ url: `/api/v1/sessions/${encodeURIComponent(sessionID.value)}/timeline`, query: { cursor, limit: trace ? 100 : 60, trace }, signal }))
+  function history(cursor: string | undefined, trace: boolean, signal?: AbortSignal, activityCursor?: string) {
+    return request(client.get<SessionHistoryResponses, SessionHistoryErrors>({ url: `/api/v1/sessions/${encodeURIComponent(sessionID.value)}/timeline`, query: { cursor, activity_cursor: trace ? undefined : activityCursor ?? '0', limit: trace ? 100 : 60, trace }, signal }))
   }
   function close() {
     const closing = source
@@ -85,7 +85,7 @@ export function useSession(sessionID: Ref<string>) {
         state.value = reconcileSnapshot(previous, snapshot)
         // A long outage may exceed the snapshot tail. Fill that gap in the
         // background while keeping previously read pages and live output on screen.
-        if (historyBoundary) void fillGap(historyEpoch)
+        if (historyBoundary || state.value.subagentActivityBoundary) void fillGap(historyEpoch)
         connection.value = 'connected'
         error.value = ''
         if (state.value.view) app.sessionViews[state.value.view.id] = state.value.view
@@ -115,30 +115,40 @@ export function useSession(sessionID: Ref<string>) {
     timer = setTimeout(connect, 1000)
   }
   const loadingHistory = ref(false)
-  function older(): Promise<boolean> {
+  function older(activityOnly = false): Promise<boolean> {
     // The scroll prefetch and reconnect gap recovery share one request rather
     // than treating the other's in-flight work as a failed history load.
     if (olderPending) return olderPending
-    const cursor = state.value.historyCursor
-    if (!cursor) return Promise.resolve(false)
-    const pending = loadOlderPage(cursor)
+    const cursor = activityOnly ? undefined : state.value.historyCursor
+    const activityCursor = state.value.subagentActivityNextCursor
+    if (!cursor && !activityCursor) return Promise.resolve(false)
+    const pending = loadOlderPage(cursor, activityCursor)
     olderPending = pending
     void pending.finally(() => { if (olderPending === pending) olderPending = undefined })
     return pending
   }
-  async function loadOlderPage(cursor: string) {
+  async function loadOlderPage(cursor?: string, activityCursor?: string) {
     loadingHistory.value = true
     const current = generation
     const epoch = historyEpoch
     const controller = new AbortController()
     historyRequest = controller
     try {
-      const page = await history(cursor, false, controller.signal)
-      if (current !== generation || epoch !== historyEpoch || cursor !== state.value.historyCursor) return true
+      const page = await history(cursor, false, controller.signal, activityCursor)
+      if (current !== generation || epoch !== historyEpoch || cursor && cursor !== state.value.historyCursor || activityCursor !== state.value.subagentActivityNextCursor) return true
       for (const entry of page.entries ?? []) addEntry(state.value, entry, true)
-      const crossed = historyBoundary && (page.entries ?? []).some(entry => entry.sequence <= historyBoundary!.sequence)
-      state.value.historyCursor = crossed ? historyBoundary!.cursor : page.next_cursor
-      if (crossed || !page.next_cursor) historyBoundary = undefined
+      if (cursor) {
+        const crossed = historyBoundary && (page.entries ?? []).some(entry => entry.sequence <= historyBoundary!.sequence)
+        state.value.historyCursor = crossed ? historyBoundary!.cursor : page.next_cursor
+        if (crossed || !page.next_cursor) historyBoundary = undefined
+      }
+      addSubagentActivity(state.value, page.subagent_activity, page.subagent_activity_cursor)
+      if (activityCursor) {
+        const boundary = state.value.subagentActivityBoundary
+        const crossed = boundary && (page.subagent_activity ?? []).some(activity => activity.sequence <= boundary.sequence)
+        state.value.subagentActivityNextCursor = crossed ? boundary.cursor : page.subagent_activity_next_cursor
+        if (crossed || !page.subagent_activity_next_cursor) state.value.subagentActivityBoundary = undefined
+      }
       return true
     } catch (e) {
       if (current !== generation || epoch !== historyEpoch || controller.signal.aborted) return true
@@ -148,8 +158,8 @@ export function useSession(sessionID: Ref<string>) {
     finally { if (current === generation && epoch === historyEpoch) { loadingHistory.value = false; historyRequest = undefined } }
   }
   async function fillGap(epoch: number) {
-    while (epoch === historyEpoch && historyBoundary && state.value.historyCursor) {
-      if (!await older()) return
+    while (epoch === historyEpoch && (historyBoundary && state.value.historyCursor || state.value.subagentActivityBoundary && state.value.subagentActivityNextCursor)) {
+      if (!await older(!historyBoundary)) return
     }
   }
   async function moreTrace() {

@@ -145,6 +145,9 @@ func (s *Service) deleteOneSession(ctx context.Context, id string, revision int6
 		if err := tx.PurgeSessionDeliveries(ctx, id); err != nil {
 			return err
 		}
+		if err := tx.PurgeSubagentActivities(ctx, id); err != nil {
+			return err
+		}
 		if err := schedule.PurgeSession(ctx, tx, id); err != nil {
 			return err
 		}
@@ -181,8 +184,8 @@ func (s *Service) closeDeletedRuntime(ctx context.Context, id string) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	r.retire()
 	r.mu.Lock()
-	session := r.core.Load()
 	titleCancel, titleDone := r.titleCancel, r.titleDone
 	r.mu.Unlock()
 	if titleCancel != nil {
@@ -195,10 +198,8 @@ func (s *Service) closeDeletedRuntime(ctx context.Context, id string) error {
 	}
 	// A running tool can need r.mu while observing cancellation. The durable
 	// intent already blocks new admissions, so never hold it while joining Core.
-	if session != nil {
-		if err := session.Close(ctx); err != nil {
-			return err
-		}
+	if err := r.closeCore(ctx); err != nil {
+		return err
 	}
 	if r.tools != nil {
 		return r.tools.Close(ctx)

@@ -3,7 +3,7 @@ import type { SessionEvent } from './types'
 // Only incremental previews wait for the next paint. Durable commits and status
 // transitions flush the preceding deltas first, in their original wire order.
 export function isSessionDelta(event: SessionEvent) {
-  return !event.entry && !event.view && ['message_update', 'tool_execution_update'].includes(event.core?.type ?? '')
+  return !event.entry && !event.view && !event.subagent_activity?.length && ['message_update', 'tool_execution_update'].includes(event.core?.type ?? '')
 }
 export function createSessionEventBatch(consume: (events: SessionEvent[]) => void) {
   let pending: SessionEvent[] = []

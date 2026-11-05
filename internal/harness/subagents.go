@@ -130,11 +130,15 @@ func (t agentControlTool) Execute(ctx context.Context, inv core.Invocation, _ fu
 }
 
 func (s *Service) subagentRecord(ctx context.Context, parent, id string) (domain.Session, error) {
+	return s.ownedSubagentRecord(ctx, parent, id, false)
+}
+
+func (s *Service) ownedSubagentRecord(ctx context.Context, parent, id string, allowDeleting bool) (domain.Session, error) {
 	var record domain.Session
 	if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
 		return record, err
 	}
-	if record.SubagentParentID != parent || record.Deletion != nil {
+	if record.SubagentParentID != parent || record.Deletion != nil && !allowDeleting {
 		return record, domain.Forbidden("only a direct parent can manage this subagent")
 	}
 	var owner domain.Session
@@ -359,12 +363,12 @@ func (s *Service) controlSubagent(ctx context.Context, parent, execution string,
 		}
 		return result, nil
 	}
-	record, err := s.subagentRecord(ctx, parent, input.AgentID)
-	if err != nil {
-		return nil, err
-	}
 	if input.Signal != "" && (input.Input != "" || input.Model != "") {
 		return nil, domain.Invalid("choose signal or input/selection")
+	}
+	record, err := s.ownedSubagentRecord(ctx, parent, input.AgentID, input.Signal == "delete")
+	if err != nil {
+		return nil, err
 	}
 	if input.Model != "" {
 		if err = s.selectDirectSubagentModel(ctx, parent, record.ID, core.ModelSelection{ID: input.Model, Reasoning: input.Reasoning}); err != nil {
@@ -395,7 +399,11 @@ func (s *Service) controlSubagent(ctx context.Context, parent, execution string,
 				return nil, err
 			}
 			status := "queued"
-			if r.core.Load().Snapshot().Running {
+			snapshot, snapshotErr := r.snapshot()
+			if snapshotErr != nil {
+				return nil, snapshotErr
+			}
+			if snapshot.Running {
 				status = "running"
 			}
 			var settings subagentSettings
@@ -669,6 +677,14 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	}
 	var deliveryErr error
 	if stateErr == nil {
+		moreActivity, err := s.recordSubagentActivities(ctx, record, state)
+		if err != nil {
+			return err
+		}
+		if moreActivity {
+			// Continue bounded historical backfill only while facts remain.
+			s.wakeSubagents(record.ID)
+		}
 		deliveryErr = s.deliverSubagentHistoryLocked(ctx, record, state)
 		if deliveryErr != nil && !errors.Is(deliveryErr, errSubagentReportsPending) {
 			return deliveryErr
@@ -723,7 +739,11 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	}
 	// Use one snapshot for both the durable lifecycle and execution flags. A
 	// fast failure between separate reads must not revive the retained input.
-	snapshot := r.core.Load().Snapshot()
+	snapshot, snapshotErr := r.snapshot()
+	if snapshotErr != nil {
+		r.mu.Unlock()
+		return snapshotErr
+	}
 	lastRun := snapshot.State.LastRun
 	shouldActivate := initialErr == nil && initial.State == core.InputPending && lastRun == nil
 	shouldActivate = shouldActivate || lastRun != nil && lastRun.Status == "started"
@@ -816,6 +836,9 @@ type subagentActivation struct {
 }
 
 func (r *runtime) startSubagentLocked(ctx context.Context) error {
+	if _, err := r.readableCore(); err != nil {
+		return err
+	}
 	metadata, err := r.service.childMetadata(ctx, r.id)
 	if err != nil || metadata.started {
 		return err
@@ -863,7 +886,10 @@ func (r *runtime) activateSubagentLocked(ctx context.Context, activation *subage
 	if err != nil && !errors.Is(err, core.ErrBusy) && !errors.Is(err, core.ErrNotContinuable) {
 		return err
 	}
-	snapshot := r.core.Load().Snapshot()
+	snapshot, snapshotErr := r.snapshot()
+	if snapshotErr != nil {
+		return snapshotErr
+	}
 	activation.Complete = receipt.State != string(core.InputPending) || snapshot.Running
 	state := "running"
 	if activation.Complete {
@@ -937,7 +963,11 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 		if terminal && receipt.State == core.InputPending {
 			err = parent.continueLocked(ctx)
 			if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
-				if !parent.core.Load().Snapshot().Running {
+				snapshot, snapshotErr := parent.snapshot()
+				if snapshotErr != nil {
+					return snapshotErr
+				}
+				if !snapshot.Running {
 					return errSubagentReportsPending
 				}
 				return nil
@@ -998,12 +1028,19 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 		cursor = page.Next
 	}
 	kind := core.InputFollowUp
-	if parent.core.Load().Snapshot().Running {
+	snapshot, snapshotErr := parent.snapshot()
+	if snapshotErr != nil {
+		return snapshotErr
+	}
+	if snapshot.Running {
 		kind = core.InputSteer
 	}
 	_, err = parent.accept(ctx, input, kind)
 	if err == nil {
-		snapshot := parent.core.Load().Snapshot()
+		snapshot, snapshotErr := parent.snapshot()
+		if snapshotErr != nil {
+			return snapshotErr
+		}
 		receipt, lookupErr := parent.core.Load().LookupInput(ctx, input.ID)
 		if lookupErr != nil {
 			return lookupErr

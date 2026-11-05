@@ -96,7 +96,10 @@ func (s *Service) resumeAcceptedProbeSession(ctx context.Context, b domain.Conve
 func (s *Service) resumeAcceptedProbeSessionStatus(ctx context.Context, b domain.ConversationBinding) (bool, error) {
 	pending := false
 	err := s.Harness.WithSession(ctx, b.SessionID, func(session *core.Session) error {
-		snapshot := session.Snapshot()
+		snapshot, err := s.Harness.Snapshot(ctx, b.SessionID)
+		if err != nil {
+			return err
+		}
 		if snapshot.State.PendingInputs[core.InputSteer] == 0 {
 			return nil
 		}

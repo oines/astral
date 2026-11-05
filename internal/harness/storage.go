@@ -24,11 +24,8 @@ func (s *Service) StorageBusy() bool {
 		default:
 			return true
 		}
-		if session := r.core.Load(); session != nil {
-			view := session.Snapshot()
-			if view.Running || view.Maintenance {
-				return true
-			}
+		if r.storageBusy() {
+			return true
 		}
 	}
 	return false

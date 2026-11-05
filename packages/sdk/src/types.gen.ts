@@ -1132,6 +1132,17 @@ export type AstralInternalDomainStickerMetadata = {
     width: number;
 };
 
+export type AstralInternalDomainSubagentActivity = {
+    child_session_id: string;
+    id: string;
+    name: string;
+    run_id: string;
+    sequence: number;
+    session_id: string;
+    status: string;
+    time: string;
+};
+
 export type AstralInternalDomainTextQuote = {
     manual: boolean;
     /**
@@ -1217,6 +1228,9 @@ export type AstralInternalGatewayHistoryPage = {
     entries: Array<AstralCoreEntry>;
     head_id: string;
     next_cursor?: string;
+    subagent_activity?: Array<AstralInternalDomainSubagentActivity>;
+    subagent_activity_cursor?: string;
+    subagent_activity_next_cursor?: string;
 };
 
 export type AstralInternalGatewayMessageAttachmentView = {
@@ -1596,6 +1610,8 @@ export type AstralInternalHttpapiEvent = {
     core?: AstralCoreEvent;
     entry?: AstralCoreEntry;
     epoch: string;
+    subagent_activity?: Array<AstralInternalDomainSubagentActivity>;
+    subagent_activity_cursor?: string;
     view?: AstralInternalHarnessView;
 };
 
@@ -1770,6 +1786,9 @@ export type AstralInternalHttpapiSessionPresentation = {
 export type AstralInternalHttpapiSnapshot = {
     epoch: string;
     history: AstralInternalGatewayHistoryPage;
+    subagent_activity: Array<AstralInternalDomainSubagentActivity>;
+    subagent_activity_cursor: string;
+    subagent_activity_next_cursor?: string;
     trace: AstralInternalGatewayHistoryPage;
     view: AstralInternalHarnessView;
 };
@@ -4957,6 +4976,7 @@ export type SessionTimelineData = {
     };
     query?: {
         cursor?: string;
+        activity_cursor?: string;
         limit?: number;
         trace?: boolean;
     };

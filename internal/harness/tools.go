@@ -227,7 +227,10 @@ func (r *runtime) finishInterruptedTools(ctx context.Context) error {
 // Only a resolved tool changes it; ordinary view reads need one Core snapshot.
 func (r *runtime) snapshotAfterInterruptedTools(ctx context.Context) (core.SessionSnapshot, error) {
 	session := r.core.Load()
-	snapshot := session.Snapshot()
+	snapshot, err := r.snapshot()
+	if err != nil {
+		return core.SessionSnapshot{}, err
+	}
 	if snapshot.Running || snapshot.Maintenance || len(snapshot.Unresolved) == 0 {
 		return snapshot, nil
 	}
@@ -245,7 +248,7 @@ func (r *runtime) snapshotAfterInterruptedTools(ctx context.Context) (core.Sessi
 			return core.SessionSnapshot{}, err
 		}
 	}
-	return session.Snapshot(), nil
+	return r.snapshot()
 }
 
 func (r *runtime) registerHandle(ctx context.Context, internalID int, b domain.ExecutionBinding) (processHandle, error) {

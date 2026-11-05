@@ -261,7 +261,10 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 	if err == nil && trigger != nil && kind == core.InputContext {
 		// A new explicit message can resume a stopped queue or an attempt left
 		// by a crash. Passive delivery makes it available to the resumed run.
-		snapshot := r.core.Load().Snapshot()
+		snapshot, snapshotErr := r.snapshot()
+		if snapshotErr != nil {
+			return receipt, snapshotErr
+		}
 		if snapshot.Running || snapshot.Maintenance || snapshot.Stopping {
 			return receipt, nil
 		}

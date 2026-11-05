@@ -127,6 +127,9 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 }
 
 func (r *runtime) syncBusinessConfig(ctx context.Context) error {
+	if _, err := r.readableCore(); err != nil {
+		return err
+	}
 	var record domain.Session
 	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
 		return err
@@ -186,7 +189,11 @@ func (s *Service) SelectComputer(ctx context.Context, id, computerID, cwd string
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.core.Load().Snapshot().Running || r.core.Load().Snapshot().Maintenance {
+	snapshot, err := r.snapshot()
+	if err != nil {
+		return err
+	}
+	if snapshot.Running || snapshot.Maintenance {
 		return domain.Conflict("stop the Session before changing its Computer")
 	}
 	_, err = r.selectComputer(ctx, computerID, cwd)
@@ -215,7 +222,11 @@ func (r *runtime) selectComputer(ctx context.Context, id, cwd string) (domain.Ex
 }
 
 func (r *runtime) continueLocked(ctx context.Context) error {
-	if snapshot := r.core.Load().Snapshot(); snapshot.Running || snapshot.Maintenance {
+	snapshot, err := r.snapshot()
+	if err != nil {
+		return err
+	}
+	if snapshot.Running || snapshot.Maintenance {
 		return core.ErrBusy
 	}
 	if err := r.finishInterruptedTools(ctx); err != nil {
@@ -224,7 +235,7 @@ func (r *runtime) continueLocked(ctx context.Context) error {
 	if err := r.syncBusinessConfig(ctx); err != nil {
 		return err
 	}
-	_, err := r.core.Load().Continue(ctx)
+	_, err = r.core.Load().Continue(ctx)
 	r.service.notify(r.id)
 	return err
 }

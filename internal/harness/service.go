@@ -66,6 +66,9 @@ type runtime struct {
 	openErr          error
 	mu               sync.Mutex
 	core             atomic.Pointer[core.Session]
+	snapshotMu       sync.RWMutex
+	corePhase        runtimeCorePhase
+	retired          bool
 	tools            *standardtools.Set
 	environmentMu    sync.Mutex
 	processMu        sync.Mutex
@@ -184,7 +187,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if r.core.Load() != nil {
-				_ = r.core.Load().Close(cleanup)
+				_ = r.closeCore(cleanup)
 			}
 			_ = r.tools.Close(cleanup)
 		}
@@ -314,7 +317,7 @@ func (s *Service) Core(ctx context.Context, id string) (*core.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return r.core.Load(), nil
+	return r.readableCore()
 }
 func (s *Service) CreateSession(ctx context.Context, agentID, title string) (domain.Session, error) {
 	return s.createSession(ctx, agentID, title, domain.ID("session"), "web", false, false)
@@ -413,9 +416,12 @@ func (s *Service) Close(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		if r.core.Load() != nil {
-			errs = append(errs, r.core.Load().Close(ctx))
-		}
+		r.retire()
+		// Drain callbacks that received a raw Core handle before retirement.
+		// Joining Core must remain outside mu: cancelled tools can need it.
+		r.mu.Lock()
+		r.mu.Unlock() //nolint:staticcheck // Join pre-retirement callbacks before Core.Close clears their window.
+		errs = append(errs, r.closeCore(ctx))
 		if r.tools != nil {
 			errs = append(errs, r.tools.Close(ctx))
 		}
