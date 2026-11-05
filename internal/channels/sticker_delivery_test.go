@@ -60,7 +60,11 @@ func TestStickerDeliveryUsesImagesWithoutSavingOriginalFiles(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			bot := newBot(t)
-			p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("received sticker") })
+			requests := make(chan map[string]any, 2)
+			p := testkit.New(t, 1, func(_ context.Context, _ int, request map[string]any) any {
+				requests <- request
+				return testkit.Text("received sticker")
+			})
 			s := New(p.Store, p.Harness)
 			source := &stickerImageAdapter{data: webp, expected: test.expected, fail: test.fail}
 			if test.corrupt {
@@ -86,17 +90,20 @@ func TestStickerDeliveryUsesImagesWithoutSavingOriginalFiles(t *testing.T) {
 			if err := s.deliver(p.Context, binding, event); err != nil {
 				t.Fatal("a sticker preview blocked the received message:", err)
 			}
+			awaitDirectReminderRequests(t, p, binding.SessionID, "sticker mention", 2)
 			p.Idle(t, binding.SessionID)
+			<-requests // The original direct-trigger request is followed by one reminder.
+			activeDeliveryAssertOneReplyReminder(t, <-requests)
 			view, err := p.Harness.InspectContext(p.Context, binding.SessionID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			found := false
+			observations := 0
 			for _, message := range view.Request.Messages {
 				if message.ContextKind != "im.observation" {
 					continue
 				}
-				found = true
+				observations++
 				var meta messages.Metadata
 				if json.Unmarshal(message.Metadata, &meta) != nil || len(meta.Attachments) != len(attachments) || len(meta.Files) != 0 || meta.Attachments[0].Sticker == nil {
 					t.Fatal("sticker metadata was lost or reception created a Computer file")
@@ -124,8 +131,8 @@ func TestStickerDeliveryUsesImagesWithoutSavingOriginalFiles(t *testing.T) {
 					t.Fatal("missing preview was not explained to the model")
 				}
 			}
-			if !found || p.Requests.Load() != 1 {
-				t.Fatal("sticker was not delivered exactly once")
+			if observations != 1 || p.Requests.Load() != 2 {
+				t.Fatalf("sticker or reminder was lost or duplicated: observations=%d requests=%d", observations, p.Requests.Load())
 			}
 			files, err := list[domain.FileRef](p.Context, p.Store, "files")
 			if err != nil || len(files) != 0 {
@@ -165,6 +172,16 @@ func TestStickerDeliveryUsesImagesWithoutSavingOriginalFiles(t *testing.T) {
 				if err != nil || len(files) != 1 {
 					t.Fatal("explicit download did not register exactly one Computer file")
 				}
+			}
+			// A replay must not re-register the direct trigger or schedule another
+			// reminder after the first one has been consumed and reconciled.
+			testkit.Await(t, p.Context, func() bool {
+				var watch map[string]any
+				return domain.IsMissing(p.Store.Maintenance(p.Context, "im_reply_watch", binding.SessionID, &watch))
+			})
+			p.Idle(t, binding.SessionID)
+			if p.Requests.Load() != 2 {
+				t.Fatal("sticker replay or completed reminder started another model request")
 			}
 		})
 	}
