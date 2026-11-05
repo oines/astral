@@ -100,9 +100,14 @@ func TestFailedImagePreviewDoesNotBlockLaterIMTrigger(t *testing.T) {
 			later, through := activeDeliveryArchive(t, p, binding, "later-mention", "mention")
 			startChannels(t, s, p.Context)
 			activeDeliveryRouted(t, p, later.ID)
-			testkit.Await(t, p.Context, func() bool { return p.Requests.Load() == 1 })
+			awaitDirectReminderRequests(t, p, binding.SessionID, "later mention after unavailable image", 2)
 			p.Idle(t, binding.SessionID)
 			request := <-requests
+			// The fixture does not send a reply, so its second request must be
+			// the one-time reminder rather than another image/trigger delivery.
+			if !strings.Contains(activeDeliveryText(<-requests), "如果你决定不回复，请忽略此提醒。") {
+				t.Fatal("the second request was not the missing-send reminder")
+			}
 			text := activeDeliveryText(request)
 			for _, fragment := range []string{image.Text, image.ReplyPreview, image.ReplyQuote.Text, later.Text, "Image preview unavailable", "download-url", `trigger="mention"`} {
 				if !strings.Contains(text, fragment) {
@@ -142,7 +147,7 @@ func TestFailedImagePreviewDoesNotBlockLaterIMTrigger(t *testing.T) {
 					}
 				}
 			}
-			if !found || source.downloads.Load() != 1 || p.Requests.Load() != 1 {
+			if !found || source.downloads.Load() != 1 || p.Requests.Load() != 2 {
 				t.Fatalf("image was lost, retried or duplicated: found=%v downloads=%d requests=%d", found, source.downloads.Load(), p.Requests.Load())
 			}
 			if err := s.deliver(p.Context, binding, image); err != nil || source.downloads.Load() != 1 {

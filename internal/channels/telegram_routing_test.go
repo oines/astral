@@ -81,8 +81,11 @@ func TestTelegramReplyThreadsDeliverToExistingGroupSession(t *testing.T) {
 		eventID := stableID("event", connection.ID, strconv.Itoa(i+1))
 		testkit.Await(t, p.Context, func() bool {
 			delivery, err := service.Delivery(p.Context, eventID)
-			return err == nil && delivery.SessionID == test.binding.SessionID && delivery.State == "applied" && p.Requests.Load() >= int64(i+1)
+			return err == nil && delivery.SessionID == test.binding.SessionID && delivery.State == "applied"
 		})
+		// Do not deliver the next routing case while the fixture's missing-send
+		// reminder is still working and can consume it as an active observation.
+		awaitDirectReminderRequests(t, p, test.binding.SessionID, test.text, int64((i+1)*2))
 		if view := p.Idle(t, test.binding.SessionID); view.LastRun.Status != "completed" {
 			t.Fatal("reply did not complete in the bound session")
 		}
@@ -99,7 +102,7 @@ func TestTelegramReplyThreadsDeliverToExistingGroupSession(t *testing.T) {
 		t.Fatalf("ordinary replies created extra conversations: count=%d error=%v", len(conversations), err)
 	}
 	bindings, err := list[domain.ConversationBinding](p.Context, p.Store, "bindings")
-	if err != nil || len(bindings) != 2 || p.Requests.Load() != 4 {
+	if err != nil || len(bindings) != 2 || p.Requests.Load() != 8 {
 		t.Fatalf("reply routing created bindings or lost/duplicated model work: count=%d requests=%d error=%v", len(bindings), p.Requests.Load(), err)
 	}
 	// An actual, unbound Topic must remain outside the authorized group and
@@ -118,7 +121,7 @@ func TestTelegramReplyThreadsDeliverToExistingGroupSession(t *testing.T) {
 		t.Fatal("real unbound Topic was not archived independently:", err)
 	}
 	bindings, err = list[domain.ConversationBinding](p.Context, p.Store, "bindings")
-	if err != nil || len(bindings) != 2 || p.Requests.Load() != 4 {
+	if err != nil || len(bindings) != 2 || p.Requests.Load() != 8 {
 		t.Fatal("unbound Topic gained access to an existing session")
 	}
 }

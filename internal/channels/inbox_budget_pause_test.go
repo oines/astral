@@ -149,7 +149,7 @@ func TestInboxCompactionBudgetPauseRetainsQueueAcrossRestartAndRecoversAfterMode
 
 	// A successful passive recovery must also leave ordinary IM execution usable.
 	// The existing inbox receives this new mention and the offline provider returns
-	// plain assistant text; no real platform send or new sender stub is involved.
+	// plain directly output text; no real platform send or new sender stub is involved.
 	fresh, _ := activeDeliveryArchive(t, p, b, "mention-after-compaction-recovery", "mention")
 	testkit.Await(t, p.Context, func() bool {
 		receipt, err := session.LookupInput(p.Context, fresh.ID+":trigger")

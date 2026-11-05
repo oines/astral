@@ -178,7 +178,7 @@ func TestPrivateFirstMessageActivatesAndDirectMessagesBypassProbe(t *testing.T) 
 	}
 	p.Idle(t, b.SessionID)
 	if bot.sends.Load() != 0 {
-		t.Fatal("assistant text was automatically sent")
+		t.Fatal("directly output text was automatically sent")
 	}
 	ctx, cancel := context.WithTimeout(p.Context, time.Second)
 	defer cancel()

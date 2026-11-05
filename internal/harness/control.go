@@ -259,8 +259,14 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 		return err
 	}
 	r.core.Load().Cancel()
+	// Serialize retirement of any pending IM nudge with its admission. Cancel
+	// first so maintenance holding mu can unwind, then recheck after draining.
+	r.mu.Lock()
+	r.core.Load().Cancel()
+	err = s.Store.DeleteMaintenance(ctx, imReplyWatchKind, id)
+	r.mu.Unlock()
 	s.notify(id)
-	return nil
+	return err
 }
 func (s *Service) Compact(ctx context.Context, id, instructions string) error {
 	r, err := s.open(ctx, id)

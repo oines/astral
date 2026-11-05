@@ -62,7 +62,7 @@ func (t spawnAgentTool) Definition() core.ToolDefinition {
 	if saved, ok := t.runtime.savedDelegationTool("spawn_agent"); ok {
 		return saved
 	}
-	return core.ToolDefinition{Name: "spawn_agent", Version: "astral-2", Description: "Create a persistent direct subagent and start it asynchronously. Only user-facing root Sessions may spawn subagents; subagents cannot spawn further agents. Assign independently actionable work. name optionally assigns a stable agent name; omitted names receive a generated code. task is only its first instruction, never its name. Delegate long-running or parallel work, or hand off unfinished work with inherit_context=true. Inherited history uses a shared Rollout fork; otherwise start fresh. Both use this Session's current Computer by default. Omit model and reasoning to inherit the parent's latest complete selection. Explicit model uses that profile's defaults unless reasoning is supplied. Read the models Gateway capability for available profile IDs and legal reasoning values. Do not ask subagents to poll or keep their Runs alive while waiting for you, other agents, or future decisions. Subagents report meaningful progress through assistant text passively and naturally end their Runs when completed or blocked. Natural Run end or failure automatically wakes you. Continue useful work yourself, or end your own Run rather than polling for subagents. Reuse persistent Sessions through agent_control. Returns session_id, name and selection.",
+	return core.ToolDefinition{Name: "spawn_agent", Version: "astral-2", Description: "Create a persistent direct subagent and start it asynchronously. Only user-facing root Sessions may spawn subagents; subagents cannot spawn further agents. Assign independently actionable work. name optionally assigns a stable agent name; omitted names receive a generated code. task is only its first instruction, never its name. Delegate long-running or parallel work, or hand off unfinished work with inherit_context=true. Inherited history uses a shared Rollout fork; otherwise start fresh. Both use this Session's current Computer by default. Omit model and reasoning to inherit the parent's latest complete selection. Explicit model uses that profile's defaults unless reasoning is supplied. Read the models Gateway capability for available profile IDs and legal reasoning values. Do not ask subagents to poll or keep their Runs alive while waiting for you, other agents, or future decisions. Subagents output meaningful progress updates directly; the system automatically delivers their output to the direct parent. They naturally end their Runs when completed or blocked. Natural Run end or failure automatically wakes you. Continue useful work yourself, or end your own Run rather than polling for subagents. Reuse persistent Sessions through agent_control. Returns session_id, name and selection.",
 		Parameters: encode(map[string]any{"type": "object", "properties": map[string]any{
 			"name":            map[string]any{"type": "string", "maxLength": 100},
 			"task":            map[string]any{"type": "string", "minLength": 1},
@@ -427,22 +427,22 @@ func (s *Service) controlSubagent(ctx context.Context, parent, execution string,
 	return s.subagentView(ctx, record)
 }
 
-const identityRevision = 1
+const identityRevision = 2
 
 const rootCoordinationInstructions = `Stay responsive to the user. Don't let ongoing tasks or subagent coordination delay your replies.
 
 Delegate actionable work that subagents can advance independently. Do not ask subagents to poll or stay alive waiting for you or other agents.
 
-After delegating, continue useful independent work. If nothing useful remains, naturally end your Run instead of polling subagent status or sleeping to wait. Ending your Run does not abandon the task: the Host will automatically reactivate you when a direct subagent's Run naturally ends or fails. Reuse its persistent Session through agent_control when needed.`
+After delegating, continue useful independent work. If nothing useful remains, naturally end your Run instead of polling subagent status or sleeping to wait. Ending your Run does not abandon the task: the system will automatically reactivate you when a direct subagent's Run naturally ends or fails. Reuse its persistent Session through agent_control when needed.`
 
-const subagentCoordinationInstructions = `You are a persistent subagent working exclusively for your direct parent Session. You do not spawn or manage further subagents. Your assistant text is automatically delivered to that parent as passive progress context. The Host automatically notifies your parent when your Run naturally ends or fails.
+const subagentCoordinationInstructions = `You are a persistent subagent working exclusively for your direct parent Session. You do not spawn or manage further subagents. Output progress updates, findings and results directly; the system automatically delivers your output to your direct parent as passive progress context. The system automatically notifies your parent when your Run naturally ends or fails.
 
 PROACTIVE PROGRESS REPORTING
 - Keep your parent informed without being asked.
 - Before substantial work, briefly state your approach and immediate next step, preferably alongside the first tool call.
 - During multi-step work, proactively report meaningful discoveries, completed milestones, blockers, unexpected results, and changes of approach. Aim to report after roughly 2–3 tool-use steps when there is useful new information; avoid empty updates.
 - Briefly explain what you learned or accomplished and what comes next.
-- When more work remains, include progress text alongside your next tool call so the Run can continue. A text-only assistant response without tool calls may naturally end the Run.
+- When more work remains, include progress text alongside your next tool call so the Run can continue. A reply containing only text and no tool calls may naturally end the Run.
 - Do not wait for your parent's acknowledgment.
 
 DO WORK OR YIELD
@@ -456,7 +456,7 @@ DO WORK OR YIELD
 COMPLETION
 - When finished, provide a concise final report with outcomes, evidence or artifacts, and unresolved issues, then naturally end the Run.
 - Clearly distinguish completed work from blocked or yielded work. A natural Run end alone does not imply business success.
-- Communicate through assistant text to your direct parent, never directly to the user. Do not delegate work to further subagents.
+- Output messages directly; the system automatically delivers your output to your direct parent, never to the user. Do not delegate work to further subagents.
 
 Principle: Do useful work, report meaningful progress, and yield when blocked. Never wait for work.`
 
@@ -488,7 +488,7 @@ func (r *runtime) identityContext(ctx context.Context, boundary core.ContextBoun
 	metadata := identityMetadata{SessionID: r.id, ParentID: record.SubagentParentID, CompactionID: boundary.CompactionID, Revision: identityRevision}
 	text := fmt.Sprintf("Current Astral Session identity: %s. You are the user-facing root agent. Reply to the user and coordinate your direct subagents.\n\n%s", r.id, rootCoordinationInstructions)
 	if record.SubagentParentID != "" {
-		text = fmt.Sprintf("Current Astral Session identity: %s. Your agent name is %s. You are a subagent of Session %s. Actively report progress, findings, blockers and results in assistant text; the Host delivers your text only to this direct parent. send_message is forbidden for every subagent. Earlier identities in inherited history or copied System text belong to earlier Sessions.\n\n%s", r.id, string(encode(record.Title)), record.SubagentParentID, subagentCoordinationInstructions)
+		text = fmt.Sprintf("Current Astral Session identity: %s. Your agent name is %s. You are a subagent of Session %s. Output progress updates, findings, blockers and results directly; the system automatically delivers your output only to your direct parent. send_message is forbidden for every subagent. Earlier identities in inherited history or copied System text belong to earlier Sessions.\n\n%s", r.id, string(encode(record.Title)), record.SubagentParentID, subagentCoordinationInstructions)
 	}
 	return []core.Message{{Role: core.RoleUser, ContextKind: identityKind, Metadata: encode(metadata), Content: core.Text(text)}}, nil
 }
@@ -621,10 +621,14 @@ func (s *Service) reconcileSubagentsObserved(ctx context.Context, observed func(
 		if err = json.Unmarshal(item.Data, &record); err != nil {
 			return err
 		}
-		if record.SubagentParentID == "" || record.Deletion != nil {
+		if record.Deletion != nil || record.SubagentParentID == "" && record.BindingID == "" {
 			continue
 		}
-		err = s.reconcileSubagent(ctx, record)
+		if record.SubagentParentID == "" {
+			err = s.reconcileIMReply(ctx, record)
+		} else {
+			err = s.reconcileSubagent(ctx, record)
+		}
 		if observed != nil {
 			observed(record, err)
 		}

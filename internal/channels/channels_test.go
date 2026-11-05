@@ -376,7 +376,7 @@ func TestTelegramImagesObservationsAndCommittedReplySurviveRecovery(t *testing.T
 		t.Fatalf("actual rollout inputs lost images: %d", frozen)
 	}
 	if bot.sends.Load() != 1 {
-		t.Fatal("restart or silent end resent old assistant text")
+		t.Fatal("restart or silent end resent old directly output text")
 	}
 }
 
