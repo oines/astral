@@ -48,9 +48,13 @@ type Service struct {
 	childSettings   map[string]subagentMetadata
 	closed          bool
 	changes         chan string
+	sessionChanges  sessionChangeSignal
 	workers         sync.WaitGroup
 	subagentMu      sync.Mutex
 	subagentWake    chan struct{}
+	subagentWakeMu  sync.Mutex
+	subagentDirty   map[string]struct{}
+	subagentRescan  bool
 	subagentWorkers sync.WaitGroup
 }
 
@@ -90,6 +94,10 @@ func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bri
 }
 func (s *Service) Changes() <-chan string { return s.changes }
 func (s *Service) notify(id string) {
+	s.sessionChanges.notify(id)
+	// Host operations notify after Core releases its Run/maintenance state.
+	// Store commit notifications alone can precede that final idle boundary.
+	s.wakeSubagents(id)
 	select {
 	case s.changes <- id:
 	default:
@@ -248,7 +256,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		}
 	}
 	if err == nil && r.subagent != nil {
-		s.wakeSubagents()
+		s.wakeSubagents(r.id)
 	}
 	return err
 }
@@ -256,7 +264,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 func (r *runtime) coreConfig(record domain.Session) core.Config {
 	s := r.service
 	config := core.Config{
-		Store: s.CoreStore, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokensReadOnly: modelbridge.EstimateTokens,
+		Store: subagentWakeStore{Store: s.CoreStore, service: s}, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokensReadOnly: modelbridge.EstimateTokens,
 		SystemPrompt: systemPromptFor(record), Tools: r.hostTools(),
 		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContextReadOnly: r.collectContext,
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
@@ -383,6 +391,7 @@ func (s *Service) Close(ctx context.Context) error {
 		all = append(all, r)
 	}
 	s.mu.Unlock()
+	s.sessionChanges.close()
 	var errs []error
 	if s.Schedules != nil {
 		errs = append(errs, s.Schedules.Close(ctx))

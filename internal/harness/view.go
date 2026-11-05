@@ -56,10 +56,10 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := r.finishInterruptedTools(ctx); err != nil {
+	snapshot, err := r.snapshotAfterInterruptedTools(ctx)
+	if err != nil {
 		return View{}, err
 	}
-	snapshot := r.core.Load().Snapshot()
 	view := View{Status: "idle", CanContinue: snapshot.CanContinue, Pending: []PendingInput{}, Approvals: snapshot.Approvals, Unresolved: snapshot.Unresolved}
 	view.EventSequence = snapshot.EventSequence
 	if err = s.Store.Get(ctx, "sessions", id, &view.Session); err != nil {

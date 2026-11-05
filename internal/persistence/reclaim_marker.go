@@ -15,7 +15,7 @@ const reclaimMarkerID = reclaimMarkerKind + ":owner"
 // final deletion intent. Recovery can therefore discover the need to reclaim
 // even if the process exits before a best-effort in-memory notification runs.
 func (tx *Tx) MarkStorageReclaim(ctx context.Context) error {
-	_, err := tx.tx.ExecContext(ctx, `INSERT INTO operations(id,kind,state,data) VALUES(?,?,?,'{}') ON CONFLICT(id) DO UPDATE SET state=excluded.state WHERE operations.kind=excluded.kind`, reclaimMarkerID, reclaimMarkerKind, domain.ID("reclaim"))
+	_, err := tx.execKey(ctx, ChangeKey{Kind: reclaimMarkerKind, ID: "owner"}, `INSERT INTO operations(id,kind,state,data) VALUES(?,?,?,'{}') ON CONFLICT(id) DO UPDATE SET state=excluded.state WHERE operations.kind=excluded.kind`, reclaimMarkerID, reclaimMarkerKind, domain.ID("reclaim"))
 	return err
 }
 
@@ -34,6 +34,6 @@ func (s *Store) ClearStorageReclaimDirty(ctx context.Context, token string) erro
 	if token == "" {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, "DELETE FROM operations WHERE id=? AND kind=? AND state=?", reclaimMarkerID, reclaimMarkerKind, token)
+	_, err := s.execKey(ctx, ChangeKey{Kind: reclaimMarkerKind, ID: "owner"}, "DELETE FROM operations WHERE id=? AND kind=? AND state=?", reclaimMarkerID, reclaimMarkerKind, token)
 	return err
 }

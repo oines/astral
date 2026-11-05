@@ -21,6 +21,7 @@ import (
 	"github.com/oines/astral/internal/gateway"
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/httpcontract"
+	"github.com/oines/astral/internal/persistence"
 )
 
 type Snapshot struct {
@@ -139,6 +140,17 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	// by its persistent Entry ID. A reconnect always receives a fresh snapshot.
 	subscription := session.Subscribe(256)
 	defer subscription.Close()
+	hostChanges := h.WatchSession(r.PathValue("id"))
+	defer hostChanges.Close()
+	resources := h.Store.Watch(
+		persistence.ChangeKey{Kind: "sessions", ID: r.PathValue("id")},
+		persistence.ChangeKey{Kind: "agents"},
+		persistence.ChangeKey{Kind: "models"},
+		persistence.ChangeKey{Kind: "providers"},
+		persistence.ChangeKey{Kind: "im_inbox_pause"},
+	)
+	defer resources.Close()
+	resourceChanges := resources.Changes()
 	snapshot, err := a.snapshotAt(r, session.Snapshot().EventSequence)
 	if err != nil {
 		httpcontract.Failure(w, r, err)
@@ -167,13 +179,36 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	if !send("snapshot", h.RuntimeID, snapshot) {
 		return
 	}
-	stateTicker := time.NewTicker(time.Second)
-	defer stateTicker.Stop()
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
 	lastView, _ := json.Marshal(snapshot.View)
+	refresh := func() bool {
+		view, viewErr := h.View(r.Context(), r.PathValue("id"))
+		if viewErr != nil {
+			_ = send("resync", "", map[string]string{"reason": "Session view changed"})
+			return false
+		}
+		raw, _ := json.Marshal(view)
+		if string(raw) == string(lastView) {
+			return true
+		}
+		lastView = raw
+		return send("state", "", Event{Epoch: h.RuntimeID, View: &view})
+	}
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case _, ok := <-hostChanges.C:
+			if !ok || !refresh() {
+				return
+			}
+		case <-resourceChanges:
+			// Rearm before reading: a write during View must remain pending.
+			resourceChanges = resources.Changes()
+			if !refresh() {
+				return
+			}
 		case event, ok := <-subscription.C:
 			if !ok {
 				_ = send("resync", "", map[string]string{"reason": "event subscription ended; reconnect to reconcile durable history"})
@@ -194,52 +229,53 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 				event.Model = &model
 			}
 			envelope := Event{Epoch: h.RuntimeID, Core: &event}
-			if event.Type == core.EventRunStart || event.Type == core.EventRunEnd || event.Type == core.EventApproval || event.Type == core.EventContextApplied || event.Attempt != nil || event.Type == core.EventMaintenanceStart || event.Type == core.EventMaintenanceEnd {
-				if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
-					envelope.View = &view
-					lastView, _ = json.Marshal(view)
-				}
-			}
+			refreshView := event.Type == core.EventRunStart || event.Type == core.EventRunEnd || event.Type == core.EventApproval || event.Type == core.EventContextApplied || event.Attempt != nil || event.Type == core.EventMaintenanceStart || event.Type == core.EventMaintenanceEnd
 			if event.Type == core.EventCommitted && event.EntryID != "" {
-				if entry, readErr := session.History().Get(r.Context(), event.EntryID); readErr == nil {
-					entry = timelineEntry(entry)
-					if timelineRelevant(entry) {
-						envelope.Entry = &entry
-					}
-					if entry.Kind == core.EntryMessage && entry.Message != nil && entry.Message.Role == core.RoleAssistant && entry.Usage.Available {
-						if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
-							envelope.View = &view
-							lastView, _ = json.Marshal(view)
-						}
-					}
+				entry, readErr := session.History().Get(r.Context(), event.EntryID)
+				if readErr != nil {
+					_ = send("resync", "", map[string]string{"reason": "Session entry changed"})
+					return
 				}
+				entry = timelineEntry(entry)
+				if timelineRelevant(entry) {
+					envelope.Entry = &entry
+				}
+				refreshView = refreshView || entryChangesView(entry)
+			}
+			if refreshView {
+				view, viewErr := h.View(r.Context(), r.PathValue("id"))
+				if viewErr != nil {
+					_ = send("resync", "", map[string]string{"reason": "Session view changed"})
+					return
+				}
+				envelope.View = &view
+				lastView, _ = json.Marshal(view)
 			}
 			if !send("event", fmt.Sprintf("%s:%d", h.RuntimeID, event.Sequence), envelope) {
 				return
 			}
-		case <-stateTicker.C:
-			view, viewErr := h.View(r.Context(), r.PathValue("id"))
-			if viewErr != nil {
-				_ = send("resync", "", map[string]string{"reason": "Session view changed"})
+		case <-keepalive.C:
+			_ = controller.SetWriteDeadline(time.Now().Add(15 * time.Second))
+			if _, err = io.WriteString(w, ": keepalive\n\n"); err != nil {
 				return
 			}
-			raw, _ := json.Marshal(view)
-			if string(raw) != string(lastView) {
-				lastView = raw
-				if !send("state", "", Event{Epoch: h.RuntimeID, View: &view}) {
-					return
-				}
-			} else {
-				_ = controller.SetWriteDeadline(time.Now().Add(15 * time.Second))
-				if _, err = io.WriteString(w, ": keepalive\n\n"); err != nil {
-					return
-				}
-				if controller.Flush() != nil {
-					return
-				}
+			if controller.Flush() != nil {
+				return
 			}
 		}
 	}
+}
+
+func entryChangesView(entry core.Entry) bool {
+	if entry.IsHistory() {
+		return true
+	}
+	switch entry.Kind {
+	case core.EntryApprovalRequested, core.EntryApprovalDecided, core.EntryInputQueued,
+		core.EntryInputRequeued, core.EntryInputConsumed, core.EntryInputCleared, core.EntryRun:
+		return true
+	}
+	return false
 }
 func (a *API) exportRollout(w http.ResponseWriter, r *http.Request) {
 	session, err := a.Config.Harness.Core(r.Context(), r.PathValue("id"))

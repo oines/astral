@@ -10,10 +10,10 @@ import (
 
 // PurgeSessionDeliveries removes routes after Core and Recall have been erased.
 func (tx *Tx) PurgeSessionDeliveries(ctx context.Context, id string) error {
-	if _, err := tx.tx.ExecContext(ctx, "DELETE FROM operations WHERE kind IN ('im_inbox_pause','im_inbox_resume','im_direct_handoff') AND json_extract(data,'$.session_id')=?", id); err != nil {
+	if _, err := tx.exec(ctx, "DELETE FROM operations WHERE kind IN ('im_inbox_pause','im_inbox_resume','im_direct_handoff') AND json_extract(data,'$.session_id')=?", id); err != nil {
 		return err
 	}
-	_, err := tx.tx.ExecContext(ctx, "DELETE FROM deliveries WHERE session_id=?", id)
+	_, err := tx.exec(ctx, "DELETE FROM deliveries WHERE session_id=?", id)
 	return err
 }
 
@@ -97,10 +97,10 @@ func (tx *Tx) PurgeAgentData(ctx context.Context, agentID string) error {
 		}
 	}
 	for id := range connections {
-		if _, err = tx.tx.ExecContext(ctx, "DELETE FROM deliveries WHERE event_id IN (SELECT id FROM observations WHERE connection_id=?)", id); err != nil {
+		if _, err = tx.exec(ctx, "DELETE FROM deliveries WHERE event_id IN (SELECT id FROM observations WHERE connection_id=?)", id); err != nil {
 			return err
 		}
-		if _, err = tx.tx.ExecContext(ctx, "DELETE FROM observations WHERE connection_id=?", id); err != nil {
+		if _, err = tx.exec(ctx, "DELETE FROM observations WHERE connection_id=?", id); err != nil {
 			return err
 		}
 	}
@@ -109,12 +109,12 @@ func (tx *Tx) PurgeAgentData(ctx context.Context, agentID string) error {
 			continue
 		}
 		if d.kind == "outbox" {
-			if _, err = tx.tx.ExecContext(ctx, "DELETE FROM outbox_keys WHERE outbox_id=?", d.id); err != nil {
+			if _, err = tx.exec(ctx, "DELETE FROM outbox_keys WHERE outbox_id=?", d.id); err != nil {
 				return err
 			}
 		}
 		for _, table := range []string{"documents", "versions"} {
-			if _, err = tx.tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE kind=? AND id=?", d.kind, d.id); err != nil {
+			if _, err = tx.exec(ctx, "DELETE FROM "+table+" WHERE kind=? AND id=?", d.kind, d.id); err != nil {
 				return err
 			}
 		}
@@ -127,7 +127,7 @@ func (tx *Tx) PurgeAgentData(ctx context.Context, agentID string) error {
 			}
 		}
 	}
-	_, err = tx.tx.ExecContext(ctx, "DELETE FROM operations WHERE json_extract(data,'$.agent_id')=?", agentID)
+	_, err = tx.exec(ctx, "DELETE FROM operations WHERE json_extract(data,'$.agent_id')=?", agentID)
 	return err
 }
 

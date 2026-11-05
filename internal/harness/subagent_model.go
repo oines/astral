@@ -46,7 +46,7 @@ func (s *Service) selectDirectSubagentModel(ctx context.Context, parent, id stri
 		return err
 	}
 	s.notify(id)
-	s.wakeSubagents()
+	s.wakeSubagents(id)
 	s.mu.Lock()
 	child := s.runtimes[id]
 	s.mu.Unlock()
@@ -110,10 +110,14 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 	}
 	r.mu.Lock()
 	if len(change.SessionIDs) == 1 && root.SubagentParentID == "" {
+		changed := !jsonEqual(r.core.Load().Configuration().Selection, selection)
 		err = r.core.Load().SelectModel(ctx, selection)
 		r.mu.Unlock()
 		if err == nil {
 			s.notify(id)
+			if changed {
+				err = s.resumeIMSession(ctx, id)
+			}
 		}
 		return err
 	}
@@ -129,11 +133,11 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 	}
 	r.mu.Unlock()
 	if err != nil {
-		s.wakeSubagents() // Uncertain Core writes retain their recovery intent.
+		s.wakeSubagents(id) // Uncertain Core writes retain their recovery intent.
 		return err
 	}
 	s.notify(id)
-	s.wakeSubagents()
+	s.wakeSubagents(id)
 	if err = s.persistSubagentModelChange(ctx, change); err != nil {
 		return err
 	}

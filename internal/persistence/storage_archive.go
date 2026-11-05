@@ -104,7 +104,7 @@ func (s *Store) PruneObservations(ctx context.Context, conversation string, afte
 			if err != nil {
 				return err
 			}
-			if _, err = tx.tx.ExecContext(ctx, "UPDATE observations SET payload=? WHERE sequence=? AND conversation_id=?", raw, it.seq, conversation); err != nil {
+			if _, err = tx.execKey(ctx, ChangeKey{Kind: "observations", ID: conversation}, "UPDATE observations SET payload=? WHERE sequence=? AND conversation_id=?", raw, it.seq, conversation); err != nil {
 				return err
 			}
 			count++
