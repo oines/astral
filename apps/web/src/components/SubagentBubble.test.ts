@@ -5,7 +5,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import SubagentBubble from './SubagentBubble.vue'
 import { useSurfaceStore } from '../stores/surface'
 import type { SubagentActivity } from '../lib/subagents'
-import type { Entry } from '../lib/types'
 
 const mocks = vi.hoisted(() => ({
   app: {
@@ -37,13 +36,7 @@ afterEach(() => { dispose?.(); dispose = undefined; setActivePinia(undefined) })
 function activity(status = 'started'): SubagentActivity {
   return { id: `event-${status}`, sequence: 1, session_id: 'parent', child_session_id: 'child', name: 'Runtime review', run_id: 'child-run', status, time: '2026-11-05T03:00:00Z' }
 }
-function creation(): Entry {
-  return { id: 'spawn-result', sequence: 1, version: 1, session_id: 'parent', time: '', kind: 'tool_result', tool: {
-    invocation: { session_id: 'parent', run_id: 'parent-run', turn_id: 'turn', assistant_id: 'assistant', execution_id: 'spawn', call: { id: 'call', name: 'spawn_agent', arguments: {} } },
-    result: { outcome: 'succeeded', details: { session_id: 'child', parent_session_id: 'parent', name: 'Created name', status: 'queued' } },
-  } }
-}
-function render(props: { activity?: SubagentActivity; entry?: Entry }) {
+function render(props: { activity: SubagentActivity }) {
   return renderToString(createSSRApp(SubagentBubble, { ...props, sessionID: 'parent' }).use(i18n))
 }
 
@@ -56,7 +49,7 @@ describe('subagent lifecycle bubbles', () => {
   ])('renders the recorded %s event in both languages', async (status, chinese, english) => {
     const zh = await render({ activity: activity(status) })
     expect(zh).toContain(chinese)
-    expect(zh).toContain('subagent-bubble-status')
+    expect(zh).toContain('subagent-bubble')
     expect(zh).not.toContain('subagent-bubble-copy')
     i18n.global.locale.value = 'en'
     expect(await render({ activity: activity(status) })).toContain(english)
@@ -76,15 +69,6 @@ describe('subagent lifecycle bubbles', () => {
     expect(html).toContain('Runtime review 已完成')
     expect(html).toContain('disabled')
     expect(html).not.toContain('已删除')
-  })
-
-  it('retains the existing creation card and its current child state', async () => {
-    mocks.app.sessionViews.child = { title: 'Current title', status: 'running' }
-    const html = await render({ entry: creation() })
-    expect(html).toContain('subagent-bubble-copy')
-    expect(html).not.toContain('subagent-bubble-status')
-    expect(html).toContain('Current title')
-    expect(html).toContain('运行中')
   })
 
   it('opens the same contextual surface and cannot navigate after deletion', () => {

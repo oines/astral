@@ -140,12 +140,6 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
                 :session-i-d="sessionID"
               />
               <SubagentBubble
-                v-else-if="block.kind === 'subagent'"
-                :entry="block.entry"
-                :session-i-d="sessionID"
-                @open="scroll.pause"
-              />
-              <SubagentBubble
                 v-else-if="block.kind === 'subagent-status'"
                 :activity="block.activity"
                 :session-i-d="sessionID"

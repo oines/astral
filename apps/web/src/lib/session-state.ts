@@ -3,7 +3,7 @@ import type { Entry, SessionEvent, SessionView, Snapshot } from './types'
 import type { TranscriptPosition } from './transcript-position'
 import { carryTranscriptIdentity, reconcileTranscriptGroups } from './transcript-identity'
 import { object } from './api'
-import { spawnedSubagent, type SubagentActivity } from './subagents'
+import type { SubagentActivity } from './subagents'
 
 export interface PreviewPart { type: string; text: string }
 export interface Preview { runID: string; parts: Record<number, PreviewPart>; interrupted?: boolean }
@@ -218,7 +218,6 @@ export type ProcessItem =
   | { kind: 'tool'; key: string; entry: Entry }
 export type TranscriptBlock =
   | { kind: 'text'; key: string; text: string; streaming?: boolean }
-  | { kind: 'subagent'; key: string; entry: Entry }
   | { kind: 'subagent-status'; key: string; activity: SubagentActivity }
   | { kind: 'process'; key: string; items: ProcessItem[]; active?: boolean }
 export interface TranscriptGroup {
@@ -286,8 +285,7 @@ export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] 
     if (shownTools.has(invocation.execution_id)) return
     shownTools.add(invocation.execution_id)
     const group = assistant(invocation.run_id, `run:${invocation.run_id}:${entry.id}`)
-    if (spawnedSubagent(entry)) group.blocks.push({ kind: 'subagent', key: invocation.execution_id, entry })
-    else process(group, { kind: 'tool', key: invocation.execution_id, entry })
+    process(group, { kind: 'tool', key: invocation.execution_id, entry })
   }
   const activities = Object.values(state.subagentActivity ?? {}).map(activity => ({ activity, time: Date.parse(activity.time) }))
     .sort((a, b) => a.time - b.time || a.activity.sequence - b.activity.sequence)

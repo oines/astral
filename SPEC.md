@@ -1233,7 +1233,7 @@ Settings 维护全局搜索实例，支持 Tavily、Exa、DeepSeek Search、Brav
 
 Transcript 是主工作区。Sidebar 包含新会话、计划任务、搜索和设置。会话按“正在进行 → 已计划 → Telegram → QQ → 微信 → 飞书 → 固定 → 最近”优先级只出现一次；只按当前 IM 绑定分平台，QQ 官方与 NapCat 同组。空组不显示，切换 Bot 与搜索使用过滤后的可见结果。有启用且下一次时间存在、使用固定 Session 的任务才计入已计划；每次新建模式在任务页管理，新建的会话按运行状态进入正在进行或最近。所有任务及其暂停、结束和错误状态仍可在独立计划任务页面管理。Agent 作为 Session 的身份或筛选信息，不默认展开为 Agent → Session 的多层后台导航。
 
-Sidebar 可以完全折叠，不保留固定 icon rail。主界面没有额外产品级 Top Bar、永久第三栏或常驻 Inspector。点击文件、附件或子代理入口时，才开启同一个可调整大小、可关闭的 Contextual Surface。子代理不进入主侧栏；从父 Transcript 的创建结果进入其完整只读 Transcript，在同一侧栏内逐级查看下级，并通过面包屑或返回操作回到父级，不再增加另一列代理面板。子代理没有 Composer，用户不能直接输入、改模型或电脑、恢复执行；Owner API 同样限制对应写入，任务通过根会话交给直接父代理调度。执行详情、命令输出、Diff 和搜索来源在 Transcript 原地展开。会话标题和分支信息不作为占用纵向空间的 Transcript banner。
+Sidebar 可以完全折叠，不保留固定 icon rail。主界面没有额外产品级 Top Bar、永久第三栏或常驻 Inspector。点击文件、附件或子代理入口时，才开启同一个可调整大小、可关闭的 Contextual Surface。子代理不进入主侧栏；从父 Transcript 的子代理状态行进入其完整只读 Transcript，在同一侧栏内逐级查看下级，并通过面包屑或返回操作回到父级，不再增加另一列代理面板。子代理没有 Composer，用户不能直接输入、改模型或电脑、恢复执行；Owner API 同样限制对应写入，任务通过根会话交给直接父代理调度。执行详情、命令输出、Diff 和搜索来源在 Transcript 原地展开。会话标题和分支信息不作为占用纵向空间的 Transcript banner。
 
 未命名的新 Session 在首条非空用户输入成功接收后，先保存去除 Markdown 的首行摘录，再使用接收时选中的当前模型异步生成一次短标题。标题请求不携带工具、环境或完整历史，不进入 Core Rollout；失败、超时或无有效结果时保留摘录，后续消息和重启均不重试。显式命名、手动改名和 Fork 标题优先，异步结果不能覆盖手动选择。
 
