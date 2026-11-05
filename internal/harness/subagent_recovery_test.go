@@ -217,19 +217,43 @@ func TestSubagentNormalRequestAfterCompactionKeepsOneCurrentIdentity(t *testing.
 
 type subagentRecoveryScanCounter struct {
 	core.Store
-	sessionID string
-	mu        sync.Mutex
-	queries   []core.Query
-	returned  map[string]bool
+	sessionID                  string
+	mu                         sync.Mutex
+	queries                    []core.Query
+	returned                   map[string]bool
+	activityQueries            []core.Query
+	activityReturnedOtherKinds bool
+	activityReturned           map[string]bool
+	invalidActivityCursor      bool
 }
 
 func (s *subagentRecoveryScanCounter) Scan(ctx context.Context, rolloutID string, query core.Query) (core.Page, error) {
+	if query.SessionID == s.sessionID && query.Kind == core.EntryRun && query.Cursor != "" {
+		s.mu.Lock()
+		s.invalidActivityCursor = s.invalidActivityCursor || !s.activityReturned[query.Cursor]
+		s.mu.Unlock()
+	}
 	page, err := s.Store.Scan(ctx, rolloutID, query)
 	if query.SessionID == s.sessionID {
 		s.mu.Lock()
-		s.queries = append(s.queries, query)
-		if page.Next != "" {
-			s.returned[page.Next] = true
+		if query.Kind == core.EntryRun {
+			s.activityQueries = append(s.activityQueries, query)
+			if page.Next != "" {
+				if s.activityReturned == nil {
+					s.activityReturned = map[string]bool{}
+				}
+				s.activityReturned[page.Next] = true
+			}
+			for _, record := range page.Records {
+				if record.Entry.Kind != core.EntryRun {
+					s.activityReturnedOtherKinds = true
+				}
+			}
+		} else {
+			s.queries = append(s.queries, query)
+			if page.Next != "" {
+				s.returned[page.Next] = true
+			}
 		}
 		s.mu.Unlock()
 	}
@@ -283,7 +307,8 @@ func TestSubagentDeliveryResumesFromPublicCursorWithoutRescanningHistory(t *test
 		f.idle(t, child.SessionID)
 	}
 	// Replace only the Host's Store access. The open Core runtime keeps its
-	// real configuration Store, so the counter measures delivery scans alone.
+	// real configuration Store. Count report delivery separately from the UI's
+	// indexed, Run-only projection so each independent cursor is checked.
 	counter := &subagentRecoveryScanCounter{Store: f.coreStore, sessionID: child.SessionID, returned: map[string]bool{}}
 	f.service.CoreStore = counter
 	appendPassive("long-history", 3*core.DefaultPageSize+17)
@@ -327,6 +352,19 @@ func TestSubagentDeliveryResumesFromPublicCursorWithoutRescanningHistory(t *test
 	counter.mu.Unlock()
 	if unchangedPages != len(queries) {
 		t.Fatal("unchanged child version caused another history scan")
+	}
+	counter.mu.Lock()
+	activityQueries := append([]core.Query(nil), counter.activityQueries...)
+	activityReturnedOtherKinds := counter.activityReturnedOtherKinds
+	invalidActivityCursor := counter.invalidActivityCursor
+	counter.mu.Unlock()
+	if len(activityQueries) == 0 || len(activityQueries) > 3 || activityReturnedOtherKinds || invalidActivityCursor {
+		t.Fatalf("lifecycle projection reread passive history or forged a cursor: queries=%d other_kinds=%v invalid_cursor=%v", len(activityQueries), activityReturnedOtherKinds, invalidActivityCursor)
+	}
+	for _, query := range activityQueries {
+		if query.Kind != core.EntryRun || query.Limit != 64 || query.MaxBytes <= 0 || query.MaxBytes > 128<<20 {
+			t.Fatalf("lifecycle query lost its filtered, bounded source cursor: %+v", query)
+		}
 	}
 }
 

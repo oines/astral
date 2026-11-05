@@ -175,6 +175,21 @@ func (s *Service) deleteSubagentTree(ctx context.Context, id string, revision in
 		} else if err != nil {
 			return err
 		}
+		if state, err := s.CoreStore.LoadState(ctx, target); err == nil {
+			// Close may just have written a cancellation. Retain that fact in
+			// the surviving parent's transcript before deleting the source.
+			for !selected[record.SubagentParentID] && record.SubagentParentID != "" {
+				more, err := s.recordSubagentActivities(ctx, record, state)
+				if err != nil {
+					return err
+				}
+				if !more {
+					break
+				}
+			}
+		} else if !errors.Is(err, core.ErrNotFound) {
+			return err
+		}
 		result, deleteErr := deleter.DeleteBranch(ctx, core.BranchDeleteRequest{SessionID: target})
 		if deleteErr != nil {
 			return deleteErr
@@ -216,6 +231,12 @@ func (s *Service) deleteSubagentTree(ctx context.Context, id string, revision in
 				return err
 			}
 			if err := tx.DeleteMaintenance(ctx, "subagent_activation", target); err != nil {
+				return err
+			}
+			if err := tx.DeleteMaintenance(ctx, subagentActivityCursorKind, target); err != nil {
+				return err
+			}
+			if err := tx.PurgeSubagentActivities(ctx, target); err != nil {
 				return err
 			}
 			if err := tx.DeleteMaintenance(ctx, subagentModelChangeKind, target); err != nil {

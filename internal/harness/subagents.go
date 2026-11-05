@@ -669,6 +669,14 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	}
 	var deliveryErr error
 	if stateErr == nil {
+		moreActivity, err := s.recordSubagentActivities(ctx, record, state)
+		if err != nil {
+			return err
+		}
+		if moreActivity {
+			// Continue bounded historical backfill only while facts remain.
+			s.wakeSubagents(record.ID)
+		}
 		deliveryErr = s.deliverSubagentHistoryLocked(ctx, record, state)
 		if deliveryErr != nil && !errors.Is(deliveryErr, errSubagentReportsPending) {
 			return deliveryErr

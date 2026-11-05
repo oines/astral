@@ -29,6 +29,7 @@ function snapshot(id: string, epoch: string): Snapshot {
     epoch,
     view: { id, agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Work', archived: false, pinned: false, source: 'web', rollout_id: 'rollout', head_id: 'head', event_sequence: 0, status: 'idle', can_continue: false, model_available: true, selection: { id: 'model' }, approvals: [], pending: [], unresolved: [] },
     history: { entries: [], head_id: 'head' }, trace: { entries: [], head_id: 'head' },
+    subagent_activity: [], subagent_activity_cursor: '0',
   }
 }
 let scope: EffectScope | undefined

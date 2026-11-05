@@ -25,16 +25,21 @@ import (
 )
 
 type Snapshot struct {
-	Epoch   string              `json:"epoch"`
-	View    harness.View        `json:"view"`
-	History gateway.HistoryPage `json:"history"`
-	Trace   gateway.HistoryPage `json:"trace"`
+	Epoch                      string                    `json:"epoch"`
+	View                       harness.View              `json:"view"`
+	History                    gateway.HistoryPage       `json:"history"`
+	Trace                      gateway.HistoryPage       `json:"trace"`
+	SubagentActivity           []domain.SubagentActivity `json:"subagent_activity"`
+	SubagentActivityCursor     string                    `json:"subagent_activity_cursor"`
+	SubagentActivityNextCursor string                    `json:"subagent_activity_next_cursor,omitempty"`
 }
 type Event struct {
-	Epoch string        `json:"epoch"`
-	Core  *core.Event   `json:"core,omitempty"`
-	Entry *core.Entry   `json:"entry,omitempty"`
-	View  *harness.View `json:"view,omitempty"`
+	Epoch                  string                    `json:"epoch"`
+	Core                   *core.Event               `json:"core,omitempty"`
+	Entry                  *core.Entry               `json:"entry,omitempty"`
+	View                   *harness.View             `json:"view,omitempty"`
+	SubagentActivity       []domain.SubagentActivity `json:"subagent_activity,omitempty"`
+	SubagentActivityCursor string                    `json:"subagent_activity_cursor,omitempty"`
 }
 
 func (a *API) streamRoutes() {
@@ -52,8 +57,24 @@ func (a *API) streamRoutes() {
 		a.mux.HandleFunc("GET "+path, spec.handler)
 	}
 	route[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/timeline", "sessionTimeline", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
-		return timelineHistory(r.Context(), a.Config.Harness.CoreStore, r.PathValue("id"), r.URL.Query().Get("cursor"), limit(r, 60), r.URL.Query().Get("trace") == "true")
-	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
+		query := r.URL.Query()
+		page := gateway.HistoryPage{Entries: []core.Entry{}}
+		var err error
+		if !query.Has("activity_cursor") || query.Get("cursor") != "" || query.Get("trace") == "true" {
+			page, err = timelineHistory(r.Context(), a.Config.Harness.CoreStore, r.PathValue("id"), query.Get("cursor"), limit(r, 60), query.Get("trace") == "true")
+			if err != nil {
+				return page, err
+			}
+		}
+		if query.Has("activity_cursor") && query.Get("trace") != "true" {
+			activity, err := a.Config.Harness.SubagentActivities(r.Context(), r.PathValue("id"), query.Get("activity_cursor"), limit(r, 60), true)
+			if err != nil {
+				return page, err
+			}
+			page.SubagentActivity, page.SubagentActivityCursor, page.SubagentActivityNextCursor = activity.Activities, activity.Cursor, activity.NextCursor
+		}
+		return page, nil
+	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "activity_cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
 
 	a.Contract.Describe(httpcontract.Operation{Method: "POST", Path: "/api/v1/sessions/{id}/attachments", ID: "uploadAttachment", Tag: "Files", Auth: true, Response: reflect.TypeFor[gateway.ReferenceResponse](),
 		Query: []httpcontract.Parameter{{Name: "name", Required: true}, {Name: "computer_id"}}})
@@ -90,13 +111,19 @@ func (a *API) snapshot(r *http.Request) (Snapshot, error) {
 func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 	h := a.Config.Harness
 	snapshot := Snapshot{Epoch: h.RuntimeID}
-	var viewErr, historyErr, traceErr error
+	var viewErr, historyErr, traceErr, activityErr error
 	var reads sync.WaitGroup
-	reads.Add(3)
+	reads.Add(4)
 	go func() { defer reads.Done(); snapshot.View, viewErr = h.View(r.Context(), r.PathValue("id")) }()
 	go func() {
 		defer reads.Done()
 		snapshot.History, historyErr = timelineHistory(r.Context(), h.CoreStore, r.PathValue("id"), "", 60, false)
+	}()
+	go func() {
+		defer reads.Done()
+		var activity domain.SubagentActivityPage
+		activity, activityErr = h.SubagentActivities(r.Context(), r.PathValue("id"), "", 60, true)
+		snapshot.SubagentActivity, snapshot.SubagentActivityCursor, snapshot.SubagentActivityNextCursor = activity.Activities, activity.Cursor, activity.NextCursor
 	}()
 	go func() {
 		defer reads.Done()
@@ -111,6 +138,9 @@ func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 	}
 	if traceErr != nil {
 		return snapshot, traceErr
+	}
+	if activityErr != nil {
+		return snapshot, activityErr
 	}
 	snapshot.View.EventSequence = min(snapshot.View.EventSequence, watermark)
 
@@ -151,6 +181,9 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	)
 	defer resources.Close()
 	resourceChanges := resources.Changes()
+	activityWatch := h.Store.Watch(persistence.ChangeKey{Kind: persistence.SubagentActivityKind, ID: r.PathValue("id")})
+	defer activityWatch.Close()
+	activityChanges := activityWatch.Changes()
 	snapshot, err := a.snapshotAt(r, session.Snapshot().EventSequence)
 	if err != nil {
 		httpcontract.Failure(w, r, err)
@@ -182,6 +215,26 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
 	lastView, _ := json.Marshal(snapshot.View)
+	activityCursor := snapshot.SubagentActivityCursor
+	refreshActivity := func() bool {
+		for {
+			page, err := h.SubagentActivities(r.Context(), r.PathValue("id"), activityCursor, 100, false)
+			if err != nil {
+				_ = send("resync", "", map[string]string{"reason": "Subagent activity changed"})
+				return false
+			}
+			if len(page.Activities) == 0 {
+				return true
+			}
+			if !send("event", "", Event{Epoch: h.RuntimeID, SubagentActivity: page.Activities, SubagentActivityCursor: page.Cursor}) {
+				return false
+			}
+			activityCursor = page.Cursor
+			if page.NextCursor == "" {
+				return true
+			}
+		}
+	}
 	refresh := func() bool {
 		view, viewErr := h.View(r.Context(), r.PathValue("id"))
 		if viewErr != nil {
@@ -199,6 +252,11 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-activityChanges:
+			activityChanges = activityWatch.Changes()
+			if !refreshActivity() {
+				return
+			}
 		case _, ok := <-hostChanges.C:
 			if !ok || !refresh() {
 				return

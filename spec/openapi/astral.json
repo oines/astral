@@ -3618,6 +3618,46 @@
         ],
         "type": "object"
       },
+      "astral_internal_domain_SubagentActivity": {
+        "properties": {
+          "child_session_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "child_session_id",
+          "name",
+          "run_id",
+          "status",
+          "time",
+          "sequence"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_TextQuote": {
         "properties": {
           "manual": {
@@ -3892,6 +3932,18 @@
             "type": "string"
           },
           "next_cursor": {
+            "type": "string"
+          },
+          "subagent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_SubagentActivity"
+            },
+            "type": "array"
+          },
+          "subagent_activity_cursor": {
+            "type": "string"
+          },
+          "subagent_activity_next_cursor": {
             "type": "string"
           }
         },
@@ -5177,6 +5229,15 @@
           "epoch": {
             "type": "string"
           },
+          "subagent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_SubagentActivity"
+            },
+            "type": "array"
+          },
+          "subagent_activity_cursor": {
+            "type": "string"
+          },
           "view": {
             "$ref": "#/components/schemas/astral_internal_harness_View"
           }
@@ -5783,6 +5844,18 @@
           "history": {
             "$ref": "#/components/schemas/astral_internal_gateway_HistoryPage"
           },
+          "subagent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_SubagentActivity"
+            },
+            "type": "array"
+          },
+          "subagent_activity_cursor": {
+            "type": "string"
+          },
+          "subagent_activity_next_cursor": {
+            "type": "string"
+          },
           "trace": {
             "$ref": "#/components/schemas/astral_internal_gateway_HistoryPage"
           },
@@ -5794,7 +5867,9 @@
           "epoch",
           "view",
           "history",
-          "trace"
+          "trace",
+          "subagent_activity",
+          "subagent_activity_cursor"
         ],
         "type": "object"
       },
@@ -12677,6 +12752,14 @@
           {
             "in": "query",
             "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "activity_cursor",
             "required": false,
             "schema": {
               "type": "string"

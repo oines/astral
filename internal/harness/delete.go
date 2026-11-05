@@ -145,6 +145,9 @@ func (s *Service) deleteOneSession(ctx context.Context, id string, revision int6
 		if err := tx.PurgeSessionDeliveries(ctx, id); err != nil {
 			return err
 		}
+		if err := tx.PurgeSubagentActivities(ctx, id); err != nil {
+			return err
+		}
 		if err := schedule.PurgeSession(ctx, tx, id); err != nil {
 			return err
 		}

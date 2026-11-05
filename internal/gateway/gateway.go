@@ -50,9 +50,12 @@ type MessagePage struct {
 	NextSequence int64                          `json:"next_sequence"`
 }
 type HistoryPage struct {
-	Entries    []sessions.Entry `json:"entries"`
-	NextCursor string           `json:"next_cursor,omitempty"`
-	HeadID     string           `json:"head_id"`
+	Entries                    []sessions.Entry          `json:"entries"`
+	NextCursor                 string                    `json:"next_cursor,omitempty"`
+	HeadID                     string                    `json:"head_id"`
+	SubagentActivity           []domain.SubagentActivity `json:"subagent_activity,omitempty"`
+	SubagentActivityCursor     string                    `json:"subagent_activity_cursor,omitempty"`
+	SubagentActivityNextCursor string                    `json:"subagent_activity_next_cursor,omitempty"`
 }
 type ResolveConversation struct {
 	ExternalID string `json:"external_id"`
