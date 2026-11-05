@@ -40,10 +40,16 @@ func (r *runtime) readableCore() (*core.Session, error) {
 func (r *runtime) retire() {
 	r.snapshotMu.Lock()
 	r.retired = true
+	session := r.core.Load()
 	if r.corePhase == runtimeCoreActive {
 		r.corePhase = runtimeCoreClosing
 	}
 	r.snapshotMu.Unlock()
+	// An admitted callback can hold mu while awaiting Core maintenance. Cancel
+	// before draining that lock; Close will join it after callbacks release mu.
+	if session != nil {
+		session.Cancel()
+	}
 }
 
 func (r *runtime) closeCore(ctx context.Context) error {

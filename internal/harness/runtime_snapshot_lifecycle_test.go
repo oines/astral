@@ -3,12 +3,80 @@ package harness
 import (
 	"context"
 	"errors"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 )
+
+func TestRuntimeRetirementCancelsMaintenanceBeforeDrainingAdmission(t *testing.T) {
+	for _, operation := range []string{"shutdown", "delete"} {
+		t.Run(operation, func(t *testing.T) {
+			entered, release := make(chan struct{}), make(chan struct{})
+			releaseModel := sync.OnceFunc(func() { close(release) })
+			defer releaseModel()
+			f := newFixture(t, 0, func(ctx context.Context, n int, _ map[string]any) any {
+				if n <= 2 {
+					return textReply("Completed before maintenance.")
+				}
+				close(entered)
+				select {
+				case <-release:
+					return textReply("Summarized.")
+				case <-ctx.Done():
+					return nil
+				}
+			})
+			for i, text := range []string{strings.Repeat("Retain this history when compacting. ", 2500), "Complete another turn."} {
+				if _, err := f.service.Submit(f.ctx, f.session.ID, InputRequest{ID: []string{"history", "recent"}[i], Text: text}); err != nil {
+					t.Fatal(err)
+				}
+				f.idle(t, f.session.ID)
+			}
+			maintenance := make(chan error, 1)
+			go func() {
+				maintenance <- f.service.WithSession(f.ctx, f.session.ID, func(session *core.Session) error {
+					_, err := session.Compact(f.ctx, "Summarize while holding Host admission.")
+					return err
+				})
+			}()
+			select {
+			case <-entered:
+			case err := <-maintenance:
+				t.Fatalf("maintenance did not reach its real model request: %v", err)
+			case <-f.ctx.Done():
+				t.Fatal(f.ctx.Err())
+			}
+			closing := make(chan error, 1)
+			go func() {
+				if operation == "shutdown" {
+					closing <- f.service.Close(f.ctx)
+				} else {
+					closing <- f.service.closeDeletedRuntime(f.ctx, f.session.ID)
+				}
+			}()
+			select {
+			case err := <-closing:
+				if err != nil {
+					t.Error(err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Error("retirement waited for admission before cancelling its Core maintenance")
+				releaseModel()
+				if err := <-closing; err != nil {
+					t.Error(err)
+				}
+			}
+			if err := <-maintenance; !errors.Is(err, context.Canceled) {
+				t.Errorf("retirement did not cancel the independent maintenance request: %v", err)
+			}
+		})
+	}
+}
 
 func TestRuntimeRetirementBlocksReadersBeforeJoiningCore(t *testing.T) {
 	f := newFixture(t, 0, func(context.Context, int, map[string]any) any {
