@@ -119,11 +119,10 @@ func (s *Service) summary(ctx context.Context, record domain.Session, modelAvail
 		select {
 		case <-r.ready:
 			if r.openErr == nil {
-				// The handle is atomically published and Snapshot owns its Core
-				// lock. Directory reads must not wait for Host admission/compaction.
-				session := r.core.Load()
-				value := session.Snapshot()
-				if value.State.SessionID != "" {
+				// The short lifecycle gate excludes closed windows without waiting
+				// for Host admission/compaction. Unavailable handles use cold state.
+				value, snapshotErr := r.snapshot()
+				if snapshotErr == nil {
 					snapshot = &value
 					state = value.State
 				}

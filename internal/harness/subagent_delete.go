@@ -20,7 +20,7 @@ func (s *Service) deleteSubagent(ctx context.Context, parent, id string) error {
 		return err
 	}
 	defer s.subagentMu.Unlock()
-	if _, err := s.subagentRecord(ctx, parent, id); err != nil {
+	if _, err := s.ownedSubagentRecord(ctx, parent, id, true); err != nil {
 		if domain.IsMissing(err) {
 			return nil
 		}

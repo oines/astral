@@ -98,11 +98,11 @@ func (a *API) streamRoutes() {
 	})
 }
 func (a *API) snapshot(r *http.Request) (Snapshot, error) {
-	session, err := a.Config.Harness.Core(r.Context(), r.PathValue("id"))
+	snapshot, err := a.Config.Harness.Snapshot(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return a.snapshotAt(r, session.Snapshot().EventSequence)
+	return a.snapshotAt(r, snapshot.EventSequence)
 }
 
 // The watermark must be captured before parallel reads. A newer View may
@@ -184,7 +184,12 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	activityWatch := h.Store.Watch(persistence.ChangeKey{Kind: persistence.SubagentActivityKind, ID: r.PathValue("id")})
 	defer activityWatch.Close()
 	activityChanges := activityWatch.Changes()
-	snapshot, err := a.snapshotAt(r, session.Snapshot().EventSequence)
+	boundary, err := h.Snapshot(r.Context(), r.PathValue("id"))
+	if err != nil {
+		httpcontract.Failure(w, r, err)
+		return
+	}
+	snapshot, err := a.snapshotAt(r, boundary.EventSequence)
 	if err != nil {
 		httpcontract.Failure(w, r, err)
 		return

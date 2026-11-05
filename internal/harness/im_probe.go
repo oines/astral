@@ -20,11 +20,13 @@ func (s *Service) IMProbeRecoveryPossible(id string) (possible, loaded bool) {
 	if r.openErr != nil {
 		return false, false
 	}
-	session := r.core.Load()
-	state := session.State()
+	snapshot, err := r.snapshot()
+	if err != nil {
+		return false, false
+	}
+	state := snapshot.State
 	if state.PendingInputs[core.InputSteer] == 0 || state.CurrentAttemptID != "" || !state.Branch.Complete() {
 		return false, true
 	}
-	snapshot := session.Snapshot()
 	return !snapshot.Running && !snapshot.Maintenance, true
 }

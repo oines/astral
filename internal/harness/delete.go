@@ -184,8 +184,8 @@ func (s *Service) closeDeletedRuntime(ctx context.Context, id string) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	r.retire()
 	r.mu.Lock()
-	session := r.core.Load()
 	titleCancel, titleDone := r.titleCancel, r.titleDone
 	r.mu.Unlock()
 	if titleCancel != nil {
@@ -198,10 +198,8 @@ func (s *Service) closeDeletedRuntime(ctx context.Context, id string) error {
 	}
 	// A running tool can need r.mu while observing cancellation. The durable
 	// intent already blocks new admissions, so never hold it while joining Core.
-	if session != nil {
-		if err := session.Close(ctx); err != nil {
-			return err
-		}
+	if err := r.closeCore(ctx); err != nil {
+		return err
 	}
 	if r.tools != nil {
 		return r.tools.Close(ctx)

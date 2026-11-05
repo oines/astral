@@ -109,6 +109,10 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 		}
 	}
 	r.mu.Lock()
+	if _, err = r.readableCore(); err != nil {
+		r.mu.Unlock()
+		return err
+	}
 	if len(change.SessionIDs) == 1 && root.SubagentParentID == "" {
 		changed := !jsonEqual(r.core.Load().Configuration().Selection, selection)
 		err = r.core.Load().SelectModel(ctx, selection)
