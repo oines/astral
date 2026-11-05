@@ -86,7 +86,7 @@ func TestSubagentCoordinationPromptsKeepRolesChannelsAndSpawnSchema(t *testing.T
 			t.Fatal("shared System lost the root-only permission boundary")
 		}
 	}
-	if !strings.Contains(webSystemPrompt, "replies to the user with assistant text in Web") || !strings.Contains(imSystemPrompt, "assistant text is visible in Web only; use send_message") || !strings.Contains(imSystemPrompt, "IM observations are passive") {
+	if !strings.Contains(webSystemPrompt, "outputs replies directly to the user on the web page") || !strings.Contains(imSystemPrompt, "text you output directly is shown only on the web page") || !strings.Contains(imSystemPrompt, "IM observations are passive context") {
 		t.Fatal("coordination prompt changes altered Web/IM response rules")
 	}
 }

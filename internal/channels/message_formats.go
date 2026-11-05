@@ -75,19 +75,7 @@ func messageTool(c Capabilities) core.ToolDefinition {
 	def := harness.DefaultMessageTool()
 	def.Version = "astral-4/" + c.Adapter
 	def.Parameters = encoded(map[string]any{"type": "object", "additionalProperties": false, "properties": properties})
-	def.Description += " Destination: " + c.Name + ". "
-	switch c.Adapter {
-	case "telegram.bot":
-		def.Description += "markdown and html use Telegram Rich Messages (headings, lists, code, tables). Use supported rich syntax, not MarkdownV2. parts can mix formatted text, native mentions by numeric user ID, uploaded images and documents in one Rich Message."
-	case "feishu.bot":
-		def.Description += "markdown uses a Feishu rich-text post with md blocks; supports CommonMark/GFM with Feishu restrictions. parts mix text, native mentions (user_id=open_id) and uploaded images in a post; documents have separate receipts. An optional title belongs to that post."
-	case "qq.bot":
-		def.Description += "markdown uses QQ's native Markdown subset; markdown_template uses an approved QQ template. Availability is controlled by this account's QQ permissions. Formatted bodies and attachments have separate receipts; a definitive rejection is returned without silently changing format."
-	case "qq.napcat":
-		def.Description += "Text is sent unchanged even if it contains Markdown syntax. parts use native at, text and image/file segments in order. Markdown segments and JSON/XML cards are not available."
-	case "weixin.ilink":
-		def.Description += "markdown uses Weixin's partial Markdown support: CJK italics and level 5/6 headings are simplified; inline image syntax becomes readable text, so send actual images through attachments. Outbound reply references are unavailable."
-	}
+	def.Description = "Sends text and attachments to this Session's bound " + c.Name + " chat."
 	return def
 }
 

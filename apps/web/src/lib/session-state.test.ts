@@ -219,7 +219,7 @@ describe('ordered transcript process', () => {
     expect(transcriptGroups(state)[0]!.blocks[2]!.key).toBe(split[2]!.key)
   })
 
-  it('keeps earlier shell items live without adding later items across an assistant text boundary', () => {
+  it('keeps earlier shell items live without adding later items across a model reply boundary', () => {
     const state = fromSnapshot(snapshot())
     addEntry(state, toolEntry('old-start', 1, 'first', 'old-shell', 'tool_started'))
     addEntry(state, entry('commentary', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'The command is still running; checking another file.' }] } }))

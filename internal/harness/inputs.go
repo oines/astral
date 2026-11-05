@@ -254,6 +254,9 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 			return InputReceipt{}, err
 		}
 	}
+	if err := r.watchIMReply(ctx, inputID, metadata, trigger); err != nil {
+		return InputReceipt{}, err
+	}
 	receipt, err := r.accept(ctx, input, kind)
 	if err == nil && kind == core.InputSteer {
 		r.maybeGenerateSessionTitle(metadata.DisplayText)

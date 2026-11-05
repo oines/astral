@@ -41,7 +41,7 @@ func (t sendMessageTool) Definition() core.ToolDefinition {
 // omitted from model requests until a destination has been selected.
 func DefaultMessageTool() core.ToolDefinition {
 	return core.ToolDefinition{Name: "send_message", Version: "astral-4", Sequential: true,
-		Description: "Send to this Session's bound chat using the Host-selected account, chat and Topic. Text may be empty when sending attachments. Attachments are Computer paths or astral-file:// references. Returns sent (true, false, or null when unconfirmed), optional message_ids and an error on failure. Assistant text alone stays in Web.",
+		Description: "Sends text and attachments to this Session's bound IM chat.",
 		Parameters:  json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"},"reply_to":{"type":"string"},"attachments":{"type":"array","items":{"type":"string","minLength":1}}},"required":["text"],"additionalProperties":false}`)}
 }
 

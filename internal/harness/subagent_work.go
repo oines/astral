@@ -71,12 +71,16 @@ func (s *Service) reconcileSubagentIDs(ctx context.Context, work *subagentWork, 
 	for id := range work.affected(dirty) {
 		var record domain.Session
 		err := s.Store.Get(ctx, "sessions", id, &record)
-		if domain.IsMissing(err) || err == nil && (record.Deletion != nil || record.SubagentParentID == "") {
+		if domain.IsMissing(err) || err == nil && (record.Deletion != nil || record.SubagentParentID == "" && record.BindingID == "") {
 			work.forget(id)
 			continue
 		}
 		if err == nil {
-			err = s.reconcileSubagent(ctx, record)
+			if record.SubagentParentID == "" {
+				err = s.reconcileIMReply(ctx, record)
+			} else {
+				err = s.reconcileSubagent(ctx, record)
+			}
 			work.observe(record, err)
 		}
 		if err != nil && !errors.Is(err, core.ErrBusy) && !errors.Is(err, errSubagentReportsPending) {
