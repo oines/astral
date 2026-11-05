@@ -369,6 +369,9 @@ func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputK
 	var err error
 	switch kind {
 	case core.InputContext:
+		if err := r.syncIdlePrefix(ctx); err != nil {
+			return InputReceipt{}, err
+		}
 		receipt, err = r.core.Load().InjectContext(ctx, input)
 	case core.InputSteer:
 		receipt, err = r.core.Load().Steer(ctx, input)

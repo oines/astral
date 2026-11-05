@@ -394,7 +394,7 @@ func TestSubagentCompactionBypassesTreeLockAndKeepsFrozenSummaryModel(t *testing
 	if err := f.store.Get(f.ctx, "subagent_settings", child.SessionID, &settings); err != nil {
 		t.Fatal(err)
 	}
-	if frozen.SystemPrompt == settings.Configuration.SystemPrompt {
+	if strings.HasPrefix(frozen.SystemPrompt, commonSystemPrompt) {
 		t.Fatal("fixture did not use the auxiliary compaction System prompt")
 	}
 	// Simulate a desired selection already committed by the Host while Core

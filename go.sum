@@ -45,6 +45,8 @@ github.com/ncruces/go-strftime v0.1.9 h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdh
 github.com/ncruces/go-strftime v0.1.9/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
 github.com/oines/astral-core v0.0.0-20261104193014-7c7ea56d4b17 h1:B9fppzr4uCMGkaJuirCtZcer8k6WvfhRuEppGqfvW0c=
 github.com/oines/astral-core v0.0.0-20261104193014-7c7ea56d4b17/go.mod h1:esTBo4mDEKdP6/hgCUB2sM87xivAlYaSUqNuOFxd7eo=
+github.com/oines/astral-core v0.0.0-20261105165958-ecbb022e4eb0 h1:3wzmzLHyNdlP50RUAImKLC1EnzKbE8ZM+uRBniEOZ1g=
+github.com/oines/astral-core v0.0.0-20261105165958-ecbb022e4eb0/go.mod h1:esTBo4mDEKdP6/hgCUB2sM87xivAlYaSUqNuOFxd7eo=
 github.com/philhofer/fwd v1.2.0 h1:e6DnBTl7vGY+Gz322/ASL4Gyp1FspeMvx1RNDoToZuM=
 github.com/philhofer/fwd v1.2.0/go.mod h1:RqIHx9QI14HlwKwm98g9Re5prTQ6LdeRQn+gXJFxsJM=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

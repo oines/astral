@@ -36,6 +36,8 @@ The same details are available when reading a subagent's conversation. Expanding
 
 ## Delegate background work
 
+The original conversation and its subagents use a common source for system instructions and tool descriptions. After updating Astral, existing subagents use the current instructions in new requests. Applying a Bot persona also updates their next new request, including during an active task. Requests already frozen and their retries retain their original content; configuration changes do not start idle subagents.
+
 For a longer task or work that can proceed in parallel, the Bot can delegate parts to **subagents**. You can ask for this explicitly, for example:
 
 > Check the backend and frontend separately with subagents. Keep the review read-only and summarize the risks here when the checks finish.

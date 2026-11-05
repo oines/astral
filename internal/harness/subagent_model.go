@@ -242,8 +242,8 @@ func (s *Service) reconcileSubagentModelChangesLocked(ctx context.Context) error
 	return nil
 }
 
-// Called with the tree or runtime lock. Only the selection is mutable; the
-// child's saved System and tool definitions retain the parent's exact prefix.
+// Called with the tree or runtime lock. Selection is independent from the shared
+// root prefix, which is resolved separately at the next safe request boundary.
 func (r *runtime) syncSubagentModel(ctx context.Context) error {
 	settings, err := r.service.childMetadata(ctx, r.id)
 	if err != nil {

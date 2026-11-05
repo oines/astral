@@ -144,13 +144,12 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 		if err := r.syncSubagentModel(ctx); err != nil {
 			return err
 		}
-		configuration := r.core.Load().Configuration()
-		next := r.subagent.Configuration
-		next.Selection = configuration.Selection
-		if configuration.SystemPrompt != next.SystemPrompt || !jsonEqual(configuration.Tools, next.Tools) {
-			return r.core.Load().Configure(ctx, next)
+		if err := r.service.Store.Get(ctx, "sessions", r.prefixSourceID(), &record); err != nil {
+			return err
 		}
-		return nil
+		if record.Deletion != nil || record.AgentID != r.agentID {
+			return domain.Forbidden("subagent prefix source is unavailable")
+		}
 	}
 	if err := r.syncBindingConfig(ctx, record); err != nil {
 		return err
@@ -173,6 +172,31 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 	return nil
 }
 func jsonEqual(a, b any) bool { return string(encode(a)) == string(encode(b)) }
+
+// Passive admission can precede Continue after an application update. Compare
+// only declarations first: normal deliveries need no execution snapshot or
+// configuration write, including while a large tool invocation is in flight.
+func (r *runtime) syncIdlePrefix(ctx context.Context) error {
+	session, err := r.readableCore()
+	if err != nil {
+		return err
+	}
+	registered := map[string]core.ToolDefinition{}
+	for _, tool := range r.hostTools() {
+		definition := tool.Definition()
+		registered[definition.Name] = definition
+	}
+	for _, saved := range session.Configuration().Tools {
+		if definition, found := registered[saved.Name]; !found || !jsonEqual(definition, saved) {
+			snapshot, err := r.snapshot()
+			if err != nil || snapshot.Running || snapshot.Maintenance {
+				return err
+			}
+			return r.syncBusinessConfig(ctx)
+		}
+	}
+	return nil
+}
 
 func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoning ...*core.ReasoningOptions) error {
 	selection := core.ModelSelection{ID: profileID}

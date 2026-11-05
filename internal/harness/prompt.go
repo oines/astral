@@ -65,20 +65,20 @@ func composeSystemPrompt(hostPrompt, persona string) string {
 }
 
 func (r *runtime) currentSystemPrompt(ctx context.Context, hostPrompt string) (string, error) {
-	if r.subagent != nil {
-		return r.subagent.Configuration.SystemPrompt, nil
-	}
 	var agent domain.Agent
 	if err := r.service.Store.Get(ctx, "agents", r.agentID, &agent); err != nil {
 		return "", err
 	}
 	var record domain.Session
-	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
+	if err := r.service.Store.Get(ctx, "sessions", r.prefixSourceID(), &record); err != nil {
 		return "", err
+	}
+	if record.Deletion != nil || record.AgentID != r.agentID {
+		return "", domain.Forbidden("Session prefix source is unavailable")
 	}
 	var identity promptIdentity
 	identity.Agent.ID, identity.Agent.Name = agent.ID, agent.Name
-	identity.Session.ID, identity.Session.Source = r.id, record.Source
+	identity.Session.ID, identity.Session.Source = record.ID, record.Source
 	if hostInstructions, _, _ := strings.Cut(hostPrompt, personaSeparator); strings.Contains(hostInstructions, "\n"+imPromptHeading) {
 		conversationID, err := promptConversationID(hostPrompt)
 		if err != nil {
@@ -102,6 +102,13 @@ func (r *runtime) currentSystemPrompt(ctx context.Context, hostPrompt string) (s
 	}
 	hostPrompt += personaSeparator + identityHeading + string(encode(identity))
 	return composeSystemPrompt(hostPrompt, agent.Persona), nil
+}
+
+func (r *runtime) prefixSourceID() string {
+	if r.prefixRootID != "" {
+		return r.prefixRootID
+	}
+	return r.id
 }
 
 // Fixed Host instructions contain no blank paragraphs. Their first metadata
@@ -153,7 +160,7 @@ func (m sessionModel) Stream(ctx context.Context, request core.Request, emit fun
 }
 
 func (m sessionModel) stream(ctx context.Context, request core.Request, emit func(core.ModelEvent), invoke func(context.Context, func(core.ModelEvent)) (core.Reply, error)) (core.Reply, error) {
-	if m.runtime.subagent != nil && request.SystemPrompt == m.runtime.subagent.Configuration.SystemPrompt {
+	if _, host := hostPromptMetadata(request.SystemPrompt); m.runtime.subagent != nil && host {
 		// Preparation can temporarily refuse SelectModel. Once this request is
 		// frozen, apply the saved selection for its successor before sending it.
 		// Auxiliary compaction requests have their own System prompt and can
@@ -212,9 +219,6 @@ func (m sessionModel) ProjectRequest(ctx context.Context, request core.Request) 
 
 func (m sessionModel) preparePrompt(ctx context.Context, request core.Request) (core.Request, error) {
 	var err error
-	if m.runtime.subagent != nil {
-		return request, nil
-	}
 	// Keep the Host variant and chat identity selected with the tool schema.
 	// Only metadata and persona are fresh; never re-read the Session's binding.
 	if _, host := hostPromptMetadata(request.SystemPrompt); host {

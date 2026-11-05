@@ -62,6 +62,7 @@ type runtime struct {
 	service          *Service
 	id               string
 	agentID          string
+	prefixRootID     string
 	ready            chan struct{}
 	openErr          error
 	mu               sync.Mutex
@@ -159,6 +160,23 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		return domain.Missing("Session", r.id)
 	}
 	r.agentID = record.AgentID
+	prefix := record
+	seen := map[string]bool{record.ID: true}
+	for prefix.SubagentParentID != "" {
+		if seen[prefix.SubagentParentID] {
+			return domain.Invalid("subagent parent references contain a cycle")
+		}
+		seen[prefix.SubagentParentID] = true
+		var parent domain.Session
+		if err = s.Store.Get(ctx, "sessions", prefix.SubagentParentID, &parent); err != nil {
+			return err
+		}
+		prefix = parent
+		if prefix.Deletion != nil || prefix.AgentID != record.AgentID {
+			return domain.Forbidden("subagent prefix source is unavailable")
+		}
+	}
+	r.prefixRootID = prefix.ID
 	if record.SubagentParentID != "" {
 		var settings subagentSettings
 		if err = s.Store.Get(ctx, "subagent_settings", r.id, &settings); err != nil {
@@ -167,7 +185,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		r.subagent = &settings
 	}
 	r.compactionPrompt = compactionPromptFor(record)
-	r.messageTool, err = r.messageToolFor(ctx, record)
+	r.messageTool, err = r.messageToolFor(ctx, prefix)
 	if err != nil {
 		return err
 	}
@@ -192,7 +210,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 			_ = r.tools.Close(cleanup)
 		}
 	}()
-	config := r.coreConfig(record)
+	config := r.coreConfig(prefix)
 	session, err := core.OpenSession(ctx, config, r.id)
 	created := errors.Is(err, core.ErrNotFound)
 	if errors.Is(err, core.ErrNotFound) {
@@ -238,11 +256,6 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	// snapshot for inspection; execution reconciles the current selection in
 	// continueLocked/Compact. Only a newly created Session needs initial setup.
 	if err == nil && created {
-		if r.subagent != nil {
-			err = r.core.Load().Configure(ctx, r.subagent.Configuration)
-		}
-	}
-	if err == nil && created {
 		err = r.syncBusinessConfig(ctx)
 	}
 	if err == nil && created && r.subagent != nil {
@@ -273,7 +286,6 @@ func (r *runtime) coreConfig(record domain.Session) core.Config {
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
 	}
 	if r.subagent != nil {
-		config.SystemPrompt = r.subagent.Configuration.SystemPrompt
 		config.Selection = r.subagent.Configuration.Selection
 	}
 	return config

@@ -20,6 +20,12 @@ type hostTool struct {
 	core.Tool
 	runtime *runtime
 }
+
+type preparingHostTool struct {
+	hostTool
+	core.ToolArgumentPreparer
+}
+
 type processHandle struct {
 	domain.Meta
 	RuntimeID  string                  `json:"runtime_id"`
@@ -33,7 +39,12 @@ type processHandle struct {
 func (r *runtime) hostTools() []core.Tool {
 	var tools []core.Tool
 	for _, tool := range r.tools.Tools() {
-		tools = append(tools, hostTool{Tool: tool, runtime: r})
+		wrapped := hostTool{Tool: tool, runtime: r}
+		if preparer, ok := tool.(core.ToolArgumentPreparer); ok {
+			tools = append(tools, preparingHostTool{wrapped, preparer})
+		} else {
+			tools = append(tools, wrapped)
+		}
 	}
 	tools = append(tools,
 		spawnAgentTool{runtime: r}, agentControlTool{runtime: r},

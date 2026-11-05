@@ -106,16 +106,15 @@ func largeSelectionFixture(t *testing.T) (*fixture, domain.Session, int, *coldQu
 	if err := f.store.Get(f.ctx, "subagent_settings", child.SessionID, &settings); err != nil {
 		t.Fatal(err)
 	}
-	settings.Configuration.SystemPrompt += strings.Repeat("Synthetic fixed configuration context. ", 3072)
-	if err := f.store.Save(f.ctx, "subagent_settings", &settings.Meta, &settings); err != nil {
-		t.Fatal(err)
-	}
 	r, err := f.service.open(f.ctx, child.SessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
+	configuration := r.core.Load().Configuration()
+	configuration.SystemPrompt += strings.Repeat("Synthetic fixed configuration context. ", 3072)
+	saveLegacySubagentPrefix(t, f, &settings, configuration)
 	r.mu.Lock()
-	err = r.core.Load().Configure(f.ctx, settings.Configuration)
+	err = r.core.Load().Configure(f.ctx, configuration)
 	r.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -134,7 +133,7 @@ func largeSelectionFixture(t *testing.T) (*fixture, domain.Session, int, *coldQu
 	if err := f.store.Get(f.ctx, "sessions", child.SessionID, &record); err != nil {
 		t.Fatal(err)
 	}
-	configuration, err := f.service.configurationAtState(f.ctx, record.ID, state)
+	configuration, err = f.service.configurationAtState(f.ctx, record.ID, state)
 	if err != nil {
 		t.Fatal(err)
 	}
