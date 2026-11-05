@@ -23,6 +23,7 @@ type subagentWorkerStore struct {
 	failScan     atomic.Bool
 	scanFailures atomic.Int32
 	failed       chan struct{}
+	retryStarted chan struct{}
 	uncertain    atomic.Bool
 	uncertainID  atomic.Value
 	confirmed    atomic.Int32
@@ -43,6 +44,12 @@ func (s *subagentWorkerStore) Scan(ctx context.Context, rollout string, query co
 		s.scanFailures.Add(1)
 		close(s.failed)
 		return core.Page{}, errors.New("fixture temporary child-history read failure")
+	}
+	if query.SessionID == s.childID && s.scanFailures.Load() > 0 && s.retryStarted != nil {
+		select {
+		case s.retryStarted <- struct{}{}:
+		default:
+		}
 	}
 	return s.Store.Scan(ctx, rollout, query)
 }
@@ -220,7 +227,10 @@ func testSubagentWorkerDeliveryRetry(t *testing.T, unrelatedWakes bool) {
 	if err := f.service.Close(f.ctx); err != nil {
 		t.Fatal(err)
 	}
-	counted := &subagentWorkerStore{Store: f.coreStore, childID: child.SessionID, failed: make(chan struct{})}
+	counted := &subagentWorkerStore{
+		Store: f.coreStore, childID: child.SessionID,
+		failed: make(chan struct{}), retryStarted: make(chan struct{}, 1),
+	}
 	counted.failScan.Store(true)
 	f.service = New(f.store, counted, f.service.Models, f.hub)
 	select {
@@ -232,8 +242,10 @@ func testSubagentWorkerDeliveryRetry(t *testing.T, unrelatedWakes bool) {
 	// unrelated ID wakes must neither perform that work nor postpone its deadline.
 	if unrelatedWakes {
 		ctx, cancel := context.WithTimeout(f.ctx, 2*time.Second)
-		defer cancel()
+		stopped := make(chan struct{})
+		defer func() { cancel(); <-stopped }()
 		go func() {
+			defer close(stopped)
 			ticker := time.NewTicker(10 * time.Millisecond)
 			defer ticker.Stop()
 			for {
@@ -245,13 +257,16 @@ func testSubagentWorkerDeliveryRetry(t *testing.T, unrelatedWakes bool) {
 				}
 			}
 		}()
-		eventually(t, ctx, func() bool {
-			var checkpoint subagentCheckpoint
-			return f.store.Maintenance(ctx, "subagent_delivery", child.SessionID, &checkpoint) == nil && checkpoint.Version == state.Version
-		})
-	} else {
-		subagentWorkerCheckpoint(t, f, child.SessionID, state)
+		select {
+		case <-counted.retryStarted:
+		case <-ctx.Done():
+			t.Fatal("worker did not start its failed-delivery retry while unrelated wakes continued")
+		}
+		cancel()
 	}
+	// The deadline above measures the retry starting, not the SQLite reads and
+	// parent notification commits it must then complete on a native race runner.
+	subagentWorkerCheckpoint(t, f, child.SessionID, state)
 	f.idle(t, parent.id)
 	if counted.scanFailures.Load() != 1 {
 		t.Fatal("temporary read fault was not exercised exactly once")
