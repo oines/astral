@@ -225,7 +225,7 @@ describe('ordered transcript process', () => {
     addEntry(state, entry('commentary', 2, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'The command is still running; checking another file.' }] } }))
     addEntry(state, toolEntry('new-start', 3, 'second', 'new-shell', 'tool_started'))
     const before = transcriptGroups(state)[0]!.blocks
-    expect(before.map(block => block.kind === 'process' ? block.items.map(item => item.key) : block.kind === 'text' ? block.text : block.kind === 'subagent' ? block.entry.id : block.activity.id)).toEqual([
+    expect(before.map(block => block.kind === 'process' ? block.items.map(item => item.key) : block.kind === 'text' ? block.text : block.activity.id)).toEqual([
       ['old-shell'], 'The command is still running; checking another file.', ['new-shell'],
     ])
     applyEvent(state, event(4, { type: 'tool_execution_update', execution_id: 'old-shell', progress: { text: 'Command is making progress\n' } }))
@@ -254,7 +254,7 @@ describe('ordered transcript process', () => {
     ] } }))
     addEntry(state, toolEntry('result-2', 6, 'second', 'exec-2'))
     const blocks = transcriptGroups(state)[0]!.blocks
-    expect(blocks.map(block => block.kind === 'text' ? block.text : block.kind === 'process' ? block.items.map(item => item.kind === 'reasoning' ? item.text : item.entry.id) : block.kind === 'subagent' ? block.entry.id : block.activity.id)).toEqual([
+    expect(blocks.map(block => block.kind === 'text' ? block.text : block.kind === 'process' ? block.items.map(item => item.kind === 'reasoning' ? item.text : item.entry.id) : block.activity.id)).toEqual([
       ['First thought'], 'Checking now.', ['result', 'Next thought', 'result-2'], 'Done.',
     ])
   })

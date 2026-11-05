@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSurfaceStore } from '../stores/surface'
-import { spawnedSubagent, subagentStatus } from './subagents'
-import { addEntry, emptyState, transcriptGroups } from './session-state'
+import { subagentStatus } from './subagents'
+import { addEntry, addSubagentActivity, emptyState, transcriptGroups } from './session-state'
 import type { Entry } from './types'
 
 function spawn(id: string, sequence: number, outcome = 'succeeded'): Entry {
@@ -16,48 +16,51 @@ function spawn(id: string, sequence: number, outcome = 'succeeded'): Entry {
 }
 
 describe('subagent conversation entry points', () => {
-  it('accepts only successful spawn results and leaves failures as ordinary tool details', () => {
-    expect(spawnedSubagent(spawn('spawn', 1))).toEqual({ sessionID: 'child', parentSessionID: 'parent', title: 'Recovery check', status: 'running' })
-    expect(spawnedSubagent(spawn('failed', 1, 'failed'))).toBeUndefined()
-    const other = spawn('other', 1)
-    other.tool!.invocation.call.name = 'exec_command'
-    expect(spawnedSubagent(other)).toBeUndefined()
-    const pending = spawn('pending', 1)
-    delete pending.tool!.result
-    expect(spawnedSubagent(pending)).toBeUndefined()
+  it.each(['succeeded', 'failed'])('keeps a %s spawn result in the ordinary tool details', outcome => {
+    const state = emptyState()
+    const result = spawn('result', 1, outcome)
+    addEntry(state, result)
+    expect(transcriptGroups(state)[0]!.blocks).toMatchObject([{ kind: 'process', items: [{ kind: 'tool', key: 'spawn', entry: result }] }])
   })
 
-  it('prefers the stable agent name while accepting older title-only results', () => {
-    const entry = spawn('named', 1)
-    const details = entry.tool!.result!.details as Record<string, unknown>
-    details.name = 'Source check'
-    expect(spawnedSubagent(entry)?.title).toBe('Source check')
-    delete details.title
-    expect(spawnedSubagent(entry)?.title).toBe('Source check')
-    details.title = 'Recovery check'
-    details.name = '  '
-    expect(spawnedSubagent(entry)?.title).toBe('Recovery check')
-    delete details.name
-    expect(spawnedSubagent(entry)?.title).toBe('Recovery check')
-  })
-
-  it('shows a spawned child once outside collapsed tool processes and retains its stable identity', () => {
+  it('keeps one spawn tool inside the collapsed process with stable identity', () => {
     const state = emptyState()
     const starting = spawn('starting', 1)
     starting.kind = 'tool_started'
     delete starting.tool!.result
     addEntry(state, starting)
-    transcriptGroups(state)
+    const processKey = transcriptGroups(state)[0]!.blocks[0]!.key
     const result = spawn('result', 2)
     addEntry(state, result)
     const group = transcriptGroups(state)[0]!
-    expect(group.blocks).toEqual([{ kind: 'subagent', key: 'spawn', entry: result }])
+    expect(group.blocks).toMatchObject([{ kind: 'process', items: [{ kind: 'tool', key: 'spawn', entry: result }] }])
+    expect(group.blocks[0]!.key).toBe(processKey)
     const key = group.key
     addEntry(state, { id: 'answer', sequence: 3, version: 3, session_id: 'parent', time: '', kind: 'message', run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'Reviewing the other files.' }] } })
     const after = transcriptGroups(state)[0]!
     expect(after.key).toBe(key)
     expect(after.blocks[0]).toBe(group.blocks[0])
-    expect(after.blocks.map(block => block.kind)).toEqual(['subagent', 'text'])
+    expect(after.blocks.map(block => block.kind)).toEqual(['process', 'text'])
+  })
+
+  it('shows one lifecycle row without duplicating the creation result as a card', () => {
+    const state = emptyState()
+    addEntry(state, { id: 'assistant', sequence: 1, version: 1, session_id: 'parent', run_id: 'run', time: '2026-11-05T00:00:00Z', kind: 'message', message: { role: 'assistant', content: [{ type: 'tool_call', tool_call: { id: 'call', name: 'spawn_agent', arguments: {} } }] } })
+    const starting = spawn('starting', 2)
+    starting.kind = 'tool_started'
+    starting.time = '2026-11-05T00:00:01Z'
+    delete starting.tool!.result
+    addEntry(state, starting)
+    const result = spawn('result', 3)
+    result.time = '2026-11-05T00:00:02Z'
+    addEntry(state, result)
+    addSubagentActivity(state, [{ id: 'started', sequence: 1, session_id: 'parent', child_session_id: 'child', name: 'Recovery check', run_id: 'child-run', status: 'started', time: '2026-11-05T00:00:03Z' }], '1')
+    const groups = transcriptGroups(state)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.blocks.map(block => block.kind)).toEqual(['process', 'subagent-status'])
+    const process = groups[0]!.blocks[0]!
+    expect(process).toMatchObject({ kind: 'process', items: [{ kind: 'tool', key: 'spawn', entry: result }] })
+    if (process.kind === 'process') expect(process.items).toHaveLength(1)
   })
 
   it('keeps failures and stopped executions distinct from a destroyed child session', () => {
