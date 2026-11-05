@@ -420,7 +420,7 @@ func (s *Service) Close(ctx context.Context) error {
 		// Drain callbacks that received a raw Core handle before retirement.
 		// Joining Core must remain outside mu: cancelled tools can need it.
 		r.mu.Lock()
-		r.mu.Unlock()
+		r.mu.Unlock() //nolint:staticcheck // Join pre-retirement callbacks before Core.Close clears their window.
 		errs = append(errs, r.closeCore(ctx))
 		if r.tools != nil {
 			errs = append(errs, r.tools.Close(ctx))
