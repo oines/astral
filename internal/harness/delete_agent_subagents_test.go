@@ -63,6 +63,9 @@ func TestDeleteAgentRemovesDelegatedTreesAcrossRolloutsAndKeepsFilesAndOtherBots
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Deletion intentionally cancels any parent requests still uploading after
+	// child completion. No further model work is expected in this fixture.
+	f.providerClosing.Store(true)
 	if err := f.service.DeleteAgent(f.ctx, f.agent.ID, f.agent.Revision); err != nil {
 		t.Fatal(err)
 	}
