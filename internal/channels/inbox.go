@@ -18,7 +18,48 @@ import (
 	"github.com/oines/astral/internal/transport"
 )
 
+// Capture the Store notification before reading the inbox. A commit between
+// those reads and this wait closes that same channel, so it cannot be missed.
+// A zero deadline disables the timer entirely while the inbox is caught up.
+func waitInbox(ctx context.Context, changed <-chan struct{}, wake <-chan struct{}, results <-chan probeResult, deadline time.Time) (probeResult, bool) {
+	var timer *time.Timer
+	var due <-chan time.Time
+	if !deadline.IsZero() {
+		timer = time.NewTimer(max(time.Until(deadline), 0))
+		due = timer.C
+		defer timer.Stop()
+	}
+	select {
+	case <-ctx.Done():
+	case <-changed:
+	case <-wake:
+	case result := <-results:
+		return result, true
+	case <-due:
+	}
+	return probeResult{}, false
+}
+
 func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
+	changes := s.Store.Watch(
+		persistence.ChangeKey{Kind: "bindings", ID: b.ID},
+		persistence.ChangeKey{Kind: "conversations", ID: b.ConversationID},
+		persistence.ChangeKey{Kind: "observations", ID: b.ConversationID},
+		persistence.ChangeKey{Kind: "sessions", ID: b.SessionID},
+		persistence.ChangeKey{Kind: "agents", ID: b.AgentID},
+		persistence.ChangeKey{Kind: "inbox_cursors", ID: b.ID},
+		persistence.ChangeKey{Kind: "probe_cursors", ID: b.ID},
+		persistence.ChangeKey{Kind: inboxPauseKind, ID: b.ID},
+		persistence.ChangeKey{Kind: inboxResumeKind, ID: b.ID},
+		persistence.ChangeKey{Kind: inboxHandoffKind, ID: b.ID},
+		// A Composer change over a delegation tree acknowledges the root's
+		// committed Core selection by removing this Host recovery intent.
+		persistence.ChangeKey{Kind: "subagent_model_change", ID: b.SessionID},
+		persistence.ChangeKey{Kind: "connections"},
+		persistence.ChangeKey{Kind: "models"},
+		persistence.ChangeKey{Kind: "providers"},
+	)
+	defer changes.Close()
 	if err := s.requireIMBackground(ctx, b); err != nil {
 		return
 	}
@@ -45,15 +86,14 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 	probing := false
 	var pendingResult *probeResult
 	for ctx.Err() == nil {
-		paused, pauseErr := s.pausedInbox(ctx, b)
+		changed := changes.Changes()
+		paused, retryAt, pauseErr := s.inboxPauseState(ctx, b)
 		if pauseErr != nil || paused {
 			resumeContext = true
-			select {
-			case <-ctx.Done():
-				return
-			case <-wake:
-			case <-time.After(time.Second):
+			if pauseErr != nil {
+				retryAt = time.Now().Add(time.Second)
 			}
+			waitInbox(ctx, changed, wake, nil, retryAt)
 			continue
 		}
 		if resumeContext {
@@ -67,6 +107,7 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 				continue
 			}
 			if err := s.Harness.ResumeContext(ctx, b.SessionID); err != nil && ctx.Err() == nil {
+				resumeContext = true
 				pauseErr := s.pauseInboxFailure(ctx, b, boundary, err)
 				slog.WarnContext(ctx, "IM passive recovery failed", "session_id", b.SessionID, "error", errors.Join(err, pauseErr))
 				if !delay(ctx, time.Second) {
@@ -104,11 +145,14 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 				break
 			}
 		}
+		retry := false
 		if err == nil {
-			err = s.handoffDirectObservations(ctx, b, position.Sequence)
+			retry, err = s.handoffDirectObservationsStatus(ctx, b, position.Sequence)
 		}
 		if err == nil {
-			err = s.resumeAcceptedProbe(ctx, b)
+			var pending bool
+			pending, err = s.resumeAcceptedProbeStatus(ctx, b)
+			retry = retry || pending
 		}
 		select {
 		case result := <-results:
@@ -120,16 +164,24 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 			settled, probeErr := s.completeProbe(ctx, b, *pendingResult)
 			if settled {
 				pendingResult = nil
+			} else {
+				retry = true
 			}
 			if probeErr != nil && ctx.Err() == nil {
+				retry = true
 				slog.WarnContext(ctx, "IM Probe completion failed", "conversation_id", b.ConversationID, "error", probeErr)
 			}
 		}
+		var nextAt time.Time
 		if !probing && pendingResult == nil && err == nil {
 			window, probeErr := s.pendingProbe(ctx, b, position.Sequence, time.Now())
+			nextAt = window.NextAt
+			retry = retry || window.Retry || probeErr != nil
 			if probeErr == nil && window.Through != 0 {
 				if _, lookupErr := s.Harness.Receipt(ctx, b.SessionID, probeInputID(b.ID, window.Through)); lookupErr == nil {
-					_ = s.finishProbe(ctx, b, probeResult{through: window.Through, participate: true})
+					if finishErr := s.finishProbe(ctx, b, probeResult{through: window.Through, participate: true}); finishErr != nil {
+						retry = true
+					}
 				} else {
 					view, viewErr := s.Harness.ReadContext(ctx, b.SessionID)
 					if viewErr == nil {
@@ -151,18 +203,27 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 							participate, requestErr := s.shouldParticipate(request, b, view)
 							results <- probeResult{through: window.Through, inputs: window.Inputs, participate: participate, err: requestErr}
 						}()
-					} else if !errors.Is(viewErr, core.ErrIncompleteBatch) {
-						_ = s.finishProbe(ctx, b, probeResult{through: window.Through, err: viewErr})
+					} else {
+						retry = true
+						if !errors.Is(viewErr, core.ErrIncompleteBatch) {
+							_ = s.finishProbe(ctx, b, probeResult{through: window.Through, err: viewErr})
+						}
 					}
 				}
 			}
 		}
-		interval := 200 * time.Millisecond
-		if err != nil {
-			interval = time.Second
+		if retry {
+			nextAt = time.Now().Add(200 * time.Millisecond)
 		}
-		if !delay(ctx, interval) {
-			return
+		if err != nil {
+			// Failed delivery can itself save a blocked record. Its notification
+			// must not defeat the existing retry backoff and create a write loop.
+			changed = nil
+			nextAt = time.Now().Add(time.Second)
+		}
+		if result, ok := waitInbox(ctx, changed, wake, results, nextAt); ok {
+			probing = false
+			pendingResult = &result
 		}
 	}
 }
@@ -170,9 +231,17 @@ func (s *Service) inbox(ctx context.Context, b domain.ConversationBinding) {
 // The durable position contains only confirmed handoffs. It never skips a
 // passive direct input whose conditional wakeup was merely accepted.
 func (s *Service) handoffDirectObservations(ctx context.Context, b domain.ConversationBinding, delivered int64) error {
+	_, err := s.handoffDirectObservationsStatus(ctx, b, delivered)
+	return err
+}
+
+// pending means a real delivered observation still awaits its Core handoff.
+// Only that work retains the short retry when Core advances without a Host
+// commit; an empty inbox does not need to inspect Core on a timer.
+func (s *Service) handoffDirectObservationsStatus(ctx context.Context, b domain.ConversationBinding, delivered int64) (pending bool, err error) {
 	after, err := s.handoffPosition(ctx, b)
 	if err != nil {
-		return err
+		return false, err
 	}
 	previous := after
 	// Reconcile at most one page before yielding to newly archived messages.
@@ -180,10 +249,10 @@ func (s *Service) handoffDirectObservations(ctx context.Context, b domain.Conver
 	if after < delivered {
 		page, err := s.Store.Observations(ctx, b.ConversationID, after, 100)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if len(page) == 0 {
-			return nil
+			return false, nil
 		}
 		var inputs []harness.IMWakeup
 		for _, item := range page {
@@ -199,7 +268,7 @@ func (s *Service) handoffDirectObservations(ctx context.Context, b domain.Conver
 		if len(inputs) > 0 {
 			statuses, err = s.Harness.WakeObservations(ctx, b.SessionID, inputs, b.ID)
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 		nextStatus := 0
@@ -220,13 +289,13 @@ func (s *Service) handoffDirectObservations(ctx context.Context, b domain.Conver
 	}
 	if after > previous {
 		if err := s.saveHandoffPosition(ctx, b, after); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if after >= delivered {
 		s.Harness.ReleaseIMRecovery(b.SessionID)
 	}
-	return nil
+	return after < delivered, nil
 }
 func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, event domain.Observation) (err error) {
 	if paused, pauseErr := s.pausedInbox(ctx, b); pauseErr != nil {

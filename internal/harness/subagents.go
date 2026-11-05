@@ -327,7 +327,7 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 	// The durable creation is the tool result. Initialization and the first Run
 	// are reconciled asynchronously, including after a crash before this signal.
 	s.notify(id)
-	s.wakeSubagents()
+	s.wakeSubagents(id)
 	return SubagentView{SessionID: id, ParentSessionID: source.ID, Title: title, Name: title, Selection: configuration.Selection, Status: "queued"}, nil
 }
 
@@ -494,27 +494,109 @@ type subagentCheckpoint struct {
 
 const subagentDeliveryProtocol = 1
 
-func (s *Service) wakeSubagents() {
+func (s *Service) wakeSubagents(ids ...string) {
+	s.subagentWakeMu.Lock()
+	defer s.subagentWakeMu.Unlock()
+	if len(ids) == 0 {
+		s.subagentRescan = true
+	}
+	for _, id := range ids {
+		if id != "" {
+			if s.subagentDirty == nil {
+				s.subagentDirty = map[string]struct{}{}
+			}
+			s.subagentDirty[id] = struct{}{}
+		}
+	}
+	if !s.subagentRescan && len(s.subagentDirty) == 0 {
+		return
+	}
 	select {
 	case s.subagentWake <- struct{}{}:
 	default:
 	}
 }
+
+func (s *Service) takeSubagentWork() (map[string]struct{}, bool) {
+	s.subagentWakeMu.Lock()
+	defer s.subagentWakeMu.Unlock()
+	dirty, full := s.subagentDirty, s.subagentRescan
+	s.subagentDirty, s.subagentRescan = nil, false
+	select {
+	case <-s.subagentWake:
+	default:
+	}
+	return dirty, full
+}
+
 func (s *Service) subagentWorker() {
 	defer s.subagentWorkers.Done()
-	timer := time.NewTicker(500 * time.Millisecond)
-	defer timer.Stop()
+	work := newSubagentWork()
+	watcher := s.Store.Watch(
+		persistence.ChangeKey{Kind: "sessions"},
+		persistence.ChangeKey{Kind: "subagent_settings"},
+		persistence.ChangeKey{Kind: "agents"},
+		persistence.ChangeKey{Kind: "models"},
+		persistence.ChangeKey{Kind: "providers"},
+		persistence.ChangeKey{Kind: "subagent_activation"},
+		persistence.ChangeKey{Kind: subagentModelChangeKind},
+	)
+	defer watcher.Close()
+	changes := watcher.Changes()
+	full := true
+	var retryAt time.Time
 	for {
+		if s.ctx.Err() != nil {
+			return
+		}
+		dirty, rescan := s.takeSubagentWork()
+		full = full || rescan
+		// Preserve the old subscription until its closure has been observed.
+		// A concurrent Core wake must not hide a Host relationship change.
+		select {
+		case <-changes:
+			changes = watcher.Changes()
+			full = true
+		default:
+		}
+		full = full || !retryAt.IsZero() && !time.Now().Before(retryAt)
+		if full {
+			work = newSubagentWork()
+			err := s.reconcileSubagentsObserved(s.ctx, work.observe)
+			full, retryAt = false, time.Time{}
+			if err != nil {
+				retryAt = time.Now().Add(500 * time.Millisecond)
+			}
+		} else if err := s.reconcileSubagentIDs(s.ctx, work, dirty); err != nil && retryAt.IsZero() {
+			retryAt = time.Now().Add(500 * time.Millisecond)
+		}
+		var retry <-chan time.Time
+		var timer *time.Timer
+		if !retryAt.IsZero() {
+			// Unrelated dirty IDs do not postpone a genuine failure's deadline.
+			timer = time.NewTimer(time.Until(retryAt))
+			retry = timer.C
+		}
 		select {
 		case <-s.ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
 			return
 		case <-s.subagentWake:
-		case <-timer.C:
+		case <-changes:
+		case <-retry:
 		}
-		_ = s.reconcileSubagents(s.ctx)
+		if timer != nil {
+			timer.Stop()
+		}
 	}
 }
 func (s *Service) reconcileSubagents(ctx context.Context) error {
+	return s.reconcileSubagentsObserved(ctx, nil)
+}
+
+func (s *Service) reconcileSubagentsObserved(ctx context.Context, observed func(domain.Session, error)) error {
 	if err := s.reconcileSubagentModelChanges(ctx); err != nil {
 		return err
 	}
@@ -522,6 +604,7 @@ func (s *Service) reconcileSubagents(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var failures []error
 	for _, item := range items {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -533,13 +616,20 @@ func (s *Service) reconcileSubagents(ctx context.Context) error {
 		if record.SubagentParentID == "" || record.Deletion != nil {
 			continue
 		}
-		if err = s.reconcileSubagent(ctx, record); err != nil {
+		err = s.reconcileSubagent(ctx, record)
+		if observed != nil {
+			observed(record, err)
+		}
+		if err != nil {
 			// Failed delivery remains unacknowledged and is retried. Runtime errors
 			// remain visible in the ordinary Session view, never treated as success.
-			continue
+			// Busy execution and unapplied reports instead await Core/Host changes.
+			if !errors.Is(err, core.ErrBusy) && !errors.Is(err, errSubagentReportsPending) {
+				failures = append(failures, err)
+			}
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) error {
 	// Serialize admission and its delivery checkpoint with recursive deletion.
@@ -577,9 +667,11 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	} else {
 		state, stateErr = s.CoreStore.LoadState(ctx, record.ID)
 	}
+	var deliveryErr error
 	if stateErr == nil {
-		if err := s.deliverSubagentHistoryLocked(ctx, record, state); err != nil && !errors.Is(err, errSubagentReportsPending) {
-			return err
+		deliveryErr = s.deliverSubagentHistoryLocked(ctx, record, state)
+		if deliveryErr != nil && !errors.Is(deliveryErr, errSubagentReportsPending) {
+			return deliveryErr
 		}
 		// A parent's unapplied report must not hold up recovery of an already
 		// accepted new instruction for the child. Retry that terminal delivery
@@ -590,8 +682,11 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	if r == nil {
 		if stateErr == nil {
 			needed, err := s.subagentNeedsRuntime(ctx, record, state)
-			if err != nil || !needed {
+			if err != nil {
 				return err
+			}
+			if !needed {
+				return deliveryErr
 			}
 		}
 		var err error
@@ -842,6 +937,9 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 		if terminal && receipt.State == core.InputPending {
 			err = parent.continueLocked(ctx)
 			if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
+				if !parent.core.Load().Snapshot().Running {
+					return errSubagentReportsPending
+				}
 				return nil
 			}
 			return err
