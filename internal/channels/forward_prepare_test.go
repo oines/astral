@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	core "github.com/oines/astral-core"
+
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/testkit"
 )
 
 func TestForwardPreparationUsesSharedBudgetAndNeverRewritesSource(t *testing.T) {
@@ -194,15 +197,40 @@ func TestForwardRecallBeforeOrDuringPreparationDoesNotBlockLaterIMTrigger(t *tes
 			if err := f.s.deliver(f.p.Context, binding, later); err != nil {
 				t.Fatalf("later mention was blocked: %v", err)
 			}
+			awaitDirectReminderRequests(t, f.p, binding.SessionID, "later mention after recalled forward", 2)
 			f.p.Idle(t, binding.SessionID)
+			// Inspect the actual second frozen request: this resource fixture
+			// returns text without exposing a provider-request callback.
+			session, err := f.p.Harness.Core(f.p.Context, binding.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			attempts, err := session.Attempts().Scan(f.p.Context, core.AttemptQuery{Purpose: "generation", Reverse: true, Limit: 3, MaxBytes: 1 << 20})
+			if err != nil || len(attempts.Attempts) != 2 {
+				t.Fatalf("expected the later mention and one reply reminder: attempts=%d error=%v", len(attempts.Attempts), err)
+			}
+			request, err := session.Attempts().Request(f.p.Context, attempts.Attempts[0].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var reminder map[string]any
+			if err := json.Unmarshal(encoded(request), &reminder); err != nil {
+				t.Fatal(err)
+			}
+			activeDeliveryAssertOneReplyReminder(t, reminder)
 			for _, event := range []domain.Observation{created, recalled, later} {
 				delivery, err := f.p.Store.Delivery(f.p.Context, event.ID)
 				if err != nil || delivery.State != "routed" {
 					t.Fatalf("event after recall did not route: event=%s delivery=%+v err=%v", event.ID, delivery, err)
 				}
 			}
-			if f.p.Requests.Load() != 1 {
-				t.Fatalf("later mention failed to wake exactly once: requests=%d", f.p.Requests.Load())
+			testkit.Await(t, f.p.Context, func() bool {
+				var watch map[string]any
+				return domain.IsMissing(f.p.Store.Maintenance(f.p.Context, "im_reply_watch", binding.SessionID, &watch))
+			})
+			f.p.Idle(t, binding.SessionID)
+			if f.p.Requests.Load() != 2 {
+				t.Fatalf("later mention and its single reminder did not settle: requests=%d", f.p.Requests.Load())
 			}
 		})
 	}

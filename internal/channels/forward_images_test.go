@@ -19,7 +19,7 @@ func forwardImagePart(ref string) domain.MessagePart {
 }
 
 func TestForwardImagesReuseNativePreviewWithoutSavingOriginals(t *testing.T) {
-	requests := make(chan map[string]any, 1)
+	requests := make(chan map[string]any, 2)
 	p := testkit.New(t, 0, func(_ context.Context, _ int, request map[string]any) any {
 		requests <- request
 		return testkit.Text("received forwarded text and pictures")
@@ -52,8 +52,10 @@ func TestForwardImagesReuseNativePreviewWithoutSavingOriginals(t *testing.T) {
 	if err := s.deliver(p.Context, binding, event); err != nil {
 		t.Fatal(err)
 	}
+	awaitDirectReminderRequests(t, p, binding.SessionID, "forwarded image mention", 2)
 	p.Idle(t, binding.SessionID)
 	request := <-requests
+	activeDeliveryAssertOneReplyReminder(t, <-requests)
 	text := activeDeliveryText(request)
 	for _, fragment := range []string{"Alice", "Bob", "Carol", "notes.pdf", "scene.mp4", "/messages/10/parts/p0.m0.p0/content", "/messages/10/parts/p0.m0.p3.m0.p0/content", "/messages/9/parts/p0.m0.p0/content", "75,000 pixels"} {
 		if !strings.Contains(text, fragment) {
@@ -69,7 +71,7 @@ func TestForwardImagesReuseNativePreviewWithoutSavingOriginals(t *testing.T) {
 	if err != nil || len(files) != 0 || string(encoded(event)) != before {
 		t.Fatal("forward preview saved original files or rewrote the archived source", err)
 	}
-	if err := s.deliver(p.Context, binding, event); err != nil || source.downloads.Load() != 4 || p.Requests.Load() != 1 {
+	if err := s.deliver(p.Context, binding, event); err != nil || source.downloads.Load() != 4 || p.Requests.Load() != 2 {
 		t.Fatal("receipt replay fetched pictures or woke the Agent again", err)
 	}
 	view, err := p.Harness.InspectContext(p.Context, binding.SessionID)
@@ -87,10 +89,18 @@ func TestForwardImagesReuseNativePreviewWithoutSavingOriginals(t *testing.T) {
 			t.Fatal("forward preview registered a saved attachment")
 		}
 	}
+	testkit.Await(t, p.Context, func() bool {
+		var watch map[string]any
+		return domain.IsMissing(p.Store.Maintenance(p.Context, "im_reply_watch", binding.SessionID, &watch))
+	})
+	p.Idle(t, binding.SessionID)
+	if p.Requests.Load() != 2 {
+		t.Fatal("forward replay or completed reminder started another model request")
+	}
 }
 
 func TestForwardImageFailureStillAdmitsMessageAndLaterTrigger(t *testing.T) {
-	requests := make(chan map[string]any, 1)
+	requests := make(chan map[string]any, 2)
 	p := testkit.New(t, 0, func(_ context.Context, _ int, request map[string]any) any {
 		requests <- request
 		return testkit.Text("received later mention")
@@ -108,15 +118,25 @@ func TestForwardImageFailureStillAdmitsMessageAndLaterTrigger(t *testing.T) {
 	later, _ := activeDeliveryArchive(t, p, binding, "forward-later-mention", "mention")
 	startChannels(t, s, p.Context)
 	activeDeliveryRouted(t, p, later.ID)
+	awaitDirectReminderRequests(t, p, binding.SessionID, "later mention after unavailable forwarded image", 2)
 	p.Idle(t, binding.SessionID)
 	text := activeDeliveryText(<-requests)
+	activeDeliveryAssertOneReplyReminder(t, <-requests)
 	for _, want := range []string{"keep this quotation", "Forwarded image preview unavailable", "download-url", later.Text} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in admitted context: %s", want, text)
 		}
 	}
-	if strings.Contains(text, "private.example") || strings.Contains(text, "token=secret") || p.Requests.Load() != 1 {
+	if strings.Contains(text, "private.example") || strings.Contains(text, "token=secret") || p.Requests.Load() != 2 {
 		t.Fatal("failed forwarded image leaked provider credentials or duplicated activation")
+	}
+	testkit.Await(t, p.Context, func() bool {
+		var watch map[string]any
+		return domain.IsMissing(p.Store.Maintenance(p.Context, "im_reply_watch", binding.SessionID, &watch))
+	})
+	p.Idle(t, binding.SessionID)
+	if p.Requests.Load() != 2 {
+		t.Fatal("unavailable forwarded image started more than one reply reminder")
 	}
 }
 

@@ -1061,17 +1061,31 @@ func TestFreshDirectIMResumesFrozenGenerationAfterReopen(t *testing.T) {
 				t.Fatalf("fixture did not reopen an unstarted frozen generation: %+v calls=%d", before, mains.Load())
 			}
 			startChannels(t, restarted, p.Context)
-			event, _ := activeDeliveryArchive(t, p, binding, "fresh-direct-after-frozen-crash", trigger)
-			deadline, cancel := context.WithTimeout(p.Context, 8*time.Second)
-			defer cancel()
-			testkit.Await(t, deadline, func() bool { return mains.Load() >= 2 })
+			event, through := activeDeliveryArchive(t, p, binding, "fresh-direct-after-frozen-crash", trigger)
+			// The frozen request finishes first, the new direct driver is read
+			// second, and its unsent text receives exactly one later User nudge.
+			awaitDirectReminderRequests(t, p, binding.SessionID, "frozen recovery "+trigger, 3)
 			p.Idle(t, binding.SessionID)
 			first, second := activeDeliveryText(<-requests), activeDeliveryText(<-requests)
 			if !strings.Contains(first, oldText) || strings.Contains(first, event.Text) {
 				t.Fatalf("recovery changed the already frozen request: %s", first)
 			}
-			if strings.Count(second, event.Text) != 1 || mains.Load() != 2 {
+			if strings.Count(second, event.Text) != 1 {
 				t.Fatalf("the fresh direct message was lost or duplicated after recovery: %s calls=%d", second, mains.Load())
+			}
+			activeDeliveryAssertOneReplyReminder(t, <-requests)
+			if err := restarted.deliver(p.Context, binding, event); err != nil {
+				t.Fatal(err)
+			}
+			if err := restarted.handoffDirectObservations(p.Context, binding, through); err != nil {
+				t.Fatal(err)
+			}
+			p.Idle(t, binding.SessionID)
+			if mains.Load() != 3 {
+				t.Fatalf("recovery or replay duplicated a direct response or its one-time reminder: %d", mains.Load())
+			}
+			if outbox, err := p.Store.List(p.Context, "outbox"); err != nil || len(outbox) != 0 {
+				t.Fatalf("text-only recovery or replay automatically sent an IM message: outbox=%d error=%v", len(outbox), err)
 			}
 		})
 	}
