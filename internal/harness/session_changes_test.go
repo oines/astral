@@ -69,22 +69,3 @@ func TestSessionChangesConcurrentRegistrationAndNotification(t *testing.T) {
 		t.Fatal("concurrent readers were retained")
 	}
 }
-
-func TestDirectoryChangesDoNotInvalidateAnUnchangedSessionView(t *testing.T) {
-	s := &Service{}
-	directory, view := s.WatchSession(""), s.WatchSession("one")
-	defer directory.Close()
-	defer view.Close()
-	// A Core commit invalidates the directory, while the existing Core Event
-	// subscription owns the individual view's ordered updates.
-	s.sessionChanges.notify("")
-	<-directory.C
-	select {
-	case <-view.C:
-		t.Fatal("directory invalidation duplicated a Session's Core events")
-	default:
-	}
-	s.sessionChanges.notify("one")
-	<-directory.C
-	<-view.C
-}

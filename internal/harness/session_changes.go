@@ -20,7 +20,6 @@ type sessionChangeSignal struct {
 // WatchSession includes changes such as Stop, which cancels Core immediately
 // but may not produce a Core event until the running operation has unwound.
 // Register before reading the initial view, then Close when the reader exits.
-// An empty ID watches the directory rather than one Session.
 func (s *Service) WatchSession(id string) *SessionWatcher {
 	signal := &s.sessionChanges
 	channel := make(chan struct{}, 1)
@@ -51,7 +50,7 @@ func (s *sessionChangeSignal) notify(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for w := range s.watchers {
-		if w.id == "" || w.id == id {
+		if w.id == id {
 			select {
 			case w.channel <- struct{}{}:
 			default:

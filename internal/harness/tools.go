@@ -219,11 +219,19 @@ func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(co
 }
 
 func (r *runtime) finishInterruptedTools(ctx context.Context) error {
+	_, err := r.snapshotAfterInterruptedTools(ctx)
+	return err
+}
+
+// Reuse the snapshot already needed to decide whether recovery is allowed.
+// Only a resolved tool changes it; ordinary view reads need one Core snapshot.
+func (r *runtime) snapshotAfterInterruptedTools(ctx context.Context) (core.SessionSnapshot, error) {
 	session := r.core.Load()
-	if snapshot := session.Snapshot(); snapshot.Running || snapshot.Maintenance {
-		return nil
+	snapshot := session.Snapshot()
+	if snapshot.Running || snapshot.Maintenance || len(snapshot.Unresolved) == 0 {
+		return snapshot, nil
 	}
-	for _, record := range session.UnresolvedTools() {
+	for _, record := range snapshot.Unresolved {
 		result := core.ToolResult{Content: core.Text("The tool request was interrupted; its effects are unconfirmed."), Outcome: core.OutcomeFailed, IsError: true}
 		if record.Result != nil {
 			result = *record.Result
@@ -234,10 +242,10 @@ func (r *runtime) finishInterruptedTools(ctx context.Context) error {
 			result.Content = core.Text(`{"sent":null,"error":"message send attempt was interrupted"}`)
 		}
 		if err := session.ResolveTool(ctx, record.Invocation.ExecutionID, core.ToolExecution{Result: &result}); err != nil {
-			return err
+			return core.SessionSnapshot{}, err
 		}
 	}
-	return nil
+	return session.Snapshot(), nil
 }
 
 func (r *runtime) registerHandle(ctx context.Context, internalID int, b domain.ExecutionBinding) (processHandle, error) {

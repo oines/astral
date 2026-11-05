@@ -46,12 +46,75 @@ func (s *Service) Summary(ctx context.Context, id string) (SessionSummary, error
 	if err != nil {
 		return SessionSummary{}, err
 	}
+	return s.summary(ctx, record, s.Models.Availability)
+}
+
+// Summaries reads the directory once. Shared Agent and model checks belong to
+// this read only; later requests must observe changed resource availability.
+func (s *Service) Summaries(ctx context.Context) ([]SessionSummary, error) {
+	records, err := s.Store.List(ctx, "sessions")
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	closed := s.closed
+	s.mu.Unlock()
+	agents := map[string]error{}
+	type availability struct {
+		available bool
+		reason    string
+	}
+	models := map[string]availability{}
+	modelAvailability := func(ctx context.Context, id string) (bool, string) {
+		value, ok := models[id]
+		if !ok {
+			value.available, value.reason = s.Models.Availability(ctx, id)
+			models[id] = value
+		}
+		return value.available, value.reason
+	}
+	views := make([]SessionSummary, 0, len(records))
+	for _, stored := range records {
+		var record domain.Session
+		if err := json.Unmarshal(stored.Data, &record); err != nil {
+			return nil, err
+		}
+		if record.Deletion != nil {
+			continue
+		}
+		agentErr, checked := agents[record.AgentID]
+		if !checked {
+			if closed {
+				agentErr = core.ErrClosed
+			} else {
+				agentErr = s.agentAvailable(ctx, record.AgentID)
+			}
+			agents[record.AgentID] = agentErr
+		}
+		var view SessionSummary
+		viewErr := agentErr
+		if viewErr == nil {
+			view, viewErr = s.summary(ctx, record, modelAvailability)
+		}
+		if viewErr != nil {
+			// A broken historical configuration must not hide other Sessions.
+			view = SessionSummary{Session: record, Status: "needs_attention",
+				Error: "This Session could not be opened. Check its Agent and model configuration."}
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+func (s *Service) summary(ctx context.Context, record domain.Session, modelAvailability func(context.Context, string) (bool, string)) (SessionSummary, error) {
+	id := record.ID
 	view := SessionSummary{Session: record, Status: "idle"}
 	s.mu.Lock()
 	r := s.runtimes[id]
 	s.mu.Unlock()
 	var state core.RuntimeState
 	var snapshot *core.SessionSnapshot
+	var err error
 	if r != nil {
 		select {
 		case <-r.ready:
@@ -91,7 +154,7 @@ func (s *Service) Summary(ctx context.Context, id string) (SessionSummary, error
 		}
 	}
 	view.ProfileID, view.Reasoning = view.Selection.ID, view.Selection.Reasoning
-	view.ModelAvailable, view.ModelUnavailableReason = s.Models.Availability(ctx, view.ProfileID)
+	view.ModelAvailable, view.ModelUnavailableReason = modelAvailability(ctx, view.ProfileID)
 	attention := len(state.Branch.Unresolved) > 0
 	for execution, approval := range state.Approvals {
 		if approval.Decision != nil {

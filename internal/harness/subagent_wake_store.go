@@ -18,7 +18,6 @@ func (s subagentWakeStore) Commit(ctx context.Context, id string, commit core.Co
 	receipt, err := s.Store.Commit(ctx, id, commit)
 	if err == nil {
 		s.service.wakeSubagents(id)
-		s.service.sessionChanges.notify("")
 	}
 	return receipt, err
 }
@@ -29,7 +28,6 @@ func (s subagentWakeStore) LookupCommit(ctx context.Context, id, commitID string
 		// Core also confirms a possibly durable write through LookupCommit when
 		// the original Commit/Fork response was lost.
 		s.service.wakeSubagents(id)
-		s.service.sessionChanges.notify("")
 	}
 	return receipt, err
 }
@@ -38,7 +36,6 @@ func (s subagentWakeStore) Fork(ctx context.Context, request core.ForkRequest) (
 	state, err := s.Store.Fork(ctx, request)
 	if err == nil {
 		s.service.wakeSubagents(request.TargetID)
-		s.service.sessionChanges.notify("")
 	}
 	return state, err
 }
