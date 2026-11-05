@@ -23,12 +23,17 @@ const maxSubagentsPerBot = 64
 
 type subagentSettings struct {
 	domain.Meta
-	Configuration  core.Configuration  `json:"configuration"`
-	MessageTool    core.ToolDefinition `json:"message_tool"`
-	InheritContext bool                `json:"inherit_context"`
-	ForkEntryID    string              `json:"fork_entry_id,omitempty"`
-	Task           string              `json:"task"`
-	Started        bool                `json:"started"`
+	// Legacy records may contain a full Configuration and MessageTool. Decode
+	// only the mutable selection; every new request uses the shared root source.
+	Configuration  subagentConfiguration `json:"configuration"`
+	InheritContext bool                  `json:"inherit_context"`
+	ForkEntryID    string                `json:"fork_entry_id,omitempty"`
+	Task           string                `json:"task"`
+	Started        bool                  `json:"started"`
+}
+
+type subagentConfiguration struct {
+	Selection core.ModelSelection `json:"selection"`
 }
 
 type SpawnAgentInput struct {
@@ -59,9 +64,6 @@ type SubagentView struct {
 type spawnAgentTool struct{ runtime *runtime }
 
 func (t spawnAgentTool) Definition() core.ToolDefinition {
-	if saved, ok := t.runtime.savedDelegationTool("spawn_agent"); ok {
-		return saved
-	}
 	return core.ToolDefinition{Name: "spawn_agent", Version: "astral-2", Description: "Create a persistent direct subagent and start it asynchronously. Only user-facing root Sessions may spawn subagents; subagents cannot spawn further agents. Assign independently actionable work. name optionally assigns a stable agent name; omitted names receive a generated code. task is only its first instruction, never its name. Delegate long-running or parallel work, or hand off unfinished work with inherit_context=true. Inherited history uses a shared Rollout fork; otherwise start fresh. Both use this Session's current Computer by default. Omit model and reasoning to inherit the parent's latest complete selection. Explicit model uses that profile's defaults unless reasoning is supplied. Read the models Gateway capability for available profile IDs and legal reasoning values. Do not ask subagents to poll or keep their Runs alive while waiting for you, other agents, or future decisions. Subagents output meaningful progress updates directly; the system automatically delivers their output to the direct parent. They naturally end their Runs when completed or blocked. Natural Run end or failure automatically wakes you. Continue useful work yourself, or end your own Run rather than polling for subagents. Reuse persistent Sessions through agent_control. Returns session_id, name and selection.",
 		Parameters: encode(map[string]any{"type": "object", "properties": map[string]any{
 			"name":            map[string]any{"type": "string", "maxLength": 100},
@@ -87,9 +89,6 @@ func (t spawnAgentTool) Execute(ctx context.Context, inv core.Invocation, _ func
 type agentControlTool struct{ runtime *runtime }
 
 func (t agentControlTool) Definition() core.ToolDefinition {
-	if saved, ok := t.runtime.savedDelegationTool("agent_control"); ok {
-		return saved
-	}
 	return core.ToolDefinition{Name: "agent_control", Version: "astral-2", Description: "Manage only your direct persistent subagents. Empty arguments list them; agent_id queries one (use its session_id). input submits a new instruction, steering an active Run or starting an idle Session. model optionally replaces only this child's complete selection, not its descendants; reasoning requires model. Omitted reasoning uses the selected profile's defaults; an empty object uses API defaults. Read the models Gateway capability for available profile IDs and legal reasoning values. Selection alone never starts work; with input it is saved before that instruction. Frozen requests retain their original selection. signal=stop stops its current Run and preserves history; signal=delete permanently deletes it and all descendants, including independent Rollouts. Signals cannot be combined with input or selection. Query without polling to wait: natural Run end triggers you automatically.",
 		Parameters: encode(map[string]any{"type": "object", "properties": map[string]any{
 			"agent_id":  map[string]any{"type": "string"},
@@ -107,16 +106,6 @@ func subagentReasoningSchema() map[string]any {
 	}, "additionalProperties": false}
 }
 
-func (r *runtime) savedDelegationTool(name string) (core.ToolDefinition, bool) {
-	if r != nil && r.subagent != nil {
-		for _, definition := range r.subagent.Configuration.Tools {
-			if definition.Name == name {
-				return definition, true
-			}
-		}
-	}
-	return core.ToolDefinition{}, false
-}
 func (t agentControlTool) Execute(ctx context.Context, inv core.Invocation, _ func(core.ToolProgress)) (core.ToolExecution, error) {
 	var input AgentControlInput
 	if err := json.Unmarshal(inv.Call.Arguments, &input); err != nil {
@@ -232,20 +221,22 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 	if count >= maxSubagentsPerBot {
 		return SubagentView{}, domain.Conflict("subagent Session limit reached; delete unused subagents before creating more")
 	}
-	configuration, err := core.ReadConfiguration(ctx, s.CoreStore, parent.id)
+	selected, err := s.selectionAtState(ctx, parent.id, parent.core.Load().State())
 	if err != nil {
+		return SubagentView{}, err
+	}
+	var configuration subagentConfiguration
+	if err = json.Unmarshal(selected.value, &configuration.Selection); err != nil {
 		return SubagentView{}, err
 	}
 	if parent.subagent != nil {
-		var settings subagentSettings
-		if err = s.Store.Get(ctx, "subagent_settings", parent.id, &settings); err != nil {
+		settings, err := s.childMetadata(ctx, parent.id)
+		if err != nil {
 			return SubagentView{}, err
 		}
-		configuration.Selection = settings.Configuration.Selection
-	}
-	prompt, err := parent.currentSystemPrompt(ctx, configuration.SystemPrompt)
-	if err != nil {
-		return SubagentView{}, err
+		if err = json.Unmarshal(settings.selection, &configuration.Selection); err != nil {
+			return SubagentView{}, err
+		}
 	}
 	forkHead := parent.core.Load().Head()
 	if inv.AssistantID != "" {
@@ -255,16 +246,7 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 			return SubagentView{}, readErr
 		}
 		forkHead = assistant.Entry.ParentID
-		if assistant.Entry.Generation != nil {
-			request, requestErr := parent.core.Load().Attempts().Request(ctx, assistant.Entry.Generation.AttemptID)
-			if requestErr != nil {
-				return SubagentView{}, requestErr
-			}
-			prompt = request.SystemPrompt
-			configuration.Tools = request.Tools
-		}
 	}
-	configuration.SystemPrompt = prompt
 	if input.Model != "" {
 		configuration.Selection = core.ModelSelection{ID: input.Model, Reasoning: input.Reasoning}
 		if _, err = s.Models.ResolveSelection(ctx, configuration.Selection); err != nil {
@@ -304,7 +286,7 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 		}
 	}
 	record := domain.Session{Meta: domain.Meta{ID: id}, AgentID: source.AgentID, Title: title, TitleSource: domain.TitleManual, Source: "subagent", SubagentParentID: source.ID, ComputerID: computerID, CWD: cwd, Private: source.Private}
-	settings := subagentSettings{Meta: domain.Meta{ID: id}, Configuration: configuration, MessageTool: parent.messageTool, InheritContext: input.InheritContext, ForkEntryID: forkHead, Task: input.Task}
+	settings := subagentSettings{Meta: domain.Meta{ID: id}, Configuration: configuration, InheritContext: input.InheritContext, ForkEntryID: forkHead, Task: input.Task}
 	if settings.InheritContext && forkHead == "" {
 		return SubagentView{}, domain.Conflict("no committed parent history is available to fork")
 	}
@@ -854,13 +836,10 @@ func (r *runtime) startSubagentLocked(ctx context.Context) error {
 	if settings.Started {
 		return nil
 	}
-	// A shared fork can be durable before initialize applies the saved child
-	// configuration. Reconcile it before initial admission as well, so reopening
-	// that fork cannot silently lose an explicit child model selection.
-	if !jsonEqual(r.core.Load().Configuration(), settings.Configuration) {
-		if err := r.core.Load().Configure(ctx, settings.Configuration); err != nil {
-			return err
-		}
+	// Reconcile a durable fork before initial admission, using the current root
+	// prefix and this child's independently selected model.
+	if err := r.syncBusinessConfig(ctx); err != nil {
+		return err
 	}
 	message := core.User(settings.Task)
 	message.ContextKind = "astral.subagent_instruction"

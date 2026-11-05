@@ -84,7 +84,22 @@ func (f *remoteFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	return raw, remoteError(err, false)
 }
 func (f *remoteFS) WriteFile(ctx context.Context, path string, data []byte) error {
-	_, stream, err := f.hub.Call(ctx, "file.write", Call{Binding: f.binding, Path: path}, bytes.NewReader(data))
+	return f.mutate(ctx, "file.write", path, bytes.NewReader(data))
+}
+
+func (f *remoteFS) mutate(ctx context.Context, method, path string, data io.Reader) error {
+	peer, err := f.hub.Peer(ctx, f.binding)
+	if err != nil {
+		return remoteError(err, false)
+	}
+	if err := ctx.Err(); err != nil {
+		return remoteError(err, false)
+	}
+	// Once dispatched, wait for the file operation's terminal response before
+	// releasing the SDK's file queue. Caller cancellation must not let a later
+	// edit read a partial file while the daemon is still writing it. The pinned
+	// peer still terminates on disconnect, whose mutation outcome stays unknown.
+	_, stream, err := peer.Call(context.WithoutCancel(ctx), method, Call{Binding: f.binding, Path: path}, data)
 	if err != nil {
 		return remoteError(err, true)
 	}
@@ -93,7 +108,7 @@ func (f *remoteFS) WriteFile(ctx context.Context, path string, data []byte) erro
 	return remoteError(err, true)
 }
 func (f *remoteFS) MkdirAll(ctx context.Context, path string) error {
-	return remoteError(f.hub.JSON(ctx, "file.mkdir", Call{Binding: f.binding, Path: path}, nil), true)
+	return f.mutate(ctx, "file.mkdir", path, nil)
 }
 
 func (b *Backend) StartProcess(ctx context.Context, inv core.Invocation, request standardtools.ProcessRequest) (standardtools.Process, error) {

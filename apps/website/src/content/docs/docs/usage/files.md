@@ -15,6 +15,8 @@ Check the selected computer before attaching a file: that is where the upload go
 
 If a file is already on the computer, provide its full path, such as `/home/mei/reports/meeting.txt`. That path must be on the computer the Bot is using. If you are unsure, ask it to report its current directory and list the files before doing the work.
 
+On Windows, use the native path, for example `C:\Users\mei\reports\meeting.txt`. File tools also accept `/c/Users/mei/...`, `/mnt/c/Users/mei/...`, and `/cygdrive/c/Users/mei/...` as Windows drive paths when the selected computer runs Windows. The selected computer interprets paths using its own operating system.
+
 ## Open results
 
 Click an image in the conversation to open the full-screen viewer, where you can zoom and download it. Other files open in the file sidebar; available previews depend on the file format. Download a copy to your own device or back it up on the source computer when you need to keep it.

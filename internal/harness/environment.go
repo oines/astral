@@ -220,6 +220,9 @@ func modelChange(previous, current modelbridge.ModelDescription) []core.Message 
 // boundary and duplicate, or describe a selection already superseded there.
 
 func (r *runtime) refreshEnvironment(ctx context.Context) error {
+	if err := r.syncIdlePrefix(ctx); err != nil {
+		return err
+	}
 	view, err := r.core.Load().InspectContext(context.WithValue(ctx, inspectContextKey{}, true))
 	if err != nil {
 		return err

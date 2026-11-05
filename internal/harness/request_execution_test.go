@@ -133,11 +133,11 @@ func TestSessionExecutionRetainsSubagentTreeGuardAndSummaryBypass(t *testing.T) 
 		}), nil
 	}}
 	s := &Service{}
-	r := &runtime{service: s, subagent: &subagentSettings{Configuration: core.Configuration{SystemPrompt: "child-system"}}}
+	r := &runtime{service: s, subagent: &subagentSettings{}}
 	wrapped := sessionModel{Model: probe, runtime: r}
 	s.subagentMu.Lock()
 	defer s.subagentMu.Unlock()
-	execution, err := wrapped.PrepareExecution(context.Background(), core.Request{SystemPrompt: "child-system"})
+	execution, err := wrapped.PrepareExecution(context.Background(), core.Request{SystemPrompt: webSystemPrompt})
 	if err != nil {
 		t.Fatal(err)
 	}

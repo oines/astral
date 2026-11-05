@@ -46,9 +46,6 @@ func DefaultMessageTool() core.ToolDefinition {
 }
 
 func (r *runtime) messageToolFor(ctx context.Context, record domain.Session) (core.ToolDefinition, error) {
-	if r.subagent != nil {
-		return r.subagent.MessageTool, nil
-	}
 	if record.BindingID == "" || r.service.IM == nil {
 		return DefaultMessageTool(), nil
 	}

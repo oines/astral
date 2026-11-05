@@ -108,8 +108,8 @@ func TestIdentityRevisionUpgradesExistingRootAndChildOnceWithoutRewritingHistory
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A child retains the exact inherited System/tool prefix saved by the older
-	// Host. Only its Host User identity is upgraded at a safe context boundary.
+	// An older Host saved a full prefix. New requests use the shared current
+	// source, while those old configuration and identity entries stay immutable.
 	configuration.SystemPrompt = "Legacy inherited prefix: subagents can delegate further. The latest Host identity User message establishes the current role."
 	for index := range configuration.Tools {
 		if configuration.Tools[index].Name == "spawn_agent" {
@@ -120,10 +120,7 @@ func TestIdentityRevisionUpgradesExistingRootAndChildOnceWithoutRewritingHistory
 	if err := f.store.Get(f.ctx, "subagent_settings", child.SessionID, &settings); err != nil {
 		t.Fatal(err)
 	}
-	settings.Configuration = configuration
-	if err := f.store.Save(f.ctx, "subagent_settings", &settings.Meta, &settings); err != nil {
-		t.Fatal(err)
-	}
+	saveLegacySubagentPrefix(t, f, &settings, configuration)
 	if err := f.service.Close(f.ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -198,8 +195,8 @@ func TestIdentityRevisionUpgradesExistingRootAndChildOnceWithoutRewritingHistory
 			t.Fatalf("%s appended %d upgraded identities, want 1", id, count)
 		}
 	}
-	if request := subagentTestRequest(t, f, child.SessionID); request.SystemPrompt != configuration.SystemPrompt || !reflect.DeepEqual(request.Tools, configuration.Tools) {
-		t.Fatal("upgrading a child's User identity replaced its saved System/tool prefix")
+	if request, rootRequest := subagentTestRequest(t, f, child.SessionID), subagentTestRequest(t, f, parent.id); request.SystemPrompt != rootRequest.SystemPrompt || !reflect.DeepEqual(request.Tools, rootRequest.Tools) {
+		t.Fatal("child did not adopt the shared current System/tool prefix")
 	}
 	for _, id := range []string{parent.id, child.SessionID} {
 		if err := f.service.InitializeSession(f.ctx, id); err != nil {

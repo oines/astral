@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 )
 
-// Keep only admission metadata. The frozen prompt, tool declarations and
-// initial task remain in their authoritative document, not in this memo.
+// Keep only admission metadata. Shared instructions and tool declarations are
+// never loaded from a child's settings; the initial task stays in its document.
 type subagentMetadata struct {
 	revision    int64
 	started     bool
