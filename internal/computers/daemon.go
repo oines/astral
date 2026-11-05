@@ -55,6 +55,7 @@ type daemonConnection struct {
 	peer        *transport.Peer
 	executions  map[string]string
 	closing     bool
+	mutations   sync.WaitGroup
 	cleanupOnce sync.Once
 	cleanupErr  error
 }
@@ -211,6 +212,10 @@ func (d *Daemon) cleanupConnection(generation *daemonConnection) error {
 				errs = append(errs, err)
 			}
 		}
+		// No new file mutations can register after closing was set under mu.
+		// Keep Connect's generation lock until old writes have closed their files,
+		// even when their transport already disconnected and cannot report a result.
+		generation.mutations.Wait()
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		if len(errs) != 0 {
@@ -436,6 +441,10 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 	}()
 	d.mu.Lock()
 	connected := d.connectedLocked(generation)
+	if connected && (request.Method == "file.write" || request.Method == "file.mkdir") {
+		generation.mutations.Add(1)
+		defer generation.mutations.Done()
+	}
 	d.mu.Unlock()
 	if !connected {
 		return domain.Offline("daemon connection is no longer active")
