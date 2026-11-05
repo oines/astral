@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,11 +14,32 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral-core/store/sqlite"
 	"github.com/oines/astral/internal/computers"
+	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/modelbridge"
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/testkit"
 )
+
+// Ask SQLite for a coherent snapshot, including committed WAL pages. Closing
+// database/sql does not guarantee every previously borrowed connection is gone.
+func probeDatabaseSnapshot(t *testing.T, path string) []byte {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	target := filepath.Join(t.TempDir(), "snapshot.db")
+	if _, err := db.ExecContext(t.Context(), "VACUUM INTO ?", target); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
 
 type coldProbeStore struct {
 	core.Store
@@ -163,9 +185,9 @@ func TestProbeRecoveryChecksWorkBeforeOpeningIdenticalColdFixtures(t *testing.T)
 				}
 				return bytes
 			}
-			hostDB := read(filepath.Join(p.Store.Directory, "astral.db"))
+			hostDB := probeDatabaseSnapshot(t, filepath.Join(p.Store.Directory, "astral.db"))
 			key := read(filepath.Join(p.Store.Directory, "master.key"))
-			coreDB := read(filepath.Join(p.Directory, "core.db"))
+			coreDB := probeDatabaseSnapshot(t, filepath.Join(p.Directory, "core.db"))
 			for _, legacy := range []bool{true, false} {
 				fixture, spy := cloneProbeFixture(t, hostDB, key, coreDB, client)
 				calls := p.Requests.Load()
@@ -252,6 +274,76 @@ func TestProbeRecoveryChecksWorkBeforeOpeningIdenticalColdFixtures(t *testing.T)
 			}
 		})
 	}
+}
+
+func TestColdProbeFixtureSnapshotIncludesCommittedWAL(t *testing.T) {
+	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any {
+		t.Error("snapshotting an idle fixture called the model")
+		return nil
+	})
+	path := filepath.Join(p.Store.Directory, "astral.db")
+	reader, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	if _, err := reader.ExecContext(p.Context, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		t.Fatal(err)
+	}
+	// Keep a pre-binding read snapshot alive. The writer can close successfully,
+	// but this reader prevents the newly committed Session from reaching main DB.
+	tx, err := reader.BeginTx(p.Context, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	var count int
+	if err := tx.QueryRowContext(p.Context, "SELECT count(*) FROM documents").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	s := New(p.Store, p.Harness)
+	binding := activeDeliveryChat(t, p, s, true, false)
+	var original domain.Session
+	if err := p.Store.Get(p.Context, "sessions", binding.SessionID, &original); err != nil {
+		t.Fatal("source fixture lost its committed Host Session:", err)
+	}
+	if err := p.Harness.Close(p.Context); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.CoreStore.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	wal, err := os.Stat(path + "-wal")
+	if err != nil || wal.Size() == 0 {
+		t.Fatalf("fixture did not retain committed WAL after Close: %v %v", wal, err)
+	}
+	main, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(data []byte, exists bool) {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "astral.db"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		store, err := persistence.Open(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		var copied domain.Session
+		err = store.Get(p.Context, "sessions", binding.SessionID, &copied)
+		if exists && (err != nil || copied.ID != original.ID) || !exists && !domain.IsMissing(err) {
+			t.Fatalf("snapshot Host Session exists=%v: copied=%s error=%v", exists, copied.ID, err)
+		}
+	}
+	check(main, false) // The old fixture reproduces the exact Host Get failure.
+	check(probeDatabaseSnapshot(t, path), true)
+	t.Logf("committed Host Session omitted by main-file copy after successful Close; WAL=%d bytes; SQLite snapshot retains it", wal.Size())
 }
 
 func TestBusyProbeRecoveryDoesNotReadQueuedOwnerBodies(t *testing.T) {
