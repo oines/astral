@@ -45,6 +45,9 @@ export async function buildNotices(root, target) {
     if (entry.Path === 'github.com/oines/astral-core') {
       sections.push(`Astral Core Models / Twilight AI\n\n${await notices(path.join(entry.Dir, 'models'))}`)
     }
+    if (entry.Path === 'github.com/gen2brain/vpx') {
+      sections.push(`VPX additional patent grant\n\n${await readFile(path.join(entry.Dir, 'PATENTS'), 'utf8')}`)
+    }
   }
   const goRoot = execFileSync('go', ['env', 'GOROOT'], commandOptions).trim()
   const goLicense = await readFile(path.join(goRoot, 'LICENSE'), 'utf8').catch(error => {

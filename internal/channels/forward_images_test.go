@@ -57,7 +57,7 @@ func TestForwardImagesReuseNativePreviewWithoutSavingOriginals(t *testing.T) {
 	request := <-requests
 	activeDeliveryAssertOneReplyReminder(t, <-requests)
 	text := activeDeliveryText(request)
-	for _, fragment := range []string{"Alice", "Bob", "Carol", "notes.pdf", "scene.mp4", "/messages/10/parts/p0.m0.p0/content", "/messages/10/parts/p0.m0.p3.m0.p0/content", "/messages/9/parts/p0.m0.p0/content", "75,000 pixels"} {
+	for _, fragment := range []string{"Alice", "Bob", "Carol", "notes.pdf", "scene.mp4", "/messages/10/parts/p0.m0.p0/content", "/messages/10/parts/p0.m0.p3.m0.p0/content", "/messages/9/parts/p0.m0.p0/content", "compressed preview", "download the original attachment"} {
 		if !strings.Contains(text, fragment) {
 			t.Errorf("model input lost %q: %s", fragment, text)
 		}

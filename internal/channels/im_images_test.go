@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"image"
 	"image/color"
+	"image/draw"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"net/http"
@@ -25,6 +27,11 @@ import (
 
 func observationPNG(t *testing.T, width, height int) []byte {
 	t.Helper()
+	return observationPNGWithCompression(t, width, height, png.DefaultCompression)
+}
+
+func observationPNGWithCompression(t *testing.T, width, height int, level png.CompressionLevel) []byte {
+	t.Helper()
 	canvas := image.NewNRGBA(image.Rect(0, 0, width, height))
 	for y := height / 2; y < height; y++ {
 		for x := width / 2; x < width; x++ {
@@ -32,7 +39,29 @@ func observationPNG(t *testing.T, width, height int) []byte {
 		}
 	}
 	var data bytes.Buffer
-	if err := png.Encode(&data, canvas); err != nil {
+	encoder := png.Encoder{CompressionLevel: level}
+	if err := encoder.Encode(&data, canvas); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
+}
+
+func observationUncompressedPNG(t *testing.T, width, height int) []byte {
+	t.Helper()
+	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			canvas.SetRGBA(x, y, color.RGBA{
+				R: byte(x / 5), G: byte(y / 4), B: byte((x + y) / 9), A: 255,
+			})
+		}
+	}
+	var data bytes.Buffer
+	// The source is a valid, deliberately uncompressed PNG. Its bytes exceed
+	// both image budgets while the pixels compress well, so processing must
+	// encode WebP without needing to shrink the original dimensions.
+	encoder := png.Encoder{CompressionLevel: png.NoCompression}
+	if err := encoder.Encode(&data, canvas); err != nil {
 		t.Fatal(err)
 	}
 	return data.Bytes()
@@ -55,18 +84,176 @@ func observationPreviewPixels(t *testing.T, part core.Content) image.Image {
 	return pixels
 }
 
-func TestObservationImageLimitsAreaWithoutUpscaling(t *testing.T) {
+func observationPreviewBase64(t *testing.T, part core.Content) string {
+	t.Helper()
+	var encoded string
+	if err := json.Unmarshal(part.Data, &encoded); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := base64.StdEncoding.DecodeString(encoded); err != nil {
+		t.Fatalf("invalid preview base64: %v", err)
+	}
+	return encoded
+}
+
+func TestObservationPreviewCompressesHighNoiseWithoutResizing(t *testing.T) {
+	canvas := image.NewRGBA(image.Rect(0, 0, 512, 512))
+	state := uint32(1)
+	for i := 0; i < len(canvas.Pix); i += 4 {
+		for channel := 0; channel < 3; channel++ {
+			state = state*1664525 + 1013904223
+			canvas.Pix[i+channel] = byte(state >> 24)
+		}
+		canvas.Pix[i+3] = 255
+	}
+	var source bytes.Buffer
+	if err := png.Encode(&source, canvas); err != nil {
+		t.Fatal(err)
+	}
+	if base64.StdEncoding.EncodedLen(source.Len()) <= observationImageCompressAboveBytes {
+		t.Fatal("fixture does not exceed the encoded preview budget")
+	}
+	result, err := processObservationImage(t.Context(), source.Bytes())
+	if err != nil || result.IsError || len(result.Content) != 2 {
+		t.Fatalf("prepare noisy preview: %+v, %v", result, err)
+	}
+	if encoded := observationPreviewBase64(t, result.Content[1]); len(encoded) >= base64.StdEncoding.EncodedLen(source.Len()) {
+		t.Fatal("compressed preview did not reduce the original encoded size")
+	}
+	if result.Content[1].MediaType != "image/webp" {
+		t.Fatalf("noisy image was not compressed to WebP: %q", result.Content[1].MediaType)
+	}
+	if bounds := observationPreviewPixels(t, result.Content[1]).Bounds(); bounds != canvas.Bounds() {
+		t.Fatalf("preview was unexpectedly resized: %v", bounds)
+	}
+}
+
+func TestObservationPreviewBoundsLargeAnimatedGIFWithoutShrinkingSmallFrame(t *testing.T) {
+	palette := make(color.Palette, 256)
+	for i := range palette {
+		palette[i] = color.RGBA{R: byte(i), G: byte(i * 73), B: byte(i * 151), A: 255}
+	}
+	animation := gif.GIF{}
+	state := uint32(1)
+	for range 12 {
+		frame := image.NewPaletted(image.Rect(0, 0, 96, 96), palette)
+		for i := range frame.Pix {
+			state = state*1664525 + 1013904223
+			frame.Pix[i] = byte(state >> 24)
+		}
+		animation.Image = append(animation.Image, frame)
+		animation.Delay = append(animation.Delay, 10)
+	}
+	var source bytes.Buffer
+	if err := gif.EncodeAll(&source, &animation); err != nil {
+		t.Fatal(err)
+	}
+	if base64.StdEncoding.EncodedLen(source.Len()) <= observationImageCompressAboveBytes {
+		t.Fatal("small-frame animation does not exceed the encoded preview budget")
+	}
+	result, err := processObservationImage(t.Context(), source.Bytes())
+	if err != nil || result.IsError || len(result.Content) != 2 {
+		t.Fatalf("prepare animated preview: %+v, %v", result, err)
+	}
+	observationPreviewBase64(t, result.Content[1])
+	if bounds := observationPreviewPixels(t, result.Content[1]).Bounds(); bounds.Dx() != 96 || bounds.Dy() != 96 || result.Content[1].MediaType != "image/webp" {
+		t.Fatalf("large animation was not reduced to a bounded static preview: %v, %q", bounds, result.Content[1].MediaType)
+	}
+}
+
+func TestObservationPreviewUsesIMQualityWithoutChangingReadDefault(t *testing.T) {
+	source := observationUncompressedPNG(t, 1200, 800)
+	if base64.StdEncoding.EncodedLen(len(source)) <= 150_000 {
+		t.Fatal("fixture does not require ordinary image processing")
+	}
+	preview, err := processObservationImage(t.Context(), source)
+	if err != nil || preview.IsError || len(preview.Content) != 2 {
+		t.Fatalf("prepare IM image: %+v, %v", preview, err)
+	}
+	options := core.ImageOptions{CompressAboveBytes: observationImageCompressAboveBytes, Quality: 30}
+	expected, err := core.ProcessImage(t.Context(), source, options)
+	if err != nil || expected.IsError || len(expected.Content) != 2 {
+		t.Fatalf("prepare reference IM image: %+v, %v", expected, err)
+	}
+	if preview.Content[1].MediaType != "image/webp" || !bytes.Equal(preview.Content[1].Data, expected.Content[1].Data) {
+		t.Fatal("IM preview did not use Core's quality-30 WebP encoding")
+	}
+	if bounds := observationPreviewPixels(t, preview.Content[1]).Bounds(); bounds.Dx() != 1200 || bounds.Dy() != 800 {
+		t.Fatalf("IM unnecessarily imposed a dimension limit despite fitting the encoded budget: %v", bounds)
+	}
+	previewBytes, err := base64.StdEncoding.DecodeString(observationPreviewBase64(t, preview.Content[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	passthrough, err := processObservationImage(t.Context(), previewBytes)
+	if err != nil || passthrough.IsError || len(passthrough.Content) != 2 || !bytes.Equal(passthrough.Content[1].Data, preview.Content[1].Data) {
+		t.Fatal("a WebP already within the preview limits was recompressed:", err)
+	}
+	// The source exceeds the ordinary byte budget too, so the default must
+	// encode instead of taking the original-byte passthrough path.
+	readOptions := core.ImageOptions{}
+	readDefault, err := core.ProcessImage(t.Context(), source, readOptions)
+	if err != nil || readDefault.IsError || len(readDefault.Content) != 2 {
+		t.Fatalf("prepare ordinary read image: %+v, %v", readDefault, err)
+	}
+	readOptions.Quality = 75
+	readHigh, err := core.ProcessImage(t.Context(), source, readOptions)
+	if err != nil || readHigh.IsError || len(readHigh.Content) != 2 {
+		t.Fatalf("prepare explicit high-quality read image: %+v, %v", readHigh, err)
+	}
+	if readDefault.Content[1].MediaType != "image/webp" || !bytes.Equal(readDefault.Content[1].Data, readHigh.Content[1].Data) {
+		t.Fatal("ordinary image processing no longer uses its quality-75 default")
+	}
+	if bytes.Equal(preview.Content[1].Data, readDefault.Content[1].Data) {
+		t.Fatal("IM preview unexpectedly used ordinary read quality")
+	}
+}
+
+func TestObservationPreviewKeepsTextResolutionWhenEncodedBudgetFits(t *testing.T) {
+	canvas := image.NewRGBA(image.Rect(0, 0, 1600, 900))
+	draw.Draw(canvas, canvas.Bounds(), image.White, image.Point{}, draw.Src)
+	// A row of small high-contrast glyphs remains pixel-identical; this checks
+	// resolution preservation, not an OCR or model recognition claim.
+	for x := 16; x < 1560; x += 32 {
+		for y, row := range []string{"00100", "01010", "10001", "11111", "10001", "10001", "10001"} {
+			for column, pixel := range row {
+				if pixel == '1' {
+					draw.Draw(canvas, image.Rect(x+column*2, 16+y*2, x+column*2+2, 18+y*2), image.Black, image.Point{}, draw.Src)
+				}
+			}
+		}
+	}
+	var source bytes.Buffer
+	if err := png.Encode(&source, canvas); err != nil {
+		t.Fatal(err)
+	}
+	if base64.StdEncoding.EncodedLen(source.Len()) > observationImageCompressAboveBytes {
+		t.Fatal("text fixture does not fit the encoded preview budget")
+	}
+	result, err := processObservationImage(t.Context(), source.Bytes())
+	if err != nil || result.IsError || len(result.Content) != 2 {
+		t.Fatalf("prepare text preview: %+v, %v", result, err)
+	}
+	if frozen := observationPreviewBase64(t, result.Content[1]); frozen != base64.StdEncoding.EncodeToString(source.Bytes()) {
+		t.Fatal("text pixels were unnecessarily recompressed or reduced by a total-pixel limit")
+	}
+	if bounds := observationPreviewPixels(t, result.Content[1]).Bounds(); bounds != canvas.Bounds() {
+		t.Fatalf("text resolution changed: %v", bounds)
+	}
+}
+
+func TestObservationImageKeepsOriginalDimensionsWhenEncodedBudgetFits(t *testing.T) {
 	for _, test := range []struct {
 		name                        string
 		width, height, wantW, wantH int
 	}{
-		{"square", 1000, 1000, 273, 273},
-		{"landscape", 1200, 800, 335, 223},
-		{"portrait", 800, 1200, 223, 335},
+		{"square", 1000, 1000, 1000, 1000},
+		{"landscape", 1200, 800, 1200, 800},
+		{"portrait", 800, 1200, 800, 1200},
 		{"small", 200, 100, 200, 100},
-		{"at-limit", 300, 250, 300, 250},
-		{"narrow", 1, 100000, 1, 75000},
-		{"wide", 100000, 1, 75000, 1},
+		{"medium", 1024, 512, 1024, 512},
+		{"narrow", 1, 100000, 1, 100000},
+		{"wide", 100000, 1, 100000, 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			data := observationPNG(t, test.width, test.height)
@@ -75,24 +262,27 @@ func TestObservationImageLimitsAreaWithoutUpscaling(t *testing.T) {
 				t.Fatalf("prepare preview: %+v, %v", result, err)
 			}
 			bounds := observationPreviewPixels(t, result.Content[1]).Bounds()
-			if bounds.Dx() != test.wantW || bounds.Dy() != test.wantH || bounds.Dx()*bounds.Dy() > observationImageMaxPixels {
-				t.Fatalf("preview=%v, want %dx%d within %d pixels", bounds, test.wantW, test.wantH, observationImageMaxPixels)
+			var frozen string
+			if err := json.Unmarshal(result.Content[1].Data, &frozen); err != nil {
+				t.Fatal(err)
 			}
-			if test.width*test.height <= observationImageMaxPixels {
-				var frozen string
-				_ = json.Unmarshal(result.Content[1].Data, &frozen)
-				if frozen != base64.StdEncoding.EncodeToString(data) {
-					t.Fatal("small image was unnecessarily re-encoded")
-				}
+			if bounds.Dx() != test.wantW || bounds.Dy() != test.wantH || len(frozen) > observationImageCompressAboveBytes {
+				t.Fatalf("preview=%v, want %dx%d; base64=%d limit=%d", bounds, test.wantW, test.wantH, len(frozen), observationImageCompressAboveBytes)
+			}
+			if frozen != base64.StdEncoding.EncodeToString(data) {
+				t.Fatal("image that fit the encoded budget was unnecessarily re-encoded")
 			}
 		})
 	}
 }
 
 func TestObservationImagePreservesTransparencyAndEXIFOrientation(t *testing.T) {
-	result, err := processObservationImage(context.Background(), observationPNG(t, 1200, 800))
+	result, err := processObservationImage(context.Background(), observationPNGWithCompression(t, 1200, 800, png.NoCompression))
 	if err != nil || result.IsError {
 		t.Fatalf("prepare transparent image: %+v %v", result, err)
+	}
+	if result.Content[1].MediaType != "image/webp" {
+		t.Fatalf("transparent fixture did not exercise WebP encoding: %q", result.Content[1].MediaType)
 	}
 	pixels := observationPreviewPixels(t, result.Content[1])
 	if _, _, _, alpha := pixels.At(0, 0).RGBA(); alpha != 0 {
@@ -122,15 +312,16 @@ func TestObservationImagePreservesTransparencyAndEXIFOrientation(t *testing.T) {
 	if err != nil || result.IsError {
 		t.Fatalf("prepare rotated image: %+v %v", result, err)
 	}
-	if bounds := observationPreviewPixels(t, result.Content[1]).Bounds(); bounds.Dx() != 223 || bounds.Dy() != 335 {
+	if bounds := observationPreviewPixels(t, result.Content[1]).Bounds(); bounds.Dx() != 800 || bounds.Dy() != 1200 {
 		t.Fatalf("EXIF orientation was lost: %v", bounds)
 	}
 }
 
 func TestIMPreviewIsFrozenBeforeMainAndProbeWithoutChangingOriginalDownload(t *testing.T) {
 	bot := newBot(t)
-	data := observationPNG(t, 1200, 800)
+	data := observationUncompressedPNG(t, 1200, 800)
 	var probes atomic.Int64
+	var frozenPreview atomic.Value
 	p := testkit.New(t, 1, func(_ context.Context, _ int, request map[string]any) any {
 		if !strings.Contains(string(encoded(request["messages"])), "compressed preview") {
 			t.Error("model request omitted the IM preview explanation")
@@ -148,9 +339,15 @@ func TestIMPreviewIsFrozenBeforeMainAndProbeWithoutChangingOriginalDownload(t *t
 				value, _ := part["image_url"].(map[string]any)
 				url, _ := value["url"].(string)
 				_, encodedImage, ok := strings.Cut(url, ",")
+				if !strings.HasPrefix(url, "data:image/webp;base64,") {
+					t.Errorf("model received a recompressed image in an unexpected format: %q", strings.SplitN(url, ",", 2)[0])
+				}
+				if !frozenPreview.CompareAndSwap(nil, encodedImage) && frozenPreview.Load() != encodedImage {
+					t.Error("main model and Probe received different frozen preview bytes")
+				}
 				payload, decodeErr := base64.StdEncoding.DecodeString(encodedImage)
 				config, _, configErr := image.DecodeConfig(bytes.NewReader(payload))
-				if !ok || decodeErr != nil || configErr != nil || config.Width*config.Height > observationImageMaxPixels {
+				if !ok || decodeErr != nil || configErr != nil || config.Width != 1200 || config.Height != 800 {
 					t.Errorf("model received an invalid or oversized preview: %+v, %v, %v", config, decodeErr, configErr)
 				}
 			}
@@ -205,8 +402,11 @@ func TestIMPreviewIsFrozenBeforeMainAndProbeWithoutChangingOriginalDownload(t *t
 				continue
 			}
 			bounds := observationPreviewPixels(t, part).Bounds()
-			if bounds.Dx() != 335 || bounds.Dy() != 223 || part.URL != messages.AttachmentDownloadPath(b.ConversationID, "10", "10:0") {
+			if bounds.Dx() != 1200 || bounds.Dy() != 800 || part.URL != messages.AttachmentDownloadPath(b.ConversationID, "10", "10:0") {
 				t.Fatalf("frozen preview dimensions or original reference changed: %v, %q", bounds, part.URL)
+			}
+			if part.MediaType != "image/webp" || frozenPreview.Load() != observationPreviewBase64(t, part) {
+				t.Fatal("model request changed the admitted WebP preview")
 			}
 		}
 	}

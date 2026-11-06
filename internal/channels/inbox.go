@@ -493,7 +493,7 @@ func (s *Service) observationImage(ctx context.Context, b domain.ConversationBin
 	}
 	image := processed.Content[1]
 	image.URL = messages.AttachmentDownloadPath(conversation.ID, event.MessageID, attachment.Ref)
-	content := core.Text(fmt.Sprintf("[IM image file-id=%q: compressed preview, at most 75,000 pixels. To inspect text or fine details, download the original attachment through its download-url and read the downloaded file.]", attachment.Ref))
+	content := core.Text(fmt.Sprintf("[IM image file-id=%q: compressed preview. To inspect text or fine details, download the original attachment through its download-url and read the downloaded file.]", attachment.Ref))
 	return append(content, image), nil
 }
 
