@@ -27,6 +27,8 @@ If the Bot reports completion without a link, ask:
 
 The link retains its original computer. Selecting a different computer later does not move the file or change where an older link points.
 
+When the Bot reads an image on a computer, it preserves the original dimensions by default. Images above the default 150KB encoded-data compression threshold use quality-75 WebP; smaller images keep their original bytes. Final sizes vary with the image content. The original file on the computer stays intact.
+
 Images returned directly by a tool are retained in the conversation and remain available when you reopen its history. Displaying them does not require an extra file copy on the computer.
 
 ### A file will not open
@@ -49,7 +51,7 @@ Folders organize work; the operating-system account running the computer service
 
 ## Chat attachments
 
-In a connected Telegram, QQ, or other platform chat, send attachments with the task you want performed. Images initially supply a compressed preview. If text or detail is unclear, ask the Bot to download and read the original image. Videos and ordinary files are downloaded to a computer when the task needs them.
+In a connected Telegram, QQ, or other platform chat, send attachments with the task you want performed. Chat images use a lighter preview: a 30KB encoded-data compression threshold and quality-30 WebP, keeping the original dimensions by default. These are compression settings rather than a fixed output size. The preview is prepared on arrival and reused in later replies. When a task depends on small text or fine detail, ask the Bot to download and read the original image. Downloads preserve the original file. Videos and ordinary files are downloaded to a computer when the task needs them.
 
 To return a result to the chat, ask explicitly:
 

@@ -7,7 +7,7 @@ This guide is for developers modifying Astral or building their own packages. Fo
 
 ## Prepare the tools and source
 
-Install the versions specified by the repository: Go **1.26.3**, Node.js **26.7.0**, and pnpm **10.31.0**. They are recorded in `mise.toml` and can also be managed with mise.
+Install the versions specified by the repository: Go **1.26.4**, Node.js **26.7.0**, and pnpm **10.31.0**. They are recorded in `mise.toml` and can also be managed with mise.
 
 Get the source and install dependencies:
 

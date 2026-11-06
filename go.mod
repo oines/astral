@@ -1,6 +1,6 @@
 module github.com/oines/astral
 
-go 1.26.0
+go 1.26.4
 
 require (
 	github.com/MoeForge/moego v0.1.0-alpha.1.0.20261104092832-8aa874cd38e3
@@ -8,7 +8,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
-	github.com/oines/astral-core v0.0.0-20261105165958-ecbb022e4eb0
+	github.com/oines/astral-core v0.0.0-20261106045805-4e2310bd0d4a
 	github.com/pquerna/otp v1.5.0
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/robfig/cron/v3 v3.0.1
@@ -24,6 +24,7 @@ require (
 require (
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/creack/pty v1.1.24 // indirect
+	github.com/gen2brain/vpx v0.2.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect

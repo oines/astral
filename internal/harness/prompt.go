@@ -243,5 +243,9 @@ func (m sessionModel) ValidateRequestReadOnly(ctx context.Context, request core.
 }
 
 func (m sessionModel) RecoverRequest(ctx context.Context, request core.Request, cause error) (core.Request, bool, error) {
-	return core.RecoverModelRequest(ctx, m.Model, request, cause)
+	// Core already isolated the request at its public recovery boundary.
+	if recoverer, ok := m.Model.(core.ModelRequestRecoverer); ok {
+		return recoverer.RecoverRequest(ctx, request, cause)
+	}
+	return core.Request{}, false, nil
 }
