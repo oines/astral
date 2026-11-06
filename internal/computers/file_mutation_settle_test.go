@@ -238,13 +238,17 @@ func TestDaemonReconnectWaitsForDisconnectedFileMutation(t *testing.T) {
 	}
 	firstConnection := connect()
 	var generation *daemonConnection
-	for generation == nil {
+	var initialHubConnection *connection
+	for generation == nil || initialHubConnection == nil {
 		d.mu.Lock()
 		if d.connectedLocked(d.connection) {
 			generation = d.connection
 		}
 		d.mu.Unlock()
-		if generation == nil {
+		hub.mu.RLock()
+		initialHubConnection = hub.live[d.Credentials.ComputerID]
+		hub.mu.RUnlock()
+		if generation == nil || initialHubConnection == nil {
 			select {
 			case err := <-firstConnection:
 				t.Fatalf("initial connection failed: %v", err)
@@ -312,12 +316,16 @@ func TestDaemonReconnectWaitsForDisconnectedFileMutation(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("old connection did not finish after its write settled")
 	}
+	var active *connection
 	for {
 		d.mu.Lock()
 		current := d.connection
 		ready := current != generation && d.connectedLocked(current)
 		d.mu.Unlock()
-		if ready {
+		hub.mu.RLock()
+		active = hub.live[d.Credentials.ComputerID]
+		hub.mu.RUnlock()
+		if ready && active != nil && active != initialHubConnection {
 			break
 		}
 		select {
@@ -328,9 +336,6 @@ func TestDaemonReconnectWaitsForDisconnectedFileMutation(t *testing.T) {
 		case <-time.After(time.Millisecond):
 		}
 	}
-	hub.mu.RLock()
-	active := hub.live[d.Credentials.ComputerID]
-	hub.mu.RUnlock()
 	_, stream, err := active.peer.Call(ctx, "file.write", Call{Binding: binding, Path: path}, strings.NewReader("FINAL\n"))
 	if err != nil {
 		t.Fatal(err)
