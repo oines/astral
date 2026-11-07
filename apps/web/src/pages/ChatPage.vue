@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { compactSession, forkSession } from '@astral/sdk'
 import { Button, Modal, useDelayedPending } from '@astral/ui'
-import { ArrowRight, PanelLeftClose, PanelLeftOpen, AstralLogo } from '@astral/icons'
+import { ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, AstralLogo } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { useSurfaceStore } from '../stores/surface'
 import { useSession } from '../composables/useSession'
@@ -86,8 +86,8 @@ function shortcut(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); void router.push('/') }
 }
 window.addEventListener('keydown', shortcut)
-onBeforeUnmount(() => { window.removeEventListener('keydown', shortcut); surface.close() })
-watch(id, () => { surface.close(); error.value = '' })
+onBeforeUnmount(() => { window.removeEventListener('keydown', shortcut); surface.setSession('') })
+watch(id, value => { surface.setSession(value); error.value = '' }, { immediate: true, flush: 'sync' })
 </script>
 <template>
   <div
@@ -108,6 +108,17 @@ watch(id, () => { surface.close(); error.value = '' })
       <PanelLeftClose v-if="app.sidebar" />
       <PanelLeftOpen v-else />
     </Button>
+    <Button
+      v-if="id && !surface.current && route.path !== '/schedules'"
+      class="workspace-reopen"
+      size="icon"
+      variant="ghost"
+      :aria-label="t('workspaceOpen')"
+      aria-controls="context-surface"
+      @click="surface.reopen"
+    >
+      <PanelRightOpen />
+    </Button>
     <Transition name="fade">
       <div
         v-if="app.sidebar"
@@ -126,106 +137,108 @@ watch(id, () => { surface.close(); error.value = '' })
         :inert="!app.sidebar"
       />
     </Transition>
-    <main class="chat-main">
-      <KeepAlive>
-        <SchedulesPage v-if="route.path === '/schedules'" />
-      </KeepAlive>
-      <template v-if="route.path !== '/schedules' && !id">
-        <div class="welcome">
-          <AstralLogo class="welcome-logo" />
-          <template v-if="readyToStart">
-            <h1>{{ t('welcome') }}</h1>
-            <Composer
-              :key="app.activeAgentID"
-              :view="initialView"
-              :live="true"
-              @started="started"
-            />
-          </template>
-          <div
-            v-else
-            class="welcome-setup"
-          >
-            <h1>{{ t('setup') }}</h1><p class="muted">
-              {{ activeAgent ? t('setupMissingModel', { name: activeAgent.name }) : t('setupNoBots') }}
-            </p><div class="row wrap">
-              <RouterLink
-                v-if="!app.availableModels.length"
-                to="/settings/models"
-                class="button button-primary"
-              >
-                {{ t('setupModels') }}<ArrowRight />
-              </RouterLink><RouterLink
-                v-if="activeAgent"
-                :to="{ path: '/settings/agents', query: { agent: activeAgent.id } }"
-                class="button"
-                :class="app.availableModels.length ? 'button-primary' : 'button-secondary'"
-              >
-                {{ t('setupBotSettings') }}
-              </RouterLink><RouterLink
-                v-else
-                to="/settings/agents"
-                class="button button-secondary"
-              >
-                {{ t('setupAgent') }}
-              </RouterLink>
+    <div class="chat-workspace">
+      <main class="chat-main">
+        <KeepAlive>
+          <SchedulesPage v-if="route.path === '/schedules'" />
+        </KeepAlive>
+        <template v-if="route.path !== '/schedules' && !id">
+          <div class="welcome">
+            <AstralLogo class="welcome-logo" />
+            <template v-if="readyToStart">
+              <h1>{{ t('welcome') }}</h1>
+              <Composer
+                :key="app.activeAgentID"
+                :view="initialView"
+                :live="true"
+                @started="started"
+              />
+            </template>
+            <div
+              v-else
+              class="welcome-setup"
+            >
+              <h1>{{ t('setup') }}</h1><p class="muted">
+                {{ activeAgent ? t('setupMissingModel', { name: activeAgent.name }) : t('setupNoBots') }}
+              </p><div class="row wrap">
+                <RouterLink
+                  v-if="!app.availableModels.length"
+                  to="/settings/models"
+                  class="button button-primary"
+                >
+                  {{ t('setupModels') }}<ArrowRight />
+                </RouterLink><RouterLink
+                  v-if="activeAgent"
+                  :to="{ path: '/settings/agents', query: { agent: activeAgent.id } }"
+                  class="button"
+                  :class="app.availableModels.length ? 'button-primary' : 'button-secondary'"
+                >
+                  {{ t('setupBotSettings') }}
+                </RouterLink><RouterLink
+                  v-else
+                  to="/settings/agents"
+                  class="button button-secondary"
+                >
+                  {{ t('setupAgent') }}
+                </RouterLink>
+              </div>
             </div>
           </div>
-        </div>
-      </template>
-      <template v-else-if="route.path !== '/schedules' && view">
+        </template>
+        <template v-else-if="route.path !== '/schedules' && view">
+          <div
+            v-if="error || live.error.value"
+            class="chat-error error-box"
+          >
+            {{ error || live.error.value }}
+          </div>
+          <Transcript
+            :key="id"
+            :state="live.state.value"
+            :session-i-d="id"
+            :load-older="live.older"
+            :readonly="readonly"
+            @fork="fork"
+            @position="rememberPosition"
+          />
+          <Composer
+            v-if="!readonly"
+            :key="id"
+            :view="view"
+            :live="live.connection.value === 'connected'"
+            @compact="compact = true"
+          />
+        </template>
         <div
-          v-if="error || live.error.value"
-          class="chat-error error-box"
+          v-else-if="route.path !== '/schedules' && app.deletedSessions.has(id)"
+          class="chat-load-error"
+          role="status"
         >
-          {{ error || live.error.value }}
+          <p class="muted">
+            {{ t('conversationDeleted') }}
+          </p>
         </div>
-        <Transcript
-          :key="id"
-          :state="live.state.value"
-          :session-i-d="id"
-          :load-older="live.older"
-          :readonly="readonly"
-          @fork="fork"
-          @position="rememberPosition"
-        />
-        <Composer
-          v-if="!readonly"
-          :key="id"
-          :view="view"
-          :live="live.connection.value === 'connected'"
-          @compact="compact = true"
-        />
-      </template>
-      <div
-        v-else-if="route.path !== '/schedules' && app.deletedSessions.has(id)"
-        class="chat-load-error"
-        role="status"
-      >
-        <p class="muted">
-          {{ t('conversationDeleted') }}
-        </p>
-      </div>
-      <div
-        v-else-if="route.path !== '/schedules' && live.error.value"
-        class="chat-load-error"
-        role="alert"
-      >
-        <p
-          class="error-box"
+        <div
+          v-else-if="route.path !== '/schedules' && live.error.value"
+          class="chat-load-error"
+          role="alert"
         >
-          {{ live.error.value }}
-        </p>
-        <Button @click="live.reconnect">
-          {{ t('retry') }}
-        </Button>
-      </div>
-      <ChatLoading
-        v-else-if="route.path !== '/schedules' && showChatLoading"
-        :reconnecting="live.connection.value === 'reconnecting'"
-      />
-    </main>
-    <ContextSurface />
+          <p
+            class="error-box"
+          >
+            {{ live.error.value }}
+          </p>
+          <Button @click="live.reconnect">
+            {{ t('retry') }}
+          </Button>
+        </div>
+        <ChatLoading
+          v-else-if="route.path !== '/schedules' && showChatLoading"
+          :reconnecting="live.connection.value === 'reconnecting'"
+        />
+      </main>
+      <ContextSurface :activities="live.state.value.subagentActivity" />
+    </div>
     <Modal
       v-model:open="compact"
       :title="t('compact')"

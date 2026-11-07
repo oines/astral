@@ -8,6 +8,7 @@ import { i18n } from '../i18n'
 import { errorText, request } from '../lib/api'
 import type { AstralInternalHarnessInputRequest } from '@astral/sdk'
 import { useAuthStore } from './auth'
+import { useSurfaceStore } from './surface'
 import type { FileRef, SessionView } from '../lib/types'
 import { scheduleAPI, type Schedule, type ScheduleInput } from '../lib/schedules'
 import { sessionWithMetadata } from '../lib/session-presentation'
@@ -48,6 +49,7 @@ export const useAppStore = defineStore('app', () => {
   const sessions = computed(() => (sessionQuery.data.value ?? data.value?.sessions ?? []).filter(session => !deletedSessions.value.has(session.id)).map(s => sessionWithMetadata(s, sessionViews.value[s.id])))
   watch(() => authorized.value ? `${auth.status?.desktop ? 'desktop' : 'web'}:${auth.status?.username || ''}` : '', () => {
     sessionCatalog.clear()
+    useSurfaceStore().clear()
     deletedSessions.value = new Set()
   }, { flush: 'sync' })
   watch(() => Object.values(sessionViews.value), views => {
@@ -175,6 +177,7 @@ export const useAppStore = defineStore('app', () => {
     if (deletedSessions.value.has(id)) return
     sessionCatalog.remember([...(data.value?.sessions || []), ...(sessionQuery.data.value || []), ...Object.values(sessionViews.value), ...Object.values(drafts.value).flatMap(draft => draft.session ? [draft.session] : [])].filter(session => !deletedSessions.value.has(session.id)))
     const ids = sessionCatalog.tree(id)
+    useSurfaceStore().forgetSessions(ids)
     sessionCatalog.forget(ids)
     deletedSessions.value = new Set([...deletedSessions.value, ...ids])
     for (const sessionID of ids) {

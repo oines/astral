@@ -9,7 +9,7 @@ import ChatPage from './ChatPage.vue'
 const fixture = vi.hoisted(() => ({ agents: [] as Agent[], availableModels: [] as Profile[], views: [] as SessionView[] }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('../stores/app', () => ({ useAppStore: () => reactive({ agents: fixture.agents, availableModels: fixture.availableModels, activeAgentID: 'bot', sessions: [], sidebar: false }) }))
-vi.mock('../stores/surface', () => ({ useSurfaceStore: () => ({ close: vi.fn() }) }))
+vi.mock('../stores/surface', () => ({ useSurfaceStore: () => ({ close: vi.fn(), setSession: vi.fn() }) }))
 vi.mock('../composables/useSession', () => ({ useSession: () => ({ state: ref({ view: undefined }), error: ref(''), connection: ref('connected') }) }))
 vi.mock('../components/Sidebar.vue', () => ({ default: { render: () => null } }))
 vi.mock('../components/Transcript.vue', () => ({ default: { render: () => null } }))

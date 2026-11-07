@@ -101,7 +101,7 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 			return nil, fmt.Errorf("invalid container information: %w", err)
 		}
 	}
-	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability}},
+	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability, FileListCapability}},
 		httpClient: client, gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, apiTokens: map[string]*daemonProcess{}}, nil
 }
 
@@ -525,6 +525,12 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 		return err
 	}
 	switch request.Method {
+	case FileListCapability:
+		page, err := listDirectory(ctx, fs, call)
+		if err != nil {
+			return err
+		}
+		return out.JSON(page)
 	case "file.resolve":
 		path, err := fs.ResolvePath(ctx, call.Path, call.ForRead)
 		if err != nil {

@@ -36,6 +36,11 @@ function applyTheme() {
       'inputOption.activeBackground': color('--selected'),
       'inputOption.activeForeground': color('--ink'),
       'list.focusOutline': color('--focus-ring'),
+      'scrollbarSlider.background': `${color('--muted')}55`,
+      'scrollbarSlider.hoverBackground': `${color('--muted')}80`,
+      'scrollbarSlider.activeBackground': `${color('--muted')}a6`,
+      'scrollbar.shadow': '#00000000',
+      'editorOverviewRuler.border': '#00000000',
     },
   })
   monaco.editor.setTheme('astral-preview')
@@ -55,7 +60,12 @@ function update() {
 onMounted(() => {
   if (!host.value) return
   applyTheme()
-  const options = { readOnly: true, automaticLayout: true, minimap: { enabled: false }, fontSize: 12, scrollBeyondLastLine: false, theme: 'astral-preview', wordWrap: 'on' as const, padding: { top: 12 } }
+  const options = {
+    readOnly: true, automaticLayout: true, minimap: { enabled: false }, fontSize: 12,
+    scrollBeyondLastLine: false, theme: 'astral-preview', wordWrap: 'on' as const, padding: { top: 12 },
+    overviewRulerLanes: props.original === undefined ? 0 : 3, overviewRulerBorder: false, hideCursorInOverviewRuler: true,
+    scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false },
+  }
   editor = props.original !== undefined ? monaco.editor.createDiffEditor(host.value, { ...options, renderSideBySide: false }) : monaco.editor.create(host.value, options)
   update()
 })
@@ -69,3 +79,6 @@ onBeforeUnmount(() => { editor?.dispose(); models.forEach(model => model.dispose
     class="code-viewer"
   />
 </template>
+<style scoped>
+.code-viewer :deep(.monaco-scrollable-element > .scrollbar > .slider) { border-radius: var(--radius-control); }
+</style>

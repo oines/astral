@@ -1,11 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopUpdateState } from '../shared/updates'
+import type { DesktopFileTarget } from '../shared/files'
 
 contextBridge.exposeInMainWorld('astralDesktop', {
   platform: process.platform,
   preferences: (value: { keepRunning: boolean; loginStart: boolean }) => ipcRenderer.invoke('astral:preferences', value),
   openExternal: (url: string) => ipcRenderer.invoke('astral:open-external', url),
   appearance: (dark: boolean) => ipcRenderer.invoke('astral:appearance', dark),
+  files: {
+    canReveal: (target: DesktopFileTarget) => ipcRenderer.invoke('astral:files-can-reveal', target),
+    reveal: (target: DesktopFileTarget) => ipcRenderer.invoke('astral:files-reveal', target),
+  },
   updates: {
     state: () => ipcRenderer.invoke('astral:update-state'),
     check: () => ipcRenderer.invoke('astral:update-check'),

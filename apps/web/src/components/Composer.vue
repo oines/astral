@@ -16,6 +16,7 @@ import { modelUnavailableLabel } from '../lib/model-availability'
 import { useImagePreviewStore } from '../stores/image-preview'
 import { useSurfaceStore } from '../stores/surface'
 import type { FileRef } from '../lib/types'
+import { revealOverflowLabel } from '../lib/overflow-label'
 const props = defineProps<{ view: SessionView; live: boolean }>()
 const showConnection = useDelayedPending(() => !props.live)
 const emit = defineEmits<{ compact: []; started: [id: string] }>()
@@ -582,7 +583,8 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
                   type="button"
                   class="composer-picker computer-picker"
                   :aria-label="t('computer')"
-                  :title="computer?.name"
+                  @pointerenter="revealOverflowLabel($event, 'span')"
+                  @focus="revealOverflowLabel($event, 'span')"
                 >
                   <Monitor /><span>{{ computer?.name || t('missing') }}</span><ChevronDown />
                 </button>

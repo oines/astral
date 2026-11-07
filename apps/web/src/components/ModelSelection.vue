@@ -8,7 +8,7 @@ import { useAppStore } from '../stores/app'
 import { modelReasoning, reasoningSelection, type ModelSelection } from '../lib/model-reasoning'
 import { modelUnavailableLabel } from '../lib/model-availability'
 
-const props = defineProps<{ modelValue: string; reasoning?: Reasoning; label?: string; emptyLabel?: string; allowEmpty?: boolean; busy?: boolean; disabled?: boolean; composer?: boolean; unavailableReason?: string; exclude?: string[]; closeOnSelect?: boolean; showProvider?: boolean }>()
+const props = withDefaults(defineProps<{ modelValue: string; reasoning?: Reasoning; label?: string; emptyLabel?: string; allowEmpty?: boolean; busy?: boolean; disabled?: boolean; composer?: boolean; unavailableReason?: string; exclude?: string[]; closeOnSelect?: boolean; showProvider?: boolean }>(), { allowEmpty: true, reasoning: undefined, label: undefined, emptyLabel: undefined, unavailableReason: undefined, exclude: undefined })
 const emit = defineEmits<{ select: [selection: ModelSelection] }>()
 const app = useAppStore()
 const { t } = useI18n()

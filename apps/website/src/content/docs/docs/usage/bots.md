@@ -35,7 +35,7 @@ To make existing sessions prefer the Bot list's first model, select **Apply to a
 
 **Automatically restore the preferred model** is off by default. When enabled, Astral periodically makes a real request to each affected session's preferred model and switches back after it responds successfully, at the next request boundary. Checks may incur model charges. If all candidates fail, the task waits for recovery instead of ending; checks are spaced one minute apart after each check finishes. With the option off, a task stops with an error once no candidate can continue. Fix the connection, quota, or model choices, then continue the session. Enabling automatic recovery later also requires continuing the failed session; it does not restart old failed tasks on its own.
 
-The group-participation model remains a separate setting. When it follows the session, it uses the model actually serving that session.
+The group-participation model remains a separate setting. When it follows the session, it uses the model actually serving that session. After choosing a fixed model, you can return to **Follow the Session’s current model** in the same menu; its reasoning settings will follow the session too.
 
 ## Computer access
 
