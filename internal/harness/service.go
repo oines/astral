@@ -469,15 +469,23 @@ func (s *Service) Close(ctx context.Context) error {
 		all = append(all, r)
 	}
 	s.mu.Unlock()
+	// A reconciler can be waiting for admission held by Core maintenance.
+	// Cancel that work before joining reconcilers, so maintenance releases
+	// admission. Cancel leaves the execution window intact; retirement and
+	// Close still run through the lifecycle gates after those workers finish.
+	for _, r := range all {
+		if session := r.core.Load(); session != nil {
+			session.Cancel()
+		}
+	}
 	s.sessionChanges.close()
 	var errs []error
 	if s.Schedules != nil {
 		errs = append(errs, s.Schedules.Close(ctx))
 	}
 	// A cancelled reconciler can still be finishing durable parent admission.
-	// Join it before Close clears any Core window it may inspect. Runtime runs
-	// remain alive until the ordinary shutdown below, so this wait cannot race
-	// a closed parent handle or strand a tool behind a closed Session.
+	// Join it before Close clears any Core window it may inspect. The earlier
+	// cancellation releases running work without closing its readable handle.
 	subagentsDone := make(chan struct{})
 	go func() { s.subagentWorkers.Wait(); s.modelFallbackWorkers.Wait(); close(subagentsDone) }()
 	select {
