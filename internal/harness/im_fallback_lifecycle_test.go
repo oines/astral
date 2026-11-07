@@ -32,9 +32,17 @@ func TestIMFallbackWaitKeepsDirectReplyWatchAndBlocksProbeRecovery(t *testing.T)
 	if err := f.store.Get(f.ctx, "sessions", f.session.ID, &record); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.service.reconcileIMReply(f.ctx, record); err != nil {
-		t.Fatal(err)
+	reconcileReply := func() bool {
+		err := f.service.reconcileIMReply(f.ctx, record)
+		if errors.Is(err, errIMReplyAdmissionBusy) {
+			return false
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return true
 	}
+	eventually(t, f.ctx, reconcileReply)
 	var watch imReplyWatch
 	if err := f.store.Maintenance(f.ctx, imReplyWatchKind, f.session.ID, &watch); err != nil || len(watch.Inputs) != 1 {
 		t.Fatalf("internal fallback failure discarded the direct-reply watch: %+v %v", watch, err)
@@ -55,9 +63,7 @@ func TestIMFallbackWaitKeepsDirectReplyWatchAndBlocksProbeRecovery(t *testing.T)
 	if err := f.service.Stop(f.ctx, f.session.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.service.reconcileIMReply(f.ctx, record); err != nil {
-		t.Fatal(err)
-	}
+	eventually(t, f.ctx, reconcileReply)
 	if err := f.store.Maintenance(f.ctx, imReplyWatchKind, f.session.ID, &watch); !domain.IsMissing(err) {
 		t.Fatalf("an explicitly stopped task retained its reply watch: %v", err)
 	}
