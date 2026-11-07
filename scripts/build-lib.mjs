@@ -29,6 +29,20 @@ export async function embedWeb() {
     if (name !== 'README.txt') await rm(path.join(target, name), { recursive: true, force: true })
   }
   await cp(source, target, { recursive: true })
+  // A file copied into web/ can still be excluded by go:embed (for example,
+  // Vite's _plugin chunks). Check Go's selection before building any binaries.
+  const selection = spawnSync('go', ['list', '-find', '-json=EmbedFiles', './internal/platform'], { cwd: root, encoding: 'utf8' })
+  if (selection.error) throw selection.error
+  if (selection.status !== 0) throw new Error(`Cannot inspect embedded Web assets: ${selection.stderr}`)
+  const embedded = new Set(JSON.parse(selection.stdout).EmbedFiles)
+  async function checkDirectory(directory, relative = 'web') {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const name = `${relative}/${entry.name}`
+      if (entry.isDirectory()) await checkDirectory(path.join(directory, entry.name), name)
+      else if (entry.isFile() && !embedded.has(name)) throw new Error(`Required Web asset is missing from Go embeds: ${name}`)
+    }
+  }
+  await checkDirectory(source)
 }
 export async function buildServer(system, arch, { buildRoot = root, environment = process.env } = {}) {
   const version = await readReleaseVersion(buildRoot, environment)
