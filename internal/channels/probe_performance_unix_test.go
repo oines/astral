@@ -37,7 +37,7 @@ func probePerformanceFiles(t *testing.T, directory string) map[string]probePerfo
 			return err
 		}
 		name := entry.Name()
-		if entry.IsDir() || !(strings.HasSuffix(name, ".db") || strings.HasSuffix(name, ".db-wal") || strings.HasSuffix(name, ".db-shm")) {
+		if entry.IsDir() || !strings.HasSuffix(name, ".db") && !strings.HasSuffix(name, ".db-wal") && !strings.HasSuffix(name, ".db-shm") {
 			return nil
 		}
 		info, err := entry.Info()

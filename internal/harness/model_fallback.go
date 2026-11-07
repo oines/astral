@@ -14,6 +14,7 @@ import (
 	"github.com/oines/astral-core/models/provider"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/modelbridge"
+	"github.com/oines/astral/internal/persistence"
 )
 
 const modelFallbackKind = "model_fallback"
@@ -51,6 +52,44 @@ type modelFallbackProbe struct {
 	cancel context.CancelFunc
 }
 
+// The scheduler retains only routing/deadline metadata, never history or the
+// growing suppressed-Run list. Its queue lock is independent of operation locks;
+// it is always released before reading Store or acquiring a runtime lock.
+type modelFallbackScheduleState struct {
+	id, agentID, phase, preferredID, activeID string
+	nextProbeAt                               time.Time
+}
+
+type modelFallbackScheduleUpdate struct {
+	state   modelFallbackScheduleState
+	refresh bool
+}
+
+func fallbackScheduleState(state modelFallbackState) modelFallbackScheduleState {
+	return modelFallbackScheduleState{id: state.SessionID, agentID: state.AgentID, phase: state.Phase,
+		preferredID: state.Preferred.ID, activeID: state.Active.ID, nextProbeAt: state.NextProbeAt}
+}
+
+func (s *Service) queueModelFallback(update modelFallbackScheduleUpdate) {
+	if update.state.id == "" || s.modelFallbackWake == nil {
+		return
+	}
+	s.modelFallbackScheduleMu.Lock()
+	// A later durable-state save may coalesce with a terminal wake, but must
+	// not erase the explicit one-shot reconcile before the worker consumes it.
+	update.refresh = update.refresh || s.modelFallbackUpdates[update.state.id].refresh
+	s.modelFallbackUpdates[update.state.id] = update
+	s.modelFallbackScheduleMu.Unlock()
+	select {
+	case s.modelFallbackWake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Service) wakeModelFallback(id string) {
+	s.queueModelFallback(modelFallbackScheduleUpdate{state: modelFallbackScheduleState{id: id}, refresh: true})
+}
+
 func fallbackArmed(state modelFallbackState) bool {
 	return state.Phase == "active" || state.Phase == "failed" || state.Phase == "switching" || state.Phase == "waiting"
 }
@@ -68,6 +107,7 @@ func (s *Service) saveModelFallback(ctx context.Context, state modelFallbackStat
 	// Fallback state changes concern this Session only. A coarse Store watch
 	// would rescan every settled child whenever an unrelated root takes a turn.
 	s.wakeSubagents(state.SessionID)
+	s.queueModelFallback(modelFallbackScheduleUpdate{state: fallbackScheduleState(state)})
 	return nil
 }
 
@@ -544,6 +584,7 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 					if event.Type != core.EventRunEnd {
 						continue
 					}
+					s.wakeModelFallback(r.id)
 					select {
 					case terminal <- event:
 					default:
@@ -564,6 +605,9 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 		if s.ctx.Err() != nil {
 			return
 		}
+		// The model can report failure before Core leaves Running. Every terminal
+		// Run, including validation/tool failures, supplies the later safe boundary.
+		s.wakeModelFallback(r.id)
 		r.mu.Lock()
 		var session domain.Session
 		readErr := s.Store.Get(s.ctx, "sessions", r.id, &session)
@@ -666,46 +710,214 @@ func (s *Service) finishModelFallbackIfCompleted(ctx context.Context, r *runtime
 	return true
 }
 
+func (s *Service) modelFallbackDeadline(state modelFallbackScheduleState) time.Time {
+	now := time.Now()
+	switch state.phase {
+	case "failed", "switching":
+		return now
+	case "active":
+		if state.preferredID == state.activeID {
+			return time.Time{}
+		}
+	case "waiting":
+	default:
+		return time.Time{}
+	}
+	var agent domain.Agent
+	if err := s.Store.Get(s.ctx, "agents", state.agentID, &agent); err != nil {
+		if domain.IsMissing(err) {
+			return time.Time{}
+		}
+		return now.Add(modelFallbackTick)
+	}
+	if agent.Deletion {
+		return time.Time{}
+	}
+	if !agent.ModelAutoRestore {
+		if state.phase == "waiting" {
+			return now // Persist exhausted promptly when the switch is disabled.
+		}
+		return time.Time{}
+	}
+	if state.nextProbeAt.IsZero() {
+		return now
+	}
+	return state.nextProbeAt
+}
+
+func modelFallbackShortRetry(err error) bool {
+	var configuration *domain.Error
+	return err != nil && !errors.Is(err, context.Canceled) && !errors.As(err, &configuration)
+}
+
 func (s *Service) startModelFallbackWorker() {
 	s.modelFallbackWorkers.Add(1)
-	go func() {
-		defer s.modelFallbackWorkers.Done()
-		ticker := time.NewTicker(modelFallbackTick)
-		defer ticker.Stop()
-		done := make(chan string, 256)
-		active := map[string]bool{}
-		for {
-			select {
-			case <-s.ctx.Done():
-				return
-			case id := <-done:
-				delete(active, id)
-				continue
-			case <-ticker.C:
+	go s.runModelFallbackWorker(s.reconcileModelFallback)
+}
+
+func (s *Service) runModelFallbackWorker(reconcile func(context.Context, string) error) {
+	defer s.modelFallbackWorkers.Done()
+	// Operation saves notify their exact Session directly. Resource changes
+	// can alter an armed task's policy; unrelated writes and settled history
+	// must not cause another pending-operation scan.
+	watcher := s.Store.Watch(persistence.ChangeKey{Kind: "agents"}, persistence.ChangeKey{Kind: "models"}, persistence.ChangeKey{Kind: "providers"})
+	defer watcher.Close()
+	changed := watcher.Changes() // Obtain before the initial restore/policy reads.
+	type scheduled struct {
+		due time.Time
+	}
+	type completed struct {
+		id  string
+		err error
+	}
+	entries := map[string]scheduled{}
+	active := map[string]bool{}
+	forced := map[string]bool{}
+	done := make(chan completed, 256)
+	timer := time.NewTimer(time.Hour)
+	if !timer.Stop() {
+		<-timer.C
+	}
+	defer timer.Stop()
+	set := func(state modelFallbackScheduleState, restore bool) {
+		if state.phase != "active" && state.phase != "failed" && state.phase != "switching" && state.phase != "waiting" {
+			delete(entries, state.id)
+			delete(forced, state.id)
+			return
+		}
+		due := s.modelFallbackDeadline(state)
+		if restore && state.phase == "active" {
+			// Inspect interrupted Runs once on restart; only the existing
+			// Resumable business rule may Continue them.
+			due = time.Now()
+		}
+		entries[state.id] = scheduled{due: due}
+	}
+	refresh := func(id string, force bool) {
+		var state modelFallbackState
+		err := s.Store.Maintenance(s.ctx, modelFallbackKind, id, &state)
+		if domain.IsMissing(err) {
+			delete(entries, id)
+			delete(forced, id)
+		} else if err != nil {
+			entries[id] = scheduled{due: time.Now().Add(modelFallbackTick)}
+		} else {
+			set(fallbackScheduleState(state), false)
+			if entry, ok := entries[id]; ok && force {
+				forced[id] = true
+				entry.due = time.Now()
+				entries[id] = entry
 			}
+		}
+	}
+	drain := func() {
+		s.modelFallbackScheduleMu.Lock()
+		updates := s.modelFallbackUpdates
+		s.modelFallbackUpdates = map[string]modelFallbackScheduleUpdate{}
+		s.modelFallbackScheduleMu.Unlock()
+		for id, update := range updates {
+			if update.refresh {
+				refresh(id, true)
+			} else {
+				set(update.state, false)
+			}
+		}
+	}
+	restored := false
+	var restoreAt time.Time
+	for {
+		if s.ctx.Err() != nil {
+			return
+		}
+		if !restored && !time.Now().Before(restoreAt) {
 			items, err := s.Store.PendingMaintenance(s.ctx, modelFallbackKind)
 			if err != nil {
+				restoreAt = time.Now().Add(modelFallbackTick)
+			} else {
+				for _, raw := range items {
+					var state modelFallbackState
+					if json.Unmarshal(raw, &state) == nil && state.SessionID != "" {
+						set(fallbackScheduleState(state), true)
+					}
+				}
+				restored = true
+			}
+		}
+		drain()
+		now := time.Now()
+		var next time.Time
+		if !restored {
+			next = restoreAt
+		}
+		for id, entry := range entries {
+			if active[id] || entry.due.IsZero() {
 				continue
 			}
-			for _, raw := range items {
-				var state modelFallbackState
-				if json.Unmarshal(raw, &state) != nil || state.SessionID == "" || active[state.SessionID] {
-					continue
-				}
-				id := state.SessionID
+			if !entry.due.After(now) {
 				active[id] = true
+				delete(forced, id) // Later explicit wakes remain pending until done.
 				s.modelFallbackWorkers.Add(1)
 				go func() {
 					defer s.modelFallbackWorkers.Done()
-					_ = s.reconcileModelFallback(s.ctx, id)
+					err := reconcile(s.ctx, id)
 					select {
-					case done <- id:
+					case done <- completed{id, err}:
 					case <-s.ctx.Done():
 					}
 				}()
+			} else if next.IsZero() || entry.due.Before(next) {
+				next = entry.due
 			}
 		}
-	}()
+		var due <-chan time.Time
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		if !next.IsZero() {
+			timer.Reset(max(time.Until(next), 0))
+			due = timer.C
+		}
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-s.modelFallbackWake:
+		case <-due:
+		case <-changed:
+			changed = watcher.Changes()
+			for id, entry := range entries {
+				forced[id] = true
+				entry.due = time.Now()
+				entries[id] = entry
+			}
+		case result := <-done:
+			delete(active, result.id)
+			// A save made while this worker was active must be consumed before
+			// its completion. Then reload the durable latest intent once.
+			drain()
+			refresh(result.id, false)
+			if entry, ok := entries[result.id]; ok {
+				if forced[result.id] {
+					entry.due = time.Now()
+					entries[result.id] = entry
+				} else if result.err != nil && !modelFallbackShortRetry(result.err) {
+					// Configuration/permission failures await a resource change or
+					// explicit action; they are not transient storage/admission work.
+					if !entry.due.After(time.Now()) {
+						entry.due = time.Time{}
+						entries[result.id] = entry
+					}
+				} else if modelFallbackShortRetry(result.err) || !entry.due.IsZero() && !entry.due.After(time.Now()) {
+					// Core may still be unwinding a failed Run or in maintenance.
+					// Retry only this unresolved target, never every armed task.
+					entry.due = time.Now().Add(modelFallbackTick)
+					entries[result.id] = entry
+				}
+			}
+		}
+	}
 }
 
 func modelFallbackCandidates(preferred core.ModelSelection, agent domain.Agent) []core.ModelSelection {
@@ -737,7 +949,19 @@ func (s *Service) reconcileModelFallback(ctx context.Context, id string) error {
 		return err
 	}
 	var agent domain.Agent
-	if err = s.Store.Get(ctx, "agents", r.agentID, &agent); err != nil || agent.Deletion {
+	if err = s.Store.Get(ctx, "agents", r.agentID, &agent); domain.IsMissing(err) || err == nil && agent.Deletion {
+		state.Epoch++
+		state.Phase, state.NextProbeAt = "cancelled", time.Time{}
+		if probe, ok := s.modelFallbackProbes[id]; ok {
+			probe.cancel()
+			delete(s.modelFallbackProbes, id)
+		}
+		err = s.saveModelFallback(ctx, state)
+		s.modelFallbackMu.Unlock()
+		r.mu.Unlock()
+		s.notify(id)
+		return err
+	} else if err != nil {
 		s.modelFallbackMu.Unlock()
 		r.mu.Unlock()
 		return err

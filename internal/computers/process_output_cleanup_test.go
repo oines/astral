@@ -71,7 +71,7 @@ func newProcessOutputCleanupFixture(t *testing.T, gateHeaders bool) *processOutp
 	d.Hello.Home = t.TempDir()
 	f := &processOutputCleanupFixture{daemon: d, binding: securityBinding(t, d, "synthetic_cleanup_grant"), handlerDone: make(chan error, 1)}
 	left, right := net.Pipe()
-	var daemonConn net.Conn = left
+	daemonConn := left
 	if gateHeaders {
 		f.gate = &processOutputHeaderGate{Conn: left, entered: make(chan struct{}), release: make(chan struct{}), closed: make(chan struct{})}
 		daemonConn = f.gate
@@ -125,7 +125,7 @@ func TestDaemonCancelledOutputReapsProcessAndKeepsExecutionIdentity(t *testing.T
 				const marker = "synthetic output before cancellation"
 				call := Call{Binding: f.binding, Execution: "synthetic_cancelled_execution", APIToken: securityToken('c'),
 					Process: standardtools.ProcessRequest{Command: testshell.Print(marker) + "; " + testshell.Sleep(30*time.Second), TTY: tty}}
-				ctx, cancel := context.WithCancel(t.Context())
+				ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 				defer cancel()
 				if beforeHeaders {
 					started := make(chan error, 1)
@@ -156,9 +156,26 @@ func TestDaemonCancelledOutputReapsProcessAndKeepsExecutionIdentity(t *testing.T
 					if err := json.Unmarshal(metadata, &started); err != nil || started.ID == "" {
 						t.Fatalf("streaming startup metadata: %s %v", metadata, err)
 					}
-					actual := make([]byte, len(marker))
-					if _, err := io.ReadFull(output, actual); err != nil || string(actual) != marker {
-						t.Fatalf("real process did not produce its synthetic output: %q %v", actual, err)
+					if tty {
+						// ConPTY may emit terminal initialization before command output.
+						// Read only through the marker; the long-running stream stays
+						// attached so cancellation still exercises Daemon cleanup.
+						var one [1]byte
+						observed := make([]byte, 0, 256)
+						for len(observed) < 64<<10 && !bytes.HasSuffix(observed, []byte(marker)) {
+							if _, err := io.ReadFull(output, one[:]); err != nil {
+								t.Fatalf("TTY did not produce its synthetic marker: bytes=%d error=%v", len(observed), err)
+							}
+							observed = append(observed, one[0])
+						}
+						if !bytes.HasSuffix(observed, []byte(marker)) {
+							t.Fatal("TTY output exceeded 64 KiB before its synthetic marker")
+						}
+					} else {
+						actual := make([]byte, len(marker))
+						if _, err := io.ReadFull(output, actual); err != nil || string(actual) != marker {
+							t.Fatalf("real process did not produce its synthetic output: %q %v", actual, err)
+						}
 					}
 					cancel()
 					_ = output.Close()

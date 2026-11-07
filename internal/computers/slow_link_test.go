@@ -70,7 +70,7 @@ func slowLinkDaemon(t *testing.T, bytesPerSecond int) (*Daemon, *transport.Peer,
 	d.Hello.Home = t.TempDir()
 	binding := securityBinding(t, d, "synthetic_grant")
 	left, right := net.Pipe()
-	var daemonConn net.Conn = left
+	daemonConn := left
 	if bytesPerSecond > 0 {
 		daemonConn = &rateLimitedComputerConn{Conn: left, bytesPerSecond: bytesPerSecond, closed: make(chan struct{})}
 	}
