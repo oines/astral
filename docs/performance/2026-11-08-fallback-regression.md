@@ -295,3 +295,76 @@ python3 scripts/validate-performance-case.py \
 Runner 只运行已编译二进制，不自动编译、不访问外部模型。每项顶层测试、证据文件、请求／工具计数和种子身份由严格验证器检查；v2 额外逐条核对 held delay、实际 receiver 等待时间和所有存储快照的错误／operations 可用性。源码／二进制稳定性另核对。整进程 setup／teardown 指标与热区指标均保留，不能将其中一个替代另一个。
 
 本轮 v2 重验输出为独立的 `request-acceptance-v2.json` 及各 suite 的 `acceptance-v2.json`，旧 identity、validator 哈希、raw 与失败记录保持原样。request 51 条的 `validated_rounds_success=true`，但 `original_suite_failed=true` 和总体 `success=false` 保留；其余正式 suite 及 profiles 均 `all_expected`，missing/incomplete/failed 为 0。复验只读小 JSON／日志，不重读种子、数据库或运行 benchmark。
+
+## 后续 Host 调度优化的隔离配对复测
+
+前文记录的是优化前的冻结版本及其局限，原始结果和失败记录没有覆盖。发现后台成本后，后续版本将 fallback 调度改为首次恢复扫描、按 Session 的状态通知及到期计时；普通运行中的终态由 Run 观察通知，等待探测仍保持真实 60 秒间隔。没有修改 Core，也没有通过放大检查周期降低测得成本。
+
+本节比较的是另一组冻结二进制：
+
+| 标签 | 产品源码版本 | 说明 |
+| --- | --- | --- |
+| baseline | `7228850389e6d3fe1dec9638cc5a25bcb1f46f10` | 与前文 current 相同的产品版本，加入公共测量夹具 |
+| optimized | `d0a1766f411f1b6e5514a3ff458200f09ea3bb51` | 包含 Host 慢链路 RPC 修复及 fallback 事件／到期调度优化 |
+
+仍使用相同 Apple M2／24 GiB／Darwin 24.6 arm64／Go 1.26.4，Core 版本保持前文的 `4e2310bd0d4a`。两树共用的 11 份测量源码 SHA 逐项相同；runner 在每个 suite 前后核对产品源码、二进制与种子身份。baseline 的测量夹具补丁已记录，optimized 为上述干净提交。运行串行且不与编译、其他 Go 测试或 profile 并行；两标签的先后顺序按轮交替。runner SHA 为 `988565420029edc54f3d04bad0a6371f4bd03b59e9b5bae0d2d28d2e5c908e62`，validator v2 SHA 保持 `8223da908b764c02d42e342a5395e52463bea027e02da00cfc3113a51cbe69f3`。
+
+| 独立 suite | 场景 | 完整 fresh 进程记录 |
+| --- | --- | ---: |
+| pressure | 10k completed 历史、50 个 active 请求＋1000 条 completed 历史、50 个等待恢复 Session；每版每项 3 轮、每轮热区 10s | 18 |
+| requests | 500k／900k 各连续 20 次请求，每版各 1 轮；900k 单请求 held 10s，每版各 3 轮 | 10 |
+| real-probe | optimized 单 Session 等待 65s，保留真实探测周期 | 1 |
+
+三个 suite 的 `summary.success=true`，共 29 条均通过严格工件验证，无 failure 文件。请求种子仍为前文的公开 227 张合成图片，SHA 为 `cd2d68fe8d9832672797085a7f9f974ef6c39ad0922b4aac4e9ddd28b5beef7a`。每个请求均核对实际 wire 与冻结请求重建、digest 重建、请求计数及输入规模。不同进程的环境字段可以不同，不能将“同一公开种子／规模、各自重建一致”写成两版完整请求字节逐字相同。
+
+### 后台等待的 CPU、分配与存储
+
+下表为每版 3 个 fresh 进程的中位数；CPU 为热区 `RUSAGE_SELF`，分配为同一热区的 `TotalAlloc` 增量。所有窗口约 10.001s，窗口内 forced GC 均为 0。括号为 CPU 三轮最小–最大值。
+
+| 场景 | 热区 CPU，baseline → optimized | 热区累计分配，baseline → optimized | 热区 OS 归属读／写，baseline → optimized |
+| --- | --- | --- | --- |
+| 10k completed 历史，当前无运行请求 | 254.054ms（251.553–274.388）→ 0.206ms（0.181–0.214） | 31,704 B → 248 B | 229,376／0 B → 0／0 B |
+| 50 个 active 请求阻塞于模型 transport，另有 1000 条 completed 历史 | 684.927ms（655.862–754.222）→ 0.199ms（0.127–0.263） | 33,827,288 B → 248 B | 两版均 0／0 B |
+| 50 个额度耗尽、等待首次恢复探测的 Session | 1,499.101ms（1,412.288–1,559.783）→ 0.329ms（0.251–0.390） | 161,040,048 B → 248 B | 两版均 0／0 B |
+
+这三个受测窗口中，原有周期扫描和重复 Session 检查所对应的 CPU／分配成本已明显降低。optimized 的数值仍包含计时器唤醒、资源采样等固定成本，不能解释为严格零开销。50 Session 等待场景由约 15% 单核降至该 10 秒窗口中约 0.0033% 单核；本轮没有将这个结果外推至任意 Session 规模或持续时间。
+
+每轮模型请求计数、Core 版本和等待状态的不变量均通过。六组热区的 DB、WAL、operations 行数和 JSON 字节均没有增长；存储快照 `errors` 为空，operations 可用。已关闭的历史维护记录不会因本次调度优化被删除，因此历史 DB 长度没有因减少扫描而自动缩小。
+
+| 场景 | 整进程峰值 RSS 中位，baseline → optimized | 全部 cleanup 后 GC 堆中位，baseline → optimized |
+| --- | --- | --- |
+| 10k completed 历史 | 42.680 → 43.172 MB | 3.136 → 3.131 MB |
+| active 50 | 75.809 → 73.679 MB | 3.383 → 3.330 MB |
+| waiting 50 | 53.379 → 53.264 MB | 3.332 → 3.347 MB |
+
+RSS 是含 setup 的进程高水位，cleanup 后堆也不能代表仍然等待时的保留成本。waiting 50 另在热区结束后、Stop 前做一次诊断 GC：baseline 保留堆中位 **9,065,640 B**，范围 **9,039,896–9,089,208 B**；optimized 中位 **9,160,928 B**，范围 **9,047,024–9,182,440 B**。后者中位高 95,288 B（约 1.05%）。这支持本次降低后台成本没有引入与原先每秒分配相当的大缓存，也保留了小幅保留堆增加的实测结果；不能仅凭 cleanup 后堆接近就宣称运行中内存完全相同。
+
+### 大上下文与真实 held 请求
+
+500k／900k 各只测一个 fresh 进程中的 20 次连续请求，不是 20 个独立进程样本。下表是这 20 次的总量，held 则是每版 3 个 fresh 单请求进程的中位数。墙钟包含隔离 receiver 的读取／JSON 校验／散列；CPU 是 Host 自身热区 CPU，不使用可能累计已 wait 子进程的 `wait4` CPU。
+
+| 场景 | 热区墙钟，baseline → optimized | 热区 CPU，baseline → optimized | 累计分配，baseline → optimized | 验证后、Host 仍打开时的 GC 堆 |
+| --- | --- | --- | --- | --- |
+| 500k ×20 | 3,326.325 → 2,904.181ms | 1,009.947 → 901.314ms | 575.404 → 563.396 MB | 39.062 → 39.087 MB |
+| 900k ×20 | 3,282.697 → 3,271.776ms | 1,128.576 → 1,110.979ms | 630.141 → 629.667 MB | 57.645 → 57.668 MB |
+| 900k，receiver 持有响应 10s | 10,169.901 → 10,172.061ms | 104.773 → 64.673ms | 32.296 → 31.518 MB | 57.511 → 44.993 MB |
+
+20 次连续请求的本地 dispatch 段中位分别为：500k **31.065 → 26.901ms**，900k **34.071 → 34.150ms**。这些段排除 receiver 工作，与完整热区墙钟不是同一口径，也不能据中位数宣称每次请求都低于 50ms。500k 的 CPU／分配较低，900k 两版接近；各只有一个 fresh 样本，不据此宣称可重复的整体提速或全工况无回归。
+
+held 10s 的三轮 CPU 范围为 baseline **102.844–117.994ms**、optimized **61.713–65.480ms**。验证器逐轮核对配置延迟、实际响应延迟以及 receiver 等待时间，确实保留了 10 秒请求。它覆盖持有请求时的后台开销，不能替代真实 4 分钟超时／五次超时测试。其 optimized 验证后 GC 堆在 **41.599–57.516 MB** 间波动，baseline 为 **57.501–57.536 MB**；报告保留范围，不将这一中位差异作为稳定内存收益。
+
+| 场景 | Host 峰值 RSS，baseline → optimized | 完整 `m.Run` OS 归属读／写，baseline → optimized | 验证后 DB／WAL 长度，两版相同 |
+| --- | --- | --- | --- |
+| 500k ×20 | 176.570 → 156.598 MB | 1.765／68.608 → 16.691／68.559 MB | 18,243,584／18,758,424 B |
+| 900k ×20 | 210.960 → 211.010 MB | 16.904／74.879 → 16.507／74.928 MB | 20,344,832／20,876,104 B |
+| 900k held 10s，中位 | 210.420 → 206.291 MB | 15.634／62.169 → 15.610／62.185 MB | 20,008,960／20,641,264 B |
+
+该表 RSS 是截至热区结束的 Host 进程高水位，含 setup，不含隔离 receiver 进程。读写包括完整 `m.Run` 的 setup／验证／teardown，与前表纯热区 CPU／分配分别列出。500k 读取量的单样本差异仍受页缓存／归属时机影响；没有重复样本将其归因为代码 I/O 退化，也没有将它隐藏为零。写入量和最终文件长度接近，不等于写入次数、设备 NAND 写放大或自然 RSS 完全相同。Darwin 仍未取得 logical syscall 字节，维持 unavailable。
+
+### 真实 60 秒到期调度
+
+optimized 单 Session 的 65s 热区内，初始额度失败请求与恢复探测之间为 **60.009652s**；正好新增 1 次直接 SDK 探测，没有工具调用。模型仍不可用，Session 保持 waiting，Core 版本不变；Stop 取消恢复，之后无新请求。这一测试未借助 View／Pending 轮询推进调度，也没有缩短探测周期。
+
+该热区 CPU 为 **7.542ms**，累计分配 **263,544 B**，自然 GC 和 forced GC 均为 0；整进程峰值 RSS **30.327 MB**，Stop 前诊断 GC 堆 **3.254 MB**。热区 OS 归属读／写为 **24,576／49,152 B**，DB 长度不变，WAL 增长 **8,240 B**，operations 行数不变。它包含到期探测及下一次 due 状态保存，不应要求与尚未到期的 10s 窗口同样零写入。
+
+这次配对复测覆盖了包含新 RPC 修复和调度优化的产品版本，消除了前文 current 版本在这三个后台场景中已明确复现的大额周期 CPU／分配。它没有重跑前文全部 232 条矩阵，重复 100 次恢复的 JSON 增长、1000 步压缩的趋势和长期限制仍以对应冻结版本的原记录为准；大上下文测试也不能替代慢链路工具读写的独立功能验收。所有新原始记录在独立的 `pressure/`、`requests/`、`real-probe/` 中，原版本的 identity、raw、acceptance 和失败 suite 证据未改写。
