@@ -16,27 +16,28 @@ import (
 
 func awaitDirectReminderRequests(t *testing.T, p *testkit.Platform, sessionID, reason string, count int64) {
 	t.Helper()
-	deadline := time.NewTimer(3 * time.Second)
-	defer deadline.Stop()
 	tick := time.NewTicker(5 * time.Millisecond)
 	defer tick.Stop()
 	for p.Requests.Load() < count {
 		select {
-		case <-p.Context.Done():
-			t.Fatal(p.Context.Err())
 		case <-tick.C:
-		case <-deadline.C:
-			state, stateErr := p.CoreStore.LoadState(p.Context, sessionID)
+		case <-p.Context.Done():
+			// Request preparation can legitimately spend up to five seconds
+			// collecting the Computer environment. Use the fixture's complete
+			// scenario budget, retaining diagnostics after that context expires.
+			diagnostic, cancel := context.WithTimeout(context.WithoutCancel(p.Context), 3*time.Second)
+			defer cancel()
+			state, stateErr := p.CoreStore.LoadState(diagnostic, sessionID)
 			var watch map[string]any
-			watchErr := p.Store.Maintenance(p.Context, "im_reply_watch", sessionID, &watch)
-			consumed, consumedErr := p.CoreStore.Scan(p.Context, state.RolloutID, core.Query{SessionID: sessionID, Kind: core.EntryInputConsumed, Reverse: true, Limit: 8, MaxBytes: 1 << 20})
+			watchErr := p.Store.Maintenance(diagnostic, "im_reply_watch", sessionID, &watch)
+			consumed, consumedErr := p.CoreStore.Scan(diagnostic, state.RolloutID, core.Query{SessionID: sessionID, Kind: core.EntryInputConsumed, Reverse: true, Limit: 8, MaxBytes: 1 << 20})
 			inputs := []any{}
 			for _, row := range consumed.Records {
 				if row.Entry.Input != nil {
 					inputs = append(inputs, map[string]any{"run": row.Entry.RunID, "version": row.Entry.Version, "input_id": row.Entry.Input.ID})
 				}
 			}
-			t.Fatalf("%s: requests=%d want=%d last_run=%+v/%v watch=%+v/%v consumed=%+v/%v", reason, p.Requests.Load(), count, state.LastRun, stateErr, watch, watchErr, inputs, consumedErr)
+			t.Fatalf("%s: requests=%d want=%d wait_error=%v last_run=%+v/%v watch=%+v/%v consumed=%+v/%v", reason, p.Requests.Load(), count, p.Context.Err(), state.LastRun, stateErr, watch, watchErr, inputs, consumedErr)
 		}
 	}
 }

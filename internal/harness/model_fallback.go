@@ -667,7 +667,6 @@ func (s *Service) finishModelFallbackIfCompleted(ctx context.Context, r *runtime
 }
 
 func (s *Service) startModelFallbackWorker() {
-	s.modelFallbackProbes = map[string]modelFallbackProbe{}
 	s.modelFallbackWorkers.Add(1)
 	go func() {
 		defer s.modelFallbackWorkers.Done()

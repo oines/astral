@@ -92,7 +92,8 @@ func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bri
 	s := &Service{Store: store, CoreStore: coreStore, Models: models, Hub: hub,
 		Files: &filestream.Service{Store: store, Hub: hub}, Search: &search.Service{Store: store},
 		Recall:    recall.New(store, coreStore),
-		RuntimeID: domain.ID("server"), ctx: ctx, cancel: cancel, runtimes: map[string]*runtime{}, changes: make(chan string, 256), subagentWake: make(chan struct{}, 1)}
+		RuntimeID: domain.ID("server"), ctx: ctx, cancel: cancel, runtimes: map[string]*runtime{}, changes: make(chan string, 256), subagentWake: make(chan struct{}, 1),
+		modelFallbackProbes: map[string]modelFallbackProbe{}}
 	s.Timezone = timezone.New(store)
 	s.Schedules = schedule.New(store, s.deliverSchedule, s.scheduleAccepted, func() { s.notify("") }, s.Timezone)
 	s.subagentWorkers.Add(1)
