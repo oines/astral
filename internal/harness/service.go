@@ -25,40 +25,43 @@ import (
 )
 
 type Service struct {
-	Store                *persistence.Store
-	CoreStore            core.Store
-	Models               *modelbridge.Bridge
-	Hub                  *computers.Hub
-	Files                *filestream.Service
-	Search               *search.Service
-	Recall               *recall.Service
-	Schedules            *schedule.Service
-	Timezone             *timezone.Service
-	RuntimeID            string
-	IM                   Messenger
-	StorageChanged       func()
-	ctx                  context.Context
-	cancel               context.CancelFunc
-	mu                   sync.Mutex
-	deleteMu             sync.Mutex
-	agentMu              sync.RWMutex
-	runtimes             map[string]*runtime
-	headTimes            map[string]sessionHeadTime
-	selections           map[string]configurationSelection
-	childSettings        map[string]subagentMetadata
-	closed               bool
-	changes              chan string
-	sessionChanges       sessionChangeSignal
-	workers              sync.WaitGroup
-	subagentMu           sync.Mutex
-	subagentWake         chan struct{}
-	subagentWakeMu       sync.Mutex
-	subagentDirty        map[string]struct{}
-	subagentRescan       bool
-	subagentWorkers      sync.WaitGroup
-	modelFallbackMu      sync.Mutex
-	modelFallbackWorkers sync.WaitGroup
-	modelFallbackProbes  map[string]modelFallbackProbe
+	Store                   *persistence.Store
+	CoreStore               core.Store
+	Models                  *modelbridge.Bridge
+	Hub                     *computers.Hub
+	Files                   *filestream.Service
+	Search                  *search.Service
+	Recall                  *recall.Service
+	Schedules               *schedule.Service
+	Timezone                *timezone.Service
+	RuntimeID               string
+	IM                      Messenger
+	StorageChanged          func()
+	ctx                     context.Context
+	cancel                  context.CancelFunc
+	mu                      sync.Mutex
+	deleteMu                sync.Mutex
+	agentMu                 sync.RWMutex
+	runtimes                map[string]*runtime
+	headTimes               map[string]sessionHeadTime
+	selections              map[string]configurationSelection
+	childSettings           map[string]subagentMetadata
+	closed                  bool
+	changes                 chan string
+	sessionChanges          sessionChangeSignal
+	workers                 sync.WaitGroup
+	subagentMu              sync.Mutex
+	subagentWake            chan struct{}
+	subagentWakeMu          sync.Mutex
+	subagentDirty           map[string]struct{}
+	subagentRescan          bool
+	subagentWorkers         sync.WaitGroup
+	modelFallbackMu         sync.Mutex
+	modelFallbackWorkers    sync.WaitGroup
+	modelFallbackProbes     map[string]modelFallbackProbe
+	modelFallbackScheduleMu sync.Mutex
+	modelFallbackUpdates    map[string]modelFallbackScheduleUpdate
+	modelFallbackWake       chan struct{}
 }
 
 type runtime struct {
@@ -93,7 +96,8 @@ func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bri
 		Files: &filestream.Service{Store: store, Hub: hub}, Search: &search.Service{Store: store},
 		Recall:    recall.New(store, coreStore),
 		RuntimeID: domain.ID("server"), ctx: ctx, cancel: cancel, runtimes: map[string]*runtime{}, changes: make(chan string, 256), subagentWake: make(chan struct{}, 1),
-		modelFallbackProbes: map[string]modelFallbackProbe{}}
+		modelFallbackProbes:  map[string]modelFallbackProbe{},
+		modelFallbackUpdates: map[string]modelFallbackScheduleUpdate{}, modelFallbackWake: make(chan struct{}, 1)}
 	s.Timezone = timezone.New(store)
 	s.Schedules = schedule.New(store, s.deliverSchedule, s.scheduleAccepted, func() { s.notify("") }, s.Timezone)
 	s.subagentWorkers.Add(1)

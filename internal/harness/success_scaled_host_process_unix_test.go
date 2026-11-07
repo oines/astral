@@ -187,6 +187,13 @@ func (p *scaledHostProcess) RoundTrip(request *http.Request) (*http.Response, er
 		return nil, errors.New("invalid isolated receiver acknowledgement")
 	}
 	wire := scaledHostWire{successLifecycleWire: successLifecycleWire{Bytes: size, SHA256: digest, ValidJSON: true, Streaming: streaming, DispatchNS: dispatch, BodyReadNS: returned, SinkNS: processing}, ReceiverReturnNS: returned, ReceiverWallNS: returned - dispatch, ServerProcessingNS: processing, ServerPeakRSSBytes: rss, ReceiverPID: pid}
+	if value := response.Header.Get("X-Astral-Response-Delay-Ns"); value != "" {
+		wire.ResponseDelayNS, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || wire.ResponseDelayNS < 0 {
+			_ = response.Body.Close()
+			return nil, errors.New("invalid offline receiver delay acknowledgement")
+		}
+	}
 	p.receiver.mu.Lock()
 	p.receiver.wires = append(p.receiver.wires, wire)
 	p.receiver.mu.Unlock()
@@ -212,6 +219,14 @@ func TestScaledHostModelProcess(t *testing.T) {
 		t.Fatal("invalid child protocol")
 	}
 	lifecycle := os.Getenv("ASTRAL_SCALED_HOST_CHILD_LIFECYCLE") == "true"
+	var responseDelay time.Duration
+	if raw := os.Getenv("ASTRAL_SCALED_HOST_DELAY_MS"); raw != "" {
+		milliseconds, err := strconv.Atoi(raw)
+		if err != nil || milliseconds < 0 || milliseconds > 30000 {
+			t.Fatal("offline response delay must be between 0 and 30000 milliseconds")
+		}
+		responseDelay = time.Duration(milliseconds) * time.Millisecond
+	}
 	receiver := &scaledHostReceiver{sink: &successLifecycleTransport{protocol: protocol, started: time.Now(), omitUsage: lifecycle}, endpoint: *endpoint, toolPath: os.Getenv("ASTRAL_SCALED_HOST_CHILD_TOOL")}
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		copy := *request
@@ -243,6 +258,17 @@ func TestScaledHostModelProcess(t *testing.T) {
 			return
 		}
 		defer response.Body.Close()
+		if responseDelay > 0 {
+			// Hold only this owned synthetic provider after full body validation.
+			// The parent stays in a real frozen request while Host workers run.
+			timer := time.NewTimer(responseDelay)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+			case <-request.Context().Done():
+				return
+			}
+		}
 		rss, err := scaledHostPeakRSSBytes()
 		if err != nil {
 			http.Error(w, "RSS unavailable", 500)
@@ -251,6 +277,7 @@ func TestScaledHostModelProcess(t *testing.T) {
 		for key, value := range map[string]string{"Content-Type": response.Header.Get("Content-Type"), "X-Astral-Streaming": strconv.FormatBool(wire.Streaming), "X-Astral-Body-Bytes": strconv.Itoa(wire.Bytes), "X-Astral-Body-Sha256": wire.SHA256, "X-Astral-Json-Valid": strconv.FormatBool(wire.ValidJSON), "X-Astral-Processing-Ns": strconv.FormatInt(wire.ReceiverWallNS, 10), "X-Astral-Peak-Rss-Bytes": strconv.FormatInt(rss, 10), "X-Astral-Receiver-Pid": strconv.Itoa(os.Getpid())} {
 			w.Header().Set(key, value)
 		}
+		w.Header().Set("X-Astral-Response-Delay-Ns", strconv.FormatInt(int64(responseDelay), 10))
 		w.WriteHeader(response.StatusCode)
 		_, _ = io.Copy(w, response.Body)
 	})}

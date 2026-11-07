@@ -260,6 +260,9 @@ func TestDaemonReconnectWaitsForDisconnectedFileMutation(t *testing.T) {
 	}
 	binding := securityBinding(t, d, "grant_file_settle")
 	path := filepath.Join(binding.CWD, "settle.txt")
+	if err := os.WriteFile(path, []byte("ORIGINAL\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	entered, release := make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
 	defer releaseOnce.Do(func() { close(release) })
@@ -277,10 +280,10 @@ func TestDaemonReconnectWaitsForDisconnectedFileMutation(t *testing.T) {
 	select {
 	case <-entered:
 	case <-ctx.Done():
-		t.Fatal("daemon write did not reach its partial-file gate")
+		t.Fatal("daemon upload did not reach its incomplete-body gate")
 	}
-	if data, err := os.ReadFile(path); err != nil || string(data) != "ALPHA\n" {
-		t.Fatalf("write gate did not hold a real partially-written file: %q, %v", data, err)
+	if data, err := os.ReadFile(path); err != nil || string(data) != "ORIGINAL\n" {
+		t.Fatalf("incomplete upload changed the original file: %q, %v", data, err)
 	}
 	stopWrite()
 	_ = generation.peer.Close()
@@ -302,8 +305,11 @@ func TestDaemonReconnectWaitsForDisconnectedFileMutation(t *testing.T) {
 	select {
 	case err := <-writeDone:
 		var wire *transport.Error
-		if !errors.As(err, &wire) || wire.Outcome != string(core.OutcomeUnknown) {
-			t.Fatalf("partial disconnected daemon write lost unknown outcome: %v", err)
+		if !errors.As(err, &wire) || wire.Outcome != string(core.OutcomeNotExecuted) {
+			t.Fatalf("cancelled incomplete upload did not report an uncommitted outcome: %v", err)
+		}
+		if data, err := os.ReadFile(path); err != nil || string(data) != "ORIGINAL\n" {
+			t.Fatalf("cancelled upload changed the original after settlement: %q, %v", data, err)
 		}
 	case <-ctx.Done():
 		t.Fatal("old daemon write did not settle")

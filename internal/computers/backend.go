@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 	"time"
 
@@ -74,6 +75,9 @@ func (f *remoteFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	if err = json.Unmarshal(meta, &info); err != nil {
 		return nil, err
 	}
+	if info.Size < 0 {
+		return nil, domain.Invalid("file response has an invalid size")
+	}
 	if info.Size > 32<<20 {
 		return nil, domain.Invalid("file exceeds the 32 MiB tool read limit; use a shell command for selected ranges")
 	}
@@ -81,9 +85,18 @@ func (f *remoteFS) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	if len(raw) > 32<<20 {
 		return nil, domain.Invalid("file exceeds the 32 MiB tool read limit")
 	}
-	return raw, remoteError(err, false)
+	if err != nil {
+		return nil, remoteError(err, false)
+	}
+	if int64(len(raw)) != info.Size {
+		return nil, remoteError(errors.New("file transfer did not match the advertised size"), false)
+	}
+	return raw, nil
 }
 func (f *remoteFS) WriteFile(ctx context.Context, path string, data []byte) error {
+	if len(data) > fileWriteSizeLimit {
+		return remoteError(domain.Invalid("file exceeds the 32 MiB tool write limit; use a shell command for larger files"), false)
+	}
 	return f.mutate(ctx, "file.write", path, bytes.NewReader(data))
 }
 
@@ -125,36 +138,62 @@ func (b *Backend) StartProcess(ctx context.Context, inv core.Invocation, request
 		return nil, remoteError(err, false)
 	}
 	started := false
+	lifetime, cancel := context.WithCancel(context.Background())
+	p := &remoteProcess{hub: b.Hub, peer: peer, binding: binding, ctx: lifetime, cancel: cancel, credential: credential}
 	defer func() {
 		if !started {
 			b.Hub.revokeCommandCredential(credential)
+			cancel()
 		}
 	}()
 	var start processStart
-	if err = peer.JSON(ctx, "process.start", Call{Binding: binding, Execution: inv.ExecutionID, Process: request, APIToken: token}, &start); err != nil {
-		return nil, remoteError(err, true)
+	var output io.ReadCloser
+	b.Hub.mu.RLock()
+	active := b.Hub.live[binding.ComputerID]
+	streamStart := active != nil && active.peer == peer && slices.Contains(active.hello.Capabilities, ProcessStreamCapability)
+	b.Hub.mu.RUnlock()
+	if streamStart {
+		// Only startup belongs to the invocation context. The same stream then
+		// carries output for a yielded process, without another network round trip.
+		stop := context.AfterFunc(ctx, cancel)
+		var metadata json.RawMessage
+		metadata, output, err = peer.Call(lifetime, ProcessStreamCapability, Call{Binding: binding, Execution: inv.ExecutionID, Process: request, APIToken: token}, nil)
+		stop()
+		if err == nil {
+			err = json.Unmarshal(metadata, &start)
+		}
+		if err == nil && start.ID == "" {
+			err = errors.New("daemon returned no process identity")
+		}
+		if err == nil {
+			err = ctx.Err()
+		}
+		p.id = start.ID
+	} else {
+		// Older Daemons expose startup and output as separate calls.
+		if err = peer.JSON(ctx, "process.start", Call{Binding: binding, Execution: inv.ExecutionID, Process: request, APIToken: token}, &start); err != nil {
+			return nil, remoteError(err, true)
+		}
+		p.id = start.ID
+		attachCtx, cancelAttach := context.WithTimeout(ctx, 10*time.Second)
+		stopAttach := context.AfterFunc(attachCtx, cancel)
+		_, output, err = peer.Call(lifetime, "process.output", p.call(), nil)
+		stopAttach()
+		if err == nil {
+			err = attachCtx.Err()
+		}
+		cancelAttach()
 	}
-	lifetime, cancel := context.WithCancel(context.Background())
-	p := &remoteProcess{hub: b.Hub, peer: peer, binding: binding, id: start.ID, ctx: lifetime, cancel: cancel, credential: credential}
-	// Only the output attachment handshake belongs to this invocation. Once it
-	// succeeds, a yielded process must survive the caller's context ending.
-	attachCtx, cancelAttach := context.WithTimeout(ctx, 10*time.Second)
-	stopAttach := context.AfterFunc(attachCtx, cancel)
-	_, output, err := peer.Call(lifetime, "process.output", p.call(), nil)
-	stopAttach()
-	if err == nil && attachCtx.Err() != nil {
-		err = attachCtx.Err()
-	}
-	cancelAttach()
 	if err != nil {
 		b.Hub.revokeCommandCredential(credential)
 		if output != nil {
 			_ = output.Close()
 		}
-		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = peer.JSON(cleanup, "process.terminate", p.call(), nil)
-		stop()
-		cancel()
+		if p.id != "" {
+			cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = peer.JSON(cleanup, "process.terminate", p.call(), nil)
+			stop()
+		}
 		return nil, remoteError(err, true)
 	}
 	p.outputDone = make(chan struct{})

@@ -38,6 +38,10 @@ Check that the reported location is the one you intended. This completes the pat
 
 Granting access lets the Bot operate with the computer service account's file and command permissions, beyond its default working folder. Read the [access guidance](/docs/start/safe-use/) before exposing that environment to a public group or untrusted material.
 
+## Slow or interrupted connections
+
+A slow connection can delay command output and file operations. Astral keeps collecting command output on the computer while it is being transferred. When the computer's connection to Server is confirmed lost, its commands are stopped; reconnecting does not restart them. Check any file changes or other effects before asking the Bot to repeat an operation whose result is unknown. Closing a browser tab does not disconnect the computer.
+
 ## The computer is not usable yet
 
 | What you see | What to check |

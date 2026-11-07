@@ -12,6 +12,10 @@ import (
 	"github.com/oines/astral/internal/domain"
 )
 
+// ProcessStreamCapability starts a process and attaches its output in one RPC.
+// Older peers continue to use process.start followed by process.output.
+const ProcessStreamCapability = "process.start_stream"
+
 type Hello struct {
 	Version      string                `json:"version,omitempty"`
 	BootID       string                `json:"boot_id"`
