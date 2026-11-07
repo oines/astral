@@ -58,11 +58,14 @@ func (a replyDownloadCounter) Download(ctx context.Context, attachment domain.At
 
 func TestTelegramReplyMediaDownloadsOnlyOnExplicitAuthorizedRequest(t *testing.T) {
 	bot := newBot(t)
-	var downloads atomic.Int64
+	var downloads, reminders atomic.Int64
 	p := testkit.New(t, 1, func(_ context.Context, _ int, request map[string]any) any {
 		body := string(encoded(request["messages"]))
 		if !strings.Contains(body, `message-id=\"42\"`) || !strings.Contains(body, `file-id=\"42:0\"`) || strings.Contains(body, `"type":"image_url"`) {
 			t.Error("referenced photo was lost or automatically attached as model pixels")
+		}
+		if strings.Contains(activeDeliveryText(request), "如果你决定不回复，请忽略此提醒。") {
+			reminders.Add(1)
 		}
 		return testkit.Text("received")
 	})
@@ -80,8 +83,11 @@ func TestTelegramReplyMediaDownloadsOnlyOnExplicitAuthorizedRequest(t *testing.T
 		t.Fatal(err)
 	}
 	bot.updates <- []telegramUpdate{incoming}
-	testkit.Await(t, p.Context, func() bool { return p.Requests.Load() == 1 })
+	awaitDirectReminderRequests(t, p, binding.SessionID, "reply with quoted photo", 2)
 	p.Idle(t, binding.SessionID)
+	if p.Requests.Load() != 2 || reminders.Load() != 1 {
+		t.Fatalf("quoted-photo direct reply duplicated delivery or its reminder: requests=%d reminders=%d", p.Requests.Load(), reminders.Load())
+	}
 	if downloads.Load() != 0 {
 		t.Fatal("reply delivery automatically downloaded the referenced source")
 	}

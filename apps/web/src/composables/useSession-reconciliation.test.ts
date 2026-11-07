@@ -3,6 +3,7 @@ import { effectScope, nextTick, reactive, ref, type EffectScope } from 'vue'
 import { useSession } from './useSession'
 import { transcriptGroups } from '../lib/session-state'
 import type { Entry, Snapshot } from '../lib/types'
+import type { SubagentActivity } from '../lib/subagents'
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), app: undefined as unknown as { authorized: boolean; sessionViews: Record<string, unknown> } }))
 vi.mock('@astral/sdk/client', () => ({ client: { get: mocks.get, setConfig: vi.fn(), interceptors: { response: { use: vi.fn() } } } }))
@@ -21,7 +22,10 @@ function entry(id: string, sequence: number): Entry {
   return { id, sequence, kind: 'message', session_id: 'chat', version: sequence, time: '', message: { role: 'user', content: [{ type: 'text', text: id }] } }
 }
 function snapshot(entries: Entry[], cursor?: string, epoch = 'server'): Snapshot {
-  return { epoch, history: { entries, next_cursor: cursor, head_id: 'head' }, trace: { entries: [], head_id: 'head' }, view: { id: 'chat', run_id: 'run', event_sequence: 0 } as Snapshot['view'] }
+  return { epoch, history: { entries, next_cursor: cursor, head_id: 'head' }, trace: { entries: [], head_id: 'head' }, view: { id: 'chat', run_id: 'run', event_sequence: 0 } as Snapshot['view'], subagent_activity: [], subagent_activity_cursor: '0' }
+}
+function activity(sequence: number): SubagentActivity {
+  return { id: `child-event-${sequence}`, sequence, session_id: 'chat', child_session_id: 'child', name: 'Review', run_id: `run-${sequence}`, status: 'started', time: new Date(Date.UTC(2026, 10, 5, 0, 0, sequence)).toISOString() }
 }
 let scope: EffectScope
 beforeEach(() => {
@@ -31,6 +35,7 @@ beforeEach(() => {
   mocks.app = reactive({ authorized: true, sessionViews: {} })
   mocks.get.mockReset()
   scope = effectScope()
+
 })
 afterEach(() => { scope.stop(); vi.useRealTimers(); vi.unstubAllGlobals() })
 async function reconnect(session: ReturnType<typeof useSession>) {
@@ -143,6 +148,45 @@ describe('session transport reconciliation', () => {
     expect(session.state.value.entries.stale).toBeUndefined()
     expect(session.state.value.entries.middle).toBeDefined()
     expect(session.state.value.historyCursor).toBe('oldest-page')
+  })
+
+  it('loads older child activity after normal message history has reached its end', async () => {
+    mocks.get.mockResolvedValue({ data: { entries: [], head_id: '', subagent_activity: [activity(1)], subagent_activity_cursor: '3' } })
+    const session = scope.run(() => useSession(ref('chat')))!
+    Source.all[0]!.emit('snapshot', { ...snapshot([]), subagent_activity: [activity(3)], subagent_activity_cursor: '3', subagent_activity_next_cursor: '3' })
+    expect(await session.older()).toBe(true)
+    expect(mocks.get).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ cursor: undefined, activity_cursor: '3' }) }))
+    expect(Object.keys(session.state.value.subagentActivity ?? {}).sort()).toEqual(['child-event-1', 'child-event-3'])
+    expect(session.state.value.historyCursor).toBeUndefined()
+    expect(await session.older()).toBe(false)
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('fills a child-activity outage gap without reading unrelated older messages or losing live states', async () => {
+    let resolve!: (value: unknown) => void
+    mocks.get.mockImplementation(() => new Promise(done => { resolve = done }))
+    const session = scope.run(() => useSession(ref('chat')))!
+    Source.all[0]!.emit('snapshot', { ...snapshot([entry('old', 2)], 'older-messages'), subagent_activity: [activity(2)], subagent_activity_cursor: '2', subagent_activity_next_cursor: '2' })
+    const source = await reconnect(session)
+    source.emit('snapshot', { ...snapshot([entry('old', 2)], 'recent-messages'), subagent_activity: [activity(8), activity(9)], subagent_activity_cursor: '9', subagent_activity_next_cursor: '8' })
+    expect(mocks.get).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ cursor: undefined, activity_cursor: '8' }) }))
+    source.emit('event', { epoch: 'server', subagent_activity: [activity(10)], subagent_activity_cursor: '10' })
+    resolve({ data: { entries: [], head_id: '', subagent_activity: [activity(2), activity(5)], subagent_activity_cursor: '9', subagent_activity_next_cursor: '2' } })
+    await nextTick(); await nextTick(); await nextTick()
+    expect(Object.keys(session.state.value.subagentActivity ?? {}).sort()).toEqual(['child-event-10', 'child-event-2', 'child-event-5', 'child-event-8', 'child-event-9'])
+    expect(session.state.value.subagentActivityCursor).toBe('10')
+    expect(session.state.value.subagentActivityNextCursor).toBe('2')
+    expect(session.state.value.subagentActivityBoundary).toBeUndefined()
+    expect(session.state.value.historyCursor).toBe('older-messages')
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not re-fetch recent child states when only earlier normal messages remain', async () => {
+    mocks.get.mockResolvedValue({ data: { entries: [entry('older', 1)], head_id: '' } })
+    const session = scope.run(() => useSession(ref('chat')))!
+    Source.all[0]!.emit('snapshot', snapshot([entry('newer', 2)], 'older-message-page'))
+    await session.older()
+    expect(mocks.get).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ cursor: 'older-message-page', activity_cursor: '0' }) }))
   })
 
 })

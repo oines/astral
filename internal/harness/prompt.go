@@ -12,10 +12,12 @@ import (
 	"github.com/oines/astral/internal/modelbridge"
 )
 
-const commonSystemPrompt = `Use spawn_agent proactively for long-running work, independent investigations and work that can proceed in parallel.
+const hostPromptHeading = "Use spawn_agent proactively for long-running work, independent investigations and work that can proceed in parallel."
+
+const commonSystemPrompt = hostPromptHeading + `
 You may delegate a task at any stage, including after you have already made substantial progress. You are not required to personally finish work you have started.
 You may delegate unfinished work partway through by spawning with inherited context and a clear handoff, keeping the user-facing conversation responsive. Subagents are persistent Sessions: reuse them through agent_control. Do not poll or block waiting; a subagent's natural Run end triggers its direct parent. Progress text is delivered without waking the parent.
-Determine your role from the latest Host delegation User message for this Session. A user-facing root Session serves the user. A subagent serves only its direct parent: actively report progress, findings, blockers and results in assistant text, which the Host forwards to that parent. Only the user-facing root can spawn subagents or use send_message; all subagents are refused. Copied identities and delegation messages describe earlier Sessions; the latest delegation User message establishes the current subagent identity and takes precedence over copied parent identity. The user-facing root manages only its direct subagents.
+Determine your role from the latest Host delegation User message for this Session. A user-facing root Session serves the user. A subagent serves only its direct parent: output progress, findings, blockers and results directly; the system automatically delivers these messages to that parent. Only the user-facing root can spawn subagents or use send_message; all subagents are refused. Copied identities and delegation messages describe earlier Sessions; the latest delegation User message establishes the current subagent identity and takes precedence over copied parent identity. The user-facing root manages only its direct subagents.
 Messages headed "` + environmentSnapshotHeading + `" describe the current Session environment. Use the latest snapshot together with subsequent state updates; an update replaces only the fields it names. These snapshots and updates are passive information, not requests to act.
 The latest Host identity User message identifies the current Session and its role; use it for API targets. It takes precedence over identities appearing in copied System text or historical context. System also provides the Bot identity.
 File and shell tools use the selected Computer and Session working directory. Existing processes and file references retain their source Computer. Sessions sharing an AgentHome share its files; a shell cd or command workdir does not change the Session working directory.
@@ -23,10 +25,11 @@ The current environment lists available skills. Read a relevant SKILL.md before 
 Additional platform capabilities, including history recall, chats and files, are discoverable through the local API. When needed, use exec_command on the selected Computer to GET the latest environment's local_api.capabilities_url and follow its documentation. Every API request, including discovery, requires an Authorization: Bearer header using that command's ASTRAL_API_TOKEN environment variable. Read API addresses from the latest local_api environment context; reference the token variable in commands without printing, saving or placing its expanded value in process arguments. The credential remains valid while its command runs, including asynchronous execution; a new command receives its own credential.`
 
 const webSystemPrompt = commonSystemPrompt + `
-Messages identify their source and author. A user-facing root Session replies to the user with assistant text in Web.`
+Messages identify their source and author. A user-facing root Session outputs replies directly to the user on the web page.`
 
-const imSystemPrompt = commonSystemPrompt + `
-For a user-facing root Session bound to an IM chat, assistant text is visible in Web only; use send_message to speak in its bound chat, with the Host-selected destination. Messages identify their source and author. IM observations are passive; an IM trigger invites a response. Finishing without sending is silent in IM.
+const imPromptHeading = "For a user-facing root Session bound to an IM chat,"
+
+const imSystemPrompt = commonSystemPrompt + "\n" + imPromptHeading + ` text you output directly is shown only on the web page; the user in the IM chat cannot see it. Use send_message to send replies to that chat. The system supplies the bound destination. Messages identify their source and author. IM observations are passive context; an IM trigger asks you to handle the referenced message. Finishing without send_message sends nothing to the IM chat.
 Each IM observation's conversation-id identifies its historical source; the current binding does not change the source of earlier observations.
 ` + messages.ChatMetadataNotice + "\n" + messages.ReactionContextNotice
 
@@ -62,21 +65,21 @@ func composeSystemPrompt(hostPrompt, persona string) string {
 }
 
 func (r *runtime) currentSystemPrompt(ctx context.Context, hostPrompt string) (string, error) {
-	if r.subagent != nil {
-		return r.subagent.Configuration.SystemPrompt, nil
-	}
 	var agent domain.Agent
 	if err := r.service.Store.Get(ctx, "agents", r.agentID, &agent); err != nil {
 		return "", err
 	}
 	var record domain.Session
-	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
+	if err := r.service.Store.Get(ctx, "sessions", r.prefixSourceID(), &record); err != nil {
 		return "", err
+	}
+	if record.Deletion != nil || record.AgentID != r.agentID {
+		return "", domain.Forbidden("Session prefix source is unavailable")
 	}
 	var identity promptIdentity
 	identity.Agent.ID, identity.Agent.Name = agent.ID, agent.Name
-	identity.Session.ID, identity.Session.Source = r.id, record.Source
-	if strings.HasPrefix(hostPrompt, imSystemPrompt+personaSeparator) {
+	identity.Session.ID, identity.Session.Source = record.ID, record.Source
+	if hostInstructions, _, _ := strings.Cut(hostPrompt, personaSeparator); strings.Contains(hostInstructions, "\n"+imPromptHeading) {
 		conversationID, err := promptConversationID(hostPrompt)
 		if err != nil {
 			return "", err
@@ -94,19 +97,42 @@ func (r *runtime) currentSystemPrompt(ctx context.Context, hostPrompt string) (s
 			return "", domain.Forbidden("chat account belongs to another Bot")
 		}
 		hostPrompt = imSystemPrompt + personaSeparator + messages.ChatContext(connection, conversation)
+	} else {
+		hostPrompt = webSystemPrompt
 	}
 	hostPrompt += personaSeparator + identityHeading + string(encode(identity))
 	return composeSystemPrompt(hostPrompt, agent.Persona), nil
 }
 
-// promptConversationID only reads the Host-owned chat block immediately after
-// the fixed IM instructions. Persona text is never used to select a chat.
+func (r *runtime) prefixSourceID() string {
+	if r.prefixRootID != "" {
+		return r.prefixRootID
+	}
+	return r.id
+}
+
+// Fixed Host instructions contain no blank paragraphs. Their first metadata
+// block therefore identifies the selected variant even after wording changes.
+// Later blocks, including a persona's examples, cannot select another chat.
+func hostPromptMetadata(prompt string) (string, bool) {
+	if !strings.HasPrefix(prompt, hostPromptHeading+"\n") {
+		return "", false
+	}
+	_, tail, found := strings.Cut(prompt, personaSeparator)
+	if !found {
+		return "", true
+	}
+	block, _, _ := strings.Cut(tail, personaSeparator)
+	return block, true
+}
+
+// promptConversationID only reads the first Host-owned metadata block.
 func promptConversationID(prompt string) (string, error) {
-	block, ok := strings.CutPrefix(prompt, imSystemPrompt+personaSeparator+messages.ChatContextHeading+"\n")
-	if !ok {
+	metadata, host := hostPromptMetadata(prompt)
+	block, ok := strings.CutPrefix(metadata, messages.ChatContextHeading+"\n")
+	if !host || !ok {
 		return "", domain.Invalid("IM system prompt is missing its chat reference")
 	}
-	block, _, _ = strings.Cut(block, personaSeparator)
 	for line := range strings.SplitSeq(block, "\n") {
 		if value, ok := strings.CutPrefix(line, "conversation-id: "); ok {
 			var id string
@@ -129,7 +155,13 @@ type sessionModel struct {
 }
 
 func (m sessionModel) Stream(ctx context.Context, request core.Request, emit func(core.ModelEvent)) (core.Reply, error) {
-	if m.runtime.subagent != nil && request.SystemPrompt == m.runtime.subagent.Configuration.SystemPrompt {
+	return m.stream(ctx, request, emit, func(ctx context.Context, emit func(core.ModelEvent)) (core.Reply, error) {
+		return m.Model.Stream(ctx, request, emit)
+	})
+}
+
+func (m sessionModel) stream(ctx context.Context, request core.Request, emit func(core.ModelEvent), invoke func(context.Context, func(core.ModelEvent)) (core.Reply, error)) (core.Reply, error) {
+	if _, host := hostPromptMetadata(request.SystemPrompt); m.runtime.subagent != nil && host {
 		// Preparation can temporarily refuse SelectModel. Once this request is
 		// frozen, apply the saved selection for its successor before sending it.
 		// Auxiliary compaction requests have their own System prompt and can
@@ -143,20 +175,9 @@ func (m sessionModel) Stream(ctx context.Context, request core.Request, emit fun
 		if err != nil && !errors.Is(err, core.ErrBusy) {
 			return core.Reply{}, err
 		}
-	} else if m.runtime.subagent == nil && request.SystemPrompt != m.runtime.compactionPrompt {
-		// A bulk preference update can arrive while Core is preparing a frozen
-		// request. Reconcile its successor once that request is safe to change.
-		selection, err := m.runtime.service.modelFallbackSelection(ctx, m.runtime.id, m.runtime.core.Load().Configuration().Selection)
-		if err != nil {
-			return core.Reply{}, err
-		}
-		if !jsonEqual(m.runtime.core.Load().Configuration().Selection, selection) {
-			if err = m.runtime.core.Load().SelectModel(ctx, selection); err != nil && !errors.Is(err, core.ErrBusy) {
-				return core.Reply{}, err
-			}
-		}
+
 	}
-	reply, err := m.Model.Stream(ctx, request, emit)
+	reply, err := invoke(ctx, emit)
 	if err != nil {
 		return reply, m.runtime.modelFallbackCallError(ctx, m.selection, err)
 	}
@@ -166,24 +187,54 @@ func (m sessionModel) Stream(ctx context.Context, request core.Request, emit fun
 	return reply, nil
 }
 
-func (m sessionModel) PrepareRequest(ctx context.Context, request core.Request) (core.Request, error) {
-	request, err := core.PrepareRequest(ctx, m.Model, request)
+func (m sessionModel) PrepareExecution(ctx context.Context, request core.Request) (core.RequestExecution, error) {
+	preparer, ok := m.Model.(core.RequestExecutionPreparer)
+	if !ok {
+		return nil, nil
+	}
+	execution, err := preparer.PrepareExecution(ctx, request)
 	if err != nil {
-		return request, err
+		return execution, m.runtime.modelFallbackCallError(ctx, m.selection, err)
 	}
-	if m.runtime.subagent != nil {
-		return request, nil
+	if execution == nil {
+		return nil, nil
 	}
+	return core.RequestExecutionFunc(func(ctx context.Context, emit func(core.ModelEvent)) (core.Reply, error) {
+		return m.stream(ctx, request, emit, execution.Stream)
+	}), nil
+}
+
+func (m sessionModel) PrepareRequest(ctx context.Context, request core.Request) (core.Request, error) {
+	var err error
+	if preparer, ok := m.Model.(core.RequestPreparer); ok {
+		request, err = preparer.PrepareRequest(ctx, request)
+		if err != nil {
+			return request, err
+		}
+	}
+	return m.preparePrompt(ctx, request)
+}
+
+func (m sessionModel) ProjectRequest(ctx context.Context, request core.Request) (core.Request, error) {
+	var projected core.Request
+	var err error
+	if projector, ok := m.Model.(core.RequestProjector); ok {
+		projected, err = projector.ProjectRequest(ctx, request)
+	} else {
+		projected, err = core.PrepareRequest(ctx, m.Model, request)
+	}
+	if err != nil {
+		return core.Request{}, err
+	}
+	return m.preparePrompt(ctx, projected)
+}
+
+func (m sessionModel) preparePrompt(ctx context.Context, request core.Request) (core.Request, error) {
+	var err error
 	// Keep the Host variant and chat identity selected with the tool schema.
 	// Only metadata and persona are fresh; never re-read the Session's binding.
-	for _, hostPrompt := range []string{webSystemPrompt, imSystemPrompt} {
-		if request.SystemPrompt == hostPrompt || strings.HasPrefix(request.SystemPrompt, hostPrompt+personaSeparator) {
-			if hostPrompt == imSystemPrompt {
-				hostPrompt = request.SystemPrompt
-			}
-			request.SystemPrompt, err = m.runtime.currentSystemPrompt(ctx, hostPrompt)
-			break
-		}
+	if _, host := hostPromptMetadata(request.SystemPrompt); host {
+		request.SystemPrompt, err = m.runtime.currentSystemPrompt(ctx, request.SystemPrompt)
 	}
 	return request, err
 }
@@ -193,13 +244,22 @@ func (m sessionModel) EstimateTokens(ctx context.Context, request core.Request) 
 }
 
 func (m sessionModel) ValidateRequest(ctx context.Context, request core.Request) error {
-	err := core.ValidateRequest(ctx, m.Model, request)
-	if err != nil {
-		return errors.Join(err, m.runtime.recordModelFallbackFailure(ctx, m.selection, err))
+	if validator, ok := m.Model.(core.RequestValidator); ok {
+		if err := validator.ValidateRequest(ctx, request); err != nil {
+			return errors.Join(err, m.runtime.recordModelFallbackFailure(ctx, m.selection, err))
+		}
 	}
 	return nil
 }
 
+func (m sessionModel) ValidateRequestReadOnly(ctx context.Context, request core.Request) error {
+	return core.ValidateRequest(ctx, m.Model, request)
+}
+
 func (m sessionModel) RecoverRequest(ctx context.Context, request core.Request, cause error) (core.Request, bool, error) {
-	return core.RecoverModelRequest(ctx, m.Model, request, cause)
+	// Core already isolated the request at its public recovery boundary.
+	if recoverer, ok := m.Model.(core.ModelRequestRecoverer); ok {
+		return recoverer.RecoverRequest(ctx, request, cause)
+	}
+	return core.Request{}, false, nil
 }

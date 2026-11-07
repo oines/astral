@@ -170,11 +170,12 @@ type recoveryBatchMemory struct {
 	session *core.Session
 	store   *recoveryBatchStore
 	calls   atomic.Int64
+	config  core.Config
 }
 
 // The covered/busy/terminal paths need only a real Core and Host admission
 // records. No Provider HTTP server or model-resolution fixture is involved.
-func newRecoveryBatchMemory(t testing.TB, generate func(context.Context, core.Request) (core.Reply, error)) *recoveryBatchMemory {
+func newRecoveryBatchMemory(t testing.TB, generate func(context.Context, core.Request) (core.Reply, error), tools ...core.Tool) *recoveryBatchMemory {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	f := &recoveryBatchMemory{ctx: ctx, store: &recoveryBatchStore{Store: memory.New()}}
@@ -190,12 +191,14 @@ func newRecoveryBatchMemory(t testing.TB, generate func(context.Context, core.Re
 		}
 		return core.Reply{Message: core.Message{Role: core.RoleAssistant, Content: core.Text("Handled."), FinishReason: core.FinishStop}}, nil
 	}}
-	f.session, err = core.NewSession(ctx, core.Config{
+	f.config = core.Config{
 		Store: f.store, Model: model, SystemPrompt: "Synthetic IM recovery history.", Compaction: core.CompactionPolicy{Disabled: true},
+		Tools: tools, MaxContextBytes: 64 << 20,
 		EstimateTokens: func(_ context.Context, _ core.Model, request core.Request) (int, error) {
 			return 100 * len(request.Messages), nil
 		},
-	}, core.SessionOptions{ID: "recovery-session"})
+	}
+	f.session, err = core.NewSession(ctx, f.config, core.SessionOptions{ID: "recovery-session"})
 	if err != nil {
 		cancel()
 		_ = hostStore.Close()
@@ -358,11 +361,15 @@ func BenchmarkIMRecoveryCoveredPage(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
+				f.service.ReleaseIMRecovery(f.session.ID())
 				width := len(inputs)
 				if !batch {
 					width = 1
 				}
 				for at := 0; at < len(inputs); at += width {
+					if !batch {
+						f.service.ReleaseIMRecovery(f.session.ID())
+					}
 					statuses, err := f.service.WakeObservations(f.ctx, f.session.ID(), inputs[at:at+width], "recovery-binding")
 					if err != nil || len(statuses) != width {
 						b.Fatalf("recover page: statuses=%v err=%v", statuses, err)

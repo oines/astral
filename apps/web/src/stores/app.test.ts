@@ -42,7 +42,7 @@ class Stream extends EventTarget {
   fail() { this.onerror?.() }
 }
 function snapshot(view: SessionView, epoch = 'server'): Snapshot {
-  return { epoch, view, history: { entries: [], head_id: '' }, trace: { entries: [], head_id: '' } }
+  return { epoch, view, history: { entries: [], head_id: '' }, trace: { entries: [], head_id: '' }, subagent_activity: [], subagent_activity_cursor: '0' }
 }
 let app: ReturnType<typeof useAppStore> | undefined
 let sessionScope: EffectScope | undefined
@@ -68,6 +68,26 @@ describe('sidebar ownership across the real session stream', () => {
     const visible = visibleSidebarSessions(app!.sessions, app!.schedules, row => app!.statuses[row.id]?.status === 'running', selected).filter(row => row.title.includes(search))
     return sidebarGroups(visible, app!.schedules, row => app!.statuses[row.id]?.status === 'running').flatMap(group => group.items.map(row => row.id))
   }
+
+  it('merges a refreshed directory summary without replacing complete active execution details', async () => {
+    app = useAppStore()
+    const detailed = { ...root, status: 'running', run_id: 'current-run', event_sequence: 42,
+      pending: [{ id: 'queued-owner', kind: 'follow_up', metadata: {} }],
+      approvals: [{ ID: 'approval', Invocation: {}, Request: { prompt: 'Keep this approval' } }],
+      unresolved: [{ invocation: { execution_id: 'unconfirmed-tool' } }],
+      context_usage: { entry_id: 'generation', input_tokens: 1234, context_window: 128000 } }
+    // Simulate the full SSE payload independently of the directory contract.
+    app.sessionViews.root = detailed as SessionView
+    const detailFields = new Set(['pending', 'approvals', 'unresolved', 'context_usage', 'can_continue', 'event_sequence', 'rollout_id', 'head_id'])
+    const summary = Object.fromEntries(Object.entries(root).filter(([key]) => !detailFields.has(key)))
+    mocks.queries.sessions!.data.value = [{ ...summary, revision: 2, title: 'Fresh directory title', status: 'idle' }, child, grandchild, fork]
+    await nextTick()
+    expect(app.sessions.find(row => row.id === root.id)).toMatchObject({
+      title: 'Fresh directory title', status: 'running', run_id: 'current-run', event_sequence: 42,
+      pending: detailed.pending, approvals: detailed.approvals, unresolved: detailed.unresolved, context_usage: detailed.context_usage,
+    })
+    expect(app.sessionViews.root).toEqual(detailed)
+  })
 
   it('keeps shared and independent subagents out of bootstrap, refresh, search and archive navigation', async () => {
     const shared = { ...child, parent_session_id: 'root', archived: true, pinned: true, status: 'running' }

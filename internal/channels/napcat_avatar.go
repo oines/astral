@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	_ "golang.org/x/image/webp"
+	"golang.org/x/image/webp"
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
@@ -99,7 +99,15 @@ func (s *Service) napcatAvatar(ctx context.Context, b domain.ExecutionBinding, c
 	}
 	mediaType := http.DetectContentType(data)
 	extension := map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}[mediaType]
-	config, _, decodeErr := image.DecodeConfig(bytes.NewReader(data))
+	var config image.Config
+	var decodeErr error
+	if mediaType == "image/webp" {
+		// Image encoding dependencies also register decoders. Keep avatar header
+		// validation on its existing lightweight x/image decoder.
+		config, decodeErr = webp.DecodeConfig(bytes.NewReader(data))
+	} else {
+		config, _, decodeErr = image.DecodeConfig(bytes.NewReader(data))
+	}
 	if extension == "" || decodeErr != nil || config.Width < 1 || config.Height < 1 {
 		return Download{}, chat, account, domain.Offline("QQ avatar service did not return a supported image")
 	}

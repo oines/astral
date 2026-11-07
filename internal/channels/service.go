@@ -29,12 +29,14 @@ type Service struct {
 	workers        sync.WaitGroup
 	pollers        map[string]poller
 	inboxes        map[string]context.CancelFunc
+	inboxWake      map[string]chan struct{}
+	outboxWake     chan struct{}
+	reconcileWake  chan struct{}
 	sending        map[string]bool
 	statuses       map[string]Status
 	weixinLogins   map[string]*weixinLogin
 	probeQuiet     time.Duration
 	probeMaxWait   time.Duration
-	handoffs       map[string]int64
 	agentWorkers   map[string]*agentWorkers
 	deletingAgents map[string]bool
 	StorageChanged func()
@@ -61,7 +63,7 @@ type cursor struct {
 
 func New(store *persistence.Store, service *harness.Service) *Service {
 	s := &Service{Store: store, Harness: service, Registry: DefaultRegistry(), Client: http.DefaultClient,
-		pollers: map[string]poller{}, inboxes: map[string]context.CancelFunc{}, sending: map[string]bool{}, statuses: map[string]Status{}, probeQuiet: 10 * time.Second, probeMaxWait: time.Minute,
+		pollers: map[string]poller{}, inboxes: map[string]context.CancelFunc{}, outboxWake: make(chan struct{}, 1), reconcileWake: make(chan struct{}, 1), sending: map[string]bool{}, statuses: map[string]Status{}, probeQuiet: 10 * time.Second, probeMaxWait: time.Minute,
 		agentWorkers: map[string]*agentWorkers{}, deletingAgents: map[string]bool{}}
 	service.IM = s
 	return s
@@ -299,7 +301,11 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	// A committed dispatch without a receipt may have reached the platform.
 	// Recovery never converts that uncertainty into another send.
-	records, err := list[domain.Outbox](ctx, s.Store, "outbox")
+	rows, err := s.Store.OutboxWork(ctx)
+	if err != nil {
+		return err
+	}
+	records, err := decodeRecords[domain.Outbox](rows)
 	if err != nil {
 		return err
 	}
@@ -337,24 +343,84 @@ func (s *Service) Close(ctx context.Context) error {
 }
 func (s *Service) run() {
 	defer close(s.done)
-	ticker := time.NewTicker(300 * time.Millisecond)
-	defer ticker.Stop()
+	reconcile := func() time.Time {
+		next, err := s.reconcile()
+		if err != nil {
+			return time.Now().Add(300 * time.Millisecond)
+		}
+		return next
+	}
+	dispatch := func() time.Time {
+		if s.dispatchPending() {
+			return time.Now().Add(300 * time.Millisecond)
+		}
+		return time.Time{}
+	}
+	watch := s.Store.Watch(
+		persistence.ChangeKey{Kind: "connections"},
+		persistence.ChangeKey{Kind: "bindings"},
+		persistence.ChangeKey{Kind: "agents"},
+		persistence.ChangeKey{Kind: storageOperations},
+		persistence.ChangeKey{Kind: "storage_retention"},
+	)
+	defer watch.Close()
+	changed := watch.Changes()
+	nextReconcile := reconcile()
+	nextOutbox := dispatch()
+	timer := time.NewTimer(time.Hour)
+	defer timer.Stop()
 	for {
-		s.reconcile()
+		if s.ctx.Err() != nil {
+			s.workers.Wait()
+			return
+		}
+		now := time.Now()
+		if !nextReconcile.IsZero() && !now.Before(nextReconcile) {
+			changed = watch.Changes()
+			nextReconcile = reconcile()
+		}
+		if !nextOutbox.IsZero() && !now.Before(nextOutbox) {
+			nextOutbox = dispatch()
+		}
+		deadline := nextReconcile
+		if deadline.IsZero() || !nextOutbox.IsZero() && nextOutbox.Before(deadline) {
+			deadline = nextOutbox
+		}
+		timer.Stop()
+		var due <-chan time.Time
+		if !deadline.IsZero() {
+			timer.Reset(time.Until(deadline))
+			due = timer.C
+		}
 		select {
 		case <-s.ctx.Done():
 			s.workers.Wait()
 			return
-		case <-ticker.C:
-		case <-s.Harness.Changes():
+		case <-due:
+		case <-changed:
+			changed = watch.Changes()
+			nextReconcile = reconcile()
+		case <-s.reconcileWake:
+			changed = watch.Changes()
+			nextReconcile = reconcile()
+		case <-s.outboxWake:
+			nextOutbox = dispatch()
 		}
 	}
 }
-func (s *Service) reconcile() {
-	s.reconcileStorage()
+
+func (s *Service) wakeReconcile() {
+	select {
+	case s.reconcileWake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Service) reconcile() (time.Time, error) {
+	next, storageErr := s.reconcileStorage()
 	connections, err := list[domain.Connection](s.ctx, s.Store, "connections")
 	if err != nil {
-		return
+		return next, err
 	}
 	s.mu.Lock()
 	for id, worker := range s.pollers {
@@ -381,12 +447,17 @@ func (s *Service) reconcile() {
 		s.pollers[c.ID] = poller{revision: c.Revision, cancel: cancel, done: done}
 		s.workers.Add(1)
 		group.workers.Add(1)
-		go func() { defer s.workers.Done(); defer group.workers.Done(); defer close(done); s.poll(ctx, c) }()
+		go func() {
+			defer s.workers.Done()
+			defer group.workers.Done()
+			defer func() { close(done); s.wakeReconcile() }()
+			s.poll(ctx, c)
+		}()
 	}
 	s.mu.Unlock()
 	bindings, err := list[domain.ConversationBinding](s.ctx, s.Store, "bindings")
 	if err != nil {
-		return
+		return next, err
 	}
 	s.mu.Lock()
 	for _, binding := range bindings {
@@ -410,7 +481,7 @@ func (s *Service) reconcile() {
 		}
 	}
 	s.mu.Unlock()
-	s.dispatchPending()
+	return next, storageErr
 }
 func (s *Service) setStatus(status Status) {
 	s.mu.Lock()

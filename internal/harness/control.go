@@ -98,6 +98,9 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 }
 
 func (r *runtime) syncBusinessConfig(ctx context.Context) error {
+	if _, err := r.readableCore(); err != nil {
+		return err
+	}
 	var record domain.Session
 	if err := r.service.Store.Get(ctx, "sessions", r.id, &record); err != nil {
 		return err
@@ -112,13 +115,12 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 		if err := r.syncSubagentModel(ctx); err != nil {
 			return err
 		}
-		configuration := r.core.Load().Configuration()
-		next := r.subagent.Configuration
-		next.Selection = configuration.Selection
-		if configuration.SystemPrompt != next.SystemPrompt || !jsonEqual(configuration.Tools, next.Tools) {
-			return r.core.Load().Configure(ctx, next)
+		if err := r.service.Store.Get(ctx, "sessions", r.prefixSourceID(), &record); err != nil {
+			return err
 		}
-		return nil
+		if record.Deletion != nil || record.AgentID != r.agentID {
+			return domain.Forbidden("subagent prefix source is unavailable")
+		}
 	}
 	if err := r.syncBindingConfig(ctx, record); err != nil {
 		return err
@@ -152,6 +154,31 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 }
 func jsonEqual(a, b any) bool { return string(encode(a)) == string(encode(b)) }
 
+// Passive admission can precede Continue after an application update. Compare
+// only declarations first: normal deliveries need no execution snapshot or
+// configuration write, including while a large tool invocation is in flight.
+func (r *runtime) syncIdlePrefix(ctx context.Context) error {
+	session, err := r.readableCore()
+	if err != nil {
+		return err
+	}
+	registered := map[string]core.ToolDefinition{}
+	for _, tool := range r.hostTools() {
+		definition := tool.Definition()
+		registered[definition.Name] = definition
+	}
+	for _, saved := range session.Configuration().Tools {
+		if definition, found := registered[saved.Name]; !found || !jsonEqual(definition, saved) {
+			snapshot, err := r.snapshot()
+			if err != nil || snapshot.Running || snapshot.Maintenance {
+				return err
+			}
+			return r.syncBusinessConfig(ctx)
+		}
+	}
+	return nil
+}
+
 func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoning ...*core.ReasoningOptions) error {
 	selection := core.ModelSelection{ID: profileID}
 	if len(reasoning) > 0 {
@@ -167,7 +194,11 @@ func (s *Service) SelectComputer(ctx context.Context, id, computerID, cwd string
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.core.Load().Snapshot().Running || r.core.Load().Snapshot().Maintenance {
+	snapshot, err := r.snapshot()
+	if err != nil {
+		return err
+	}
+	if snapshot.Running || snapshot.Maintenance {
 		return domain.Conflict("stop the Session before changing its Computer")
 	}
 	_, err = r.selectComputer(ctx, computerID, cwd)
@@ -196,7 +227,11 @@ func (r *runtime) selectComputer(ctx context.Context, id, cwd string) (domain.Ex
 }
 
 func (r *runtime) continueLocked(ctx context.Context) error {
-	if snapshot := r.core.Load().Snapshot(); snapshot.Running || snapshot.Maintenance {
+	snapshot, err := r.snapshot()
+	if err != nil {
+		return err
+	}
+	if snapshot.Running || snapshot.Maintenance {
 		return core.ErrBusy
 	}
 	if pending, err := r.service.ModelFallbackPending(ctx, r.id); err != nil {
@@ -227,22 +262,31 @@ func (s *Service) Continue(ctx context.Context, id string) error {
 		return err
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.continueLocked(ctx)
+	err = r.continueLocked(ctx)
+	r.mu.Unlock()
+	if err == nil {
+		err = s.resumeIMSession(ctx, id)
+	}
+	return err
 }
 func (s *Service) Stop(ctx context.Context, id string) error {
 	r, err := s.open(ctx, id)
 	if err != nil {
 		return err
 	}
+	// Cancel before waiting for admission: an in-flight maintenance operation
+	// can need this cancellation to release r.mu. Recheck after locking so a
+	// fallback successor admitted in that gap is stopped as well.
+	r.core.Load().Cancel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := s.cancelModelFallback(ctx, id); err != nil {
 		return err
 	}
 	r.core.Load().Cancel()
+	err = s.Store.DeleteMaintenance(ctx, imReplyWatchKind, id)
 	s.notify(id)
-	return nil
+	return err
 }
 func (s *Service) Compact(ctx context.Context, id, instructions string) error {
 	r, err := s.open(ctx, id)
@@ -259,6 +303,9 @@ func (s *Service) Compact(ctx context.Context, id, instructions string) error {
 	// may wait, while the operation is tied to the service rather than its client.
 	_, err = r.core.Load().Compact(s.ctx, instructions)
 	s.notify(id)
+	if err == nil {
+		err = s.resumeIMSession(ctx, id)
+	}
 	return err
 }
 func (s *Service) ClearPending(ctx context.Context, id, kind string) error {

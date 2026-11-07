@@ -3,7 +3,7 @@ import type { Entry, SessionEvent, SessionView, Snapshot } from './types'
 import type { TranscriptPosition } from './transcript-position'
 import { carryTranscriptIdentity, reconcileTranscriptGroups } from './transcript-identity'
 import { object } from './api'
-import { spawnedSubagent } from './subagents'
+import type { SubagentActivity } from './subagents'
 
 export interface PreviewPart { type: string; text: string }
 export interface Preview { runID: string; parts: Record<number, PreviewPart>; interrupted?: boolean }
@@ -22,9 +22,24 @@ export interface SessionState {
   historyCursor?: string
   traceCursor?: string
   scrollPosition?: TranscriptPosition
+  subagentActivity?: Record<string, SubagentActivity>
+  subagentActivityCursor?: string
+  subagentActivityNextCursor?: string
+  subagentActivityBoundary?: { sequence: number; cursor?: string }
 }
 export function emptyState(): SessionState {
-  return { epoch: '', sequence: 0, historyRevision: 0, entries: {}, trace: {}, previews: {}, tools: {}, completedAttempts: new Set(), completedRuns: new Set() }
+  return { epoch: '', sequence: 0, historyRevision: 0, entries: {}, trace: {}, previews: {}, tools: {}, completedAttempts: new Set(), completedRuns: new Set(), subagentActivity: {} }
+}
+export function addSubagentActivity(state: SessionState, activities: SubagentActivity[] = [], cursor?: string) {
+  const retained = state.subagentActivity ??= {}
+  let changed = false
+  for (const activity of activities) {
+    if (retained[activity.id]) continue
+    retained[activity.id] = markRaw(activity)
+    changed = true
+  }
+  if (changed) state.historyRevision++
+  if (cursor && (state.subagentActivityCursor === undefined || Number(cursor) > Number(state.subagentActivityCursor))) state.subagentActivityCursor = cursor
 }
 export function addEntry(state: SessionState, entry: Entry, history = false) {
   // Entries are immutable facts. Replayed snapshots/pages must neither replace
@@ -63,6 +78,8 @@ export function fromSnapshot(snapshot: Snapshot): SessionState {
   state.traceCursor = snapshot.trace.next_cursor
   for (const entry of snapshot.trace.entries ?? []) addEntry(state, entry)
   for (const entry of snapshot.history.entries ?? []) addEntry(state, entry, true)
+  addSubagentActivity(state, snapshot.subagent_activity, snapshot.subagent_activity_cursor)
+  state.subagentActivityNextCursor = snapshot.subagent_activity_next_cursor
   return state
 }
 export function interruptPreviews(state: SessionState) {
@@ -80,11 +97,19 @@ export function interruptPreviews(state: SessionState) {
 export function reconcileSnapshot(previous: SessionState, snapshot: Snapshot): SessionState {
   const next = fromSnapshot(snapshot)
   const overlap = Object.keys(next.entries).some(id => previous.entries[id])
-  const changed = Object.keys(next.trace).some(id => !previous.trace[id]) || Object.keys(next.entries).some(id => !previous.entries[id])
+  const changed = Object.keys(next.trace).some(id => !previous.trace[id]) || Object.keys(next.entries).some(id => !previous.entries[id]) || Object.keys(next.subagentActivity ?? {}).some(id => !previous.subagentActivity?.[id])
   for (const id of Object.keys(next.trace)) next.trace[id] = previous.trace[id] ?? previous.entries[id] ?? next.trace[id]!
   for (const id of Object.keys(next.entries)) next.entries[id] = next.trace[id]!
   next.entries = { ...previous.entries, ...next.entries }
   next.trace = { ...previous.trace, ...next.trace }
+  const activityOverlap = Object.keys(next.subagentActivity ?? {}).some(id => previous.subagentActivity?.[id])
+  for (const [id, activity] of Object.entries(next.subagentActivity ?? {})) next.subagentActivity![id] = previous.subagentActivity?.[id] ?? activity
+  next.subagentActivity = { ...previous.subagentActivity, ...next.subagentActivity }
+  next.subagentActivityBoundary = previous.subagentActivityBoundary
+  if (activityOverlap) next.subagentActivityNextCursor = previous.subagentActivityNextCursor
+  else if (previous.subagentActivityCursor && Number(next.subagentActivityNextCursor ?? 0) > Number(previous.subagentActivityCursor)) {
+    next.subagentActivityBoundary ??= { sequence: Number(previous.subagentActivityCursor), cursor: previous.subagentActivityNextCursor }
+  }
   next.historyRevision = previous.historyRevision + Number(changed)
   next.scrollPosition = previous.scrollPosition
   carryTranscriptIdentity(previous, next)
@@ -106,6 +131,7 @@ export function reconcileSnapshot(previous: SessionState, snapshot: Snapshot): S
 }
 export function applyEvent(state: SessionState, envelope: SessionEvent): boolean {
   if (envelope.epoch !== state.epoch) return false
+  addSubagentActivity(state, envelope.subagent_activity, envelope.subagent_activity_cursor)
   const e = envelope.core
   if (e && e.sequence <= state.sequence) return true
   if (envelope.view && envelope.view.event_sequence >= (state.view?.event_sequence ?? 0)) state.view = envelope.view
@@ -192,7 +218,7 @@ export type ProcessItem =
   | { kind: 'tool'; key: string; entry: Entry }
 export type TranscriptBlock =
   | { kind: 'text'; key: string; text: string; streaming?: boolean }
-  | { kind: 'subagent'; key: string; entry: Entry }
+  | { kind: 'subagent-status'; key: string; activity: SubagentActivity }
   | { kind: 'process'; key: string; items: ProcessItem[]; active?: boolean }
 export interface TranscriptGroup {
   key: string
@@ -259,10 +285,22 @@ export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] 
     if (shownTools.has(invocation.execution_id)) return
     shownTools.add(invocation.execution_id)
     const group = assistant(invocation.run_id, `run:${invocation.run_id}:${entry.id}`)
-    if (spawnedSubagent(entry)) group.blocks.push({ kind: 'subagent', key: invocation.execution_id, entry })
-    else process(group, { kind: 'tool', key: invocation.execution_id, entry })
+    process(group, { kind: 'tool', key: invocation.execution_id, entry })
+  }
+  const activities = Object.values(state.subagentActivity ?? {}).map(activity => ({ activity, time: Date.parse(activity.time) }))
+    .sort((a, b) => a.time - b.time || a.activity.sequence - b.activity.sequence)
+  let activityIndex = 0
+  function activityRow(activity: SubagentActivity) {
+    let group = groups.at(-1)
+    if (group?.role !== 'assistant') {
+      group = { key: `subagent-status:${activity.id}`, role: 'assistant', entries: [], blocks: [] }
+      groups.push(group)
+    }
+    group.blocks.push({ kind: 'subagent-status', key: `subagent-status:${activity.id}`, activity })
   }
   for (const entry of entries) {
+    const time = Date.parse(entry.time)
+    while (activityIndex < activities.length && activities[activityIndex]!.time <= time) activityRow(activities[activityIndex++]!.activity)
     const message = conversationMessage(entry)
     if (message?.role === 'user' && visibleEntry(entry)) {
       groups.push({ key: entry.id, role: 'user', entries: [entry], blocks: [] })
@@ -284,6 +322,7 @@ export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] 
       assistant(entry.run.id, `run:${entry.run.id}:${entry.id}`).status = 'stopped'
     }
   }
+  while (activityIndex < activities.length) activityRow(activities[activityIndex++]!.activity)
   return groups
 }
 

@@ -189,6 +189,25 @@ func activeDeliveryAssertContextOnly(t *testing.T, request map[string]any, event
 	}
 }
 
+func activeDeliveryAssertOneReplyReminder(t *testing.T, request map[string]any) {
+	t.Helper()
+	count := 0
+	for _, raw := range request["messages"].([]any) {
+		message := raw.(map[string]any)
+		// Historical assistant tool calls can have null content. The nudge is
+		// specifically a User input, so inspect only those messages.
+		if message["role"] == "user" && strings.Contains(reminderWireText(message), "你刚刚输出的文字只显示在网页") {
+			count++
+			if !strings.HasSuffix(reminderWireText(message), "如果你决定不回复，请忽略此提醒。") {
+				t.Fatal("the missed-send reminder lost its explicit option to stay silent")
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected one explicit missed-send User reminder, got %d", count)
+	}
+}
+
 func TestWorkingAgentConsumesNewIMAtNextRequestWithoutProbeOrSteer(t *testing.T) {
 	for _, scenario := range []struct {
 		name, trigger string
@@ -259,6 +278,14 @@ func TestWorkingAgentConsumesNewIMAtNextRequestWithoutProbeOrSteer(t *testing.T)
 				t.Fatalf("already consumed observation remained Probe eligible: %+v %v", window, err)
 			}
 			releaseSecond()
+			wantMain := int64(2)
+			if scenario.trigger != "" {
+				// The observation was read in the existing Run without a driver.
+				// Its text-only completion now earns one separate missed-send nudge.
+				wantMain++
+				awaitDirectReminderRequests(t, p, binding.SessionID, scenario.name, wantMain)
+				activeDeliveryAssertOneReplyReminder(t, <-requests)
+			}
 			p.Idle(t, binding.SessionID)
 			// Replay the same archived event after its working run has ended.
 			// It must not be reinterpreted as a fresh idle direct trigger.
@@ -269,7 +296,7 @@ func TestWorkingAgentConsumesNewIMAtNextRequestWithoutProbeOrSteer(t *testing.T)
 				t.Fatal(err)
 			}
 			p.Idle(t, binding.SessionID)
-			if mains.Load() != 2 || probes.Load() != 0 {
+			if mains.Load() != wantMain || probes.Load() != 0 {
 				t.Fatalf("context-only delivery or replay caused extra work: main=%d Probe=%d", mains.Load(), probes.Load())
 			}
 		})
@@ -284,8 +311,8 @@ func TestWorkingAgentFinalResponseHandsUnseenIMBackToIdleRules(t *testing.T) {
 		wantMain      int64
 		wantProbes    int64
 	}{
-		{name: "group mention", trigger: "mention", proactive: true, wantMain: 2},
-		{name: "private", trigger: "private", private: true, wantMain: 2},
+		{name: "group mention", trigger: "mention", proactive: true, wantMain: 3},
+		{name: "private", trigger: "private", private: true, wantMain: 3},
 		{name: "ordinary proactive group", proactive: true, wantMain: 2, wantProbes: 1},
 		{name: "ordinary default-off group", wantMain: 1},
 	} {
@@ -324,9 +351,9 @@ func TestWorkingAgentFinalResponseHandsUnseenIMBackToIdleRules(t *testing.T) {
 				t.Fatal("the in-flight final request unexpectedly received a later observation")
 			}
 			release()
-			testkit.Await(t, p.Context, func() bool { return mains.Load() >= scenario.wantMain && probes.Load() >= scenario.wantProbes })
+			awaitDirectReminderRequests(t, p, binding.SessionID, scenario.name, scenario.wantMain+scenario.wantProbes)
 			p.Idle(t, binding.SessionID)
-			if scenario.wantMain == 2 {
+			if scenario.wantMain > 1 {
 				text := activeDeliveryText(<-requests)
 				if strings.Count(text, event.Text) != 1 {
 					t.Fatalf("idle handoff lost or duplicated the observation: %s", text)
@@ -336,6 +363,9 @@ func TestWorkingAgentFinalResponseHandsUnseenIMBackToIdleRules(t *testing.T) {
 				}
 				if scenario.trigger == "" && !strings.Contains(text, "<im_wakeup") {
 					t.Fatalf("unseen ordinary group message bypassed the idle Probe wakeup: %s", text)
+				}
+				if scenario.trigger != "" {
+					activeDeliveryAssertOneReplyReminder(t, <-requests)
 				}
 			}
 			if err := s.deliver(p.Context, binding, event); err != nil {
@@ -515,8 +545,9 @@ func TestBusyProbeCompletionDoesNotCoverAnUnseenObservation(t *testing.T) {
 func TestWorkingIMDeliveryReplayAfterHarnessReopenDoesNotWakeAgain(t *testing.T) {
 	entered, next := make(chan struct{}), make(chan struct{})
 	gate, release := activeDeliveryGate(t)
+	reminder := make(chan map[string]any, 1)
 	var mains atomic.Int64
-	p := testkit.New(t, 0, func(ctx context.Context, _ int, _ map[string]any) any {
+	p := testkit.New(t, 0, func(ctx context.Context, _ int, request map[string]any) any {
 		switch mains.Add(1) {
 		case 1:
 			close(entered)
@@ -528,6 +559,8 @@ func TestWorkingIMDeliveryReplayAfterHarnessReopenDoesNotWakeAgain(t *testing.T)
 			return testkit.Tool("exec_command", map[string]any{"cmd": "fixture must never execute", "login": false})
 		case 2:
 			close(next)
+		case 3:
+			reminder <- request
 		}
 		return testkit.Text("Finished.")
 	})
@@ -543,6 +576,8 @@ func TestWorkingIMDeliveryReplayAfterHarnessReopenDoesNotWakeAgain(t *testing.T)
 	}
 	release()
 	activeDeliveryWait(t, p.Context, next, "request consuming the new observation")
+	awaitDirectReminderRequests(t, p, binding.SessionID, "before reopen", 3)
+	activeDeliveryAssertOneReplyReminder(t, <-reminder)
 	p.Idle(t, binding.SessionID)
 	// A fresh Harness runtime reopens the authoritative Core database. The
 	// channel cursor is intentionally absent, modelling delivery replay after a
@@ -556,7 +591,7 @@ func TestWorkingIMDeliveryReplayAfterHarnessReopenDoesNotWakeAgain(t *testing.T)
 		t.Fatal(err)
 	}
 	p.Idle(t, binding.SessionID)
-	if mains.Load() != 2 {
+	if mains.Load() != 3 {
 		t.Fatalf("reopened delivery interpreted old context as a fresh trigger: %d", mains.Load())
 	}
 	coreSession, err := p.Harness.Core(p.Context, binding.SessionID)
@@ -887,9 +922,7 @@ func TestExistingDirectDriverWithLaggingHostCursorIsNotDrivenAgain(t *testing.T)
 	if err := s.handoffDirectObservations(p.Context, binding, through); err != nil {
 		t.Fatal(err)
 	}
-	s.mu.Lock()
-	position := s.handoffs[binding.ID]
-	s.mu.Unlock()
+	position := inboxRecoveryPosition(t, s, binding)
 	if position != through {
 		t.Fatalf("the already accepted direct driver blocked Host handoff recovery: %d want %d", position, through)
 	}
@@ -1028,17 +1061,31 @@ func TestFreshDirectIMResumesFrozenGenerationAfterReopen(t *testing.T) {
 				t.Fatalf("fixture did not reopen an unstarted frozen generation: %+v calls=%d", before, mains.Load())
 			}
 			startChannels(t, restarted, p.Context)
-			event, _ := activeDeliveryArchive(t, p, binding, "fresh-direct-after-frozen-crash", trigger)
-			deadline, cancel := context.WithTimeout(p.Context, 8*time.Second)
-			defer cancel()
-			testkit.Await(t, deadline, func() bool { return mains.Load() >= 2 })
+			event, through := activeDeliveryArchive(t, p, binding, "fresh-direct-after-frozen-crash", trigger)
+			// The frozen request finishes first, the new direct driver is read
+			// second, and its unsent text receives exactly one later User nudge.
+			awaitDirectReminderRequests(t, p, binding.SessionID, "frozen recovery "+trigger, 3)
 			p.Idle(t, binding.SessionID)
 			first, second := activeDeliveryText(<-requests), activeDeliveryText(<-requests)
 			if !strings.Contains(first, oldText) || strings.Contains(first, event.Text) {
 				t.Fatalf("recovery changed the already frozen request: %s", first)
 			}
-			if strings.Count(second, event.Text) != 1 || mains.Load() != 2 {
+			if strings.Count(second, event.Text) != 1 {
 				t.Fatalf("the fresh direct message was lost or duplicated after recovery: %s calls=%d", second, mains.Load())
+			}
+			activeDeliveryAssertOneReplyReminder(t, <-requests)
+			if err := restarted.deliver(p.Context, binding, event); err != nil {
+				t.Fatal(err)
+			}
+			if err := restarted.handoffDirectObservations(p.Context, binding, through); err != nil {
+				t.Fatal(err)
+			}
+			p.Idle(t, binding.SessionID)
+			if mains.Load() != 3 {
+				t.Fatalf("recovery or replay duplicated a direct response or its one-time reminder: %d", mains.Load())
+			}
+			if outbox, err := p.Store.List(p.Context, "outbox"); err != nil || len(outbox) != 0 {
+				t.Fatalf("text-only recovery or replay automatically sent an IM message: outbox=%d error=%v", len(outbox), err)
 			}
 		})
 	}

@@ -57,7 +57,7 @@ func subagentTestLegacySpawn(t *testing.T, f *fixture, parent *runtime, executio
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := subagentSettings{Meta: domain.Meta{ID: id}, Configuration: configuration, MessageTool: parent.messageTool,
+	settings := subagentSettings{Meta: domain.Meta{ID: id}, Configuration: subagentConfiguration{Selection: configuration.Selection},
 		InheritContext: inherited, ForkEntryID: parent.core.Load().Head(), Task: task}
 	if inherited && settings.ForkEntryID == "" {
 		t.Fatal("legacy shared descendant requires committed parent history")

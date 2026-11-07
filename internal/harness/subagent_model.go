@@ -49,7 +49,7 @@ func (s *Service) selectDirectSubagentModel(ctx context.Context, parent, id stri
 		return err
 	}
 	s.notify(id)
-	s.wakeSubagents()
+	s.wakeSubagents(id)
 	s.mu.Lock()
 	child := s.runtimes[id]
 	s.mu.Unlock()
@@ -112,6 +112,17 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 		}
 	}
 	r.mu.Lock()
+	if _, err = r.readableCore(); err != nil {
+		r.mu.Unlock()
+		return err
+	}
+	previous, err := s.modelPreferredSelection(ctx, id, r.core.Load().Configuration().Selection)
+	if err != nil {
+		r.mu.Unlock()
+		return err
+	}
+	changed := !jsonEqual(previous, selection) || !jsonEqual(r.core.Load().Configuration().Selection, selection)
+
 	// Record the intent before the first Core write. Recovery only propagates
 	// it if the root's durable selection confirms that write succeeded.
 	if err = s.Store.SaveMaintenance(ctx, subagentModelChangeKind, id, "running", change); err == nil {
@@ -124,11 +135,11 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 	}
 	r.mu.Unlock()
 	if err != nil {
-		s.wakeSubagents() // Uncertain Core writes retain their recovery intent.
+		s.wakeSubagents(id) // Uncertain Core writes retain their recovery intent.
 		return err
 	}
 	s.notify(id)
-	s.wakeSubagents()
+	s.wakeSubagents(id)
 	if err = s.persistSubagentModelChange(ctx, change); err != nil {
 		return err
 	}
@@ -156,6 +167,9 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 		if err != nil && !errors.Is(err, core.ErrBusy) {
 			return err
 		}
+	}
+	if changed && root.SubagentParentID == "" {
+		return s.resumeIMSession(ctx, id)
 	}
 	return nil
 }
@@ -245,20 +259,29 @@ func (s *Service) reconcileSubagentModelChangesLocked(ctx context.Context) error
 	return nil
 }
 
-// Called with the tree or runtime lock. Only the selection is mutable; the
-// child's saved System and tool definitions retain the parent's exact prefix.
+// Called with the tree or runtime lock. Selection is independent from the shared
+// root prefix, which is resolved separately at the next safe request boundary.
 func (r *runtime) syncSubagentModel(ctx context.Context) error {
-	var settings subagentSettings
-	if err := r.service.Store.Get(ctx, "subagent_settings", r.id, &settings); err != nil {
-		return err
-	}
-	selection, err := r.service.modelFallbackSubagentSelection(ctx, r.id, settings.Configuration.Selection)
+	settings, err := r.service.childMetadata(ctx, r.id)
 	if err != nil {
 		return err
 	}
-	if jsonEqual(r.core.Load().Configuration().Selection, selection) {
+	var desired core.ModelSelection
+	if err := json.Unmarshal(settings.selection, &desired); err != nil {
+		return err
+	}
+	selection, err := r.service.modelFallbackSubagentSelection(ctx, r.id, desired)
+	if err != nil {
+		return err
+	}
+	current, err := r.service.selectionAtState(ctx, r.id, r.core.Load().State())
+	if err != nil {
+		return err
+	}
+	if current.fingerprint == digest(selection) {
 		return nil
 	}
+
 	if err := r.core.Load().SelectModel(ctx, selection); err != nil {
 		return err
 	}

@@ -57,10 +57,10 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := r.finishInterruptedTools(ctx); err != nil {
+	snapshot, err := r.snapshotAfterInterruptedTools(ctx)
+	if err != nil {
 		return View{}, err
 	}
-	snapshot := r.core.Load().Snapshot()
 	view := View{Status: "idle", CanContinue: snapshot.CanContinue, Pending: []PendingInput{}, Approvals: snapshot.Approvals, Unresolved: snapshot.Unresolved}
 	view.EventSequence = snapshot.EventSequence
 	if err = s.Store.Get(ctx, "sessions", id, &view.Session); err != nil {
@@ -78,8 +78,8 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 		return view, err
 	}
 	if view.HeadID != "" {
-		if head, readErr := r.core.Load().History().Get(ctx, view.HeadID); readErr == nil && head.Time.After(view.UpdatedAt) {
-			view.UpdatedAt = head.Time
+		if stamp, readErr := s.sessionHeadTime(ctx, id, state.RolloutID, view.HeadID); readErr == nil && stamp.After(view.UpdatedAt) {
+			view.UpdatedAt = stamp
 		}
 	}
 	view.Error, view.Attempt = snapshot.Error, snapshot.Attempt
@@ -99,14 +99,25 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	if resolved {
 		view.Error = ""
 	}
-	if len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && (!view.ModelAvailable || !resolved && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started")))) {
-		view.Status = "needs_attention"
-	}
 	pendingFallback, fallbackErr := s.ModelFallbackPending(ctx, id)
 	if fallbackErr != nil {
 		return view, fallbackErr
 	}
-	if pendingFallback && !snapshot.Stopping && !snapshot.Maintenance && len(view.Unresolved) == 0 && len(view.Approvals) == 0 {
+	deliveryPaused := false
+	if !snapshot.Running && !snapshot.Maintenance && (view.Error == "" || pendingFallback) {
+		deliveryError, err := s.imDeliveryError(ctx, id)
+		if err != nil {
+			return view, err
+		}
+		deliveryPaused = deliveryError != ""
+		if deliveryPaused {
+			view.Error = deliveryError
+		}
+	}
+	if deliveryPaused || len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && (!view.ModelAvailable || !resolved && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started")))) {
+		view.Status = "needs_attention"
+	}
+	if pendingFallback && !deliveryPaused && !snapshot.Stopping && !snapshot.Maintenance && len(view.Unresolved) == 0 && len(view.Approvals) == 0 {
 		view.Status, view.Error, view.CanContinue = "running", "", false
 		if view.RunID == "" && state.LastRun != nil {
 			view.RunID = state.LastRun.ID
@@ -138,6 +149,7 @@ func (s *Service) ModelSelection(ctx context.Context, id string) (sessions.Model
 	s.mu.Lock()
 	r := s.runtimes[id]
 	s.mu.Unlock()
+	var state sessions.RuntimeState
 	if r != nil {
 		select {
 		case <-ctx.Done():
@@ -147,10 +159,23 @@ func (s *Service) ModelSelection(ctx context.Context, id string) (sessions.Model
 		if r.openErr != nil {
 			return sessions.ModelSelection{}, r.openErr
 		}
-		return r.core.Load().Configuration().Selection, nil
+		r.mu.Lock()
+		state = r.core.Load().State()
+		r.mu.Unlock()
+	} else {
+		var err error
+		state, err = s.CoreStore.LoadState(ctx, id)
+		if err != nil {
+			return sessions.ModelSelection{}, err
+		}
 	}
-	configuration, err := sessions.ReadConfiguration(ctx, s.CoreStore, id)
-	return configuration.Selection, err
+	selection, err := s.selectionAtState(ctx, id, state)
+	if err != nil {
+		return sessions.ModelSelection{}, err
+	}
+	var value sessions.ModelSelection
+	err = json.Unmarshal(selection.value, &value)
+	return value, err
 }
 
 // PreferredModelSelection includes a saved manual choice while a different

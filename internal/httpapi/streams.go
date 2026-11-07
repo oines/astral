@@ -21,19 +21,25 @@ import (
 	"github.com/oines/astral/internal/gateway"
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/httpcontract"
+	"github.com/oines/astral/internal/persistence"
 )
 
 type Snapshot struct {
-	Epoch   string              `json:"epoch"`
-	View    harness.View        `json:"view"`
-	History gateway.HistoryPage `json:"history"`
-	Trace   gateway.HistoryPage `json:"trace"`
+	Epoch                      string                    `json:"epoch"`
+	View                       harness.View              `json:"view"`
+	History                    gateway.HistoryPage       `json:"history"`
+	Trace                      gateway.HistoryPage       `json:"trace"`
+	SubagentActivity           []domain.SubagentActivity `json:"subagent_activity"`
+	SubagentActivityCursor     string                    `json:"subagent_activity_cursor"`
+	SubagentActivityNextCursor string                    `json:"subagent_activity_next_cursor,omitempty"`
 }
 type Event struct {
-	Epoch string        `json:"epoch"`
-	Core  *core.Event   `json:"core,omitempty"`
-	Entry *core.Entry   `json:"entry,omitempty"`
-	View  *harness.View `json:"view,omitempty"`
+	Epoch                  string                    `json:"epoch"`
+	Core                   *core.Event               `json:"core,omitempty"`
+	Entry                  *core.Entry               `json:"entry,omitempty"`
+	View                   *harness.View             `json:"view,omitempty"`
+	SubagentActivity       []domain.SubagentActivity `json:"subagent_activity,omitempty"`
+	SubagentActivityCursor string                    `json:"subagent_activity_cursor,omitempty"`
 }
 
 func (a *API) streamRoutes() {
@@ -51,8 +57,24 @@ func (a *API) streamRoutes() {
 		a.mux.HandleFunc("GET "+path, spec.handler)
 	}
 	route[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/timeline", "sessionTimeline", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
-		return timelineHistory(r.Context(), a.Config.Harness.CoreStore, r.PathValue("id"), r.URL.Query().Get("cursor"), limit(r, 60), r.URL.Query().Get("trace") == "true")
-	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
+		query := r.URL.Query()
+		page := gateway.HistoryPage{Entries: []core.Entry{}}
+		var err error
+		if !query.Has("activity_cursor") || query.Get("cursor") != "" || query.Get("trace") == "true" {
+			page, err = timelineHistory(r.Context(), a.Config.Harness.CoreStore, r.PathValue("id"), query.Get("cursor"), limit(r, 60), query.Get("trace") == "true")
+			if err != nil {
+				return page, err
+			}
+		}
+		if query.Has("activity_cursor") && query.Get("trace") != "true" {
+			activity, err := a.Config.Harness.SubagentActivities(r.Context(), r.PathValue("id"), query.Get("activity_cursor"), limit(r, 60), true)
+			if err != nil {
+				return page, err
+			}
+			page.SubagentActivity, page.SubagentActivityCursor, page.SubagentActivityNextCursor = activity.Activities, activity.Cursor, activity.NextCursor
+		}
+		return page, nil
+	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "activity_cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
 
 	a.Contract.Describe(httpcontract.Operation{Method: "POST", Path: "/api/v1/sessions/{id}/attachments", ID: "uploadAttachment", Tag: "Files", Auth: true, Response: reflect.TypeFor[gateway.ReferenceResponse](),
 		Query: []httpcontract.Parameter{{Name: "name", Required: true}, {Name: "computer_id"}}})
@@ -76,11 +98,11 @@ func (a *API) streamRoutes() {
 	})
 }
 func (a *API) snapshot(r *http.Request) (Snapshot, error) {
-	session, err := a.Config.Harness.Core(r.Context(), r.PathValue("id"))
+	snapshot, err := a.Config.Harness.Snapshot(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return a.snapshotAt(r, session.Snapshot().EventSequence)
+	return a.snapshotAt(r, snapshot.EventSequence)
 }
 
 // The watermark must be captured before parallel reads. A newer View may
@@ -89,13 +111,19 @@ func (a *API) snapshot(r *http.Request) (Snapshot, error) {
 func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 	h := a.Config.Harness
 	snapshot := Snapshot{Epoch: h.RuntimeID}
-	var viewErr, historyErr, traceErr error
+	var viewErr, historyErr, traceErr, activityErr error
 	var reads sync.WaitGroup
-	reads.Add(3)
+	reads.Add(4)
 	go func() { defer reads.Done(); snapshot.View, viewErr = h.View(r.Context(), r.PathValue("id")) }()
 	go func() {
 		defer reads.Done()
 		snapshot.History, historyErr = timelineHistory(r.Context(), h.CoreStore, r.PathValue("id"), "", 60, false)
+	}()
+	go func() {
+		defer reads.Done()
+		var activity domain.SubagentActivityPage
+		activity, activityErr = h.SubagentActivities(r.Context(), r.PathValue("id"), "", 60, true)
+		snapshot.SubagentActivity, snapshot.SubagentActivityCursor, snapshot.SubagentActivityNextCursor = activity.Activities, activity.Cursor, activity.NextCursor
 	}()
 	go func() {
 		defer reads.Done()
@@ -110,6 +138,9 @@ func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 	}
 	if traceErr != nil {
 		return snapshot, traceErr
+	}
+	if activityErr != nil {
+		return snapshot, activityErr
 	}
 	snapshot.View.EventSequence = min(snapshot.View.EventSequence, watermark)
 
@@ -139,7 +170,26 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	// by its persistent Entry ID. A reconnect always receives a fresh snapshot.
 	subscription := session.Subscribe(256)
 	defer subscription.Close()
-	snapshot, err := a.snapshotAt(r, session.Snapshot().EventSequence)
+	hostChanges := h.WatchSession(r.PathValue("id"))
+	defer hostChanges.Close()
+	resources := h.Store.Watch(
+		persistence.ChangeKey{Kind: "sessions", ID: r.PathValue("id")},
+		persistence.ChangeKey{Kind: "agents"},
+		persistence.ChangeKey{Kind: "models"},
+		persistence.ChangeKey{Kind: "providers"},
+		persistence.ChangeKey{Kind: "im_inbox_pause"},
+	)
+	defer resources.Close()
+	resourceChanges := resources.Changes()
+	activityWatch := h.Store.Watch(persistence.ChangeKey{Kind: persistence.SubagentActivityKind, ID: r.PathValue("id")})
+	defer activityWatch.Close()
+	activityChanges := activityWatch.Changes()
+	boundary, err := h.Snapshot(r.Context(), r.PathValue("id"))
+	if err != nil {
+		httpcontract.Failure(w, r, err)
+		return
+	}
+	snapshot, err := a.snapshotAt(r, boundary.EventSequence)
 	if err != nil {
 		httpcontract.Failure(w, r, err)
 		return
@@ -167,13 +217,61 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	if !send("snapshot", h.RuntimeID, snapshot) {
 		return
 	}
-	stateTicker := time.NewTicker(time.Second)
-	defer stateTicker.Stop()
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
 	lastView, _ := json.Marshal(snapshot.View)
+	activityCursor := snapshot.SubagentActivityCursor
+	refreshActivity := func() bool {
+		for {
+			page, err := h.SubagentActivities(r.Context(), r.PathValue("id"), activityCursor, 100, false)
+			if err != nil {
+				_ = send("resync", "", map[string]string{"reason": "Subagent activity changed"})
+				return false
+			}
+			if len(page.Activities) == 0 {
+				return true
+			}
+			if !send("event", "", Event{Epoch: h.RuntimeID, SubagentActivity: page.Activities, SubagentActivityCursor: page.Cursor}) {
+				return false
+			}
+			activityCursor = page.Cursor
+			if page.NextCursor == "" {
+				return true
+			}
+		}
+	}
+	refresh := func() bool {
+		view, viewErr := h.View(r.Context(), r.PathValue("id"))
+		if viewErr != nil {
+			_ = send("resync", "", map[string]string{"reason": "Session view changed"})
+			return false
+		}
+		raw, _ := json.Marshal(view)
+		if string(raw) == string(lastView) {
+			return true
+		}
+		lastView = raw
+		return send("state", "", Event{Epoch: h.RuntimeID, View: &view})
+	}
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-activityChanges:
+			activityChanges = activityWatch.Changes()
+			if !refreshActivity() {
+				return
+			}
+		case _, ok := <-hostChanges.C:
+			if !ok || !refresh() {
+				return
+			}
+		case <-resourceChanges:
+			// Rearm before reading: a write during View must remain pending.
+			resourceChanges = resources.Changes()
+			if !refresh() {
+				return
+			}
 		case event, ok := <-subscription.C:
 			if !ok {
 				_ = send("resync", "", map[string]string{"reason": "event subscription ended; reconnect to reconcile durable history"})
@@ -194,52 +292,53 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 				event.Model = &model
 			}
 			envelope := Event{Epoch: h.RuntimeID, Core: &event}
-			if event.Type == core.EventRunStart || event.Type == core.EventRunEnd || event.Type == core.EventApproval || event.Type == core.EventContextApplied || event.Attempt != nil || event.Type == core.EventMaintenanceStart || event.Type == core.EventMaintenanceEnd {
-				if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
-					envelope.View = &view
-					lastView, _ = json.Marshal(view)
-				}
-			}
+			refreshView := event.Type == core.EventRunStart || event.Type == core.EventRunEnd || event.Type == core.EventApproval || event.Type == core.EventContextApplied || event.Attempt != nil || event.Type == core.EventMaintenanceStart || event.Type == core.EventMaintenanceEnd
 			if event.Type == core.EventCommitted && event.EntryID != "" {
-				if entry, readErr := session.History().Get(r.Context(), event.EntryID); readErr == nil {
-					entry = timelineEntry(entry)
-					if timelineRelevant(entry) {
-						envelope.Entry = &entry
-					}
-					if entry.Kind == core.EntryMessage && entry.Message != nil && entry.Message.Role == core.RoleAssistant && entry.Usage.Available {
-						if view, viewErr := h.View(r.Context(), r.PathValue("id")); viewErr == nil {
-							envelope.View = &view
-							lastView, _ = json.Marshal(view)
-						}
-					}
+				entry, readErr := session.History().Get(r.Context(), event.EntryID)
+				if readErr != nil {
+					_ = send("resync", "", map[string]string{"reason": "Session entry changed"})
+					return
 				}
+				entry = timelineEntry(entry)
+				if timelineRelevant(entry) {
+					envelope.Entry = &entry
+				}
+				refreshView = refreshView || entryChangesView(entry)
+			}
+			if refreshView {
+				view, viewErr := h.View(r.Context(), r.PathValue("id"))
+				if viewErr != nil {
+					_ = send("resync", "", map[string]string{"reason": "Session view changed"})
+					return
+				}
+				envelope.View = &view
+				lastView, _ = json.Marshal(view)
 			}
 			if !send("event", fmt.Sprintf("%s:%d", h.RuntimeID, event.Sequence), envelope) {
 				return
 			}
-		case <-stateTicker.C:
-			view, viewErr := h.View(r.Context(), r.PathValue("id"))
-			if viewErr != nil {
-				_ = send("resync", "", map[string]string{"reason": "Session view changed"})
+		case <-keepalive.C:
+			_ = controller.SetWriteDeadline(time.Now().Add(15 * time.Second))
+			if _, err = io.WriteString(w, ": keepalive\n\n"); err != nil {
 				return
 			}
-			raw, _ := json.Marshal(view)
-			if string(raw) != string(lastView) {
-				lastView = raw
-				if !send("state", "", Event{Epoch: h.RuntimeID, View: &view}) {
-					return
-				}
-			} else {
-				_ = controller.SetWriteDeadline(time.Now().Add(15 * time.Second))
-				if _, err = io.WriteString(w, ": keepalive\n\n"); err != nil {
-					return
-				}
-				if controller.Flush() != nil {
-					return
-				}
+			if controller.Flush() != nil {
+				return
 			}
 		}
 	}
+}
+
+func entryChangesView(entry core.Entry) bool {
+	if entry.IsHistory() {
+		return true
+	}
+	switch entry.Kind {
+	case core.EntryApprovalRequested, core.EntryApprovalDecided, core.EntryInputQueued,
+		core.EntryInputRequeued, core.EntryInputConsumed, core.EntryInputCleared, core.EntryRun:
+		return true
+	}
+	return false
 }
 func (a *API) exportRollout(w http.ResponseWriter, r *http.Request) {
 	session, err := a.Config.Harness.Core(r.Context(), r.PathValue("id"))

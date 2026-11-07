@@ -161,7 +161,7 @@ func TestNapCatNoticesAppendToContextAndRespectChatBinding(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	p := testkit.New(t, 1, func(_ context.Context, n int, request map[string]any) any {
-		if n == 2 {
+		if n == 3 {
 			body := fmt.Sprint(request["messages"])
 			for _, want := range []string{"original-kept", `kind="message.deleted"`, `message-id="42"`, "QQ user 555 recalled message 42", `kind="notice.poke"`, "QQ user 123 poked QQ user 777.", `reason="poke"`} {
 				if !strings.Contains(body, want) {
@@ -180,7 +180,9 @@ func TestNapCatNoticesAppendToContextAndRespectChatBinding(t *testing.T) {
 	binding := createBinding(t, p, service, connection, "group:456", "")
 	startChannels(t, service, p.Context)
 	frames <- json.RawMessage(`{"post_type":"message","message_type":"group","self_id":999,"message_id":42,"user_id":123,"group_id":456,"time":1792900000,"message":[{"type":"at","data":{"qq":999}},{"type":"text","data":{"text":"original-kept"}}]}`)
-	testkit.Await(t, p.Context, func() bool { return p.Requests.Load() == 1 })
+	// Each directly triggered run in this fixture leaves its reply on the web
+	// page, so finish its one-time reminder before testing passive notices.
+	awaitDirectReminderRequests(t, p, binding.SessionID, "original mention", 2)
 	p.Idle(t, binding.SessionID)
 	originalID := stableID("event", connection.ID, "message.created:group:456:42")
 	originalDelivery, err := service.Delivery(p.Context, originalID)
@@ -197,11 +199,11 @@ func TestNapCatNoticesAppendToContextAndRespectChatBinding(t *testing.T) {
 		delivery, e := service.Delivery(p.Context, events[2].Observation.ID)
 		return e == nil && delivery.InputID != ""
 	})
-	if p.Requests.Load() != 1 {
+	if p.Requests.Load() != 2 {
 		t.Fatal("recall or a poke of another member activated the model")
 	}
 	frames <- json.RawMessage(`{"post_type":"notice","notice_type":"notify","sub_type":"poke","self_id":999,"user_id":123,"target_id":999,"group_id":456,"time":1792900003}`)
-	testkit.Await(t, p.Context, func() bool { return p.Requests.Load() == 2 })
+	awaitDirectReminderRequests(t, p, binding.SessionID, "poke of the Bot", 4)
 	p.Idle(t, binding.SessionID)
 	original, err := p.Store.Observation(p.Context, originalID)
 	if err != nil || original.Kind != "message.created" || !strings.Contains(original.Text, "original-kept") {
@@ -219,7 +221,7 @@ func TestNapCatNoticesAppendToContextAndRespectChatBinding(t *testing.T) {
 		return len(events) == 1 && p.Store.Get(p.Context, "channel_cursors", connection.ID, &position) == nil && position.Value == events[0].Observation.ID
 	})
 	bindings, err := list[domain.ConversationBinding](p.Context, p.Store, "bindings")
-	if err != nil || len(bindings) != 1 || p.Requests.Load() != 2 {
+	if err != nil || len(bindings) != 1 || p.Requests.Load() != 4 {
 		t.Fatal("a poke bypassed specified-chat access")
 	}
 }

@@ -21,6 +21,7 @@ type Store struct {
 	db        *sql.DB
 	cipher    cipher.AEAD
 	Directory string
+	changes   changeSignal
 }
 
 // FormatVersion is the current Astral Host database schema version.
@@ -200,9 +201,12 @@ func (s *Store) Retained(ctx context.Context, kind string) ([]Record, error) {
 }
 
 type Tx struct {
-	tx    *sql.Tx
-	store *Store
-	undo  []func()
+	tx          *sql.Tx
+	store       *Store
+	undo        []func()
+	changed     bool
+	allChanges  bool
+	changedKeys map[ChangeKey]struct{}
 }
 
 func (s *Store) Update(ctx context.Context, fn func(*Tx) error) error {
@@ -227,6 +231,9 @@ func (s *Store) Update(ctx context.Context, fn func(*Tx) error) error {
 		return err
 	}
 	committed = true
+	if unit.changed {
+		unit.publishChanges()
+	}
 	return nil
 }
 func (tx *Tx) Get(ctx context.Context, kind, id string, target any) error {
@@ -269,9 +276,9 @@ func (tx *Tx) Save(ctx context.Context, kind string, meta *domain.Meta, value an
 	}
 	var result sql.Result
 	if previous.Revision == 0 {
-		result, err = tx.tx.ExecContext(ctx, `INSERT OR IGNORE INTO documents(kind,id,revision,data) VALUES(?,?,?,?)`, kind, meta.ID, meta.Revision, data)
+		result, err = tx.execKey(ctx, ChangeKey{Kind: kind, ID: meta.ID}, `INSERT OR IGNORE INTO documents(kind,id,revision,data) VALUES(?,?,?,?)`, kind, meta.ID, meta.Revision, data)
 	} else {
-		result, err = tx.tx.ExecContext(ctx, `UPDATE documents SET revision=?,data=? WHERE kind=? AND id=? AND revision=?`, meta.Revision, data, kind, meta.ID, previous.Revision)
+		result, err = tx.execKey(ctx, ChangeKey{Kind: kind, ID: meta.ID}, `UPDATE documents SET revision=?,data=? WHERE kind=? AND id=? AND revision=?`, meta.Revision, data, kind, meta.ID, previous.Revision)
 	}
 	if err != nil {
 		*meta = previous
@@ -286,7 +293,7 @@ func (tx *Tx) Save(ctx context.Context, kind string, meta *domain.Meta, value an
 		*meta = previous
 		return domain.Conflict("this record changed; reload it before saving")
 	}
-	if _, err = tx.tx.ExecContext(ctx, "INSERT INTO versions(kind,id,revision,data) VALUES(?,?,?,?)", kind, meta.ID, meta.Revision, data); err != nil {
+	if _, err = tx.execKey(ctx, ChangeKey{Kind: kind, ID: meta.ID}, "INSERT INTO versions(kind,id,revision,data) VALUES(?,?,?,?)", kind, meta.ID, meta.Revision, data); err != nil {
 		*meta = previous
 		return err
 	}
@@ -302,7 +309,7 @@ func (s *Store) Save(ctx context.Context, kind string, meta *domain.Meta, value 
 	return err
 }
 func (tx *Tx) Delete(ctx context.Context, kind, id string, revision int64) error {
-	result, err := tx.tx.ExecContext(ctx, "DELETE FROM documents WHERE kind=? AND id=? AND revision=?", kind, id, revision)
+	result, err := tx.execKey(ctx, ChangeKey{Kind: kind, ID: id}, "DELETE FROM documents WHERE kind=? AND id=? AND revision=?", kind, id, revision)
 	if err != nil {
 		return err
 	}
@@ -321,7 +328,7 @@ func (tx *Tx) Purge(ctx context.Context, kind, id string, revision int64) error 
 	if err := tx.Delete(ctx, kind, id, revision); err != nil {
 		return err
 	}
-	_, err := tx.tx.ExecContext(ctx, "DELETE FROM versions WHERE kind=? AND id=?", kind, id)
+	_, err := tx.execKey(ctx, ChangeKey{Kind: kind, ID: id}, "DELETE FROM versions WHERE kind=? AND id=?", kind, id)
 	return err
 }
 func (s *Store) Secret(ctx context.Context, id string) (string, error) {
@@ -345,7 +352,7 @@ func (tx *Tx) PutSecret(ctx context.Context, value string) (string, error) {
 		return "", err
 	}
 	sealed := tx.store.cipher.Seal(nonce, nonce, []byte(value), []byte(id))
-	_, err := tx.tx.ExecContext(ctx, "INSERT INTO secrets(id,value) VALUES(?,?)", id, sealed)
+	_, err := tx.execKey(ctx, ChangeKey{Kind: "secrets", ID: id}, "INSERT INTO secrets(id,value) VALUES(?,?)", id, sealed)
 	return id, err
 }
 
@@ -354,7 +361,7 @@ func (tx *Tx) DeleteSecret(ctx context.Context, id string) error {
 	if id == "" {
 		return nil
 	}
-	_, err := tx.tx.ExecContext(ctx, "DELETE FROM secrets WHERE id=?", id)
+	_, err := tx.execKey(ctx, ChangeKey{Kind: "secrets", ID: id}, "DELETE FROM secrets WHERE id=?", id)
 	return err
 }
 
@@ -362,12 +369,12 @@ func (tx *Tx) DeleteSecret(ctx context.Context, id string) error {
 // authorization grant. Normal API-key edits always use PutSecret and a new
 // provider revision instead.
 func (s *Store) RotateSecret(ctx context.Context, id, value string) error {
-	return s.rotateSecret(ctx, s.db, id, value)
+	return s.rotateSecret(ctx, changeWriter{exec: s.execKey, key: ChangeKey{Kind: "secrets", ID: id}}, id, value)
 }
 
 // RotateSecret participates in the caller's resource-liveness transaction.
 func (tx *Tx) RotateSecret(ctx context.Context, id, value string) error {
-	return tx.store.rotateSecret(ctx, tx.tx, id, value)
+	return tx.store.rotateSecret(ctx, changeWriter{exec: tx.execKey, key: ChangeKey{Kind: "secrets", ID: id}}, id, value)
 }
 
 func (s *Store) rotateSecret(ctx context.Context, writer interface {
@@ -404,10 +411,10 @@ type StoredObservation struct {
 }
 
 func (s *Store) Archive(ctx context.Context, event domain.Observation) (bool, error) {
-	return archive(ctx, s.db, event)
+	return archive(ctx, changeWriter{exec: s.execKey, key: ChangeKey{Kind: "observations", ID: event.ConversationID}}, event)
 }
 func (tx *Tx) Archive(ctx context.Context, event domain.Observation) (bool, error) {
-	return archive(ctx, tx.tx, event)
+	return archive(ctx, changeWriter{exec: tx.execKey, key: ChangeKey{Kind: "observations", ID: event.ConversationID}}, event)
 }
 func archive(ctx context.Context, db interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
@@ -451,7 +458,7 @@ func (s *Store) SearchObservations(ctx context.Context, conversation string, aft
 	return result, rows.Err()
 }
 func (s *Store) SaveDelivery(ctx context.Context, d Delivery) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO deliveries(event_id,session_id,state,error) VALUES(?,?,?,?)
+	_, err := s.execKey(ctx, ChangeKey{Kind: "deliveries", ID: d.SessionID}, `INSERT INTO deliveries(event_id,session_id,state,error) VALUES(?,?,?,?)
 ON CONFLICT(event_id) DO UPDATE SET state=excluded.state,error=excluded.error WHERE deliveries.session_id=excluded.session_id`,
 		d.EventID, d.SessionID, d.State, d.Error)
 	return err
@@ -462,7 +469,7 @@ func (s *Store) Delivery(ctx context.Context, eventID string) (Delivery, error) 
 	return d, err
 }
 func (tx *Tx) ClaimIntent(ctx context.Context, key, id string) (string, error) {
-	_, err := tx.tx.ExecContext(ctx, "INSERT OR IGNORE INTO outbox_keys(intent_key,outbox_id) VALUES(?,?)", key, id)
+	_, err := tx.execKey(ctx, ChangeKey{Kind: "outbox_keys", ID: key}, "INSERT OR IGNORE INTO outbox_keys(intent_key,outbox_id) VALUES(?,?)", key, id)
 	if err != nil {
 		return "", err
 	}

@@ -131,7 +131,7 @@ func (r *runtime) existingReceipt(ctx context.Context, id, hash string) (InputRe
 	}
 	return InputReceipt{}, false, err
 }
-func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (InputReceipt, error) {
+func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (receipt InputReceipt, err error) {
 	if input.ID == "" || len(input.ID) > 200 {
 		return InputReceipt{}, domain.Invalid("a stable input ID is required")
 	}
@@ -149,7 +149,13 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 		return InputReceipt{}, err
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	resume := false
+	defer func() {
+		r.mu.Unlock()
+		if err == nil && resume {
+			err = s.resumeIMSession(ctx, id)
+		}
+	}()
 	hash := digest(input)
 	if receipt, exists, err := r.existingReceipt(ctx, input.ID, hash); err != nil || exists {
 		return receipt, err
@@ -171,9 +177,10 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (In
 	if err = s.Files.FreezeImages(ctx, r.agentID, id, &message); err != nil {
 		return InputReceipt{}, err
 	}
-	receipt, err := r.accept(ctx, core.Input{ID: input.ID, Digest: hash, Message: message}, kind)
+	receipt, err = r.accept(ctx, core.Input{ID: input.ID, Digest: hash, Message: message}, kind)
 	if err == nil {
 		r.maybeGenerateSessionTitle(input.Text)
+		resume = true
 	}
 	return receipt, err
 }
@@ -251,6 +258,9 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 			return InputReceipt{}, err
 		}
 	}
+	if err := r.watchIMReply(ctx, inputID, metadata, trigger); err != nil {
+		return InputReceipt{}, err
+	}
 	receipt, err := r.accept(ctx, input, kind)
 	if err == nil && kind == core.InputSteer {
 		r.maybeGenerateSessionTitle(metadata.DisplayText)
@@ -261,7 +271,10 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 		}
 		// A new explicit message can resume a stopped queue or an attempt left
 		// by a crash. Passive delivery makes it available to the resumed run.
-		snapshot := r.core.Load().Snapshot()
+		snapshot, snapshotErr := r.snapshot()
+		if snapshotErr != nil {
+			return receipt, snapshotErr
+		}
 		if snapshot.Running || snapshot.Maintenance || snapshot.Stopping {
 			return receipt, nil
 		}
@@ -285,8 +298,8 @@ type IMWakeup struct {
 }
 
 // WakeObservations hands off a page of direct observations under the same Host
-// admission lock. Frozen request evidence is shared across the page, rather
-// than reconstructing the same history separately for every recovered message.
+// admission lock. Frozen request evidence is shared across recovery pages,
+// rather than reconstructing the same history for every recovered message.
 // A busy observation ends the batch so the caller can retain its scan position.
 func (s *Service) WakeObservations(ctx context.Context, id string, inputs []IMWakeup, bindingID string) ([]IMWakeStatus, error) {
 	r, err := s.open(ctx, id)
@@ -302,12 +315,13 @@ func (s *Service) WakeObservations(ctx context.Context, id string, inputs []IMWa
 	if record.BindingID != bindingID {
 		return nil, domain.Conflict("the inbound binding is no longer active")
 	}
-	inspector := NewIMInspector(r.core.Load(), s.CoreStore)
+	inspector := r.imInspector
 	statuses := make([]IMWakeStatus, 0, len(inputs))
 	for _, input := range inputs {
 		// Starting work can reopen Core when the binding configuration changes.
-		if inspector.session != r.core.Load() {
+		if inspector == nil || inspector.session != r.core.Load() {
 			inspector = NewIMInspector(r.core.Load(), s.CoreStore)
+			r.imInspector = inspector
 		}
 		status, err := r.wakeObservation(ctx, input.InputID, input.Message, inspector)
 		if err != nil {
@@ -365,6 +379,9 @@ func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputK
 	var err error
 	switch kind {
 	case core.InputContext:
+		if err := r.syncIdlePrefix(ctx); err != nil {
+			return InputReceipt{}, err
+		}
 		receipt, err = r.core.Load().InjectContext(ctx, input)
 	case core.InputSteer:
 		receipt, err = r.core.Load().Steer(ctx, input)
@@ -389,20 +406,26 @@ func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputK
 	return value, nil
 }
 func (s *Service) Receipt(ctx context.Context, sessionID, inputID string) (InputReceipt, error) {
-	r, err := s.open(ctx, sessionID)
-	if err != nil {
+	if _, err := s.storedSession(ctx, sessionID); err != nil {
 		return InputReceipt{}, err
 	}
-	receipt, err := r.core.Load().LookupInput(ctx, inputID)
+	receipt, err := s.CoreStore.LookupInput(ctx, sessionID, inputID)
 	if errors.Is(err, core.ErrNotFound) {
 		return InputReceipt{}, domain.Missing("inputs", inputID)
 	}
-	return r.receiptView(receipt), err
+	return InputReceipt{InputID: receipt.ID, SessionID: sessionID, Digest: receipt.Digest, AcceptedAt: receipt.AcceptedAt, EntryID: receipt.EntryID, State: string(receipt.State)}, err
 }
 
 // ResumeContext re-admits an already durable item to resume Core's passive
 // maintenance after Host recovery. It neither reconstructs media nor drives a turn.
 func (s *Service) ResumeContext(ctx context.Context, id string) error {
+	if _, err := s.storedSession(ctx, id); err != nil {
+		return err
+	}
+	state, err := s.CoreStore.LoadState(ctx, id)
+	if err != nil || state.PendingInputs[core.InputContext] == 0 {
+		return err
+	}
 	return s.WithSession(ctx, id, func(session *core.Session) error {
 		if session.State().PendingInputs[core.InputContext] == 0 {
 			return nil

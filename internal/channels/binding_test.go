@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,9 +14,13 @@ import (
 
 func TestAllChatActivationHasNoHistoryPrefillAndModesKeepBindings(t *testing.T) {
 	bot := newBot(t)
+	var reminders atomic.Int64
 	p := testkit.New(t, 0, func(_ context.Context, _ int, request map[string]any) any {
 		if strings.Contains(string(encoded(request["messages"])), "before activation") {
 			t.Error("first activation replayed old messages")
+		}
+		if strings.Contains(activeDeliveryText(request), "如果你决定不回复，请忽略此提醒。") {
+			reminders.Add(1)
 		}
 		return testkit.Text("Web only")
 	})
@@ -43,9 +48,11 @@ func TestAllChatActivationHasNoHistoryPrefillAndModesKeepBindings(t *testing.T) 
 	bot.updates <- []telegramUpdate{trigger, trigger}
 	var b domain.ConversationBinding
 	testkit.Await(t, p.Context, func() bool { b, _ = s.activeBinding(p.Context, chat.ID); return b.ID != "" })
+	awaitDirectReminderRequests(t, p, b.SessionID, "all-chat first activation", 2)
 	p.Idle(t, b.SessionID)
-	testkit.Await(t, p.Context, func() bool { return p.Requests.Load() == 1 })
-	p.Idle(t, b.SessionID)
+	if p.Requests.Load() != 2 || reminders.Load() != 1 {
+		t.Fatalf("duplicate activation did not settle to one direct response and one reminder: requests=%d reminders=%d", p.Requests.Load(), reminders.Load())
+	}
 	all, _ := list[domain.ConversationBinding](p.Context, p.Store, "bindings")
 	if len(all) != 1 {
 		t.Fatalf("activation created duplicate bindings: %d", len(all))
@@ -155,9 +162,13 @@ func TestRebindStopsOriginalAndTargetBeforeCommit(t *testing.T) {
 
 func TestPrivateFirstMessageActivatesAndDirectMessagesBypassProbe(t *testing.T) {
 	bot := newBot(t)
+	var reminders atomic.Int64
 	p := testkit.New(t, 0, func(_ context.Context, _ int, r map[string]any) any {
 		if strings.Contains(string(encoded(r["tools"])), `"name":"decide"`) {
 			t.Error("direct message used Probe")
+		}
+		if strings.Contains(activeDeliveryText(r), "如果你决定不回复，请忽略此提醒。") {
+			reminders.Add(1)
 		}
 		return testkit.Text("Web only")
 	})
@@ -171,14 +182,20 @@ func TestPrivateFirstMessageActivatesAndDirectMessagesBypassProbe(t *testing.T) 
 	event := update(1, "hello privately")
 	event.Message.Chat = telegramChat{ID: 7, Type: "private", FirstName: "Ada"}
 	bot.updates <- []telegramUpdate{event}
-	testkit.Await(t, p.Context, func() bool { return p.Requests.Load() == 1 })
-	b, err := s.activeBinding(p.Context, stableID("conversation", c.ID, "7", ""))
-	if err != nil || b.ID == "" {
-		t.Fatalf("private chat did not activate: %v", err)
-	}
+	var b domain.ConversationBinding
+	activationCtx, stopActivation := context.WithTimeout(p.Context, 3*time.Second)
+	defer stopActivation()
+	testkit.Await(t, activationCtx, func() bool {
+		b, _ = s.activeBinding(p.Context, stableID("conversation", c.ID, "7", ""))
+		return b.ID != ""
+	})
+	awaitDirectReminderRequests(t, p, b.SessionID, "private first activation", 2)
 	p.Idle(t, b.SessionID)
+	if p.Requests.Load() != 2 || reminders.Load() != 1 {
+		t.Fatalf("private activation did not settle to one direct response and one reminder: requests=%d reminders=%d", p.Requests.Load(), reminders.Load())
+	}
 	if bot.sends.Load() != 0 {
-		t.Fatal("assistant text was automatically sent")
+		t.Fatal("directly output text was automatically sent")
 	}
 	ctx, cancel := context.WithTimeout(p.Context, time.Second)
 	defer cancel()

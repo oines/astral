@@ -43,11 +43,18 @@ type Service struct {
 	deleteMu             sync.Mutex
 	agentMu              sync.RWMutex
 	runtimes             map[string]*runtime
+	headTimes            map[string]sessionHeadTime
+	selections           map[string]configurationSelection
+	childSettings        map[string]subagentMetadata
 	closed               bool
 	changes              chan string
+	sessionChanges       sessionChangeSignal
 	workers              sync.WaitGroup
 	subagentMu           sync.Mutex
 	subagentWake         chan struct{}
+	subagentWakeMu       sync.Mutex
+	subagentDirty        map[string]struct{}
+	subagentRescan       bool
 	subagentWorkers      sync.WaitGroup
 	modelFallbackMu      sync.Mutex
 	modelFallbackWorkers sync.WaitGroup
@@ -58,10 +65,14 @@ type runtime struct {
 	service          *Service
 	id               string
 	agentID          string
+	prefixRootID     string
 	ready            chan struct{}
 	openErr          error
 	mu               sync.Mutex
 	core             atomic.Pointer[core.Session]
+	snapshotMu       sync.RWMutex
+	corePhase        runtimeCorePhase
+	retired          bool
 	tools            *standardtools.Set
 	environmentMu    sync.Mutex
 	processMu        sync.Mutex
@@ -73,6 +84,7 @@ type runtime struct {
 	titleCancel      context.CancelFunc
 	titleDone        chan struct{}
 	subagent         *subagentSettings
+	imInspector      *IMInspector
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
@@ -90,6 +102,10 @@ func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bri
 }
 func (s *Service) Changes() <-chan string { return s.changes }
 func (s *Service) notify(id string) {
+	s.sessionChanges.notify(id)
+	// Host operations notify after Core releases its Run/maintenance state.
+	// Store commit notifications alone can precede that final idle boundary.
+	s.wakeSubagents(id)
 	select {
 	case s.changes <- id:
 	default:
@@ -148,6 +164,23 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		return domain.Missing("Session", r.id)
 	}
 	r.agentID = record.AgentID
+	prefix := record
+	seen := map[string]bool{record.ID: true}
+	for prefix.SubagentParentID != "" {
+		if seen[prefix.SubagentParentID] {
+			return domain.Invalid("subagent parent references contain a cycle")
+		}
+		seen[prefix.SubagentParentID] = true
+		var parent domain.Session
+		if err = s.Store.Get(ctx, "sessions", prefix.SubagentParentID, &parent); err != nil {
+			return err
+		}
+		prefix = parent
+		if prefix.Deletion != nil || prefix.AgentID != record.AgentID {
+			return domain.Forbidden("subagent prefix source is unavailable")
+		}
+	}
+	r.prefixRootID = prefix.ID
 	if record.SubagentParentID != "" {
 		var settings subagentSettings
 		if err = s.Store.Get(ctx, "subagent_settings", r.id, &settings); err != nil {
@@ -156,7 +189,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		r.subagent = &settings
 	}
 	r.compactionPrompt = compactionPromptFor(record)
-	r.messageTool, err = r.messageToolFor(ctx, record)
+	r.messageTool, err = r.messageToolFor(ctx, prefix)
 	if err != nil {
 		return err
 	}
@@ -176,12 +209,12 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if r.core.Load() != nil {
-				_ = r.core.Load().Close(cleanup)
+				_ = r.closeCore(cleanup)
 			}
 			_ = r.tools.Close(cleanup)
 		}
 	}()
-	config := r.coreConfig(record)
+	config := r.coreConfig(prefix)
 	session, err := core.OpenSession(ctx, config, r.id)
 	created := errors.Is(err, core.ErrNotFound)
 	if errors.Is(err, core.ErrNotFound) {
@@ -247,11 +280,6 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	if err == nil && created {
 		if r.subagent != nil {
 			err = r.initializeModelFallback(ctx, r.subagent.Configuration.Selection, config.Selection)
-			if err == nil {
-				configuration := r.subagent.Configuration
-				configuration.Selection = config.Selection
-				err = r.core.Load().Configure(ctx, configuration)
-			}
 		}
 	}
 	if err == nil && created {
@@ -271,7 +299,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		}
 	}
 	if err == nil && r.subagent != nil {
-		s.wakeSubagents()
+		s.wakeSubagents(r.id)
 	}
 	return err
 }
@@ -279,14 +307,13 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 func (r *runtime) coreConfig(record domain.Session) core.Config {
 	s := r.service
 	config := core.Config{
-		Store: s.CoreStore, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokens: modelbridge.EstimateTokens,
+		Store: subagentWakeStore{Store: s.CoreStore, service: s}, ResolveModel: r.resolveModel, RestoreModel: r.restoreModel, EstimateTokensReadOnly: modelbridge.EstimateTokens,
 		SystemPrompt: systemPromptFor(record), Tools: r.hostTools(),
-		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContext: r.collectContext,
+		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContextReadOnly: r.collectContext,
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
 		Retry: core.RetryPolicy{MaxAttempts: 5},
 	}
 	if r.subagent != nil {
-		config.SystemPrompt = r.subagent.Configuration.SystemPrompt
 		config.Selection = r.subagent.Configuration.Selection
 	}
 	return config
@@ -334,7 +361,7 @@ func (s *Service) Core(ctx context.Context, id string) (*core.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return r.core.Load(), nil
+	return r.readableCore()
 }
 func (s *Service) CreateSession(ctx context.Context, agentID, title string) (domain.Session, error) {
 	return s.createSession(ctx, agentID, title, domain.ID("session"), "web", false, false)
@@ -442,6 +469,7 @@ func (s *Service) Close(ctx context.Context) error {
 		all = append(all, r)
 	}
 	s.mu.Unlock()
+	s.sessionChanges.close()
 	var errs []error
 	if s.Schedules != nil {
 		errs = append(errs, s.Schedules.Close(ctx))
@@ -463,9 +491,12 @@ func (s *Service) Close(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		if r.core.Load() != nil {
-			errs = append(errs, r.core.Load().Close(ctx))
-		}
+		r.retire()
+		// Drain callbacks that received a raw Core handle before retirement.
+		// Joining Core must remain outside mu: cancelled tools can need it.
+		r.mu.Lock()
+		r.mu.Unlock() //nolint:staticcheck // Join pre-retirement callbacks before Core.Close clears their window.
+		errs = append(errs, r.closeCore(ctx))
 		if r.tools != nil {
 			errs = append(errs, r.tools.Close(ctx))
 		}

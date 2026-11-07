@@ -15,6 +15,8 @@ Check the selected computer before attaching a file: that is where the upload go
 
 If a file is already on the computer, provide its full path, such as `/home/mei/reports/meeting.txt`. That path must be on the computer the Bot is using. If you are unsure, ask it to report its current directory and list the files before doing the work.
 
+On Windows, use the native path, for example `C:\Users\mei\reports\meeting.txt`. File tools also accept `/c/Users/mei/...`, `/mnt/c/Users/mei/...`, and `/cygdrive/c/Users/mei/...` as Windows drive paths when the selected computer runs Windows. The selected computer interprets paths using its own operating system.
+
 ## Open results
 
 Click an image in the conversation to open the full-screen viewer, where you can zoom and download it. Other files open in the file sidebar; available previews depend on the file format. Download a copy to your own device or back it up on the source computer when you need to keep it.
@@ -24,6 +26,8 @@ If the Bot reports completion without a link, ask:
 > Give me a link to the file you created, along with its source computer and full path.
 
 The link retains its original computer. Selecting a different computer later does not move the file or change where an older link points.
+
+When the Bot reads an image on a computer, it preserves the original dimensions by default. Images above the default 150KB encoded-data compression threshold use quality-75 WebP; smaller images keep their original bytes. Final sizes vary with the image content. The original file on the computer stays intact.
 
 Images returned directly by a tool are retained in the conversation and remain available when you reopen its history. Displaying them does not require an extra file copy on the computer.
 
@@ -47,7 +51,7 @@ Folders organize work; the operating-system account running the computer service
 
 ## Chat attachments
 
-In a connected Telegram, QQ, or other platform chat, send attachments with the task you want performed. Images initially supply a compressed preview. If text or detail is unclear, ask the Bot to download and read the original image. Videos and ordinary files are downloaded to a computer when the task needs them.
+In a connected Telegram, QQ, or other platform chat, send attachments with the task you want performed. Chat images use a lighter preview: a 30KB encoded-data compression threshold and quality-30 WebP, keeping the original dimensions by default. These are compression settings rather than a fixed output size. The preview is prepared on arrival and reused in later replies. When a task depends on small text or fine detail, ask the Bot to download and read the original image. Downloads preserve the original file. Videos and ordinary files are downloaded to a computer when the task needs them.
 
 To return a result to the chat, ask explicitly:
 

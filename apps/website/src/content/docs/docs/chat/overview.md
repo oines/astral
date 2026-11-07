@@ -36,7 +36,9 @@ After adding the chat, return to the platform and **send a new message**:
 
 Mention the Bot in a group or reply to a message it sent. Earlier discovery messages do not become tasks after authorization.
 
-Check both the processing in Astral and the reply in the original chat. Next, send an image or small file and ask the Bot to read it and send it back. Say “send it back to this chat” when you want a result delivered: the Bot uses its sending tool, and working notes shown in Astral are not all forwarded.
+Check both the processing in Astral and the reply in the original chat. Next, send an image or small file and ask the Bot to read it and send it back. Say “send it back to this chat” when you want a result delivered. Text the Bot outputs directly appears only in the Astral web interface; people in the group or private chat cannot see it. The Bot uses `send_message` to send a reply to the chat.
+
+After handling a direct trigger, such as a private message, mention or reply to the Bot, Astral reminds it once if it finishes normally without using the sending tool. It can still choose not to reply, and Astral does not automatically forward its working text. This follow-up reminder does not apply to proactive participation or to send attempts that failed or have an unconfirmed outcome; it does not resend those attempts.
 
 ## What matters during everyday use
 
@@ -44,5 +46,9 @@ Check both the processing in Astral and the reply in the original chat. Next, se
 - **Removing one chat:** first switch to **Only specified chats**. Switching retains connected chats and their settings.
 - **Pausing an account:** turn off **Enabled** to stop reception and keep history. Stop any computer task already in progress separately in its conversation.
 - **Changing the bound conversation:** stops work in both the original and target conversations and retains their histories. Previously accepted sends keep their original destination.
+
+If the model runs out of quota, rejects its credentials, or denies access, Astral keeps the error in the corresponding conversation and pauses processing while continuing to receive and archive platform messages. After restoring quota or correcting the credentials, open that conversation in Astral and send a new input to retry. Successfully switching to an available model also retries processing of waiting messages. Rate limits, temporary service failures, and network errors retry at intervals. Sending more chat messages does not make them retry sooner.
+
+Processing also pauses if the conversation reports that its summary input exceeds the model's context window. Waiting messages are retained. Choose a model that can accommodate that summary input or correct its window configuration before retrying; service recovery or more chat messages do not remove this limit. Successfully switching the conversation's model, or correcting its window or connection configuration, triggers another processing attempt. Work continues after compaction succeeds and the complete context passes its budget checks.
 
 Ask the Bot directly to look up members or manage group files. Read the [Platform API reference](/docs/chat/platform-api/) only when you need custom calls.

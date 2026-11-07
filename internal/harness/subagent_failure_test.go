@@ -276,7 +276,13 @@ func TestSubagentQueuedModelBecomesUnavailableBeforeInitializationStillNotifiesP
 		return err == nil && failed.LastRun != nil && failed.LastRun.Status == "failed" && strings.Contains(failed.LastRun.Error, "disabled")
 	})
 	subagentFailureAssertNotification(t, f, parent.id, child.SessionID, failed)
-	eventually(t, f.ctx, func() bool { return failureRequests.Load() == 1 })
+	eventually(t, f.ctx, func() bool {
+		count := failureRequests.Load()
+		if count > 1 {
+			t.Fatalf("initialization failure triggered %d parent requests, want 1", count)
+		}
+		return count == 1
+	})
 	f.idle(t, parent.id)
 	if got := subagentTestRequest(t, f, parent.id); !strings.Contains(string(encode(got.Messages)), failed.LastRun.Error) {
 		t.Fatal("parent woke without the asynchronous model-selection error")
@@ -294,8 +300,18 @@ func TestSubagentQueuedModelBecomesUnavailableBeforeInitializationStillNotifiesP
 		if runs := subagentTerminalRunIDs(t, f, child.SessionID, "failed"); len(runs) != 1 || runs[0] != failed.LastRun.ID {
 			t.Fatalf("pending initial input automatically restarted a failed child: %v", runs)
 		}
-		if notifications := subagentFailureNotifications(t, f, parent.id, child.SessionID, failed.LastRun.ID); len(notifications) != 1 || failureRequests.Load() != 1 {
-			t.Fatalf("failed initialization produced a notification storm: notifications=%d parent requests=%d", len(notifications), failureRequests.Load())
+		reportedRuns := map[string]int{}
+		for _, entry := range subagentTestEntries(t, f, parent.id) {
+			if entry.Message == nil || entry.Message.ContextKind != subagentUpdateKind {
+				continue
+			}
+			var metadata map[string]string
+			if json.Unmarshal(entry.Message.Metadata, &metadata) == nil && metadata["child_session_id"] == child.SessionID && metadata["run_status"] == "failed" {
+				reportedRuns[metadata["run_id"]]++
+			}
+		}
+		if len(reportedRuns) != 1 || reportedRuns[failed.LastRun.ID] != 1 || failureRequests.Load() != 1 {
+			t.Fatalf("failed initialization produced a notification storm: reports by Run=%v parent requests=%d", reportedRuns, failureRequests.Load())
 		}
 		if initial, err := f.coreStore.LookupInput(f.ctx, child.SessionID, initialID); err != nil || initial.State != core.InputPending {
 			t.Fatalf("reconciliation consumed an intentionally suspended initial input: %+v %v", initial, err)

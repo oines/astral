@@ -23,12 +23,17 @@ const maxSubagentsPerBot = 64
 
 type subagentSettings struct {
 	domain.Meta
-	Configuration  core.Configuration  `json:"configuration"`
-	MessageTool    core.ToolDefinition `json:"message_tool"`
-	InheritContext bool                `json:"inherit_context"`
-	ForkEntryID    string              `json:"fork_entry_id,omitempty"`
-	Task           string              `json:"task"`
-	Started        bool                `json:"started"`
+	// Legacy records may contain a full Configuration and MessageTool. Decode
+	// only the mutable selection; every new request uses the shared root source.
+	Configuration  subagentConfiguration `json:"configuration"`
+	InheritContext bool                  `json:"inherit_context"`
+	ForkEntryID    string                `json:"fork_entry_id,omitempty"`
+	Task           string                `json:"task"`
+	Started        bool                  `json:"started"`
+}
+
+type subagentConfiguration struct {
+	Selection core.ModelSelection `json:"selection"`
 }
 
 type SpawnAgentInput struct {
@@ -59,10 +64,7 @@ type SubagentView struct {
 type spawnAgentTool struct{ runtime *runtime }
 
 func (t spawnAgentTool) Definition() core.ToolDefinition {
-	if saved, ok := t.runtime.savedDelegationTool("spawn_agent"); ok {
-		return saved
-	}
-	return core.ToolDefinition{Name: "spawn_agent", Version: "astral-2", Description: "Create a persistent direct subagent and start it asynchronously. Only user-facing root Sessions may spawn subagents; subagents cannot spawn further agents. Assign independently actionable work. name optionally assigns a stable agent name; omitted names receive a generated code. task is only its first instruction, never its name. Delegate long-running or parallel work, or hand off unfinished work with inherit_context=true. Inherited history uses a shared Rollout fork; otherwise start fresh. Both use this Session's current Computer by default. Omit model and reasoning to inherit the parent's latest complete selection. Explicit model uses that profile's defaults unless reasoning is supplied. Read the models Gateway capability for available profile IDs and legal reasoning values. Do not ask subagents to poll or keep their Runs alive while waiting for you, other agents, or future decisions. Subagents report meaningful progress through assistant text passively and naturally end their Runs when completed or blocked. Natural Run end or failure automatically wakes you. Continue useful work yourself, or end your own Run rather than polling for subagents. Reuse persistent Sessions through agent_control. Returns session_id, name and selection.",
+	return core.ToolDefinition{Name: "spawn_agent", Version: "astral-2", Description: "Create a persistent direct subagent and start it asynchronously. Only user-facing root Sessions may spawn subagents; subagents cannot spawn further agents. Assign independently actionable work. name optionally assigns a stable agent name; omitted names receive a generated code. task is only its first instruction, never its name. Delegate long-running or parallel work, or hand off unfinished work with inherit_context=true. Inherited history uses a shared Rollout fork; otherwise start fresh. Both use this Session's current Computer by default. Omit model and reasoning to inherit the parent's latest complete selection. Explicit model uses that profile's defaults unless reasoning is supplied. Read the models Gateway capability for available profile IDs and legal reasoning values. Do not ask subagents to poll or keep their Runs alive while waiting for you, other agents, or future decisions. Subagents output meaningful progress updates directly; the system automatically delivers their output to the direct parent. They naturally end their Runs when completed or blocked. Natural Run end or failure automatically wakes you. Continue useful work yourself, or end your own Run rather than polling for subagents. Reuse persistent Sessions through agent_control. Returns session_id, name and selection.",
 		Parameters: encode(map[string]any{"type": "object", "properties": map[string]any{
 			"name":            map[string]any{"type": "string", "maxLength": 100},
 			"task":            map[string]any{"type": "string", "minLength": 1},
@@ -87,9 +89,6 @@ func (t spawnAgentTool) Execute(ctx context.Context, inv core.Invocation, _ func
 type agentControlTool struct{ runtime *runtime }
 
 func (t agentControlTool) Definition() core.ToolDefinition {
-	if saved, ok := t.runtime.savedDelegationTool("agent_control"); ok {
-		return saved
-	}
 	return core.ToolDefinition{Name: "agent_control", Version: "astral-2", Description: "Manage only your direct persistent subagents. Empty arguments list them; agent_id queries one (use its session_id). input submits a new instruction, steering an active Run or starting an idle Session. model optionally replaces only this child's complete selection, not its descendants; reasoning requires model. Omitted reasoning uses the selected profile's defaults; an empty object uses API defaults. Read the models Gateway capability for available profile IDs and legal reasoning values. Selection alone never starts work; with input it is saved before that instruction. Frozen requests retain their original selection. signal=stop stops its current Run and preserves history; signal=delete permanently deletes it and all descendants, including independent Rollouts. Signals cannot be combined with input or selection. Query without polling to wait: natural Run end triggers you automatically.",
 		Parameters: encode(map[string]any{"type": "object", "properties": map[string]any{
 			"agent_id":  map[string]any{"type": "string"},
@@ -107,16 +106,6 @@ func subagentReasoningSchema() map[string]any {
 	}, "additionalProperties": false}
 }
 
-func (r *runtime) savedDelegationTool(name string) (core.ToolDefinition, bool) {
-	if r != nil && r.subagent != nil {
-		for _, definition := range r.subagent.Configuration.Tools {
-			if definition.Name == name {
-				return definition, true
-			}
-		}
-	}
-	return core.ToolDefinition{}, false
-}
 func (t agentControlTool) Execute(ctx context.Context, inv core.Invocation, _ func(core.ToolProgress)) (core.ToolExecution, error) {
 	var input AgentControlInput
 	if err := json.Unmarshal(inv.Call.Arguments, &input); err != nil {
@@ -130,11 +119,15 @@ func (t agentControlTool) Execute(ctx context.Context, inv core.Invocation, _ fu
 }
 
 func (s *Service) subagentRecord(ctx context.Context, parent, id string) (domain.Session, error) {
+	return s.ownedSubagentRecord(ctx, parent, id, false)
+}
+
+func (s *Service) ownedSubagentRecord(ctx context.Context, parent, id string, allowDeleting bool) (domain.Session, error) {
 	var record domain.Session
 	if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
 		return record, err
 	}
-	if record.SubagentParentID != parent || record.Deletion != nil {
+	if record.SubagentParentID != parent || record.Deletion != nil && !allowDeleting {
 		return record, domain.Forbidden("only a direct parent can manage this subagent")
 	}
 	var owner domain.Session
@@ -228,24 +221,22 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 	if count >= maxSubagentsPerBot {
 		return SubagentView{}, domain.Conflict("subagent Session limit reached; delete unused subagents before creating more")
 	}
-	configuration, err := core.ReadConfiguration(ctx, s.CoreStore, parent.id)
+	selected, err := s.selectionAtState(ctx, parent.id, parent.core.Load().State())
 	if err != nil {
+		return SubagentView{}, err
+	}
+	var configuration subagentConfiguration
+	if err = json.Unmarshal(selected.value, &configuration.Selection); err != nil {
 		return SubagentView{}, err
 	}
 	if parent.subagent != nil {
-		var settings subagentSettings
-		if err = s.Store.Get(ctx, "subagent_settings", parent.id, &settings); err != nil {
+		settings, err := s.childMetadata(ctx, parent.id)
+		if err != nil {
 			return SubagentView{}, err
 		}
-		configuration.Selection = settings.Configuration.Selection
-	}
-	configuration.Selection, err = s.modelPreferredSelection(ctx, parent.id, configuration.Selection)
-	if err != nil {
-		return SubagentView{}, err
-	}
-	prompt, err := parent.currentSystemPrompt(ctx, configuration.SystemPrompt)
-	if err != nil {
-		return SubagentView{}, err
+		if err = json.Unmarshal(settings.selection, &configuration.Selection); err != nil {
+			return SubagentView{}, err
+		}
 	}
 	forkHead := parent.core.Load().Head()
 	if inv.AssistantID != "" {
@@ -255,16 +246,7 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 			return SubagentView{}, readErr
 		}
 		forkHead = assistant.Entry.ParentID
-		if assistant.Entry.Generation != nil {
-			request, requestErr := parent.core.Load().Attempts().Request(ctx, assistant.Entry.Generation.AttemptID)
-			if requestErr != nil {
-				return SubagentView{}, requestErr
-			}
-			prompt = request.SystemPrompt
-			configuration.Tools = request.Tools
-		}
 	}
-	configuration.SystemPrompt = prompt
 	if input.Model != "" {
 		configuration.Selection = core.ModelSelection{ID: input.Model, Reasoning: input.Reasoning}
 		if _, err = s.Models.ResolveSelection(ctx, configuration.Selection); err != nil {
@@ -304,7 +286,7 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 		}
 	}
 	record := domain.Session{Meta: domain.Meta{ID: id}, AgentID: source.AgentID, Title: title, TitleSource: domain.TitleManual, Source: "subagent", SubagentParentID: source.ID, ComputerID: computerID, CWD: cwd, Private: source.Private}
-	settings := subagentSettings{Meta: domain.Meta{ID: id}, Configuration: configuration, MessageTool: parent.messageTool, InheritContext: input.InheritContext, ForkEntryID: forkHead, Task: input.Task}
+	settings := subagentSettings{Meta: domain.Meta{ID: id}, Configuration: configuration, InheritContext: input.InheritContext, ForkEntryID: forkHead, Task: input.Task}
 	if settings.InheritContext && forkHead == "" {
 		return SubagentView{}, domain.Conflict("no committed parent history is available to fork")
 	}
@@ -331,7 +313,7 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 	// The durable creation is the tool result. Initialization and the first Run
 	// are reconciled asynchronously, including after a crash before this signal.
 	s.notify(id)
-	s.wakeSubagents()
+	s.wakeSubagents(id)
 	return SubagentView{SessionID: id, ParentSessionID: source.ID, Title: title, Name: title, Selection: configuration.Selection, Status: "queued"}, nil
 }
 
@@ -363,12 +345,12 @@ func (s *Service) controlSubagent(ctx context.Context, parent, execution string,
 		}
 		return result, nil
 	}
-	record, err := s.subagentRecord(ctx, parent, input.AgentID)
-	if err != nil {
-		return nil, err
-	}
 	if input.Signal != "" && (input.Input != "" || input.Model != "") {
 		return nil, domain.Invalid("choose signal or input/selection")
+	}
+	record, err := s.ownedSubagentRecord(ctx, parent, input.AgentID, input.Signal == "delete")
+	if err != nil {
+		return nil, err
 	}
 	if input.Model != "" {
 		if err = s.selectDirectSubagentModel(ctx, parent, record.ID, core.ModelSelection{ID: input.Model, Reasoning: input.Reasoning}); err != nil {
@@ -399,7 +381,11 @@ func (s *Service) controlSubagent(ctx context.Context, parent, execution string,
 				return nil, err
 			}
 			status := "queued"
-			if r.core.Load().Snapshot().Running {
+			snapshot, snapshotErr := r.snapshot()
+			if snapshotErr != nil {
+				return nil, snapshotErr
+			}
+			if snapshot.Running {
 				status = "running"
 			}
 			var settings subagentSettings
@@ -423,22 +409,22 @@ func (s *Service) controlSubagent(ctx context.Context, parent, execution string,
 	return s.subagentView(ctx, record)
 }
 
-const identityRevision = 1
+const identityRevision = 2
 
 const rootCoordinationInstructions = `Stay responsive to the user. Don't let ongoing tasks or subagent coordination delay your replies.
 
 Delegate actionable work that subagents can advance independently. Do not ask subagents to poll or stay alive waiting for you or other agents.
 
-After delegating, continue useful independent work. If nothing useful remains, naturally end your Run instead of polling subagent status or sleeping to wait. Ending your Run does not abandon the task: the Host will automatically reactivate you when a direct subagent's Run naturally ends or fails. Reuse its persistent Session through agent_control when needed.`
+After delegating, continue useful independent work. If nothing useful remains, naturally end your Run instead of polling subagent status or sleeping to wait. Ending your Run does not abandon the task: the system will automatically reactivate you when a direct subagent's Run naturally ends or fails. Reuse its persistent Session through agent_control when needed.`
 
-const subagentCoordinationInstructions = `You are a persistent subagent working exclusively for your direct parent Session. You do not spawn or manage further subagents. Your assistant text is automatically delivered to that parent as passive progress context. The Host automatically notifies your parent when your Run naturally ends or fails.
+const subagentCoordinationInstructions = `You are a persistent subagent working exclusively for your direct parent Session. You do not spawn or manage further subagents. Output progress updates, findings and results directly; the system automatically delivers your output to your direct parent as passive progress context. The system automatically notifies your parent when your Run naturally ends or fails.
 
 PROACTIVE PROGRESS REPORTING
 - Keep your parent informed without being asked.
 - Before substantial work, briefly state your approach and immediate next step, preferably alongside the first tool call.
 - During multi-step work, proactively report meaningful discoveries, completed milestones, blockers, unexpected results, and changes of approach. Aim to report after roughly 2–3 tool-use steps when there is useful new information; avoid empty updates.
 - Briefly explain what you learned or accomplished and what comes next.
-- When more work remains, include progress text alongside your next tool call so the Run can continue. A text-only assistant response without tool calls may naturally end the Run.
+- When more work remains, include progress text alongside your next tool call so the Run can continue. A reply containing only text and no tool calls may naturally end the Run.
 - Do not wait for your parent's acknowledgment.
 
 DO WORK OR YIELD
@@ -452,7 +438,7 @@ DO WORK OR YIELD
 COMPLETION
 - When finished, provide a concise final report with outcomes, evidence or artifacts, and unresolved issues, then naturally end the Run.
 - Clearly distinguish completed work from blocked or yielded work. A natural Run end alone does not imply business success.
-- Communicate through assistant text to your direct parent, never directly to the user. Do not delegate work to further subagents.
+- Output messages directly; the system automatically delivers your output to your direct parent, never to the user. Do not delegate work to further subagents.
 
 Principle: Do useful work, report meaningful progress, and yield when blocked. Never wait for work.`
 
@@ -484,7 +470,7 @@ func (r *runtime) identityContext(ctx context.Context, boundary core.ContextBoun
 	metadata := identityMetadata{SessionID: r.id, ParentID: record.SubagentParentID, CompactionID: boundary.CompactionID, Revision: identityRevision}
 	text := fmt.Sprintf("Current Astral Session identity: %s. You are the user-facing root agent. Reply to the user and coordinate your direct subagents.\n\n%s", r.id, rootCoordinationInstructions)
 	if record.SubagentParentID != "" {
-		text = fmt.Sprintf("Current Astral Session identity: %s. Your agent name is %s. You are a subagent of Session %s. Actively report progress, findings, blockers and results in assistant text; the Host delivers your text only to this direct parent. send_message is forbidden for every subagent. Earlier identities in inherited history or copied System text belong to earlier Sessions.\n\n%s", r.id, string(encode(record.Title)), record.SubagentParentID, subagentCoordinationInstructions)
+		text = fmt.Sprintf("Current Astral Session identity: %s. Your agent name is %s. You are a subagent of Session %s. Output progress updates, findings, blockers and results directly; the system automatically delivers your output only to your direct parent. send_message is forbidden for every subagent. Earlier identities in inherited history or copied System text belong to earlier Sessions.\n\n%s", r.id, string(encode(record.Title)), record.SubagentParentID, subagentCoordinationInstructions)
 	}
 	return []core.Message{{Role: core.RoleUser, ContextKind: identityKind, Metadata: encode(metadata), Content: core.Text(text)}}, nil
 }
@@ -498,27 +484,109 @@ type subagentCheckpoint struct {
 
 const subagentDeliveryProtocol = 1
 
-func (s *Service) wakeSubagents() {
+func (s *Service) wakeSubagents(ids ...string) {
+	s.subagentWakeMu.Lock()
+	defer s.subagentWakeMu.Unlock()
+	if len(ids) == 0 {
+		s.subagentRescan = true
+	}
+	for _, id := range ids {
+		if id != "" {
+			if s.subagentDirty == nil {
+				s.subagentDirty = map[string]struct{}{}
+			}
+			s.subagentDirty[id] = struct{}{}
+		}
+	}
+	if !s.subagentRescan && len(s.subagentDirty) == 0 {
+		return
+	}
 	select {
 	case s.subagentWake <- struct{}{}:
 	default:
 	}
 }
+
+func (s *Service) takeSubagentWork() (map[string]struct{}, bool) {
+	s.subagentWakeMu.Lock()
+	defer s.subagentWakeMu.Unlock()
+	dirty, full := s.subagentDirty, s.subagentRescan
+	s.subagentDirty, s.subagentRescan = nil, false
+	select {
+	case <-s.subagentWake:
+	default:
+	}
+	return dirty, full
+}
+
 func (s *Service) subagentWorker() {
 	defer s.subagentWorkers.Done()
-	timer := time.NewTicker(500 * time.Millisecond)
-	defer timer.Stop()
+	work := newSubagentWork()
+	watcher := s.Store.Watch(
+		persistence.ChangeKey{Kind: "sessions"},
+		persistence.ChangeKey{Kind: "subagent_settings"},
+		persistence.ChangeKey{Kind: "agents"},
+		persistence.ChangeKey{Kind: "models"},
+		persistence.ChangeKey{Kind: "providers"},
+		persistence.ChangeKey{Kind: "subagent_activation"},
+		persistence.ChangeKey{Kind: subagentModelChangeKind},
+	)
+	defer watcher.Close()
+	changes := watcher.Changes()
+	full := true
+	var retryAt time.Time
 	for {
+		if s.ctx.Err() != nil {
+			return
+		}
+		dirty, rescan := s.takeSubagentWork()
+		full = full || rescan
+		// Preserve the old subscription until its closure has been observed.
+		// A concurrent Core wake must not hide a Host relationship change.
+		select {
+		case <-changes:
+			changes = watcher.Changes()
+			full = true
+		default:
+		}
+		full = full || !retryAt.IsZero() && !time.Now().Before(retryAt)
+		if full {
+			work = newSubagentWork()
+			err := s.reconcileSubagentsObserved(s.ctx, work.observe)
+			full, retryAt = false, time.Time{}
+			if err != nil {
+				retryAt = time.Now().Add(500 * time.Millisecond)
+			}
+		} else if err := s.reconcileSubagentIDs(s.ctx, work, dirty); err != nil && retryAt.IsZero() {
+			retryAt = time.Now().Add(500 * time.Millisecond)
+		}
+		var retry <-chan time.Time
+		var timer *time.Timer
+		if !retryAt.IsZero() {
+			// Unrelated dirty IDs do not postpone a genuine failure's deadline.
+			timer = time.NewTimer(time.Until(retryAt))
+			retry = timer.C
+		}
 		select {
 		case <-s.ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
 			return
 		case <-s.subagentWake:
-		case <-timer.C:
+		case <-changes:
+		case <-retry:
 		}
-		_ = s.reconcileSubagents(s.ctx)
+		if timer != nil {
+			timer.Stop()
+		}
 	}
 }
 func (s *Service) reconcileSubagents(ctx context.Context) error {
+	return s.reconcileSubagentsObserved(ctx, nil)
+}
+
+func (s *Service) reconcileSubagentsObserved(ctx context.Context, observed func(domain.Session, error)) error {
 	if err := s.reconcileSubagentModelChanges(ctx); err != nil {
 		return err
 	}
@@ -526,6 +594,7 @@ func (s *Service) reconcileSubagents(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var failures []error
 	for _, item := range items {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -534,16 +603,27 @@ func (s *Service) reconcileSubagents(ctx context.Context) error {
 		if err = json.Unmarshal(item.Data, &record); err != nil {
 			return err
 		}
-		if record.SubagentParentID == "" || record.Deletion != nil {
+		if record.Deletion != nil || record.SubagentParentID == "" && record.BindingID == "" {
 			continue
 		}
-		if err = s.reconcileSubagent(ctx, record); err != nil {
+		if record.SubagentParentID == "" {
+			err = s.reconcileIMReply(ctx, record)
+		} else {
+			err = s.reconcileSubagent(ctx, record)
+		}
+		if observed != nil {
+			observed(record, err)
+		}
+		if err != nil {
 			// Failed delivery remains unacknowledged and is retried. Runtime errors
 			// remain visible in the ordinary Session view, never treated as success.
-			continue
+			// Busy execution and unapplied reports instead await Core/Host changes.
+			if !errors.Is(err, core.ErrBusy) && !errors.Is(err, errSubagentReportsPending) {
+				failures = append(failures, err)
+			}
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) error {
 	// Serialize admission and its delivery checkpoint with recursive deletion.
@@ -559,10 +639,41 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	// Deliver persisted facts independently of opening or reconfiguring this
 	// runtime. A now-unavailable desired model must not hide an earlier failure
 	// from its parent, or hold ordinary progress behind a busy model switch.
-	state, stateErr := s.CoreStore.LoadState(ctx, record.ID)
+	s.mu.Lock()
+	r := s.runtimes[record.ID]
+	s.mu.Unlock()
+	if r != nil {
+		select {
+		case <-r.ready:
+			if r.openErr != nil {
+				return r.openErr
+			}
+		default:
+			r = nil
+		}
+	}
+	var state core.RuntimeState
+	var stateErr error
+	if r != nil {
+		r.mu.Lock()
+		state = r.core.Load().State()
+		r.mu.Unlock()
+	} else {
+		state, stateErr = s.CoreStore.LoadState(ctx, record.ID)
+	}
+	var deliveryErr error
 	if stateErr == nil {
-		if err := s.deliverSubagentHistoryLocked(ctx, record, state); err != nil && !errors.Is(err, errSubagentReportsPending) {
+		moreActivity, err := s.recordSubagentActivities(ctx, record, state)
+		if err != nil {
 			return err
+		}
+		if moreActivity {
+			// Continue bounded historical backfill only while facts remain.
+			s.wakeSubagents(record.ID)
+		}
+		deliveryErr = s.deliverSubagentHistoryLocked(ctx, record, state)
+		if deliveryErr != nil && !errors.Is(deliveryErr, errSubagentReportsPending) {
+			return deliveryErr
 		}
 		// A parent's unapplied report must not hold up recovery of an already
 		// accepted new instruction for the child. Retry that terminal delivery
@@ -570,12 +681,24 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	} else if !errors.Is(stateErr, core.ErrNotFound) {
 		return stateErr
 	}
-	r, err := s.open(ctx, record.ID)
-	if err != nil {
-		return err
+	if r == nil {
+		if stateErr == nil {
+			needed, err := s.subagentNeedsRuntime(ctx, record, state)
+			if err != nil {
+				return err
+			}
+			if !needed {
+				return deliveryErr
+			}
+		}
+		var err error
+		r, err = s.open(ctx, record.ID)
+		if err != nil {
+			return err
+		}
 	}
 	r.mu.Lock()
-	err = r.syncSubagentModel(ctx)
+	err := r.syncSubagentModel(ctx)
 	if err == nil {
 		err = r.startSubagentLocked(ctx)
 	}
@@ -594,20 +717,64 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	// A process can stop after durable admission but before Continue starts a
 	// Run. Reconcile the stable initial receipt, and interrupted started Runs,
 	// without resuming a deliberately cancelled or failed Run.
-	snapshot := r.core.Load().Snapshot()
+	r.mu.Lock()
 	initial, initialErr := r.core.Load().LookupInput(ctx, "subagent_initial_"+record.ID)
+	if initialErr != nil && !errors.Is(initialErr, core.ErrNotFound) {
+		r.mu.Unlock()
+		return initialErr
+	}
+	// Use one snapshot for both the durable lifecycle and execution flags. A
+	// fast failure between separate reads must not revive the retained input.
+	snapshot, snapshotErr := r.snapshot()
+	if snapshotErr != nil {
+		r.mu.Unlock()
+		return snapshotErr
+	}
 	lastRun := snapshot.State.LastRun
 	shouldActivate := initialErr == nil && initial.State == core.InputPending && lastRun == nil
 	shouldActivate = shouldActivate || lastRun != nil && lastRun.Status == "started"
 	if shouldActivate && !snapshot.Running && !snapshot.Maintenance && !snapshot.Stopping {
-		r.mu.Lock()
 		err = r.continueLocked(ctx)
-		r.mu.Unlock()
-		if err != nil && !errors.Is(err, core.ErrBusy) && !errors.Is(err, core.ErrNotContinuable) {
-			return err
-		}
+	}
+	r.mu.Unlock()
+	if err != nil && !errors.Is(err, core.ErrBusy) && !errors.Is(err, core.ErrNotContinuable) {
+		return err
 	}
 	return s.deliverSubagentHistoryLocked(ctx, record, r.core.Load().State())
+}
+
+// Only a cold child needs durable admission checks. Hot children already own
+// their execution state and retain the ordinary synchronization path above.
+func (s *Service) subagentNeedsRuntime(ctx context.Context, record domain.Session, state core.RuntimeState) (bool, error) {
+	settings, err := s.childMetadata(ctx, record.ID)
+	if err != nil {
+		return false, err
+	}
+	if !settings.started || state.LastRun == nil || state.LastRun.Status == "started" || state.CurrentAttemptID != "" || !state.Branch.Complete() || state.PendingInputs[core.InputContext] > 0 {
+		return true, nil
+	}
+	selection, err := s.selectionAtState(ctx, record.ID, state)
+	if err != nil {
+		return false, err
+	}
+	var desired core.ModelSelection
+	if err := json.Unmarshal(settings.selection, &desired); err != nil {
+		return false, err
+	}
+	active, err := s.modelFallbackSubagentSelection(ctx, record.ID, desired)
+	if err != nil {
+		return false, err
+	}
+	if selection.fingerprint != digest(active) {
+		return true, nil
+	}
+	var activation subagentActivation
+	if err := s.Store.Maintenance(ctx, "subagent_activation", record.ID, &activation); err == nil {
+		return !activation.Complete, nil
+	} else if !domain.IsMissing(err) {
+		return false, err
+	}
+	return false, nil
 }
 
 func (s *Service) deliverSubagentHistoryLocked(ctx context.Context, record domain.Session, state core.RuntimeState) error {
@@ -663,6 +830,13 @@ type subagentActivation struct {
 }
 
 func (r *runtime) startSubagentLocked(ctx context.Context) error {
+	if _, err := r.readableCore(); err != nil {
+		return err
+	}
+	metadata, err := r.service.childMetadata(ctx, r.id)
+	if err != nil || metadata.started {
+		return err
+	}
 	var settings subagentSettings
 	if err := r.service.Store.Get(ctx, "subagent_settings", r.id, &settings); err != nil {
 		return err
@@ -670,19 +844,11 @@ func (r *runtime) startSubagentLocked(ctx context.Context) error {
 	if settings.Started {
 		return nil
 	}
-	// A shared fork can be durable before initialize applies the saved child
-	// configuration. Reconcile it before initial admission as well, so reopening
-	// that fork cannot silently lose an explicit child model selection.
-	configuration := settings.Configuration
-	var err error
-	configuration.Selection, err = r.service.modelFallbackSelection(ctx, r.id, configuration.Selection)
-	if err != nil {
+	// Reconcile a durable fork before initial admission, using the current root
+	// prefix and this child's independently selected active fallback model.
+	if err := r.syncBusinessConfig(ctx); err != nil {
 		return err
-	}
-	if !jsonEqual(r.core.Load().Configuration(), configuration) {
-		if err := r.core.Load().Configure(ctx, configuration); err != nil {
-			return err
-		}
+
 	}
 	message := core.User(settings.Task)
 	message.ContextKind = "astral.subagent_instruction"
@@ -712,7 +878,10 @@ func (r *runtime) activateSubagentLocked(ctx context.Context, activation *subage
 	if err != nil && !errors.Is(err, core.ErrBusy) && !errors.Is(err, core.ErrNotContinuable) {
 		return err
 	}
-	snapshot := r.core.Load().Snapshot()
+	snapshot, snapshotErr := r.snapshot()
+	if snapshotErr != nil {
+		return snapshotErr
+	}
 	activation.Complete = receipt.State != string(core.InputPending) || snapshot.Running
 	state := "running"
 	if activation.Complete {
@@ -747,6 +916,9 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 	failed := entry.Run != nil && entry.Run.Status == "failed"
 	if failed {
 		suppressed, err := s.suppressModelFallbackRun(ctx, child.ID, entry.RunID)
+		if errors.Is(err, errModelFallbackRunPending) {
+			return core.ErrBusy
+		}
 		if err != nil {
 			return err
 		}
@@ -795,6 +967,13 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 		if terminal && receipt.State == core.InputPending {
 			err = parent.continueLocked(ctx)
 			if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
+				snapshot, snapshotErr := parent.snapshot()
+				if snapshotErr != nil {
+					return snapshotErr
+				}
+				if !snapshot.Running {
+					return errSubagentReportsPending
+				}
 				return nil
 			}
 			return err
@@ -853,12 +1032,19 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 		cursor = page.Next
 	}
 	kind := core.InputFollowUp
-	if parent.core.Load().Snapshot().Running {
+	snapshot, snapshotErr := parent.snapshot()
+	if snapshotErr != nil {
+		return snapshotErr
+	}
+	if snapshot.Running {
 		kind = core.InputSteer
 	}
 	_, err = parent.accept(ctx, input, kind)
 	if err == nil {
-		snapshot := parent.core.Load().Snapshot()
+		snapshot, snapshotErr := parent.snapshot()
+		if snapshotErr != nil {
+			return snapshotErr
+		}
 		receipt, lookupErr := parent.core.Load().LookupInput(ctx, input.ID)
 		if lookupErr != nil {
 			return lookupErr

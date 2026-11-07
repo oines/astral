@@ -109,6 +109,18 @@ func TestWaitingFallbackRemainsBusyForIMAndProbeFollowsActiveModel(t *testing.T)
 	if err != nil || stored.Kind != core.InputContext {
 		t.Fatalf("waiting task got an extra driver: %+v %v", stored, err)
 	}
+	pause := &pausedIMFixture{}
+	pause.paused.Store(true)
+	f.service.IM = pause
+	pausedView, err := f.service.View(f.ctx, f.session.ID)
+	if err != nil || pausedView.Status != "needs_attention" || pausedView.Error == "" {
+		t.Fatalf("fallback hid a separate paused IM delivery after a failed Run: %+v %v", pausedView, err)
+	}
+	pause.paused.Store(false)
+	resumedView, err := f.service.View(f.ctx, f.session.ID)
+	if err != nil || resumedView.Status != "running" || resumedView.Error != "" {
+		t.Fatalf("clearing the IM pause lost the original fallback wait: %+v %v", resumedView, err)
+	}
 	if err = f.service.Stop(f.ctx, f.session.ID); err != nil {
 		t.Fatal(err)
 	}

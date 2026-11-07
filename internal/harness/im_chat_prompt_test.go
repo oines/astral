@@ -188,3 +188,48 @@ func TestIMSystemPreparationUsesRequestChatAndIgnoresPersonaReferences(t *testin
 		t.Fatal("Persona text supplied a missing Host chat reference")
 	}
 }
+
+func TestHostPromptWordingUpgradeKeepsSelectedVariantAndChat(t *testing.T) {
+	f := newFixture(t, 0, func(context.Context, int, map[string]any) any {
+		t.Error("preparing the prompt invoked the model")
+		return nil
+	})
+	chatA := promptFixtureChat(t, f, "legacy-chat-A")
+	chatB := promptFixtureChat(t, f, "current-chat-B")
+	bindPromptFixture(t, f, chatB)
+	persona := messages.ChatContextHeading + "\nconversation-id: \"current-chat-B\""
+	savePersona(t, f, persona)
+	r, err := f.service.open(f.ctx, f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := r.resolveModel(f.ctx, core.ModelSelection{ID: f.agent.DefaultModelID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, prompt, prefix, chat string
+		tools                      []core.ToolDefinition
+	}{
+		{name: "old IM wording", prompt: hostPromptHeading + "\n" + imPromptHeading + " previous delivery wording." + personaSeparator + messages.ChatContextHeading + "\nconversation-id: \"legacy-chat-A\"", prefix: imSystemPrompt, chat: chatA.ID, tools: []core.ToolDefinition{DefaultMessageTool()}},
+		{name: "old Web wording with persona chat example", prompt: hostPromptHeading + "\nPrevious Web reply instructions." + personaSeparator + persona, prefix: webSystemPrompt},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := core.Request{SystemPrompt: test.prompt, Tools: test.tools}
+			prepared, err := core.PrepareRequest(f.ctx, resolved.Model, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasPrefix(prepared.SystemPrompt, test.prefix+personaSeparator) || readPromptIdentity(t, prepared.SystemPrompt).Session.ConversationID != test.chat {
+				t.Fatal("wording upgrade changed the selected Web/IM variant or chat")
+			}
+			if string(encode(prepared.Tools)) != string(encode(test.tools)) || request.SystemPrompt != test.prompt {
+				t.Fatal("preparation mutated the selected tool schema or original request")
+			}
+			again, err := core.PrepareRequest(f.ctx, resolved.Model, prepared)
+			if err != nil || again.SystemPrompt != prepared.SystemPrompt {
+				t.Fatalf("wording upgrade was not idempotent: %v", err)
+			}
+		})
+	}
+}

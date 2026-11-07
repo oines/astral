@@ -39,7 +39,13 @@ func (s *Service) WithStoppedSessions(ctx context.Context, ids []string, change 
 				break
 			}
 			locked++
-			snapshot := r.core.Load().Snapshot()
+			snapshot, err := r.snapshot()
+			if err != nil {
+				for i := locked - 1; i >= 0; i-- {
+					runtimes[i].mu.Unlock()
+				}
+				return err
+			}
 			if snapshot.Running || snapshot.Maintenance {
 				idle = false
 				break
@@ -80,7 +86,11 @@ func (s *Service) WithSession(ctx context.Context, id string, apply func(*core.S
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if snapshot := r.core.Load().Snapshot(); !snapshot.Running && !snapshot.Maintenance {
+	snapshot, err := r.snapshot()
+	if err != nil {
+		return err
+	}
+	if !snapshot.Running && !snapshot.Maintenance {
 		if err = r.syncBusinessConfig(ctx); err != nil {
 			return err
 		}

@@ -27,7 +27,7 @@ const imagePreview = useImagePreviewStore()
 const app = useAppStore()
 const scroller = ref<HTMLElement>()
 const content = ref<HTMLElement>()
-const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor), loadOlder: () => props.loadOlder(), getPosition: () => props.state.scrollPosition, savePosition: position => emit('position', props.state, position) })
+const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor || !!props.state.subagentActivityNextCursor), loadOlder: () => props.loadOlder(), getPosition: () => props.state.scrollPosition, savePosition: position => emit('position', props.state, position) })
 const durable = computed(() => {
   // Live deltas touch previews/tools, not this revision or the durable entries.
   void props.state.historyRevision
@@ -140,8 +140,8 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
                 :session-i-d="sessionID"
               />
               <SubagentBubble
-                v-else-if="block.kind === 'subagent'"
-                :entry="block.entry"
+                v-else-if="block.kind === 'subagent-status'"
+                :activity="block.activity"
                 :session-i-d="sessionID"
                 @open="scroll.pause"
               />

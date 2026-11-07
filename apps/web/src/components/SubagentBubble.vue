@@ -1,22 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, ChevronRight } from '@astral/icons'
+import { Bot } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { useSurfaceStore } from '../stores/surface'
-import { spawnedSubagent, subagentStatus } from '../lib/subagents'
-import type { Entry } from '../lib/types'
+import { subagentActivityStatus, type SubagentActivity } from '../lib/subagents'
 
-const props = defineProps<{ entry: Entry; sessionID: string }>()
+const props = defineProps<{ activity: SubagentActivity; sessionID: string }>()
 const emit = defineEmits<{ open: [] }>()
 const app = useAppStore()
 const surface = useSurfaceStore()
 const { t } = useI18n()
-const child = computed(() => spawnedSubagent(props.entry))
-const view = computed(() => child.value ? app.sessionViews[child.value.sessionID] || app.statuses[child.value.sessionID] : undefined)
+const child = computed(() => {
+  if (!subagentActivityStatus(props.activity.status)) return
+  return { sessionID: props.activity.child_session_id, parentSessionID: props.activity.session_id, title: props.activity.name, status: props.activity.status }
+})
 const removed = computed(() => !!child.value && app.deletedSessions?.has(child.value.sessionID))
-const title = computed(() => view.value?.title || child.value?.title || t('subagent'))
-const status = computed(() => removed.value ? 'subagentDeleted' : subagentStatus(view.value?.error ? 'failed' : view.value?.status || child.value?.status))
+const title = computed(() => props.activity.name || t('subagent'))
+const activityText = computed(() => t(subagentActivityStatus(props.activity.status) ?? 'subagent', { name: title.value }))
+const label = computed(() => removed.value ? activityText.value : `${activityText.value} · ${t('openSubagent', { name: title.value })}`)
 const expanded = computed(() => surface.current?.kind === 'subagent' && surface.current.path.some(session => session.id === child.value?.sessionID))
 function open() {
   if (!child.value || removed.value) return
@@ -31,17 +33,15 @@ function open() {
     v-if="child"
     type="button"
     class="subagent-bubble"
-    :aria-label="t('openSubagent', { name: title })"
+    :aria-label="label"
     aria-controls="context-surface"
     :aria-expanded="expanded"
     :disabled="removed"
     @click="open"
   >
     <Bot aria-hidden="true" />
-    <span class="subagent-bubble-copy"><strong>{{ title }}</strong><span>{{ t(status) }}</span></span>
-    <ChevronRight
-      v-if="!removed"
-      aria-hidden="true"
-    />
+    <span
+      class="subagent-status-copy"
+    >{{ activityText }}</span>
   </button>
 </template>

@@ -3628,6 +3628,46 @@
         ],
         "type": "object"
       },
+      "astral_internal_domain_SubagentActivity": {
+        "properties": {
+          "child_session_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "child_session_id",
+          "name",
+          "run_id",
+          "status",
+          "time",
+          "sequence"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_TextQuote": {
         "properties": {
           "manual": {
@@ -3902,6 +3942,18 @@
             "type": "string"
           },
           "next_cursor": {
+            "type": "string"
+          },
+          "subagent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_SubagentActivity"
+            },
+            "type": "array"
+          },
+          "subagent_activity_cursor": {
+            "type": "string"
+          },
+          "subagent_activity_next_cursor": {
             "type": "string"
           }
         },
@@ -4572,6 +4624,111 @@
         ],
         "type": "object"
       },
+      "astral_internal_harness_SessionSummary": {
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "binding_id": {
+            "type": "string"
+          },
+          "channel_platform": {
+            "type": "string"
+          },
+          "computer_id": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "deletion": {
+            "$ref": "#/components/schemas/astral_internal_domain_SessionDeletion"
+          },
+          "error": {
+            "type": "string"
+          },
+          "fork_entry_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model_available": {
+            "type": "boolean"
+          },
+          "model_unavailable_reason": {
+            "type": "string"
+          },
+          "parent_session_id": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "private": {
+            "type": "boolean"
+          },
+          "profile_id": {
+            "type": "string"
+          },
+          "reasoning": {
+            "$ref": "#/components/schemas/astral_core_ReasoningOptions"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/astral_core_ModelSelection"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subagent_parent_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "title_source": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "created_at",
+          "updated_at",
+          "agent_id",
+          "title",
+          "source",
+          "pinned",
+          "archived",
+          "selection",
+          "status",
+          "model_available"
+        ],
+        "type": "object"
+      },
       "astral_internal_harness_View": {
         "properties": {
           "agent_id": {
@@ -5091,6 +5248,15 @@
             "$ref": "#/components/schemas/astral_core_Entry"
           },
           "epoch": {
+            "type": "string"
+          },
+          "subagent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_SubagentActivity"
+            },
+            "type": "array"
+          },
+          "subagent_activity_cursor": {
             "type": "string"
           },
           "view": {
@@ -5699,6 +5865,18 @@
           "history": {
             "$ref": "#/components/schemas/astral_internal_gateway_HistoryPage"
           },
+          "subagent_activity": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_domain_SubagentActivity"
+            },
+            "type": "array"
+          },
+          "subagent_activity_cursor": {
+            "type": "string"
+          },
+          "subagent_activity_next_cursor": {
+            "type": "string"
+          },
           "trace": {
             "$ref": "#/components/schemas/astral_internal_gateway_HistoryPage"
           },
@@ -5710,7 +5888,9 @@
           "epoch",
           "view",
           "history",
-          "trace"
+          "trace",
+          "subagent_activity",
+          "subagent_activity_cursor"
         ],
         "type": "object"
       },
@@ -10861,7 +11041,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/astral_internal_harness_View"
+                    "$ref": "#/components/schemas/astral_internal_harness_SessionSummary"
                   },
                   "type": "array"
                 }
@@ -12644,6 +12824,14 @@
           {
             "in": "query",
             "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "activity_cursor",
             "required": false,
             "schema": {
               "type": "string"

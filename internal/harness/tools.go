@@ -20,6 +20,12 @@ type hostTool struct {
 	core.Tool
 	runtime *runtime
 }
+
+type preparingHostTool struct {
+	hostTool
+	core.ToolArgumentPreparer
+}
+
 type processHandle struct {
 	domain.Meta
 	RuntimeID  string                  `json:"runtime_id"`
@@ -33,7 +39,12 @@ type processHandle struct {
 func (r *runtime) hostTools() []core.Tool {
 	var tools []core.Tool
 	for _, tool := range r.tools.Tools() {
-		tools = append(tools, hostTool{Tool: tool, runtime: r})
+		wrapped := hostTool{Tool: tool, runtime: r}
+		if preparer, ok := tool.(core.ToolArgumentPreparer); ok {
+			tools = append(tools, preparingHostTool{wrapped, preparer})
+		} else {
+			tools = append(tools, wrapped)
+		}
 	}
 	tools = append(tools,
 		spawnAgentTool{runtime: r}, agentControlTool{runtime: r},
@@ -219,11 +230,22 @@ func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(co
 }
 
 func (r *runtime) finishInterruptedTools(ctx context.Context) error {
+	_, err := r.snapshotAfterInterruptedTools(ctx)
+	return err
+}
+
+// Reuse the snapshot already needed to decide whether recovery is allowed.
+// Only a resolved tool changes it; ordinary view reads need one Core snapshot.
+func (r *runtime) snapshotAfterInterruptedTools(ctx context.Context) (core.SessionSnapshot, error) {
 	session := r.core.Load()
-	if snapshot := session.Snapshot(); snapshot.Running || snapshot.Maintenance {
-		return nil
+	snapshot, err := r.snapshot()
+	if err != nil {
+		return core.SessionSnapshot{}, err
 	}
-	for _, record := range session.UnresolvedTools() {
+	if snapshot.Running || snapshot.Maintenance || len(snapshot.Unresolved) == 0 {
+		return snapshot, nil
+	}
+	for _, record := range snapshot.Unresolved {
 		result := core.ToolResult{Content: core.Text("The tool request was interrupted; its effects are unconfirmed."), Outcome: core.OutcomeFailed, IsError: true}
 		if record.Result != nil {
 			result = *record.Result
@@ -234,10 +256,10 @@ func (r *runtime) finishInterruptedTools(ctx context.Context) error {
 			result.Content = core.Text(`{"sent":null,"error":"message send attempt was interrupted"}`)
 		}
 		if err := session.ResolveTool(ctx, record.Invocation.ExecutionID, core.ToolExecution{Result: &result}); err != nil {
-			return err
+			return core.SessionSnapshot{}, err
 		}
 	}
-	return nil
+	return r.snapshot()
 }
 
 func (r *runtime) registerHandle(ctx context.Context, internalID int, b domain.ExecutionBinding) (processHandle, error) {
@@ -245,7 +267,7 @@ func (r *runtime) registerHandle(ctx context.Context, internalID int, b domain.E
 	err := r.service.Store.Update(ctx, func(tx *persistence.Tx) error {
 		var counter struct {
 			domain.Meta
-			Value int `json:"value"`
+			Value int64 `json:"value"`
 		}
 		err := tx.Get(ctx, "counters", "process", &counter)
 		if err != nil && !domain.IsMissing(err) {
@@ -259,7 +281,7 @@ func (r *runtime) registerHandle(ctx context.Context, internalID int, b domain.E
 		if err = tx.Save(ctx, "counters", &counter.Meta, &counter); err != nil {
 			return err
 		}
-		handle.ID = strconv.Itoa(counter.Value)
+		handle.ID = strconv.FormatInt(counter.Value, 10)
 		return tx.Save(ctx, "process_handles", &handle.Meta, &handle)
 	})
 	return handle, err

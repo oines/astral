@@ -1134,6 +1134,17 @@ export type AstralInternalDomainStickerMetadata = {
     width: number;
 };
 
+export type AstralInternalDomainSubagentActivity = {
+    child_session_id: string;
+    id: string;
+    name: string;
+    run_id: string;
+    sequence: number;
+    session_id: string;
+    status: string;
+    time: string;
+};
+
 export type AstralInternalDomainTextQuote = {
     manual: boolean;
     /**
@@ -1219,6 +1230,9 @@ export type AstralInternalGatewayHistoryPage = {
     entries: Array<AstralCoreEntry>;
     head_id: string;
     next_cursor?: string;
+    subagent_activity?: Array<AstralInternalDomainSubagentActivity>;
+    subagent_activity_cursor?: string;
+    subagent_activity_next_cursor?: string;
 };
 
 export type AstralInternalGatewayMessageAttachmentView = {
@@ -1425,6 +1439,37 @@ export type AstralInternalHarnessPendingInput = {
     metadata: AstralInternalMessagesMetadata;
 };
 
+export type AstralInternalHarnessSessionSummary = {
+    agent_id: string;
+    archived: boolean;
+    binding_id?: string;
+    channel_platform?: string;
+    computer_id?: string;
+    conversation_id?: string;
+    created_at: string;
+    cwd?: string;
+    deletion?: AstralInternalDomainSessionDeletion;
+    error?: string;
+    fork_entry_id?: string;
+    id: string;
+    model_available: boolean;
+    model_unavailable_reason?: string;
+    parent_session_id?: string;
+    pinned: boolean;
+    private?: boolean;
+    profile_id?: string;
+    reasoning?: AstralCoreReasoningOptions;
+    revision: number;
+    run_id?: string;
+    selection: AstralCoreModelSelection;
+    source: string;
+    status: string;
+    subagent_parent_id?: string;
+    title: string;
+    title_source?: string;
+    updated_at: string;
+};
+
 export type AstralInternalHarnessView = {
     agent_id: string;
     approvals: Array<AstralCorePendingApproval>;
@@ -1571,6 +1616,8 @@ export type AstralInternalHttpapiEvent = {
     core?: AstralCoreEvent;
     entry?: AstralCoreEntry;
     epoch: string;
+    subagent_activity?: Array<AstralInternalDomainSubagentActivity>;
+    subagent_activity_cursor?: string;
     view?: AstralInternalHarnessView;
 };
 
@@ -1745,6 +1792,9 @@ export type AstralInternalHttpapiSessionPresentation = {
 export type AstralInternalHttpapiSnapshot = {
     epoch: string;
     history: AstralInternalGatewayHistoryPage;
+    subagent_activity: Array<AstralInternalDomainSubagentActivity>;
+    subagent_activity_cursor: string;
+    subagent_activity_next_cursor?: string;
     trace: AstralInternalGatewayHistoryPage;
     view: AstralInternalHarnessView;
 };
@@ -4161,7 +4211,7 @@ export type ListSessionsResponses = {
     /**
      * OK
      */
-    200: Array<AstralInternalHarnessView>;
+    200: Array<AstralInternalHarnessSessionSummary>;
 };
 
 export type ListSessionsResponse = ListSessionsResponses[keyof ListSessionsResponses];
@@ -4959,6 +5009,7 @@ export type SessionTimelineData = {
     };
     query?: {
         cursor?: string;
+        activity_cursor?: string;
         limit?: number;
         trace?: boolean;
     };

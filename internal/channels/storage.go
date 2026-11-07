@@ -190,10 +190,10 @@ func (s *Service) saveStorageIntent(ctx context.Context, op *StorageOperation) e
 
 // Storage jobs run in the existing service lifecycle and resume queued/running
 // intents after restart. Worker admission is synchronized with Bot deletion.
-func (s *Service) reconcileStorage() {
+func (s *Service) reconcileStorage() (time.Time, error) {
 	records, err := list[StorageOperation](s.ctx, s.Store, storageOperations)
 	if err != nil {
-		return
+		return time.Time{}, err
 	}
 	for _, op := range records {
 		if op.State != "queued" && op.State != "running" {
@@ -215,11 +215,16 @@ func (s *Service) reconcileStorage() {
 		go func(op StorageOperation) {
 			defer s.workers.Done()
 			defer group.workers.Done()
-			defer func() { s.mu.Lock(); delete(s.storageRunning, op.ID); s.mu.Unlock() }()
+			defer func() {
+				s.mu.Lock()
+				delete(s.storageRunning, op.ID)
+				s.mu.Unlock()
+				s.wakeReconcile()
+			}()
 			s.executeStorageOperation(group.ctx, op.ID)
 		}(op)
 	}
-	s.reconcileRetention()
+	return s.reconcileRetention()
 }
 
 func (s *Service) executeStorageOperation(ctx context.Context, id string) {
@@ -391,11 +396,9 @@ func (s *Service) pruneStorageArchiveBatch(ctx context.Context, op *StorageOpera
 		if err = s.Store.Get(ctx, "inbox_cursors", binding.ID, &position); err != nil && !domain.IsMissing(err) {
 			return 0, err
 		}
-		s.mu.Lock()
-		handoff, ok := s.handoffs[binding.ID]
-		s.mu.Unlock()
-		if !ok {
-			handoff = binding.StartSequence
+		handoff, err := s.handoffPosition(ctx, binding)
+		if err != nil {
+			return 0, err
 		}
 		through = min(position.Sequence, handoff)
 		if chat.ProactiveEnabled && chat.Kind != "private" {
@@ -424,17 +427,39 @@ func (s *Service) pruneStorageArchiveBatch(ctx context.Context, op *StorageOpera
 	return n, err
 }
 
-func (s *Service) reconcileRetention() {
+func (s *Service) reconcileRetention() (time.Time, error) {
 	policies, err := list[archiveRetention](s.ctx, s.Store, "storage_retention")
 	if err != nil {
-		return
+		return time.Time{}, err
+	}
+	now := time.Now().UTC()
+	var next time.Time
+	var retryErr error
+	schedule := func(at time.Time) {
+		if next.IsZero() || at.Before(next) {
+			next = at
+		}
 	}
 	for _, policy := range policies {
-		if policy.RetentionDays <= 0 || time.Since(policy.LastRun) < 24*time.Hour {
+		if policy.RetentionDays <= 0 {
+			continue
+		}
+		if at := policy.LastRun.Add(24 * time.Hour); at.After(now) {
+			schedule(at)
 			continue
 		}
 		days := policy.RetentionDays
-		id := "retention_" + policy.ID + "_" + time.Now().UTC().Format("20060102")
-		_, _ = s.StartStorageOperation(s.ctx, policy.ConversationID, "archive", StorageRequest{OperationID: id, RetentionDays: &days})
+		id := "retention_" + policy.ID + "_" + now.Format("20060102")
+		op, err := s.StartStorageOperation(s.ctx, policy.ConversationID, "archive", StorageRequest{OperationID: id, RetentionDays: &days})
+		if err != nil {
+			retryErr = err
+			continue
+		}
+		// Active jobs publish their progress. An existing terminal daily job
+		// cannot advance by being looked up again; the next day gives it a new ID.
+		if op.State != "queued" && op.State != "running" {
+			schedule(now.Truncate(24 * time.Hour).Add(24 * time.Hour))
+		}
 	}
+	return next, retryErr
 }

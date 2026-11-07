@@ -19,7 +19,7 @@ Use the persona for preferences that should apply across tasks. For example:
 
 > Help me organize my daily work. Start with practical recommendations. If a source does not specify an owner or date, mark it as “To confirm” rather than filling it in.
 
-Select **Apply persona** to use it in subsequent model requests across this Bot's sessions. Clear it and apply again to remove it. Proactive group-participation decisions also use the current persona. Leave it empty when you have no standing preferences to add.
+Select **Apply persona** to use it in subsequent model requests across this Bot's sessions, including existing subagents that are already working. Requests already frozen retain their original instructions. Clear it and apply again to remove it. Applying a persona does not start idle sessions or subagents. Proactive group-participation decisions also use the current persona. Leave it empty when you have no standing preferences to add.
 
 ## Keep work moving when a model is unavailable
 

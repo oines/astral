@@ -30,6 +30,8 @@ type probeWindow struct {
 	InputID     string
 	Inputs      []string
 	First, Last time.Time
+	NextAt      time.Time
+	Retry       bool
 }
 type probeResult struct {
 	through     int64
@@ -46,16 +48,59 @@ func probeInputID(bindingID string, through int64) string {
 // admission and Continue. It resumes only this binding's accepted IM wakeup,
 // never arbitrary queued owner work or a stopped/failed activation.
 func (s *Service) resumeAcceptedProbe(ctx context.Context, b domain.ConversationBinding) error {
-	current, err := s.Harness.Core(ctx, b.SessionID)
-	if err != nil {
-		return err
-	}
-	if current.State().PendingInputs[core.InputSteer] == 0 {
+	if possible, loaded := s.Harness.IMProbeRecoveryPossible(b.SessionID); loaded && !possible {
 		return nil
 	}
-	return s.Harness.WithSession(ctx, b.SessionID, func(session *core.Session) error {
-		snapshot := session.Snapshot()
-		if snapshot.Running || snapshot.Maintenance || snapshot.State.CurrentAttemptID != "" || !snapshot.State.Branch.Complete() || snapshot.State.PendingInputs[core.InputSteer] == 0 {
+	_, err := s.resumeAcceptedProbeStatus(ctx, b)
+	return err
+}
+
+// resumeAcceptedProbeStatus reports only this binding's unfinished Probe. Owner
+// Steers must not open a cold Session or keep an inbox retry timer alive. An
+// accepted Probe can still need a retry while Core advances without a Host write.
+func (s *Service) resumeAcceptedProbeStatus(ctx context.Context, b domain.ConversationBinding) (bool, error) {
+	// Pending is an indexed Store read. Empty queues and unrelated owner inputs
+	// must not open a cold Session merely to discover there is no Probe to resume.
+	found := false
+	var after string
+	for {
+		page, err := s.Harness.CoreStore.Pending(ctx, b.SessionID, core.PendingQuery{Kind: core.EntryInputQueued, InputKind: core.InputSteer, Cursor: after, Limit: 64, MaxBytes: 4 << 20})
+		if err != nil {
+			return false, err
+		}
+		for _, record := range page.Records {
+			if acceptedProbeInput(record.Entry.Input, b) {
+				found = true
+				break
+			}
+		}
+		if found || page.Next == "" {
+			break
+		}
+		after = page.Next
+	}
+	if !found {
+		return false, nil
+	}
+	return s.resumeAcceptedProbeSessionStatus(ctx, b)
+}
+
+func (s *Service) resumeAcceptedProbeSession(ctx context.Context, b domain.ConversationBinding) error {
+	if possible, loaded := s.Harness.IMProbeRecoveryPossible(b.SessionID); loaded && !possible {
+		return nil
+	}
+	_, err := s.resumeAcceptedProbeSessionStatus(ctx, b)
+	return err
+}
+
+func (s *Service) resumeAcceptedProbeSessionStatus(ctx context.Context, b domain.ConversationBinding) (bool, error) {
+	pending := false
+	err := s.Harness.WithSession(ctx, b.SessionID, func(session *core.Session) error {
+		snapshot, err := s.Harness.Snapshot(ctx, b.SessionID)
+		if err != nil {
+			return err
+		}
+		if snapshot.State.PendingInputs[core.InputSteer] == 0 {
 			return nil
 		}
 		var after string
@@ -66,11 +111,7 @@ func (s *Service) resumeAcceptedProbe(ctx context.Context, b domain.Conversation
 			}
 			for _, record := range page.Records {
 				input := record.Entry.Input
-				if input.Message == nil || !strings.HasPrefix(input.ID, "probe:"+b.ID+":") {
-					continue
-				}
-				var metadata messages.Metadata
-				if json.Unmarshal(input.Message.Metadata, &metadata) != nil || metadata.Source != "im.wakeup" || metadata.ConversationID != b.ConversationID {
+				if !acceptedProbeInput(input, b) {
 					continue
 				}
 				suspended, err := harness.IMInputStopped(ctx, session, s.Harness.CoreStore, input.ID)
@@ -87,6 +128,10 @@ func (s *Service) resumeAcceptedProbe(ctx context.Context, b domain.Conversation
 				if current.BindingID != b.ID {
 					return nil
 				}
+				pending = true
+				if snapshot.Running || snapshot.Maintenance || snapshot.Stopping || snapshot.State.CurrentAttemptID != "" || !snapshot.State.Branch.Complete() {
+					return nil
+				}
 				persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 				err = s.Harness.ContinueWithinSession(persist, session)
 				cancel()
@@ -101,6 +146,15 @@ func (s *Service) resumeAcceptedProbe(ctx context.Context, b domain.Conversation
 			after = page.Next
 		}
 	})
+	return pending, err
+}
+
+func acceptedProbeInput(input *core.InputRecord, b domain.ConversationBinding) bool {
+	if input == nil || input.Message == nil || !strings.HasPrefix(input.ID, "probe:"+b.ID+":") {
+		return false
+	}
+	var metadata messages.Metadata
+	return json.Unmarshal(input.Message.Metadata, &metadata) == nil && metadata.Source == "im.wakeup" && metadata.ConversationID == b.ConversationID
 }
 
 func (s *Service) probeCursor(ctx context.Context, b domain.ConversationBinding) (cursor, error) {
@@ -176,11 +230,19 @@ func (s *Service) pendingProbe(ctx context.Context, b domain.ConversationBinding
 	if !conversation.ProactiveEnabled || conversation.Kind == "private" {
 		return probeWindow{}, nil
 	}
+	position, err := s.probeCursor(ctx, b)
+	if err != nil || position.Sequence >= delivered {
+		return probeWindow{}, err
+	}
 	var window probeWindow
-	err := s.Harness.WithSession(ctx, b.SessionID, func(session *core.Session) error {
+	err = s.Harness.WithSession(ctx, b.SessionID, func(session *core.Session) error {
 		canProbe, err := s.Harness.IMCanProbe(ctx, b.SessionID, session)
-		if err != nil || !canProbe {
+		if err != nil {
 			return err
+		}
+		if !canProbe {
+			window.Retry = true
+			return nil
 		}
 		window, err = s.probeWindow(ctx, b, delivered, now, session)
 		return err
@@ -249,8 +311,18 @@ func (s *Service) probeWindow(ctx context.Context, b domain.ConversationBinding,
 			return probeWindow{}, err
 		}
 	}
-	if !ready || window.Through == 0 || now.Before(window.Last.Add(s.probeQuiet)) && now.Before(window.First.Add(s.probeMaxWait)) {
+	if window.Through == 0 {
 		return probeWindow{}, nil
+	}
+	if !ready {
+		return probeWindow{Retry: true}, nil
+	}
+	next := window.Last.Add(s.probeQuiet)
+	if maximum := window.First.Add(s.probeMaxWait); maximum.Before(next) {
+		next = maximum
+	}
+	if now.Before(next) {
+		return probeWindow{NextAt: next}, nil
 	}
 	return window, nil
 }

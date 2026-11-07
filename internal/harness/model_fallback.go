@@ -62,7 +62,13 @@ func (s *Service) saveModelFallback(ctx context.Context, state modelFallbackStat
 	if !fallbackArmed(state) {
 		phase = "complete"
 	}
-	return s.Store.SaveMaintenance(ctx, modelFallbackKind, state.SessionID, phase, state)
+	if err := s.Store.SaveMaintenance(ctx, modelFallbackKind, state.SessionID, phase, state); err != nil {
+		return err
+	}
+	// Fallback state changes concern this Session only. A coarse Store watch
+	// would rescan every settled child whenever an unrelated root takes a turn.
+	s.wakeSubagents(state.SessionID)
+	return nil
 }
 
 func (s *Service) modelFallbackSelection(ctx context.Context, id string, baseline core.ModelSelection) (core.ModelSelection, error) {
@@ -203,7 +209,10 @@ func (r *runtime) initializeModelFallback(ctx context.Context, preferred, active
 // prepareModelFallback starts a logical task after durable input admission or
 // an explicit Continue. Automatic recovery calls Core.Continue directly.
 func (r *runtime) prepareModelFallback(ctx context.Context) error {
-	snapshot := r.core.Load().Snapshot()
+	snapshot, err := r.snapshot()
+	if err != nil {
+		return err
+	}
 	if snapshot.Running || snapshot.Maintenance {
 		return nil
 	}
@@ -211,7 +220,7 @@ func (r *runtime) prepareModelFallback(ctx context.Context) error {
 	s.modelFallbackMu.Lock()
 	defer s.modelFallbackMu.Unlock()
 	var state modelFallbackState
-	err := s.Store.Maintenance(ctx, modelFallbackKind, r.id, &state)
+	err = s.Store.Maintenance(ctx, modelFallbackKind, r.id, &state)
 	if err != nil && !domain.IsMissing(err) {
 		return err
 	}
@@ -279,7 +288,11 @@ func (s *Service) ModelFallbackPending(ctx context.Context, id string) (bool, er
 			if err := s.Store.Get(ctx, "sessions", id, &session); err != nil || session.Deletion != nil {
 				return false, err
 			}
-			if snapshot := live.core.Load().Snapshot(); snapshot.Running || snapshot.Maintenance {
+			snapshot, snapshotErr := live.snapshot()
+			if snapshotErr != nil {
+				return false, snapshotErr
+			}
+			if snapshot.Running || snapshot.Maintenance {
 				return true, nil
 			}
 		}
@@ -386,8 +399,11 @@ func fallbackErrorKind(err error) string {
 // The call boundary still owns typed errors. Persist their classification now;
 // never infer retry/fallback policy by parsing a provider's display text later.
 func (r *runtime) recordModelFallbackFailure(ctx context.Context, selection core.ModelSelection, failure error) error {
+	if r == nil || r.service == nil || r.service.Store == nil {
+		return nil
+	}
 	kind := fallbackErrorKind(failure)
-	if kind == "" || r.service.ctx.Err() != nil || r.core.Load() == nil {
+	if kind == "" || r.service.ctx != nil && r.service.ctx.Err() != nil || r.core.Load() == nil {
 		return nil
 	}
 	s := r.service
@@ -405,11 +421,10 @@ func (r *runtime) recordModelFallbackFailure(ctx context.Context, selection core
 	if !fallbackArmed(state) {
 		return nil
 	}
-	// A deletion first cancels this Host record before closing the Core
-	// handle. The operation lock therefore protects Snapshot from that close
-	// without taking r.mu inside a model callback (Close may be joining it).
-	snapshot := r.core.Load().Snapshot()
-	if snapshot.Stopping {
+	// Use the short lifecycle gate inside model callbacks. Taking r.mu here
+	// could deadlock with Close while it joins the executing model call.
+	snapshot, snapshotErr := r.snapshot()
+	if snapshotErr != nil || snapshot.Stopping {
 		return nil
 	}
 	runID := snapshot.RunID
@@ -434,6 +449,9 @@ func (r *runtime) recordModelFallbackFailure(ctx context.Context, selection core
 // repair in that case so the Host can advance the ordered policy once.
 func (r *runtime) modelFallbackCallError(ctx context.Context, selection core.ModelSelection, failure error) error {
 	recordErr := r.recordModelFallbackFailure(ctx, selection, failure)
+	if r == nil || r.service == nil || r.service.Store == nil {
+		return errors.Join(failure, recordErr)
+	}
 	var classified *core.ModelError
 	if !errors.As(failure, &classified) || !classified.ContextOverflow {
 		return errors.Join(failure, recordErr)
@@ -458,6 +476,9 @@ func (r *runtime) modelFallbackCallError(ctx context.Context, selection core.Mod
 // A successful intermediate model turn does not finish the logical task or
 // forget its fallback cursor. Natural Run completion ends recovery/detection.
 func (r *runtime) recordModelFallbackSuccess(ctx context.Context) error {
+	if r == nil || r.service == nil || r.service.Store == nil {
+		return nil
+	}
 	s := r.service
 	s.modelFallbackMu.Lock()
 	defer s.modelFallbackMu.Unlock()
@@ -559,7 +580,11 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 			r.mu.Unlock()
 			return
 		}
-		snapshot := observed.Snapshot()
+		snapshot, snapshotErr := r.snapshot()
+		if snapshotErr != nil {
+			r.mu.Unlock()
+			return
+		}
 		if err != nil {
 			if snapshot.Running || snapshot.State.LastRun == nil || snapshot.State.LastRun.ID != run.ID() {
 				r.mu.Unlock()
@@ -624,7 +649,10 @@ func (s *Service) finishModelFallbackIfCompleted(ctx context.Context, r *runtime
 	if err := s.Store.Maintenance(ctx, modelFallbackKind, r.id, &state); err != nil || !fallbackArmed(state) || state.Epoch != epoch {
 		return true
 	}
-	snapshot := observed.Snapshot()
+	snapshot, snapshotErr := r.snapshot()
+	if snapshotErr != nil {
+		return true
+	}
 	if snapshot.Running || state.ObservedRunID == "" || snapshot.State.LastRun == nil || snapshot.State.LastRun.Status != "completed" {
 		return false
 	}
@@ -715,7 +743,12 @@ func (s *Service) reconcileModelFallback(ctx context.Context, id string) error {
 		r.mu.Unlock()
 		return err
 	}
-	snapshot := r.core.Load().Snapshot()
+	snapshot, snapshotErr := r.snapshot()
+	if snapshotErr != nil {
+		s.modelFallbackMu.Unlock()
+		r.mu.Unlock()
+		return snapshotErr
+	}
 	if snapshot.Stopping {
 		state.Phase = "cancelled"
 		err = s.saveModelFallback(ctx, state)
@@ -962,7 +995,10 @@ func (s *Service) probePreferredModel(ctx context.Context, r *runtime, intent mo
 	if available, _ := s.Models.Availability(ctx, current.Preferred.ID); !available {
 		return nil
 	}
-	snapshot := r.core.Load().Snapshot()
+	snapshot, snapshotErr := r.snapshot()
+	if snapshotErr != nil {
+		return snapshotErr
+	}
 	if snapshot.Stopping || (!snapshot.Running && snapshot.State.LastRun != nil && snapshot.State.LastRun.Status == "completed") {
 		return nil
 	}

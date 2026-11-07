@@ -54,6 +54,8 @@ With an online computer selected, try a small task whose result you can check:
 
 Check that the Bot actually performs the operation and returns the result. A selectable model has the required configuration; a real task checks the credentials, quota, and ability to use tools. Model requests may incur service charges.
 
+If a model is explicitly configured as not supporting images, requests replace images with text markers so it can continue working with the text. To inspect an image, choose a model that supports images. The original images remain in session history and can be included in new requests after switching to a compatible model.
+
 Changing the model or reasoning settings in a conversation's input area also updates all its existing subagents, including deeper levels and subagents previously assigned another model. A request already sent completes with its original settings; later requests use the new choice. Other conversations and ordinary Fork copies keep their settings. See [background work](/docs/usage/conversations/#delegate-background-work) for following subagent activity and model selection for newly created subagents. The picker can be temporarily unavailable while preparing a request or summarizing a long conversation. If a model is disabled or removed, choose another available model; the history remains accessible.
 
 ## Set up web search
