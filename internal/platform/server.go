@@ -32,9 +32,10 @@ import (
 )
 
 // The release build copies the shared Vite output into web/. A source checkout
-// can instead pass --web-dir apps/web/dist.
+// can instead pass --web-dir apps/web/dist. Vite may emit required chunks whose
+// names start with an underscore, so include every generated asset.
 //
-//go:embed web
+//go:embed all:web
 var embeddedWeb embed.FS
 
 type Config struct {
