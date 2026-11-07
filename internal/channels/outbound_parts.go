@@ -11,7 +11,7 @@ import (
 
 // Every public sending shape reaches this one preparation path before any
 // intent is committed or any platform message is sent.
-func (s *Service) freezeOutboundParts(ctx context.Context, agentID, sessionID string, r SendRequest, c Capabilities) ([]domain.OutboxPart, error) {
+func (s *Service) resolveOutboundParts(ctx context.Context, agentID, sessionID string, r SendRequest, c Capabilities) ([]domain.OutboxPart, error) {
 	if err := validateMessageOptions(c, r.MessageOptions); err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func (s *Service) freezeOutboundParts(ctx context.Context, agentID, sessionID st
 	if len(inputs) > 100 {
 		return nil, domain.Invalid("a message supports at most 100 parts")
 	}
-	// Validate every part before snapshotting sources. Unsupported mentions are
+	// Validate every part before resolving sources. Unsupported mentions are
 	// rejected before earlier text can reach the external chat.
 	for _, p := range inputs {
 		switch p.Type {
@@ -89,12 +89,24 @@ func (s *Service) freezeOutboundParts(ctx context.Context, agentID, sessionID st
 			if source == nil || source.AgentID != agentID || source.SessionID != sessionID || source.ComputerID != r.SourceComputerID {
 				return nil, domain.Forbidden("file path needs the authenticated source Computer")
 			}
-			f, err = s.Harness.Files.Reference(ctx, *source, input.Path, true)
+			f, err = s.Harness.Files.Reference(ctx, *source, input.Path, false)
 		} else {
 			f, err = s.Harness.Files.Get(ctx, agentID, input.FileURI)
 		}
 		if err != nil {
 			return nil, err
+		}
+		if input.FileURI != "" && f.Version == "" {
+			source, bindErr := s.Harness.Hub.Bind(ctx, agentID, sessionID, f.ComputerID, "")
+			if bindErr != nil {
+				return nil, bindErr
+			}
+			// Live references may predate edits to the source. Resolve current
+			// metadata for the upload without copying any file content.
+			f, err = s.Harness.Files.Reference(ctx, source, f.Path, false)
+			if err != nil {
+				return nil, err
+			}
 		}
 		// The text/attachments conveniences retain their automatic image
 		// presentation. An explicit parts.file always remains a document.
@@ -122,16 +134,6 @@ func (s *Service) freezeOutboundParts(ctx context.Context, agentID, sessionID st
 		}
 		if p.Type == "image" && c.Adapter == "feishu.bot" && f.Size > 10<<20 {
 			return nil, domain.Invalid("Feishu images cannot exceed 10 MiB")
-		}
-		if f.Version == "" {
-			source, bindErr := s.Harness.Hub.Bind(ctx, agentID, sessionID, f.ComputerID, "")
-			if bindErr != nil {
-				return nil, bindErr
-			}
-			f, err = s.Harness.Files.Reference(ctx, source, f.Path, true)
-			if err != nil {
-				return nil, err
-			}
 		}
 		if c.UploadLimit > 0 && f.Size > c.UploadLimit {
 			return nil, domain.Invalid("file exceeds the platform upload limit")

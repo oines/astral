@@ -83,7 +83,7 @@ func TestTelegramOrderedPartsUploadRichMediaAndNativeMention(t *testing.T) {
 	}
 }
 
-func TestOrderedPartsPreparationFreezesAllSourcesAndRejectsUnsupportedMentions(t *testing.T) {
+func TestOrderedPartsPreparationResolvesAllSourcesAndRejectsUnsupportedMentions(t *testing.T) {
 	bot := newBot(t)
 	p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	s := New(p.Store, p.Harness)
@@ -126,13 +126,13 @@ func TestOrderedPartsPreparationFreezesAllSourcesAndRejectsUnsupportedMentions(t
 		t.Fatalf("archive %#v %v", message, err)
 	}
 	for _, a := range []Adapter{&qqbot{}, &weixinAdapter{}} {
-		if _, err = s.freezeOutboundParts(p.Context, p.Agent.ID, p.Session.ID, request, a.Capabilities()); err == nil {
+		if _, err = s.resolveOutboundParts(p.Context, p.Agent.ID, p.Session.ID, request, a.Capabilities()); err == nil {
 			t.Fatalf("%s accepted fake mention", a.Capabilities().Adapter)
 		}
 	}
 	for _, id := range []string{"+123", "0123", "0", "123abc"} {
 		invalid := SendRequest{Parts: []domain.OutboundPart{{Type: "mention", UserID: id}}}
-		if _, err := s.freezeOutboundParts(p.Context, p.Agent.ID, p.Session.ID, invalid, (&napcat{}).Capabilities()); err == nil {
+		if _, err := s.resolveOutboundParts(p.Context, p.Agent.ID, p.Session.ID, invalid, (&napcat{}).Capabilities()); err == nil {
 			t.Fatalf("invalid user ID %q passed whole-message validation", id)
 		}
 	}
@@ -186,7 +186,7 @@ func TestAttachmentConvenienceKeepsAutomaticPhotosAndExplicitFilesStayDocuments(
 	}
 	// Both convenience entry points share the same inference before platform
 	// adaptation, so NapCat also retains its prior automatic image segments.
-	inferred, err := service.freezeOutboundParts(p.Context, p.Agent.ID, binding.SessionID, SendRequest{FileURI: filestream.URL(image)}, (&napcat{}).Capabilities())
+	inferred, err := service.resolveOutboundParts(p.Context, p.Agent.ID, binding.SessionID, SendRequest{FileURI: filestream.URL(image)}, (&napcat{}).Capabilities())
 	if err != nil || len(inferred) != 1 || inferred[0].Type != "image" {
 		t.Fatalf("NapCat convenience lost image presentation: %#v %v", inferred, err)
 	}
@@ -210,7 +210,7 @@ func TestConvenienceFreezesNativeMediaIntentWithoutChangingExplicitFile(t *testi
 		}
 		for _, adapter := range []Adapter{&qqbot{}, &weixinAdapter{}} {
 			caps := adapter.Capabilities()
-			native, err := service.freezeOutboundParts(p.Context, p.Agent.ID, p.Session.ID, SendRequest{FileURI: filestream.URL(file)}, caps)
+			native, err := service.resolveOutboundParts(p.Context, p.Agent.ID, p.Session.ID, SendRequest{FileURI: filestream.URL(file)}, caps)
 			if err != nil || len(native) != 1 {
 				t.Fatalf("%s freeze native %s: %#v %v", caps.Adapter, mime, native, err)
 			}
@@ -226,7 +226,7 @@ func TestConvenienceFreezesNativeMediaIntentWithoutChangingExplicitFile(t *testi
 			if native[0].Type != wantType || native[0].MediaKind != wantKind {
 				t.Fatalf("%s convenience changed %s delivery: %#v", caps.Adapter, mime, native)
 			}
-			explicit, err := service.freezeOutboundParts(p.Context, p.Agent.ID, p.Session.ID, SendRequest{Parts: []domain.OutboundPart{{Type: "file", FileURI: filestream.URL(file)}}}, caps)
+			explicit, err := service.resolveOutboundParts(p.Context, p.Agent.ID, p.Session.ID, SendRequest{Parts: []domain.OutboundPart{{Type: "file", FileURI: filestream.URL(file)}}}, caps)
 			if err != nil || len(explicit) != 1 || explicit[0].Type != "file" || explicit[0].MediaKind != "" {
 				t.Fatalf("%s explicit file changed %s delivery: %#v %v", caps.Adapter, mime, explicit, err)
 			}

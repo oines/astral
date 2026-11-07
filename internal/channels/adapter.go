@@ -72,7 +72,7 @@ type Send struct {
 	Parts     []SendPart
 }
 
-// SendPart contains a frozen, authorized source. Adapters open each source only
+// SendPart contains an authorized source reference. Adapters open each source only
 // when preparing its platform request and must close it on every outcome.
 type SendPart struct {
 	Type, Text, UserID, Name string

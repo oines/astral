@@ -11,7 +11,7 @@ type OutboundPart struct {
 	FileURI string `json:"file_uri,omitempty" description:"For image/file only. An astral-file:// reference; mutually exclusive with path."`
 }
 
-// OutboxPart is a prepared part whose media has an immutable Computer snapshot.
+// OutboxPart is a prepared part whose media references its source Computer file.
 // Its internal file reference is never accepted as a public sending argument.
 type OutboxPart struct {
 	Type      string `json:"type" enum:"text,mention,image,file"`
