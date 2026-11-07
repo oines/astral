@@ -45,6 +45,9 @@ func (s *Service) selectDirectSubagentModel(ctx context.Context, parent, id stri
 	}); err != nil {
 		return err
 	}
+	if err := s.setPreferredModel(ctx, id, selection); err != nil {
+		return err
+	}
 	s.notify(id)
 	s.wakeSubagents(id)
 	s.mu.Lock()
@@ -113,18 +116,13 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 		r.mu.Unlock()
 		return err
 	}
-	if len(change.SessionIDs) == 1 && root.SubagentParentID == "" {
-		changed := !jsonEqual(r.core.Load().Configuration().Selection, selection)
-		err = r.core.Load().SelectModel(ctx, selection)
+	previous, err := s.modelPreferredSelection(ctx, id, r.core.Load().Configuration().Selection)
+	if err != nil {
 		r.mu.Unlock()
-		if err == nil {
-			s.notify(id)
-			if changed {
-				err = s.resumeIMSession(ctx, id)
-			}
-		}
 		return err
 	}
+	changed := !jsonEqual(previous, selection) || !jsonEqual(r.core.Load().Configuration().Selection, selection)
+
 	// Record the intent before the first Core write. Recovery only propagates
 	// it if the root's durable selection confirms that write succeeded.
 	if err = s.Store.SaveMaintenance(ctx, subagentModelChangeKind, id, "running", change); err == nil {
@@ -170,12 +168,28 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 			return err
 		}
 	}
+	if changed && root.SubagentParentID == "" {
+		return s.resumeIMSession(ctx, id)
+	}
 	return nil
 }
 
 // The caller holds subagentMu. Desired child selections and acknowledgement
 // share one Host transaction; a crash cannot leave an untracked partial tree.
 func (s *Service) persistSubagentModelChange(ctx context.Context, change subagentModelChange) error {
+	for _, id := range change.SessionIDs {
+		var record domain.Session
+		if err := s.Store.Get(ctx, "sessions", id, &record); domain.IsMissing(err) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		if record.Deletion == nil {
+			if err := s.setPreferredModel(ctx, id, change.Selection); err != nil {
+				return err
+			}
+		}
+	}
 	return s.Store.Update(ctx, func(tx *persistence.Tx) error {
 		for _, id := range change.SessionIDs {
 			var record domain.Session
@@ -209,6 +223,9 @@ func (s *Service) reconcileSubagentModelChanges(ctx context.Context) error {
 }
 
 func (s *Service) reconcileSubagentModelChangesLocked(ctx context.Context) error {
+	if err := s.reconcileAgentModelPriorityChangesLocked(ctx); err != nil {
+		return err
+	}
 	changes, err := s.Store.PendingMaintenance(ctx, subagentModelChangeKind)
 	if err != nil {
 		return err
@@ -249,17 +266,22 @@ func (r *runtime) syncSubagentModel(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var desired core.ModelSelection
+	if err := json.Unmarshal(settings.selection, &desired); err != nil {
+		return err
+	}
+	selection, err := r.service.modelFallbackSubagentSelection(ctx, r.id, desired)
+	if err != nil {
+		return err
+	}
 	current, err := r.service.selectionAtState(ctx, r.id, r.core.Load().State())
 	if err != nil {
 		return err
 	}
-	if current.fingerprint == settings.fingerprint {
+	if current.fingerprint == digest(selection) {
 		return nil
 	}
-	var selection core.ModelSelection
-	if err := json.Unmarshal(settings.selection, &selection); err != nil {
-		return err
-	}
+
 	if err := r.core.Load().SelectModel(ctx, selection); err != nil {
 		return err
 	}

@@ -19,7 +19,7 @@ The **Prompt** is the instruction delivered when the task is due. Specify the so
 
 After creating the task, check its **Next** time in the list. One-time tasks need a future time; ordinary repeating work can use the daily or weekly options.
 
-A new conversation uses the Bot's default model and computer at the time of the run. It does not copy earlier history or a messaging-platform binding. Include the paths and requirements it needs instead of relying on earlier discussion. You can create this kind of schedule before any sessions exist.
+A new conversation uses the Bot's model priority list and default computer at the time of the run. It does not copy earlier history or a messaging-platform binding. Include the paths and requirements it needs instead of relying on earlier discussion. You can create this kind of schedule before any sessions exist.
 
 ## Let the Bot manage schedules
 

@@ -25,8 +25,9 @@ func (s *Service) IMProbeRecoveryPossible(id string) (possible, loaded bool) {
 		return false, false
 	}
 	state := snapshot.State
-	if state.PendingInputs[core.InputSteer] == 0 || state.CurrentAttemptID != "" || !state.Branch.Complete() {
+	if snapshot.Running || snapshot.Maintenance || snapshot.Stopping || state.PendingInputs[core.InputSteer] == 0 || state.CurrentAttemptID != "" || !state.Branch.Complete() {
 		return false, true
 	}
-	return !snapshot.Running && !snapshot.Maintenance, true
+	pending, err := s.ModelFallbackPending(s.ctx, id)
+	return err == nil && !pending, true
 }

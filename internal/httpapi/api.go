@@ -101,6 +101,9 @@ type SelectModel struct {
 	ProfileID string                 `json:"profile_id"`
 	Reasoning *core.ReasoningOptions `json:"reasoning,omitempty"`
 }
+type AppliedModelPriority struct {
+	Updated int `json:"updated"`
+}
 type SelectComputer struct {
 	ComputerID string `json:"computer_id"`
 	CWD        string `json:"cwd,omitempty"`
@@ -425,6 +428,11 @@ func (a *API) usage(ctx context.Context, kind, id string) (Usage, error) {
 	}
 	for _, agent := range agents {
 		used := kind == "search" && agent.SearchProviderID == id || (kind == "models" || kind == "providers") && (modelIDs[agent.DefaultModelID] || modelIDs[agent.ProbeModelID])
+		if kind == "models" || kind == "providers" {
+			for _, selection := range harness.AgentModelPriority(agent) {
+				used = used || modelIDs[selection.ID]
+			}
+		}
 		if kind == "computers" {
 			for _, computer := range agent.AllowedComputers {
 				if computer == id {
@@ -441,11 +449,13 @@ func (a *API) usage(ctx context.Context, kind, id string) (Usage, error) {
 		return value, err
 	}
 	for _, session := range all {
-		selected := core.ModelSelection{}
+		usesModel := false
 		if kind == "models" || kind == "providers" {
-			selected, _ = a.Config.Harness.ModelSelection(ctx, session.ID)
+			selected, _ := a.Config.Harness.ModelSelection(ctx, session.ID)
+			preferred, _ := a.Config.Harness.PreferredModelSelection(ctx, session.ID)
+			usesModel = modelIDs[selected.ID] || modelIDs[preferred.ID]
 		}
-		if (kind == "models" || kind == "providers") && modelIDs[selected.ID] || kind == "computers" && session.ComputerID == id || kind == "agents" && session.AgentID == id {
+		if usesModel || kind == "computers" && session.ComputerID == id || kind == "agents" && session.AgentID == id {
 			value.Sessions = append(value.Sessions, session)
 		}
 	}
@@ -459,6 +469,10 @@ func (a *API) resources() {
 	route[domain.Agent, domain.Agent](a, "POST", "/agents", "saveAgent", "Agents", func(r *http.Request, input domain.Agent) (domain.Agent, error) {
 		err := h.SaveAgent(r.Context(), &input)
 		return input, err
+	})
+	route[httpcontract.Empty, AppliedModelPriority](a, "POST", "/agents/{id}/apply-model-priority", "applyAgentModelPriority", "Agents", func(r *http.Request, _ httpcontract.Empty) (AppliedModelPriority, error) {
+		updated, err := h.ApplyAgentModelPriority(r.Context(), r.PathValue("id"))
+		return AppliedModelPriority{Updated: updated}, err
 	})
 	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/agents/{id}", "deleteAgent", "Agents", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.DeleteAgent(r.Context(), r.PathValue("id"), revision(r))

@@ -757,7 +757,15 @@ func (s *Service) subagentNeedsRuntime(ctx context.Context, record domain.Sessio
 	if err != nil {
 		return false, err
 	}
-	if selection.fingerprint != settings.fingerprint {
+	var desired core.ModelSelection
+	if err := json.Unmarshal(settings.selection, &desired); err != nil {
+		return false, err
+	}
+	active, err := s.modelFallbackSubagentSelection(ctx, record.ID, desired)
+	if err != nil {
+		return false, err
+	}
+	if selection.fingerprint != digest(active) {
 		return true, nil
 	}
 	var activation subagentActivation
@@ -837,9 +845,10 @@ func (r *runtime) startSubagentLocked(ctx context.Context) error {
 		return nil
 	}
 	// Reconcile a durable fork before initial admission, using the current root
-	// prefix and this child's independently selected model.
+	// prefix and this child's independently selected active fallback model.
 	if err := r.syncBusinessConfig(ctx); err != nil {
 		return err
+
 	}
 	message := core.User(settings.Task)
 	message.ContextKind = "astral.subagent_instruction"
@@ -905,6 +914,18 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 	text := assistantText(entry.Message)
 	natural := entry.Run != nil && entry.Run.Status == "completed"
 	failed := entry.Run != nil && entry.Run.Status == "failed"
+	if failed {
+		suppressed, err := s.suppressModelFallbackRun(ctx, child.ID, entry.RunID)
+		if errors.Is(err, errModelFallbackRunPending) {
+			return core.ErrBusy
+		}
+		if err != nil {
+			return err
+		}
+		if suppressed {
+			return nil
+		}
+	}
 	terminal := natural || failed
 	if text == "" && !terminal {
 		return nil

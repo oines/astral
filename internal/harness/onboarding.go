@@ -101,7 +101,12 @@ func (s *Service) CompleteOnboarding(ctx context.Context, input OnboardingInput)
 		if computer.Revoked || !s.Hub.Status(computer).Online {
 			return domain.Conflict("the selected Computer must be connected to finish setup")
 		}
+		previous := agent
 		agent.DefaultModelID, agent.DefaultComputerID = profile.ID, computer.ID
+		agent.DefaultReasoning = nil
+		if err := normalizeAgentModelPriority(&agent, previous); err != nil {
+			return err
+		}
 		if !slices.Contains(agent.AllowedComputers, computer.ID) {
 			agent.AllowedComputers = append(agent.AllowedComputers, computer.ID)
 		}

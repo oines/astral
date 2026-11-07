@@ -18,6 +18,7 @@ import { useAppStore } from '../../stores/app'
 import ChannelsSettings from './ChannelsSettings.vue'
 import SettingsFeedback from './SettingsFeedback.vue'
 import SettingsText from './SettingsText.vue'
+import BotModelPriority from './BotModelPriority.vue'
 
 const { t } = useI18n()
 const app = useAppStore()
@@ -53,7 +54,7 @@ const visibleAgents = computed(() => app.agents.filter(a => a.name.toLocaleLower
 const computers = computed(() => app.computers.filter(c => !c.revoked || selected.value?.allowed_computers?.includes(c.id)))
 const allowedComputers = computed(() => app.computers.filter(c => !c.revoked && selected.value?.allowed_computers?.includes(c.id)))
 
-function newBot() { action.error.value = ''; creating.value = { ...newMeta(), name: '', avatar: '', default_model_id: '', allowed_computers: [] } }
+function newBot() { action.error.value = ''; creating.value = { ...newMeta(), name: '', avatar: '', default_model_id: '', model_auto_restore: false, allowed_computers: [] } }
 function openAgent(id: string) { void router.push({ path: '/settings/agents', query: { agent: id } }) }
 async function latest(id: string) {
   const value = (await request(listAgents())).find(a => a.id === id)
@@ -237,19 +238,10 @@ function preventDeleteDismiss(event: Event) { if (action.busy.value) event.preve
           />
         </SettingsSection>
         <SettingsSection :title="t('botModelSettings')">
-          <SettingsRow
-            :label="t('defaultModel')"
-            :description="t('defaultModelHint')"
-          >
-            <ModelSelection
-              :model-value="modelSelection('default').profile_id"
-              :reasoning="modelSelection('default').reasoning"
-              :label="t('defaultModel')"
-              :empty-label="t('chooseInConversation')"
-              :busy="saves.state(`${resource}/default-model`).status === 'saving'"
-              @select="updateModel('default', $event)"
-            />
-          </SettingsRow>
+          <BotModelPriority
+            :key="selected.id"
+            :agent="selected"
+          />
           <SettingsRow
             :label="t('probeModel')"
             :description="t('probeModelHint')"
@@ -269,7 +261,7 @@ function preventDeleteDismiss(event: Event) { if (action.busy.value) event.preve
               class="settings-inline-link"
             >
               {{ t('manageModels') }}<ChevronRight />
-            </RouterLink><SettingsFeedback :scope="[`${resource}/default-model`, `${resource}/probe-model`]" />
+            </RouterLink><SettingsFeedback :scope="`${resource}/probe-model`" />
           </div>
         </SettingsSection>
         <SettingsSection :title="t('botSearchSettings')">

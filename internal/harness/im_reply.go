@@ -119,6 +119,11 @@ func (s *Service) reconcileIMReply(ctx context.Context, record domain.Session) e
 	if state.LastRun == nil {
 		return nil
 	}
+	if pending, err := s.ModelFallbackPending(ctx, record.ID); err != nil || pending {
+		// A failed Core Run can be an internal fallback boundary. Keep the
+		// direct-input watch until the logical task completes or really stops.
+		return err
+	}
 	if state.LastRun.Status == "cancelled" || state.LastRun.Status == "failed" {
 		return clear()
 	}

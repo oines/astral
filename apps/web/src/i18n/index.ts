@@ -30,7 +30,7 @@ const en = {
   worked: 'Worked', steps: 'steps', rawData: 'Raw data', arguments: 'Arguments', sessionOptions: 'Conversation options', sessionOptionsFor: 'Options for {name}', earlierActivity: 'Load earlier activity',
   personal: 'Personal', workspace: 'Workspace', sessionInfo: 'Conversation info',
 
-  newSession: 'New session', search: 'Search sessions', settings: 'Settings', back: 'Back to chats', now: 'Now', pinned: 'Pinned', recent: 'Recent', conversationDeleted: 'This conversation has been deleted.',
+  newSession: 'New session', search: 'Search sessions', settings: 'Settings', manageBot: 'Manage Bot', back: 'Back to chats', now: 'Now', pinned: 'Pinned', recent: 'Recent', conversationDeleted: 'This conversation has been deleted.',
   save: 'Save changes', cancel: 'Cancel', add: 'Add', delete: 'Delete', edit: 'Edit', close: 'Close', openSidebar: 'Open sidebar', closeSidebar: 'Collapse sidebar', retry: 'Retry', refresh: 'Refresh', copy: 'Copy', download: 'Download',
   general: 'General', appearance: 'Appearance', models: 'Models', webSearch: 'Web search', computers: 'Computers', channels: 'Channels', agents: 'Bots', storage: 'Data & storage', security: 'Security & access', advanced: 'About & diagnostics',
   name: 'Name', online: 'Connected', offline: 'Offline', missing: 'Missing configuration', select: 'Select…', none: 'None', default: 'Default',
@@ -73,7 +73,7 @@ const zh: typeof en = {
   worked: '已完成', steps: '个步骤', rawData: '原始数据', arguments: '参数', sessionOptions: '会话选项', sessionOptionsFor: '{name}的会话选项', earlierActivity: '加载更早的过程',
   personal: '个人', workspace: '工作区', sessionInfo: '会话信息',
 
-  newSession: '新建会话', search: '搜索会话', settings: '设置', back: '返回聊天', now: '进行中', pinned: '已固定', recent: '最近', conversationDeleted: '此会话已删除。',
+  newSession: '新建会话', search: '搜索会话', settings: '设置', manageBot: '管理 Bot', back: '返回聊天', now: '进行中', pinned: '已固定', recent: '最近', conversationDeleted: '此会话已删除。',
   save: '保存更改', cancel: '取消', add: '添加', delete: '删除', edit: '编辑', close: '关闭', openSidebar: '打开侧边栏', closeSidebar: '收起侧边栏', retry: '重试', refresh: '刷新', copy: '复制', download: '下载',
   general: '通用', appearance: '外观', models: '模型', webSearch: '网页搜索', computers: '电脑', channels: '消息渠道', agents: 'Bot', storage: '数据与存储', security: '安全与访问', advanced: '关于与诊断',
   name: '名称', online: '已连接', offline: '离线', missing: '缺少配置', select: '请选择…', none: '不设置', default: '默认',

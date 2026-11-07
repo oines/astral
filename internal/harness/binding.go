@@ -18,6 +18,9 @@ func (s *Service) WithStoppedSessions(ctx context.Context, ids []string, change 
 	ids = slices.Compact(ids)
 	var runtimes []*runtime
 	for _, id := range ids {
+		if err := s.cancelModelFallback(ctx, id); err != nil {
+			return err
+		}
 		r, err := s.open(ctx, id)
 		if err != nil {
 			return err
@@ -97,4 +100,17 @@ func (s *Service) WithSession(ctx context.Context, id string, apply func(*core.S
 	}
 	s.notify(id)
 	return nil
+}
+
+// ContinueWithinSession starts work from a WithSession callback, which already
+// holds the Host admission lock. IM starts need the same model policy and Run
+// observation as owner input; calling Core.Continue directly bypasses them.
+func (s *Service) ContinueWithinSession(ctx context.Context, session *core.Session) error {
+	s.mu.Lock()
+	r := s.runtimes[session.ID()]
+	s.mu.Unlock()
+	if r == nil || r.core.Load() != session {
+		return core.ErrClosed
+	}
+	return r.continueLocked(ctx)
 }

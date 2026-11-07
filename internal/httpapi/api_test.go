@@ -394,7 +394,7 @@ func TestRetrySnapshotSurvivesEventStreamReconnectWithoutResubmission(t *testing
 		}
 		break
 	}
-	if retry == nil || retry.Attempt != 1 || retry.MaxAttempts != 3 || retry.Purpose != "generation" || !retry.NextRetryAt.After(time.Now()) {
+	if retry == nil || retry.Attempt != 1 || retry.MaxAttempts != 5 || retry.Purpose != "generation" || !retry.NextRetryAt.After(time.Now()) {
 		t.Fatalf("missing retry progress: %+v", retry)
 	}
 	_ = response.Body.Close()

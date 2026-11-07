@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	sessions "github.com/oines/astral-core"
@@ -98,15 +99,29 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	if resolved {
 		view.Error = ""
 	}
+	pendingFallback, fallbackErr := s.ModelFallbackPending(ctx, id)
+	if fallbackErr != nil {
+		return view, fallbackErr
+	}
 	deliveryPaused := false
-	if !snapshot.Running && !snapshot.Maintenance && view.Error == "" {
-		if view.Error, err = s.imDeliveryError(ctx, id); err != nil {
+	if !snapshot.Running && !snapshot.Maintenance && (view.Error == "" || pendingFallback) {
+		deliveryError, err := s.imDeliveryError(ctx, id)
+		if err != nil {
 			return view, err
 		}
-		deliveryPaused = view.Error != ""
+		deliveryPaused = deliveryError != ""
+		if deliveryPaused {
+			view.Error = deliveryError
+		}
 	}
 	if deliveryPaused || len(view.Unresolved) > 0 || len(view.Approvals) > 0 || (!snapshot.Running && !snapshot.Maintenance && (!view.ModelAvailable || !resolved && (view.Error != "" || state.LastRun != nil && (state.LastRun.Status == "failed" || state.LastRun.Status == "started")))) {
 		view.Status = "needs_attention"
+	}
+	if pendingFallback && !deliveryPaused && !snapshot.Stopping && !snapshot.Maintenance && len(view.Unresolved) == 0 && len(view.Approvals) == 0 {
+		view.Status, view.Error, view.CanContinue = "running", "", false
+		if view.RunID == "" && state.LastRun != nil {
+			view.RunID = state.LastRun.ID
+		}
 	}
 	pending, err := r.core.Load().PeekQueuedInputs(ctx)
 	if err != nil {
@@ -161,4 +176,20 @@ func (s *Service) ModelSelection(ctx context.Context, id string) (sessions.Model
 	var value sessions.ModelSelection
 	err = json.Unmarshal(selection.value, &value)
 	return value, err
+}
+
+// PreferredModelSelection includes a saved manual choice while a different
+// fallback target is active, and accepted children without a Core branch yet.
+func (s *Service) PreferredModelSelection(ctx context.Context, id string) (sessions.ModelSelection, error) {
+	selection, err := s.ModelSelection(ctx, id)
+	if errors.Is(err, sessions.ErrNotFound) {
+		var settings subagentSettings
+		if readErr := s.Store.Get(ctx, "subagent_settings", id, &settings); readErr != nil {
+			return sessions.ModelSelection{}, readErr
+		}
+		selection = settings.Configuration.Selection
+	} else if err != nil {
+		return sessions.ModelSelection{}, err
+	}
+	return s.modelPreferredSelection(ctx, id, selection)
 }

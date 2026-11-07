@@ -261,6 +261,13 @@ func TestSubagentQueuedModelBecomesUnavailableBeforeInitializationStillNotifiesP
 	if err := f.service.Models.SaveProfile(f.ctx, &model); err != nil {
 		t.Fatal(err)
 	}
+	// Exercise exhaustion rather than the new Bot fallback path. The parent
+	// retains its independent usable preference, while the queued child has
+	// no other candidate after its explicit selection becomes unavailable.
+	f.agent.ModelPriority = []core.ModelSelection{}
+	if err := f.service.SaveAgent(f.ctx, &f.agent); err != nil {
+		t.Fatal(err)
+	}
 	f.restart(t)
 	var failed core.RuntimeState
 	eventually(t, f.ctx, func() bool {

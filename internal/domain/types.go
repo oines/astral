@@ -35,6 +35,8 @@ type Agent struct {
 	Persona           string                 `json:"persona,omitempty"`
 	DefaultModelID    string                 `json:"default_model_id,omitempty"`
 	DefaultReasoning  *core.ReasoningOptions `json:"default_reasoning,omitempty"`
+	ModelPriority     []core.ModelSelection  `json:"model_priority,omitempty"`
+	ModelAutoRestore  bool                   `json:"model_auto_restore"`
 	ProbeModelID      string                 `json:"probe_model_id,omitempty"`
 	ProbeReasoning    *core.ReasoningOptions `json:"probe_reasoning,omitempty"`
 	SearchProviderID  string                 `json:"search_provider_id,omitempty"`

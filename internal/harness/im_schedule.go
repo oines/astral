@@ -28,6 +28,16 @@ func IMCanProbe(session *core.Session) bool {
 	return !IMWorking(session) && state.PendingInputs[core.InputSteer]+state.PendingInputs[core.InputFollowUp] == 0
 }
 
+// A logical task remains active between failed model Runs while Host selects
+// another candidate or waits for its preferred model to recover.
+func (s *Service) IMCanProbe(ctx context.Context, id string, session *core.Session) (bool, error) {
+	pending, err := s.ModelFallbackPending(ctx, id)
+	if err != nil || pending {
+		return false, err
+	}
+	return IMCanProbe(session), nil
+}
+
 // IMInspector retains only evidence derived from immutable attempt
 // inputs. Receipt and latest-attempt discovery are always read again, so it
 // never caches a decision that a newly received observation is unhandled.

@@ -14,6 +14,7 @@ const props = defineProps<{
   reasoningBudgetValue?: number
   labels: { model: string; reasoning: string; search: string; empty: string; budget?: string; useBudget?: string }
   busy?: boolean
+  closeOnSelect?: boolean
   side?: 'top' | 'bottom'
   align?: 'start' | 'end'
 }>()
@@ -21,6 +22,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: string]; 'update:reasoni
 const open = ref(false)
 const search = ref('')
 const budget = ref('')
+function chooseModel(value: string) {
+  emit('update:modelValue', value)
+  if (props.closeOnSelect) open.value = false
+}
 watch(() => [props.modelValue, props.reasoningBudgetValue], () => { budget.value = props.reasoningBudgetValue === undefined ? '' : String(props.reasoningBudgetValue) }, { immediate: true })
 function applyBudget() {
   const value = Number(budget.value)
@@ -78,7 +83,7 @@ onDeactivated(() => { open.value = false })
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup
               :model-value="modelValue"
-              @update:model-value="emit('update:modelValue', String($event))"
+              @update:model-value="chooseModel(String($event))"
             >
               <template
                 v-for="[key, group] in groups"

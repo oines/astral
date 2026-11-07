@@ -150,7 +150,8 @@ func promptConversationID(prompt string) (string, error) {
 // attempt retains its frozen prompt. Auxiliary calls are not replaced.
 type sessionModel struct {
 	core.Model
-	runtime *runtime
+	runtime   *runtime
+	selection core.ModelSelection
 }
 
 func (m sessionModel) Stream(ctx context.Context, request core.Request, emit func(core.ModelEvent)) (core.Reply, error) {
@@ -174,8 +175,16 @@ func (m sessionModel) stream(ctx context.Context, request core.Request, emit fun
 		if err != nil && !errors.Is(err, core.ErrBusy) {
 			return core.Reply{}, err
 		}
+
 	}
-	return invoke(ctx, emit)
+	reply, err := invoke(ctx, emit)
+	if err != nil {
+		return reply, m.runtime.modelFallbackCallError(ctx, m.selection, err)
+	}
+	if err := m.runtime.recordModelFallbackSuccess(ctx); err != nil {
+		return reply, err
+	}
+	return reply, nil
 }
 
 func (m sessionModel) PrepareExecution(ctx context.Context, request core.Request) (core.RequestExecution, error) {
@@ -184,8 +193,11 @@ func (m sessionModel) PrepareExecution(ctx context.Context, request core.Request
 		return nil, nil
 	}
 	execution, err := preparer.PrepareExecution(ctx, request)
-	if err != nil || execution == nil {
-		return execution, err
+	if err != nil {
+		return execution, m.runtime.modelFallbackCallError(ctx, m.selection, err)
+	}
+	if execution == nil {
+		return nil, nil
 	}
 	return core.RequestExecutionFunc(func(ctx context.Context, emit func(core.ModelEvent)) (core.Reply, error) {
 		return m.stream(ctx, request, emit, execution.Stream)
@@ -233,7 +245,9 @@ func (m sessionModel) EstimateTokens(ctx context.Context, request core.Request) 
 
 func (m sessionModel) ValidateRequest(ctx context.Context, request core.Request) error {
 	if validator, ok := m.Model.(core.RequestValidator); ok {
-		return validator.ValidateRequest(ctx, request)
+		if err := validator.ValidateRequest(ctx, request); err != nil {
+			return errors.Join(err, m.runtime.recordModelFallbackFailure(ctx, m.selection, err))
+		}
 	}
 	return nil
 }
