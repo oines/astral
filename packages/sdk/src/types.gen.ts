@@ -685,6 +685,8 @@ export type AstralInternalDomainAgent = {
     default_reasoning?: AstralCoreReasoningOptions;
     deletion?: boolean;
     id: string;
+    model_auto_restore: boolean;
+    model_priority?: Array<AstralCoreModelSelection>;
     name: string;
     persona?: string;
     probe_model_id?: string;
@@ -1464,6 +1466,10 @@ export type AstralInternalHarnessView = {
     updated_at: string;
 };
 
+export type AstralInternalHttpapiAppliedModelPriority = {
+    updated: number;
+};
+
 export type AstralInternalHttpapiApproval = {
     decision: AstralCoreApprovalDecision;
 };
@@ -2184,6 +2190,33 @@ export type DeleteAgentResponses = {
 };
 
 export type DeleteAgentResponse = DeleteAgentResponses[keyof DeleteAgentResponses];
+
+export type ApplyAgentModelPriorityData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/agents/{id}/apply-model-priority';
+};
+
+export type ApplyAgentModelPriorityErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ApplyAgentModelPriorityError = ApplyAgentModelPriorityErrors[keyof ApplyAgentModelPriorityErrors];
+
+export type ApplyAgentModelPriorityResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiAppliedModelPriority;
+};
+
+export type ApplyAgentModelPriorityResponse = ApplyAgentModelPriorityResponses[keyof ApplyAgentModelPriorityResponses];
 
 export type StartWeixinLoginData = {
     body: AstralInternalChannelsWeixinLoginInput;

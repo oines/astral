@@ -151,6 +151,9 @@ func (s *Service) deleteOneSession(ctx context.Context, id string, revision int6
 		if err := tx.DeleteMaintenance(ctx, subagentModelChangeKind, id); err != nil {
 			return err
 		}
+		if err := tx.DeleteMaintenance(ctx, modelFallbackKind, id); err != nil {
+			return err
+		}
 		if err := tx.Purge(ctx, "sessions", id, current.Revision); err != nil {
 			return err
 		}
@@ -170,6 +173,9 @@ func (s *Service) deleteOneSession(ctx context.Context, id string, revision int6
 }
 
 func (s *Service) closeDeletedRuntime(ctx context.Context, id string) error {
+	if err := s.cancelModelFallback(ctx, id); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	r := s.runtimes[id]
 	s.mu.Unlock()

@@ -1,30 +1,38 @@
 /* eslint-disable vue/one-component-per-file -- UI primitives are isolated test stubs. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setImmediate } from 'node:timers/promises'
-import { createSSRApp, defineComponent, getCurrentInstance, h, reactive } from 'vue'
+import { createSSRApp as createVueSSRApp, defineComponent, getCurrentInstance, h, reactive, type VNode } from 'vue'
 import { renderToString } from 'vue/server-renderer'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import type { SessionView } from '../lib/types'
 import Composer from './Composer.vue'
 
 const fixture = vi.hoisted(() => ({
   app: {
-    drafts: {} as Record<string, unknown>, models: [] as { id: string; available: boolean }[], agents: [], computers: [],
+    drafts: {} as Record<string, unknown>, models: [] as { id: string; available: boolean }[],
+    agents: [] as { id: string; name: string; allowed_computers: string[] }[], computers: [] as { id: string; name: string; online: boolean; revoked: boolean }[],
     data: { preferences: {} as { running_input?: 'steer' | 'follow_up' } }, preferences: vi.fn(async () => undefined),
   },
   continueSession: vi.fn(async () => ({ data: { ok: true } })),
   submitInput: vi.fn(async (options: { body: { id: string; text: string; mode: string } }) => ({ data: { ok: true }, options })),
   inputReceipt: vi.fn(async () => ({ data: undefined, response: { status: 404 } })),
+  createSession: vi.fn(async () => ({ data: undefined as unknown as SessionView })),
+  selectComputer: vi.fn(async () => ({ data: { ok: true } })),
+  selectModel: vi.fn(async () => ({ data: { ok: true } })),
+  closeComputerMenu: vi.fn(),
+  computerMenu: [] as VNode[],
   send: undefined as undefined | (() => Promise<void>),
   handlers: undefined as undefined | { keyboard: (event: KeyboardEvent) => void; composerText: string; sendLabel: string; error: string; toggleQueue: () => Promise<void> },
 }))
 vi.mock('../stores/app', () => ({ useAppStore: () => reactive(fixture.app) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
-vi.mock('../lib/api', () => ({
+vi.mock('../lib/api', async importOriginal => ({
+  ...await importOriginal<object>(),
   errorText: (error: unknown) => String(error), fileURL: () => '',
   request: async (promise: Promise<{ data: unknown }>) => (await promise).data,
 }))
-vi.mock('@astral/sdk', async (importOriginal) => ({ ...await importOriginal<object>(), continueSession: fixture.continueSession, submitInput: fixture.submitInput, inputReceipt: fixture.inputReceipt }))
+vi.mock('@astral/sdk', async (importOriginal) => ({ ...await importOriginal<object>(), continueSession: fixture.continueSession, submitInput: fixture.submitInput, inputReceipt: fixture.inputReceipt, createSession: fixture.createSession, selectComputer: fixture.selectComputer, selectModel: fixture.selectModel }))
 vi.mock('./ModelSelection.vue', () => ({ default: { render: () => null } }))
 vi.mock('@astral/ui', async () => ({
   ...await import('../../../../packages/ui/src/useDelayedPending'),
@@ -36,17 +44,28 @@ vi.mock('@astral/ui', async () => ({
     }
     return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
   } }),
-  Popover: defineComponent({ setup(_props, { slots }) { return () => h('div', slots.default?.({ close: () => {} })) } }),
+  Popover: defineComponent({ props: { label: { type: String, default: '' } }, setup(props, { slots }) {
+    return () => {
+      const items = slots.default?.({ close: props.label === 'computer' ? fixture.closeComputerMenu : () => {} })
+      if (props.label === 'computer') fixture.computerMenu = items || []
+      return h('div', { 'data-popover-label': props.label }, [...slots.trigger?.() || [], ...items || []])
+    }
+  } }),
 }))
+let router: Router
+function createSSRApp(...args: Parameters<typeof createVueSSRApp>) { return createVueSSRApp(...args).use(router) }
 function view(canContinue: boolean): SessionView {
   return { id: 'session', agent_id: 'agent', revision: 1, created_at: '', updated_at: '', title: 'Task', source: 'web', pinned: false, archived: false,
     selection: { id: 'deleted-model' }, profile_id: 'deleted-model', rollout_id: 'rollout', head_id: 'head', status: 'needs_attention', event_sequence: 0,
     can_continue: canContinue, model_available: false, model_unavailable_reason: 'model_missing', pending: [], approvals: [], unresolved: [] }
 }
-beforeEach(() => {
+beforeEach(async () => {
   setActivePinia(createPinia())
-  fixture.app.drafts = {}; fixture.app.models = []; fixture.app.data.preferences = {}
+  fixture.app.drafts = {}; fixture.app.models = []; fixture.app.agents = []; fixture.app.computers = []; fixture.app.data.preferences = {}
+  fixture.computerMenu = []
   fixture.send = undefined; fixture.handlers = undefined; vi.clearAllMocks()
+  router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] })
+  await router.push('/')
 })
 describe('continuing a frozen request with an unavailable live model', () => {
   it('keeps Continue enabled and submits it without starting a new input', async () => {
@@ -203,5 +222,182 @@ describe('queue controls in IM-bound sessions', () => {
     expect(fixture.app.preferences).toHaveBeenCalledWith({ running_input: 'steer' })
     await keydown()
     expect(fixture.submitInput.mock.calls[0]![0].body).toMatchObject({ text: 'hello', mode: 'steer' })
+  })
+})
+
+function computerMenuButtons(items: VNode[] = fixture.computerMenu): VNode[] {
+  return items.flatMap(item => [
+    ...(item.type === 'button' && item.props?.class === 'menu-item' ? [item] : []),
+    ...(Array.isArray(item.children) ? computerMenuButtons(item.children.filter((child): child is VNode => typeof child === 'object' && child !== null && 'type' in child)) : []),
+  ])
+}
+function manageComputersLink() {
+  const link = fixture.computerMenu.find(item => item.props?.to)
+  expect(link).toBeDefined()
+  return link!.props as { to: { path: string; query: { agent: string; tab: string } }; onClick: () => void }
+}
+describe('Composer Computer management entry', () => {
+  function computersFor(agentID: string, allowed: string[] = ['computer-1']) {
+    // Another Bot appears first in the store; navigation must use the current
+    // conversation's owner rather than a global/default Bot selection.
+    fixture.app.agents = [{ id: 'other-bot', name: 'Other Bot', allowed_computers: [] }, { id: agentID, name: 'Current Bot', allowed_computers: allowed }]
+    fixture.app.computers = [{ id: 'computer-1', name: 'Current Computer', online: true, revoked: false }]
+  }
+
+  it.each(['running', 'stopping', 'compacting'])('keeps management reachable during %s while only Computer switching is disabled', async status => {
+    computersFor('current-bot')
+    const draft = { text: 'Keep my unfinished message', files: [] }
+    fixture.app.drafts.session = draft
+    const html = await renderToString(createSSRApp(Composer, { live: true, view: { ...view(false), agent_id: 'current-bot', computer_id: 'computer-1', status } }))
+    const trigger = html.match(/<button[^>]*class="composer-picker computer-picker"[^>]*>/)?.[0]
+    expect(trigger).toBeDefined()
+    expect(trigger).not.toContain('disabled')
+    expect(computerMenuButtons()).toHaveLength(1)
+    expect(computerMenuButtons()[0]!.props?.disabled).toBe(true)
+    expect(html).toContain('href="/settings/agents?agent=current-bot&amp;tab=computers"')
+    expect(html).toMatch(/<hr class="separator">\s*<a[^>]*class="menu-item"/)
+    const link = manageComputersLink()
+    expect(link.to).toEqual({ path: '/settings/agents', query: { agent: 'current-bot', tab: 'computers' } })
+    link.onClick()
+    expect(fixture.closeComputerMenu).toHaveBeenCalledOnce()
+    expect(fixture.app.drafts.session).toBe(draft)
+    expect(fixture.app.drafts.session).toMatchObject({ text: 'Keep my unfinished message' })
+    expect(fixture.createSession).not.toHaveBeenCalled()
+    expect(fixture.selectComputer).not.toHaveBeenCalled()
+    expect(fixture.submitInput).not.toHaveBeenCalled()
+  })
+
+  it('offers Bot Computer permissions when no Computers are currently authorized', async () => {
+    computersFor('no-computers', [])
+    const html = await renderToString(createSSRApp(Composer, { live: true, view: { ...view(false), agent_id: 'no-computers', status: 'running' } }))
+    expect(computerMenuButtons()).toHaveLength(0)
+    expect(html.match(/<button[^>]*class="composer-picker computer-picker"[^>]*>/)?.[0]).not.toContain('disabled')
+    expect(html).toContain('href="/settings/agents?agent=no-computers&amp;tab=computers"')
+    manageComputersLink().onClick()
+    expect(fixture.closeComputerMenu).toHaveBeenCalledOnce()
+    expect(fixture.createSession).not.toHaveBeenCalled()
+    expect(fixture.selectComputer).not.toHaveBeenCalled()
+  })
+
+  it('uses the new-conversation Bot and preserves its draft without creating a Session', async () => {
+    computersFor('new-bot', [])
+    const draft = { text: 'Continue writing after permissions', files: [], selection: { profile_id: 'chosen-model' } }
+    fixture.app.drafts['new:new-bot'] = draft
+    const html = await renderToString(createSSRApp(Composer, { live: true, view: { ...view(false), id: '', agent_id: 'new-bot', status: 'idle' } }))
+    expect(html).toContain('href="/settings/agents?agent=new-bot&amp;tab=computers"')
+    const link = manageComputersLink()
+    expect(link.to.query).toEqual({ agent: 'new-bot', tab: 'computers' })
+    link.onClick()
+    expect(fixture.closeComputerMenu).toHaveBeenCalledOnce()
+    expect(fixture.app.drafts['new:new-bot']).toBe(draft)
+    expect(fixture.app.drafts['new:new-bot']).toEqual({ text: 'Continue writing after permissions', files: [], selection: { profile_id: 'chosen-model' } })
+    expect(fixture.createSession).not.toHaveBeenCalled()
+    expect(fixture.selectComputer).not.toHaveBeenCalled()
+  })
+
+  it('retains ordinary Computer switching when the conversation is idle', async () => {
+    computersFor('current-bot')
+    await renderToString(createSSRApp(Composer, { live: true, view: { ...view(false), agent_id: 'current-bot', status: 'idle' } }))
+    const option = computerMenuButtons()[0]!
+    expect(option.props?.disabled).toBe(false)
+    const click = option.props!.onClick as () => void
+    click()
+    await setImmediate()
+    expect(fixture.selectComputer).toHaveBeenCalledExactlyOnceWith({ path: { id: 'session' }, body: { computer_id: 'computer-1' } })
+    expect(fixture.closeComputerMenu).toHaveBeenCalledOnce()
+    expect(fixture.createSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('new-conversation model intent', () => {
+  async function prepareNewConversation(explicit = false) {
+    fixture.app.models = ['initial-model', 'server-model', 'manual-model'].map(id => ({ id, available: true }))
+    fixture.app.drafts['new:agent'] = { text: 'Complete my original task', files: [], ...(explicit ? { selection: { profile_id: 'manual-model', reasoning: { effort: 'high' } } } : {}) }
+    const initial: SessionView = { ...view(false), id: '', status: 'idle', profile_id: 'initial-model', selection: { id: 'initial-model' }, model_available: true }
+    // Resource availability may change between displaying the composer and
+    // creating the real Session. The server owns its current fallback choice.
+    fixture.createSession.mockResolvedValue({ data: { ...initial, id: 'created', profile_id: 'server-model', selection: { id: 'server-model' } } })
+    await renderToString(createSSRApp(Composer, { live: true, view: initial }))
+    return initial
+  }
+
+  it('does not turn an automatic initial preview into a manual override of the server model', async () => {
+    await prepareNewConversation()
+    await fixture.send!()
+    expect(fixture.createSession).toHaveBeenCalledExactlyOnceWith({ body: { agent_id: 'agent', title: '' } })
+    expect(fixture.selectModel).not.toHaveBeenCalled()
+    expect(fixture.submitInput).toHaveBeenCalledExactlyOnceWith({ path: { id: 'created' }, body: expect.objectContaining({ text: 'Complete my original task' }) })
+  })
+
+  it('preserves an explicit composer model and reasoning choice over the server initial model', async () => {
+    await prepareNewConversation(true)
+    await fixture.send!()
+    expect(fixture.selectModel).toHaveBeenCalledExactlyOnceWith({ path: { id: 'created' }, body: { profile_id: 'manual-model', reasoning: { effort: 'high' } } })
+    expect(fixture.submitInput).toHaveBeenCalledOnce()
+  })
+
+  it('confirms an explicit preference even when it matches the server active fallback model', async () => {
+    const initial = await prepareNewConversation(true)
+    fixture.createSession.mockResolvedValueOnce({ data: { ...initial, id: 'created', profile_id: 'manual-model', reasoning: { effort: 'high' }, selection: { id: 'manual-model', reasoning: { effort: 'high' } } } })
+    await fixture.send!()
+    // Matching the actual model does not prove that it is the Session's
+    // preferred model. An explicit user choice still needs confirmation.
+    expect(fixture.selectModel).toHaveBeenCalledExactlyOnceWith({ path: { id: 'created' }, body: { profile_id: 'manual-model', reasoning: { effort: 'high' } } })
+    expect(fixture.submitInput).toHaveBeenCalledOnce()
+  })
+
+  it('reuses the created Session and confirmed explicit selection when retrying the original input', async () => {
+    const initial = await prepareNewConversation(true)
+    fixture.submitInput.mockRejectedValueOnce(new TypeError('The input response was lost.'))
+    await fixture.send!()
+    const original = fixture.submitInput.mock.calls[0]![0].body
+    expect(fixture.app.drafts['new:agent']).toMatchObject({ text: 'Complete my original task', session: { id: 'created', profile_id: 'manual-model' }, confirmedModelSelection: { sessionID: 'created', profile_id: 'manual-model', reasoning: { effort: 'high' } } })
+    // The task may already have moved to a fallback model after the lost
+    // response. Remounting or retrying must not reapply the old preference.
+    const draft = fixture.app.drafts['new:agent'] as { session: SessionView }
+    draft.session.profile_id = 'server-model'
+    draft.session.reasoning = undefined
+    await renderToString(createSSRApp(Composer, { live: true, view: initial }))
+    await fixture.send!()
+    expect(fixture.createSession).toHaveBeenCalledOnce()
+    expect(fixture.selectModel).toHaveBeenCalledOnce()
+    expect(fixture.submitInput).toHaveBeenCalledTimes(2)
+    expect(fixture.submitInput.mock.calls[1]![0]).toMatchObject({ path: { id: 'created' }, body: { id: original.id, text: 'Complete my original task' } })
+  })
+
+  it('keeps the created Session while retrying a failed explicit model override', async () => {
+    const initial = await prepareNewConversation(true)
+    fixture.createSession.mockResolvedValueOnce({ data: { ...initial, id: 'created', profile_id: 'manual-model', reasoning: { effort: 'high' } } })
+    fixture.selectModel.mockRejectedValueOnce(new Error('The model selection was rejected.'))
+    await fixture.send!()
+    expect(fixture.app.drafts['new:agent']).toMatchObject({ text: 'Complete my original task', session: { id: 'created', profile_id: 'manual-model' } })
+    expect(fixture.app.drafts['new:agent']).not.toHaveProperty('confirmedModelSelection', expect.anything())
+    expect(fixture.submitInput).not.toHaveBeenCalled()
+    await fixture.send!()
+    expect(fixture.createSession).toHaveBeenCalledOnce()
+    expect(fixture.selectModel).toHaveBeenCalledTimes(2)
+    expect(fixture.submitInput).toHaveBeenCalledOnce()
+  })
+
+  it('applies a later explicit reasoning change instead of reusing an earlier confirmation', async () => {
+    const initial = await prepareNewConversation(true)
+    fixture.submitInput.mockRejectedValueOnce(new TypeError('The input response was lost.'))
+    await fixture.send!()
+    const draft = fixture.app.drafts['new:agent'] as { selection: Partial<SessionView> }
+    draft.selection.reasoning = { effort: 'low' }
+    await renderToString(createSSRApp(Composer, { live: true, view: initial }))
+    await fixture.send!()
+    expect(fixture.createSession).toHaveBeenCalledOnce()
+    expect(fixture.selectModel).toHaveBeenCalledTimes(2)
+    expect(fixture.selectModel).toHaveBeenLastCalledWith({ path: { id: 'created' }, body: { profile_id: 'manual-model', reasoning: { effort: 'low' } } })
+  })
+
+  it('clears an older confirmation before creating a new Session', async () => {
+    await prepareNewConversation(true)
+    const draft = fixture.app.drafts['new:agent'] as { confirmedModelSelection?: { sessionID: string; profile_id: string; reasoning: { effort: string } } }
+    draft.confirmedModelSelection = { sessionID: 'created', profile_id: 'manual-model', reasoning: { effort: 'high' } }
+    await fixture.send!()
+    expect(fixture.createSession).toHaveBeenCalledOnce()
+    expect(fixture.selectModel).toHaveBeenCalledOnce()
   })
 })

@@ -239,6 +239,10 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 		}
 		configuration.Selection = settings.Configuration.Selection
 	}
+	configuration.Selection, err = s.modelPreferredSelection(ctx, parent.id, configuration.Selection)
+	if err != nil {
+		return SubagentView{}, err
+	}
 	prompt, err := parent.currentSystemPrompt(ctx, configuration.SystemPrompt)
 	if err != nil {
 		return SubagentView{}, err
@@ -669,8 +673,14 @@ func (r *runtime) startSubagentLocked(ctx context.Context) error {
 	// A shared fork can be durable before initialize applies the saved child
 	// configuration. Reconcile it before initial admission as well, so reopening
 	// that fork cannot silently lose an explicit child model selection.
-	if !jsonEqual(r.core.Load().Configuration(), settings.Configuration) {
-		if err := r.core.Load().Configure(ctx, settings.Configuration); err != nil {
+	configuration := settings.Configuration
+	var err error
+	configuration.Selection, err = r.service.modelFallbackSelection(ctx, r.id, configuration.Selection)
+	if err != nil {
+		return err
+	}
+	if !jsonEqual(r.core.Load().Configuration(), configuration) {
+		if err := r.core.Load().Configure(ctx, configuration); err != nil {
 			return err
 		}
 	}
@@ -735,6 +745,15 @@ func (s *Service) deliverSubagentEntryLocked(ctx context.Context, child domain.S
 	text := assistantText(entry.Message)
 	natural := entry.Run != nil && entry.Run.Status == "completed"
 	failed := entry.Run != nil && entry.Run.Status == "failed"
+	if failed {
+		suppressed, err := s.suppressModelFallbackRun(ctx, child.ID, entry.RunID)
+		if err != nil {
+			return err
+		}
+		if suppressed {
+			return nil
+		}
+	}
 	terminal := natural || failed
 	if text == "" && !terminal {
 		return nil

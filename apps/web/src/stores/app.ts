@@ -18,7 +18,7 @@ export const useAppStore = defineStore('app', () => {
   const auth = useAuthStore()
   const authorized = computed(() => auth.authenticated)
   const lastChatPath = ref('/')
-  const drafts = ref<Record<string, { text: string; files: Array<{ uri: string; file: FileRef }>; attempt?: AstralInternalHarnessInputRequest; session?: SessionView; selection?: Partial<SessionView> }>>({})
+  const drafts = ref<Record<string, { text: string; files: Array<{ uri: string; file: FileRef }>; attempt?: AstralInternalHarnessInputRequest; session?: SessionView; selection?: Partial<SessionView>; confirmedModelSelection?: { sessionID: string; profile_id: string; reasoning?: SessionView['reasoning'] } }>>({})
   const query = useQuery({ ...bootstrapQuery(), enabled: () => authorized.value, staleTime: 15_000 })
   const sessionQuery = useQuery({ ...listSessionsQuery(), enabled: () => authorized.value, staleTime: 5000 })
   const computerQuery = useQuery({ ...listComputersQuery(), enabled: () => authorized.value, staleTime: 5000 })

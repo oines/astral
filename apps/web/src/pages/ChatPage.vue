@@ -34,7 +34,12 @@ const showChatLoading = useDelayedPending(() => id.value && !view.value && !live
 const error = ref('')
 const busy = ref(false)
 const activeAgent = computed(() => app.agents.find(agent => agent.id === app.activeAgentID))
-const readyToStart = computed(() => activeAgent.value && app.availableModels.some(model => model.id === activeAgent.value?.default_model_id))
+const initialModel = computed(() => {
+  const agent = activeAgent.value
+  const priority = agent?.model_priority?.length ? agent.model_priority : agent?.default_model_id ? [{ id: agent.default_model_id, reasoning: agent.default_reasoning }] : []
+  return priority.find(selection => app.availableModels.some(model => model.id === selection.id))
+})
+const readyToStart = computed(() => !!initialModel.value)
 watch(() => view.value?.id === id.value ? view.value?.agent_id : app.sessions.find(session => session.id === id.value)?.agent_id, agentID => {
   if (agentID) app.activeAgentID = agentID
 }, { immediate: true })
@@ -50,8 +55,8 @@ function sidebarOpened(element: Element) {
   if (document.activeElement === document.body) element.querySelector<HTMLButtonElement>('.sidebar-agent')?.focus()
 }
 const initialView = computed<SessionView>(() => {
-  const agent = app.agents.find(a => a.id === app.activeAgentID)
-  return { ...newMeta(), agent_id: app.activeAgentID, title: t('newSession'), archived: false, pinned: false, source: 'web', selection: { id: agent?.default_model_id || '', reasoning: agent?.default_reasoning }, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', can_continue: false, model_available: readyToStart.value || false, approvals: [], pending: [], unresolved: [], profile_id: agent?.default_model_id || '', reasoning: agent?.default_reasoning, computer_id: agent?.default_computer_id || '' }
+  const selection = initialModel.value || { id: '' }
+  return { ...newMeta(), agent_id: app.activeAgentID, title: t('newSession'), archived: false, pinned: false, source: 'web', selection, head_id: '', rollout_id: '', event_sequence: 0, status: 'idle', can_continue: false, model_available: readyToStart.value, approvals: [], pending: [], unresolved: [], profile_id: selection.id, reasoning: selection.reasoning, computer_id: activeAgent.value?.default_computer_id || '' }
 })
 async function started(sessionID: string) {
   await router.push(`/sessions/${sessionID}`)

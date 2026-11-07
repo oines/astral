@@ -18,8 +18,8 @@ export const providersEn = {
   modelUnavailable_provider_missing: 'Connection deleted', modelUnavailable_provider_disabled: 'Connection disabled', modelUnavailable_model_disabled: 'Model disabled', modelUnavailable_model_missing: 'Model removed', modelUnavailable_invalid_configuration: 'Model configuration needs attention',
   modelUnavailable_token_limits_unknown: 'Set the context and output limits before using this model',
   selectAvailableModelHint: '. Select an available model below.',
-  deleteProviderHint: 'This connection and its models will be removed. Bots and sessions using them will need a new model selection. History is preserved.',
-  deleteModelHint: 'Bots and sessions using this model will need a new model selection. History is preserved. Refreshing the provider catalog adds this model again if it is still listed.',
+  deleteProviderHint: 'This connection and its models will be removed. Model priority lists keep these entries and skip them. Work needs another available model to continue. History is preserved.',
+  deleteModelHint: 'Model priority lists keep this entry and skip it. Work needs another available model to continue. History is preserved. A later catalog refresh may add a new entry with the same name; select it explicitly to replace the old one.',
 }
 export const providersZh: typeof providersEn = {
   providerPageTitle: '模型服务商', chooseProvider: '服务商', customProvider: '自定义服务商', customEndpoint: '自定义 API 地址',
@@ -41,6 +41,6 @@ export const providersZh: typeof providersEn = {
   modelUnavailable_provider_missing: '连接已删除', modelUnavailable_provider_disabled: '连接已停用', modelUnavailable_model_disabled: '模型已停用', modelUnavailable_model_missing: '模型已移除', modelUnavailable_invalid_configuration: '模型配置待补全',
   modelUnavailable_token_limits_unknown: '填写上下文与最大输出限制后即可使用',
   selectAvailableModelHint: '，请在下方选择可用模型。',
-  deleteProviderHint: '此连接及其模型将被移除。使用它们的 Bot 和会话需要重新选择模型，历史记录保留。',
-  deleteModelHint: '使用此模型的 Bot 和会话需要重新选择模型，历史记录保留。如果服务商目录仍列出此模型，刷新目录会重新加入。',
+  deleteProviderHint: '此连接及其模型将被移除。优先列表保留失效项并跳过，需要其他可用模型才能继续工作。历史记录保留。',
+  deleteModelHint: '优先列表保留此项并跳过，需要其他可用模型才能继续工作。历史记录保留。刷新目录可能重新加入同名模型，需要明确选择来替换旧项。',
 }

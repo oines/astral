@@ -211,7 +211,11 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 	inputID, kind := metadata.EventID, core.InputContext
 	if trigger != nil {
 		inputID += ":trigger"
-		if IMCanProbe(r.core.Load()) {
+		canProbe, probeErr := s.IMCanProbe(ctx, id, r.core.Load())
+		if probeErr != nil {
+			return InputReceipt{}, probeErr
+		}
+		if canProbe {
 			kind = core.InputSteer
 		}
 	}
@@ -252,6 +256,9 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 		r.maybeGenerateSessionTitle(metadata.DisplayText)
 	}
 	if err == nil && trigger != nil && kind == core.InputContext {
+		if pending, checkErr := s.ModelFallbackPending(ctx, id); checkErr != nil || pending {
+			return receipt, checkErr
+		}
 		// A new explicit message can resume a stopped queue or an attempt left
 		// by a crash. Passive delivery makes it available to the resumed run.
 		snapshot := r.core.Load().Snapshot()
@@ -318,6 +325,9 @@ func (r *runtime) wakeObservation(ctx context.Context, inputID string, trigger c
 	handled, err := inspector.Handled(ctx, inputID)
 	if err != nil || handled {
 		return IMWakeCovered, err
+	}
+	if pending, err := r.service.ModelFallbackPending(ctx, r.id); err != nil || pending {
+		return IMWakeBusy, err
 	}
 	wakeupID := inputID + ":wakeup"
 	var metadata messages.Metadata

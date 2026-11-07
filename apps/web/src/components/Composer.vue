@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { RouterLink } from 'vue-router'
 import { createSession, continueSession, decideApproval, inputReceipt, movePending, removePending, updatePending, selectComputer, selectModel, stopSession, submitInput, uploadAttachment } from '@astral/sdk'
-import { ArrowUp, ArrowDown, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, Bot, ListEnd, CornerDownRight, Trash2, Ellipsis, Pencil } from '@astral/icons'
+import { ArrowUp, ArrowDown, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, Bot, ListEnd, CornerDownRight, Trash2, Ellipsis, Pencil, Settings2 } from '@astral/icons'
 import { Button, Popover, useDelayedPending } from '@astral/ui'
 import type { SessionView } from '../lib/types'
-import { errorText, fileURL, request } from '../lib/api'
+import { clone, errorText, fileURL, jsonEqual, request } from '../lib/api'
 import { prepareInputAttempt, sameInputContent } from '../lib/input-attempt'
 import { useAppStore } from '../stores/app'
 import ModelSelection from './ModelSelection.vue'
@@ -83,7 +84,9 @@ async function action(fn: () => Promise<unknown>) {
 async function ensureSession() {
   if (props.view.id) return
   const desired = { ...view.value }
+  const explicitModel = homeSelection.value.profile_id ? clone({ profile_id: homeSelection.value.profile_id, reasoning: homeSelection.value.reasoning }) : undefined
   if (!draft.session) {
+    draft.confirmedModelSelection = undefined
     const created = await request(createSession({ body: { agent_id: desired.agent_id, title: '' } }))
     draft.session = created
   }
@@ -92,10 +95,14 @@ async function ensureSession() {
     await request(selectComputer({ path: { id: session.id }, body: { computer_id: desired.computer_id } }))
     draft.session.computer_id = desired.computer_id
   }
-  if (desired.profile_id && (desired.profile_id !== session.profile_id || JSON.stringify(desired.reasoning) !== JSON.stringify(session.reasoning))) {
-    await request(selectModel({ path: { id: session.id }, body: { profile_id: desired.profile_id, reasoning: desired.reasoning } }))
-    draft.session.profile_id = desired.profile_id
-    draft.session.reasoning = desired.reasoning
+  const confirmed = draft.confirmedModelSelection
+  // A matching active fallback model does not confirm the user's preference.
+  // Remember the explicit write so input retries do not reset later fallback.
+  if (explicitModel && (confirmed?.sessionID !== session.id || confirmed.profile_id !== explicitModel.profile_id || !jsonEqual(confirmed.reasoning, explicitModel.reasoning))) {
+    await request(selectModel({ path: { id: session.id }, body: explicitModel }))
+    draft.session.profile_id = explicitModel.profile_id
+    draft.session.reasoning = explicitModel.reasoning
+    draft.confirmedModelSelection = { sessionID: session.id, ...explicitModel }
   }
 }
 async function changeComputer(id: string) {
@@ -145,6 +152,7 @@ async function send(overrideMode?: string) {
     if (!props.view.id) {
       const id = view.value.id
       draft.session = undefined
+      draft.confirmedModelSelection = undefined
       emit('started', id)
     }
   } catch (e) { error.value = errorText(e) }
@@ -573,7 +581,6 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
                 <button
                   type="button"
                   class="composer-picker computer-picker"
-                  :disabled="running"
                   :aria-label="t('computer')"
                   :title="computer?.name"
                 >
@@ -589,6 +596,7 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
                   :key="c.id"
                   type="button"
                   class="menu-item"
+                  :disabled="running"
                   @click="changeComputer(c.id); close()"
                 >
                   <Monitor /><span>{{ c.name }}<small
@@ -596,6 +604,14 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
                     class="muted"
                   > · {{ t('offline') }}</small></span><Check v-if="view.computer_id === c.id" />
                 </button>
+                <hr class="separator">
+                <RouterLink
+                  class="menu-item"
+                  :to="{ path: '/settings/agents', query: { agent: view.agent_id, tab: 'computers' } }"
+                  @click="close()"
+                >
+                  <Settings2 />{{ t('manageComputers') }}
+                </RouterLink>
               </template>
             </Popover>
             <div class="composer-agent">

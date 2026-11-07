@@ -25,30 +25,33 @@ import (
 )
 
 type Service struct {
-	Store           *persistence.Store
-	CoreStore       core.Store
-	Models          *modelbridge.Bridge
-	Hub             *computers.Hub
-	Files           *filestream.Service
-	Search          *search.Service
-	Recall          *recall.Service
-	Schedules       *schedule.Service
-	Timezone        *timezone.Service
-	RuntimeID       string
-	IM              Messenger
-	StorageChanged  func()
-	ctx             context.Context
-	cancel          context.CancelFunc
-	mu              sync.Mutex
-	deleteMu        sync.Mutex
-	agentMu         sync.RWMutex
-	runtimes        map[string]*runtime
-	closed          bool
-	changes         chan string
-	workers         sync.WaitGroup
-	subagentMu      sync.Mutex
-	subagentWake    chan struct{}
-	subagentWorkers sync.WaitGroup
+	Store                *persistence.Store
+	CoreStore            core.Store
+	Models               *modelbridge.Bridge
+	Hub                  *computers.Hub
+	Files                *filestream.Service
+	Search               *search.Service
+	Recall               *recall.Service
+	Schedules            *schedule.Service
+	Timezone             *timezone.Service
+	RuntimeID            string
+	IM                   Messenger
+	StorageChanged       func()
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	mu                   sync.Mutex
+	deleteMu             sync.Mutex
+	agentMu              sync.RWMutex
+	runtimes             map[string]*runtime
+	closed               bool
+	changes              chan string
+	workers              sync.WaitGroup
+	subagentMu           sync.Mutex
+	subagentWake         chan struct{}
+	subagentWorkers      sync.WaitGroup
+	modelFallbackMu      sync.Mutex
+	modelFallbackWorkers sync.WaitGroup
+	modelFallbackProbes  map[string]modelFallbackProbe
 }
 
 type runtime struct {
@@ -82,6 +85,7 @@ func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bri
 	s.Schedules = schedule.New(store, s.deliverSchedule, s.scheduleAccepted, func() { s.notify("") }, s.Timezone)
 	s.subagentWorkers.Add(1)
 	go s.subagentWorker()
+	s.startModelFallbackWorker()
 	return s
 }
 func (s *Service) Changes() <-chan string { return s.changes }
@@ -181,6 +185,15 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	session, err := core.OpenSession(ctx, config, r.id)
 	created := errors.Is(err, core.ErrNotFound)
 	if errors.Is(err, core.ErrNotFound) {
+		if r.subagent != nil {
+			config.Selection, err = s.availableModelSelection(ctx, agent, r.subagent.Configuration.Selection)
+			if err != nil {
+				// The child was already accepted while its model was usable.
+				// Let Core persist its creation before passive preparation fails,
+				// so reconciliation can report an exhausted task to its parent.
+				config.Selection = r.subagent.Configuration.Selection
+			}
+		}
 		if r.subagent != nil && r.subagent.InheritContext {
 			parent, openErr := s.open(ctx, record.SubagentParentID)
 			if openErr != nil {
@@ -209,12 +222,21 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 			session, err = core.OpenSession(ctx, config, r.id)
 		} else {
 			if r.subagent == nil {
-				config.Selection = core.ModelSelection{ID: agent.DefaultModelID, Reasoning: agent.DefaultReasoning}
+				config.Selection, err = s.FirstAvailableAgentModel(ctx, agent)
+				if err != nil {
+					return err
+				}
 			}
 			session, err = core.NewSession(ctx, config, core.SessionOptions{ID: r.id})
 		}
 	}
 	r.core.Store(session)
+	if err == nil && created && r.subagent == nil && record.ParentSessionID == "" {
+		priority := AgentModelPriority(agent)
+		if len(priority) > 0 {
+			err = r.initializeModelFallback(ctx, priority[0], config.Selection)
+		}
+	}
 	if err == nil {
 		err = r.finishInterruptedTools(ctx)
 	}
@@ -224,7 +246,12 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 	// continueLocked/Compact. Only a newly created Session needs initial setup.
 	if err == nil && created {
 		if r.subagent != nil {
-			err = r.core.Load().Configure(ctx, r.subagent.Configuration)
+			err = r.initializeModelFallback(ctx, r.subagent.Configuration.Selection, config.Selection)
+			if err == nil {
+				configuration := r.subagent.Configuration
+				configuration.Selection = config.Selection
+				err = r.core.Load().Configure(ctx, configuration)
+			}
 		}
 	}
 	if err == nil && created {
@@ -256,6 +283,7 @@ func (r *runtime) coreConfig(record domain.Session) core.Config {
 		SystemPrompt: systemPromptFor(record), Tools: r.hostTools(),
 		Compaction: core.CompactionPolicy{SystemPrompt: r.compactionPrompt}, CollectContext: r.collectContext,
 		MaxContextBytes: 64 << 20, MaxParallelTools: 8,
+		Retry: core.RetryPolicy{MaxAttempts: 5},
 	}
 	if r.subagent != nil {
 		config.SystemPrompt = r.subagent.Configuration.SystemPrompt
@@ -268,9 +296,12 @@ func (r *runtime) resolveModel(ctx context.Context, selection core.ModelSelectio
 	ctx = modelbridge.WithSessionID(ctx, r.id)
 	resolved, err := r.service.Models.ResolveSelection(ctx, selection)
 	if err != nil {
+		if recordErr := r.recordModelFallbackFailure(ctx, selection, err); recordErr != nil {
+			return core.ResolvedModel{}, errors.Join(err, recordErr)
+		}
 		return core.ResolvedModel{}, err
 	}
-	resolved.Model = sessionModel{Model: resolved.Model, runtime: r}
+	resolved.Model = sessionModel{Model: resolved.Model, runtime: r, selection: selection}
 	return resolved, nil
 }
 
@@ -279,7 +310,8 @@ func (r *runtime) restoreModel(ctx context.Context, snapshot core.ModelSnapshot)
 	if err != nil {
 		return nil, err
 	}
-	return sessionModel{Model: model, runtime: r}, nil
+	profileID, _, _ := strings.Cut(snapshot.Spec.ID, "~")
+	return sessionModel{Model: model, runtime: r, selection: core.ModelSelection{ID: profileID}}, nil
 }
 
 func (r *runtime) currentBinding(ctx context.Context) (domain.ExecutionBinding, error) {
@@ -332,7 +364,7 @@ func (s *Service) createSession(ctx context.Context, agentID, title, id, source 
 	if err := s.Store.Get(ctx, "agents", agentID, &agent); err != nil {
 		return domain.Session{}, err
 	}
-	_, _, err = s.Models.Selection(ctx, agent.DefaultModelID)
+	_, err = s.FirstAvailableAgentModel(ctx, agent)
 	if err != nil {
 		return domain.Session{}, err
 	}
@@ -370,6 +402,37 @@ func (s *Service) createSession(ctx context.Context, agentID, title, id, source 
 	return record, err
 }
 
+// FirstAvailableAgentModel skips resources that the owner disabled or removed.
+// It validates local configuration only; availability at the provider is learned
+// by the task's real requests.
+func (s *Service) FirstAvailableAgentModel(ctx context.Context, agent domain.Agent) (core.ModelSelection, error) {
+	return s.availableModelSelection(ctx, agent, core.ModelSelection{})
+}
+
+func (s *Service) availableModelSelection(ctx context.Context, agent domain.Agent, preferred core.ModelSelection) (core.ModelSelection, error) {
+	var firstErr error
+	priority := AgentModelPriority(agent)
+	if preferred.ID != "" {
+		priority = append([]core.ModelSelection{preferred}, priority...)
+	}
+	seen := map[string]bool{}
+	for _, selection := range priority {
+		if seen[selection.ID] {
+			continue
+		}
+		seen[selection.ID] = true
+		if _, err := s.Models.ResolveSelection(ctx, selection); err == nil {
+			return selection, nil
+		} else if firstErr == nil {
+			firstErr = err
+		}
+	}
+	if firstErr != nil {
+		return core.ModelSelection{}, firstErr
+	}
+	return core.ModelSelection{}, domain.Invalid("choose a model for this Bot before creating a Session")
+}
+
 func (s *Service) Close(ctx context.Context) error {
 	s.mu.Lock()
 	s.closed = true
@@ -388,7 +451,7 @@ func (s *Service) Close(ctx context.Context) error {
 	// remain alive until the ordinary shutdown below, so this wait cannot race
 	// a closed parent handle or strand a tool behind a closed Session.
 	subagentsDone := make(chan struct{})
-	go func() { s.subagentWorkers.Wait(); close(subagentsDone) }()
+	go func() { s.subagentWorkers.Wait(); s.modelFallbackWorkers.Wait(); close(subagentsDone) }()
 	select {
 	case <-subagentsDone:
 	case <-ctx.Done():

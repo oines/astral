@@ -124,7 +124,8 @@ func promptConversationID(prompt string) (string, error) {
 // attempt retains its frozen prompt. Auxiliary calls are not replaced.
 type sessionModel struct {
 	core.Model
-	runtime *runtime
+	runtime   *runtime
+	selection core.ModelSelection
 }
 
 func (m sessionModel) Stream(ctx context.Context, request core.Request, emit func(core.ModelEvent)) (core.Reply, error) {
@@ -142,8 +143,27 @@ func (m sessionModel) Stream(ctx context.Context, request core.Request, emit fun
 		if err != nil && !errors.Is(err, core.ErrBusy) {
 			return core.Reply{}, err
 		}
+	} else if m.runtime.subagent == nil && request.SystemPrompt != m.runtime.compactionPrompt {
+		// A bulk preference update can arrive while Core is preparing a frozen
+		// request. Reconcile its successor once that request is safe to change.
+		selection, err := m.runtime.service.modelFallbackSelection(ctx, m.runtime.id, m.runtime.core.Load().Configuration().Selection)
+		if err != nil {
+			return core.Reply{}, err
+		}
+		if !jsonEqual(m.runtime.core.Load().Configuration().Selection, selection) {
+			if err = m.runtime.core.Load().SelectModel(ctx, selection); err != nil && !errors.Is(err, core.ErrBusy) {
+				return core.Reply{}, err
+			}
+		}
 	}
-	return m.Model.Stream(ctx, request, emit)
+	reply, err := m.Model.Stream(ctx, request, emit)
+	if err != nil {
+		return reply, m.runtime.modelFallbackCallError(ctx, m.selection, err)
+	}
+	if err := m.runtime.recordModelFallbackSuccess(ctx); err != nil {
+		return reply, err
+	}
+	return reply, nil
 }
 
 func (m sessionModel) PrepareRequest(ctx context.Context, request core.Request) (core.Request, error) {
@@ -173,7 +193,11 @@ func (m sessionModel) EstimateTokens(ctx context.Context, request core.Request) 
 }
 
 func (m sessionModel) ValidateRequest(ctx context.Context, request core.Request) error {
-	return core.ValidateRequest(ctx, m.Model, request)
+	err := core.ValidateRequest(ctx, m.Model, request)
+	if err != nil {
+		return errors.Join(err, m.runtime.recordModelFallbackFailure(ctx, m.selection, err))
+	}
+	return nil
 }
 
 func (m sessionModel) RecoverRequest(ctx context.Context, request core.Request, cause error) (core.Request, bool, error) {

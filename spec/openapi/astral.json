@@ -2096,6 +2096,15 @@
           "id": {
             "type": "string"
           },
+          "model_auto_restore": {
+            "type": "boolean"
+          },
+          "model_priority": {
+            "items": {
+              "$ref": "#/components/schemas/astral_core_ModelSelection"
+            },
+            "type": "array"
+          },
           "name": {
             "type": "string"
           },
@@ -2125,6 +2134,7 @@
           "created_at",
           "updated_at",
           "name",
+          "model_auto_restore",
           "allowed_computers"
         ],
         "type": "object"
@@ -4713,6 +4723,17 @@
         ],
         "type": "object"
       },
+      "astral_internal_httpapi_AppliedModelPriority": {
+        "properties": {
+          "updated": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "updated"
+        ],
+        "type": "object"
+      },
       "astral_internal_httpapi_Approval": {
         "properties": {
           "decision": {
@@ -7037,6 +7058,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Agents"
+        ]
+      }
+    },
+    "/api/v1/agents/{id}/apply-model-priority": {
+      "post": {
+        "operationId": "applyAgentModelPriority",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpapi_AppliedModelPriority"
                 }
               }
             },

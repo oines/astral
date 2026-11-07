@@ -8,7 +8,7 @@ import { useAppStore } from '../stores/app'
 import { modelReasoning, reasoningSelection, type ModelSelection } from '../lib/model-reasoning'
 import { modelUnavailableLabel } from '../lib/model-availability'
 
-const props = defineProps<{ modelValue: string; reasoning?: Reasoning; label?: string; emptyLabel?: string; busy?: boolean; composer?: boolean; unavailableReason?: string }>()
+const props = defineProps<{ modelValue: string; reasoning?: Reasoning; label?: string; emptyLabel?: string; allowEmpty?: boolean; busy?: boolean; disabled?: boolean; composer?: boolean; unavailableReason?: string; exclude?: string[]; closeOnSelect?: boolean; showProvider?: boolean }>()
 const emit = defineEmits<{ select: [selection: ModelSelection] }>()
 const app = useAppStore()
 const { t } = useI18n()
@@ -18,8 +18,8 @@ const modelName = computed(() => profile.value?.name || (props.modelValue ? t('m
 const modelLabel = computed(() => unavailableReason.value ? `${modelName.value} · ${modelUnavailableLabel(unavailableReason.value, t)}` : modelName.value)
 const reasoningState = computed(() => modelReasoning(unavailableReason.value ? undefined : profile.value, props.reasoning, t))
 const models = computed(() => {
-  const result = app.availableModels.map(model => ({ value: model.id, label: model.name, group: model.provider_id, groupLabel: model.provider_name || '', keywords: model.model_id, disabled: false }))
-  if (props.emptyLabel) result.unshift({ value: '', label: props.emptyLabel, group: '', groupLabel: '', keywords: '', disabled: false })
+  const result = app.availableModels.filter(model => model.id === props.modelValue || !props.exclude?.includes(model.id)).map(model => ({ value: model.id, label: model.name, group: model.provider_id, groupLabel: model.provider_name || '', keywords: model.model_id, disabled: false }))
+  if (props.emptyLabel && props.allowEmpty !== false) result.unshift({ value: '', label: props.emptyLabel, group: '', groupLabel: '', keywords: '', disabled: false })
   if (props.modelValue && !result.some(model => model.value === props.modelValue)) result.push({ value: props.modelValue, label: modelLabel.value, group: '', groupLabel: '', keywords: '', disabled: true })
   return result
 })
@@ -44,19 +44,26 @@ function chooseBudget(value: number) {
     :reasoning-budget-value="reasoning?.budget_tokens"
     :labels="{ model: label || t('model'), reasoning: t('reasoning'), search: t('searchModels'), empty: t('noModelMatch'), budget: t('reasoningBudget'), useBudget: t('useReasoningBudget') }"
     :busy="busy"
+    :close-on-select="closeOnSelect"
     :side="composer ? 'top' : 'bottom'"
     :align="composer ? 'end' : 'start'"
     @update:model-value="chooseModel"
     @update:reasoning-value="chooseReasoning"
     @update:reasoning-budget-value="chooseBudget"
   >
-    <button
-      type="button"
-      :class="composer ? 'composer-picker model-picker' : 'select-trigger model-selection-trigger'"
-      :aria-label="label || t('model')"
-      :title="[modelLabel, ...(reasoningState.options.length ? [reasoningState.label] : []), ...(profile?.reasoning_error ? [profile.reasoning_error] : [])].join(' · ')"
-    >
-      <span>{{ modelLabel }}</span><small v-if="reasoningState.options.length">· {{ reasoningState.label }}</small><ChevronDown />
-    </button>
+    <slot name="trigger">
+      <button
+        type="button"
+        :class="composer ? 'composer-picker model-picker' : 'select-trigger model-selection-trigger'"
+        :disabled="disabled"
+        :aria-label="label || t('model')"
+        :title="modelValue ? [modelLabel, ...(showProvider && profile?.provider_name ? [profile.provider_name] : []), ...(reasoningState.options.length ? [reasoningState.label] : []), ...(profile?.reasoning_error ? [profile.reasoning_error] : [])].join(' · ') : undefined"
+      >
+        <span>{{ modelLabel }}<span
+          v-if="showProvider && profile?.provider_name"
+          class="muted"
+        > · {{ profile.provider_name }}</span></span><small v-if="reasoningState.options.length">· {{ reasoningState.label }}</small><ChevronDown />
+      </button>
+    </slot>
   </ModelPicker>
 </template>

@@ -83,7 +83,7 @@ func (s *Service) bindExpected(ctx context.Context, conversationID, sessionID st
 		}
 		stop = append(stop, sessionID)
 	} else {
-		_, _, selectionErr := s.Harness.Models.Selection(ctx, agent.DefaultModelID)
+		_, selectionErr := s.Harness.FirstAvailableAgentModel(ctx, agent)
 		if selectionErr != nil {
 			return domain.ConversationBinding{}, selectionErr
 		}

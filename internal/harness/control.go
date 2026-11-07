@@ -39,37 +39,8 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 			return domain.Missing("Bot", agent.ID)
 		}
 	}
-	for _, selection := range []struct {
-		model             string
-		reasoning         *core.ReasoningOptions
-		previousModel     string
-		previousReasoning *core.ReasoningOptions
-	}{
-		{agent.DefaultModelID, agent.DefaultReasoning, previous.DefaultModelID, previous.DefaultReasoning},
-		{agent.ProbeModelID, agent.ProbeReasoning, previous.ProbeModelID, previous.ProbeReasoning},
-	} {
-		// Deleted or disabled models leave their saved references intact. An
-		// unrelated edit or repair of the other selection must still be possible;
-		// only a newly chosen model/reasoning pair needs current validation.
-		if agent.Revision > 0 && selection.model == selection.previousModel && jsonEqual(selection.reasoning, selection.previousReasoning) {
-			continue
-		}
-		if selection.model == "" {
-			if selection.reasoning != nil {
-				return domain.Invalid("a reasoning override requires an explicit model")
-			}
-			continue
-		}
-		ref, options, err := s.Models.Selection(ctx, selection.model)
-		if err != nil {
-			return err
-		}
-		if selection.reasoning != nil {
-			options.Reasoning = *selection.reasoning
-			if err = s.Models.ValidateOptions(ctx, ref, options); err != nil {
-				return err
-			}
-		}
+	if err := s.validateAgentModels(ctx, agent, previous); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for _, id := range agent.AllowedComputers {
@@ -153,6 +124,16 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 		return err
 	}
 	configuration := r.core.Load().Configuration()
+	selection, err := r.service.modelFallbackSelection(ctx, r.id, configuration.Selection)
+	if err != nil {
+		return err
+	}
+	if !jsonEqual(configuration.Selection, selection) {
+		if err := r.core.Load().SelectModel(ctx, selection); err != nil {
+			return err
+		}
+		configuration.Selection = selection
+	}
 	definitions := []core.ToolDefinition{}
 	for _, tool := range r.hostTools() {
 		if tool.Definition().Name != "send_message" || record.BindingID != "" {
@@ -218,13 +199,24 @@ func (r *runtime) continueLocked(ctx context.Context) error {
 	if snapshot := r.core.Load().Snapshot(); snapshot.Running || snapshot.Maintenance {
 		return core.ErrBusy
 	}
+	if pending, err := r.service.ModelFallbackPending(ctx, r.id); err != nil {
+		return err
+	} else if pending {
+		return core.ErrBusy
+	}
 	if err := r.finishInterruptedTools(ctx); err != nil {
+		return err
+	}
+	if err := r.prepareModelFallback(ctx); err != nil {
 		return err
 	}
 	if err := r.syncBusinessConfig(ctx); err != nil {
 		return err
 	}
-	_, err := r.core.Load().Continue(ctx)
+	run, err := r.core.Load().Continue(ctx)
+	if err == nil {
+		r.observeModelFallbackRun(run)
+	}
 	r.service.notify(r.id)
 	return err
 }
@@ -241,6 +233,11 @@ func (s *Service) Continue(ctx context.Context, id string) error {
 func (s *Service) Stop(ctx context.Context, id string) error {
 	r, err := s.open(ctx, id)
 	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := s.cancelModelFallback(ctx, id); err != nil {
 		return err
 	}
 	r.core.Load().Cancel()

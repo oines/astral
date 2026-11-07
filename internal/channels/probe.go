@@ -88,7 +88,7 @@ func (s *Service) resumeAcceptedProbe(ctx context.Context, b domain.Conversation
 					return nil
 				}
 				persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-				_, err = session.Continue(persist)
+				err = s.Harness.ContinueWithinSession(persist, session)
 				cancel()
 				if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
 					return nil
@@ -178,10 +178,10 @@ func (s *Service) pendingProbe(ctx context.Context, b domain.ConversationBinding
 	}
 	var window probeWindow
 	err := s.Harness.WithSession(ctx, b.SessionID, func(session *core.Session) error {
-		if !harness.IMCanProbe(session) {
-			return nil
+		canProbe, err := s.Harness.IMCanProbe(ctx, b.SessionID, session)
+		if err != nil || !canProbe {
+			return err
 		}
-		var err error
 		window, err = s.probeWindow(ctx, b, delivered, now, session)
 		return err
 	})
@@ -473,7 +473,11 @@ func (s *Service) completeProbe(ctx context.Context, b domain.ConversationBindin
 			// run. Re-evaluate only the remaining messages at the next idle window.
 			return nil
 		}
-		if !harness.IMCanProbe(session) {
+		canProbe, err := s.Harness.IMCanProbe(ctx, b.SessionID, session)
+		if err != nil {
+			return err
+		}
+		if !canProbe {
 			settled = false
 			return nil
 		}
@@ -494,7 +498,7 @@ func (s *Service) completeProbe(ctx context.Context, b domain.ConversationBindin
 			return nil
 		}
 		persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		_, err = session.Continue(persist)
+		err = s.Harness.ContinueWithinSession(persist, session)
 		cancel()
 		if errors.Is(err, core.ErrBusy) || errors.Is(err, core.ErrNotContinuable) {
 			err = nil

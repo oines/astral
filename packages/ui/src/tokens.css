@@ -25,6 +25,9 @@
   --control-track: #d9d8d2;
   --overlay: #1f1e1b2b;
   --hairline: 1px;
+  --control-height: 36px;
+  --control-small-height: 32px;
+  --control-icon-size: 34px;
   --radius-control: 8px;
   --radius-panel: 12px;
   --radius-dialog: 16px;
@@ -125,7 +128,7 @@ input[type='checkbox'] { appearance: none; width: 17px; height: 17px; margin: 0;
 input[type='checkbox']:checked { background: var(--control-active); border-color: var(--control-active); }
 input[type='checkbox']:checked::after { content: ''; width: 8px; height: 5px; border: solid var(--control-on-active); border-width: 0 0 1.8px 1.8px; transform: translateY(-1px) rotate(-45deg); }
 textarea { resize: vertical; min-height: 100px; }
-.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: var(--radius-control); padding: 7px 12px; min-height: 36px; font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: var(--radius-control); padding: 7px 12px; min-height: var(--control-height); font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap; }
 .button:hover { text-decoration: none; }
 .button-primary { background: var(--ink); color: var(--bg); }
 .button-primary:hover:not(:disabled):not([data-disabled]) { opacity: .86; }
@@ -133,8 +136,8 @@ textarea { resize: vertical; min-height: 100px; }
 .button-secondary:hover:not(:disabled):not([data-disabled]), .button-ghost:hover:not(:disabled):not([data-disabled]) { background: var(--hover); }
 .button-ghost { background: transparent; color: var(--ink); }
 .button-danger { background: var(--danger-soft); color: var(--danger); }
-.button-small { padding: 5px 10px; min-height: 32px; font-size: 13px; }
-.button-icon { width: 34px; height: 34px; min-height: 34px; padding: 7px; }
+.button-small { padding: 5px 10px; min-height: var(--control-small-height); font-size: 13px; }
+.button-icon { width: var(--control-icon-size); height: var(--control-icon-size); min-height: var(--control-icon-size); padding: 7px; }
 .button:active:not(:disabled) { transform: scale(.98); }
 .row { display: flex; align-items: center; gap: 10px; }
 .between { justify-content: space-between; }
@@ -163,7 +166,7 @@ textarea { resize: vertical; min-height: 100px; }
 .menu-item:hover:not(:disabled):not([data-disabled]), .menu-item:focus-visible { background: var(--hover); text-decoration: none; }
 .menu-item:focus-visible { outline: 1px solid var(--focus-ring); outline-offset: -1px; }
 .menu-item > span { flex: 1; }
-.select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 36px; max-width: 100%; border: 1px solid var(--field-line); border-radius: var(--radius-control); padding: 6px 10px 6px 12px; background: var(--field-bg); box-shadow: var(--control-shadow); font-size: 13px; text-align: left; line-height: 1.5; }
+.select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--control-height); max-width: 100%; border: 1px solid var(--field-line); border-radius: var(--radius-control); padding: 6px 10px 6px 12px; background: var(--field-bg); box-shadow: var(--control-shadow); font-size: 13px; text-align: left; line-height: 1.5; }
 .select-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select-trigger > svg { width: 16px; height: 16px; color: var(--muted); }
 .select-trigger > svg { transition: transform var(--motion-normal) var(--ease-out); }

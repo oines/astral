@@ -44,7 +44,9 @@ Tokens are units used by models to measure content, rather than a direct word co
 
 ## Choose a model for a Bot or session
 
-During first-time setup, select the configured model and proceed to the computer step. Later, choose a default under **Settings → Bots → your Bot → Basic settings**. The default applies to new sessions. Choose a model separately in the input area of an existing session.
+During first-time setup, select the configured model and proceed to the computer step. Later, arrange the preferred model and alternatives under **Settings → Bots → your Bot → Basic settings → Model priority**. Each entry has its own reasoning choice. New sessions prefer the first entry; existing sessions keep their preferred model and use the current list for alternatives. **Apply to all sessions** sets this Bot's existing sessions and subagents to prefer the first entry too. See [model recovery](/docs/usage/bots/#keep-work-moving-when-a-model-is-unavailable) for automatic switching and restoring the preferred model. You can still choose a preferred model separately in a session's input area.
+
+Use a row's drag handle to change its priority. The focused handle also accepts Up, Down, Home, and End; each completed move saves automatically. Connection names help distinguish models with the same name.
 
 With an online computer selected, try a small task whose result you can check:
 
@@ -68,7 +70,7 @@ Tests use the saved connection. The test query does not become a standing task f
 | --- | --- |
 | A saved service, but setup cannot continue | Enable at least one model, complete its required limits, and select it in the setup step. |
 | An invalid-key or permission error | Check that the key belongs to this service and region, and that its account can use this model. For account authorization, try reconnecting the account. |
-| A quota or rate-limit error | Review the provider's quota and request limits before adding credit, waiting, or choosing another configured model. |
+| A quota or rate-limit error | Review the provider's quota and request limits. Add another trusted model to the Bot's priority list and apply it to existing sessions when needed; see [model recovery](/docs/usage/bots/#keep-work-moving-when-a-model-is-unavailable). |
 | A timeout or unreachable address | Check the Server machine's network and the Base URL. Reaching the provider's website in your browser does not test that connection. |
 | Text replies work, but tool use fails | Check that this model supports tools through the selected API protocol. Choose a suitable model if necessary. |
 | A search test works, but the Bot cannot search | Check that this Bot's basic settings select the connection you just tested. |
@@ -87,10 +89,12 @@ For a subagent that needs a different model, ask in the original conversation an
 
 A failed or incomplete fetch preserves the old list. A successfully returned empty catalog clears it. Codex and GitHub Copilot catalogs come from the signed-in account.
 
-Deleting one model does not prevent a later refresh from adding it again. Deleting a provider removes its models too. If you add the connection again, select a model again for affected Bots and sessions. Their history is preserved.
+To stop using a model temporarily, turn it off. Turning off a connection makes all its models unavailable without changing each model's own enabled setting. Priority lists keep these entries and skip them. Turning the same resource back on makes it eligible again; a request already in progress keeps its original settings.
+
+Deleting one model does not prevent a later refresh from adding it again, but the new entry has a new identity. Deleting a provider removes its models too. Priority lists retain missing entries until you remove or replace them; another usable entry can continue the work. Recreating a model or connection with the same name does not repair old choices automatically. Replace affected entries explicitly, and use **Apply to all sessions** when existing sessions should prefer the list's first entry. History is preserved.
 
 ## Group participation model
 
-With [proactive group participation](/docs/chat/groups/) enabled, Astral decides whether an ordinary group message should wake an idle Bot. By default it uses the session model; you can select a separate model for this decision in the Bot's settings.
+With [proactive group participation](/docs/chat/groups/) enabled, Astral decides whether an ordinary group message should wake an idle Bot. By default it uses the model actually serving the session, including after an automatic switch; you can select a separate model for this decision in the Bot's settings.
 
 This model only decides whether to start work. The session model performs the task and handles new chat content while the Bot is working.

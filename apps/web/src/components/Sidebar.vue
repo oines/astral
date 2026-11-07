@@ -2,8 +2,8 @@
 import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Plus, Search, Settings2, FolderOpen, Pin, Clock3, Lock } from '@astral/icons'
-import { Button, Modal, Select } from '@astral/ui'
+import { Plus, Search, Settings2, FolderOpen, Pin, Clock3, Lock, Check, ChevronDown } from '@astral/icons'
+import { Button, Modal, Menu, MenuItem, MenuItemIndicator, MenuRadioGroup, MenuRadioItem } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { errorText } from '../lib/api'
 import type { Session } from '../lib/types'
@@ -18,6 +18,7 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const search = ref('')
+const agentMenuOpen = ref(false)
 const filtered = computed(() => visibleSidebarSessions(app.sessions, app.schedules, isActive, String(route.params.id || '')).filter(s => s.agent_id === app.activeAgentID && s.title.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => b.updated_at.localeCompare(a.updated_at)))
 const rename = ref(false)
 const renameTarget = ref<Session>()
@@ -30,7 +31,9 @@ const groups = computed(() => sidebarGroups(filtered.value, app.schedules, isAct
 const planned = computed(() => new Set(app.schedules.filter(hasScheduledSession).map(schedule => schedule.session_id)))
 function agentName(id: string) { return app.agents.find(a => a.id === id)?.name || t('missing') }
 function navigate() { if (window.innerWidth < 760) app.sidebar = false }
+function manageBot() { agentMenuOpen.value = false; navigate() }
 function selectAgent(id: string) {
+  agentMenuOpen.value = false
   if (id === app.activeAgentID) return
   app.activeAgentID = id
   search.value = ''
@@ -73,14 +76,50 @@ async function presentation(session: Session, patch: { title?: string; pinned?: 
     :aria-label="t('recent')"
   >
     <div class="sidebar-heading">
-      <Select
+      <Menu
         v-if="app.agents.length"
-        :model-value="app.activeAgentID"
-        class="sidebar-agent"
+        v-model:open="agentMenuOpen"
+        class="sidebar-agent-menu"
         :label="t('agent')"
-        :options="app.agents.map(a => ({ value: a.id, label: a.name }))"
-        @update:model-value="selectAgent"
-      />
+        :side-offset="6"
+      >
+        <template #trigger>
+          <button
+            type="button"
+            class="sidebar-agent select-trigger"
+            :aria-label="t('agent')"
+          >
+            <span>{{ agentName(app.activeAgentID) }}</span><ChevronDown aria-hidden="true" />
+          </button>
+        </template>
+        <MenuRadioGroup
+          :model-value="app.activeAgentID"
+          @update:model-value="selectAgent(String($event))"
+        >
+          <MenuRadioItem
+            v-for="agent in app.agents"
+            :key="agent.id"
+            :value="agent.id"
+            :text-value="agent.name"
+            class="menu-item"
+          >
+            <span class="sidebar-agent-name">{{ agent.name }}</span>
+            <MenuItemIndicator as-child>
+              <Check aria-hidden="true" />
+            </MenuItemIndicator>
+          </MenuRadioItem>
+        </MenuRadioGroup>
+        <hr class="separator sidebar-agent-separator">
+        <MenuItem as-child>
+          <RouterLink
+            class="menu-item"
+            :to="{ path: '/settings/agents', query: { agent: app.activeAgentID } }"
+            @click="manageBot"
+          >
+            <Settings2 aria-hidden="true" />{{ t('manageBot') }}
+          </RouterLink>
+        </MenuItem>
+      </Menu>
     </div>
     <RouterLink
       to="/"
@@ -208,3 +247,10 @@ async function presentation(session: Session, patch: { title?: string; pinned?: 
     </Modal>
   </aside>
 </template>
+<style>
+.sidebar-agent-menu.popover { width: var(--reka-dropdown-menu-trigger-width); }
+.sidebar-agent-menu .menu-item[data-highlighted] { outline: none; background: var(--hover); }
+.sidebar-agent-menu .menu-item > svg { flex-shrink: 0; width: 16px; height: 16px; }
+.sidebar-agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-agent-menu .sidebar-agent-separator { width: auto; margin: 4px 9px; border-color: var(--panel-line); }
+</style>
