@@ -15,7 +15,10 @@ import { schedulesEn, schedulesZh } from './schedules'
 import { storageEn, storageZh } from './storage'
 import { imagesEn, imagesZh } from './images'
 import { toolDetailsEn, toolDetailsZh } from './tool-details'
+import { workspaceEn, workspaceZh } from './workspace'
+import { filesEn, filesZh } from './files'
 const en = {
+  ...workspaceEn, ...filesEn,
   ...toolDetailsEn,
   ...imagesEn,
   ...storageEn,
@@ -59,6 +62,7 @@ const en = {
   disconnect: 'Sign out', loading: 'Loading…', empty: 'Nothing here yet.', inspect: 'Inspect', result: 'Result', source: 'Source', terminal: 'Terminal output',
 }
 const zh: typeof en = {
+  ...workspaceZh, ...filesZh,
   ...toolDetailsZh,
   ...imagesZh,
   ...storageZh,

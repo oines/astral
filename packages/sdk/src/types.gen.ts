@@ -668,6 +668,22 @@ export type AstralInternalChannelsWeixinLoginView = {
     status: string;
 };
 
+export type AstralInternalComputersDirectoryEntry = {
+    is_dir: boolean;
+    modified_at: string;
+    name: string;
+    path: string;
+    size: number;
+};
+
+export type AstralInternalComputersDirectoryPage = {
+    computer_id: string;
+    entries: Array<AstralInternalComputersDirectoryEntry>;
+    next_cursor?: string;
+    parent: string;
+    path: string;
+};
+
 export type AstralInternalComputersEnrollmentResult = {
     command: string;
     enrollment: AstralInternalDomainEnrollment;
@@ -3042,6 +3058,86 @@ export type UpdateComputerResponses = {
 
 export type UpdateComputerResponse = UpdateComputerResponses[keyof UpdateComputerResponses];
 
+export type ListComputerDirectoryData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        /**
+         * Session whose Bot owns or is allowed to access this file.
+         */
+        session_id: string;
+        /**
+         * Directory or file path on the selected Computer. Relative paths use that Computer's Bot home. An omitted path uses the Session CWD on its current Computer, otherwise the Bot home.
+         */
+        path?: string;
+        /**
+         * Opaque continuation cursor from this directory's previous page.
+         */
+        cursor?: string;
+        /**
+         * Page size, from 1 to 500; defaults to 200.
+         */
+        limit?: number;
+    };
+    url: '/api/v1/computers/{id}/files/directory';
+};
+
+export type ListComputerDirectoryErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ListComputerDirectoryError = ListComputerDirectoryErrors[keyof ListComputerDirectoryErrors];
+
+export type ListComputerDirectoryResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalComputersDirectoryPage;
+};
+
+export type ListComputerDirectoryResponse = ListComputerDirectoryResponses[keyof ListComputerDirectoryResponses];
+
+export type ReferenceComputerFileData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        /**
+         * Session whose Bot owns or is allowed to access this file.
+         */
+        session_id: string;
+        /**
+         * Ordinary file path on the selected Computer. Creates a live reference, without a snapshot or Server copy.
+         */
+        path: string;
+    };
+    url: '/api/v1/computers/{id}/files/reference';
+};
+
+export type ReferenceComputerFileErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ReferenceComputerFileError = ReferenceComputerFileErrors[keyof ReferenceComputerFileErrors];
+
+export type ReferenceComputerFileResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayReferenceResponse;
+};
+
+export type ReferenceComputerFileResponse = ReferenceComputerFileResponses[keyof ReferenceComputerFileResponses];
+
 export type RevokeComputerData = {
     body?: never;
     path: {
@@ -3281,6 +3377,38 @@ export type EventSchemaResponses = {
 };
 
 export type EventSchemaResponse = EventSchemaResponses[keyof EventSchemaResponses];
+
+export type GetFileReferenceData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        /**
+         * Session whose Bot owns or is allowed to access this file.
+         */
+        session_id: string;
+    };
+    url: '/api/v1/files/{id}';
+};
+
+export type GetFileReferenceErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type GetFileReferenceError = GetFileReferenceErrors[keyof GetFileReferenceErrors];
+
+export type GetFileReferenceResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainFileRef;
+};
+
+export type GetFileReferenceResponse = GetFileReferenceResponses[keyof GetFileReferenceResponses];
 
 export type FileContentData = {
     body?: never;

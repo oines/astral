@@ -53,6 +53,8 @@ type Call struct {
 	Offset    int64                        `json:"offset,omitempty"`
 	Length    *int64                       `json:"length,omitempty"`
 	Version   string                       `json:"version,omitempty"`
+	Cursor    string                       `json:"cursor,omitempty"`
+	Limit     int                          `json:"limit,omitempty"`
 }
 type FileInfo struct {
 	Path      string    `json:"path"`

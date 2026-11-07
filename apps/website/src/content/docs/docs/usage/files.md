@@ -19,13 +19,29 @@ On Windows, use the native path, for example `C:\Users\mei\reports\meeting.txt`.
 
 ## Open results
 
-Click an image in the conversation to open the full-screen viewer, where you can zoom and download it. Other files open in the file sidebar; available previews depend on the file format. Download a copy to your own device or back it up on the source computer when you need to keep it.
+Click an image in the conversation to open the full-screen viewer, where you can zoom and download it. Other files open directly in the right-hand preview. Files and subagent conversations have separate tabs, so you can switch between them without finding their links again. Available previews depend on the file format. Download a copy to your own device or back it up on the source computer when you need to keep it.
+
+Markdown opens in a reading view. Code, configuration files, logs, and other files recognized as text use a code or plain-text preview, including files with an unfamiliar extension or no extension. Use **Copy content** in the preview toolbar to copy the text; Markdown copies its source text. When only part of a large file has loaded, **Copy preview content** copies only the current excerpt. Download the file to get its complete contents.
+
+The workspace normally sits beside the conversation, with separate space for each. Drag the divider between them to adjust their widths. As available width decreases, the workspace narrows first; it overlays the conversation only when there is no longer enough room for both.
+
+The **Files** button at the top of the panel shows or hides the file manager to the right of the preview. It stays in the same place in both states. Drag the divider between the preview and file manager to adjust their widths. In a narrow workspace, the file manager opens as a drawer over the preview. Click a file row to preview it; its context menu lets you download the file or copy the path.
+
+You can use **Files** to browse the current session computer's working directory before opening any attachment. Until a file is opened, this directory follows changes to the session computer. Opening a file locates it on its source computer; switching file tabs changes the directory view to that file's computer and location. Changing the session computer keeps existing file tabs and their original sources. A hidden file manager stays hidden when you switch files. Browsing folders or opening a file does not change the computer or working directory the Bot uses to execute your task.
+
+Subagent tabs show their conversations and tool activity in read-only form. To give a subagent more work or change its instructions, return to the original conversation and tell the Bot.
 
 If the Bot reports completion without a link, ask:
 
 > Give me a link to the file you created, along with its source computer and full path.
 
 The link retains its original computer. Selecting a different computer later does not move the file or change where an older link points.
+
+Use **Refresh preview** to read an updated working file without closing its tab. Refreshing the file manager updates its directory listing separately.
+
+In the Desktop app, a file's context menu can reveal it in Finder, File Explorer, or the system file manager when its source is the actual local Computer managed by that Desktop. The corresponding directory action opens the directory. Remote and container files can be browsed, previewed, and downloaded in Astral; they do not open as paths on your own machine. The browser interface does not provide native file-manager actions.
+
+A link may refer to a preserved snapshot. Its preview, download, and file-manager action use the snapshot's actual location on the source computer. Ask the Bot for the original path when you need the current working file.
 
 When the Bot reads an image on a computer, it preserves the original dimensions by default. Images above the default 150KB encoded-data compression threshold use quality-75 WebP; smaller images keep their original bytes. Final sizes vary with the image content. The original file on the computer stays intact.
 

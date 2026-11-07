@@ -40,14 +40,16 @@ async function render() {
 }
 
 describe('the subagent transcript surface', () => {
-  it('renders the parent navigation and reuses the transcript in read-only mode', async () => {
+  it('renders the read-only transcript without a status or breadcrumb row', async () => {
     mocks.session.state.value.view = { id: 'child', title: 'Backend', status: 'running' } as SessionState['view']
     const html = await render()
-    expect(html).toContain('Review')
-    expect(html).toContain('Backend')
+    expect(html).not.toContain('<nav')
+    expect(html).not.toContain('Review')
+    expect(html).not.toContain('Backend')
     expect(html).toContain('data-session="child"')
     expect(html).toContain('data-readonly="true"')
-    expect(html).toContain('running')
+    expect(html).not.toContain('subagent-surface-status')
+    expect(html).not.toContain('running')
     expect(html).not.toContain('textarea')
   })
 
@@ -64,7 +66,7 @@ describe('the subagent transcript surface', () => {
     mocks.session.state.value.view = { id: 'child', status: 'needs_attention', error: 'The selected model is unavailable.' } as SessionState['view']
     const html = await render()
     expect(html).toContain('The selected model is unavailable.')
-    expect(html).toContain('subagentFailed')
+    expect(html).not.toContain('subagentFailed')
     expect(html).not.toContain('retry')
   })
 

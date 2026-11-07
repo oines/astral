@@ -16,6 +16,7 @@ import { DesktopShutdown } from './shutdown'
 import { DesktopUpdateControl, startDesktopUpdateBridge } from './update-control'
 import { DesktopUpdateCache } from './update-cache'
 import { nativeWindowAppearance, titleBarAppearance } from './window-appearance'
+import { DesktopFiles, registerDesktopFileHandlers } from './files'
 import type { DesktopUpdateState } from '../shared/updates'
 
 app.setName('Astral')
@@ -219,6 +220,16 @@ async function start() {
     assertSender(event)
     await shell.openExternal(externalURL(url))
   })
+  registerDesktopFileHandlers(ipcMain, assertSender, new DesktopFiles({
+    localDirectory: join(root, 'computers', 'local'), serverURL,
+    alive: () => !!service.child?.pid && service.child.exitCode === null && service.child.signalCode === null && !quitting,
+    request: async (path, method = 'GET') => {
+      const response = await fetch(`${serverURL}${path}`, { method, headers: { Authorization: `Desktop ${token}`, Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(5000) })
+      if (!response.ok) throw new Error('The source file or Computer access could not be verified.')
+      return response.json()
+    },
+    shell,
+  }))
   ipcMain.handle('astral:appearance', (event, dark: unknown) => {
     assertSender(event)
     const appearance = titleBarAppearance(dark)

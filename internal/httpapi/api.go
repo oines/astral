@@ -186,6 +186,7 @@ func New(config Config) *API {
 	a.networkRoutes()
 	a.updateRoutes()
 	a.streamRoutes()
+	a.fileRoutes()
 	a.authRoutes()
 	a.handler = a.authenticate(a.mux)
 	return a
