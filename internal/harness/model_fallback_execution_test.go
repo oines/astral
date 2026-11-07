@@ -205,9 +205,11 @@ func TestModelFallbackPendingDoesNotFinishNewTaskBeforeItsRunIsObserved(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	// continueLocked keeps admission through prepare, Continue and observing
+	// the new Run. Keep that same boundary while inspecting the prepare gap.
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	err = r.prepareModelFallback(f.ctx)
-	r.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
