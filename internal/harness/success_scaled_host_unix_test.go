@@ -55,6 +55,7 @@ type scaledHostWire struct {
 	ServerProcessingNS int64 `json:"server_processing_ns,omitempty"`
 	ServerPeakRSSBytes int64 `json:"server_peak_rss_bytes,omitempty"`
 	ReceiverPID        int   `json:"receiver_pid,omitempty"`
+	ResponseDelayNS    int64 `json:"receiver_response_delay_ns,omitempty"`
 }
 
 type scaledHostRound struct {
@@ -79,6 +80,7 @@ type scaledHostRound struct {
 	Under50ms          bool             `json:"under_50ms"`
 	LocalUnder50ms     bool             `json:"local_under_50ms"`
 	EstimatedTokens    []int            `json:"estimated_input_tokens"`
+	ResourceWindow     map[string]any   `json:"resource_window,omitempty"`
 	WireStart, WireEnd int              `json:"-"`
 }
 
@@ -440,6 +442,7 @@ func TestHostSuccessScaledContext(t *testing.T) {
 			}
 		}()
 	}
+	storageBefore := performanceFixtureSnapshot(t, f)
 	var hotStarted time.Time
 	var rounds []scaledHostRound
 	runRound := func(index int) scaledHostRound {
@@ -450,6 +453,7 @@ func TestHostSuccessScaledContext(t *testing.T) {
 		receiver.mu.Lock()
 		round.WireStart = len(receiver.wires)
 		receiver.mu.Unlock()
+		resourcesBefore := performanceResources(t)
 		var before, after goruntime.MemStats
 		goruntime.ReadMemStats(&before)
 		cpuBefore := successScaledHostCPU(t)
@@ -481,6 +485,8 @@ func TestHostSuccessScaledContext(t *testing.T) {
 		}
 		round.WallNS, round.CPUNS = time.Since(started).Nanoseconds(), successScaledHostCPU(t)-cpuBefore
 		goruntime.ReadMemStats(&after)
+		resourcesAfter := performanceResources(t)
+		round.ResourceWindow = performanceDifference(resourcesBefore, resourcesAfter)
 		if runEnd.Status != "completed" || runEnd.Error != "" {
 			t.Fatalf("Host run failed in round %d", index+1)
 		}
@@ -691,6 +697,16 @@ func TestHostSuccessScaledContext(t *testing.T) {
 		"first_dispatch_ns": wires[0].DispatchNS, "local_dispatch_segments_ns": segments, "last_receiver_return_to_core_end_ns": hotLoopEndNS - previousReturn, "core_end_ns": hotLoopEndNS,
 		"total_alloc_bytes": allocBytes, "mallocs": mallocs, "num_gc": numGC, "heap_alloc_before": rounds[0].HeapAllocBefore, "heap_alloc_after": rounds[len(rounds)-1].HeapAllocAfter, "forced_gc": 0,
 		"wire_requests": wires, "verified_requests": verified, "tool_end_event_observed_ns": toolEndNS, "real_computer_read_verified": toolResultVerified, "real_host_environment_verified": hostContextVerified, "version_before": stateBefore.Version, "version_after": stateAfter.Version, "profiles_enabled": profileEnabled}
+	result["storage_before"] = storageBefore
+	result["storage_after"] = performanceFixtureSnapshot(t, f)
+	result["receiver_delay_ms"] = os.Getenv("ASTRAL_SCALED_HOST_DELAY_MS")
+	// Keep forced-GC retention diagnostics outside every hot interval and CPU
+	// profile. The live Host and Computer stay open during this observation.
+	goruntime.GC()
+	var retained goruntime.MemStats
+	goruntime.ReadMemStats(&retained)
+	result["post_gc_heap_alloc_after_verification"] = retained.HeapAlloc
+	result["post_gc_heap_scope"] = "live Host/Computer after full frozen-request verification; not natural peak RSS"
 	if mode == "tool" {
 		result["tool_end_event_observed_to_next_dispatch_ns"] = wires[1].DispatchNS - toolEndNS
 		result["tool_end_timing_note"] = "subscription receive time after result commit, not the Computer implementation return; scheduling can make this derived interval negative"

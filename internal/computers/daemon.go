@@ -38,18 +38,20 @@ type Daemon struct {
 	Root        string
 	Hello       Hello
 	// Update is a Host management operation, never an Agent execution capability.
-	Update     func(context.Context, releasefeed.Binary) error
-	updateMu   sync.Mutex
-	updating   bool
-	httpClient *http.Client
-	connectMu  sync.Mutex
-	mu         sync.Mutex
-	peer       *transport.Peer
-	connection *daemonConnection
-	gateways   map[string]*localGateway
-	processes  map[string]*daemonProcess
-	apiTokens  map[string]*daemonProcess
-	closed     bool
+	Update         func(context.Context, releasefeed.Binary) error
+	updateMu       sync.Mutex
+	updating       bool
+	httpClient     *http.Client
+	connectMu      sync.Mutex
+	mu             sync.Mutex
+	peer           *transport.Peer
+	connection     *daemonConnection
+	gateways       map[string]*localGateway
+	processes      map[string]*daemonProcess
+	apiTokens      map[string]*daemonProcess
+	outputBudget   *processOutputBudget
+	fileWriteSlots chan struct{}
+	closed         bool
 }
 type daemonConnection struct {
 	peer        *transport.Peer
@@ -68,6 +70,7 @@ type daemonProcess struct {
 	connection *daemonConnection
 	apiToken   string
 	process    standardtools.Process
+	output     *processOutputBuffer
 	started    chan struct{}
 	done       chan struct{}
 	exit       processExit
@@ -101,8 +104,9 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 			return nil, fmt.Errorf("invalid container information: %w", err)
 		}
 	}
-	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability, FileListCapability}},
-		httpClient: client, gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, apiTokens: map[string]*daemonProcess{}}, nil
+	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability, FileListCapability, ProcessStreamCapability}},
+		httpClient: client, gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, apiTokens: map[string]*daemonProcess{},
+		outputBudget: newProcessOutputBudget(256 << 20), fileWriteSlots: make(chan struct{}, 8)}, nil
 }
 
 // Run reconnects the same boot identity after reaping disconnected commands.
@@ -248,12 +252,17 @@ func (d *Daemon) cleanupProcess(ctx context.Context, p *daemonProcess) error {
 	if process == nil {
 		return nil
 	}
-	if err := process.Terminate(ctx); err != nil {
-		return err
+	terminateErr := process.Terminate(ctx)
+	var outputErr error
+	if p.output != nil {
+		outputErr = p.output.Close()
+	}
+	if terminateErr != nil {
+		return errors.Join(terminateErr, outputErr)
 	}
 	select {
 	case <-p.done:
-		return nil
+		return outputErr
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -500,7 +509,7 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 		return out.JSON(b)
 	}
 	apiToken := ""
-	if request.Method == "process.start" {
+	if request.Method == "process.start" || request.Method == ProcessStreamCapability {
 		if !validAPIToken(call.APIToken) {
 			return domain.Invalid("process API credential is required")
 		}
@@ -602,20 +611,8 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 		}
 		return err
 	case "file.write":
-		// Core's write/edit semantics preserve symlinks and hard-linked files.
-		path, err := fs.ResolvePath(ctx, call.Path, false)
-		if err != nil {
+		if err := d.writeFile(ctx, fs, call.Path, request.Body); err != nil {
 			return err
-		}
-		file, err := os.OpenFile(path.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
-		if err != nil {
-			return toolError(err, core.OutcomeNotExecuted)
-		}
-		_, writeErr := copyContext(ctx, file, request.Body)
-		syncErr := file.Sync()
-		closeErr := file.Close()
-		if err = errors.Join(writeErr, syncErr, closeErr); err != nil {
-			return toolError(fmt.Errorf("file may be partially written: %w", err), core.OutcomeUnknown)
 		}
 		return out.JSON(struct{}{})
 	case "file.upload":
@@ -718,6 +715,15 @@ func (d *Daemon) startProcess(ctx context.Context, generation *daemonConnection,
 	d.apiTokens[call.APIToken] = p
 	d.mu.Unlock()
 	process, err := start(ctx)
+	var output *processOutputBuffer
+	var captureErr error
+	if err == nil {
+		// Drain the OS pipe before returning startup to the network. A slow
+		// attachment or receiver must never hold the pipe's unread tail.
+		output, captureErr = newProcessOutputBuffer(process.Output(), processOutputBufferConfig{
+			Directory: d.Root, MemoryLimit: 64 << 10, BufferLimit: 64 << 20,
+		}, d.outputBudget)
+	}
 	d.mu.Lock()
 	if err != nil {
 		d.revokeProcessTokenLocked(p)
@@ -728,11 +734,22 @@ func (d *Daemon) startProcess(ctx context.Context, generation *daemonConnection,
 		return "", err
 	}
 	p.process = process
+	p.output = output
 	connected := d.connectedLocked(generation)
 	close(p.started)
 	d.mu.Unlock()
 	go func() {
 		code, err := process.Wait()
+		// OS exit revokes command API access immediately, independently of
+		// how much captured output is still waiting for its remote consumer.
+		d.mu.Lock()
+		d.revokeProcessTokenLocked(p)
+		d.mu.Unlock()
+		if output != nil {
+			<-output.Done()
+			err = errors.Join(err, output.Err())
+		}
+		err = errors.Join(err, captureErr)
 		d.mu.Lock()
 		p.exit.Code = code
 		if err != nil {
@@ -742,26 +759,57 @@ func (d *Daemon) startProcess(ctx context.Context, generation *daemonConnection,
 		close(p.done)
 		d.mu.Unlock()
 	}()
-	if !connected {
+	if output != nil {
+		go func() {
+			select {
+			case <-output.Failed():
+			case <-output.Closed():
+			}
+			// A spool can fail during consumption after the OS process has
+			// already exited. Keep observing until storage is closed, rather
+			// than treating source EOF as successful remote collection.
+			if captureErr := output.Err(); captureErr != nil {
+				d.mu.Lock()
+				if p.exit.Error == "" {
+					p.exit.Error = captureErr.Error()
+				} else if !strings.Contains(p.exit.Error, captureErr.Error()) {
+					p.exit.Error += "; " + captureErr.Error()
+				}
+				d.mu.Unlock()
+				cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				_ = process.Terminate(cleanup)
+			}
+		}()
+	}
+	if captureErr != nil || !connected {
 		// Also terminate here if a blocked OS startup outlasted the connection's
 		// cleanup deadline. Cleanup and Terminate are safe to run concurrently.
 		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		err := process.Terminate(cleanup)
+		err := d.cleanupProcess(cleanup, p)
 		cancel()
+		if captureErr != nil {
+			return "", toolError(errors.Join(fmt.Errorf("process output collection failed: %w", captureErr), err), core.OutcomeUnknown)
+		}
 		return "", errors.Join(domain.Offline("daemon connection was lost during process startup"), err)
 	}
 	return id, nil
 }
 
-func (d *Daemon) processCall(ctx context.Context, generation *daemonConnection, request transport.Request, call Call, backend *local.Backend, out *transport.Responder) error {
-	if request.Method == "process.start" {
+func (d *Daemon) processCall(ctx context.Context, generation *daemonConnection, request transport.Request, call Call, backend *local.Backend, out *transport.Responder) (err error) {
+	streamStart := request.Method == ProcessStreamCapability
+	if request.Method == "process.start" || streamStart {
 		id, err := d.startProcess(ctx, generation, call, func(ctx context.Context) (standardtools.Process, error) {
 			return backend.StartProcess(ctx, core.Invocation{}, call.Process)
 		})
 		if err != nil {
 			return err
 		}
-		return out.JSON(processStart{ID: id})
+		if !streamStart {
+			return out.JSON(processStart{ID: id})
+		}
+		call.ProcessID = id
+		request.Method = "process.output"
 	}
 	d.mu.Lock()
 	p := d.processes[call.ProcessID]
@@ -779,26 +827,72 @@ func (d *Daemon) processCall(ctx context.Context, generation *daemonConnection, 
 	d.mu.Unlock()
 	switch request.Method {
 	case "process.output":
-		input := p.process.Output()
-		stop := context.AfterFunc(ctx, func() { _ = input.Close() })
+		input := p.output
+		var cleanupOnce sync.Once
+		var cleanupErr error
+		cleanupOutput := func() error {
+			cleanupOnce.Do(func() {
+				d.mu.Lock()
+				d.revokeProcessTokenLocked(p)
+				d.mu.Unlock()
+				cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				cleanupErr = d.cleanupProcess(cleanup, p)
+				if cleanupErr == nil {
+					d.mu.Lock()
+					if d.processes[call.ProcessID] == p {
+						delete(d.processes, call.ProcessID)
+					}
+					d.mu.Unlock()
+				}
+			})
+			return cleanupErr
+		}
+		stop := context.AfterFunc(ctx, func() { _ = cleanupOutput() })
 		defer stop()
-		defer input.Close()
-		if err := out.Headers(struct{}{}); err != nil {
+		defer func() {
+			err = errors.Join(err, input.Close())
+			if err != nil || ctx.Err() != nil {
+				// The client may have cancelled before receiving a process ID.
+				// Cleanup therefore belongs to this Daemon, not a later RPC.
+				err = errors.Join(err, ctx.Err(), cleanupOutput())
+			}
+		}()
+		var metadata any = struct{}{}
+		if streamStart {
+			metadata = processStart{ID: call.ProcessID}
+		}
+		if err := out.Headers(metadata); err != nil {
 			return err
 		}
-		_, err := copyContext(ctx, out, input)
+		_, err = copyContext(ctx, out, input)
 		return err
 	case "process.wait":
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-p.done:
-			return out.JSON(p.exit)
+			d.mu.Lock()
+			exit := p.exit
+			d.mu.Unlock()
+			if captureErr := p.output.Err(); captureErr != nil && !strings.Contains(exit.Error, captureErr.Error()) {
+				if exit.Error != "" {
+					exit.Error += "; "
+				}
+				exit.Error += captureErr.Error()
+			}
+			return out.JSON(exit)
 		}
 	case "process.write":
 		raw, err := io.ReadAll(io.LimitReader(request.Body, (1<<20)+1))
-		if err != nil || len(raw) > 1<<20 {
+		if err != nil {
+			return toolError(fmt.Errorf("process input was not received completely: %w", err), core.OutcomeNotExecuted)
+		}
+		if len(raw) > 1<<20 {
 			return domain.Invalid("process input exceeds 1 MiB")
+		}
+		if err := ctx.Err(); err != nil {
+			return toolError(err, core.OutcomeNotExecuted)
 		}
 		if err = p.process.Write(ctx, raw); err != nil {
 			return err
@@ -817,8 +911,15 @@ func (d *Daemon) processCall(ctx context.Context, generation *daemonConnection, 
 	case "process.release":
 		select {
 		case <-p.done:
+			if p.output != nil {
+				if err := p.output.Close(); err != nil {
+					return err
+				}
+			}
 			d.mu.Lock()
-			delete(d.processes, call.ProcessID)
+			if d.processes[call.ProcessID] == p {
+				delete(d.processes, call.ProcessID)
+			}
 			d.mu.Unlock()
 		default:
 			return domain.Conflict("process has not exited")

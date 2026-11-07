@@ -137,6 +137,8 @@ func TestHostSuccessBaseline(t *testing.T) {
 		defer profile.Close()
 		defer pprof.StopCPUProfile()
 	}
+	storageBefore := performanceFixtureSnapshot(t, f)
+	resourcesBefore := performanceResources(t)
 	var before, after goruntime.MemStats
 	goruntime.ReadMemStats(&before)
 	cpuBefore := successReplayCPU(t)
@@ -177,6 +179,8 @@ func TestHostSuccessBaseline(t *testing.T) {
 	}
 	elapsed, cpuNS := time.Since(started).Nanoseconds(), successReplayCPU(t)-cpuBefore
 	goruntime.ReadMemStats(&after)
+	resourcesAfter := performanceResources(t)
+	storageAfter := performanceFixtureSnapshot(t, f)
 	if profile != nil {
 		pprof.StopCPUProfile()
 		_ = profile.Close()
@@ -250,8 +254,18 @@ func TestHostSuccessBaseline(t *testing.T) {
 		"version_before": stateBefore.Version, "version_after": stateAfter.Version,
 		"tool_end_event_observed_ns": toolEndNS,
 		"compact_completed_ns":       compactNS,
+		"resource_window":            performanceDifference(resourcesBefore, resourcesAfter),
+		"storage_before":             storageBefore,
+		"storage_after":              storageAfter,
 		"limitations":                []string{"synthetic small control, not captured production context", "session and Computer initialized before timing; not a cold-start measurement", "real local Computer RPC/discovery included; remote network latency excluded", "offline receiver reads, validates and hashes full request; its overhead is included", "ToolEnd event follows result commit, not raw tool implementation return", "rebuild/digest verification after timing; production freeze and commits remain inside timing"},
 	}
+	// Retention is diagnosed after the measured lifecycle and request checks.
+	// This forced GC never enters the hot-loop timing or allocation metrics.
+	goruntime.GC()
+	var retained goruntime.MemStats
+	goruntime.ReadMemStats(&retained)
+	result["post_gc_heap_alloc_after_verification"] = retained.HeapAlloc
+	result["post_gc_heap_scope"] = "live Host/Computer after request verification; forced GC outside measured interval"
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		t.Fatal(err)

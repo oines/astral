@@ -7,13 +7,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/computers"
@@ -29,6 +27,21 @@ type stickerResourceBot struct {
 	beforeGetFile  func() error
 	streamFile     func(http.ResponseWriter, *http.Request, telegramStickerTestFile) bool
 	files          map[string]telegramStickerTestFile
+}
+
+type stickerResourceTransport func(*http.Request) (*http.Response, error)
+
+func (f stickerResourceTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+type stickerResourceReader func([]byte) (int, error)
+
+func (f stickerResourceReader) Read(p []byte) (int, error) { return f(p) }
+
+type stickerResourceBody struct {
+	io.Reader
+	io.Closer
 }
 
 func stickerResourcePlatform(t *testing.T, computerCount int) (*testkit.Platform, *Service, *stickerResourceBot, domain.Connection) {
@@ -432,54 +445,64 @@ func TestDownloadTelegramStickerDoesNotRegisterFileAfterAccountDisabledDuringWri
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeObserved := make(chan struct{})
-	bot.mu.Lock()
-	bot.streamFile = func(w http.ResponseWriter, r *http.Request, file telegramStickerTestFile) bool {
-		w.Header().Set("Content-Type", file.mediaType)
-		_, _ = io.WriteString(w, file.body[:1])
-		w.(http.Flusher).Flush()
-		// This is the real target Computer's temporary test filesystem. Hold
-		// the HTTP source until file.write has started creating its destination.
-		ticker := time.NewTicker(time.Millisecond)
-		defer ticker.Stop()
-		deadline := time.NewTimer(3 * time.Second)
-		defer deadline.Stop()
-		for {
-			if _, err := os.Stat(location.Path); err == nil {
-				break
-			}
+	writeObserved, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(release) })
+	s.Client = &http.Client{Transport: stickerResourceTransport(func(r *http.Request) (*http.Response, error) {
+		response, err := http.DefaultTransport.RoundTrip(r)
+		if err != nil || r.URL.Path != "/file/botresource-test/stickers/animated.tgs" {
+			return response, err
+		}
+		body := response.Body
+		var observedOnce sync.Once
+		// The RPC input producer reads the next chunk only after delivering the
+		// first byte to file.write. Hold the rest of this real HTTP body, and
+		// therefore input_end, until the account has been disabled. Staging may
+		// legitimately leave the destination absent throughout this boundary.
+		response.Body = stickerResourceBody{Reader: io.MultiReader(io.LimitReader(body, 1), stickerResourceReader(func(p []byte) (int, error) {
+			observedOnce.Do(func() { close(writeObserved) })
 			select {
-			case <-ticker.C:
+			case <-release:
+				return body.Read(p)
 			case <-r.Context().Done():
-				return true
-			case <-deadline.C:
-				t.Error("Computer file.write did not begin before the stream deadline")
-				return true
+				return 0, r.Context().Err()
 			}
-		}
-		var disabled domain.Connection
-		if err := p.Store.Get(p.Context, "connections", account.ID, &disabled); err != nil {
-			t.Error(err)
-			return true
-		}
-		disabled.Enabled = false
-		if err := p.Store.Save(p.Context, "connections", &disabled.Meta, &disabled); err != nil {
-			t.Error(err)
-			return true
-		}
-		close(writeObserved)
-		_, _ = io.WriteString(w, file.body[1:])
-		return true
-	}
-	bot.mu.Unlock()
+		})), Closer: body}
+		return response, nil
+	})}
 	source := TelegramStickerSource{SetName: "oines1", FileID: "animated-file"}
-	if ref, err := s.DownloadTelegramSticker(p.Context, b, account.ID, source, location.Path); err == nil || ref.ID != "" {
-		t.Fatalf("disabled account registered a new FileRef: %#v, %v", ref, err)
+	type result struct {
+		ref domain.FileRef
+		err error
 	}
+	done := make(chan result, 1)
+	go func() {
+		ref, err := s.DownloadTelegramSticker(p.Context, b, account.ID, source, location.Path)
+		done <- result{ref: ref, err: err}
+	}()
 	select {
 	case <-writeObserved:
-	default:
-		t.Fatal("test did not disable the account during a real write")
+	case value := <-done:
+		t.Fatalf("download finished before the upload boundary: %#v, %v", value.ref, value.err)
+	case <-p.Context.Done():
+		t.Fatal(p.Context.Err())
+	}
+	var disabled domain.Connection
+	if err := p.Store.Get(p.Context, "connections", account.ID, &disabled); err != nil {
+		t.Fatal(err)
+	}
+	disabled.Enabled = false
+	if err := p.Store.Save(p.Context, "connections", &disabled.Meta, &disabled); err != nil {
+		t.Fatal(err)
+	}
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case value := <-done:
+		if value.err == nil || value.ref.ID != "" {
+			t.Fatalf("disabled account registered a new FileRef: %#v, %v", value.ref, value.err)
+		}
+	case <-p.Context.Done():
+		t.Fatal(p.Context.Err())
 	}
 	data, err := fs.ReadFile(p.Context, location.Path)
 	if err != nil || string(data) != bot.files[source.FileID].body {

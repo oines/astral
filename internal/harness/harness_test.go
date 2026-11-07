@@ -176,6 +176,7 @@ func newFixture(t *testing.T, computerCount int, generate func(context.Context, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	performanceTrackFixture(t, f)
 	return f
 }
 

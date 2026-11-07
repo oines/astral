@@ -17,6 +17,8 @@ If a file is already on the computer, provide its full path, such as `/home/mei/
 
 On Windows, use the native path, for example `C:\Users\mei\reports\meeting.txt`. File tools also accept `/c/Users/mei/...`, `/mnt/c/Users/mei/...`, and `/cygdrive/c/Users/mei/...` as Windows drive paths when the selected computer runs Windows. The selected computer interprets paths using its own operating system.
 
+Built-in file tools read or write at most 32 MiB per operation. For larger files, ask the Bot to use a shell command to process the needed portions. This limit is separate from uploading or downloading attachments.
+
 ## Open results
 
 Click an image in the conversation to open the full-screen viewer, where you can zoom and download it. Other files open directly in the right-hand preview. Files and subagent conversations have separate tabs, so you can switch between them without finding their links again. Available previews depend on the file format. Download a copy to your own device or back it up on the source computer when you need to keep it.
