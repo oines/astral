@@ -39,6 +39,8 @@ A successful response contains the platform operation's data in `result`. It may
 
 The account must belong to the current Bot, and the chat must remain authorized. Access to one Telegram topic does not grant parent-group management. Chats bound to private conversations keep their private-access restrictions.
 
+Upload operations stream files directly from the specified computer path or `astral-file://` reference, without creating an extra copy for sending. Keep the source file available and unchanged until the operation finishes.
+
 ## Download a file from an allowed computer
 
 Call `GET /v1/computers` to find the source computer's `id`, then request `GET /v1/computers/{id}/files/content?path=…`. Each request checks that the source is still allowed for the current Bot, connected, and not revoked. The file must be readable by that computer's Daemon account.

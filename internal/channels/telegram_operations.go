@@ -188,7 +188,7 @@ func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBindi
 			return TelegramResult{}, domain.Invalid("invalid upload field")
 		}
 		if !strings.HasPrefix(location, "astral-file://") {
-			ref, err := s.Harness.Files.Reference(ctx, b, location, true)
+			ref, err := s.Harness.Files.Reference(ctx, b, location, false)
 			if err != nil {
 				return TelegramResult{}, err
 			}

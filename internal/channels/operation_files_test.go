@@ -98,6 +98,15 @@ func TestNapCatOperationUploadsReadOriginalComputerAndRespectRevocation(t *testi
 	if calls.Load() != 6 {
 		t.Fatalf("each upload should make one platform request: %d", calls.Load())
 	}
+	files, err := list[domain.FileRef](p.Context, p.Store, "files")
+	if err != nil || len(files) != 4 {
+		t.Fatalf("unexpected upload references: %+v, %v", files, err)
+	}
+	for _, file := range files {
+		if file.ID != ref.ID && (file.Path != path.Path || file.Version != "") {
+			t.Fatalf("operation upload copied its source: %+v", file)
+		}
+	}
 	for _, files := range []map[string]string{
 		{"other": path.Path},
 		{"file": "https://example.com/external.bin"},

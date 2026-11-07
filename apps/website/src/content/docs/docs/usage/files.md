@@ -75,6 +75,8 @@ To return a result to the chat, ask explicitly:
 
 > Send meeting-actions.md back to this chat as an attachment.
 
+Astral streams the attachment directly from its source computer without making an extra copy for sending. Keep the file available and unchanged until sending finishes.
+
 Check that the attachment actually arrives. Platform file limits, supported formats, and account permissions can affect sending. Creating a file or displaying its path in Astral does not send a platform attachment.
 
 If an image is marked unavailable, ask the Bot to retry downloading it or upload it again. For a full backup, preserve Server data, computer work files, and container data separately; see [Updates and backups](/docs/hosting/maintenance/).

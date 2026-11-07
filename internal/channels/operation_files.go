@@ -18,7 +18,7 @@ func (s *Service) operationFiles(ctx context.Context, b domain.ExecutionBinding,
 			return nil, domain.Invalid("files must contain Computer paths or astral-file:// references")
 		}
 		if !strings.HasPrefix(location, "astral-file://") {
-			ref, err := s.Harness.Files.Reference(ctx, b, location, true)
+			ref, err := s.Harness.Files.Reference(ctx, b, location, false)
 			if err != nil {
 				closeOperationFiles(uploads)
 				return nil, err

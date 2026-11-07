@@ -195,7 +195,7 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 			return nil, domain.Forbidden("reply message is not archived in the selected chat")
 		}
 	}
-	parts, err := s.freezeOutboundParts(ctx, agentID, sessionID, request, adapter.Capabilities())
+	parts, err := s.resolveOutboundParts(ctx, agentID, sessionID, request, adapter.Capabilities())
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +205,7 @@ func (s *Service) Enqueue(ctx context.Context, agentID, sessionID string, reques
 	}
 	s.gate.Lock()
 	defer s.gate.Unlock()
-	// Source snapshotting can take time; recheck the destination before commit.
+	// Source resolution can take time; recheck the destination before commit.
 	current, _, fresh, err := s.target(ctx, agentID, sessionID, request.ConversationID)
 	if err != nil {
 		return nil, err

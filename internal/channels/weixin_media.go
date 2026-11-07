@@ -308,7 +308,7 @@ func (w *weixinAdapter) Download(ctx context.Context, attachment domain.Attachme
 
 func (w *weixinAdapter) upload(ctx context.Context, send Send, mediaKind string) (weixinItem, error) {
 	// iLink requires the plaintext checksum before providing an upload URL.
-	// Hash once, then reopen the same immutable Computer snapshot for encryption.
+	// Hash once, then reopen the source Computer file for encryption.
 	stopClose := context.AfterFunc(ctx, func() { _ = send.File.Close() })
 	defer stopClose()
 	checksum := md5.New()
