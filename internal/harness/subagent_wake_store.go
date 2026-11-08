@@ -18,6 +18,7 @@ func (s subagentWakeStore) Commit(ctx context.Context, id string, commit core.Co
 	receipt, err := s.Store.Commit(ctx, id, commit)
 	if err == nil {
 		s.service.wakeSubagents(id)
+		s.service.wakeExternal(id)
 	}
 	return receipt, err
 }
@@ -28,6 +29,7 @@ func (s subagentWakeStore) LookupCommit(ctx context.Context, id, commitID string
 		// Core also confirms a possibly durable write through LookupCommit when
 		// the original Commit/Fork response was lost.
 		s.service.wakeSubagents(id)
+		s.service.wakeExternal(id)
 	}
 	return receipt, err
 }

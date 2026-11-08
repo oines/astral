@@ -7,6 +7,7 @@ import { useAppStore } from '../stores/app'
 import { errorText, object } from '../lib/api'
 import { repeatCron, repeatFields, scheduleInput, type RepeatKind, type Schedule, type ScheduleInput } from '../lib/schedules'
 import { formatDateTime, wallDateTime, wallTimeInstant } from '../lib/timezone'
+import WakeEndpointsPanel from '../components/WakeEndpointsPanel.vue'
 
 const app = useAppStore()
 const { t, locale } = useI18n()
@@ -322,7 +323,10 @@ async function remove(task: Schedule) {
           <Plus />{{ t('scheduleAdd') }}
         </Button>
       </div>
-      <SettingsSection v-if="tasks.length">
+      <SettingsSection
+        v-if="tasks.length"
+        :title="t('scheduleTimedTasks')"
+      >
         <div
           v-for="task in tasks"
           :key="task.id"
@@ -408,6 +412,7 @@ async function remove(task: Schedule) {
           </div>
         </div>
       </SettingsSection>
+      <WakeEndpointsPanel />
     </div>
   </div>
 </template>

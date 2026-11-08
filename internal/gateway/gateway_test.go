@@ -58,8 +58,8 @@ func TestConcurrentLocalGatewaysKeepAgentSessionAndSourceIdentity(t *testing.T) 
 		}
 		return string(body), err
 	}
-	if first.APIURL == "" || second.APIURL == "" || first.APIURL == second.APIURL {
-		t.Fatalf("Agents must have separate loopback addresses: %q %q", first.APIURL, second.APIURL)
+	if first.APIURL == "" || second.APIURL == "" || first.APIURL != second.APIURL {
+		t.Fatalf("Agents on one Computer must share its local API address: %q %q", first.APIURL, second.APIURL)
 	}
 	var workers sync.WaitGroup
 	for _, b := range []domain.ExecutionBinding{first, second} {

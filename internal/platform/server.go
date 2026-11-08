@@ -235,6 +235,7 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	}
 	agentGateway := gateway.New(s.Harness, s.Channels)
 	s.Hub.Gateway = agentGateway.Handle
+	s.Hub.Wake = agentGateway.HandleWake
 	if config.DesktopUpdateURL != "" || config.DesktopUpdateToken != "" {
 		s.updates, err = serverupdate.NewDesktop(config.DesktopUpdateURL, config.DesktopUpdateToken)
 		if err != nil {
@@ -328,6 +329,9 @@ func (s *Server) Start() error {
 		}
 	}
 	if err := s.Harness.Schedules.Start(s.ctx); err != nil {
+		return err
+	}
+	if err := s.Harness.WakeEndpoints.Start(s.ctx); err != nil {
 		return err
 	}
 	s.startUpdateChecks()

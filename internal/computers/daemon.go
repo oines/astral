@@ -47,6 +47,10 @@ type Daemon struct {
 	peer           *transport.Peer
 	connection     *daemonConnection
 	gateways       map[string]*localGateway
+	localAPI       *http.Server
+	localListener  net.Listener
+	wakeBlocked    map[string]time.Time
+	wakeSlots      chan struct{}
 	processes      map[string]*daemonProcess
 	apiTokens      map[string]*daemonProcess
 	outputBudget   *processOutputBudget
@@ -145,6 +149,9 @@ func (d *Daemon) Connect(ctx context.Context) error {
 	d.mu.Unlock()
 	if closed {
 		return errors.New("daemon is closed")
+	}
+	if err := d.ensureLocalAPI(); err != nil {
+		return err
 	}
 	conn, _, err := authenticateTunnel(ctx, d.Credentials.ServerURL, d.Credentials.ServerPin, tunnelRequest{Operation: "connect", ComputerID: d.Credentials.ComputerID, Token: d.Credentials.Token, Hello: d.Hello}, d.httpClient)
 	if err != nil {
@@ -331,26 +338,26 @@ func (d *Daemon) backend(b domain.ExecutionBinding, apiToken string) (*local.Bac
 	return local.New(local.Options{CWD: b.CWD, Shell: b.Shell, Env: env})
 }
 
-func (d *Daemon) localAPICredential(r *http.Request, binding domain.ExecutionBinding) (string, *transport.Peer) {
+func (d *Daemon) localAPICredential(r *http.Request) (string, domain.ExecutionBinding, *transport.Peer) {
 	values := r.Header.Values("Authorization")
 	if len(values) != 1 {
-		return "", nil
+		return "", domain.ExecutionBinding{}, nil
 	}
 	scheme, token, ok := strings.Cut(values[0], " ")
 	if !ok || !strings.EqualFold(scheme, "Bearer") || !validAPIToken(token) {
-		return "", nil
+		return "", domain.ExecutionBinding{}, nil
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	p := d.apiTokens[token]
-	if p == nil || p.binding != binding || !d.connectedLocked(p.connection) {
-		return "", nil
+	if p == nil || !d.connectedLocked(p.connection) {
+		return "", domain.ExecutionBinding{}, nil
 	}
 	select {
 	case <-p.done:
-		return "", nil
+		return "", domain.ExecutionBinding{}, nil
 	default:
-		return token, p.connection.peer
+		return token, p.binding, p.connection.peer
 	}
 }
 
@@ -365,79 +372,17 @@ func (d *Daemon) ensureGateway(b domain.ExecutionBinding) (domain.ExecutionBindi
 	if d.closed {
 		return b, domain.Offline("daemon is closed")
 	}
+	if err := d.startLocalAPILocked(); err != nil {
+		return b, err
+	}
+	b.APIURL = d.Hello.LocalAPIURL
 	if g := d.gateways[b.GrantID]; g != nil {
-		b.APIURL = g.binding.APIURL
 		if g.binding != b {
 			return b, domain.Forbidden("gateway binding changed")
 		}
 		return b, nil
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return b, err
-	}
-	b.APIURL = "http://" + listener.Addr().String()
-	g := &localGateway{binding: b}
-	g.server = &http.Server{ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// A localhost endpoint is for command-line clients, never cross-origin
-		// browser script. The server uses this listener's fixed binding.
-		if r.Header.Get("Origin") != "" || r.Host != listener.Addr().String() {
-			http.Error(w, "invalid local gateway origin", http.StatusForbidden)
-			return
-		}
-		if !strings.HasPrefix(r.URL.Path, "/v1/") || (r.Method != http.MethodGet && r.Method != http.MethodPost && r.Method != http.MethodPatch && r.Method != http.MethodDelete) {
-			http.Error(w, "unsupported gateway operation", http.StatusNotFound)
-			return
-		}
-		// Reject anonymous, malformed and locally retired credentials before
-		// reading request bodies. The Server remains the final authority.
-		apiToken, peer := d.localAPICredential(r, b)
-		if peer == nil {
-			rejectLocalAPI(w)
-			return
-		}
-		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 48<<10))
-		if err != nil || len(raw) > 0 && !json.Valid(raw) {
-			http.Error(w, "gateway expects a small JSON body", http.StatusBadRequest)
-			return
-		}
-		call := GatewayRequest{Binding: b, APIToken: apiToken, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Range: r.Header.Get("Range"), Body: raw, Intent: r.Header.Get("Idempotency-Key")}
-		var response GatewayResponse
-		meta, body, err := peer.Call(r.Context(), "gateway", call, nil)
-		if err == nil {
-			err = json.Unmarshal(meta, &response)
-		}
-		if body != nil {
-			defer body.Close()
-		}
-		if err != nil {
-			status, code := http.StatusBadGateway, "outcome_unknown"
-			var known *transport.Error
-			if errors.As(err, &known) && known.Outcome == "not_executed" {
-				status, code = http.StatusForbidden, known.Code
-				if known.Code == "unauthorized" {
-					status = http.StatusUnauthorized
-					w.Header().Set("WWW-Authenticate", "Bearer")
-				}
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(status)
-			_ = json.NewEncoder(w).Encode(map[string]string{"code": code, "message": err.Error()})
-			return
-		}
-		for key, values := range response.Headers {
-			w.Header()[key] = values
-		}
-		if response.Status < 100 || response.Status > 599 {
-			response.Status = http.StatusBadGateway
-		}
-		w.WriteHeader(response.Status)
-		if _, err := io.Copy(w, body); err != nil {
-			panic(http.ErrAbortHandler)
-		}
-	})}
-	d.gateways[b.GrantID] = g
-	go func() { _ = g.server.Serve(listener) }()
+	d.gateways[b.GrantID] = &localGateway{binding: b, server: d.localAPI}
 	return b, nil
 }
 
@@ -935,18 +880,21 @@ func (d *Daemon) Close(ctx context.Context) error {
 	d.closed = true
 	peer := d.peer
 	generation := d.connection
-	gateways := make([]*http.Server, 0, len(d.gateways))
-	for _, g := range d.gateways {
-		gateways = append(gateways, g.server)
-	}
+	localAPI := d.localAPI
+	localListener := d.localListener
 	d.mu.Unlock()
 	var errs []error
 	if peer != nil {
 		errs = append(errs, peer.Close())
 	}
 	errs = append(errs, d.cleanupConnection(generation))
-	for _, gateway := range gateways {
-		errs = append(errs, gateway.Close())
+	if localAPI != nil {
+		errs = append(errs, localAPI.Close())
+	}
+	if localListener != nil {
+		if err := localListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			errs = append(errs, err)
+		}
 	}
 	return errors.Join(errs...)
 }

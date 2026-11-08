@@ -1,8 +1,8 @@
 # Astral 系统规格
 
-版本：1.26
+版本：1.27
 
-日期：2026-11-05，Asia/Singapore
+日期：2026-11-08，Asia/Singapore
 
 状态：V1 实现规范，尚非功能交付声明
 
@@ -98,7 +98,7 @@ IM 复用同一套 IMStore、Conversation、Session 绑定、持续上下文、P
 | D13 | 已派发调用、已有进程和文件引用绑定原 Computer，不随之后的切换漂移。 |
 | D14 | AgentHome 属于 Agent 与 Computer 的组合，同一 Agent 的多个 Session 可以共享它。 |
 | D15 | Bash 命令直接执行，不增加逐命令审批；操作系统与所选 Computer 的实际执行环境决定可执行范围。 |
-| D16 | Daemon 将平台 HTTP Gateway 暴露为 Computer 内的 localhost 入口；每条命令使用 Server 签发并注入环境的临时 Bearer 凭据。 |
+| D16 | Daemon 用一个持久 loopback 端口提供 Computer API；`/v1` 按每条命令的临时 Bearer 凭据恢复执行身份，独立 `/hooks/{id}` 仅在所属电脑匿名接收事件。 |
 | D17 | 调用身份由 Daemon 与平台绑定和验证；每个 Agent 得到自己的数据与能力视图。 |
 | D18 | 工作文件与 Web 附件留在 Computer；IM 接收不创建 Computer 文件，图片在内存处理并冻结到 Core，原附件通过 API 按需流式下载。 |
 | D19 | Web FileRef 可预览下载；绑定聊天使用 send_message 发送文字及文件，跨聊天发送通过 Computer API 明确指定。 |
@@ -951,13 +951,13 @@ ModelAttempt 独立归属于 Session，不作为对话树节点保存。输入�
 
 ### localhost 入口
 
-Daemon 在 Computer 内提供 localhost HTTP 入口，将请求关联到平台内置 Gateway。入口绑定至少包含 Agent、Session 和 Computer；不同 Agent 在同一 Computer 上使用不同的 loopback 端口与各自视图。实际地址继续由 Harness 写入最新环境上下文的 `local_api`（`base_url`、`capabilities_url`），不新增地址环境变量。固定提示词概括额外能力、指向 `capabilities_url`，并告知模型用当前命令环境中的 `ASTRAL_API_TOKEN` 设置 `Authorization: Bearer …` 请求头。包括能力发现和 OpenAPI 在内的所有本地 API 均拒绝匿名请求。
+Daemon 在 Computer 内提供一个持久端口的 localhost HTTP 入口，重启后端口保持不变。`/v1` 管理和发现请求由命令凭据绑定 Agent、Session、Computer 与 Grant；同机不同调用者通过凭据获得各自视图，端口本身不充当身份。实际地址继续由 Harness 写入最新环境上下文的 `local_api`（`base_url`、`capabilities_url`），不新增地址环境变量。固定提示词概括额外能力、指向 `capabilities_url`，并告知模型用当前命令环境中的 `ASTRAL_API_TOKEN` 设置 `Authorization: Bearer …` 请求头。包括能力发现和 OpenAPI 在内的 `/v1` 管理 API 均拒绝匿名请求；独立的 `/hooks/{id}` 本地事件投递入口按下文约定允许匿名调用。
 
 Server 在派发每条 `exec_command` 前生成独立的高熵随机凭据，仅在内存中保存其哈希、执行 ID、原始连接及完整执行绑定，经已有加密通道交给 Daemon 注入该命令环境。模型的 Host 说明只包含变量名称；平台不将凭据值写入环境快照、执行绑定、模型请求、配置、数据库、URL 或普通日志。脚本从环境读取凭据，不打印、落盘或将展开后的凭据放入其他程序的命令行参数。Daemon 本地检查凭据属于存活进程，并将其交给 Server；最终身份和授权来自 Server 的内存记录，不能由 Daemon 或请求体自行选择。
 
 凭据跟随真实进程，而非一次工具调用：返回异步 `session_id` 后继续有效，`write_stdin` 发送输入或读取输出不另签发。启动失败、进程退出、主动终止、原连接失效或 Server 重启后失效，退出时不等待输出读取完才撤销。每次请求仍检查当前 Bot、Session 和电脑授权；权限撤销立即阻止调用。撤销同时取消该凭据尚在执行的请求，但不能回滚已经接受的发送或其他已发生的副作用。
 
-`GET /v1/capabilities` 是统一发现入口，返回调用与身份范围说明、按用途组织的能力及其 `read_url`，并链接完整 OpenAPI。`GET /v1/capabilities/{id}` 按需提供历史、会话管理、计划任务、聊天、文件或环境能力的用途、作用范围、行为与错误规则、请求示例及该能力的 OpenAPI 子集。子集直接取实际注册的路由、请求／响应 schema 及其传递引用，不能另维护一份参数定义；完整契约与每个能力子集均声明独立的 command Bearer 安全方案，并包含其定义。平台能力按账号继续发现，不将某个平台的能力泛化到所有账号。
+`GET /v1/capabilities` 是统一发现入口，返回调用与身份范围说明、按用途组织的能力及其 `read_url`，并链接完整 OpenAPI。`GET /v1/capabilities/{id}` 按需提供历史、会话管理、计划任务、事件唤醒、聊天、文件或环境能力的用途、作用范围、行为与错误规则、请求示例及该能力的 OpenAPI 子集。子集直接取实际注册的路由、请求／响应 schema 及其传递引用，不能另维护一份参数定义；完整契约与每个能力子集均声明独立的 command Bearer 安全方案，并包含其定义。平台能力按账号继续发现，不将某个平台的能力泛化到所有账号。
 
 发送规则明确区分直接工具和 HTTP：绑定聊天优先使用当前 `send_message` schema 支持的文字与附件；其执行标识由 Host 提供。`Idempotency-Key` 仅是 HTTP 发送接口的必需请求头，在发现文档及 OpenAPI 中声明。文件文档同时说明授权电脑文件读取、Web 文件引用、IM 原件下载及图片预览省略的区别。
 
@@ -976,7 +976,7 @@ Agent 的 Bash / 脚本
     → 查询或执行平台能力
 ```
 
-多个 Agent 共用同一 Computer 时，Daemon 必须提供能够区分执行上下文的入口绑定，例如不同的本地监听入口。Server 从命令凭据恢复唯一绑定，核对调用连接和 Daemon 入口；把 A 的凭据传给 B 的监听地址也不能获得 B 的视图。平台不采信模型在请求体中自行声明的 `agent_id` 作为身份来源。
+多个 Agent 共用同一 Computer 的固定 loopback 监听端口。Daemon 根据仍有效的命令凭据恢复执行上下文，Server 进一步核对该凭据绑定的唯一 Agent、Session、Computer、Grant 及原始连接；使用 A 的凭据始终只能获得 A 的视图，不能由 URL 或请求体选择 B 的身份。平台不采信模型在请求体中自行声明的 `agent_id` 作为身份来源。
 
 命令凭据与 Owner 网页登录、Desktop 私有身份及 Daemon 长期连接凭据互不替代。它防止其他本机程序无凭据调用 Computer API；Daemon 和该命令本身仍能接触凭据，不能声称它提供针对已被控制 Daemon 或同一 OS 身份恶意进程的强隔离。
 
@@ -1002,6 +1002,7 @@ Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用�
 | Session 目录 | `GET /v1/sessions` | 当前 Agent 的全部 Session，按最近活动排序，可过滤并完整分页 |
 | Session 管理 | `PATCH /v1/sessions/{id}` | 同 Bot 的会话重命名、归档或恢复；绑定 IM 的会话拒绝改名和归档变更 |
 | 计划任务 | `GET/POST /v1/schedules`、`GET/PATCH/DELETE /v1/schedules/{id}` | 同 Bot 的持久计划任务，与 Owner UI 共用数据和业务校验 |
+| 事件唤醒 | `GET/POST /v1/wake-endpoints`、`GET/PATCH/DELETE /v1/wake-endpoints/{id}` | 普通根会话注册的本地事件端点，Owner 仅查询和管理，不提供创建 |
 | 历史搜索 | `POST /v1/sessions/search` | 跨 Session 或限定 Session 的关键词命中片段，每个命中可直接展开 |
 | 历史读取 | `GET /v1/sessions/{id}/history` | 分页读取文本，或围绕搜索位置展开前后文与长文本范围 |
 | 原始运行记录 | `GET /v1/sessions/{id}/rollout` | 读取原始分支历史；`trace=true` 查看目标 Session 的操作记录，包含 Run 状态与错误 |
@@ -1235,6 +1236,24 @@ Bot 设置的“应用到所有会话”是单独的明确动作，将当前 Bot
 到点后使用现有 Core Steer 接口，空闲时启动，忙碌时在下一个可处理边界接收补充。每次投递冻结名称、正文、计划时间与目标，使用稳定 occurrence/input 身份；先持久化领取，再投递，重启后仅核对持久回执，不重发未确认接受的旧时刻。`delivered` 只表示会话已持久接收，不表示 Agent 已完成工作或向 IM 发信。停用或删除阻止后续投递，不撤回已接受输入。临时 Gateway Token 不保存在任务中，执行沿用目标会话当前模型、电脑与权限。
 
 计划输入保留 `source=schedule`、任务 ID、标题、计划时间与实际接收时间，正文是 prompt；IM 绑定目标附显式发送提醒。UI 在右侧显示来源标记和任务标题；普通 Owner 消息保持原呈现。调度使用 Host `documents` 的新 kind，不改变既有 Host/Core 格式，不改写历史，也无需数据转换。
+
+### 事件唤醒端点
+
+事件唤醒端点属于一个 Bot，并在创建时固定所属 Computer、来源根 Session 和目标根 Session。普通根 Agent 从 Computer API 能力目录发现并注册端点；省略 `session_id` 使用当前 Session，可显式选择同 Bot 下有权访问的其他根 Session。子代理既不能使用端点管理 API，也不能成为目标；管理和目标选择沿用当前会话可见性校验。创建后不能修改 Computer 或目标，切换电脑、当前会话和模型不使既有端点漂移。Agent 与 Owner 管理同一资源，配置使用 revision 乐观并发校验；Owner 不提供创建接口。
+
+Computer API 管理路径为 `/v1/wake-endpoints`，使用临时命令凭据。创建时从可信执行绑定填充 Bot、Computer、来源 Session，不接受请求体伪造身份。配置只有名称、可选处理说明 `prompt`、独立维护备注 `notes` 和启用状态可编辑；备注鼓励简要记录调用方脚本／配置路径与启动入口，例如 `/opt/mc/listener.py，systemd: mc-events`，电脑信息由系统提供。备注用于维护定位，与处理指令明确分开。来源电脑名称、ID 和接收时备注在每批模型输入前自动声明，同端点一批内只声明一次；已接收事件保留当时快照，不因后续编辑备注或名称改写。
+
+外部程序使用所属 Daemon 在持久 localhost 端口提供的 `POST /hooks/{id}`，无需凭据；其他 Computer 只能管理，不能投递。Server 不提供公网或跨电脑的匿名事件入口，也不把 `/v1` 管理接口开放为匿名。能力文档和公开使用文档必须明确禁止反向代理、端口映射、隧道或 Webhook 转发服务将 hooks 暴露到公网。Daemon 经现有已认证电脑连接转发事件，Server 校验端点的固定 Computer 与实际来源一致。Daemon 的触发地址来自本地实际监听信息，不使用命令临时 Gateway 地址代替。
+
+请求包含稳定 `event_id` 和 `text`／结构化 `data`（至少一个非空）。去重收据保留 7 天；保留期间，相同端点同一事件 ID、相同内容返回原收据，同 ID 不同内容返回冲突。接收时固定目标和配置快照，重复请求不再次唤醒，不因配置变化重解释旧事件。`202` 表示 Host 已持久接收，允许仍在合并缓冲中，不表示模型已经读取或任务完成。原始 JSON 请求体、单条呈现正文及待处理批次都有硬上限，超长正文显式标记截断；过大原始请求返回 `413`。
+
+每个目标 Session 以固定 1 秒窗口合批，新事件不延后截止时间；活动 Run 接收被动事件上下文，不为每条消息追加驱动输入。每个目标 Session 至多保留一个尚未被模型请求采用的投递批次（Inflight）和一个 Host 候选缓冲（Buffer），每批分别受 20 条／4 KiB 约束。同一 Session 的所有端点共用这两个槽位，最多保留两批，不按端点分别建立队列；Buffer 已满时不无限追加 Core 输入。本轮结束时，仍未被主模型采用的事件合并交接一次；Stop、重复请求及重启对账不得重复启动被停止的旧批次。请求冻结前的准备或预算失败不能使同一待处理输入反复启动失败 Run；保留事件，由既有模型恢复流程或显式继续任务接手。
+
+流控以容量判断：同目标 Session 的 Buffer 达到 20 条或 4 KiB，即将真实消息与 Host 流控说明作为同一批输入，并临时屏蔽来源端点 60 秒。4 KiB 是每批独立的内容预算，计算正文和每个来源的一份 title、prompt、notes，不计 XML 固定包装。屏蔽期间返回 `429` 与 `Retry-After`，不接收新正文，不反复通知或滑动延长该轮期限。屏蔽到期后仍须检查共享 Buffer；模型不可用或 Inflight 尚未被消费时，Buffer 仍满则继续 `429`，不能以解封或增加端点绕过容量上限。容量释放后可继续接收，再积满时再次临时屏蔽。保护与手动启停分别记录，自动解封不能重新启用手动停用的端点。被拒收请求不在解封后回放。不根据错误语义分类，不使用 LLM 做合并摘要，不引入多窗口拒绝比例或递增冷却。
+
+Host 固定来源声明、既有指令／权限不变说明和 Computer API 管理提示位于外部正文之外。每批用 `<external_events>` 包裹，每条用独立 `<external_event>` 并带可信端点、来源电脑和事件标识；属性和正文统一转义。Transcript 显示一条“事件唤醒”批次及端点、来源电脑，维护备注同来源只出现一次；内部激活提示不显示为第二条用户消息。
+
+资源配置、接收状态、有限合并缓冲和交接收据均由 Host 持久化；批次进入 Core 后清理缓冲正文，Host 去重收据不继续保存正文副本，7 天的收据保留期不改变 Core 会话历史。操作进度不逐事件保留配置历史版本。重启按稳定批次身份对账，不重复投递。删除 Bot、目标 Session 或所属 Computer 时清理／失效对应端点、缓冲和本地入口，凭据不进入该投递协议。Core 保持既有输入队列、请求冻结及运行语义，不为本功能扩张 Core API。
 
 ### Web Search
 
@@ -1517,15 +1536,16 @@ send_message 与文本/文件 API 固定目的地、来源和幂等身份，按�
 
 最终没有显式发送时，IM 保持沉默；直接触发的漏调用按第 9 节至多补一次提醒。绑定停用或更换后，未完成意图继续保留原账号、聊天和绑定；失效的原绑定阻止发送，不重定向新目标。文件仍从被接受时固定的 Computer/FileRef 流式读取，普通路径发送不自动复制文件；需要保留版本时由调用方显式创建快照。
 
-### 三类接口边界
+### 接口身份边界
 
 | 接口 | 调用方 | 契约 |
 | --- | --- | --- |
 | Owner API / Event Gateway | Web、Desktop、CLI | 资源与 Session 管理、用户驱动输入、Stop、状态、历史、文件访问 |
 | Server ↔ Daemon | 平台内部 | 绑定的文件与命令执行、进程交互、取消、文件流、状态与内部身份 |
-| Computer localhost API | Agent 的命令或脚本 | 当前 Agent 视图内的查询、主动消息、文件发送等平台能力；从环境上下文读取地址，以当前命令环境中的 `ASTRAL_API_TOKEN` 进行 Bearer 鉴权 |
+| Computer localhost API `/v1` | Agent 的命令或脚本 | 当前 Agent 视图内的查询、主动消息、文件发送等平台能力；从环境上下文读取地址，以当前命令环境中的 `ASTRAL_API_TOKEN` 进行 Bearer 鉴权 |
+| Computer localhost `/hooks/{id}` | 同电脑的第三方程序 | 匿名投递至该 Computer 所属端点；实际来源电脑由已认证 Daemon 连接决定，不授予管理能力 |
 
-三者可以共享内部服务，但不能共用一套不区分调用身份的外部入口。模型侧请求中的对象 ID 是目标参数，不是身份凭据。
+各类接口可以共享内部服务，但不能共用一套不区分调用身份的外部入口。模型侧请求中的对象 ID 是目标参数，不是身份凭据。
 
 API 需区分输入错误、对象不可见、资源离线、运行状态冲突、能力不支持、平台拒绝、操作失败和效果未知。HTTP 状态与业务状态一致；成功返回接收凭据的异步操作仍需提供查询终态的关联标识。
 
@@ -1548,7 +1568,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | A09 | 原端点绑定 | 切换后 write_stdin 仍连接原进程；旧 FileRef 仍读取原 Computer |
 | A10 | AgentHome 共享 | 同 Agent、同 Computer 的 Session 使用真实共享文件；不宣称 Session 或 Fork 自动隔离 |
 | A11 | 直接 Bash | 正常命令无需逐条审批；结果、退出码与未知效果分别呈现 |
-| A12 | localhost Gateway | 地址来自环境上下文 local_api；每条命令用环境 ASTRAL_API_TOKEN 设置 Bearer，包括发现接口也拒绝匿名；异步存活、退出撤销、断线清理、跨入口凭据和请求体伪造身份均验证 |
+| A12 | localhost Gateway | 持久共享端口的地址来自环境上下文 local_api；`/v1` 每条命令用环境 ASTRAL_API_TOKEN 设置 Bearer，包括发现接口也拒绝匿名；异步存活、退出撤销、断线清理、同端口并发身份隔离和请求体伪造身份均验证 |
 | A13 | 并发 Gateway 绑定 | 同一 Computer 上多个 Agent/Session 并行运行，来源、文件路径与目标不串用 |
 | A14 | Telegram Conversation 唯一性 | 同一启用 Conversation 仅一个 Binding；不同群/私聊/Topic 的 Session 和历史独立 |
 | A15 | 账号范围与触发 | 账号归属 Agent；全部模式首个直接触发激活，指定模式手动选择 Session；任何群成员都可请求 |
@@ -1605,7 +1625,7 @@ API 需区分输入错误、对象不可见、资源离线、运行状态冲突�
 | Go 服务工程 | HTTP 框架、配置加载、业务数据库、迁移工具、发行与更新方案 | Go Server/Daemon；Core 独立接入；不因参考 Memoh 前端而复制其后端 |
 | Daemon 内部协议 | 持续验证流控、取消、进程句柄和更新行为 | 主动连接；WS/WSS 内固定 TLS 1.3、公钥 pin 和一次注册；本地/容器/远程共用绑定语义 |
 | Computer 接入 | 本机快捷入口与命令接入共用的准备流程、安装分发、注册凭据、重复执行、默认容器镜像与数据卷、运行时检测、升级和本地卸载方式 | Desktop/Headless 都支持使用本机及本机容器；其他机器复制命令接入；不要求跨机器宿主机调度或容器编排 |
-| localhost 绑定 | 端口或入口分配、生命周期、并发绑定、接口说明发现 | 命令环境携带临时凭据；Server 确定身份和视图；旧进程绑定不漂移 |
+| localhost 绑定 | 持久共享端口、命令凭据生命周期、并发绑定、接口说明发现 | `/v1` 以临时命令凭据恢复身份和视图；匿名 hooks 仅认所属电脑连接；旧进程绑定不漂移 |
 | 被动维护与图片入口 | Core 分批应用、自动摘要、共享图片处理 | 复用已有预算/取消/原子提交，不启动主 Agent |
 | API Schema | Owner、Daemon、Gateway 与事件字段、错误码、幂等关联 | 分离调用身份；接收、应用、执行、送达分别表达 |
 | FileRef 编码 | URI、源端版本/指纹、路径规则、预览范围、媒体引用解析 | 必须含来源 Computer；工作文件与持久媒体不进入 Server 资产库 |

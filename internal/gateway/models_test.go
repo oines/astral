@@ -255,7 +255,7 @@ func TestAvailableModelsRequireCommandIdentityAndDoNotExposeManagement(t *testin
 	for _, path := range []string{"/v1/models", "/v1/capabilities/models"} {
 		gatewayModelRequest(t, p.Context, http.DefaultClient, "GET", first.APIURL+path, http.StatusUnauthorized)
 		gatewayModelRequest(t, p.Context, client, "GET", first.APIURL+path, http.StatusOK)
-		gatewayModelRequest(t, p.Context, client, "GET", second.APIURL+path, http.StatusUnauthorized)
+		gatewayModelRequest(t, p.Context, client, "GET", second.APIURL+path, http.StatusOK)
 	}
 	for _, operation := range []struct{ method, path string }{
 		{"GET", "/api/v1/models"}, {"GET", "/v1/providers"},

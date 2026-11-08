@@ -30,7 +30,7 @@ func TestDiscoveryEntryLeadsToSelfContainedLiveContracts(t *testing.T) {
 	}
 	var index Capabilities
 	read("/v1/capabilities", &index, 200)
-	if len(index.Capabilities) != 7 || index.Authentication == "" || index.Scope == "" || index.OpenAPIURL == "" {
+	if len(index.Capabilities) != 8 || index.Authentication == "" || index.Scope == "" || index.OpenAPIURL == "" {
 		t.Fatalf("entry is missing discovery instructions: %+v", index)
 	}
 	var full map[string]any
@@ -46,7 +46,11 @@ func TestDiscoveryEntryLeadsToSelfContainedLiveContracts(t *testing.T) {
 			for method, rawOperation := range raw.(map[string]any) {
 				operation := rawOperation.(map[string]any)
 				security, _ := json.Marshal(operation["security"])
-				if string(security) != `[{"command":[]}]` {
+				if path == "/hooks/{id}" {
+					if operation["security"] != nil {
+						t.Errorf("Daemon event route unexpectedly requires a credential: %s", security)
+					}
+				} else if string(security) != `[{"command":[]}]` {
 					t.Errorf("%s %s does not require its command credential: %s", method, path, security)
 				}
 			}
@@ -128,7 +132,7 @@ func TestDiscoveryEntryLeadsToSelfContainedLiveContracts(t *testing.T) {
 	read("/v1/capabilities/missing", nil, 404)
 }
 
-func TestComputerDiscoveryRequiresCommandCredentialAndMatchingListener(t *testing.T) {
+func TestComputerDiscoveryUsesCommandCredentialOnSharedListener(t *testing.T) {
 	p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	api := New(p.Harness, channels.New(p.Store, p.Harness))
 	p.Hub.Gateway = api.Handle
@@ -167,7 +171,7 @@ func TestComputerDiscoveryRequiresCommandCredentialAndMatchingListener(t *testin
 	for _, path := range []string{"/v1/capabilities", "/v1/capabilities/history", "/v1/openapi.json", "/v1/context"} {
 		check(http.DefaultClient, first.APIURL+path, http.StatusUnauthorized)
 		check(client, first.APIURL+path, http.StatusOK)
-		check(client, second.APIURL+path, http.StatusUnauthorized)
+		check(client, second.APIURL+path, http.StatusOK)
 	}
 	check(testkit.ComputerAPI(t, p, second), second.APIURL+"/v1/context", http.StatusOK)
 }

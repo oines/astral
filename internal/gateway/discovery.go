@@ -39,7 +39,7 @@ type CapabilityDocument struct {
 
 type capabilityRoute struct{ method, path, description string }
 
-const commandAuthentication = "Every request, including this index, capability documents and OpenAPI, requires Authorization: Bearer using the calling exec_command's ASTRAL_API_TOKEN environment variable. Reference the variable without printing, saving or placing its expanded value in process arguments. The credential remains valid during asynchronous execution and expires when its command exits or its Daemon connection ends. Do not request or supply provider/account credentials."
+const commandAuthentication = "Every /v1 request, including this index, capability documents and OpenAPI, requires Authorization: Bearer using the calling exec_command's ASTRAL_API_TOKEN environment variable. Reference the variable without printing, saving or placing its expanded value in process arguments. The credential remains valid during asynchronous execution and expires when its command exits or its Daemon connection ends. Do not request or supply provider/account credentials."
 
 type capabilitySpec struct {
 	id, description string
@@ -99,7 +99,7 @@ var capabilitySpecs = []capabilitySpec{
 	{
 		id: "schedules", description: "Manage visible, persistent prompt schedules targeting this Bot's Sessions.",
 		notes: []string{
-			"Schedules created here are visible and editable in the WebUI's Schedules page. You can also manage schedules created by the user. Scope is this Bot. session_mode=existing (the default) targets session_id of this Bot; omit session_id on creation to use the calling Session. session_mode=new creates an independent Session for every occurrence and must omit session_id. It uses the Bot's current default model and Computer and copies no prior context or IM binding.",
+			"Schedules created here are visible and editable in the WebUI's Schedules page. You can also manage schedules created by the user. Scope is this Bot. When asked to schedule work, use the calling Session by default: omit both session_mode and session_id. Only choose another root Session or session_mode=new when explicitly requested. session_mode=existing targets session_id of this Bot; omit session_id on creation to use the calling Session. session_mode=new creates an independent Session for every occurrence and must omit session_id. It uses the Bot's current default model and Computer and copies no prior context or IM binding.",
 			"Subagents may read schedules but cannot create, change or delete them. Schedules cannot target an internal subagent Session; only that Session's direct parent can give it work through agent_control.",
 			"A schedule has title, prompt, enabled, session_mode and timing. Use timing.kind=once with an absolute RFC3339 at, or timing.kind=cron with a five-field expression (minute hour day-of-month month day-of-week). All plans use Astral's global timezone, configured in General Settings and defaulting to the Server's system timezone. GET /v1/context returns timezone.name. Per-task timezone fields are not accepted. Read the live schema before creation.",
 			"For daily work at 09:00 in the global timezone, use cron '0 9 * * *'. For weekdays at 09:00 use '0 9 * * 1-5'. No @every aliases or inline timezone prefixes are accepted. Changing the global timezone recalculates future recurring times; one-time at remains the same absolute instant.",
@@ -110,7 +110,7 @@ var capabilitySpecs = []capabilitySpec{
 		},
 		examples: []CapabilityExample{
 			{Description: "List all schedules belonging to this Bot.", Method: "GET", Path: "/v1/schedules"},
-			{Description: "Create a repeating schedule in a chosen Session.", Method: "POST", Path: "/v1/schedules", Body: map[string]any{"session_id": "<session-id>", "title": "Daily research", "prompt": "Review today's project updates.", "enabled": true, "timing": map[string]any{"kind": "cron", "cron": "0 9 * * *"}}},
+			{Description: "Create a repeating schedule in the current Session by default.", Method: "POST", Path: "/v1/schedules", Body: map[string]any{"title": "Daily research", "prompt": "Review today's project updates.", "enabled": true, "timing": map[string]any{"kind": "cron", "cron": "0 9 * * *"}}},
 			{Description: "Run each occurrence in its own new Session.", Method: "POST", Path: "/v1/schedules", Body: map[string]any{"session_mode": "new", "title": "Daily independent review", "prompt": "Review today's project updates.", "enabled": true, "timing": map[string]any{"kind": "cron", "cron": "0 9 * * *"}}},
 			{Description: "Schedule a single future prompt at an explicit time; substitute a future date.", Method: "POST", Path: "/v1/schedules", Body: map[string]any{"title": "Reminder", "prompt": "Check the deployment result.", "enabled": true, "timing": map[string]any{"kind": "once", "at": "2030-01-01T09:00:00+08:00"}}},
 		},
@@ -122,6 +122,25 @@ var capabilitySpecs = []capabilitySpec{
 			{"DELETE", "/v1/schedules/{id}", "Delete a schedule using its current revision."},
 		},
 	},
+	{
+		id: "wake-endpoints", description: "Register and manage local event endpoints that wake this Bot's root Sessions.",
+		notes: []string{
+			"Management uses this command's temporary ASTRAL_API_TOKEN, like the rest of the Computer API. Only root Sessions may manage endpoints. The Server derives the owning Computer and source Session from the creating command; body fields cannot forge them. Other authorized Computers may manage the same Bot's visible endpoints.",
+			"Creation defaults to the calling Session; explicitly set session_id to choose another accessible root Session of this Bot. Target Session and owning Computer are fixed after creation. Subagent Sessions cannot create or manage endpoints or be event targets.",
+			"trigger_url is on the owning Daemon's persistent localhost HTTP port, shared with its /v1 Computer API. A local caller posts to /hooks/{id} without credentials; the authenticated Daemon tunnel proves its source Computer. The Server and other Daemons cannot trigger that endpoint. No public HTTP port is opened, and other /v1 operations still require a live command credential.",
+			"Do not expose or forward hooks endpoints to the public internet through reverse proxies, port forwarding, tunnels, or webhook relay services. Call them only through their owning Daemon's local loopback API.",
+			"Use notes to record the caller's script or service location, for example /opt/mc/listener.py, systemd: mc-events. The owning Computer is already recorded automatically; notes need not repeat its name or ID. prompt is the instruction for handling incoming events, not deployment notes.",
+			"POST events with a stable event_id and text or JSON data. Requests are bounded to 64 KiB; stored event content is at most 1 KiB. Events for the same target are collected for one second, with at most 20 events and a 4 KiB content budget. That budget includes each source's title, prompt and notes once, but excludes XML wrapper and escaping overhead. Exceeding the batch limit starts a fixed 60-second cooldown and returns 429 with Retry-After; continued requests do not extend the cooldown. The Daemon then rejects that endpoint locally until the deadline.",
+			"A 202 receipt means the event was durably accepted, not that the Bot finished work. Idempotency receipts are retained for seven days. Within that window, reuse event_id when retrying the same event; changing its content under the same ID is a conflict. After the retention window, the same ID can be accepted as a new event. Events use the target Session's current model, Computer and permissions. Pausing or deleting an endpoint prevents future events, but does not retract input already accepted by a Session.",
+			"GET lists and reads endpoints. PATCH changes only title, prompt, notes or enabled and requires the current revision. DELETE requires one revision query parameter. Owner UI can inspect, edit, pause or delete registered endpoints; creation belongs to Agent commands.",
+		},
+		examples: []CapabilityExample{
+			{Description: "Register an event endpoint on this Computer targeting the current Session.", Method: "POST", Path: "/v1/wake-endpoints", Body: map[string]any{"title": "Minecraft events", "prompt": "Review each incoming event and act when needed.", "notes": "/opt/mc/listener.py, systemd: mc-events"}},
+			{Description: "List endpoints available to this Bot.", Method: "GET", Path: "/v1/wake-endpoints"},
+		},
+		routes: []capabilityRoute{{"GET", "/v1/wake-endpoints", "List visible endpoints."}, {"POST", "/v1/wake-endpoints", "Create a local event endpoint for this command's Computer and a root Session."}, {"GET", "/v1/wake-endpoints/{id}", "Read one endpoint."}, {"PATCH", "/v1/wake-endpoints/{id}", "Edit an endpoint using its current revision."}, {"DELETE", "/v1/wake-endpoints/{id}", "Delete an endpoint using its current revision."}, {"POST", "/hooks/{id}", "Post an anonymous event only on the owning Daemon's local listener."}},
+	},
+
 	{
 		id: "chats", description: "Find authorized accounts and chats, read archived messages, send to other chats, and discover platform-specific operations.",
 		notes: []string{
@@ -254,7 +273,7 @@ func (s *Service) discoveryRoutes() {
 		index := Capabilities{
 			Usage:          "Choose a capability and GET its read_url for instructions, examples and the matching OpenAPI request/response schemas. Resolve all relative URLs against local_api.base_url. Use JSON bodies for POST requests; replace example placeholders with actual discovered IDs.",
 			Authentication: commandAuthentication,
-			Scope:          "The Server derives this Bot, Session and source Computer from the command credential and checks its listener binding. Each operation enforces the Bot's current resource and chat access; available account operations are discovered per account.",
+			Scope:          "The Server derives this Bot, Session and source Computer from the command credential and verifies that credential against its original Daemon connection; the shared localhost address does not select an identity. Each operation enforces the Bot's current resource and chat access; available account operations are discovered per account.",
 			OpenAPIURL:     "/v1/openapi.json", Capabilities: []Capability{},
 		}
 		for _, capability := range capabilitySpecs {

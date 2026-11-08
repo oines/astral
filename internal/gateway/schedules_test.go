@@ -30,12 +30,17 @@ type scheduleGatewayFixture struct {
 	owner              *httptest.Server
 }
 
-func newScheduleGateway(t *testing.T) *scheduleGatewayFixture {
+func newScheduleGateway(t *testing.T, computersCount ...int) *scheduleGatewayFixture {
 	t.Helper()
-	p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
+	count := 1
+	if len(computersCount) > 0 {
+		count = computersCount[0]
+	}
+	p := testkit.New(t, count, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	c := channels.New(p.Store, p.Harness)
 	g := gateway.New(p.Harness, c)
 	p.Hub.Gateway = g.Handle
+	p.Hub.Wake = g.HandleWake
 	binding, err := p.Hub.Bind(p.Context, p.Agent.ID, p.Session.ID, p.Agent.DefaultComputerID, "")
 	if err != nil {
 		t.Fatal(err)

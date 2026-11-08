@@ -26,12 +26,13 @@ func timelineEntry(entry core.Entry) core.Entry {
 		_ = json.Unmarshal(message.Metadata, &metadata)
 		var source string
 		_ = json.Unmarshal(metadata["source"], &source)
-		if entry.Kind != core.EntryMessage || message.ContextKind != "" || source == "im.trigger" {
+		external := entry.Kind == core.EntryContext && message.ContextKind == "external.events" && source == "external"
+		if !external && (entry.Kind != core.EntryMessage || message.ContextKind != "" || source == "im.trigger" || source == "external.trigger") {
 			entry.Message = nil
 		} else {
 			message.Content = timelineContent(message.Content)
 			visibleMetadata := map[string]json.RawMessage{}
-			for _, key := range []string{"source", "display_text", "files", "sender", "schedule", "accepted_at"} {
+			for _, key := range []string{"source", "display_text", "files", "sender", "schedule", "external", "accepted_at"} {
 				if value, ok := metadata[key]; ok {
 					visibleMetadata[key] = value
 				}

@@ -167,14 +167,15 @@ func TestDaemonGatewayCredentialIsBoundToProcessAndConnection(t *testing.T) {
 	if calls.Load() != 1 || response.Code != http.StatusUnauthorized || response.Header().Get("WWW-Authenticate") != "Bearer" {
 		t.Fatalf("Server authorization was not authoritative: calls=%d status=%d", calls.Load(), response.Code)
 	}
+	if a.APIURL != b.APIURL {
+		t.Fatal("one Daemon must expose one local API address")
+	}
+	process.finish()
+	d.mu.Lock()
+	done := d.processes[id].done
+	d.mu.Unlock()
+	<-done // Exit revokes before output is consumed or process.release.
 	for _, binding := range []domain.ExecutionBinding{b, a} {
-		if binding == a {
-			process.finish()
-			d.mu.Lock()
-			done := d.processes[id].done
-			d.mu.Unlock()
-			<-done // Exit revokes before output is consumed or process.release.
-		}
 		body := &forbiddenBody{}
 		request := httptest.NewRequest(http.MethodPost, binding.APIURL+"/v1/test", body)
 		request.Header.Set("Authorization", "Bearer "+token)

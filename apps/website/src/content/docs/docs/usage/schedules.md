@@ -1,6 +1,6 @@
 ---
 title: "Scheduled tasks"
-description: "Start work at a chosen time or repeat it on a daily or weekly schedule."
+description: "Run work on a schedule or resume it from a local program’s events."
 ---
 
 A scheduled task gives the Bot instructions at a chosen time. Use it for work such as a morning task review or a Friday summary. Create it in the interface or ask the Bot to arrange it in a session. Both methods use the same task list.
@@ -27,7 +27,43 @@ You can also describe the arrangement in a session:
 
 > Every Friday at 5 pm, review this week's unfinished items in this session. Check Astral's timezone first, then create the schedule and tell me its next run time.
 
-The Bot can manage schedules for sessions belonging to the same Bot. Open **Scheduled tasks** afterward to confirm the timing and prompt, then edit or pause it if needed. If creation loses its connection or has an uncertain result, check the list before creating another copy.
+When you ask the Bot to create a schedule, it uses the current conversation by default. Ask explicitly to use another conversation belonging to the same Bot or to start a new one each time. Subagent conversations cannot be schedule targets.
+
+Open **Scheduled tasks** afterward to confirm the timing and prompt, then edit or pause it if needed. If creation loses its connection or has an uncertain result, check the list before creating another copy.
+
+## Event wake-ups
+
+Ask the Bot to register an event endpoint when an external program should hand work back to it. For example:
+
+> Connect the Minecraft server messages on the computer running the server and deliver them to this conversation. Briefly record the listener’s script or configuration path and startup entry in the endpoint’s maintenance notes.
+
+The Bot creates the endpoint, which then appears under **Scheduled tasks → Event wake-ups**. You can inspect it, edit its name, handling instructions and maintenance notes, pause it, or delete it. **Add task** continues to create timed tasks. Only user-facing root conversations can register and manage endpoints; subagents cannot use these APIs or be delivery targets.
+
+If the Bot omits a target, the endpoint uses its current conversation. It can explicitly choose another accessible root conversation belonging to the same Bot. The target conversation and receiving Computer are fixed after creation; switching conversations or computers does not move them. To change either target, ask the Bot to create a new endpoint, update the caller, and disable the old endpoint.
+
+### Connect a local program
+
+Open the endpoint, check its **Receiving Computer** and **Target conversation**, then copy its delivery URL or request example. The external program must call that localhost address on the receiving Computer. Other Computers can manage the endpoint but cannot deliver events to it. Delivery is anonymous on this local entry point. The Daemon uses one persistent local port that remains the same after a restart. Do not expose this entry point to the public internet through a reverse proxy, port mapping, tunnel, or webhook forwarding service; it is only for programs on its owning Computer. Ordinary Computer API management and discovery still require the current command credential.
+
+On the receiving Computer, replace the URL below with the one shown in the endpoint details:
+
+```bash
+curl --fail-with-body '<delivery URL from the endpoint details>' \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"event_id":"build-1842","text":"The build failed. Check the logs and continue the fix."}'
+```
+
+Use a new `event_id` for each new event. Retries keep the original ID and content. Deduplication receipts are kept for seven days: during that time, the same ID returns its original receipt without waking the Bot again, and conflicting content is rejected. After the content enters the conversation, the receipt no longer keeps a copy of it. You can also attach structured `data`. A `202` response means the event was durably received, without waiting for model processing. The Computer and Server must remain connected to accept new deliveries.
+
+**Instructions** describe how to handle these events. **Maintenance notes** locate the caller, for example `/opt/mc/listener.py, systemd: mc-events`. The system supplies the source Computer, so it does not need to be repeated in the notes. Each delivery includes the notes saved when its events were received, separately from the handling instructions, so the Bot can locate the listener. Editing notes affects later events only.
+
+### Batching and temporary blocking
+
+Events are combined in a fixed one-second window and delivered as one batch. While the Agent is working, new events become context for its next model request; an in-flight generation is not rewritten.
+
+The endpoints targeting one conversation share one delivery buffer holding up to 20 events or 4 KiB. A separate batch may already have been delivered to the conversation and be waiting for the model to consume it; that batch has its own 20-event/4-KiB limit. At most these two batches are retained, regardless of the number of endpoints. Each batch’s content budget includes message bodies and one copy of each source’s endpoint name, instructions and notes; fixed formatting wrappers do not count. When the delivery buffer fills, the actual messages and a traffic-protection notice are delivered together, and the source endpoint is temporarily blocked for 60 seconds. Long content is explicitly marked as truncated. Individual events retain their boundaries, endpoint and source Computer. The transcript labels the batch **Event wake-up** with its endpoint and receiving Computer; the Bot also receives the Computer API entry for managing that endpoint.
+
+Calls made while blocked receive `429` and `Retry-After`; the caller should wait before retrying. Rejected content is not replayed as a backlog after recovery, and it does not repeatedly invoke the model. The page shows when the 60-second block ends. If the shared delivery buffer is still full—for example, because the model is unavailable and has not consumed the earlier batch—new calls continue to receive `429` until processing frees space. Astral does not accumulate an unlimited queue. An endpoint manually paused by you or the Bot remains paused. Traffic protection does not classify error text or invoke a model to summarize messages.
 
 ## When the time arrives
 

@@ -189,8 +189,19 @@ export function scheduledMessage(entry: Entry) {
   const schedule = object(meta.schedule)
   return { title: typeof schedule.title === 'string' ? schedule.title : '', deliveredAt: typeof meta.accepted_at === 'string' ? meta.accepted_at : entry.time }
 }
+export function externalMessage(entry: Entry) {
+  const meta = object(entry.message?.metadata)
+  if (meta.source !== 'external') return undefined
+  const external = object(meta.external)
+  const computers = [...new Set((Array.isArray(external.sources) ? external.sources : []).map(source => {
+    const record = object(source)
+    return typeof record.computer_name === 'string' ? record.computer_name : typeof record.computer_id === 'string' ? record.computer_id : ''
+  }).filter(Boolean))]
+  return { title: typeof external.title === 'string' ? external.title : '', computers, deliveredAt: typeof meta.accepted_at === 'string' ? meta.accepted_at : entry.time }
+}
 function conversationMessage(entry: Entry) {
   const message = entry.message
+  if (entry.kind === 'context' && message?.context_kind === 'external.events' && externalMessage(entry)) return message
   // Role describes model input, not UI visibility. Passive context and internal
   // activation prompts stay in history without becoming conversation bubbles.
   if (entry.kind !== 'message' || !message || message.context_kind && message.context_kind !== 'astral.subagent_instruction' || object(message.metadata).source === 'im.trigger') return

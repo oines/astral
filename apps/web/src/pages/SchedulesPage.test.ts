@@ -18,6 +18,12 @@ const fixture = vi.hoisted(() => ({
   setup: undefined as Setup | undefined,
   app: { activeAgentID: 'bot', timezone: 'UTC', displayTimezone: 'UTC', timezoneCompatible: true, schedules: [] as Schedule[], schedulesReady: true, schedulesError: '', sessions: [{ id: 'session', agent_id: 'bot', title: 'My conversation', archived: false }], saveSchedule: vi.fn(async (_input: ScheduleInput, _current?: Schedule, _agentID?: string) => {}), refreshSchedules: vi.fn(async () => {}), deleteSchedule: vi.fn(async () => {}) },
 }))
+// Event endpoint editing is an independent local form; it must not lock the
+// timed-task create action or discard either form's draft.
+vi.mock('../components/WakeEndpointsPanel.vue', () => ({ default: defineComponent({
+  emits: ['editing'],
+  setup(_props, { emit }) { emit('editing', true); return () => h('section', 'Open endpoint editor') },
+}) }))
 vi.mock('../stores/app', () => ({ useAppStore: () => fixture.app }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, values: Record<string, unknown> = {}) => `${key}${Object.values(values).length ? ` ${Object.values(values).join(' ')}` : ''}`, locale: { value: 'en' } }) }))
 vi.mock('@astral/ui', () => ({
@@ -49,6 +55,13 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 describe('shared Gateway and UI schedules', () => {
+  it('keeps Add task available while an event endpoint editor is open', async () => {
+    const html = await render()
+    expect(html).toContain('Open endpoint editor')
+    expect(html).toMatch(/<button(?![^>]*disabled)[^>]*>[\s\S]*?scheduleAdd<\/button>/)
+    fixture.setup!.begin()
+    expect(fixture.setup!.editor).toBeDefined()
+  })
   it('requires a supported global timezone for new one-time wall-clock input', async () => {
     fixture.app.displayTimezone = 'System'
     fixture.app.timezoneCompatible = false

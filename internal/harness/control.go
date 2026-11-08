@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 
@@ -280,13 +281,18 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	r.core.Load().Cancel()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	var wakeErr error
+	if s.WakeEndpoints != nil {
+		wakeErr = s.WakeEndpoints.StopSession(ctx, id)
+	}
+	r.externalInspector, r.externalBatchID = nil, ""
 	if err := s.cancelModelFallback(ctx, id); err != nil {
-		return err
+		return errors.Join(wakeErr, err)
 	}
 	r.core.Load().Cancel()
 	err = s.Store.DeleteMaintenance(ctx, imReplyWatchKind, id)
 	s.notify(id)
-	return err
+	return errors.Join(wakeErr, err)
 }
 func (s *Service) Compact(ctx context.Context, id, instructions string) error {
 	r, err := s.open(ctx, id)

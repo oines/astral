@@ -44,6 +44,25 @@ func TestTimelineProjectionPreservesImageGeometryAndDisplayTextWithoutModelEnvel
 	}
 }
 
+func TestTimelineExternalBatchKeepsDisplayAndSourceButHidesInternalDriver(t *testing.T) {
+	original := core.Entry{ID: "external-batch", Kind: core.EntryContext, Message: &core.Message{
+		Role: core.RoleUser, ContextKind: "external.events", Content: core.Text("trusted model notice and escaped external payload"),
+		Metadata: json.RawMessage(`{"source":"external","display_text":"[Game events · Example Computer] Player joined","external":{"title":"Game events","sources":[{"computer_id":"computer_example","computer_name":"Example Computer","notes":"/opt/example/listener.py"}]}}`),
+	}}
+	projected := timelineEntry(original)
+	if projected.Message == nil || timelineUnit(projected) != "message:external-batch" {
+		t.Fatal("actual external event batch disappeared from the visible timeline")
+	}
+	if projected.Message.Content[0].Text != "" || !strings.Contains(string(projected.Message.Metadata), "Player joined") || !strings.Contains(string(projected.Message.Metadata), "/opt/example/listener.py") {
+		t.Fatalf("projection lost display/provenance or exposed the model envelope: %+v", projected.Message)
+	}
+	original.Message.ContextKind = "external.wakeup"
+	original.Kind = core.EntryMessage
+	if projected := timelineEntry(original); projected.Message != nil || timelineUnit(projected) != "" {
+		t.Fatal("internal external-event driver appeared as another message")
+	}
+}
+
 func TestTimelineProjectionRemovesOpaquePayloadWithoutMutatingSource(t *testing.T) {
 	opaque := json.RawMessage(`{"provider":"opaque"}`)
 	original := core.Entry{Kind: core.EntryToolResult, Tool: &core.ToolRecord{

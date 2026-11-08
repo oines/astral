@@ -107,6 +107,7 @@ func (s *Service) saveModelFallback(ctx context.Context, state modelFallbackStat
 	// Fallback state changes concern this Session only. A coarse Store watch
 	// would rescan every settled child whenever an unrelated root takes a turn.
 	s.wakeSubagents(state.SessionID)
+	s.wakeExternal(state.SessionID)
 	s.queueModelFallback(modelFallbackScheduleUpdate{state: fallbackScheduleState(state)})
 	return nil
 }
@@ -585,6 +586,7 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 						continue
 					}
 					s.wakeModelFallback(r.id)
+					s.wakeExternal(r.id)
 					select {
 					case terminal <- event:
 					default:
@@ -608,6 +610,7 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 		// The model can report failure before Core leaves Running. Every terminal
 		// Run, including validation/tool failures, supplies the later safe boundary.
 		s.wakeModelFallback(r.id)
+		s.wakeExternal(r.id)
 		r.mu.Lock()
 		var session domain.Session
 		readErr := s.Store.Get(s.ctx, "sessions", r.id, &session)

@@ -179,6 +179,7 @@ func New(config Config) *API {
 	a.resources()
 	a.sessionRoutes()
 	a.scheduleRoutes()
+	a.wakeRoutes()
 	a.attemptRoutes()
 	a.systemRoutes()
 	a.storageRoutes()
