@@ -149,7 +149,8 @@ func TestInboxCompactionBudgetPauseRetainsQueueAcrossRestartAndRecoversAfterMode
 
 	// A successful passive recovery must also leave ordinary IM execution usable.
 	// The existing inbox receives this new mention and the offline provider returns
-	// plain directly output text; no real platform send or new sender stub is involved.
+	// plain output text without send_message, so the existing missed-reply policy
+	// also issues one independently identified reminder after the mention's Run.
 	fresh, _ := activeDeliveryArchive(t, p, b, "mention-after-compaction-recovery", "mention")
 	testkit.Await(t, p.Context, func() bool {
 		receipt, err := session.LookupInput(p.Context, fresh.ID+":trigger")
@@ -157,13 +158,65 @@ func TestInboxCompactionBudgetPauseRetainsQueueAcrossRestartAndRecoversAfterMode
 			return false
 		}
 		state, err := p.CoreStore.LoadState(p.Context, b.SessionID)
-		return err == nil && state.LastRun != nil && state.LastRun.Status == "completed"
+		var replyWatch any
+		return err == nil && state.LastRun != nil && state.LastRun.Status == "completed" && domain.IsMissing(p.Store.Maintenance(p.Context, "im_reply_watch", b.SessionID, &replyWatch))
 	})
-	ordinary, err := session.Attempts().Scan(p.Context, core.AttemptQuery{Purpose: "generation", Limit: 10, MaxBytes: 1 << 20})
-	if err != nil || len(ordinary.Attempts) != 1 || ordinary.Attempts[0].Outcome == nil || ordinary.Attempts[0].Outcome.Status != "completed" {
-		t.Fatalf("new mention did not finish exactly one ordinary generation after recovery: %+v %v", ordinary, err)
+	state, err = p.CoreStore.LoadState(p.Context, b.SessionID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	request, err := session.Attempts().Request(p.Context, ordinary.Attempts[0].ID)
+	consumed, err := p.CoreStore.Scan(p.Context, state.RolloutID, core.Query{SessionID: b.SessionID, Kind: core.EntryInputConsumed, Limit: 100, MaxBytes: 1 << 20})
+	if err != nil || consumed.Next != "" {
+		t.Fatalf("could not read the fixture's consumed input identities: next=%q error=%v", consumed.Next, err)
+	}
+	drivers := map[string][]core.InputReceipt{}
+	for _, row := range consumed.Records {
+		entry := row.Entry
+		if entry.Input == nil || entry.Input.Kind == core.InputContext {
+			continue
+		}
+		receipt, err := session.LookupInput(p.Context, entry.Input.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		drivers[entry.RunID] = append(drivers[entry.RunID], receipt)
+	}
+	generated, err := session.Attempts().Scan(p.Context, core.AttemptQuery{Purpose: "generation", Limit: 10, MaxBytes: 1 << 20})
+	if err != nil || generated.Next != "" {
+		t.Fatalf("could not read the fixture's generation attempts: next=%q error=%v", generated.Next, err)
+	}
+	var ordinary, reminders []core.ModelAttempt
+	var reminderID string
+	for _, attempt := range generated.Attempts {
+		if attempt.Outcome == nil || attempt.Outcome.Status != "completed" || len(drivers[attempt.RunID]) != 1 {
+			t.Fatalf("generation %s did not complete with one driving input: run=%s drivers=%d", attempt.ID, attempt.RunID, len(drivers[attempt.RunID]))
+		}
+		driver := drivers[attempt.RunID][0]
+		var source messages.Metadata
+		if driver.Message == nil || json.Unmarshal(driver.Message.Metadata, &source) != nil {
+			t.Fatalf("generation %s has no identified driving message", attempt.ID)
+		}
+		t.Logf("generation run=%s driver=%s source=%s context_kind=%s", attempt.RunID, driver.ID, source.Source, driver.Message.ContextKind)
+		switch source.Source {
+		case "im.trigger":
+			if source.EventID != fresh.ID || driver.ID != fresh.ID+":trigger" && driver.ID != fresh.ID+":trigger:wakeup" {
+				t.Fatalf("ordinary generation used a different mention: driver=%s event=%s", driver.ID, source.EventID)
+			}
+			ordinary = append(ordinary, attempt)
+		case "im.reply_reminder":
+			if driver.Message.ContextKind != "im.reply_reminder" || source.DeliveryID != driver.ID {
+				t.Fatalf("reply reminder lost its source identity: driver=%s source=%+v", driver.ID, source)
+			}
+			reminders = append(reminders, attempt)
+			reminderID = driver.ID
+		default:
+			t.Fatalf("unexpected generation source after model repair: driver=%s source=%s", driver.ID, source.Source)
+		}
+	}
+	if len(ordinary) != 1 || len(reminders) != 1 || reminderID != "im_reply_reminder_"+ordinary[0].RunID {
+		t.Fatalf("expected one mention generation and its one missed-reply reminder: ordinary=%d reminders=%d reminder_id=%s", len(ordinary), len(reminders), reminderID)
+	}
+	request, err := session.Attempts().Request(p.Context, ordinary[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}

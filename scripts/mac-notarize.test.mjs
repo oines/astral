@@ -4,13 +4,83 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { acceptedSubmission, combineNotarizationReports, finalize, resumeSubmission, staple, submit, verifyNotarizedApp, waitForSubmission } from './mac-notarize.mjs'
+import { acceptedSubmission, combineNotarizationReports, finalize, resumeSubmission, signDmgWithTimestamp, staple, submit, verifyNotarizedApp, waitForSubmission } from './mac-notarize.mjs'
 
 const submissionID = '12345678-1234-4234-8234-123456789abc'
 const otherSubmissionID = '87654321-4321-4321-8321-cba987654321'
 const configuration = { profile: 'private-profile', keychain: '/private/signing.keychain-db' }
 const artifactSHA = 'a'.repeat(64)
 const completedUpload = { artifact_sha256: artifactSHA, upload_status: 'completed', submit_exit_code: 0 }
+
+const dmgSigning = { ...configuration, identity: 'Developer ID Application: Synthetic Publisher (TEAM123456)', team: 'TEAM123456' }
+const dmgDetails = `Authority=${dmgSigning.identity}\nTeamIdentifier=${dmgSigning.team}\nTimestamp=Nov 8, 2026 at 12:00:00\n`
+
+test('DMG timestamp retry retains signing flags and strict verification before notarization', async () => {
+  const calls = [], pauses = [], logs = []
+  let attempts = 0
+  await signDmgWithTimestamp('/release/Astral.dmg', dmgSigning, {
+    run: async (program, args) => {
+      calls.push({ program, args: [...args] })
+      if (args.includes('--sign') && ++attempts === 1) throw Object.assign(new Error('codesign failed'), { stderr: 'Astral.dmg: A timestamp was expected but was not found.' })
+      return { stdout: '', stderr: args.includes('--display') ? dmgDetails : '' }
+    },
+    pause: async value => { pauses.push(value) }, log: value => { logs.push(value) },
+  })
+  assert.equal(attempts, 2)
+  assert.deepEqual(pauses, [2000])
+  for (const call of calls.slice(0, 2)) {
+    assert.equal(call.program, '/usr/bin/codesign')
+    assert.deepEqual(call.args, ['--force', '--sign', dmgSigning.identity, '--keychain', dmgSigning.keychain, '--timestamp', '/release/Astral.dmg'])
+  }
+  assert.deepEqual(calls.slice(2).map(call => call.args), [['--verify', '--strict', '--verbose=2', '/release/Astral.dmg'], ['--display', '--verbose=4', '/release/Astral.dmg']])
+  assert.equal(logs.length, 1)
+  assert.doesNotMatch(logs[0], /private-profile|keychain|Developer ID/)
+})
+
+test('DMG timestamp retry exhaustion still fails without signature verification or notarization', async () => {
+  const failure = Object.assign(new Error('codesign failed'), { stderr: 'A timestamp was expected but was not found.' })
+  const calls = [], pauses = []
+  await assert.rejects(signDmgWithTimestamp('/release/Astral.dmg', dmgSigning, {
+    run: async (program, args) => { calls.push({ program, args }); throw failure },
+    pause: async value => { pauses.push(value) }, log: () => {},
+  }), error => error === failure)
+  assert.equal(calls.length, 3)
+  assert.ok(calls.every(call => call.program === '/usr/bin/codesign' && call.args.includes('--timestamp') && call.args.includes('--sign')))
+  assert.deepEqual(pauses, [2000, 4000])
+})
+
+test('DMG signing configuration failures and missing secure signature metadata fail immediately', async () => {
+  const failure = Object.assign(new Error('identity unavailable'), { stderr: 'The specified item could not be found in the keychain.' })
+  let calls = 0
+  await assert.rejects(signDmgWithTimestamp('/release/Astral.dmg', dmgSigning, {
+    run: async () => { calls++; throw failure }, pause: async () => { assert.fail('configuration failure must not retry') },
+  }), error => error === failure)
+  assert.equal(calls, 1)
+  for (const details of [dmgDetails.replace('Timestamp=', 'Signed Time='), dmgDetails.replace(/Timestamp=.+/, 'Timestamp=none'), dmgDetails.replace(/Timestamp=.+/, 'Timestamp=unavailable'), dmgDetails.replace(dmgSigning.identity, 'Developer ID Application: Other Publisher (OTHERTEAM0)'), dmgDetails.replace(`TeamIdentifier=${dmgSigning.team}`, 'TeamIdentifier=OTHERTEAM0')]) {
+    calls = 0
+    await assert.rejects(signDmgWithTimestamp('/release/Astral.dmg', dmgSigning, {
+      run: async (_program, args) => { calls++; return { stdout: '', stderr: args.includes('--display') ? details : '' } },
+      pause: async () => { assert.fail('invalid signature metadata must not retry') },
+    }), /intended timestamped Developer ID signature/)
+    assert.equal(calls, 3)
+  }
+})
+
+test('a DMG strict verification failure remains fatal without retrying the signature', async () => {
+  const failure = Object.assign(new Error('invalid signature'), { stderr: 'code or signature modified' })
+  const calls = []
+  await assert.rejects(signDmgWithTimestamp('/release/Astral.dmg', dmgSigning, {
+    run: async (_program, args) => {
+      calls.push([...args])
+      if (args.includes('--verify')) throw failure
+      return { stdout: '', stderr: '' }
+    },
+    pause: async () => { assert.fail('verification failure must not retry') },
+  }), error => error === failure)
+  assert.equal(calls.length, 2)
+  assert.ok(calls[0].includes('--sign'))
+  assert.deepEqual(calls[1], ['--verify', '--strict', '--verbose=2', '/release/Astral.dmg'])
+})
 
 function submissionHarness(responses) {
   const calls = []

@@ -936,6 +936,16 @@ func modelFallbackCandidates(preferred core.ModelSelection, agent domain.Agent) 
 }
 
 func (s *Service) reconcileModelFallback(ctx context.Context, id string) error {
+	// Scheduler/terminal notifications are hints and can arrive after a probe
+	// was postponed. Recheck the durable deadline before opening a cold Core
+	// Session; a future waiting detector needs no execution/history window.
+	var pending modelFallbackState
+	if err := s.Store.Maintenance(ctx, modelFallbackKind, id, &pending); err == nil && pending.Phase == "waiting" && pending.NextProbeAt.After(time.Now()) {
+		var agent domain.Agent
+		if err := s.Store.Get(ctx, "agents", pending.AgentID, &agent); err == nil && agent.ModelAutoRestore && !agent.Deletion {
+			return nil
+		}
+	}
 	r, err := s.open(ctx, id)
 	if err != nil {
 		if domain.IsMissing(err) {
