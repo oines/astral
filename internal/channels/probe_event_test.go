@@ -193,6 +193,12 @@ func TestProbeEventAcceptedRecoveryBusyAndStopped(t *testing.T) {
 		t.Fatal(err)
 	}
 	release()
+	// Stop requests cancellation without joining the Run. Recovery treats an
+	// unfinished cancellation as busy until its terminal fact covers the Probe.
+	view := p.Idle(t, binding.SessionID)
+	if view.LastRun == nil || view.LastRun.Status != "cancelled" {
+		t.Fatalf("held generation did not persist its cancellation: %+v", view.LastRun)
+	}
 	if pending, err := s.resumeAcceptedProbeStatus(p.Context, binding); err != nil || pending || p.Requests.Load() != 1 {
 		t.Fatalf("user-stopped Probe was scheduled again: pending=%v calls=%d err=%v", pending, p.Requests.Load(), err)
 	}
