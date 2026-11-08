@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { sidebarGroups, visibleSidebarSessions } from './sidebar-groups'
+import { indexSessionAutomations, sidebarGroups as groupSessions, visibleSidebarSessions } from './sidebar-groups'
 import type { Session } from './types'
 import type { Schedule } from './schedules'
+import type { WakeEndpoint } from './wake-endpoints'
+
+const sidebarGroups = (sessions: Session[], schedules: Schedule[], active: (session: Session) => boolean, endpoints: WakeEndpoint[] = []) => groupSessions(sessions, indexSessionAutomations(schedules, endpoints), active)
 
 function session(id: string, extra: Partial<Session> = {}): Session {
   return { id, agent_id: 'bot', title: id, source: 'web', archived: false, pinned: false, revision: 1, created_at: '', updated_at: '', ...extra }
@@ -20,25 +23,29 @@ describe('sidebar conversation groups', () => {
     ]
     const plans = [task('detached-child')]
     const active = (value: Session) => value.id === 'shared-child'
-    expect(visibleSidebarSessions(sessions, plans, active, 'nested-child').map(value => value.id)).toEqual(['root', 'fork'])
+    expect(visibleSidebarSessions(sessions).map(value => value.id)).toEqual(['root', 'fork'])
     expect(sidebarGroups(sessions, plans, active).flatMap(group => group.items.map(value => value.id))).toEqual(['root', 'fork'])
   })
   it('does not treat a new-session task or its latest generated session as a fixed planned conversation', () => {
     const tasks = [task('', { session_mode: 'new', session_id: undefined, last_session_id: 'latest' })]
     const sessions = [session('latest'), session('archived-latest', { archived: true })]
-    const visible = visibleSidebarSessions(sessions, tasks, () => false)
+    const visible = visibleSidebarSessions(sessions)
     expect(visible.map(session => session.id)).toEqual(['latest'])
     expect(sidebarGroups(visible, tasks, () => false).map(group => [group.title, group.items.map(item => item.id)])).toEqual([['recent', ['latest']]])
   })
-  it('keeps archived conversations visible while scheduled, running or selected, but hides inactive archives', () => {
-    const sessions = ['scheduled', 'running', 'selected', 'paused', 'finished', 'ordinary'].map(id => session(id, { archived: true }))
-    const schedules = [task('scheduled'), task('paused', { enabled: false }), task('finished', { next_run_at: undefined, last_status: 'delivered' })]
-    const active = (session: Session) => session.id === 'running'
-    const visible = visibleSidebarSessions(sessions, schedules, active, 'selected')
-    expect(visible.map(session => session.id)).toEqual(['scheduled', 'running', 'selected'])
-    expect(sidebarGroups(visible, schedules, active).map(group => [group.title, group.items.map(item => item.id)])).toEqual([
-      ['now', ['running']], ['planned', ['scheduled']], ['recent', ['selected']],
-    ])
+  it('hides sealed archives even when selected, running, pinned or scheduled', () => {
+    const sessions = ['scheduled', 'running', 'selected', 'pinned'].map(id => session(id, { archived: true, pinned: true }))
+    expect(visibleSidebarSessions(sessions)).toEqual([])
+    expect(sidebarGroups(sessions, [task('scheduled')], value => value.id === 'running')).toEqual([])
+  })
+  it('marks enabled event endpoints as planned and retains both automation kinds while running', () => {
+    const endpoint = (id: string, target: string, enabled = true): WakeEndpoint => ({ id, agent_id: 'bot', session_id: target, source_session_id: target, computer_id: 'pc', title: id, enabled, revision: 1, created_at: '', updated_at: '' })
+    const endpoints = [endpoint('event-live', 'live'), { ...endpoint('event-only', 'event'), blocked_until: '2099-01-01T00:00:00Z' }, endpoint('disabled', 'paused', false)]
+    const index = indexSessionAutomations([task('live'), task('ended', { next_run_at: undefined })], endpoints)
+    expect(index.get('live')).toMatchObject({ timed: [{ title: 'live' }], events: [{ title: 'event-live' }] })
+    expect(index.has('ended')).toBe(false)
+    expect(index.has('paused')).toBe(false)
+    expect(groupSessions([session('live'), session('event'), session('paused')], index, value => value.id === 'live').map(group => [group.title, group.items.map(item => item.id)])).toEqual([['now', ['live']], ['planned', ['event']], ['recent', ['paused']]])
   })
   it('gives running and planned sessions priority without duplicating any row', () => {
     const sessions = [session('live', { binding_id: 'binding', channel_platform: 'telegram', pinned: true }), session('daily', { binding_id: 'other', channel_platform: 'qq', pinned: true }), session('saved', { pinned: true }), session('web')]

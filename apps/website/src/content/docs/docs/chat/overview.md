@@ -45,7 +45,7 @@ After handling a direct trigger, such as a private message, mention or reply to 
 - **Group replies:** mentions and replies call the Bot by default. See [Group collaboration](/docs/chat/groups/) for ordinary discussion.
 - **Removing one chat:** first switch to **Only specified chats**. Switching retains connected chats and their settings.
 - **Pausing an account:** turn off **Enabled** to stop reception and keep history. Stop any computer task already in progress separately in its conversation.
-- **Changing the bound conversation:** stops work in both the original and target conversations and retains their histories. Previously accepted sends keep their original destination.
+- **Changing the bound conversation:** stops work in both the original and target conversations and retains their histories. Restore an archived target first; binding does not restore it automatically. Previously accepted sends keep their original destination.
 
 If the model runs out of quota, rejects its credentials, or denies access, Astral keeps the error in the corresponding conversation and pauses processing while continuing to receive and archive platform messages. After restoring quota or correcting the credentials, open that conversation in Astral and send a new input to retry. Successfully switching to an available model also retries processing of waiting messages. Rate limits, temporary service failures, and network errors retry at intervals. Sending more chat messages does not make them retry sooner.
 

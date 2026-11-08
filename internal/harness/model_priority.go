@@ -65,6 +65,11 @@ func (s *Service) ApplyAgentModelPriority(ctx context.Context, id string) (int, 
 			return 0, err
 		}
 		if session.AgentID == id && session.Deletion == nil {
+			if err := persistence.CheckSessionRunnable(ctx, session, s.Store); persistence.IsSessionArchived(err) {
+				continue
+			} else if err != nil {
+				return 0, err
+			}
 			change.SessionIDs = append(change.SessionIDs, session.ID)
 		}
 	}
@@ -111,6 +116,15 @@ func (s *Service) applyAgentModelPriorityChangeLocked(ctx context.Context, chang
 			return err
 		}
 		if err == nil && record.AgentID == change.AgentID && record.Deletion == nil {
+			if gateErr := persistence.CheckSessionRunnable(ctx, record, s.Store); persistence.IsSessionArchived(gateErr) {
+				change.Cursor++
+				if err := s.Store.SaveMaintenance(ctx, agentModelPriorityChangeKind, change.AgentID, "running", change); err != nil {
+					return err
+				}
+				continue
+			} else if gateErr != nil {
+				return gateErr
+			}
 			if err = s.setPreferredModel(ctx, id, change.Selection); err != nil {
 				return err
 			}

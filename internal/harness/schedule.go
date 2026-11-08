@@ -8,6 +8,7 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/messages"
+	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/schedule"
 )
 
@@ -20,7 +21,7 @@ func (s *Service) deliverSchedule(ctx context.Context, occurrence schedule.Occur
 			return err
 		}
 	}
-	r, err := s.open(ctx, occurrence.SessionID)
+	r, err := s.openRunnable(ctx, occurrence.SessionID)
 	if err != nil {
 		return err
 	}
@@ -32,6 +33,9 @@ func (s *Service) deliverSchedule(ctx context.Context, occurrence schedule.Occur
 	}
 	if record.AgentID != occurrence.AgentID || record.Deletion != nil {
 		return domain.Missing("Session", occurrence.SessionID)
+	}
+	if err := persistence.CheckSessionRunnable(ctx, record, s.Store); err != nil {
+		return err
 	}
 	id, hash := occurrence.InputID(), digest(occurrence)
 	if _, exists, err := r.existingReceipt(ctx, id, hash); err != nil || exists {

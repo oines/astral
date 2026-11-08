@@ -6,6 +6,7 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
+	"github.com/oines/astral/internal/persistence"
 )
 
 // WithStoppedSessions serializes a binding change with input admission. Cancel
@@ -55,6 +56,12 @@ func (s *Service) WithStoppedSessions(ctx context.Context, ids []string, change 
 			err := change()
 			if err == nil {
 				for _, r := range runtimes {
+					if gateErr := r.requireRunnable(ctx); persistence.IsSessionArchived(gateErr) {
+						continue
+					} else if gateErr != nil {
+						err = gateErr
+						break
+					}
 					if err = r.syncBusinessConfig(ctx); err != nil {
 						break
 					}
@@ -80,12 +87,15 @@ func (s *Service) WithStoppedSessions(ctx context.Context, ids []string, change 
 // WithSession serializes a Host-side IM decision with Web/IM admission and
 // binding changes, while allowing the active Core run to reach its boundary.
 func (s *Service) WithSession(ctx context.Context, id string, apply func(*core.Session) error) error {
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.requireRunnable(ctx); err != nil {
+		return err
+	}
 	snapshot, err := r.snapshot()
 	if err != nil {
 		return err

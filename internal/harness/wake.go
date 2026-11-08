@@ -7,6 +7,7 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/messages"
+	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/wake"
 )
 
@@ -30,6 +31,9 @@ func (s *Service) deliverWake(ctx context.Context, batch wake.Batch) (wake.Deliv
 	if record.SubagentParentID != "" {
 		return wake.DeliveryResult{}, domain.Forbidden("external events cannot activate an internal subagent")
 	}
+	if err := persistence.CheckSessionRunnable(ctx, record, s.Store); err != nil {
+		return wake.DeliveryResult{}, err
+	}
 	if batch.ID == "" || batch.Digest == "" {
 		return wake.DeliveryResult{}, domain.Invalid("external event batch needs a stable identity")
 	}
@@ -43,6 +47,12 @@ func (s *Service) deliverWake(ctx context.Context, batch wake.Batch) (wake.Deliv
 		return wake.DeliveryResult{}, nil
 	}
 	defer r.mu.Unlock()
+	if err := s.Store.Get(ctx, "sessions", batch.SessionID, &record); err != nil {
+		return wake.DeliveryResult{}, err
+	}
+	if err := persistence.CheckSessionRunnable(ctx, record, s.Store); err != nil {
+		return wake.DeliveryResult{}, err
+	}
 	if s.WakeEndpoints != nil && !s.WakeEndpoints.BatchActive(batch) {
 		return wake.DeliveryResult{Handled: true}, nil
 	}

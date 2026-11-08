@@ -14204,6 +14204,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Send the initial full snapshot and subsequent configuration changes only; omit to include receiving and limit status updates.",
+            "in": "query",
+            "name": "configuration_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

@@ -3,17 +3,51 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 
+	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
 )
 
-// DeleteComputer removes only a revoked Server registration. Historical
-// Sessions and FileRefs retain their original identity and cannot silently
-// start using a newly enrolled Computer.
+// DeleteComputer removes a revoked registration, its event endpoints, and
+// events not yet accepted by Core. Historical Sessions and FileRefs retain
+// their identity and cannot silently start using a newly enrolled Computer.
 func (s *Service) DeleteComputer(ctx context.Context, id string, revision int64) error {
-	err := s.Store.Update(ctx, func(tx *persistence.Tx) error {
+	// A revoked or already absent source cannot receive new events. Check it
+	// before discovering targets, then recheck the confirmation in the delete Tx.
+	var current domain.Computer
+	if err := s.Store.Get(ctx, "computers", id, &current); err != nil && !domain.IsMissing(err) {
+		return err
+	} else if err == nil && !current.Revoked {
+		return domain.Conflict("请先撤销连接，再删除电脑。")
+	}
+	if err := lockSubagentContext(ctx, &s.subagentMu); err != nil {
+		return err
+	}
+	defer s.subagentMu.Unlock()
+	targets, err := s.WakeEndpoints.SnapshotComputerTargets(ctx, id)
+	if err != nil {
+		return err
+	}
+	unlock, err := s.lockRuntimeAdmissions(ctx, targets, false)
+	if err != nil {
+		return err
+	}
+	err = s.WakeEndpoints.WithComputerDeletion(ctx, id, func(ctx context.Context, sessionID, batchID, digest string) (bool, error) {
+		receipt, err := s.CoreStore.LookupInput(ctx, sessionID, batchID)
+		if errors.Is(err, core.ErrNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if receipt.Digest != digest {
+			return false, domain.Conflict("external event batch identity was used for different content")
+		}
+		return true, nil
+	}, func(tx *persistence.Tx) error {
 		var computer domain.Computer
 		if err := tx.Get(ctx, "computers", id, &computer); err != nil {
 			if domain.IsMissing(err) {
@@ -52,6 +86,7 @@ func (s *Service) DeleteComputer(ctx context.Context, id string, revision int64)
 		}
 		return tx.Purge(ctx, "computers", id, computer.Revision)
 	})
+	unlock()
 	if err != nil {
 		return err
 	}

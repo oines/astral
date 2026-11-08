@@ -34,14 +34,26 @@ func (a *API) wakeRoutes() {
 		}
 		return httpcontract.OK{OK: true}, a.Config.Harness.WakeEndpoints.Delete(r.Context(), "", r.PathValue("id"), revision)
 	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
-	a.Contract.Describe(httpcontract.Operation{Method: "GET", Path: "/api/v1/wake-endpoints/events", ID: "wakeEndpointEvents", Tag: "Wake endpoints", Auth: true, ContentType: "text/event-stream", Query: []httpcontract.Parameter{{Name: "agent_id"}}})
+	a.Contract.Describe(httpcontract.Operation{Method: "GET", Path: "/api/v1/wake-endpoints/events", ID: "wakeEndpointEvents", Tag: "Wake endpoints", Auth: true, ContentType: "text/event-stream", Query: []httpcontract.Parameter{{Name: "agent_id"}, {Name: "configuration_only", Type: "boolean", Description: "Send the initial full snapshot and subsequent configuration changes only; omit to include receiving and limit status updates."}}})
 	a.mux.HandleFunc("GET /api/v1/wake-endpoints/events", a.wakeEvents)
 
 }
 
 func (a *API) wakeEvents(w http.ResponseWriter, r *http.Request) {
 	s := a.Config.Harness.WakeEndpoints
-	changes, unsubscribe := s.Subscribe()
+	configurationOnly := false
+	if values, ok := r.URL.Query()["configuration_only"]; ok {
+		if len(values) != 1 || values[0] != "true" && values[0] != "false" {
+			httpcontract.Failure(w, r, domain.Invalid("configuration_only must be true or false"))
+			return
+		}
+		configurationOnly = values[0] == "true"
+	}
+	subscribe := s.Subscribe
+	if configurationOnly {
+		subscribe = s.SubscribeConfiguration
+	}
+	changes, unsubscribe := subscribe()
 	defer unsubscribe()
 	items, err := s.List(r.Context(), r.URL.Query().Get("agent_id"))
 	if err != nil {

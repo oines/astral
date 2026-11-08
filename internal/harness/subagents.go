@@ -25,11 +25,12 @@ type subagentSettings struct {
 	domain.Meta
 	// Legacy records may contain a full Configuration and MessageTool. Decode
 	// only the mutable selection; every new request uses the shared root source.
-	Configuration  subagentConfiguration `json:"configuration"`
-	InheritContext bool                  `json:"inherit_context"`
-	ForkEntryID    string                `json:"fork_entry_id,omitempty"`
-	Task           string                `json:"task"`
-	Started        bool                  `json:"started"`
+	Configuration       subagentConfiguration `json:"configuration"`
+	InheritContext      bool                  `json:"inherit_context"`
+	ForkEntryID         string                `json:"fork_entry_id,omitempty"`
+	Task                string                `json:"task"`
+	Started             bool                  `json:"started"`
+	ArchiveStoppedRunID string                `json:"archive_stopped_run_id,omitempty"`
 }
 
 type subagentConfiguration struct {
@@ -167,6 +168,9 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 	}
 	var source domain.Session
 	if err := s.Store.Get(ctx, "sessions", parent.id, &source); err != nil {
+		return SubagentView{}, err
+	}
+	if err := persistence.CheckSessionRunnable(ctx, source, s.Store); err != nil {
 		return SubagentView{}, err
 	}
 	release, err := s.LockAgent(ctx, source.AgentID)
@@ -352,6 +356,14 @@ func (s *Service) controlSubagent(ctx context.Context, parent, execution string,
 	if err != nil {
 		return nil, err
 	}
+	if input.Input != "" || input.Model != "" {
+		if err := s.requireRunnable(ctx, parent); err != nil {
+			return nil, err
+		}
+		if err := persistence.CheckSessionRunnable(ctx, record, s.Store); err != nil {
+			return nil, err
+		}
+	}
 	if input.Model != "" {
 		if err = s.selectDirectSubagentModel(ctx, parent, record.ID, core.ModelSelection{ID: input.Model, Reasoning: input.Reasoning}); err != nil {
 			return nil, err
@@ -476,10 +488,11 @@ func (r *runtime) identityContext(ctx context.Context, boundary core.ContextBoun
 }
 
 type subagentCheckpoint struct {
-	Protocol int    `json:"protocol,omitempty"`
-	Version  uint64 `json:"version"`
-	Sequence uint64 `json:"sequence"`
-	Cursor   string `json:"cursor,omitempty"`
+	Protocol           int    `json:"protocol,omitempty"`
+	Version            uint64 `json:"version"`
+	Sequence           uint64 `json:"sequence"`
+	Cursor             string `json:"cursor,omitempty"`
+	SkipThroughVersion uint64 `json:"skip_through_version,omitempty"`
 }
 
 const subagentDeliveryProtocol = 1
@@ -603,7 +616,7 @@ func (s *Service) reconcileSubagentsObserved(ctx context.Context, observed func(
 		if err = json.Unmarshal(item.Data, &record); err != nil {
 			return err
 		}
-		if record.Deletion != nil || record.SubagentParentID == "" && record.BindingID == "" {
+		if record.Deletion != nil || record.Archived || record.SubagentParentID == "" && record.BindingID == "" {
 			continue
 		}
 		if record.SubagentParentID == "" {
@@ -633,6 +646,12 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 		return err
 	}
 	defer s.subagentMu.Unlock()
+	if err := s.requireRunnable(ctx, record.ID); err != nil {
+		if persistence.IsSessionArchived(err) {
+			return nil
+		}
+		return err
+	}
 	if _, err := s.subagentRecord(ctx, record.SubagentParentID, record.ID); err != nil {
 		return err
 	}
@@ -682,6 +701,15 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 		return stateErr
 	}
 	if r == nil {
+		if errors.Is(stateErr, core.ErrNotFound) {
+			metadata, err := s.childMetadata(ctx, record.ID)
+			if err != nil {
+				return err
+			}
+			if metadata.started {
+				return deliveryErr
+			}
+		}
 		if stateErr == nil {
 			needed, err := s.subagentNeedsRuntime(ctx, record, state)
 			if err != nil {
@@ -732,7 +760,12 @@ func (s *Service) reconcileSubagent(ctx context.Context, record domain.Session) 
 	}
 	lastRun := snapshot.State.LastRun
 	shouldActivate := initialErr == nil && initial.State == core.InputPending && lastRun == nil
-	shouldActivate = shouldActivate || lastRun != nil && lastRun.Status == "started"
+	settings, settingsErr := s.childMetadata(ctx, record.ID)
+	if settingsErr != nil {
+		r.mu.Unlock()
+		return settingsErr
+	}
+	shouldActivate = shouldActivate || lastRun != nil && lastRun.Status == "started" && lastRun.ID != settings.archiveStoppedRunID
 	if shouldActivate && !snapshot.Running && !snapshot.Maintenance && !snapshot.Stopping {
 		err = r.continueLocked(ctx)
 	}
@@ -749,6 +782,9 @@ func (s *Service) subagentNeedsRuntime(ctx context.Context, record domain.Sessio
 	settings, err := s.childMetadata(ctx, record.ID)
 	if err != nil {
 		return false, err
+	}
+	if settings.started && state.PendingInputs[core.InputSteer]+state.PendingInputs[core.InputFollowUp] == 0 && (state.LastRun == nil || state.LastRun.ID == settings.archiveStoppedRunID) {
+		return false, nil
 	}
 	if !settings.started || state.LastRun == nil || state.LastRun.Status == "started" || state.CurrentAttemptID != "" || !state.Branch.Complete() || state.PendingInputs[core.InputContext] > 0 {
 		return true, nil
@@ -801,7 +837,10 @@ func (s *Service) deliverSubagentHistoryLocked(ctx context.Context, record domai
 			if entry.Entry.Sequence <= checkpoint.Sequence {
 				continue
 			}
-			if err = s.deliverSubagentEntryLocked(ctx, record, entry.Entry); err != nil {
+			if entry.Entry.Version > checkpoint.SkipThroughVersion {
+				err = s.deliverSubagentEntryLocked(ctx, record, entry.Entry)
+			}
+			if err != nil {
 				return err
 			}
 			checkpoint.Sequence = entry.Entry.Sequence
@@ -830,6 +869,9 @@ type subagentActivation struct {
 }
 
 func (r *runtime) startSubagentLocked(ctx context.Context) error {
+	if err := r.requireRunnable(ctx); err != nil {
+		return err
+	}
 	if _, err := r.readableCore(); err != nil {
 		return err
 	}

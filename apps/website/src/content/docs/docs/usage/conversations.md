@@ -74,7 +74,9 @@ You can change the selected computer while the session is idle. During a task, t
 
 Keep follow-up questions and revisions in the same session so the Bot can use the earlier discussion. Start a separate session for unrelated work, such as a photo collection and a financial report.
 
-Archiving puts completed ordinary sessions aside until you need them again. Sessions bound to a platform chat use the chat's name and cannot be renamed or archived. To start fresh in a connected chat while keeping the old history, [replace its session](/docs/chat/overview/).
+Archiving seals an ordinary session and removes it from the sidebar, including when it is currently open. It stops the session and its subagents and disables schedules and event endpoints targeting it. Files already changed and messages already sent remain. Sessions bound to a platform chat use the chat's name and cannot be renamed or archived. To start fresh in a connected chat while keeping the old history, [replace its session](/docs/chat/overview/).
+
+An old session link still opens its history for reading, exporting, or forking into a new independent session. Sending, continuing, compaction, and model or computer changes are unavailable while archived. Choose **Restore session** on that page, or restore it through **Settings → Data & storage → your Bot → Other sessions**, before working in the original session again. Restoring does not continue stopped work or re-enable its schedules and event endpoints; resume those explicitly when needed.
 
 Copying or forking a session lets you explore another approach from existing work. The copy is independent: later messages do not synchronize, and schedules are not copied.
 

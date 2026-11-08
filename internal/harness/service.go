@@ -126,12 +126,25 @@ func (s *Service) notify(id string) {
 }
 
 func (s *Service) open(ctx context.Context, id string) (*runtime, error) {
+	return s.openMode(ctx, id, false)
+}
+
+func (s *Service) openRunnable(ctx context.Context, id string) (*runtime, error) {
+	return s.openMode(ctx, id, true)
+}
+
+func (s *Service) openMode(ctx context.Context, id string, execution bool) (*runtime, error) {
 	var record domain.Session
 	if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
 		return nil, err
 	}
 	if record.Deletion != nil {
 		return nil, domain.Missing("Session", id)
+	}
+	if execution {
+		if err := persistence.CheckSessionRunnable(ctx, record, s.Store); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.agentAvailable(ctx, record.AgentID); err != nil {
 		return nil, err
@@ -283,7 +296,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 			err = r.initializeModelFallback(ctx, priority[0], config.Selection)
 		}
 	}
-	if err == nil {
+	if err == nil && !record.Archived {
 		err = r.finishInterruptedTools(ctx)
 	}
 	// Reopening history must not require the current Provider/Profile to still

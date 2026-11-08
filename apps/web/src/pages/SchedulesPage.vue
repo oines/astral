@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { Button, ConfirmPopover, Select, SettingsRow, SettingsSection, Switch, useDelayedPending } from '@astral/ui'
 import { Clock3, Pencil, Plus, Trash2 } from '@astral/icons'
 import { useAppStore } from '../stores/app'
@@ -8,8 +9,13 @@ import { errorText, object } from '../lib/api'
 import { repeatCron, repeatFields, scheduleInput, type RepeatKind, type Schedule, type ScheduleInput } from '../lib/schedules'
 import { formatDateTime, wallDateTime, wallTimeInstant } from '../lib/timezone'
 import WakeEndpointsPanel from '../components/WakeEndpointsPanel.vue'
+import { useAutomationEditorLink } from '../composables/useAutomationEditorLink'
 
 const app = useAppStore()
+const route = useRoute()
+watch([() => route.path, () => route.query.agent, () => app.agents], () => {
+  if (route.path === '/schedules' && typeof route.query.agent === 'string' && app.agents.some(agent => agent.id === route.query.agent)) app.activeAgentID = route.query.agent
+}, { immediate: true })
 const { t, locale } = useI18n()
 const tasks = computed(() => app.schedules.filter(task => task.agent_id === app.activeAgentID).sort((a, b) => {
   if (a.next_run_at && b.next_run_at) return a.next_run_at.localeCompare(b.next_run_at)
@@ -17,6 +23,7 @@ const tasks = computed(() => app.schedules.filter(task => task.agent_id === app.
   return b.updated_at.localeCompare(a.updated_at)
 }))
 const editor = ref<{ agentID: string; current?: Schedule }>()
+const editorElement = ref<HTMLFormElement>()
 const draftAtInstant = ref<string>()
 const draft = reactive({ title: '', sessionMode: 'existing' as 'existing' | 'new', sessionID: '', prompt: '', enabled: true, repeat: 'once' as RepeatKind, at: '', time: '09:00', weekday: '1', cron: '0 9 * * *' })
 const editorError = ref('')
@@ -26,8 +33,11 @@ const waitingAction = useDelayedPending(() => action.value)
 const actionErrors = ref<Record<string, string>>({})
 const deleting = ref('')
 const showLoading = useDelayedPending(() => !app.schedulesReady && !app.schedulesError)
-const sessions = computed(() => app.sessions.filter(session => session.agent_id === app.activeAgentID))
-const sessionOptions = computed(() => sessions.value.map(session => ({ value: session.id, label: session.archived ? `${session.title} · ${t('archive')}` : session.title })))
+const sessions = computed(() => app.sessions.filter(session => session.agent_id === app.activeAgentID && !session.subagent_parent_id))
+const activeSessions = computed(() => sessions.value.filter(session => !session.archived))
+const archivedSessions = computed(() => new Set(app.sessions.filter(session => session.archived).map(session => session.id)))
+const sessionOptions = computed(() => sessions.value.map(session => ({ value: session.id, label: session.archived ? `${session.title} · ${t('storageSessionArchived')}` : session.title, disabled: session.archived })))
+const archivedTarget = computed(() => draft.sessionMode === 'existing' && archivedSessions.value.has(draft.sessionID))
 const sameBot = computed(() => !editor.value || editor.value.agentID === app.activeAgentID)
 const executionOptions = computed(() => [{ value: 'existing', label: t('scheduleUseExistingSession') }, { value: 'new', label: t('scheduleNewSessionEachTime') }])
 const repeatOptions = computed(() => [
@@ -39,7 +49,7 @@ function sessionName(id?: string) { return app.sessions.find(session => session.
 function hasLatestSession(task: Schedule) { return !!task.last_session_id && app.sessions.some(session => session.id === task.last_session_id && session.agent_id === task.agent_id) }
 function setSessionMode(value: string) {
   draft.sessionMode = value === 'new' ? 'new' : 'existing'
-  draft.sessionID = draft.sessionMode === 'new' ? '' : sessions.value[0]?.id || ''
+  draft.sessionID = draft.sessionMode === 'new' ? '' : activeSessions.value[0]?.id || ''
 }
 function formatTime(value?: string | null) {
   return formatDateTime(value || undefined, locale.value, app.displayTimezone, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -57,22 +67,36 @@ function lastStatus(task: Schedule) {
   return labels[status] ? t(labels[status]) : status
 }
 function ended(task: Schedule) { return task.timing.kind === 'once' && !task.next_run_at && !!task.last_status && task.last_status !== 'dispatching' }
-function begin(current?: Schedule) {
+function revealEditor() {
+  void nextTick(() => {
+    editorElement.value?.scrollIntoView({ block: 'start' })
+    editorElement.value?.querySelector('input')?.focus({ preventScroll: true })
+  })
+}
+function begin(current?: Schedule, fromLink = false) {
   if (saving.value) return
+  if (!fromLink && editor.value?.current?.id) linked.clear(editor.value.current.id)
   const timing = current?.timing || { kind: 'once' as const }
   const repeat = repeatFields(timing)
-  const sessionMode = current ? current.session_mode : sessions.value.length ? 'existing' : 'new'
+  const sessionMode = current ? current.session_mode : activeSessions.value.length ? 'existing' : 'new'
   draftAtInstant.value = timing.at || new Date(Date.now() + 60 * 60_000).toISOString()
   Object.assign(draft, {
-    title: current?.title || '', sessionMode, sessionID: sessionMode === 'new' ? '' : current?.session_id || sessions.value[0]?.id || '', prompt: current?.prompt || '', enabled: current?.enabled ?? true,
+    title: current?.title || '', sessionMode, sessionID: sessionMode === 'new' ? '' : current?.session_id || activeSessions.value[0]?.id || '', prompt: current?.prompt || '', enabled: current?.enabled ?? true,
     repeat: repeat.kind, at: wallDateTime(draftAtInstant.value, app.displayTimezone), time: repeat.time, weekday: repeat.weekday, cron: repeat.cron,
   })
   editor.value = { agentID: app.activeAgentID, current }
   editorError.value = ''
+  revealEditor()
 }
+function close() { const id = editor.value?.current?.id; editor.value = undefined; linked.clear(id) }
+const linked = useAutomationEditorLink('schedule', {
+  items: () => app.schedules, ready: () => app.schedulesReady, busy: () => saving.value,
+  open: task => { if (editor.value?.current?.id === task.id && editor.value.agentID === task.agent_id) revealEditor(); else begin(task, true) },
+})
 function input(): ScheduleInput {
   if (!draft.title.trim() || !draft.prompt.trim()) throw new Error(t('scheduleRequired'))
   if (draft.sessionMode === 'existing' && !draft.sessionID) throw new Error(t('scheduleSessionRequired'))
+  if (archivedTarget.value && (draft.enabled || !editor.value?.current)) throw new Error(t('automationArchivedTarget'))
   const base = { title: draft.title.trim(), ...(draft.sessionMode === 'new' ? { session_mode: 'new' as const } : { session_mode: 'existing' as const, session_id: draft.sessionID }), prompt: draft.prompt, enabled: draft.enabled }
   if (draft.repeat === 'once') {
     const original = editor.value?.current?.timing.at
@@ -103,7 +127,7 @@ async function save() {
   saving.value = true
   try {
     await app.saveSchedule(payload, editing.current, editing.agentID)
-    editor.value = undefined
+    close()
   } catch (error) {
     const uncertain = !editing.current && typeof object(error).code !== 'string'
     editorError.value = `${errorText(error)}${uncertain ? ` ${t('scheduleCreateUncertain')}` : ''}`
@@ -112,6 +136,7 @@ async function save() {
 }
 async function toggle(task: Schedule, enabled: boolean) {
   if (action.value) return
+  if (enabled && task.session_id && archivedSessions.value.has(task.session_id)) { actionErrors.value[task.id] = t('automationArchivedTarget'); return }
   action.value = task.id
   delete actionErrors.value[task.id]
   try { await app.saveSchedule({ ...scheduleInput(task), enabled }, task) }
@@ -124,7 +149,7 @@ async function remove(task: Schedule) {
   delete actionErrors.value[task.id]
   try {
     await app.deleteSchedule(task)
-    if (editor.value?.current?.id === task.id) editor.value = undefined
+    if (editor.value?.current?.id === task.id) close()
     deleting.value = ''
   } catch (error) { actionErrors.value[task.id] = errorText(error) }
   finally { action.value = '' }
@@ -142,8 +167,16 @@ async function remove(task: Schedule) {
           <Plus />{{ t('scheduleAdd') }}
         </Button>
       </header>
+      <p
+        v-if="linked.error.value"
+        class="settings-feedback-error text-danger"
+        role="alert"
+      >
+        {{ linked.error.value }}
+      </p>
       <form
         v-if="editor"
+        ref="editorElement"
         class="settings-form stack"
         @submit.prevent="save"
       >
@@ -258,11 +291,14 @@ async function remove(task: Schedule) {
               rows="5"
             />
           </div>
-          <SettingsRow :label="t('scheduleEnabled')">
+          <SettingsRow
+            :label="t('scheduleEnabled')"
+            :description="archivedTarget ? t('automationArchivedTarget') : undefined"
+          >
             <Switch
               v-model="draft.enabled"
               :label="t('scheduleEnabled')"
-              :disabled="saving"
+              :disabled="saving || (archivedTarget && !draft.enabled)"
             />
           </SettingsRow>
           <p
@@ -276,7 +312,7 @@ async function remove(task: Schedule) {
             <div class="settings-actions">
               <Button
                 :disabled="saving"
-                @click="editor = undefined"
+                @click="close"
               >
                 {{ t('cancel') }}
               </Button>
@@ -350,6 +386,7 @@ async function remove(task: Schedule) {
               {{ t('scheduleLatestSession') }} · {{ sessionName(task.last_session_id) }}
             </RouterLink>
             <small>{{ ruleLabel(task) }}</small>
+            <small v-if="task.session_id && archivedSessions.has(task.session_id)">{{ t('automationArchivedTarget') }}</small>
             <small v-if="task.enabled && task.next_run_at">{{ t('scheduleNext', { time: formatTime(task.next_run_at) }) }}</small>
             <small v-else>{{ t(ended(task) ? 'scheduleEnded' : 'schedulePaused') }}</small>
             <small v-if="task.last_status && task.last_run_at">{{ t('scheduleLast', { status: lastStatus(task), time: formatTime(task.last_run_at) }) }}</small>
@@ -373,7 +410,7 @@ async function remove(task: Schedule) {
             <Switch
               :model-value="task.enabled"
               :label="`${t(task.enabled ? 'schedulePause' : 'scheduleResume')} · ${task.title}`"
-              :disabled="!!action || task.last_status === 'dispatching' || ended(task)"
+              :disabled="!!action || task.last_status === 'dispatching' || ended(task) || (!task.enabled && !!task.session_id && archivedSessions.has(task.session_id))"
               @update:model-value="toggle(task, $event)"
             />
             <Button

@@ -108,4 +108,6 @@ astral computer service uninstall
 
 If several instances are installed, select the intended one. For unattended commands, add `--root /path/to/computer` to specify its data directory. Copy the path from Computer details if an older custom directory is not discovered.
 
-Revoking access blocks subsequent operations; it does not undo completed file changes. Deleting the registration or uninstalling the service keeps working files. Deleting a registration does not uninstall the service or remove containers and volumes. Stop containers through the host's container manager and back up work before deletion. Desktop manages its local service with the app and its background-running settings.
+Permanently deleting a Computer’s Astral registration also deletes all event endpoints belonging to it and clears its events that have not entered conversation context. Existing conversation history and events from other Computers remain, including when they share the same target conversation. Revoking a connection or removing one Bot’s access does not perform this deletion.
+
+Revoking access blocks subsequent operations; it does not undo completed file changes. Deleting the registration or uninstalling the service keeps working files. Deleting a registration does not stop or uninstall the Daemon, or remove containers and volumes. Stop containers through the host's container manager and back up work before deletion. Desktop manages its local service with the app and its background-running settings.

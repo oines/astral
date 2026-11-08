@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file -- Shared controls are isolated SSR test stubs. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, defineComponent, getCurrentInstance, h, reactive, ref, type Ref } from 'vue'
+import { createSSRApp, defineComponent, getCurrentInstance, h, nextTick, reactive, ref, type Ref } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import WakeEndpointsPanel from './WakeEndpointsPanel.vue'
 import type { WakeEndpoint, WakePatch } from '../lib/wake-endpoints'
@@ -11,22 +11,27 @@ interface Setup {
   editorError: string
   begin: (endpoint: WakeEndpoint) => void
   save: () => Promise<void>
+  close: () => void
   toggle: (endpoint: WakeEndpoint, enabled: boolean) => Promise<void>
   remove: (endpoint: WakeEndpoint) => Promise<void>
   copyExample: () => Promise<void>
 }
 interface App {
   activeAgentID: string; authorized: boolean; displayTimezone: string
-  sessions: Array<{ id: string; title: string; agent_id: string; subagent_parent_id?: string }>
+  agents: Array<{ id: string }>; data: object
+  sessions: Array<{ id: string; title: string; agent_id: string; subagent_parent_id?: string; archived?: boolean }>
   computers: Array<{ id: string; name: string }>
 }
 const fixture = vi.hoisted(() => ({
   setup: undefined as Setup | undefined,
+  route: undefined as unknown as { path: string; query: Record<string, unknown> },
+  replace: vi.fn(async (_location: { path: string; query: Record<string, unknown> }) => {}),
   app: undefined as unknown as App,
   feed: undefined as unknown as { items: Ref<WakeEndpoint[]>; ready: Ref<boolean>; error: Ref<string>; update: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn> },
   copy: vi.fn(async (_text: string) => true),
 }))
 vi.mock('../stores/app', () => ({ useAppStore: () => fixture.app }))
+vi.mock('vue-router', () => ({ useRoute: () => fixture.route, useRouter: () => ({ replace: fixture.replace }) }))
 vi.mock('../composables/useWakeEndpoints', () => ({ useWakeEndpoints: () => fixture.feed }))
 vi.mock('../composables/useClipboard', () => ({ useClipboard: () => ({ copy: fixture.copy, copied: false }) }))
 vi.mock('@vueuse/core', () => ({ useNow: () => ref(new Date('2026-11-08T03:00:00Z')) }))
@@ -55,12 +60,46 @@ async function render() {
 }
 beforeEach(() => {
   fixture.setup = undefined
-  fixture.app = reactive({ activeAgentID: 'bot', authorized: true, displayTimezone: 'UTC', sessions: [{ id: 'session', agent_id: 'bot', title: 'Minecraft conversation' }, { id: 'child', agent_id: 'bot', title: 'Subagent', subagent_parent_id: 'session' }], computers: [{ id: 'computer-mc', name: 'Minecraft host' }] })
+  fixture.app = reactive({ activeAgentID: 'bot', agents: [{ id: 'bot' }, { id: 'other-bot' }], data: {}, authorized: true, displayTimezone: 'UTC', sessions: [{ id: 'session', agent_id: 'bot', title: 'Minecraft conversation' }, { id: 'child', agent_id: 'bot', title: 'Subagent', subagent_parent_id: 'session' }], computers: [{ id: 'computer-mc', name: 'Minecraft host' }] })
+  fixture.route = reactive({ path: '/schedules', query: {} })
+  fixture.replace.mockImplementation(async location => { fixture.route.query = location.query })
   fixture.feed = { items: ref([endpoint]), ready: ref(true), error: ref(''), update: vi.fn(async (current: WakeEndpoint, patch: WakePatch) => ({ ...current, ...patch, revision: current.revision + 1 })), remove: vi.fn(async () => {}), refresh: vi.fn(async () => {}) }
   vi.clearAllMocks()
 })
 
 describe('Agent-created event endpoint management', () => {
+  it('opens the linked endpoint in the right Bot once and preserves a draft across SSE refreshes', async () => {
+    const linked = { ...endpoint, id: 'other-endpoint', agent_id: 'other-bot' }
+    fixture.feed.items.value = [endpoint, linked]
+    fixture.route.query = { agent: 'other-bot', endpoint: linked.id }
+    await render()
+    expect(fixture.app.activeAgentID).toBe('other-bot')
+    expect(fixture.setup!.editor?.id).toBe(linked.id)
+    fixture.setup!.draft.notes = 'Keep this draft'
+    fixture.feed.items.value = [{ ...linked, revision: 5, notes: 'Changed elsewhere' }]; await nextTick()
+    expect(fixture.setup!.draft.notes).toBe('Keep this draft')
+    fixture.setup!.close(); await nextTick()
+    fixture.feed.items.value = [{ ...linked, revision: 6 }]; await nextTick()
+    expect(fixture.setup!.editor).toBeUndefined()
+    expect(fixture.route.query).toEqual({ agent: 'other-bot' })
+  })
+  it('never substitutes another endpoint for an expired link', async () => {
+    fixture.route.query = { agent: 'bot', endpoint: 'deleted-endpoint' }
+    expect(await render()).toContain('automationNotFound')
+    expect(fixture.setup!.editor).toBeUndefined()
+  })
+  it('clears an old endpoint link when opening another inline editor and permits re-entering the original link', async () => {
+    fixture.route.query = { agent: 'bot', endpoint: endpoint.id }
+    await render()
+    fixture.setup!.begin({ ...endpoint, id: 'inline-endpoint' })
+    await nextTick()
+    expect(fixture.route.query).toEqual({ agent: 'bot' })
+    fixture.setup!.close()
+    fixture.setup = undefined
+    fixture.route.query = { agent: 'bot', endpoint: endpoint.id }
+    await render()
+    expect(fixture.setup!.editor?.id).toBe(endpoint.id)
+  })
   it('lists endpoints and temporary protection separately from manual pause without exposing create or credential controls', async () => {
     fixture.feed.items.value = [{ ...endpoint, blocked_until: '2026-11-08T03:01:00Z', last_received_at: '2026-11-08T02:59:59Z' }, { ...endpoint, id: 'other', agent_id: 'other-bot', title: 'Another Bot' }]
     const html = await render()
@@ -86,6 +125,19 @@ describe('Agent-created event endpoint management', () => {
     await render()
     await fixture.setup!.toggle(endpoint, false)
     expect(fixture.feed.update).toHaveBeenCalledWith(endpoint, { enabled: false })
+  })
+  it('blocks re-enabling an archived target while permitting notes edits on a paused endpoint', async () => {
+    fixture.app.sessions[0]!.archived = true
+    const paused = { ...endpoint, enabled: false }
+    fixture.feed.items.value = [paused]
+    const html = await render()
+    expect(html).toContain('automationArchivedTarget')
+    await fixture.setup!.toggle(paused, true)
+    expect(fixture.feed.update).not.toHaveBeenCalled()
+    fixture.setup!.begin(paused)
+    fixture.setup!.draft.notes = 'Updated maintenance path'
+    await fixture.setup!.save()
+    expect(fixture.feed.update).toHaveBeenCalledWith(paused, expect.objectContaining({ notes: 'Updated maintenance path', enabled: false }))
   })
 
   it('keeps a conflicting draft and refreshes the latest directory instead of overwriting', async () => {

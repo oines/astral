@@ -79,7 +79,9 @@ Edit, pause, resume, or delete plans in the task list. Pausing or deleting preve
 
 An enabled task targeting an existing conversation places that conversation in the sidebar's **Scheduled** group while a next run time exists. New-conversation schedules remain in the task page; sessions they create appear under in-progress or recent work.
 
-Archiving an ordinary session keeps its schedules active. Permanently deleting a session or Bot removes its plans. Copying or forking a session does not copy them. Give an expired one-time task a future time before enabling it again.
+Archiving an ordinary session disables its schedules and event endpoints. Restore the conversation before enabling them again; restoring alone does not re-enable them. Permanently deleting a session or Bot removes its plans. Copying or forking a session does not copy them. Give an expired one-time task a future time before enabling it again.
+
+Sessions with an enabled fixed-conversation schedule or event endpoint appear in the sidebar’s **Scheduled** group. A clock marks timed tasks, and a lightning bolt marks event wake-ups; both appear when both are configured. Open the session’s three-dot menu to see their names together, then select a name to edit that task under the correct Bot. If there are more than six, the remaining-count link opens that Bot’s full task list. Running sessions keep the markers in **Now**. The blue dot and **Now** group also include sessions whose subagents are still working. A temporary event traffic block keeps its lightning marker; manually disabling the endpoint removes it.
 
 ### Timezone changes and custom timing
 

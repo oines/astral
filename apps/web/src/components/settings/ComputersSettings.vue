@@ -14,12 +14,14 @@ import { useSettingsSave } from '../../composables/useSettingsSave'
 import SettingsText from './SettingsText.vue'
 import SettingsFeedback from './SettingsFeedback.vue'
 import { useAppStore } from '../../stores/app'
+import { useWakeEndpointStore } from '../../stores/wake-endpoints'
 import ResourceDelete from './ResourceDelete.vue'
 import AddComputerDialog from './AddComputerDialog.vue'
 import CopyValue from '../CopyValue.vue'
 import ComputerMaintenance from './ComputerMaintenance.vue'
 const { t } = useI18n()
 const app = useAppStore()
+const wakeEndpoints = useWakeEndpointStore()
 const action = useAction()
 const saves = useSettingsSave()
 const list = useQuery(listComputersQuery())
@@ -60,6 +62,7 @@ async function remove() {
   if (!computer || action.busy.value) return
   await action.run(async () => {
     await request(deleteComputer({ path: { id: computer.id }, query: { revision: computer.revision } }))
+    wakeEndpoints.forgetComputer(computer.id)
     cache.setQueryData(listComputersQueryKey(), (list.data.value || []).filter(value => value.id !== computer.id))
     removing.value = false
     selectedID.value = ''
@@ -282,7 +285,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
         kind="computers"
         :name="removalTarget.name"
         :action-label="t('deleteComputer')"
-        :description="t('deleteComputerHint')"
+        :description="t('deleteComputerConfirmHint')"
         :busy="action.busy.value"
         :error-message="action.error.value"
         @update:open="value => { if (!action.busy.value) removing = value }"

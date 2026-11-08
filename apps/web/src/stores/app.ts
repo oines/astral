@@ -9,6 +9,7 @@ import { errorText, request } from '../lib/api'
 import type { AstralInternalHarnessInputRequest } from '@astral/sdk'
 import { useAuthStore } from './auth'
 import { useSurfaceStore } from './surface'
+import { useWakeEndpointStore } from './wake-endpoints'
 import type { FileRef, SessionView } from '../lib/types'
 import { scheduleAPI, type Schedule, type ScheduleInput } from '../lib/schedules'
 import { sessionWithMetadata } from '../lib/session-presentation'
@@ -18,6 +19,8 @@ import { createSessionCatalog } from '../lib/session-removal'
 export const useAppStore = defineStore('app', () => {
   const auth = useAuthStore()
   const authorized = computed(() => auth.authenticated)
+  const wakeDirectory = useWakeEndpointStore()
+  const wakeEndpoints = computed(() => wakeDirectory.items)
   const lastChatPath = ref('/')
   const drafts = ref<Record<string, { text: string; files: Array<{ uri: string; file: FileRef }>; attempt?: AstralInternalHarnessInputRequest; session?: SessionView; selection?: Partial<SessionView>; confirmedModelSelection?: { sessionID: string; profile_id: string; reasoning?: SessionView['reasoning'] } }>>({})
   const query = useQuery({ ...bootstrapQuery(), enabled: () => authorized.value, staleTime: 15_000 })
@@ -186,12 +189,14 @@ export const useAppStore = defineStore('app', () => {
       if (lastChatPath.value === `/sessions/${sessionID}`) lastChatPath.value = '/'
     }
     schedules.value = schedules.value.filter(schedule => !schedule.session_id || !ids.has(schedule.session_id))
+    wakeDirectory.forgetSessions(ids)
     const listed = sessionQuery.data.value
     if (listed?.some(session => ids.has(session.id))) cache.setQueryData(listSessionsQueryKey(), listed.filter(session => !ids.has(session.id)))
     if (data.value?.sessions.some(session => ids.has(session.id))) cache.setQueryData(bootstrapQueryKey(), { ...data.value, sessions: data.value.sessions.filter(session => !ids.has(session.id)) })
   }
   function forgetAgent(id: string) {
     schedules.value = schedules.value.filter(schedule => schedule.agent_id !== id)
+    wakeDirectory.forgetAgent(id)
     const owned = [...sessions.value, ...Object.values(sessionViews.value), ...Object.values(drafts.value).flatMap(draft => draft.session ? [draft.session] : [])]
     const ids = new Set([...owned.filter(session => session.agent_id === id).map(session => session.id), ...sessionCatalog.agent(id)])
     for (const sessionID of ids) if (!deletedSessions.value.has(sessionID)) forgetSession(sessionID)
@@ -199,7 +204,7 @@ export const useAppStore = defineStore('app', () => {
     if (data.value) cache.setQueryData(bootstrapQueryKey(), { ...data.value, agents: data.value.agents.filter(agent => agent.id !== id) })
   }
   const statuses = computed(() => Object.fromEntries((sessionQuery.data.value ?? []).filter(session => !deletedSessions.value.has(session.id)).map(s => [s.id, sessionWithMetadata(s, sessionViews.value[s.id])])))
-  return { authorized, lastChatPath, drafts, data, timezone, timezoneCompatible, displayTimezone, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, deletedSessions, statuses, sidebar, dark, query, refresh, preferences, refreshNetwork, networkSettings, presentation, forgetSession, forgetAgent, schedules, schedulesReady, schedulesError, refreshSchedules, saveSchedule, deleteSchedule }
+  return { authorized, lastChatPath, drafts, data, timezone, timezoneCompatible, displayTimezone, agents, activeAgentID, computers, models, availableModels, sessions, sessionViews, deletedSessions, statuses, sidebar, dark, query, refresh, preferences, refreshNetwork, networkSettings, presentation, forgetSession, forgetAgent, schedules, schedulesReady, schedulesError, refreshSchedules, saveSchedule, deleteSchedule, wakeEndpoints }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useAppStore, import.meta.hot))

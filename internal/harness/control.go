@@ -189,7 +189,7 @@ func (s *Service) SelectModel(ctx context.Context, id, profileID string, reasoni
 }
 
 func (s *Service) SelectComputer(ctx context.Context, id, computerID, cwd string) error {
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -209,6 +209,9 @@ func (s *Service) SelectComputer(ctx context.Context, id, computerID, cwd string
 	return err
 }
 func (r *runtime) selectComputer(ctx context.Context, id, cwd string) (domain.ExecutionBinding, error) {
+	if err := r.requireRunnable(ctx); err != nil {
+		return domain.ExecutionBinding{}, err
+	}
 	r.environmentMu.Lock()
 	defer r.environmentMu.Unlock()
 	b, err := r.service.Hub.Bind(ctx, r.agentID, r.id, id, cwd)
@@ -228,6 +231,9 @@ func (r *runtime) selectComputer(ctx context.Context, id, cwd string) (domain.Ex
 }
 
 func (r *runtime) continueLocked(ctx context.Context) error {
+	if err := r.requireRunnable(ctx); err != nil {
+		return err
+	}
 	snapshot, err := r.snapshot()
 	if err != nil {
 		return err
@@ -258,7 +264,7 @@ func (r *runtime) continueLocked(ctx context.Context) error {
 }
 
 func (s *Service) Continue(ctx context.Context, id string) error {
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -295,12 +301,15 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	return errors.Join(wakeErr, err)
 }
 func (s *Service) Compact(ctx context.Context, id, instructions string) error {
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return err
 	}
 	r.mu.Lock()
-	err = r.syncBusinessConfig(ctx)
+	err = r.requireRunnable(ctx)
+	if err == nil {
+		err = r.syncBusinessConfig(ctx)
+	}
 	r.mu.Unlock()
 	if err != nil {
 		return err
@@ -315,12 +324,15 @@ func (s *Service) Compact(ctx context.Context, id, instructions string) error {
 	return err
 }
 func (s *Service) ClearPending(ctx context.Context, id, kind string) error {
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.requireRunnable(ctx); err != nil {
+		return err
+	}
 	switch kind {
 	case "steer":
 		err = r.core.Load().ClearSteering(ctx)
@@ -335,8 +347,13 @@ func (s *Service) ClearPending(ctx context.Context, id, kind string) error {
 	return err
 }
 func (s *Service) DecideApproval(ctx context.Context, id, approvalID string, decision core.ApprovalDecision) error {
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireRunnable(ctx); err != nil {
 		return err
 	}
 	err = r.core.Load().DecideApproval(ctx, approvalID, decision)
@@ -430,6 +447,9 @@ func (s *Service) SaveAgentSessionPresentation(ctx context.Context, agentID, id 
 }
 
 func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id string, title *string, pinned, archived, private *bool) error {
+	if archived != nil {
+		return s.archiveSession(ctx, agentID, id, title, pinned, archived, private)
+	}
 	if agentID != "" {
 		var record domain.Session
 		if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
@@ -445,7 +465,7 @@ func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id strin
 			return domain.Forbidden("subagents are managed through agent_control")
 		}
 	}
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -461,8 +481,8 @@ func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id strin
 	if err := persistence.CheckSessionAccess(ctx, record); err != nil {
 		return err
 	}
-	if record.BindingID != "" && archived != nil {
-		return domain.Conflict("a bound Session cannot be archived")
+	if err := persistence.CheckSessionRunnable(ctx, record, s.Store); err != nil {
+		return err
 	}
 	if title != nil {
 		if record.BindingID != "" {
@@ -476,9 +496,6 @@ func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id strin
 	}
 	if pinned != nil {
 		record.Pinned = *pinned
-	}
-	if archived != nil {
-		record.Archived = *archived
 	}
 	if private != nil {
 		record.Private = *private

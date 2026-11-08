@@ -4,9 +4,10 @@ import { createSSRApp, defineComponent, getCurrentInstance, h, reactive } from '
 import { renderToString } from 'vue/server-renderer'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Sidebar from './Sidebar.vue'
+import type { Session } from '../lib/types'
 
 const fixture = vi.hoisted(() => ({
-  app: undefined as unknown as { agents: Array<{ id: string; name: string }>; activeAgentID: string; sessions: []; schedules: []; statuses: object; sidebar: boolean; data: { version: string } },
+  app: undefined as unknown as { agents: Array<{ id: string; name: string }>; activeAgentID: string; sessions: Session[]; schedules: []; wakeEndpoints: []; statuses: Record<string, { status?: string }>; sidebar: boolean; data: { version: string } },
   choose: undefined as undefined | ((value: string) => void),
   selected: '',
   menu: undefined as undefined | { agentMenuOpen: boolean },
@@ -40,7 +41,7 @@ vi.mock('@astral/ui', () => ({
 }))
 
 beforeEach(() => {
-  fixture.app = reactive({ agents: [{ id: 'bot-a', name: 'Personal' }, { id: 'bot-b', name: 'Team' }], activeAgentID: 'bot-a', sessions: [], schedules: [], statuses: {}, sidebar: true, data: { version: 'test' } })
+  fixture.app = reactive({ agents: [{ id: 'bot-a', name: 'Personal' }, { id: 'bot-b', name: 'Team' }], activeAgentID: 'bot-a', sessions: [], schedules: [], wakeEndpoints: [], statuses: {}, sidebar: true, data: { version: 'test' } })
   fixture.choose = undefined
   fixture.menu = undefined; fixture.manage = undefined
 })
@@ -48,6 +49,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('the sidebar Bot menu', () => {
+  it('marks an idle root as active while its subagent works without changing the root’s actual state or listing children', async () => {
+    const root: Session = { id: 'root', agent_id: 'bot-a', title: 'Root work', source: 'web', archived: false, pinned: false, revision: 1, created_at: '', updated_at: '' }
+    fixture.app.sessions = [root, { ...root, id: 'child', title: 'Child work', subagent_parent_id: root.id }]
+    fixture.app.statuses = { root: { status: 'idle' }, child: { status: 'running' } }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] })
+    await router.push('/sessions/root')
+    const html = await renderToString(createSSRApp(Sidebar).use(router))
+    expect(html).toMatch(/sidebar-section[^>]*>\s*now\s*<\/h2>/)
+    expect(html).toContain('Root work')
+    expect(html).toContain('running-dot')
+    expect(html).toContain('stopAndArchive')
+    expect(html).not.toContain('Child work')
+    expect(fixture.app.statuses.root?.status).toBe('idle')
+  })
   it('keeps Bot switching and opens the selected Bot settings from the bottom action', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] })
     await router.push('/sessions/from-another-bot')

@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useAppStore } from './app'
 import type { SessionView, Snapshot } from '../lib/types'
 import { useSession } from '../composables/useSession'
-import { sidebarGroups, visibleSidebarSessions } from '../lib/sidebar-groups'
+import { indexSessionAutomations, sidebarGroups, visibleSidebarSessions } from '../lib/sidebar-groups'
 
 type Query = { data: Ref<unknown>; refetch: () => Promise<void> }
 const mocks = vi.hoisted(() => ({ queries: {} as Record<string, Query>, writes: vi.fn(), auth: undefined as unknown as { authenticated: boolean; status: { desktop: boolean; username: string }; refresh: () => void } }))
@@ -64,9 +64,9 @@ beforeEach(() => {
 afterEach(() => { sessionScope?.stop(); sessionScope = undefined; app?.$dispose(); app = undefined; vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('sidebar ownership across the real session stream', () => {
-  function sidebarIDs(search = '', selected = 'child') {
-    const visible = visibleSidebarSessions(app!.sessions, app!.schedules, row => app!.statuses[row.id]?.status === 'running', selected).filter(row => row.title.includes(search))
-    return sidebarGroups(visible, app!.schedules, row => app!.statuses[row.id]?.status === 'running').flatMap(group => group.items.map(row => row.id))
+  function sidebarIDs(search = '', _selected = 'child') {
+    const visible = visibleSidebarSessions(app!.sessions).filter(row => row.title.includes(search))
+    return sidebarGroups(visible, indexSessionAutomations(app!.schedules, app!.wakeEndpoints), row => app!.statuses[row.id]?.status === 'running').flatMap(group => group.items.map(row => row.id))
   }
 
   it('merges a refreshed directory summary without replacing complete active execution details', async () => {

@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file -- Shared controls are isolated SSR test stubs. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, defineComponent, getCurrentInstance, h } from 'vue'
+import { createSSRApp, defineComponent, getCurrentInstance, h, nextTick, reactive } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import SchedulesPage from './SchedulesPage.vue'
 import type { Schedule, ScheduleInput } from '../lib/schedules'
@@ -11,12 +11,15 @@ interface Setup {
   editorError: string
   begin: (current?: Schedule) => void
   save: () => Promise<void>
+  close: () => void
   toggle: (task: Schedule, enabled: boolean) => Promise<void>
   setSessionMode: (value: string) => void
 }
 const fixture = vi.hoisted(() => ({
   setup: undefined as Setup | undefined,
-  app: { activeAgentID: 'bot', timezone: 'UTC', displayTimezone: 'UTC', timezoneCompatible: true, schedules: [] as Schedule[], schedulesReady: true, schedulesError: '', sessions: [{ id: 'session', agent_id: 'bot', title: 'My conversation', archived: false }], saveSchedule: vi.fn(async (_input: ScheduleInput, _current?: Schedule, _agentID?: string) => {}), refreshSchedules: vi.fn(async () => {}), deleteSchedule: vi.fn(async () => {}) },
+  route: undefined as unknown as { path: string; query: Record<string, unknown> },
+  replace: vi.fn(async (_location: { path: string; query: Record<string, unknown> }) => {}),
+  app: { activeAgentID: 'bot', agents: [{ id: 'bot' }, { id: 'other-bot' }], data: {}, timezone: 'UTC', displayTimezone: 'UTC', timezoneCompatible: true, schedules: [] as Schedule[], schedulesReady: true, schedulesError: '', sessions: [{ id: 'session', agent_id: 'bot', title: 'My conversation', archived: false }], saveSchedule: vi.fn(async (_input: ScheduleInput, _current?: Schedule, _agentID?: string) => {}), refreshSchedules: vi.fn(async () => {}), deleteSchedule: vi.fn(async () => {}) },
 }))
 // Event endpoint editing is an independent local form; it must not lock the
 // timed-task create action or discard either form's draft.
@@ -25,6 +28,7 @@ vi.mock('../components/WakeEndpointsPanel.vue', () => ({ default: defineComponen
   setup(_props, { emit }) { emit('editing', true); return () => h('section', 'Open endpoint editor') },
 }) }))
 vi.mock('../stores/app', () => ({ useAppStore: () => fixture.app }))
+vi.mock('vue-router', () => ({ useRoute: () => fixture.route, useRouter: () => ({ replace: fixture.replace }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, values: Record<string, unknown> = {}) => `${key}${Object.values(values).length ? ` ${Object.values(values).join(' ')}` : ''}`, locale: { value: 'en' } }) }))
 vi.mock('@astral/ui', () => ({
   Button: defineComponent({ setup(_props, { slots, attrs }) {
@@ -46,7 +50,11 @@ async function render() {
 }
 beforeEach(() => {
   fixture.setup = undefined
+  fixture.app = reactive({ ...fixture.app })
+  fixture.route = reactive({ path: '/schedules', query: {} })
+  fixture.replace.mockImplementation(async location => { fixture.route.query = location.query })
   fixture.app.schedules = [task]
+  fixture.app.schedulesReady = true
   fixture.app.activeAgentID = 'bot'
   fixture.app.timezone = 'UTC'
   fixture.app.displayTimezone = 'UTC'
@@ -55,6 +63,68 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 describe('shared Gateway and UI schedules', () => {
+  it('opens the requested Bot’s full task list without creating or opening an editor', async () => {
+    fixture.route.query = { agent: 'other-bot' }
+    await render()
+    expect(fixture.app.activeAgentID).toBe('other-bot')
+    expect(fixture.setup!.editor).toBeUndefined()
+  })
+  it('opens the linked timed task in its own Bot and keeps drafts through directory refresh and close', async () => {
+    const linked = { ...task, id: 'other-task', agent_id: 'other-bot', title: 'Another Bot task' }
+    fixture.app.schedules = [task, linked]
+    fixture.route.query = { agent: 'other-bot', schedule: linked.id }
+    await render()
+    expect(fixture.app.activeAgentID).toBe('other-bot')
+    expect(fixture.setup!.editor?.current?.id).toBe(linked.id)
+    fixture.setup!.draft.prompt = 'Keep this draft'
+    fixture.app.schedules = [task, { ...linked, revision: 5, prompt: 'Changed elsewhere' }]
+    await nextTick()
+    expect(fixture.setup!.draft.prompt).toBe('Keep this draft')
+    fixture.setup!.close(); await nextTick()
+    fixture.app.schedules = [task, { ...linked, revision: 6 }]; await nextTick()
+    expect(fixture.setup!.editor).toBeUndefined()
+    expect(fixture.route.query).toEqual({ agent: 'other-bot' })
+  })
+  it('waits for the initial directory before resolving a timed-task link', async () => {
+    fixture.app.schedules = []; fixture.app.schedulesReady = false
+    fixture.route.query = { agent: 'bot', schedule: task.id }
+    const html = await render()
+    expect(fixture.setup!.editor).toBeUndefined()
+    expect(html).not.toContain('automationNotFound')
+  })
+  it('clears an old task link when switching to another inline editor so the original link can be entered again', async () => {
+    fixture.route.query = { agent: 'bot', schedule: task.id }
+    await render()
+    expect(fixture.setup!.editor?.current?.id).toBe(task.id)
+    fixture.setup!.begin({ ...task, id: 'inline-task' })
+    await nextTick()
+    expect(fixture.route.query).toEqual({ agent: 'bot' })
+    fixture.setup!.close()
+    fixture.setup = undefined
+    fixture.route.query = { agent: 'bot', schedule: task.id }
+    await render()
+    expect(fixture.setup!.editor?.current?.id).toBe(task.id)
+  })
+  it('does not open another task for a deleted ID or a mismatched Bot', async () => {
+    fixture.route.query = { agent: 'bot', schedule: 'deleted-task' }
+    expect(await render()).toContain('automationNotFound')
+    expect(fixture.setup!.editor).toBeUndefined()
+    fixture.route.query = { agent: 'other-bot', schedule: task.id }; await nextTick()
+    expect(fixture.setup!.editor).toBeUndefined()
+  })
+  it('rejects enabling an archived target and still permits editing a paused plan', async () => {
+    fixture.app.sessions[0]!.archived = true
+    const paused = { ...task, enabled: false, next_run_at: undefined }
+    fixture.app.schedules = [paused]
+    const html = await render()
+    expect(html).toContain('automationArchivedTarget')
+    await fixture.setup!.toggle(paused, true)
+    expect(fixture.app.saveSchedule).not.toHaveBeenCalled()
+    fixture.setup!.begin(paused)
+    fixture.setup!.draft.prompt = 'Revised future work'
+    await fixture.setup!.save()
+    expect(fixture.app.saveSchedule).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, prompt: 'Revised future work' }), paused, 'bot')
+  })
   it('keeps Add task available while an event endpoint editor is open', async () => {
     const html = await render()
     expect(html).toContain('Open endpoint editor')
