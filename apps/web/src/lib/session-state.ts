@@ -20,6 +20,8 @@ export interface SessionState {
   completedAttempts: Set<string>
   completedRuns: Set<string>
   historyCursor?: string
+  historyStartTime?: number
+  historyGaps?: Array<{ start: number; end: number; activityAfter?: number }>
   traceCursor?: string
   scrollPosition?: TranscriptPosition
   subagentActivity?: Record<string, SubagentActivity>
@@ -47,7 +49,13 @@ export function addEntry(state: SessionState, entry: Entry, history = false) {
   const existing = state.trace[entry.id] ?? state.entries[entry.id]
   const accepted = existing ?? markRaw(entry)
   const inHistory = history || ['message', 'context', 'compaction'].includes(accepted.kind)
-  if (state.trace[entry.id] && (!inHistory || state.entries[entry.id])) return
+  const start = history ? historyEntryTime(accepted) : undefined
+  const expanded = start !== undefined && (state.historyStartTime === undefined || start < state.historyStartTime)
+  if (expanded) state.historyStartTime = start
+  if (state.trace[entry.id] && (!inHistory || state.entries[entry.id])) {
+    if (expanded) state.historyRevision++
+    return
+  }
   state.trace[entry.id] = accepted
   state.historyRevision++
   if (inHistory) state.entries[entry.id] = accepted
@@ -96,12 +104,14 @@ export function interruptPreviews(state: SessionState) {
 // already loaded. Live output belongs to one server runtime and active run only.
 export function reconcileSnapshot(previous: SessionState, snapshot: Snapshot): SessionState {
   const next = fromSnapshot(snapshot)
-  const overlap = Object.keys(next.entries).some(id => previous.entries[id])
+  const overlap = (snapshot.history.entries ?? []).some(entry => previous.entries[entry.id])
   const changed = Object.keys(next.trace).some(id => !previous.trace[id]) || Object.keys(next.entries).some(id => !previous.entries[id]) || Object.keys(next.subagentActivity ?? {}).some(id => !previous.subagentActivity?.[id])
   for (const id of Object.keys(next.trace)) next.trace[id] = previous.trace[id] ?? previous.entries[id] ?? next.trace[id]!
   for (const id of Object.keys(next.entries)) next.entries[id] = next.trace[id]!
   next.entries = { ...previous.entries, ...next.entries }
   next.trace = { ...previous.trace, ...next.trace }
+  if (previous.historyStartTime !== undefined) next.historyStartTime = Math.min(previous.historyStartTime, next.historyStartTime ?? Infinity)
+  next.historyGaps = previous.historyGaps
   const activityOverlap = Object.keys(next.subagentActivity ?? {}).some(id => previous.subagentActivity?.[id])
   for (const [id, activity] of Object.entries(next.subagentActivity ?? {})) next.subagentActivity![id] = previous.subagentActivity?.[id] ?? activity
   next.subagentActivity = { ...previous.subagentActivity, ...next.subagentActivity }
@@ -113,7 +123,7 @@ export function reconcileSnapshot(previous: SessionState, snapshot: Snapshot): S
   next.historyRevision = previous.historyRevision + Number(changed)
   next.scrollPosition = previous.scrollPosition
   carryTranscriptIdentity(previous, next)
-  if (overlap) next.historyCursor = previous.historyCursor
+  if (overlap && snapshot.history.next_cursor) next.historyCursor = previous.historyCursor
   if (previous.epoch !== next.epoch) { if (previous.epoch) interruptPreviews(next); return next }
   for (const id of previous.completedAttempts) next.completedAttempts.add(id)
   for (const id of previous.completedRuns) next.completedRuns.add(id)
@@ -192,6 +202,23 @@ export function visibleEntry(entry: Entry) {
   if (message.role !== 'user') return false
   const files = object(message.metadata).files
   return Boolean(messageText(entry)) || Boolean(message.content?.some(p => p.type === 'image')) || (Array.isArray(files) && files.length > 0)
+}
+function historyEntryTime(entry: Entry): number | undefined {
+  const message = conversationMessage(entry)
+  const assistantProcess = message?.role === 'assistant' && !message.is_error && !['error', 'cancelled'].includes(message.finish_reason ?? '') && message.content?.some(part => part.type === 'reasoning' && part.text || part.type === 'tool_call' && part.tool_call)
+  if (!entry.tool && !visibleEntry(entry) && !assistantProcess) return
+  const time = Date.parse(entry.time)
+  return Number.isFinite(time) ? time : 0
+}
+// Trace tails can extend further than the paged conversation. Only readable
+// main-history records establish where child activity can safely join it.
+export function historyPageStart(entries: Entry[]): number | undefined {
+  let start: number | undefined
+  for (const entry of entries) {
+    const time = historyEntryTime(entry)
+    if (time !== undefined) start = Math.min(start ?? Infinity, time)
+  }
+  return start
 }
 export function sortedEntries(entries: Record<string, Entry>): Entry[] {
   return Object.values(entries).sort((a, b) => a.sequence - b.sequence)
@@ -288,6 +315,11 @@ export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] 
     process(group, { kind: 'tool', key: invocation.execution_id, entry })
   }
   const activities = Object.values(state.subagentActivity ?? {}).map(activity => ({ activity, time: Date.parse(activity.time) }))
+    .filter(({ activity, time }) => {
+      if (!Number.isFinite(time)) return true
+      if (state.historyCursor && (state.historyStartTime === undefined || time < state.historyStartTime)) return false
+      return !state.historyGaps?.some(gap => (gap.activityAfter === undefined || activity.sequence > gap.activityAfter) && time > gap.start && time < gap.end)
+    })
     .sort((a, b) => a.time - b.time || a.activity.sequence - b.activity.sequence)
   let activityIndex = 0
   function activityRow(activity: SubagentActivity) {

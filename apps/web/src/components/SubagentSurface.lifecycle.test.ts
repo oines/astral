@@ -17,7 +17,7 @@ vi.mock('../composables/useSession', async () => {
       const observation = { id, changes: [] as string[] }
       fixture.observations.push(observation)
       watch(id, value => observation.changes.push(value), { immediate: true, flush: 'sync' })
-      return { state: ref(emptyState()), error: ref(''), older: async () => false, reconnect: vi.fn() }
+      return { state: ref(emptyState()), error: ref(''), loadingHistory: ref(false), older: async () => false, reconnect: vi.fn() }
     },
   }
 })

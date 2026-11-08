@@ -197,6 +197,7 @@ watch(id, value => { surface.setSession(value); error.value = '' }, { immediate:
             :state="live.state.value"
             :session-i-d="id"
             :load-older="live.older"
+            :loading-history="live.loadingHistory.value"
             :readonly="readonly"
             @fork="fork"
             @position="rememberPosition"

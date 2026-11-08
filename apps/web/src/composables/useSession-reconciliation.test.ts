@@ -27,6 +27,13 @@ function snapshot(entries: Entry[], cursor?: string, epoch = 'server'): Snapshot
 function activity(sequence: number): SubagentActivity {
   return { id: `child-event-${sequence}`, sequence, session_id: 'chat', child_session_id: 'child', name: 'Review', run_id: `run-${sequence}`, status: 'started', time: new Date(Date.UTC(2026, 10, 5, 0, 0, sequence)).toISOString() }
 }
+function timedEntry(id: string, sequence: number): Entry {
+  return { ...entry(id, sequence), time: activity(sequence).time }
+}
+function shownActivities(session: ReturnType<typeof useSession>) {
+  return transcriptGroups(session.state.value).flatMap(group => group.blocks)
+    .filter(block => block.kind === 'subagent-status').map(block => block.activity.sequence)
+}
 let scope: EffectScope
 beforeEach(() => {
   vi.useFakeTimers()
@@ -45,6 +52,89 @@ async function reconnect(session: ReturnType<typeof useSession>) {
 }
 
 describe('session transport reconciliation', () => {
+  it('reveals retained status rows only as delayed main-history pages reach their time range', async () => {
+    let resolve!: (value: unknown) => void
+    mocks.get.mockImplementation(() => new Promise(done => { resolve = done }))
+    const session = scope.run(() => useSession(ref('chat')))!
+    Source.all[0]!.emit('snapshot', { ...snapshot([timedEntry('recent', 10)], 'older'), subagent_activity: [activity(2), activity(5), activity(12)], subagent_activity_cursor: '12' })
+    expect(shownActivities(session)).toEqual([12])
+    const pending = session.older()
+    expect(shownActivities(session)).toEqual([12])
+    expect(Object.keys(session.state.value.subagentActivity ?? {})).toHaveLength(3)
+    resolve({ data: { entries: [timedEntry('middle', 4)], next_cursor: 'oldest' } })
+    await pending
+    expect(shownActivities(session)).toEqual([5, 12])
+    const last = session.older()
+    resolve({ data: { entries: [timedEntry('first', 1)] } })
+    await last
+    expect(shownActivities(session)).toEqual([2, 5, 12])
+  })
+
+  it('does not render outage status walls while delayed pages are still filling a reconnect gap', async () => {
+    const pages: Array<(value: unknown) => void> = []
+    mocks.get.mockImplementation(() => new Promise(done => { pages.push(done) }))
+    const session = scope.run(() => useSession(ref('chat')))!
+    Source.all[0]!.emit('snapshot', { ...snapshot([timedEntry('old', 2)], 'oldest'), subagent_activity: [activity(2)], subagent_activity_cursor: '2' })
+    const source = await reconnect(session)
+    source.emit('snapshot', { ...snapshot([timedEntry('recent', 9)], 'gap'), subagent_activity: [activity(2), activity(3), activity(5), activity(8), activity(10)], subagent_activity_cursor: '10' })
+    expect(shownActivities(session)).toEqual([2, 10])
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+    pages[0]!({ data: { entries: [timedEntry('middle', 6)], next_cursor: 'gap-2' } })
+    await vi.waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2))
+    expect(shownActivities(session)).toEqual([2, 8, 10])
+    pages[1]!({ data: { entries: [timedEntry('old', 2), timedEntry('earlier', 3)], next_cursor: 'overlap' } })
+    await nextTick(); await nextTick()
+    expect(shownActivities(session)).toEqual([2, 3, 5, 8, 10])
+    expect(session.state.value.historyGaps).toBeUndefined()
+    expect(session.state.value.historyCursor).toBe('oldest')
+  })
+
+  it('accepts a complete replacement snapshot without retaining a stale gap cursor', async () => {
+    let resolve!: (value: unknown) => void
+    mocks.get.mockImplementation(() => new Promise(done => { resolve = done }))
+    const session = scope.run(() => useSession(ref('chat')))!
+    Source.all[0]!.emit('snapshot', snapshot([timedEntry('old', 2)], 'oldest'))
+    const source = await reconnect(session)
+    source.emit('snapshot', snapshot([timedEntry('recent', 9)], 'gap'))
+    expect(session.state.value.historyGaps).toHaveLength(1)
+    source.emit('snapshot', snapshot([timedEntry('old', 2), timedEntry('middle', 5), timedEntry('recent', 9)]))
+    expect(session.state.value.historyCursor).toBeUndefined()
+    expect(session.state.value.historyGaps).toBeUndefined()
+    resolve({ data: { entries: [timedEntry('stale', 3)], next_cursor: 'stale' } })
+    await nextTick(); await nextTick()
+    expect(session.state.value.entries.stale).toBeUndefined()
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not mistake trace overlap for a continuous main-history window', async () => {
+    mocks.get.mockImplementation(() => new Promise(() => {}))
+    const session = scope.run(() => useSession(ref('chat')))!
+    const old = timedEntry('old', 2)
+    Source.all[0]!.emit('snapshot', snapshot([old], 'oldest'))
+    const source = await reconnect(session)
+    const recent = snapshot([timedEntry('recent', 9)], 'gap')
+    recent.trace.entries = [old]
+    source.emit('snapshot', recent)
+    expect(session.state.value.historyCursor).toBe('gap')
+    expect(mocks.get).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ cursor: 'gap' }) }))
+  })
+
+  it('keeps previously displayed child activity while deferring new outage activity', async () => {
+    let resolve!: (value: unknown) => void
+    mocks.get.mockImplementation(() => new Promise(done => { resolve = done }))
+    const session = scope.run(() => useSession(ref('chat')))!
+    Source.all[0]!.emit('snapshot', { ...snapshot([timedEntry('old', 2)], 'oldest'), subagent_activity: [activity(3), activity(4)], subagent_activity_cursor: '4' })
+    expect(shownActivities(session)).toEqual([3, 4])
+    const source = await reconnect(session)
+    source.emit('snapshot', { ...snapshot([timedEntry('recent', 9)], 'gap'), subagent_activity: [activity(3), activity(4), activity(6), activity(10)], subagent_activity_cursor: '10' })
+    expect(shownActivities(session)).toEqual([3, 4, 10])
+    expect(session.state.value.historyGaps?.[0]?.activityAfter).toBe(4)
+    resolve({ data: { entries: [timedEntry('middle', 5)], next_cursor: 'gap-2' } })
+    await vi.waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2))
+    expect(shownActivities(session)).toEqual([3, 4, 6, 10])
+    expect(session.state.value.historyGaps?.[0]?.activityAfter).toBe(4)
+  })
+
   it('keeps loaded history and live output during a connection interruption', async () => {
     const session = scope.run(() => useSession(ref('chat')))!
     Source.all[0]!.emit('snapshot', snapshot([entry('old', 1)], 'older'))

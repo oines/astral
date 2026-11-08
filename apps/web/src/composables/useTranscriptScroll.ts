@@ -9,6 +9,7 @@ type Options = {
   content: Ref<HTMLElement | undefined>
   sessionID: Ref<string>
   hasMore: Ref<boolean>
+  needsHistory?: Ref<boolean>
   loadOlder: () => Promise<boolean>
   getPosition?: () => TranscriptPosition | undefined
   savePosition?: (position: TranscriptPosition) => void
@@ -102,9 +103,9 @@ export function useTranscriptScroll(options: Options) {
   async function loadEarlier() {
     const el = options.scroller.value
     if (!active || !initialized || !el || !options.hasMore.value || loading || historyFailed) return
-    // A page may hit its scan/byte budget before filling the screen. Continue
-    // until there is something to scroll, without requiring an impossible gesture.
-    if (follow.following && el.scrollHeight > el.clientHeight + 1 || el.scrollTop > Math.max(320, el.clientHeight * .75)) return
+    // Activity rows can fill the screen before the main history scan reaches
+    // readable content. Keep scanning that window independently of DOM height.
+    if (!options.needsHistory?.value && (follow.following && el.scrollHeight > el.clientHeight + 1 || el.scrollTop > Math.max(320, el.clientHeight * .75))) return
     loading = true
     const current = generation
     captureAnchor()
@@ -215,7 +216,7 @@ export function useTranscriptScroll(options: Options) {
   }
 
   useResizeObserver([options.content, options.scroller], schedule)
-  watch([options.scroller, options.content, options.hasMore], schedule, { immediate: true, flush: 'post' })
+  watch([options.scroller, options.content, options.hasMore, () => options.needsHistory?.value], schedule, { immediate: true, flush: 'post' })
   watch(options.sessionID, () => { generation++; loading = false; historyFailed = false; reset() }, { immediate: true, flush: 'post' })
   onActivated(() => { active = true; initialized = false; schedule() })
   onDeactivated(() => { savePosition(); active = false; stop() })

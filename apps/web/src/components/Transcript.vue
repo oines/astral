@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useNow } from '@vueuse/core'
 import { useClipboard } from '../composables/useClipboard'
 import { useI18n } from 'vue-i18n'
-import { Button, Popover } from '@astral/ui'
+import { Button, Popover, useDelayedPending } from '@astral/ui'
 import { ArrowDown, Check, Clock3, Copy, Ellipsis, File, GitBranch } from '@astral/icons'
 import type { Content, Entry, FileRef } from '../lib/types'
 import { errorText, fileURL, imageURL, object } from '../lib/api'
@@ -19,7 +19,7 @@ import type { TranscriptPosition } from '../lib/transcript-position'
 import { messageAttachments } from '../lib/message-attachments'
 import { useImagePreviewStore } from '../stores/image-preview'
 import SubagentBubble from './SubagentBubble.vue'
-const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean>; readonly?: boolean }>()
+const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean>; loadingHistory?: boolean; readonly?: boolean }>()
 const emit = defineEmits<{ fork: [entryID: string]; position: [state: SessionState, position: TranscriptPosition] }>()
 const { t, locale } = useI18n()
 const surface = useSurfaceStore()
@@ -27,7 +27,9 @@ const imagePreview = useImagePreviewStore()
 const app = useAppStore()
 const scroller = ref<HTMLElement>()
 const content = ref<HTMLElement>()
-const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor || !!props.state.subagentActivityNextCursor), loadOlder: () => props.loadOlder(), getPosition: () => props.state.scrollPosition, savePosition: position => emit('position', props.state, position) })
+const needsHistory = computed(() => !!props.state.historyCursor && props.state.historyStartTime === undefined)
+const waitingHistory = useDelayedPending(needsHistory)
+const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor || !!props.state.subagentActivityNextCursor), needsHistory, loadOlder: () => props.loadOlder(), getPosition: () => props.state.scrollPosition, savePosition: position => emit('position', props.state, position) })
 const durable = computed(() => {
   // Live deltas touch previews/tools, not this revision or the durable entries.
   void props.state.historyRevision
@@ -109,6 +111,16 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
         ref="content"
         class="transcript"
       >
+        <div
+          v-if="waitingHistory && loadingHistory"
+          class="activity-line"
+          role="status"
+        >
+          <span
+            class="spinner"
+            aria-hidden="true"
+          />{{ t('loading') }}
+        </div>
         <section
           v-for="(group, groupIndex) in groups"
           :key="group.key"
@@ -122,6 +134,7 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
               :key="block.key"
               :data-scroll-anchor="block.key"
               class="transcript-block"
+              :class="{ 'transcript-block-status': block.kind === 'subagent-status' }"
             >
               <ActivityLine
                 v-if="block.kind === 'process'"

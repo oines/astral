@@ -176,6 +176,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .chat-load-error { width: min(752px, calc(100% - 48px)); margin: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; }
 .transcript-block { font-size: 15px; line-height: 1.65; }
 .transcript-block + .transcript-block { margin-top: 14px; }
+.transcript-block-status + .transcript-block-status { margin-top: 4px; }
 .run-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; line-height: 20px; margin-top: 10px; }
 .run-status:first-child { margin-top: 0; }
 .message { position: relative; margin: 0; line-height: 1.65; font-size: 15px; }
