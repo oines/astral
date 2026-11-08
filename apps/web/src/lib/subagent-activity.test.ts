@@ -40,6 +40,50 @@ describe('durable subagent activity in the parent transcript', () => {
     expect(state.subagentActivityCursor).toBe('2')
   })
 
+  it('orders late-delivered lifecycle events by their submillisecond source times', () => {
+    const state = emptyState()
+    addSubagentActivity(state, [
+      { ...activity(1, 'completed'), time: '2026-11-08T01:00:00.123900Z' },
+      { ...activity(2, 'started'), time: '2026-11-08T09:00:00.123100+08:00' },
+    ], '2')
+    expect(statuses(state).map(row => row.sequence)).toEqual([2, 1])
+  })
+
+  it('places an earlier child Run completion before a later parent message in the same millisecond', () => {
+    const state = emptyState()
+    addEntry(state, { ...message('parent-follow-up', 1), time: '2026-11-08T01:00:00.123100Z' }, true)
+    addSubagentActivity(state, [{ ...activity(1, 'completed'), run_id: 'earlier-child-run', time: '2026-11-08T01:00:00.123050Z' }], '1')
+    const blocks = durableTranscriptGroups(state).flatMap(group => group.blocks)
+    expect(blocks.map(block => block.kind)).toEqual(['subagent-status', 'text'])
+    expect(blocks[0]).toMatchObject({ activity: { run_id: 'earlier-child-run', status: 'completed' } })
+  })
+
+  it.each([
+    ['2026-11-08T01:00:00.123100001Z', ['process', 'subagent-status']],
+    ['2026-11-08T09:00:00.123900+08:00', ['process', 'subagent-status']],
+    ['2026-11-08T01:00:00.123100000Z', ['process', 'subagent-status']],
+  ])('interleaves a complete parent tool call and child event at %s without losing source precision', (childTime, expected) => {
+    const state = emptyState()
+    const call = { id: 'spawn-call', name: 'spawn_agent', arguments: { task: 'Review' } }
+    const invocation = { session_id: 'parent', run_id: 'parent-run', turn_id: 'turn', assistant_id: 'parent-call', execution_id: 'spawn-execution', call }
+    addEntry(state, {
+      ...message('parent-call', 1), time: '2026-11-08T01:00:00.123100000Z',
+      message: { role: 'assistant', content: [{ type: 'tool_call', tool_call: call }] },
+    }, true)
+    addEntry(state, {
+      id: 'parent-tool-started', sequence: 2, version: 2, session_id: 'parent', kind: 'tool_started', time: '2026-11-08T01:00:00.123100000Z', tool: { invocation },
+    })
+    const result: Entry = {
+      id: 'parent-result', sequence: 3, version: 3, session_id: 'parent', kind: 'tool_result', time: '2026-11-08T01:00:00.124100Z',
+      tool: { invocation, result: { outcome: 'succeeded', details: { session_id: 'child', status: 'queued' } } },
+    }
+    addEntry(state, result, true)
+    addSubagentActivity(state, [{ ...activity(1, 'started'), time: childTime }], '1')
+    const blocks = durableTranscriptGroups(state).flatMap(group => group.blocks)
+    expect(blocks.map(block => block.kind)).toEqual(expected)
+    expect(blocks.find(block => block.kind === 'process')).toMatchObject({ items: [{ kind: 'tool', key: 'spawn-execution', entry: result }] })
+  })
+
   it('inserts state changes between visible messages without exposing model-only context', () => {
     const entries: Entry[] = [
       { id: 'user', sequence: 1, version: 1, session_id: 'parent', kind: 'message', time: '2026-11-05T00:00:00Z', message: { role: 'user', content: [{ type: 'text', text: 'Review' }] } },

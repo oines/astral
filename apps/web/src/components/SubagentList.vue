@@ -5,12 +5,19 @@ import { Bot, ChevronRight } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { useSurfaceStore, type SurfaceSession } from '../stores/surface'
 import { subagentStatus, type SubagentActivity } from '../lib/subagents'
+import { compareEventTime } from '../lib/event-time'
 
 const props = defineProps<{ rootID: string; activities: Record<string, SubagentActivity> }>()
 const app = useAppStore()
 const surface = useSurfaceStore()
 const { t } = useI18n()
 const children = computed(() => {
+  const latest = new Map<string, SubagentActivity>()
+  for (const activity of Object.values(props.activities)) {
+    const previous = latest.get(activity.child_session_id)
+    const order = previous ? compareEventTime(activity.time, previous.time) : 1
+    if (!previous || order > 0 || order === 0 && activity.sequence > previous.sequence) latest.set(activity.child_session_id, activity)
+  }
   const sessions = new Map([...app.sessions, ...Object.values(app.sessionViews)].map(session => [session.id, session]))
   return [...sessions.values()].flatMap(session => {
     if (!session.subagent_parent_id || app.deletedSessions.has(session.id)) return []
@@ -22,16 +29,22 @@ const children = computed(() => {
       const source = sessions.get(parent)
       path.unshift({ id: parent, title: source?.title || t('conversation') })
       if (parent === props.rootID) {
-        const activity = Object.values(props.activities).filter(item => item.child_session_id === session.id).sort((a, b) => b.sequence - a.sequence)[0]
+        const activity = latest.get(session.id)
         const currentStatus = app.sessionViews[session.id]?.status || ('status' in session && typeof session.status === 'string' ? session.status : undefined)
         const status = currentStatus || (activity ? ({ started: 'running', completed: 'idle', failed: 'failed', cancelled: 'idle' }[activity.status]) : undefined)
-        return [{ id: session.id, title: session.title || activity?.name || t('subagent'), path, status }]
+        const running = ['running', 'compacting', 'stopping', 'queued', 'waiting'].includes(status ?? '') || status === 'needs_attention' && 'run_id' in session && !!session.run_id
+        const time = activity?.time || session.updated_at || session.created_at
+        return [{ id: session.id, title: session.title || activity?.name || t('subagent'), path, status, running, time, sequence: activity?.sequence ?? 0 }]
       }
       parent = source?.subagent_parent_id || ''
     }
     return []
-  }).sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || a.title.localeCompare(b.title))
+  }).sort((a, b) => compareEventTime(b.time, a.time) || b.sequence - a.sequence || a.title.localeCompare(b.title) || a.id.localeCompare(b.id))
 })
+const groups = computed(() => [
+  { key: 'running', title: t('workspaceSubagentsRunning'), children: children.value.filter(child => child.running) },
+  { key: 'ended', title: t('workspaceSubagentsEnded'), children: children.value.filter(child => !child.running) },
+].filter(group => group.children.length))
 </script>
 <template>
   <section
@@ -44,21 +57,31 @@ const children = computed(() => {
     >
       {{ t('workspaceNoSubagents') }}
     </p>
-    <button
-      v-for="child in children"
-      :key="child.id"
-      type="button"
-      class="workspace-agent-row"
-      @click="surface.open({ kind: 'subagent', id: child.id, title: child.title, path: child.path })"
+    <section
+      v-for="group in groups"
+      :key="group.key"
+      class="workspace-agent-group"
+      :aria-label="group.title"
     >
-      <Bot aria-hidden="true" />
-      <span><strong>{{ child.title }}</strong><small class="muted">{{ child.status ? t(subagentStatus(child.status)) : t('workspaceUnknownStatus') }}</small></span>
-      <ChevronRight aria-hidden="true" />
-    </button>
+      <h3>{{ group.title }}</h3>
+      <button
+        v-for="child in group.children"
+        :key="child.id"
+        type="button"
+        class="workspace-agent-row"
+        @click="surface.open({ kind: 'subagent', id: child.id, title: child.title, path: child.path })"
+      >
+        <Bot aria-hidden="true" />
+        <span><strong>{{ child.title }}</strong><small class="muted">{{ child.status ? t(subagentStatus(child.status)) : t('workspaceUnknownStatus') }}</small></span>
+        <ChevronRight aria-hidden="true" />
+      </button>
+    </section>
   </section>
 </template>
 <style scoped>
 .workspace-agent-list { padding: 8px 8px 16px; overflow: auto; scrollbar-width: thin; }
+.workspace-agent-group + .workspace-agent-group { margin-top: 20px; }
+.workspace-agent-group > h3 { margin: 8px 12px 4px; color: var(--muted); font-size: 12px; font-weight: 500; line-height: 20px; }
 .workspace-agent-row { position: relative; width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px; min-height: 60px; border: 0; border-radius: var(--radius-control); background: transparent; text-align: left; }
 .workspace-agent-row + .workspace-agent-row::before { content: ''; position: absolute; top: 0; left: 12px; right: 12px; height: 1px; background: var(--panel-line); pointer-events: none; }
 .workspace-agent-row:hover { background: var(--hover); }

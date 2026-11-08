@@ -4,6 +4,7 @@ import type { TranscriptPosition } from './transcript-position'
 import { carryTranscriptIdentity, reconcileTranscriptGroups } from './transcript-identity'
 import { object } from './api'
 import type { SubagentActivity } from './subagents'
+import { compareEventTime } from './event-time'
 
 export interface PreviewPart { type: string; text: string }
 export interface Preview { runID: string; parts: Record<number, PreviewPart>; interrupted?: boolean }
@@ -320,7 +321,7 @@ export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] 
       if (state.historyCursor && (state.historyStartTime === undefined || time < state.historyStartTime)) return false
       return !state.historyGaps?.some(gap => (gap.activityAfter === undefined || activity.sequence > gap.activityAfter) && time > gap.start && time < gap.end)
     })
-    .sort((a, b) => a.time - b.time || a.activity.sequence - b.activity.sequence)
+    .sort((a, b) => compareEventTime(a.activity.time, b.activity.time) || a.activity.sequence - b.activity.sequence)
   let activityIndex = 0
   function activityRow(activity: SubagentActivity) {
     let group = groups.at(-1)
@@ -331,8 +332,7 @@ export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] 
     group.blocks.push({ kind: 'subagent-status', key: `subagent-status:${activity.id}`, activity })
   }
   for (const entry of entries) {
-    const time = Date.parse(entry.time)
-    while (activityIndex < activities.length && activities[activityIndex]!.time <= time) activityRow(activities[activityIndex++]!.activity)
+    while (activityIndex < activities.length && compareEventTime(activities[activityIndex]!.activity.time, entry.time) < 0) activityRow(activities[activityIndex++]!.activity)
     const message = conversationMessage(entry)
     if (message?.role === 'user' && visibleEntry(entry)) {
       groups.push({ key: entry.id, role: 'user', entries: [entry], blocks: [] })

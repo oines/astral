@@ -48,6 +48,8 @@ Only the root Bot in the original conversation can create subagents: original co
 
 You continue using the original conversation while the subagents work. The Bot can also delegate partway through a task. It can finish its current round while waiting for results and resume when a subagent finishes or encounters a run error. It can then review the result or error, choose another model, retry, assign a follow-up, or report back to you. The notification preserves what happened during the run; the parent assesses whether the task itself succeeded. Subagents are instructed to report useful progress as they work and to end their round after reporting a blocker that needs outside action. Progress reports reach the parent without interrupting it for every update.
 
+The subagent list shows **Running** above **Ended** (including failed runs), with the most recent run activity first in each group.
+
 Select a subagent’s status line in the conversation to open its full conversation and tool activity in the right-hand panel. For deeper subagents created in an earlier version, select their status lines to open them in the same workspace. Switch between open conversations using the tabs at the top. Each tab retains its reading position, and your original conversation and draft stay in place.
 
 The timeline records when each round starts and ends, such as “Source check started working” and “Source check completed,” including failures and confirmed stops. Older subagent status records load together with the corresponding conversation history. Reusing a subagent adds new records, which remain after a refresh or reconnection. After a subagent is deleted, its existing status records remain, but its conversation can no longer be opened.
