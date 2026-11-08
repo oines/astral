@@ -1,7 +1,7 @@
 import { effectScope, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { client } from '@astral/sdk/client'
 import type { SessionHistoryResponses, SessionHistoryErrors } from '@astral/sdk'
-import { addEntry, addSubagentActivity, applyEvent, emptyState, interruptPreviews, reconcileSnapshot } from '../lib/session-state'
+import { addEntry, addSubagentActivity, applyEvent, emptyState, historyPageStart, interruptPreviews, reconcileSnapshot } from '../lib/session-state'
 import { errorText, request } from '../lib/api'
 import type { SessionEvent, Snapshot } from '../lib/types'
 import { useAppStore } from '../stores/app'
@@ -82,7 +82,15 @@ export function useSession(sessionID: Ref<string>) {
           historyBoundary ??= { sequence: known.reduce((latest, entry) => Math.max(latest, entry.sequence), 0), cursor: previous.historyCursor }
         }
         resetHistoryRequest()
-        state.value = reconcileSnapshot(previous, snapshot)
+        const next = reconcileSnapshot(previous, snapshot)
+        if (!snapshot.history.next_cursor) { historyBoundary = undefined; next.historyGaps = undefined }
+        else if (known.length && !overlap) {
+          const edge = known.reduce((latest, entry) => entry.sequence > latest.sequence ? entry : latest)
+          const start = Date.parse(edge.time)
+          const end = historyPageStart(snapshot.history.entries ?? []) ?? Infinity
+          if (Number.isFinite(start) && end > start) next.historyGaps = [...(next.historyGaps ?? []), { start, end, activityAfter: Number(previous.subagentActivityCursor ?? 0) }]
+        }
+        state.value = next
         // A long outage may exceed the snapshot tail. Fill that gap in the
         // background while keeping previously read pages and live output on screen.
         if (historyBoundary || state.value.subagentActivityBoundary) void fillGap(historyEpoch)
@@ -138,9 +146,14 @@ export function useSession(sessionID: Ref<string>) {
       if (current !== generation || epoch !== historyEpoch || cursor && cursor !== state.value.historyCursor || activityCursor !== state.value.subagentActivityNextCursor) return true
       for (const entry of page.entries ?? []) addEntry(state.value, entry, true)
       if (cursor) {
+        const start = historyPageStart(page.entries ?? [])
+        if (start !== undefined && state.value.historyGaps?.length) {
+          state.value.historyGaps = state.value.historyGaps.filter(gap => start > gap.start)
+            .map(gap => ({ ...gap, end: Math.min(gap.end, start) }))
+        }
         const crossed = historyBoundary && (page.entries ?? []).some(entry => entry.sequence <= historyBoundary!.sequence)
         state.value.historyCursor = crossed ? historyBoundary!.cursor : page.next_cursor
-        if (crossed || !page.next_cursor) historyBoundary = undefined
+        if (crossed || !page.next_cursor) { historyBoundary = undefined; state.value.historyGaps = undefined }
       }
       addSubagentActivity(state.value, page.subagent_activity, page.subagent_activity_cursor)
       if (activityCursor) {

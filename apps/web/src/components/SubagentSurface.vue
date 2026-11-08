@@ -44,6 +44,7 @@ function rememberPosition(state: SessionState, position: TranscriptPosition) { s
       :state="live.state.value"
       :session-i-d="sessionID"
       :load-older="live.older"
+      :loading-history="live.loadingHistory.value"
       readonly
       @position="rememberPosition"
     />

@@ -10,7 +10,7 @@ import type { SessionState } from '../lib/session-state'
 import type { Ref } from 'vue'
 
 const mocks = vi.hoisted(() => ({
-  session: undefined as unknown as { state: Ref<SessionState>; error: Ref<string>; older: () => Promise<boolean>; reconnect: () => void },
+  session: undefined as unknown as { state: Ref<SessionState>; error: Ref<string>; loadingHistory: Ref<boolean>; older: () => Promise<boolean>; reconnect: () => void },
   app: { sessionViews: {}, sessions: [] },
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
@@ -29,7 +29,7 @@ vi.mock('./Transcript.vue', async () => {
 })
 
 beforeEach(() => {
-  mocks.session = { state: ref(emptyState()), error: ref(''), older: async () => false, reconnect: vi.fn() }
+  mocks.session = { state: ref(emptyState()), error: ref(''), loadingHistory: ref(false), older: async () => false, reconnect: vi.fn() }
 })
 async function render() {
   const pinia = createPinia()

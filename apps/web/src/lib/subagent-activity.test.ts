@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { addSubagentActivity, applyEvent, durableTranscriptGroups, emptyState, fromSnapshot, liveTranscriptGroups, reconcileSnapshot } from './session-state'
+import { addEntry, addSubagentActivity, applyEvent, durableTranscriptGroups, emptyState, fromSnapshot, historyPageStart, liveTranscriptGroups, reconcileSnapshot, transcriptGroups } from './session-state'
 import type { Entry, Snapshot } from './types'
 import type { SubagentActivity } from './subagents'
 
 function activity(sequence: number, status: SubagentActivity['status'], second = sequence): SubagentActivity {
-  return { id: `activity-${sequence}`, sequence, session_id: 'parent', child_session_id: 'child', name: 'Review', run_id: sequence <= 2 ? 'first' : 'second', status, time: `2026-11-05T00:00:${String(second).padStart(2, '0')}Z` }
+  return { id: `activity-${sequence}`, sequence, session_id: 'parent', child_session_id: 'child', name: 'Review', run_id: sequence <= 2 ? 'first' : 'second', status, time: new Date(Date.UTC(2026, 10, 5, 0, 0, second)).toISOString() }
+}
+function message(id: string, second: number): Entry {
+  return { id, sequence: second, version: second, session_id: 'parent', kind: 'message', time: activity(second, 'started').time, run_id: 'parent-run', message: { role: 'assistant', content: [{ type: 'text', text: id }] } }
 }
 function snapshot(activities: SubagentActivity[], cursor: string, next?: string): Snapshot {
   return { epoch: 'server', view: { id: 'parent', event_sequence: 0 } as Snapshot['view'], history: { entries: [], head_id: '' }, trace: { entries: [], head_id: '' }, subagent_activity: activities, subagent_activity_cursor: cursor, subagent_activity_next_cursor: next }
@@ -76,5 +79,114 @@ describe('durable subagent activity in the parent transcript', () => {
     state.previews.preview.parts[0]!.text = 'One more'
     const second = liveTranscriptGroups(state, durable).flatMap(group => group.blocks).find(block => block.kind === 'subagent-status')
     expect(second).toBe(first)
+  })
+
+  it('keeps the independent activity tail inside the loaded conversation window while paging', () => {
+    const rows = Array.from({ length: 60 }, (_, index) => activity(index + 1, index % 2 ? 'completed' : 'started'))
+    const data = snapshot(rows, '60')
+    data.history = { entries: [message('recent', 48), message('latest', 60)], head_id: 'latest', next_cursor: 'older' }
+    const state = fromSnapshot(data)
+    expect(state.historyStartTime).toBe(Date.parse(rows[47]!.time))
+    expect(statuses(state).map(row => row.sequence)).toEqual(Array.from({ length: 13 }, (_, index) => index + 48))
+    expect(Object.keys(state.subagentActivity ?? {})).toHaveLength(60)
+    const retained = transcriptGroups(state).flatMap(group => group.blocks).find(block => block.kind === 'subagent-status' && block.activity.sequence === 60)
+
+    addEntry(state, message('earlier-page', 30), true)
+    expect(statuses(state).map(row => row.sequence)).toEqual(Array.from({ length: 31 }, (_, index) => index + 30))
+    const afterPage = transcriptGroups(state).flatMap(group => group.blocks).find(block => block.kind === 'subagent-status' && block.activity.sequence === 60)
+    expect(afterPage).toBe(retained)
+
+    state.historyCursor = undefined
+    expect(statuses(state)).toEqual(rows)
+    expect(state.subagentActivityCursor).toBe('60')
+  })
+
+  it('does not let internal or trace-only records open the main-history activity window', () => {
+    const data = snapshot([activity(1, 'started'), activity(2, 'completed')], '2')
+    data.history = { entries: [
+      { ...message('internal', 1), kind: 'context' },
+      { id: 'run', sequence: 2, version: 2, session_id: 'parent', kind: 'run', time: activity(2, 'started').time, run: { id: 'parent-run', status: 'started' } },
+    ], head_id: 'run', next_cursor: 'unread-message' }
+    data.trace.entries = [message('trace-answer', 1)]
+    const state = fromSnapshot(data)
+    expect(state.historyStartTime).toBeUndefined()
+    expect(statuses(state)).toEqual([])
+    expect(Object.keys(state.subagentActivity ?? {})).toHaveLength(2)
+
+    // The same immutable entry may first arrive in the operational trace. Its
+    // later main-history page still establishes coverage despite the early return.
+    const revision = state.historyRevision
+    addEntry(state, data.trace.entries[0]!, true)
+    expect(state.historyStartTime).toBe(Date.parse(activity(1, 'started').time))
+    expect(state.historyRevision).toBe(revision + 1)
+    expect(statuses(state).map(row => row.sequence)).toEqual([1, 2])
+  })
+
+  it('establishes history coverage from visible reasoning, tool calls and executions', () => {
+    const reasoning: Entry = { ...message('reasoning', 8), message: { role: 'assistant', content: [{ type: 'reasoning', text: 'Reviewing' }] } }
+    const call: Entry = { ...message('call', 6), message: { role: 'assistant', content: [{ type: 'tool_call', tool_call: { id: 'call', name: 'read', arguments: '{}' } }] } }
+    const tool: Entry = { ...message('tool', 4), kind: 'tool_result', message: undefined, tool: { invocation: { execution_id: 'execution', session_id: 'parent', run_id: 'parent-run', turn_id: 'turn', assistant_id: 'call', call: { id: 'call', name: 'read', arguments: '{}' } } } }
+    const context: Entry = { ...message('context', 1), kind: 'context' }
+    expect(historyPageStart([context])).toBeUndefined()
+    expect(historyPageStart([reasoning])).toBe(Date.parse(reasoning.time))
+    expect(historyPageStart([reasoning, call])).toBe(Date.parse(call.time))
+    expect(historyPageStart([reasoning, context, call, tool])).toBe(Date.parse(tool.time))
+    expect(historyPageStart([{ ...message('legacy', 1), time: '' }])).toBe(0)
+  })
+
+  it('withholds only the unreconciled interval and releases records as the gap shrinks', () => {
+    const rows = Array.from({ length: 60 }, (_, index) => activity(index + 1, 'started'))
+    const state = fromSnapshot(snapshot(rows, '60'))
+    const retained = transcriptGroups(state).flatMap(group => group.blocks).find(block => block.kind === 'subagent-status' && block.activity.sequence === 60)
+    state.historyGaps = [{ start: Date.parse(rows[9]!.time), end: Date.parse(rows[49]!.time) }]
+    expect(statuses(state).map(row => row.sequence)).toEqual([...Array.from({ length: 10 }, (_, index) => index + 1), ...Array.from({ length: 11 }, (_, index) => index + 50)])
+    expect(transcriptGroups(state).flatMap(group => group.blocks).find(block => block.kind === 'subagent-status' && block.activity.sequence === 60)).toBe(retained)
+
+    state.historyGaps[0]!.end = Date.parse(rows[29]!.time)
+    expect(statuses(state).map(row => row.sequence)).toEqual([...Array.from({ length: 10 }, (_, index) => index + 1), ...Array.from({ length: 31 }, (_, index) => index + 30)])
+    state.historyGaps = undefined
+    expect(statuses(state)).toEqual(rows)
+    expect(Object.keys(state.subagentActivity ?? {})).toHaveLength(60)
+    expect(transcriptGroups(state).flatMap(group => group.blocks).find(block => block.kind === 'subagent-status' && block.activity.sequence === 60)).toBe(retained)
+    expect(state.subagentActivityCursor).toBe('60')
+  })
+
+  it('retains the loaded coverage and pending gap across replacement snapshots', () => {
+    const data = snapshot([activity(48, 'started')], '48')
+    data.history = { entries: [message('earlier', 30)], head_id: 'earlier', next_cursor: 'older' }
+    const previous = fromSnapshot(data)
+    previous.historyGaps = [{ start: Date.parse(activity(35, 'started').time), end: Date.parse(activity(50, 'started').time) }]
+    const fresh = snapshot([activity(60, 'completed')], '60')
+    fresh.history = { entries: [message('latest', 60)], head_id: 'latest', next_cursor: 'gap' }
+    const next = reconcileSnapshot(previous, fresh)
+    expect(next.historyStartTime).toBe(previous.historyStartTime)
+    expect(next.historyGaps).toEqual(previous.historyGaps)
+    expect(statuses(next).map(row => row.sequence)).toEqual([60])
+
+    fresh.history.entries = [message('oldest', 10)]
+    expect(reconcileSnapshot(next, fresh).historyStartTime).toBe(Date.parse(activity(10, 'started').time))
+  })
+
+  it('preserves legacy activity without a valid source timestamp', () => {
+    const legacy = { ...activity(1, 'started'), time: '' }
+    const data = snapshot([legacy], '1')
+    data.history.next_cursor = 'older'
+    const state = fromSnapshot(data)
+    state.historyGaps = [{ start: 0, end: Infinity }]
+    expect(statuses(state)).toEqual([legacy])
+  })
+
+  it('keeps reconciled activity between independent reconnect gaps visible', () => {
+    const rows = Array.from({ length: 20 }, (_, index) => activity(index + 1, 'started'))
+    const state = fromSnapshot(snapshot(rows, '20'))
+    state.historyGaps = [
+      { start: Date.parse(rows[1]!.time), end: Date.parse(rows[5]!.time) },
+      { start: Date.parse(rows[11]!.time), end: Date.parse(rows[18]!.time) },
+    ]
+    expect(statuses(state).map(row => row.sequence)).toEqual([1, 2, 6, 7, 8, 9, 10, 11, 12, 19, 20])
+    const next = reconcileSnapshot(state, snapshot([rows[19]!], '20'))
+    expect(statuses(next).map(row => row.sequence)).toEqual([1, 2, 6, 7, 8, 9, 10, 11, 12, 19, 20])
+    expect(next.historyGaps).toHaveLength(2)
+    expect(Object.keys(next.subagentActivity ?? {})).toHaveLength(20)
   })
 })

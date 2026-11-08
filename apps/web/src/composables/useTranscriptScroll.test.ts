@@ -16,7 +16,7 @@ afterEach(() => { scope?.stop(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 // Model real layout coordinates separately from native scrolling. This lets the
 // tests deliver wheel/scroll events between a DOM update and its next paint.
-async function transcript(options: { height?: number; hasMore?: boolean; reducedMotion?: boolean; nativeAnchor?: boolean; savedTop?: number } = {}) {
+async function transcript(options: { height?: number; hasMore?: boolean; needsHistory?: boolean; reducedMotion?: boolean; nativeAnchor?: boolean; savedTop?: number; rows?: Array<{ key: string; top: number; height: number }> } = {}) {
   vi.useFakeTimers()
   let top = 0
   let height = options.height ?? 1600
@@ -55,15 +55,19 @@ async function transcript(options: { height?: number; hasMore?: boolean; reduced
     nodes.push(node)
     return node
   }
-  for (let y = 0; y < height; y += 100) add(`message-${y}`, y)
+  if (options.rows) for (const row of options.rows) add(row.key, row.top, row.height)
+  else for (let y = 0; y < height; y += 100) add(`message-${y}`, y)
   vi.stubGlobal('document', { elementFromPoint: (_x: number, y: number) => nodes.find(node => y >= 40 + node.top - top && y < 40 + node.top + node.height - top)?.element })
   let finishLoad: (loaded: boolean) => void = () => {}
-  const loadOlder = vi.fn(() => new Promise<boolean>(resolve => { finishLoad = resolve }))
+  const pendingLoads: Array<(loaded: boolean) => void> = []
+  const loadOlder = vi.fn(() => new Promise<boolean>(resolve => { finishLoad = resolve; pendingLoads.push(resolve) }))
   scope = effectScope()
   const sessionID = ref('chat')
   const saved = options.savedTop === undefined ? undefined : { following: false, top: options.savedTop }
   const savePosition = vi.fn()
-  const scroll = scope.run(() => useTranscriptScroll({ scroller: shallowRef(el), content: shallowRef(el), sessionID, hasMore: ref(options.hasMore ?? true), loadOlder, getPosition: () => saved, savePosition }))!
+  const hasMore = ref(options.hasMore ?? true)
+  const needsHistory = ref(options.needsHistory ?? false)
+  const scroll = scope.run(() => useTranscriptScroll({ scroller: shallowRef(el), content: shallowRef(el), sessionID, hasMore, needsHistory, loadOlder, getPosition: () => saved, savePosition }))!
   function frame() {
     const pending = [...frames.values()]
     frames.clear()
@@ -90,8 +94,116 @@ async function transcript(options: { height?: number; hasMore?: boolean; reduced
   await nextTick()
   frame()
   writes.length = 0
-  return { el, scroll, scrollTo, sessionID, frame, wheel, move, prepend, grow, reflow, writes, nodes, add, loadOlder, savePosition, finishLoad: (loaded = true) => finishLoad(loaded) }
+  return { el, scroll, scrollTo, sessionID, hasMore, needsHistory, frame, wheel, move, prepend, grow, reflow, writes, nodes, add, loadOlder, pendingLoads, savePosition, finishLoad: (loaded = true) => finishLoad(loaded) }
 }
+
+describe('filling the readable history window', () => {
+  const activities = {
+    height: 2050,
+    rows: Array.from({ length: 50 }, (_, index) => ({ key: `activity-${index}`, top: index * 41, height: 41 })),
+  }
+
+  it('loads main history on the first frame even when fifty activity rows fill the screen', async () => {
+    const t = await transcript({ ...activities, needsHistory: true })
+    expect(t.el.scrollTop).toBe(1450)
+    expect(t.loadOlder).toHaveBeenCalledTimes(1)
+  })
+
+  it('continues through empty scanned pages and stops forcing prefetch once the window is readable', async () => {
+    const t = await transcript({ ...activities, needsHistory: true })
+    for (let page = 0; page < 3; page++) {
+      expect(t.loadOlder).toHaveBeenCalledTimes(page + 1)
+      t.finishLoad()
+      await nextTick()
+      await nextTick()
+      t.frame()
+    }
+    expect(t.loadOlder).toHaveBeenCalledTimes(4)
+    expect(t.el.scrollTop).toBe(1450)
+
+    t.needsHistory.value = false
+    t.finishLoad()
+    await nextTick()
+    await nextTick()
+    t.frame()
+    expect(t.hasMore.value).toBe(true)
+    expect(t.loadOlder).toHaveBeenCalledTimes(4)
+  })
+
+  it('starts filling when the history requirement changes without a DOM resize', async () => {
+    const t = await transcript(activities)
+    expect(t.loadOlder).not.toHaveBeenCalled()
+    t.needsHistory.value = true
+    await nextTick()
+    t.frame()
+    expect(t.loadOlder).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains cursor exhaustion and failure guards while forcing the initial scan', async () => {
+    const t = await transcript({ ...activities, hasMore: false, needsHistory: true })
+    expect(t.loadOlder).not.toHaveBeenCalled()
+    t.hasMore.value = true
+    await nextTick()
+    t.frame()
+    expect(t.loadOlder).toHaveBeenCalledTimes(1)
+
+    t.finishLoad(false)
+    await nextTick()
+    await nextTick()
+    t.frame()
+    for (let index = 0; index < 3; index++) { t.grow(1); t.frame() }
+    expect(t.loadOlder).toHaveBeenCalledTimes(1)
+    t.wheel(-20)
+    t.frame()
+    expect(t.loadOlder).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let a previous session failure block or duplicate the current session scan', async () => {
+    const t = await transcript({ ...activities, needsHistory: true })
+    t.sessionID.value = 'next-chat'
+    await nextTick()
+    t.frame()
+    expect(t.loadOlder).toHaveBeenCalledTimes(2)
+
+    t.pendingLoads[0]!(false)
+    await nextTick()
+    await nextTick()
+    t.frame()
+    expect(t.loadOlder).toHaveBeenCalledTimes(2)
+    t.pendingLoads[1]!(true)
+    await nextTick()
+    await nextTick()
+    t.frame()
+    expect(t.loadOlder).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not continue a pending scan after the transcript scope is disposed', async () => {
+    const t = await transcript({ ...activities, needsHistory: true })
+    scope!.stop()
+    t.finishLoad()
+    await nextTick()
+    await nextTick()
+    t.frame()
+    expect(t.loadOlder).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([false, true])('preserves upward reading movement when main history arrives with native anchoring %s', async nativeAnchor => {
+    const t = await transcript({ ...activities, needsHistory: true, savedTop: 400, nativeAnchor })
+    t.wheel(-120)
+    t.move(280)
+    t.frame()
+    t.prepend(3000)
+    t.needsHistory.value = false
+    t.finishLoad()
+    await nextTick()
+    await nextTick()
+    t.frame()
+
+    expect(t.el.scrollTop).toBe(3280)
+    expect(t.loadOlder).toHaveBeenCalledTimes(1)
+    expect(t.savePosition).toHaveBeenLastCalledWith(expect.objectContaining({ following: false, anchor: expect.objectContaining({ key: 'activity-7' }) }))
+  })
+})
 
 describe('transcript history scroll anchoring', () => {
   it('fills a short initial tail without requiring an impossible upward scroll', async () => {
