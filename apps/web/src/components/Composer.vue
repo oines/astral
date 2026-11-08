@@ -79,6 +79,7 @@ function previewAttachment(file: FileRef) {
   } else surface.open({ kind: 'file', id: file.id, sessionID: view.value.id, ref: file })
 }
 async function action(fn: () => Promise<unknown>) {
+  if (view.value.archived) return
   error.value = ''
   try { await fn() } catch (e) { error.value = errorText(e) }
 }
@@ -107,10 +108,12 @@ async function ensureSession() {
   }
 }
 async function changeComputer(id: string) {
+  if (view.value.archived) return
   if (!props.view.id) { homeSelection.value = { ...homeSelection.value, computer_id: id }; return }
   await action(async () => { await request(selectComputer({ path: { id: view.value.id }, body: { computer_id: id } })); if (draft.session) draft.session.computer_id = id })
 }
 async function send(overrideMode?: string) {
+  if (view.value.archived) return
   if (editing.value) {
     const edit = editing.value
     await queueAction(async () => {
@@ -165,6 +168,7 @@ async function upload(event: Event) {
   input.value = ''
 }
 async function uploadFiles(selected: globalThis.File[]) {
+  if (view.value.archived) return
   if (uploading.value || busy.value || editing.value || !view.value.computer_id) return
   uploading.value = true
   error.value = ''
@@ -203,7 +207,7 @@ function keyboard(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey && !event.altKey) { event.preventDefault(); void send(event.metaKey || event.ctrlKey ? 'steer' : undefined) }
 }
 async function queueAction(fn: () => Promise<unknown>) {
-  if (queueBusy.value) return
+  if (view.value.archived || queueBusy.value) return
   queueBusy.value = true
   try { await action(fn) } finally { queueBusy.value = false }
 }
@@ -245,7 +249,7 @@ async function toggleQueue() {
   await action(async () => { await app.preferences({ running_input: next }); mode.value = next })
 }
 async function changeModel(selection: Selection) {
-  if (modelBusy.value) return
+  if (view.value.archived || modelBusy.value) return
   if (!props.view.id) { homeSelection.value = { ...homeSelection.value, ...selection }; return }
   modelBusy.value = true
   try { await action(async () => { await request(selectModel({ path: { id: view.value.id }, body: selection })); if (draft.session) Object.assign(draft.session, selection) }) }
@@ -254,7 +258,10 @@ async function changeModel(selection: Selection) {
 watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value = '' })
 </script>
 <template>
-  <div class="composer-area">
+  <div
+    v-if="!view.archived"
+    class="composer-area"
+  >
     <div
       v-if="view.approvals?.length"
       class="takeover stack"

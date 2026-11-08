@@ -10,6 +10,9 @@ import (
 
 // PurgeSessionDeliveries removes routes after Core and Recall have been erased.
 func (tx *Tx) PurgeSessionDeliveries(ctx context.Context, id string) error {
+	if err := tx.DeleteMaintenance(ctx, "session_archive", id); err != nil {
+		return err
+	}
 	if err := tx.purgeSessionWake(ctx, id); err != nil {
 		return err
 	}

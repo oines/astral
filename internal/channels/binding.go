@@ -81,6 +81,9 @@ func (s *Service) bindExpected(ctx context.Context, conversationID, sessionID st
 		if record.Deletion != nil {
 			return domain.ConversationBinding{}, domain.Conflict("Session is being permanently deleted")
 		}
+		if err := persistence.CheckSessionRunnable(ctx, record, s.Store); err != nil {
+			return domain.ConversationBinding{}, err
+		}
 		stop = append(stop, sessionID)
 	} else {
 		_, selectionErr := s.Harness.FirstAvailableAgentModel(ctx, agent)
@@ -136,10 +139,12 @@ func (s *Service) bindExpected(ctx context.Context, conversationID, sessionID st
 				if record.SubagentParentID != "" {
 					return domain.Forbidden("Subagent Sessions cannot be bound to IM chats")
 				}
+				if err := persistence.CheckSessionRunnable(ctx, record, tx); err != nil {
+					return err
+				}
 			}
 			record.ConversationID, record.BindingID, record.ChannelPlatform = conversationID, binding.ID, connection.Platform
 			record.Title, record.TitleSource = conversation.Title, "conversation"
-			record.Archived = false
 			if err := tx.Save(ctx, "sessions", &record.Meta, &record); err != nil {
 				return err
 			}

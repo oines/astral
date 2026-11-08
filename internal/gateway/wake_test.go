@@ -195,3 +195,47 @@ func TestWakeEndpointDiscoveryAndOwnerSubscription(t *testing.T) {
 	}
 	cancel()
 }
+
+func TestWakeEndpointConfigurationSubscriptionKeepsInitialSnapshotAndConfigEdits(t *testing.T) {
+	f := newScheduleGateway(t)
+	var endpoint domain.WakeEndpoint
+	f.call(t, false, "POST", "/v1/wake-endpoints", wake.CreateInput{Title: "Initial configuration", Notes: "/opt/jobs/listener.py"}, &endpoint, 201)
+	for _, value := range []string{"1", "", "true&configuration_only=false"} {
+		f.call(t, true, "GET", "/api/v1/wake-endpoints/events?configuration_only="+value, nil, nil, 400)
+	}
+	ctx, cancel := context.WithTimeout(f.p.Context, 5*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, "GET", f.ownerURL+"/api/v1/wake-endpoints/events?agent_id="+f.p.Agent.ID+"&configuration_only=true", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Desktop schedule-owner-key")
+	response, err := f.owner.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	scanner := bufio.NewScanner(response.Body)
+	read := func() domain.WakeEndpoint {
+		t.Helper()
+		for scanner.Scan() {
+			if raw, ok := strings.CutPrefix(scanner.Text(), "data: "); ok {
+				var items []domain.WakeEndpoint
+				if err := json.Unmarshal([]byte(raw), &items); err != nil || len(items) != 1 {
+					t.Fatalf("invalid configuration snapshot: %s %v", raw, err)
+				}
+				return items[0]
+			}
+		}
+		t.Fatalf("configuration stream ended: %v", scanner.Err())
+		return domain.WakeEndpoint{}
+	}
+	if initial := read(); initial.ID != endpoint.ID || initial.Notes != endpoint.Notes || !initial.Enabled {
+		t.Fatalf("configuration mode omitted the initial full snapshot: %+v", initial)
+	}
+	notes := "/opt/jobs/new-listener.py"
+	f.call(t, true, "PATCH", "/api/v1/wake-endpoints/"+endpoint.ID, wake.Patch{Revision: endpoint.Revision, Notes: &notes}, &endpoint, 200)
+	if changed := read(); changed.Notes != notes || changed.Revision != endpoint.Revision {
+		t.Fatalf("configuration edit did not update the stream: %+v", changed)
+	}
+}

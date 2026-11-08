@@ -4,7 +4,7 @@ import { request } from './api'
 export type WakeEndpoint = AstralInternalDomainWakeEndpoint
 export type WakePatch = Omit<AstralInternalWakePatch, 'revision'>
 export const wakeAPI = {
-  list: (agentID: string) => request(listWakeEndpoints({ query: { agent_id: agentID } })),
+  list: (agentID?: string) => request(listWakeEndpoints({ query: agentID ? { agent_id: agentID } : undefined })),
   update: (endpoint: WakeEndpoint, input: WakePatch) => request(updateWakeEndpoint({ path: { id: endpoint.id }, body: { revision: endpoint.revision, ...input } })),
   remove: (endpoint: WakeEndpoint) => request(deleteWakeEndpoint({ path: { id: endpoint.id }, query: { revision: endpoint.revision } })),
 }

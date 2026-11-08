@@ -115,6 +115,9 @@ func (t sendMessageTool) Bind(ctx context.Context, inv core.Invocation) (json.Ra
 }
 
 func (t sendMessageTool) Execute(ctx context.Context, inv core.Invocation, _ func(core.ToolProgress)) (core.ToolExecution, error) {
+	if err := t.runtime.requireRunnable(ctx); err != nil {
+		return core.ToolExecution{}, notExecuted("session_archived", err)
+	}
 	var args MessageArgs
 	if err := json.Unmarshal(inv.Call.Arguments, &args); err != nil {
 		return core.ToolExecution{}, err

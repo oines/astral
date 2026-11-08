@@ -28,6 +28,7 @@ const chatIDCommand = computed(() => current.value?.username ? `/chat_id@${curre
 const options = computed(() => conversations.data.value?.filter(c => c.connection_id === props.connectionID && (c.id === props.conversationID || c.id === selectedConversationID.value || !bindings.data.value?.some(b => b.conversation_id === c.id && b.enabled))) ?? [])
 const selectedChat = computed(() => options.value.find(c => c.id === selectedConversationID.value))
 const sessions = computed(() => app.sessions.filter(s => s.agent_id === props.agentID && !s.binding_id && !s.archived))
+const archivedTarget = computed(() => !!sessionID.value && app.sessions.some(session => session.id === sessionID.value && session.archived))
 watch(() => [props.open, props.agentID, props.connectionID] as const, ([value]) => {
   opening++; action.busy.value = false; action.error.value = ''
   if (!value) return
@@ -54,6 +55,7 @@ async function verify() {
   })
 }
 async function save() {
+  if (archivedTarget.value) { action.error.value = t('bindArchivedTarget'); return }
   if (!selectedChat.value || selectedChat.value.connection_id !== props.connectionID || current.value?.agent_id !== props.agentID) return
   const generation = opening; const agentID = props.agentID; const connectionID = props.connectionID
   const conversationID = selectedChat.value.id; const targetSessionID = sessionID.value
@@ -158,6 +160,13 @@ async function save() {
         {{ selectedChat.title }}
       </p>
       <template v-if="selectedConversationID">
+        <p
+          v-if="archivedTarget"
+          class="text-danger small"
+          role="alert"
+        >
+          {{ t('bindArchivedTarget') }}
+        </p>
         <label
           v-if="sessions.length || props.conversationID"
           class="label"
@@ -179,7 +188,7 @@ async function save() {
         </Button><Button
           variant="primary"
           :busy="action.busy.value"
-          :disabled="!selectedChat"
+          :disabled="!selectedChat || archivedTarget"
           @click="save"
         >
           {{ t(props.conversationID ? 'changeSession' : 'addChat') }}

@@ -6,6 +6,7 @@ import { Button, ConfirmPopover, SettingsRow, SettingsSection, Switch, useDelaye
 import { Copy, Pencil, Trash2 } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { useWakeEndpoints } from '../composables/useWakeEndpoints'
+import { useAutomationEditorLink } from '../composables/useAutomationEditorLink'
 import { useClipboard } from '../composables/useClipboard'
 import { errorText, object } from '../lib/api'
 import { formatDateTime } from '../lib/timezone'
@@ -34,25 +35,35 @@ const { copy, copied } = useClipboard()
 const waiting = useDelayedPending(() => action.value)
 const loading = useDelayedPending(() => !feed.ready.value && !feed.error.value)
 const sameBot = computed(() => !editor.value || editor.value.agent_id === app.activeAgentID)
+const archivedSessions = computed(() => new Set(app.sessions.filter(session => session.archived).map(session => session.id)))
 function sessionName(id: string) { return app.sessions.find(session => session.id === id)?.title || t('conversationDeleted') }
 function computerName(id: string) { return app.computers.find(computer => computer.id === id)?.name || id }
 function formatTime(value?: string) { return formatDateTime(value, locale.value, app.displayTimezone, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
-function close() { editor.value = undefined; editorError.value = '' }
-function begin(endpoint: WakeEndpoint) {
-  if (saving.value || action.value) return
-  editor.value = { ...endpoint }
-  Object.assign(draft, { title: endpoint.title, prompt: endpoint.prompt || '', notes: endpoint.notes || '', enabled: endpoint.enabled })
-  editorError.value = ''
+function close() { const id = editor.value?.id; editor.value = undefined; editorError.value = ''; linked.clear(id) }
+function revealEditor() {
   void nextTick(() => {
     editorElement.value?.scrollIntoView({ block: 'start' })
     editorElement.value?.querySelector('input')?.focus({ preventScroll: true })
   })
 }
+function begin(endpoint: WakeEndpoint, fromLink = false) {
+  if (saving.value || action.value) return
+  if (!fromLink && editor.value?.id) linked.clear(editor.value.id)
+  editor.value = { ...endpoint }
+  Object.assign(draft, { title: endpoint.title, prompt: endpoint.prompt || '', notes: endpoint.notes || '', enabled: endpoint.enabled })
+  editorError.value = ''
+  revealEditor()
+}
+const linked = useAutomationEditorLink('event', {
+  items: () => feed.items.value, ready: () => feed.ready.value, busy: () => saving.value || !!action.value,
+  open: endpoint => { if (editor.value?.id === endpoint.id && editor.value.agent_id === endpoint.agent_id) revealEditor(); else begin(endpoint, true) },
+})
 async function save() {
   const current = editor.value
   if (!current || saving.value || !sameBot.value) return
   editorError.value = ''
   if (!draft.title.trim()) { editorError.value = t('wakeRequired'); return }
+  if (draft.enabled && archivedSessions.value.has(current.session_id)) { editorError.value = t('automationArchivedTarget'); return }
   saving.value = true
   try {
     await feed.update(current, { title: draft.title.trim(), prompt: draft.prompt, notes: draft.notes, enabled: draft.enabled })
@@ -64,6 +75,7 @@ async function save() {
 }
 async function toggle(endpoint: WakeEndpoint, enabled: boolean) {
   if (action.value || saving.value) return
+  if (enabled && archivedSessions.value.has(endpoint.session_id)) { actionErrors.value[endpoint.id] = t('automationArchivedTarget'); return }
   action.value = endpoint.id; delete actionErrors.value[endpoint.id]
   try { await feed.update(endpoint, { enabled }) }
   catch (e) { actionErrors.value[endpoint.id] = errorText(e); await feed.refresh().catch(() => undefined) }
@@ -87,6 +99,13 @@ watch(() => app.activeAgentID, () => { deleting.value = '' })
 
 <template>
   <SettingsSection :title="t('wakeEndpoints')">
+    <p
+      v-if="linked.error.value"
+      class="settings-feedback-error text-danger"
+      role="alert"
+    >
+      {{ linked.error.value }}
+    </p>
     <div
       v-if="feed.error.value"
       class="error-box row wrap"
@@ -124,6 +143,7 @@ watch(() => app.activeAgentID, () => { deleting.value = '' })
           {{ sessionName(endpoint.session_id) }}
         </RouterLink>
         <small v-if="!endpoint.enabled">{{ t('wakePaused') }}</small>
+        <small v-if="archivedSessions.has(endpoint.session_id)">{{ t('automationArchivedTarget') }}</small>
         <small v-else-if="wakeBlocked(endpoint, now.getTime())">{{ t('wakeBlocked', { time: formatTime(endpoint.blocked_until) }) }}</small>
         <small v-if="endpoint.last_received_at">{{ t('wakeLast', { time: formatTime(endpoint.last_received_at) }) }}</small>
         <small
@@ -146,7 +166,7 @@ watch(() => app.activeAgentID, () => { deleting.value = '' })
         <Switch
           :model-value="endpoint.enabled"
           :label="`${t(endpoint.enabled ? 'wakePause' : 'wakeResume')} · ${endpoint.title}`"
-          :disabled="!!action || saving"
+          :disabled="!!action || saving || (!endpoint.enabled && archivedSessions.has(endpoint.session_id))"
           @update:model-value="toggle(endpoint, $event)"
         />
         <Button
@@ -229,11 +249,14 @@ watch(() => app.activeAgentID, () => { deleting.value = '' })
         />
         <small class="muted">{{ t('wakeNotesHint') }}</small>
       </div>
-      <SettingsRow :label="t('scheduleEnabled')">
+      <SettingsRow
+        :label="t('scheduleEnabled')"
+        :description="archivedSessions.has(editor.session_id) ? t('automationArchivedTarget') : undefined"
+      >
         <Switch
           v-model="draft.enabled"
           :label="t('scheduleEnabled')"
-          :disabled="saving || !sameBot"
+          :disabled="saving || !sameBot || (archivedSessions.has(editor.session_id) && !draft.enabled)"
         />
       </SettingsRow>
       <SettingsRow :label="t('wakeURL')">

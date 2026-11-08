@@ -68,6 +68,22 @@ beforeEach(async () => {
   await router.push('/')
 })
 describe('continuing a frozen request with an unavailable live model', () => {
+  it('hides execution controls for an archived session while keeping the unsent draft', async () => {
+    fixture.app.drafts.session = { text: 'Keep this draft', files: [] }
+    const html = await renderToString(createSSRApp(Composer, { view: { ...view(true), archived: true }, live: true }))
+    expect(html).not.toContain('composer-send')
+    expect(html).not.toContain('textarea')
+    expect(fixture.app.drafts.session).toMatchObject({ text: 'Keep this draft' })
+    expect(fixture.continueSession).not.toHaveBeenCalled()
+  })
+  it('rejects a stale send callback when the session becomes archived', async () => {
+    const current = reactive(view(true))
+    await renderToString(createSSRApp(Composer, { view: current, live: true }))
+    current.archived = true
+    await fixture.send!()
+    expect(fixture.continueSession).not.toHaveBeenCalled()
+    expect(fixture.submitInput).not.toHaveBeenCalled()
+  })
   it('keeps Continue enabled and submits it without starting a new input', async () => {
     const html = await renderToString(createSSRApp(Composer, { view: view(true), live: true }))
     const button = html.match(/<button[^>]*class="composer-send"[^>]*>/)?.[0]

@@ -285,6 +285,21 @@ func (s *Service) Handle(ctx context.Context, request computers.GatewayRequest) 
 	if err := s.Harness.Hub.Validate(ctx, request.Binding); err != nil {
 		return computers.GatewayResponse{}, err
 	}
+	var source domain.Session
+	if err := s.Harness.Store.Get(ctx, "sessions", request.Binding.SessionID, &source); err != nil {
+		return computers.GatewayResponse{}, err
+	}
+	if source.AgentID != request.Binding.AgentID {
+		return computers.GatewayResponse{}, domain.Forbidden("command Session belongs to another Bot")
+	}
+	if err := persistence.CheckSessionRunnable(ctx, source, s.Harness.Store); err != nil {
+		// Keep this a normal HTTP conflict. The authenticated command must not
+		// mutate another target while its own Session is being sealed.
+		w := &responseWriter{header: http.Header{}}
+		r, _ := http.NewRequestWithContext(ctx, http.MethodPost, "/v1/", nil)
+		httpcontract.Failure(w, r, err)
+		return computers.GatewayResponse{Status: w.code, Headers: w.header, Body: w.body.Bytes()}, nil
+	}
 	ctx = persistence.WithSessionScope(ctx, request.Binding.AgentID, request.Binding.SessionID)
 	path, err := url.ParseRequestURI(request.Path)
 	if err != nil || path.RawQuery != "" || path.Host != "" || !strings.HasPrefix(path.Path, "/v1/") {

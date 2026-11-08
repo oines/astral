@@ -57,14 +57,24 @@ func (s *Service) View(ctx context.Context, id string) (View, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	snapshot, err := r.snapshotAfterInterruptedTools(ctx)
+	var record domain.Session
+	if err := s.Store.Get(ctx, "sessions", id, &record); err != nil {
+		return View{}, err
+	}
+	var snapshot sessions.SessionSnapshot
+	if record.Archived {
+		snapshot, err = r.snapshot()
+	} else {
+		snapshot, err = r.snapshotAfterInterruptedTools(ctx)
+	}
 	if err != nil {
 		return View{}, err
 	}
 	view := View{Status: "idle", CanContinue: snapshot.CanContinue, Pending: []PendingInput{}, Approvals: snapshot.Approvals, Unresolved: snapshot.Unresolved}
 	view.EventSequence = snapshot.EventSequence
-	if err = s.Store.Get(ctx, "sessions", id, &view.Session); err != nil {
-		return view, err
+	view.Session = record
+	if view.Archived {
+		view.CanContinue = false
 	}
 	view.Selection = r.core.Load().Configuration().Selection
 	view.ProfileID, view.Reasoning = view.Selection.ID, view.Selection.Reasoning

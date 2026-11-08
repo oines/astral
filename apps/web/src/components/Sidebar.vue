@@ -2,16 +2,17 @@
 import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Plus, Search, Settings2, FolderOpen, Pin, Clock3, Lock, Check, ChevronDown } from '@astral/icons'
+import { Plus, Search, Settings2, Pin, Clock3, Lock, Check, ChevronDown } from '@astral/icons'
 import { Button, Modal, Menu, MenuItem, MenuItemIndicator, MenuRadioGroup, MenuRadioItem } from '@astral/ui'
 import { useAppStore } from '../stores/app'
 import { errorText } from '../lib/api'
 import type { Session } from '../lib/types'
 import ChannelIcon from './ChannelIcon.vue'
 import SessionMenu from './SessionMenu.vue'
+import SessionAutomations from './SessionAutomations.vue'
 import { useSessionTitles } from '../composables/useSessionTitles'
-import { sidebarGroups, visibleSidebarSessions } from '../lib/sidebar-groups'
-import { hasScheduledSession } from '../lib/schedules'
+import { indexSessionAutomations, sidebarGroups, visibleSidebarSessions } from '../lib/sidebar-groups'
+import { activeSessionTreeIDs } from '../lib/session-tree-activity'
 const app = useAppStore()
 const { titles, typing } = useSessionTitles(() => app.data ? app.sessions : undefined)
 const route = useRoute()
@@ -19,16 +20,17 @@ const router = useRouter()
 const { t } = useI18n()
 const search = ref('')
 const agentMenuOpen = ref(false)
-const filtered = computed(() => visibleSidebarSessions(app.sessions, app.schedules, isActive, String(route.params.id || '')).filter(s => s.agent_id === app.activeAgentID && s.title.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => b.updated_at.localeCompare(a.updated_at)))
+const filtered = computed(() => visibleSidebarSessions(app.sessions).filter(s => s.agent_id === app.activeAgentID && s.title.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => b.updated_at.localeCompare(a.updated_at)))
 const rename = ref(false)
 const renameTarget = ref<Session>()
 const title = ref('')
 const renameError = ref('')
 const pendingID = ref('')
 const actionError = ref('')
-function isActive(session: Session) { return ['running', 'stopping', 'compacting'].includes(app.statuses[session.id]?.status ?? '') }
-const groups = computed(() => sidebarGroups(filtered.value, app.schedules, isActive))
-const planned = computed(() => new Set(app.schedules.filter(hasScheduledSession).map(schedule => schedule.session_id)))
+const activeTrees = computed(() => activeSessionTreeIDs(app.sessions, app.statuses))
+function isActive(session: Session) { return activeTrees.value.has(session.id) }
+const automations = computed(() => indexSessionAutomations(app.schedules, app.wakeEndpoints))
+const groups = computed(() => sidebarGroups(filtered.value, automations.value, isActive))
 function agentName(id: string) { return app.agents.find(a => a.id === id)?.name || t('missing') }
 function navigate() { if (window.innerWidth < 760) app.sidebar = false }
 function manageBot() { agentMenuOpen.value = false; navigate() }
@@ -156,7 +158,8 @@ async function presentation(session: Session, patch: { title?: string; pinned?: 
           v-for="s in group.items"
           :key="s.id"
           class="session-row"
-          :class="{ selected: route.params.id === s.id }"
+          :class="{ selected: route.params.id === s.id, 'has-automations': automations.has(s.id) }"
+          :style="automations.has(s.id) ? { '--session-automation-width': automations.get(s.id)!.timed.length && automations.get(s.id)!.events.length ? '44px' : '24px' } : undefined"
         >
           <RouterLink
             :to="`/sessions/${s.id}`"
@@ -183,18 +186,22 @@ async function presentation(session: Session, patch: { title?: string; pinned?: 
               <title>{{ t('privateSession') }}</title>
             </Lock>
             <span
-              v-if="app.statuses[s.id]?.status === 'running'"
+              v-if="isActive(s)"
               class="running-dot"
               :aria-label="t('running')"
-            /><FolderOpen v-else-if="s.archived" /><Clock3
-              v-else-if="planned.has(s.id)"
-              :aria-label="t('planned')"
-            /><Pin v-else-if="s.pinned" />
+            /><Pin v-else-if="s.pinned && !automations.has(s.id)" />
           </RouterLink>
+          <SessionAutomations
+            v-if="automations.has(s.id)"
+            :items="automations.get(s.id)!"
+          />
           <SessionMenu
             :session="s"
             :busy="!!pendingID"
+            :running="isActive(s)"
+            :automations="automations.get(s.id)"
             @rename="beginRename(s)"
+            @navigate="navigate"
             @presentation="presentation(s, $event)"
           />
         </div>

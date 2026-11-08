@@ -5686,6 +5686,10 @@ export type WakeEndpointEventsData = {
     path?: never;
     query?: {
         agent_id?: string;
+        /**
+         * Send the initial full snapshot and subsequent configuration changes only; omit to include receiving and limit status updates.
+         */
+        configuration_only?: boolean;
     };
     url: '/api/v1/wake-endpoints/events';
 };

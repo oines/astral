@@ -12,6 +12,7 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/messages"
+	"github.com/oines/astral/internal/persistence"
 )
 
 type InputRequest struct {
@@ -32,13 +33,16 @@ func (s *Service) UpdatePending(ctx context.Context, id, inputID string, edit Pe
 	if edit.Mode != "" && edit.Mode != "steer" && edit.Mode != "follow_up" {
 		return domain.Invalid("input mode must be steer or follow_up")
 	}
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var message *core.Message
+	if err := r.requireRunnable(ctx); err != nil {
+		return err
+	}
 	if edit.Text != nil {
 		receipt, err := r.core.Load().LookupInput(ctx, inputID)
 		if err != nil {
@@ -75,12 +79,15 @@ func (s *Service) UpdatePending(ctx context.Context, id, inputID string, edit Pe
 }
 
 func (s *Service) RemovePending(ctx context.Context, id, inputID string) error {
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.requireRunnable(ctx); err != nil {
+		return err
+	}
 	if err = r.core.Load().ClearQueuedInput(ctx, inputID); err != nil {
 		return err
 	}
@@ -89,12 +96,15 @@ func (s *Service) RemovePending(ctx context.Context, id, inputID string) error {
 }
 
 func (s *Service) MovePending(ctx context.Context, id, inputID, beforeID string) error {
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.requireRunnable(ctx); err != nil {
+		return err
+	}
 	if err = r.core.Load().MoveQueuedInput(ctx, inputID, beforeID); err != nil {
 		return err
 	}
@@ -144,12 +154,16 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (re
 	if input.Mode != "steer" && input.Mode != "follow_up" {
 		return InputReceipt{}, domain.Invalid("input mode must be steer or follow_up")
 	}
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return InputReceipt{}, err
 	}
 	r.mu.Lock()
 	resume := false
+	if err := r.requireRunnable(ctx); err != nil {
+		r.mu.Unlock()
+		return InputReceipt{}, err
+	}
 	defer func() {
 		r.mu.Unlock()
 		if err == nil && resume {
@@ -195,12 +209,15 @@ func (s *Service) Deliver(ctx context.Context, id string, observation core.Messa
 	if target.SubagentParentID != "" {
 		return InputReceipt{}, domain.Forbidden("new IM context is only delivered to user-facing root Sessions")
 	}
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return InputReceipt{}, err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.requireRunnable(ctx); err != nil {
+		return InputReceipt{}, err
+	}
 	if len(bindingID) > 0 {
 		var session domain.Session
 		if err = s.Store.Get(ctx, "sessions", id, &session); err != nil {
@@ -302,7 +319,7 @@ type IMWakeup struct {
 // rather than reconstructing the same history for every recovered message.
 // A busy observation ends the batch so the caller can retain its scan position.
 func (s *Service) WakeObservations(ctx context.Context, id string, inputs []IMWakeup, bindingID string) ([]IMWakeStatus, error) {
-	r, err := s.open(ctx, id)
+	r, err := s.openRunnable(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -310,6 +327,9 @@ func (s *Service) WakeObservations(ctx context.Context, id string, inputs []IMWa
 	defer r.mu.Unlock()
 	var record domain.Session
 	if err = s.Store.Get(ctx, "sessions", id, &record); err != nil {
+		return nil, err
+	}
+	if err := persistence.CheckSessionRunnable(ctx, record, s.Store); err != nil {
 		return nil, err
 	}
 	if record.BindingID != bindingID {
@@ -372,6 +392,9 @@ func (r *runtime) accept(ctx context.Context, input core.Input, kind core.InputK
 	if record.Deletion != nil {
 		return InputReceipt{}, domain.Missing("Session", r.id)
 	}
+	if err := persistence.CheckSessionRunnable(ctx, record, r.service.Store); err != nil {
+		return InputReceipt{}, err
+	}
 	if err := r.service.agentAvailable(ctx, record.AgentID); err != nil {
 		return InputReceipt{}, err
 	}
@@ -419,6 +442,9 @@ func (s *Service) Receipt(ctx context.Context, sessionID, inputID string) (Input
 // ResumeContext re-admits an already durable item to resume Core's passive
 // maintenance after Host recovery. It neither reconstructs media nor drives a turn.
 func (s *Service) ResumeContext(ctx context.Context, id string) error {
+	if err := s.requireRunnable(ctx, id); err != nil {
+		return err
+	}
 	if _, err := s.storedSession(ctx, id); err != nil {
 		return err
 	}
@@ -427,6 +453,9 @@ func (s *Service) ResumeContext(ctx context.Context, id string) error {
 		return err
 	}
 	return s.WithSession(ctx, id, func(session *core.Session) error {
+		if err := s.requireRunnable(ctx, id); err != nil {
+			return err
+		}
 		if session.State().PendingInputs[core.InputContext] == 0 {
 			return nil
 		}

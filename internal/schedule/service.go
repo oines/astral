@@ -211,6 +211,9 @@ func (s *Service) Create(ctx context.Context, agentID string, input Input) (doma
 		if err := planTarget(ctx, tx, plan.Schedule); err != nil {
 			return err
 		}
+		if err := runnableTarget(ctx, tx, plan.SessionMode, plan.SessionID); err != nil {
+			return err
+		}
 		if err := authorizePlan(ctx, tx, plan.Schedule); err != nil {
 			return err
 		}
@@ -256,6 +259,11 @@ func (s *Service) Update(ctx context.Context, agentID, id string, input Input, r
 		}
 		if err := target(ctx, tx, plan.AgentID, input.SessionMode, input.SessionID); err != nil {
 			return err
+		}
+		if input.Enabled {
+			if err := runnableTarget(ctx, tx, input.SessionMode, input.SessionID); err != nil {
+				return err
+			}
 		}
 		if plan.Enabled != input.Enabled || plan.SessionMode != input.SessionMode || plan.SessionID != input.SessionID || !reflect.DeepEqual(plan.Timing, input.Timing) || (input.Timing.Kind == "cron" && plan.CalculatedTimezone != location.String()) {
 			plan.NextRunAt, err = next(input, s.now().UTC(), location)
@@ -746,6 +754,17 @@ func (s *Service) dispatch(ctx context.Context, id string, now time.Time) error 
 		if !plan.Enabled || plan.NextRunAt == nil || plan.NextRunAt.After(now) {
 			return nil
 		}
+		if err := runnableTarget(ctx, tx, plan.SessionMode, plan.SessionID); err != nil {
+			var conflict *domain.Error
+			if errors.As(err, &conflict) && conflict.Status == 409 {
+				plan.Enabled, plan.NextRunAt, plan.Pending = false, nil, nil
+				changed = true
+				return tx.Save(ctx, Kind, &plan.Meta, &plan)
+			}
+			if !domain.IsMissing(err) {
+				return err
+			}
+		}
 		if err := planTarget(ctx, tx, plan.Schedule); err != nil {
 			if !domain.IsMissing(err) && !errors.Is(err, errSubagentSchedule) {
 				return err
@@ -819,8 +838,16 @@ func (s *Service) dispatch(ctx context.Context, id string, now time.Time) error 
 	}
 	lastSessionID := plan.LastSessionID
 	err = s.store.Update(ctx, func(tx *persistence.Tx) error {
+		// Omitted pending_delivery/next_run_at fields must clear the stale
+		// snapshot retained by this callback, rather than surviving Unmarshal.
+		plan = record{}
 		if err := tx.Get(ctx, Kind, id, &plan); err != nil {
 			return err
+		}
+		// Archive can clear a claim while admission is in flight. A late
+		// callback must not replace that pause with a delivered/failed result.
+		if plan.Pending == nil {
+			return nil
 		}
 		plan.Pending, plan.LastStatus, plan.LastError = nil, "delivered", ""
 		plan.LastSessionID = lastSessionID

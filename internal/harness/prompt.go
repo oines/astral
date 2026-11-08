@@ -161,6 +161,9 @@ func (m sessionModel) Stream(ctx context.Context, request core.Request, emit fun
 }
 
 func (m sessionModel) stream(ctx context.Context, request core.Request, emit func(core.ModelEvent), invoke func(context.Context, func(core.ModelEvent)) (core.Reply, error)) (core.Reply, error) {
+	if err := m.runtime.requireRunnable(ctx); err != nil {
+		return core.Reply{}, err
+	}
 	if _, host := hostPromptMetadata(request.SystemPrompt); m.runtime.subagent != nil && host {
 		// Preparation can temporarily refuse SelectModel. Once this request is
 		// frozen, apply the saved selection for its successor before sending it.

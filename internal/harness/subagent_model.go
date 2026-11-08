@@ -26,6 +26,12 @@ func (s *Service) selectDirectSubagentModel(ctx context.Context, parent, id stri
 		return err
 	}
 	defer s.subagentMu.Unlock()
+	if err := s.requireRunnable(ctx, parent); err != nil {
+		return err
+	}
+	if err := s.requireRunnable(ctx, id); err != nil {
+		return err
+	}
 	if _, err := s.Models.ResolveSelection(ctx, selection); err != nil {
 		return err
 	}
@@ -78,6 +84,9 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 		return err
 	}
 	defer s.subagentMu.Unlock()
+	if err := s.requireRunnable(ctx, id); err != nil {
+		return err
+	}
 	if _, err := s.Models.ResolveSelection(ctx, selection); err != nil {
 		return err
 	}
@@ -241,6 +250,14 @@ func (s *Service) reconcileSubagentModelChangesLocked(ctx context.Context) error
 			return err
 		}
 		if err == nil && root.Deletion == nil {
+			if gateErr := persistence.CheckSessionRunnable(ctx, root, s.Store); persistence.IsSessionArchived(gateErr) {
+				if err := s.Store.DeleteMaintenance(ctx, subagentModelChangeKind, change.RootID); err != nil {
+					return err
+				}
+				continue
+			} else if gateErr != nil {
+				return gateErr
+			}
 			configuration, readErr := core.ReadConfiguration(ctx, s.CoreStore, root.ID)
 			if readErr != nil && !errors.Is(readErr, core.ErrNotFound) {
 				return readErr

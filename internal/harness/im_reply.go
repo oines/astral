@@ -9,6 +9,7 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/messages"
+	"github.com/oines/astral/internal/persistence"
 )
 
 const imReplyWatchKind = "im_reply_watch"
@@ -78,6 +79,12 @@ func (r *runtime) watchIMReply(ctx context.Context, inputID string, observation 
 }
 
 func (s *Service) reconcileIMReply(ctx context.Context, record domain.Session) error {
+	if err := s.requireRunnable(ctx, record.ID); err != nil {
+		if persistence.IsSessionArchived(err) || domain.IsMissing(err) {
+			return s.Store.DeleteMaintenance(ctx, imReplyWatchKind, record.ID)
+		}
+		return err
+	}
 	var watch imReplyWatch
 	if err := s.Store.Maintenance(ctx, imReplyWatchKind, record.ID, &watch); domain.IsMissing(err) {
 		return nil
@@ -95,6 +102,12 @@ func (s *Service) reconcileIMReply(ctx context.Context, record domain.Session) e
 		return errIMReplyAdmissionBusy
 	}
 	defer r.mu.Unlock()
+	if err := r.requireRunnable(ctx); err != nil {
+		if persistence.IsSessionArchived(err) || domain.IsMissing(err) {
+			return nil
+		}
+		return err
+	}
 	// Admission may have replaced the watch while this worker was opening.
 	if err = s.Store.Maintenance(ctx, imReplyWatchKind, record.ID, &watch); domain.IsMissing(err) {
 		return nil

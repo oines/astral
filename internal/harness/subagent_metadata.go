@@ -8,10 +8,11 @@ import (
 // Keep only admission metadata. Shared instructions and tool declarations are
 // never loaded from a child's settings; the initial task stays in its document.
 type subagentMetadata struct {
-	revision    int64
-	started     bool
-	selection   json.RawMessage
-	fingerprint string
+	revision            int64
+	started             bool
+	selection           json.RawMessage
+	fingerprint         string
+	archiveStoppedRunID string
 }
 
 func (s *Service) childMetadata(ctx context.Context, id string) (subagentMetadata, error) {
@@ -34,6 +35,7 @@ func (s *Service) childMetadata(ctx context.Context, id string) (subagentMetadat
 		return subagentMetadata{}, err
 	}
 	cached = subagentMetadata{revision: settings.Revision, started: settings.Started, selection: selection, fingerprint: digest(settings.Configuration.Selection)}
+	cached.archiveStoppedRunID = settings.ArchiveStoppedRunID
 	s.mu.Lock()
 	if s.childSettings == nil {
 		s.childSettings = map[string]subagentMetadata{}

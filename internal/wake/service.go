@@ -75,7 +75,7 @@ type Service struct {
 	retry       map[string]time.Time
 	generation  uint64
 	computerURL func(string) string
-	subscribers map[chan struct{}]struct{}
+	subscribers map[chan struct{}]bool
 	wake        chan struct{}
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -88,7 +88,7 @@ type Service struct {
 }
 
 func New(store *persistence.Store, deliver Deliver, changed func()) *Service {
-	return &Service{store: store, deliver: deliver, changed: changed, cache: map[string]domain.WakeEndpoint{}, states: map[string]endpointState{}, flows: map[string]*flow{}, dirty: map[string]struct{}{}, retry: map[string]time.Time{}, generation: uint64(time.Now().UnixNano()), subscribers: map[chan struct{}]struct{}{}, wake: make(chan struct{}, 1), now: time.Now}
+	return &Service{store: store, deliver: deliver, changed: changed, cache: map[string]domain.WakeEndpoint{}, states: map[string]endpointState{}, flows: map[string]*flow{}, dirty: map[string]struct{}{}, retry: map[string]time.Time{}, generation: uint64(time.Now().UnixNano()), subscribers: map[chan struct{}]bool{}, wake: make(chan struct{}, 1), now: time.Now}
 }
 func (s *Service) SetComputerURLResolver(resolve func(string) string) {
 	s.mu.Lock()
@@ -113,8 +113,14 @@ func (s *Service) WakeSession(id string) {
 	}
 }
 func (s *Service) broadcast() {
+	s.broadcastSubscribers(false)
+}
+func (s *Service) broadcastSubscribers(configuration bool) {
 	s.mu.Lock()
-	for c := range s.subscribers {
+	for c, configurationOnly := range s.subscribers {
+		if configurationOnly && !configuration {
+			continue
+		}
 		select {
 		case c <- struct{}{}:
 		default:
@@ -124,15 +130,24 @@ func (s *Service) broadcast() {
 }
 
 func (s *Service) configurationChanged() {
-	s.broadcast()
+	s.broadcastSubscribers(true)
 	if s.changed != nil {
 		s.changed()
 	}
 }
 func (s *Service) Subscribe() (chan struct{}, func()) {
+	return s.subscribe(false)
+}
+
+// SubscribeConfiguration omits receiving/limit status updates, so a persistent
+// endpoint directory does not reload full prompt/notes snapshots for each batch.
+func (s *Service) SubscribeConfiguration() (chan struct{}, func()) {
+	return s.subscribe(true)
+}
+func (s *Service) subscribe(configurationOnly bool) (chan struct{}, func()) {
 	ch := make(chan struct{}, 1)
 	s.mu.Lock()
-	s.subscribers[ch] = struct{}{}
+	s.subscribers[ch] = configurationOnly
 	s.mu.Unlock()
 	var once sync.Once
 	return ch, func() { once.Do(func() { s.mu.Lock(); delete(s.subscribers, ch); s.mu.Unlock() }) }
@@ -249,6 +264,9 @@ func (s *Service) Create(ctx context.Context, agentID string, input CreateInput)
 		if err := target(ctx, tx, agentID, e.SessionID); err != nil {
 			return err
 		}
+		if err := runnableTarget(ctx, tx, agentID, e.SessionID); err != nil {
+			return err
+		}
 		var a domain.Agent
 		if err := tx.Get(ctx, "agents", agentID, &a); err != nil {
 			return err
@@ -359,6 +377,11 @@ func (s *Service) Update(ctx context.Context, agentID, id string, p Patch) (doma
 			e.Notes = *p.Notes
 		}
 		if p.Enabled != nil {
+			if *p.Enabled {
+				if err := runnableTarget(ctx, tx, e.AgentID, e.SessionID); err != nil {
+					return err
+				}
+			}
 			e.Enabled = *p.Enabled
 		}
 		if err := validate(e); err != nil {
@@ -419,6 +442,9 @@ func (s *Service) checkLocked(ctx context.Context, computerID, id string) (domai
 	}
 	if e.ComputerID != computerID {
 		return e, domain.Forbidden("this endpoint belongs to another Computer")
+	}
+	if err := runnableTarget(ctx, s.store, e.AgentID, e.SessionID); err != nil {
+		return e, err
 	}
 	if !e.Enabled {
 		return e, domain.Conflict("event endpoint is paused")
@@ -568,6 +594,9 @@ func (s *Service) Accept(ctx context.Context, computerID, id string, event Event
 			return err
 		}
 		if err := target(ctx, tx, e.AgentID, e.SessionID); err != nil {
+			return err
+		}
+		if err := runnableTarget(ctx, tx, e.AgentID, e.SessionID); err != nil {
 			return err
 		}
 		var a domain.Agent
@@ -733,7 +762,7 @@ func (s *Service) worker() {
 				s.dirty[id] = struct{}{}
 			}
 			s.mu.Unlock()
-			s.broadcast()
+			s.broadcastSubscribers(true)
 		}
 		delay := s.cycle(s.ctx)
 		if !timer.Stop() {
@@ -800,8 +829,17 @@ func (s *Service) dispatch(ctx context.Context, id string) {
 		next.Bytes = 0
 		next.Due = time.Time{}
 		next.Flood = false
-		if err := s.store.SaveMaintenance(ctx, flowKind, id, "pending", next); err != nil {
-			s.retry[id] = s.now().Add(time.Second)
+		if err := s.store.Update(ctx, func(tx *persistence.Tx) error {
+			if err := activeFlow(ctx, tx, f); err != nil {
+				return err
+			}
+			return tx.SaveMaintenance(ctx, flowKind, id, "pending", next)
+		}); err != nil {
+			if errors.Is(err, errInactiveFlow) {
+				s.discardFlowLocked(id)
+			} else {
+				s.retry[id] = s.now().Add(time.Second)
+			}
 			s.mu.Unlock()
 			return
 		}
@@ -871,6 +909,9 @@ func (s *Service) dispatch(ctx context.Context, id string) {
 			statusUpdates[event.EndpointID] = status
 		}
 		saveErr := s.store.Update(ctx, func(tx *persistence.Tx) error {
+			if err := activeFlow(ctx, tx, f); err != nil {
+				return err
+			}
 			if err := tx.SaveMaintenance(ctx, flowKind, id, state, next); err != nil {
 				return err
 			}
@@ -898,6 +939,8 @@ func (s *Service) dispatch(ctx context.Context, id string) {
 				delete(s.retry, id)
 				delete(s.dirty, id)
 			}
+		} else if errors.Is(saveErr, errInactiveFlow) {
+			s.discardFlowLocked(id)
 		} else {
 			s.retry[id] = s.now().Add(time.Second)
 		}

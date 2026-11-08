@@ -226,6 +226,10 @@ func (s *Service) removeDeletedRuntime(id string) {
 	if s.WakeEndpoints != nil {
 		s.WakeEndpoints.ForgetSession(id)
 	}
+	s.removeRuntime(id)
+}
+
+func (s *Service) removeRuntime(id string) {
 	s.mu.Lock()
 	delete(s.runtimes, id)
 	delete(s.headTimes, id)
@@ -236,6 +240,9 @@ func (s *Service) removeDeletedRuntime(id string) {
 
 // ResumeSessionDeletions runs before serving requests or starting IM workers.
 func (s *Service) ResumeSessionDeletions(ctx context.Context) error {
+	if err := s.ResumeSessionArchives(ctx); err != nil {
+		return err
+	}
 	agents, err := s.Store.List(ctx, "agents")
 	if err != nil {
 		return err

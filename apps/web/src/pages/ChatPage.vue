@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { compactSession, forkSession } from '@astral/sdk'
 import { Button, Modal, useDelayedPending } from '@astral/ui'
-import { ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, AstralLogo } from '@astral/icons'
+import { ArrowRight, Download, PanelLeftClose, PanelLeftOpen, PanelRightOpen, AstralLogo } from '@astral/icons'
 import { useAppStore } from '../stores/app'
 import { useSurfaceStore } from '../stores/surface'
 import { useSession } from '../composables/useSession'
@@ -13,6 +13,7 @@ import type { SessionState } from '../lib/session-state'
 import type { TranscriptPosition } from '../lib/transcript-position'
 import { errorText, newMeta, request } from '../lib/api'
 import { randomID } from '../lib/browser'
+import { sessionWithMetadata } from '../lib/session-presentation'
 import Sidebar from '../components/Sidebar.vue'
 import Composer from '../components/Composer.vue'
 import Transcript from '../components/Transcript.vue'
@@ -28,11 +29,17 @@ const id = ref(typeof route.params.id === 'string' ? route.params.id : '')
 watch(() => route.path, path => { if (!path.startsWith('/settings')) id.value = typeof route.params.id === 'string' ? route.params.id : '' })
 const live = useSession(id)
 function rememberPosition(state: SessionState, position: TranscriptPosition) { state.scrollPosition = position }
-const view = computed(() => live.state.value.view)
+const view = computed(() => {
+  const current = live.state.value.view
+  const catalog = app.sessions.find(session => session.id === id.value)
+  return current && catalog ? sessionWithMetadata(catalog as SessionView, current) : current
+})
 const readonly = computed(() => !!view.value?.subagent_parent_id)
+const archived = computed(() => !!view.value?.archived)
 const showChatLoading = useDelayedPending(() => id.value && !view.value && !live.error.value ? id.value : '')
 const error = ref('')
 const busy = ref(false)
+const restoring = ref(false)
 const activeAgent = computed(() => app.agents.find(agent => agent.id === app.activeAgentID))
 const initialModel = computed(() => {
   const agent = activeAgent.value
@@ -75,11 +82,20 @@ async function fork(entryID: string) {
   } catch (e) { error.value = errorText(e) }
 }
 async function doCompact() {
+  if (archived.value || readonly.value) return
   busy.value = true
   try { await request(compactSession({ path: { id: id.value }, body: { instructions: instructions.value } })); compact.value = false }
   catch (e) { error.value = errorText(e) }
   finally { busy.value = false }
 }
+async function restore() {
+  if (!view.value || restoring.value) return
+  restoring.value = true; error.value = ''
+  try { await app.presentation(view.value.id, { archived: false }) }
+  catch (e) { error.value = errorText(e) }
+  finally { restoring.value = false }
+}
+watch(archived, value => { if (value) compact.value = false })
 function shortcut(e: KeyboardEvent) {
   if (route.path.startsWith('/settings') || e.defaultPrevented) return
   if (e.key === 'Escape' && app.sidebar && window.innerWidth < 760) { e.preventDefault(); app.sidebar = false }
@@ -203,12 +219,33 @@ watch(id, value => { surface.setSession(value); error.value = '' }, { immediate:
             @position="rememberPosition"
           />
           <Composer
-            v-if="!readonly"
+            v-if="!readonly && !archived"
             :key="id"
             :view="view"
             :live="live.connection.value === 'connected'"
             @compact="compact = true"
           />
+          <div
+            v-else-if="archived && !readonly"
+            class="archived-session-notice"
+          >
+            <p class="muted">
+              {{ t('archiveReadOnly') }}
+            </p>
+            <div class="row">
+              <a
+                :href="`/api/v1/sessions/${id}/rollout`"
+                class="button button-ghost button-small"
+              ><Download />{{ t('export') }}</a>
+              <Button
+                size="small"
+                :busy="restoring"
+                @click="restore"
+              >
+                {{ t('restoreSession') }}
+              </Button>
+            </div>
+          </div>
         </template>
         <div
           v-else-if="route.path !== '/schedules' && app.deletedSessions.has(id)"

@@ -12,6 +12,8 @@ import (
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral-core/models"
 	"github.com/oines/astral-core/models/provider/openai/completions"
+	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/persistence"
 )
 
 type hostExecutionProbe struct {
@@ -132,8 +134,28 @@ func TestSessionExecutionRetainsSubagentTreeGuardAndSummaryBypass(t *testing.T) 
 			return core.Reply{}, nil
 		}), nil
 	}}
-	s := &Service{}
-	r := &runtime{service: s, subagent: &subagentSettings{}}
+	store, err := persistence.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	// Execution now checks the current Host lifecycle even for an auxiliary
+	// request. Keep this lock-boundary test small, but use real persisted parent
+	// and child identities instead of an identity-free runtime with no Store.
+	for _, record := range []domain.Session{
+		{Meta: domain.Meta{ID: "execution-parent"}, AgentID: "execution-bot"},
+		{Meta: domain.Meta{ID: "execution-child"}, AgentID: "execution-bot", SubagentParentID: "execution-parent"},
+	} {
+		if err := store.Save(context.Background(), "sessions", &record.Meta, &record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Service{Store: store}
+	r := &runtime{service: s, id: "execution-child", agentID: "execution-bot", subagent: &subagentSettings{}}
 	wrapped := sessionModel{Model: probe, runtime: r}
 	s.subagentMu.Lock()
 	defer s.subagentMu.Unlock()

@@ -614,7 +614,7 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 		r.mu.Lock()
 		var session domain.Session
 		readErr := s.Store.Get(s.ctx, "sessions", r.id, &session)
-		if readErr != nil || session.Deletion != nil || r.core.Load() != observed {
+		if readErr != nil || session.Deletion != nil || session.Archived || r.core.Load() != observed {
 			r.mu.Unlock()
 			return
 		}
@@ -687,7 +687,7 @@ func (s *Service) finishModelFallbackIfCompleted(ctx context.Context, r *runtime
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var session domain.Session
-	if err := s.Store.Get(ctx, "sessions", r.id, &session); err != nil || session.Deletion != nil || r.core.Load() != observed {
+	if err := s.Store.Get(ctx, "sessions", r.id, &session); err != nil || session.Deletion != nil || session.Archived || r.core.Load() != observed {
 		return true
 	}
 	s.modelFallbackMu.Lock()
@@ -936,6 +936,15 @@ func modelFallbackCandidates(preferred core.ModelSelection, agent domain.Agent) 
 }
 
 func (s *Service) reconcileModelFallback(ctx context.Context, id string) error {
+	if err := s.requireRunnable(ctx, id); err != nil {
+		if persistence.IsSessionArchived(err) {
+			return s.cancelModelFallback(ctx, id)
+		}
+		if domain.IsMissing(err) {
+			return s.Store.DeleteMaintenance(ctx, modelFallbackKind, id)
+		}
+		return err
+	}
 	// Scheduler/terminal notifications are hints and can arrive after a probe
 	// was postponed. Recheck the durable deadline before opening a cold Core
 	// Session; a future waiting detector needs no execution/history window.
@@ -954,6 +963,13 @@ func (s *Service) reconcileModelFallback(ctx context.Context, id string) error {
 		return err
 	}
 	r.mu.Lock()
+	if err := r.requireRunnable(ctx); err != nil {
+		r.mu.Unlock()
+		if persistence.IsSessionArchived(err) || domain.IsMissing(err) {
+			return nil
+		}
+		return err
+	}
 	s.modelFallbackMu.Lock()
 	var state modelFallbackState
 	if err = s.Store.Maintenance(ctx, modelFallbackKind, id, &state); err != nil || !fallbackArmed(state) {
@@ -1122,6 +1138,9 @@ func (s *Service) reconcileModelFallback(ctx context.Context, id string) error {
 // r.mu serializes this boundary with Stop and manual model changes. The intent
 // was saved first, so a crash after selection or Continue can be reconciled.
 func (s *Service) resumeModelFallbackLocked(ctx context.Context, r *runtime, intent modelFallbackState) error {
+	if err := r.requireRunnable(ctx); err != nil {
+		return err
+	}
 	if err := r.core.Load().SelectModel(ctx, intent.Active); err != nil {
 		return err
 	}

@@ -71,6 +71,9 @@ func (r *runtime) hostTools() []core.Tool {
 			Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1},"domains":{"type":"array","items":{"type":"string"},"description":"Restrict to these domain names (no scheme or path)."},"recency":{"type":"integer","minimum":1,"description":"Restrict to the past N days."},"limit":{"type":"integer","minimum":1,"description":"Requested result count, passed directly to the provider."}},"required":["query"],"additionalProperties":false}`)},
 			Run: func(ctx context.Context, inv core.Invocation, _ func(core.ToolProgress)) (core.ToolExecution, error) {
 				var args search.Request
+				if err := r.requireRunnable(ctx); err != nil {
+					return core.ToolExecution{}, notExecuted("session_archived", err)
+				}
 				if err := json.Unmarshal(inv.Call.Arguments, &args); err != nil {
 					return core.ToolExecution{}, notExecuted("invalid_search", err)
 				}
@@ -97,6 +100,9 @@ func (t hostTool) Definition() core.ToolDefinition {
 }
 func (t hostTool) Bind(ctx context.Context, inv core.Invocation) (json.RawMessage, error) {
 	r := t.runtime
+	if err := r.requireRunnable(ctx); err != nil {
+		return nil, notExecuted("session_archived", err)
+	}
 	if inv.SessionID != r.id {
 		return nil, notExecuted("session_mismatch", domain.Forbidden("tool belongs to another Session"))
 	}
@@ -165,6 +171,9 @@ func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(co
 	}()
 	r := t.runtime
 	original := inv
+	if err := r.requireRunnable(ctx); err != nil {
+		return core.ToolExecution{}, notExecuted("session_archived", err)
+	}
 	var handle processHandle
 	var err error
 	if t.Definition().Name == "write_stdin" {
@@ -296,6 +305,9 @@ func (b *trackedBackend) FileSystem(ctx context.Context, inv core.Invocation) (s
 	return b.backend.FileSystem(ctx, inv)
 }
 func (b *trackedBackend) StartProcess(ctx context.Context, inv core.Invocation, request standardtools.ProcessRequest) (standardtools.Process, error) {
+	if err := b.runtime.requireRunnable(ctx); err != nil {
+		return nil, err
+	}
 	process, err := b.backend.StartProcess(ctx, inv, request)
 	if err != nil {
 		return nil, err
