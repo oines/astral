@@ -1170,6 +1170,26 @@ export type AstralInternalDomainTextQuote = {
     text: string;
 };
 
+export type AstralInternalDomainWakeEndpoint = {
+    agent_id: string;
+    blocked_until?: string;
+    computer_id: string;
+    created_at: string;
+    enabled: boolean;
+    id: string;
+    last_error?: string;
+    last_received_at?: string;
+    last_status?: string;
+    notes?: string;
+    prompt?: string;
+    revision: number;
+    session_id: string;
+    source_session_id: string;
+    title: string;
+    trigger_url?: string;
+    updated_at: string;
+};
+
 export type AstralInternalGatewayAvailableModel = {
     context_window: number;
     default_reasoning: AstralCoreReasoningOptions;
@@ -2176,6 +2196,36 @@ export type AstralInternalTimezoneView = {
     name: string;
     system: string;
     using_system: boolean;
+};
+
+export type AstralInternalWakeCreateInput = {
+    enabled?: boolean;
+    notes?: string;
+    prompt?: string;
+    session_id?: string;
+    title: string;
+};
+
+export type AstralInternalWakeEvent = {
+    data?: unknown;
+    event_id: string;
+    text?: string;
+};
+
+export type AstralInternalWakePatch = {
+    enabled?: boolean;
+    notes?: string;
+    prompt?: string;
+    revision: number;
+    title?: string;
+};
+
+export type AstralInternalWakeReceipt = {
+    event_id: string;
+    receipt_id: string;
+    session_id: string;
+    status: string;
+    truncated: boolean;
 };
 
 export type ListAgentsData = {
@@ -5601,6 +5651,146 @@ export type CheckServerUpdateResponses = {
 
 export type CheckServerUpdateResponse = CheckServerUpdateResponses[keyof CheckServerUpdateResponses];
 
+export type ListWakeEndpointsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Omit to list endpoints for all Bots.
+         */
+        agent_id?: string;
+    };
+    url: '/api/v1/wake-endpoints';
+};
+
+export type ListWakeEndpointsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ListWakeEndpointsError = ListWakeEndpointsErrors[keyof ListWakeEndpointsErrors];
+
+export type ListWakeEndpointsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalDomainWakeEndpoint>;
+};
+
+export type ListWakeEndpointsResponse = ListWakeEndpointsResponses[keyof ListWakeEndpointsResponses];
+
+export type WakeEndpointEventsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        agent_id?: string;
+    };
+    url: '/api/v1/wake-endpoints/events';
+};
+
+export type WakeEndpointEventsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type WakeEndpointEventsError = WakeEndpointEventsErrors[keyof WakeEndpointEventsErrors];
+
+export type WakeEndpointEventsResponses = {
+    /**
+     * OK
+     */
+    200: string;
+};
+
+export type WakeEndpointEventsResponse = WakeEndpointEventsResponses[keyof WakeEndpointEventsResponses];
+
+export type DeleteWakeEndpointData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/api/v1/wake-endpoints/{id}';
+};
+
+export type DeleteWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type DeleteWakeEndpointError = DeleteWakeEndpointErrors[keyof DeleteWakeEndpointErrors];
+
+export type DeleteWakeEndpointResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type DeleteWakeEndpointResponse = DeleteWakeEndpointResponses[keyof DeleteWakeEndpointResponses];
+
+export type GetWakeEndpointData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/wake-endpoints/{id}';
+};
+
+export type GetWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type GetWakeEndpointError = GetWakeEndpointErrors[keyof GetWakeEndpointErrors];
+
+export type GetWakeEndpointResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainWakeEndpoint;
+};
+
+export type GetWakeEndpointResponse = GetWakeEndpointResponses[keyof GetWakeEndpointResponses];
+
+export type UpdateWakeEndpointData = {
+    body: AstralInternalWakePatch;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/wake-endpoints/{id}';
+};
+
+export type UpdateWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type UpdateWakeEndpointError = UpdateWakeEndpointErrors[keyof UpdateWakeEndpointErrors];
+
+export type UpdateWakeEndpointResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainWakeEndpoint;
+};
+
+export type UpdateWakeEndpointResponse = UpdateWakeEndpointResponses[keyof UpdateWakeEndpointResponses];
+
 export type PollWeixinLoginData = {
     body: AstralInternalChannelsWeixinLoginPoll;
     path: {
@@ -5802,6 +5992,33 @@ export type AuthStatusResponses = {
 };
 
 export type AuthStatusResponse = AuthStatusResponses[keyof AuthStatusResponses];
+
+export type TriggerWakeEndpointData = {
+    body: AstralInternalWakeEvent;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/hooks/{id}';
+};
+
+export type TriggerWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type TriggerWakeEndpointError = TriggerWakeEndpointErrors[keyof TriggerWakeEndpointErrors];
+
+export type TriggerWakeEndpointResponses = {
+    /**
+     * Accepted
+     */
+    202: AstralInternalWakeReceipt;
+};
+
+export type TriggerWakeEndpointResponse = TriggerWakeEndpointResponses[keyof TriggerWakeEndpointResponses];
 
 export type AgentAccountsData = {
     body?: never;
@@ -7309,3 +7526,136 @@ export type AgentRolloutResponses = {
 };
 
 export type AgentRolloutResponse = AgentRolloutResponses[keyof AgentRolloutResponses];
+
+export type AgentWakeEndpointsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/wake-endpoints';
+};
+
+export type AgentWakeEndpointsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentWakeEndpointsError = AgentWakeEndpointsErrors[keyof AgentWakeEndpointsErrors];
+
+export type AgentWakeEndpointsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalDomainWakeEndpoint>;
+};
+
+export type AgentWakeEndpointsResponse = AgentWakeEndpointsResponses[keyof AgentWakeEndpointsResponses];
+
+export type AgentCreateWakeEndpointData = {
+    body: AstralInternalWakeCreateInput;
+    path?: never;
+    query?: never;
+    url: '/v1/wake-endpoints';
+};
+
+export type AgentCreateWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentCreateWakeEndpointError = AgentCreateWakeEndpointErrors[keyof AgentCreateWakeEndpointErrors];
+
+export type AgentCreateWakeEndpointResponses = {
+    /**
+     * Created
+     */
+    201: AstralInternalDomainWakeEndpoint;
+};
+
+export type AgentCreateWakeEndpointResponse = AgentCreateWakeEndpointResponses[keyof AgentCreateWakeEndpointResponses];
+
+export type AgentDeleteWakeEndpointData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/v1/wake-endpoints/{id}';
+};
+
+export type AgentDeleteWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentDeleteWakeEndpointError = AgentDeleteWakeEndpointErrors[keyof AgentDeleteWakeEndpointErrors];
+
+export type AgentDeleteWakeEndpointResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type AgentDeleteWakeEndpointResponse = AgentDeleteWakeEndpointResponses[keyof AgentDeleteWakeEndpointResponses];
+
+export type AgentWakeEndpointData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/wake-endpoints/{id}';
+};
+
+export type AgentWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentWakeEndpointError = AgentWakeEndpointErrors[keyof AgentWakeEndpointErrors];
+
+export type AgentWakeEndpointResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainWakeEndpoint;
+};
+
+export type AgentWakeEndpointResponse = AgentWakeEndpointResponses[keyof AgentWakeEndpointResponses];
+
+export type AgentUpdateWakeEndpointData = {
+    body: AstralInternalWakePatch;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/wake-endpoints/{id}';
+};
+
+export type AgentUpdateWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentUpdateWakeEndpointError = AgentUpdateWakeEndpointErrors[keyof AgentUpdateWakeEndpointErrors];
+
+export type AgentUpdateWakeEndpointResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainWakeEndpoint;
+};
+
+export type AgentUpdateWakeEndpointResponse = AgentUpdateWakeEndpointResponses[keyof AgentUpdateWakeEndpointResponses];

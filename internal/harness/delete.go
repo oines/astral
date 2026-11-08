@@ -179,6 +179,12 @@ func (s *Service) deleteOneSession(ctx context.Context, id string, revision int6
 }
 
 func (s *Service) closeDeletedRuntime(ctx context.Context, id string) error {
+	// The durable deletion intent has already committed. Drop volatile event
+	// delivery ownership before joining callbacks; stale workers must not
+	// recreate maintenance rows after permanent delivery cleanup.
+	if s.WakeEndpoints != nil {
+		s.WakeEndpoints.ForgetSession(id)
+	}
 	if err := s.cancelModelFallback(ctx, id); err != nil {
 		return err
 	}
@@ -217,6 +223,9 @@ func (s *Service) closeDeletedRuntime(ctx context.Context, id string) error {
 }
 
 func (s *Service) removeDeletedRuntime(id string) {
+	if s.WakeEndpoints != nil {
+		s.WakeEndpoints.ForgetSession(id)
+	}
 	s.mu.Lock()
 	delete(s.runtimes, id)
 	delete(s.headTimes, id)

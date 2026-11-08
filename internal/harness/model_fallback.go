@@ -107,6 +107,7 @@ func (s *Service) saveModelFallback(ctx context.Context, state modelFallbackStat
 	// Fallback state changes concern this Session only. A coarse Store watch
 	// would rescan every settled child whenever an unrelated root takes a turn.
 	s.wakeSubagents(state.SessionID)
+	s.wakeExternal(state.SessionID)
 	s.queueModelFallback(modelFallbackScheduleUpdate{state: fallbackScheduleState(state)})
 	return nil
 }
@@ -585,6 +586,7 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 						continue
 					}
 					s.wakeModelFallback(r.id)
+					s.wakeExternal(r.id)
 					select {
 					case terminal <- event:
 					default:
@@ -608,6 +610,7 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 		// The model can report failure before Core leaves Running. Every terminal
 		// Run, including validation/tool failures, supplies the later safe boundary.
 		s.wakeModelFallback(r.id)
+		s.wakeExternal(r.id)
 		r.mu.Lock()
 		var session domain.Session
 		readErr := s.Store.Get(s.ctx, "sessions", r.id, &session)
@@ -933,6 +936,16 @@ func modelFallbackCandidates(preferred core.ModelSelection, agent domain.Agent) 
 }
 
 func (s *Service) reconcileModelFallback(ctx context.Context, id string) error {
+	// Scheduler/terminal notifications are hints and can arrive after a probe
+	// was postponed. Recheck the durable deadline before opening a cold Core
+	// Session; a future waiting detector needs no execution/history window.
+	var pending modelFallbackState
+	if err := s.Store.Maintenance(ctx, modelFallbackKind, id, &pending); err == nil && pending.Phase == "waiting" && pending.NextProbeAt.After(time.Now()) {
+		var agent domain.Agent
+		if err := s.Store.Get(ctx, "agents", pending.AgentID, &agent); err == nil && agent.ModelAutoRestore && !agent.Deletion {
+			return nil
+		}
+	}
 	r, err := s.open(ctx, id)
 	if err != nil {
 		if domain.IsMissing(err) {

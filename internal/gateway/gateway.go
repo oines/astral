@@ -94,6 +94,7 @@ type DownloadRequest struct {
 func New(h *harness.Service, c *channels.Service) *Service {
 	s := &Service{Harness: h, Channels: c, Contract: httpcontract.New(), mux: http.NewServeMux()}
 	s.scheduleRoutes()
+	s.wakeRoutes()
 	s.modelRoutes()
 	s.rolloutRoutes()
 	s.computerFileRoutes()

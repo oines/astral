@@ -202,6 +202,31 @@ async function asset(file) {
   return { name: path.basename(file), size: (await stat(file)).size, sha256: await digest(file) }
 }
 
+export async function signDmgWithTimestamp(target, configuration, { run = command, pause = delay, log = console.log, attempts = 3 } = {}) {
+  if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 3) throw new Error('DMG signing requires one to three bounded attempts.')
+  const args = ['--force', '--sign', configuration.identity, '--keychain', configuration.keychain, '--timestamp', target]
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await run('/usr/bin/codesign', args)
+      break
+    } catch (error) {
+      // Retry only the timestamp service failures observed before notarization.
+      // Identity, keychain, certificate and signature errors still fail at once.
+      const diagnostic = `${error?.stderr || ''}\n${error?.stdout || ''}`
+      if (attempt === attempts || !/A timestamp was expected but was not found|The timestamp service is not available\./i.test(diagnostic)) throw error
+      log(`Secure timestamp unavailable for ${path.basename(target)}; retrying DMG signing (${attempt + 1}/${attempts}).`)
+      await pause(2000 * attempt)
+    }
+  }
+  await run('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', target])
+  const signature = await run('/usr/bin/codesign', ['--display', '--verbose=4', target])
+  const fields = `${signature.stdout}\n${signature.stderr}`.split('\n')
+  if (!fields.includes(`Authority=${configuration.identity}`) || !fields.includes(`TeamIdentifier=${configuration.team}`) ||
+      !fields.some(line => /^Timestamp=.+/.test(line) && !/^Timestamp=(none|unavailable)$/i.test(line))) {
+    throw new Error('The DMG does not carry the intended timestamped Developer ID signature.')
+  }
+}
+
 async function writeReport(name, value) {
   await mkdir(reportDirectory, { recursive: true })
   await writeFile(path.join(reportDirectory, `${name}.json`), `${JSON.stringify(value, null, 2)}\n`)
@@ -247,11 +272,7 @@ async function notarizeApp(app, arch) {
     const dmg = path.join(releaseDirectory, `Astral-${version}-mac-${arch}.dmg`)
     // --prepackaged preserves the signed App and its embedded CLI hashes.
     await command('pnpm', ['--filter', '@astral/desktop', 'exec', 'electron-builder', '--config', 'electron-builder.release.cjs', '--prepackaged', app, '--mac', 'dmg', `--${arch}`, '--publish', 'never'], { timeout: 600_000 })
-    await command('/usr/bin/codesign', ['--force', '--sign', configuration.identity, '--keychain', configuration.keychain, '--timestamp', dmg])
-    await command('/usr/bin/codesign', ['--verify', '--strict', '--verbose=2', dmg])
-    const dmgSignature = await command('/usr/bin/codesign', ['--display', '--verbose=4', dmg])
-    const dmgFields = `${dmgSignature.stdout}\n${dmgSignature.stderr}`.split('\n')
-    if (!dmgFields.includes(`Authority=${configuration.identity}`) || !dmgFields.includes(`TeamIdentifier=${configuration.team}`) || !dmgFields.some(line => /^Timestamp=.+/.test(line))) throw new Error('The DMG does not carry the intended timestamped Developer ID signature.')
+    await signDmgWithTimestamp(dmg, configuration)
     const dmgSubmission = { kind: 'dmg', arch, ...await submit(dmg, configuration) }
     const notarized = dmgSubmission.status === 'Accepted'
     if (notarized) {

@@ -26,6 +26,7 @@ import (
 )
 
 type GatewayHandler func(context.Context, GatewayRequest) (GatewayResponse, error)
+type WakeHandler func(context.Context, string, WakeRequest) (GatewayResponse, error)
 
 type connection struct {
 	peer      *transport.Peer
@@ -41,6 +42,7 @@ type Hub struct {
 	updates            daemonUpdates
 	Store              *persistence.Store
 	Gateway            GatewayHandler
+	Wake               WakeHandler
 	ContainerURL       func(*http.Request, string) string
 	identity           *securetransport.Identity
 	pending            chan struct{}
@@ -163,6 +165,9 @@ func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest
 }
 
 func validateHello(hello Hello) error {
+	if hello.LocalAPIURL != "" && !validLocalAPIURL(hello.LocalAPIURL) {
+		return domain.Invalid("daemon reported an invalid local API address")
+	}
 	if hello.BootID == "" || len(hello.BootID) > 100 || hello.Hostname == "" || len(hello.Hostname) > 250 ||
 		(hello.OS != "darwin" && hello.OS != "linux" && hello.OS != "windows") || !absoluteTargetPath(hello.OS, hello.Home) || !absoluteTargetPath(hello.OS, hello.Shell) {
 		return domain.Invalid("daemon reported an unsupported or incomplete environment")
@@ -381,6 +386,27 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 	ready := make(chan struct{})
 	active.peer = transport.New(conn, func(ctx context.Context, request transport.Request, out *transport.Responder) error {
 		<-ready
+		if request.Method == "wake" && h.Wake != nil {
+			h.mu.RLock()
+			current := h.live[id] == active
+			h.mu.RUnlock()
+			if !current {
+				return domain.Offline("the original computer connection is unavailable")
+			}
+			var call WakeRequest
+			if json.Unmarshal(request.Params, &call) != nil || call.EndpointID == "" || len(call.Body) > localWakeBodyLimit {
+				return domain.Invalid("invalid wake request")
+			}
+			result, err := h.Wake(ctx, id, call)
+			if err != nil {
+				return err
+			}
+			if err := out.Headers(result); err != nil {
+				return err
+			}
+			_, err = out.Write(result.Body)
+			return err
+		}
 		if request.Method != "gateway" || h.Gateway == nil {
 			return domain.Missing("daemon method", request.Method)
 		}

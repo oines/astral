@@ -4,10 +4,10 @@ import { useNow } from '@vueuse/core'
 import { useClipboard } from '../composables/useClipboard'
 import { useI18n } from 'vue-i18n'
 import { Button, Popover, useDelayedPending } from '@astral/ui'
-import { ArrowDown, Check, Clock3, Copy, Ellipsis, File, GitBranch } from '@astral/icons'
+import { ArrowDown, Check, Clock3, Copy, Ellipsis, File, GitBranch, Zap } from '@astral/icons'
 import type { Content, Entry, FileRef } from '../lib/types'
 import { errorText, fileURL, imageURL, object } from '../lib/api'
-import { durableTranscriptGroups, liveTranscriptGroups, messageText, scheduledMessage, type SessionState, type TranscriptGroup } from '../lib/session-state'
+import { durableTranscriptGroups, externalMessage, liveTranscriptGroups, messageText, scheduledMessage, type SessionState, type TranscriptGroup } from '../lib/session-state'
 import { useSurfaceStore } from '../stores/surface'
 import Markdown from './Markdown.vue'
 import ActivityLine from './ActivityLine.vue'
@@ -90,6 +90,7 @@ function imageDimensions(image: Content) {
   return { width: width > 0 ? width : undefined, height: height > 0 ? height : undefined }
 }
 function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMessage(entry)?.deliveredAt, now.value) }
+function externalTime(entry: Entry) { return formatTimestamp.value(externalMessage(entry)?.deliveredAt, now.value) }
 </script>
 <template>
   <div class="transcript-viewport">
@@ -184,6 +185,18 @@ function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMes
                 :datetime="scheduledTime(entry)?.dateTime"
                 :title="scheduledTime(entry)?.full"
               >{{ scheduledTime(entry)?.label }}</time>
+            </div>
+            <div
+              v-else-if="externalMessage(entry)"
+              class="message-sender scheduled-message-source"
+            >
+              <Zap aria-hidden="true" />
+              <span>{{ t('wakeTask') }}<template v-if="externalMessage(entry)?.title"> · {{ externalMessage(entry)?.title }}</template><template v-if="externalMessage(entry)?.computers.length"> · {{ externalMessage(entry)?.computers.join('、') }}</template></span>
+              <time
+                v-if="externalTime(entry)"
+                :datetime="externalTime(entry)?.dateTime"
+                :title="externalTime(entry)?.full"
+              >{{ externalTime(entry)?.label }}</time>
             </div>
             <div
               v-else-if="sender(entry)"

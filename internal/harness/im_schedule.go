@@ -73,6 +73,10 @@ func (s *Service) ReleaseIMRecovery(id string) {
 }
 
 func (i *IMInspector) Handled(ctx context.Context, inputID string) (bool, error) {
+	return i.handled(ctx, inputID, false)
+}
+
+func (i *IMInspector) handled(ctx context.Context, inputID string, external bool) (bool, error) {
 	receipt, err := i.session.LookupInput(ctx, inputID)
 	if err != nil {
 		return false, err
@@ -80,9 +84,14 @@ func (i *IMInspector) Handled(ctx context.Context, inputID string) (bool, error)
 	if receipt.Kind != core.InputContext || receipt.State == core.InputCleared {
 		return true, nil
 	}
-	stopped, err := IMInputStopped(ctx, i.session, i.store, inputID)
-	if err != nil || stopped {
-		return stopped, err
+	// External delivery has its own durable Stop generation. Core cancellation
+	// also happens on Server shutdown, so it cannot distinguish an Owner stop
+	// from a restart that still owes this external batch a model handoff.
+	if !external {
+		stopped, err := IMInputStopped(ctx, i.session, i.store, inputID)
+		if err != nil || stopped {
+			return stopped, err
+		}
 	}
 	if receipt.State != core.InputApplied || receipt.EntryID == "" {
 		return false, nil
@@ -114,7 +123,7 @@ func (i *IMInspector) Handled(ctx context.Context, inputID string) (bool, error)
 				}
 				i.audits[attempt.ID] = audit
 			}
-			if audit.events[metadata.ConversationID+"\x00"+metadata.EventID] || source.Entry.Sequence <= audit.through {
+			if audit.events[observedEventKey(metadata)] || source.Entry.Sequence <= audit.through {
 				return true, nil
 			}
 		}
@@ -134,8 +143,8 @@ func (i *IMInspector) readAttempt(ctx context.Context, attempt core.ModelAttempt
 	var summaryView *core.Context
 	for _, message := range request.Messages {
 		var metadata messages.Metadata
-		if message.ContextKind == "im.observation" && json.Unmarshal(message.Metadata, &metadata) == nil && metadata.Source == "im" {
-			audit.events[metadata.ConversationID+"\x00"+metadata.EventID] = true
+		if json.Unmarshal(message.Metadata, &metadata) == nil && (message.ContextKind == "im.observation" && metadata.Source == "im" || message.ContextKind == "external.events" && metadata.Source == "external") {
+			audit.events[observedEventKey(metadata)] = true
 		}
 		if message.ContextKind != "summary" {
 			continue
@@ -165,6 +174,13 @@ func (i *IMInspector) readAttempt(ctx context.Context, attempt core.ModelAttempt
 		}
 	}
 	return audit, nil
+}
+
+func observedEventKey(metadata messages.Metadata) string {
+	if metadata.Source == "external" {
+		return "\x00external\x00" + metadata.EventID
+	}
+	return metadata.ConversationID + "\x00" + metadata.EventID
 }
 
 // IMInputStopped compares existing operational entry order, not wall-clock time.

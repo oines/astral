@@ -10,6 +10,9 @@ import (
 
 // PurgeSessionDeliveries removes routes after Core and Recall have been erased.
 func (tx *Tx) PurgeSessionDeliveries(ctx context.Context, id string) error {
+	if err := tx.purgeSessionWake(ctx, id); err != nil {
+		return err
+	}
 	if _, err := tx.exec(ctx, "DELETE FROM operations WHERE kind IN ('im_inbox_pause','im_inbox_resume','im_direct_handoff') AND json_extract(data,'$.session_id')=?", id); err != nil {
 		return err
 	}

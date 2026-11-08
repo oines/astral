@@ -139,7 +139,7 @@ func TestStickerDeliveryUsesImagesWithoutSavingOriginalFiles(t *testing.T) {
 				t.Fatal("sticker reception automatically registered files")
 			}
 			if err := filepath.WalkDir(p.Daemons[0].Root, func(path string, entry os.DirEntry, err error) error {
-				if err == nil && !entry.IsDir() && entry.Name() != "identity.json" {
+				if err == nil && !entry.IsDir() && entry.Name() != "identity.json" && entry.Name() != "local-api.json" {
 					t.Errorf("sticker reception wrote a Computer file: %s", path)
 				}
 				return err

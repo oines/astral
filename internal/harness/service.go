@@ -22,6 +22,7 @@ import (
 	"github.com/oines/astral/internal/schedule"
 	"github.com/oines/astral/internal/search"
 	"github.com/oines/astral/internal/timezone"
+	"github.com/oines/astral/internal/wake"
 )
 
 type Service struct {
@@ -33,8 +34,10 @@ type Service struct {
 	Search                  *search.Service
 	Recall                  *recall.Service
 	Schedules               *schedule.Service
+	WakeEndpoints           *wake.Service
 	Timezone                *timezone.Service
 	RuntimeID               string
+	wakeStartedAt           time.Time
 	IM                      Messenger
 	StorageChanged          func()
 	ctx                     context.Context
@@ -65,29 +68,31 @@ type Service struct {
 }
 
 type runtime struct {
-	service          *Service
-	id               string
-	agentID          string
-	prefixRootID     string
-	ready            chan struct{}
-	openErr          error
-	mu               sync.Mutex
-	core             atomic.Pointer[core.Session]
-	snapshotMu       sync.RWMutex
-	corePhase        runtimeCorePhase
-	retired          bool
-	tools            *standardtools.Set
-	environmentMu    sync.Mutex
-	processMu        sync.Mutex
-	processes        map[string]standardtools.Process
-	usageHead        string
-	messageTool      core.ToolDefinition
-	compactionPrompt string
-	contextUsage     *ContextUsage
-	titleCancel      context.CancelFunc
-	titleDone        chan struct{}
-	subagent         *subagentSettings
-	imInspector      *IMInspector
+	service           *Service
+	id                string
+	agentID           string
+	prefixRootID      string
+	ready             chan struct{}
+	openErr           error
+	mu                sync.Mutex
+	core              atomic.Pointer[core.Session]
+	snapshotMu        sync.RWMutex
+	corePhase         runtimeCorePhase
+	retired           bool
+	tools             *standardtools.Set
+	environmentMu     sync.Mutex
+	processMu         sync.Mutex
+	processes         map[string]standardtools.Process
+	usageHead         string
+	messageTool       core.ToolDefinition
+	compactionPrompt  string
+	contextUsage      *ContextUsage
+	titleCancel       context.CancelFunc
+	titleDone         chan struct{}
+	subagent          *subagentSettings
+	imInspector       *IMInspector
+	externalInspector *IMInspector
+	externalBatchID   string
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
@@ -95,11 +100,13 @@ func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bri
 	s := &Service{Store: store, CoreStore: coreStore, Models: models, Hub: hub,
 		Files: &filestream.Service{Store: store, Hub: hub}, Search: &search.Service{Store: store},
 		Recall:    recall.New(store, coreStore),
-		RuntimeID: domain.ID("server"), ctx: ctx, cancel: cancel, runtimes: map[string]*runtime{}, changes: make(chan string, 256), subagentWake: make(chan struct{}, 1),
+		RuntimeID: domain.ID("server"), wakeStartedAt: time.Now(), ctx: ctx, cancel: cancel, runtimes: map[string]*runtime{}, changes: make(chan string, 256), subagentWake: make(chan struct{}, 1),
 		modelFallbackProbes:  map[string]modelFallbackProbe{},
 		modelFallbackUpdates: map[string]modelFallbackScheduleUpdate{}, modelFallbackWake: make(chan struct{}, 1)}
 	s.Timezone = timezone.New(store)
 	s.Schedules = schedule.New(store, s.deliverSchedule, s.scheduleAccepted, func() { s.notify("") }, s.Timezone)
+	s.WakeEndpoints = wake.New(store, s.deliverWake, func() { s.notify("") })
+	s.WakeEndpoints.SetComputerURLResolver(hub.ComputerEventURL)
 	s.subagentWorkers.Add(1)
 	go s.subagentWorker()
 	s.startModelFallbackWorker()
@@ -111,6 +118,7 @@ func (s *Service) notify(id string) {
 	// Host operations notify after Core releases its Run/maintenance state.
 	// Store commit notifications alone can precede that final idle boundary.
 	s.wakeSubagents(id)
+	s.wakeExternal(id)
 	select {
 	case s.changes <- id:
 	default:
@@ -485,6 +493,9 @@ func (s *Service) Close(ctx context.Context) error {
 	}
 	s.sessionChanges.close()
 	var errs []error
+	if s.WakeEndpoints != nil {
+		errs = append(errs, s.WakeEndpoints.Close(ctx))
+	}
 	if s.Schedules != nil {
 		errs = append(errs, s.Schedules.Close(ctx))
 	}

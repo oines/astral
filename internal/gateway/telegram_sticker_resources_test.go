@@ -249,7 +249,7 @@ func TestTelegramStickerResourceQueriesAndStreamsHaveNoReceptionSideEffects(t *t
 	}
 	f.assertNoReceptionSideEffects(t, 0)
 	if err := filepath.WalkDir(f.p.Daemons[0].Root, func(path string, entry os.DirEntry, err error) error {
-		if err == nil && !entry.IsDir() && entry.Name() != "identity.json" {
+		if err == nil && !entry.IsDir() && entry.Name() != "identity.json" && entry.Name() != "local-api.json" {
 			t.Errorf("resource read automatically saved a Computer file: %s", path)
 		}
 		return err

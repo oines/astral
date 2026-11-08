@@ -1,0 +1,26 @@
+export const wakeEn = {
+  scheduleTimedTasks: 'Timed tasks', wakeEndpoints: 'Event wake-ups', wakeTask: 'Event wake-up',
+  wakeEmpty: 'No event endpoints yet.', wakeEmptyHint: 'Ask the Bot to connect an external program. Endpoints it creates appear here.',
+  wakeEdit: 'Manage endpoint', wakeTitle: 'Endpoint name', wakePrompt: 'Instructions (optional)', wakeTarget: 'Target conversation',
+  wakeNotes: 'Maintenance notes (optional)', wakeComputer: 'Receiving Computer', wakeLocalHint: 'Run the external program on this Computer. Other Computers can manage this endpoint, but cannot deliver to it.',
+  wakeNotesHint: 'Record the caller’s script or configuration path and startup entry, for example “/opt/mc/listener.py, systemd: mc-events”.',
+  wakeRequired: 'Enter an endpoint name.', wakeReadOnlyBot: 'You switched Bots. Return to this Bot to save these changes.',
+  wakeURL: 'Delivery URL', wakeExample: 'Copy request example', wakeExampleText: 'An external event is ready to process.',
+  wakeDelete: 'Delete endpoint', wakeDeleteTitle: 'Delete “{name}”?', wakeDeleteHint: 'The external program will no longer be able to deliver events. Inputs already accepted by the conversation remain.',
+  wakePause: 'Pause endpoint', wakeResume: 'Enable endpoint', wakePaused: 'Paused', wakeBlocked: 'Temporarily blocked until {time}', wakeLast: 'Last received: {time}',
+  wakeURLMissing: 'The receiving Computer has not reported a delivery address. Connect it before configuring the external program.',
+  wakeConflict: 'This endpoint changed elsewhere. Reopen the latest endpoint before saving; your draft is kept here.',
+}
+export const wakeZh: typeof wakeEn = {
+  scheduleTimedTasks: '定时任务', wakeEndpoints: '事件唤醒', wakeTask: '事件唤醒',
+  wakeEmpty: '还没有事件唤醒端点。', wakeEmptyHint: '让 Bot 接入外部程序，它创建的端点会显示在这里。',
+  wakeEdit: '管理端点', wakeTitle: '端点名称', wakePrompt: '处理说明（可选）', wakeTarget: '目标会话',
+  wakeNotes: '维护备注（可选）', wakeComputer: '接收电脑', wakeLocalHint: '外部程序在这台电脑上调用；其他电脑可以管理此端点，但不能投递。',
+  wakeNotesHint: '简要记录调用脚本或配置路径、启动入口，例如“/opt/mc/listener.py，systemd: mc-events”。',
+  wakeRequired: '请填写端点名称。', wakeReadOnlyBot: '已切换 Bot，请返回原 Bot 后保存这些更改。',
+  wakeURL: '投递地址', wakeExample: '复制调用示例', wakeExampleText: '收到一条外部事件，请继续处理。',
+  wakeDelete: '删除端点', wakeDeleteTitle: '删除「{name}」？', wakeDeleteHint: '外部程序将无法继续投递事件，已经进入会话的输入保留。',
+  wakePause: '暂停端点', wakeResume: '启用端点', wakePaused: '已暂停', wakeBlocked: '临时屏蔽至 {time}', wakeLast: '最近接收：{time}',
+  wakeURLMissing: '接收电脑尚未提供投递地址，请先连接这台电脑。',
+  wakeConflict: '端点已在其他地方修改。请重新打开最新端点后保存；当前草稿仍保留在这里。',
+}

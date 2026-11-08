@@ -65,6 +65,12 @@ func TestFallbackSchedulerKeepsFutureWaitingSessionColdAfterRestart(t *testing.T
 	f, probes := schedulerWaitingFixture(t)
 	schedulerSetProbeAt(t, f, time.Now().Add(time.Hour))
 	f.restart(t)
+	// A previously queued terminal/resource wake may still reach reconciliation
+	// after the persisted deadline was postponed. It must remain a cheap no-op,
+	// even when it bypasses the scheduler's in-memory deadline selection.
+	if err := f.service.reconcileModelFallback(f.ctx, f.session.ID); err != nil {
+		t.Fatal(err)
+	}
 	time.Sleep(3 * modelFallbackTick)
 	f.service.mu.Lock()
 	_, opened := f.service.runtimes[f.session.ID]

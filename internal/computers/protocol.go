@@ -18,6 +18,7 @@ const ProcessStreamCapability = "process.start_stream"
 
 type Hello struct {
 	Version      string                `json:"version,omitempty"`
+	LocalAPIURL  string                `json:"local_api_url,omitempty"`
 	BootID       string                `json:"boot_id"`
 	Hostname     string                `json:"hostname"`
 	OS           string                `json:"os"`
@@ -85,6 +86,13 @@ func validAPIToken(value string) bool {
 	}
 	raw, err := base64.RawURLEncoding.Strict().DecodeString(value)
 	return err == nil && len(raw) == 32
+}
+
+// WakeRequest carries no execution or Computer identity: the Hub derives the
+// source Computer from the authenticated tunnel carrying this request.
+type WakeRequest struct {
+	EndpointID string          `json:"endpoint_id"`
+	Body       json.RawMessage `json:"body"`
 }
 
 type GatewayResponse struct {

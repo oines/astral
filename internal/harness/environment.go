@@ -21,6 +21,7 @@ const modelContextKind = "astral.model"
 
 type environmentMetadata struct {
 	Version      int                          `json:"version"`
+	SessionID    string                       `json:"session_id,omitempty"`
 	Fingerprint  string                       `json:"fingerprint"`
 	CompactionID string                       `json:"compaction_id,omitempty"`
 	Model        modelbridge.ModelDescription `json:"model"`
@@ -84,7 +85,7 @@ func (r *runtime) collectEnvironmentContext(ctx context.Context, boundary core.C
 		return nil, err
 	}
 	latest, previousModel := environmentState(boundary.Context.Request.Messages)
-	metadata := environmentMetadata{Version: 3, Fingerprint: digest(encode(snapshot)), CompactionID: boundary.CompactionID, Model: model, SkillHashes: map[string]string{}}
+	metadata := environmentMetadata{Version: 3, SessionID: r.id, Fingerprint: digest(encode(snapshot)), CompactionID: boundary.CompactionID, Model: model, SkillHashes: map[string]string{}}
 	if computer, ok := snapshot["current_computer"].(map[string]any); ok {
 		metadata.ComputerID, _ = computer["id"].(string)
 		metadata.BootID, _ = computer["boot_id"].(string)
@@ -95,7 +96,7 @@ func (r *runtime) collectEnvironmentContext(ctx context.Context, boundary core.C
 	if metadata.CompactionID == "" {
 		metadata.CompactionID = latest.CompactionID
 	}
-	if latest.Version == metadata.Version && latest.Fingerprint == metadata.Fingerprint && latest.CompactionID == metadata.CompactionID {
+	if latest.Version == metadata.Version && latest.SessionID == metadata.SessionID && latest.Fingerprint == metadata.Fingerprint && latest.CompactionID == metadata.CompactionID {
 		return modelChange(previousModel, model), nil
 	}
 	visible := modelEnvironment(snapshot, latest, metadata)
