@@ -2123,6 +2123,67 @@
         ],
         "type": "object"
       },
+      "astral_internal_computers_LocalSkill": {
+        "properties": {
+          "content_digest": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "dirty": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "revision",
+          "digest",
+          "path",
+          "dirty"
+        ],
+        "type": "object"
+      },
+      "astral_internal_computers_LocalSkillsStatus": {
+        "properties": {
+          "builtin": {
+            "$ref": "#/components/schemas/astral_internal_computers_LocalSkill"
+          },
+          "builtin_root": {
+            "type": "string"
+          },
+          "shared": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_computers_LocalSkill"
+            },
+            "type": "array"
+          },
+          "shared_root": {
+            "type": "string"
+          },
+          "sync_error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "builtin_root",
+          "shared_root",
+          "shared"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_Agent": {
         "properties": {
           "allowed_computers": {
@@ -4189,6 +4250,21 @@
         ],
         "type": "object"
       },
+      "astral_internal_gateway_ManagedSkillsView": {
+        "properties": {
+          "local": {
+            "$ref": "#/components/schemas/astral_internal_computers_LocalSkillsStatus"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/astral_internal_skills_Manifest"
+          }
+        },
+        "required": [
+          "manifest",
+          "local"
+        ],
+        "type": "object"
+      },
       "astral_internal_gateway_MessageAttachmentView": {
         "properties": {
           "kind": {
@@ -4656,6 +4732,21 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "astral_internal_gateway_SkillPublishInput": {
+        "properties": {
+          "base_revision": {
+            "type": "integer"
+          },
+          "digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_revision",
+          "digest"
+        ],
         "type": "object"
       },
       "astral_internal_gateway_StoredMessageObservationView": {
@@ -6897,6 +6988,43 @@
           "phase",
           "current_version",
           "manager"
+        ],
+        "type": "object"
+      },
+      "astral_internal_skills_Manifest": {
+        "properties": {
+          "builtin": {
+            "$ref": "#/components/schemas/astral_internal_skills_Version"
+          },
+          "shared": {
+            "items": {
+              "$ref": "#/components/schemas/astral_internal_skills_Version"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "builtin",
+          "shared"
+        ],
+        "type": "object"
+      },
+      "astral_internal_skills_Version": {
+        "properties": {
+          "digest": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "revision",
+          "digest"
         ],
         "type": "object"
       },
@@ -17221,7 +17349,7 @@
         "operationId": "agentSendFile",
         "parameters": [
           {
-            "description": "Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.",
+            "description": "Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -17281,7 +17409,7 @@
         "operationId": "agentSendText",
         "parameters": [
           {
-            "description": "Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.",
+            "description": "Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -18009,6 +18137,218 @@
               }
             },
             "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/skills": {
+      "get": {
+        "description": "Read the source Computer's managed Skills and the Server's published versions.",
+        "operationId": "agentManagedSkills",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_gateway_ManagedSkillsView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/skills/shared/{name}/publish": {
+      "post": {
+        "description": "Publish a single Shared Skill from the authenticated source Computer.",
+        "operationId": "agentPublishSharedSkill",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_gateway_SkillPublishInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_skills_Version"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/skills/shared/{name}/revisions/{revision}/content": {
+      "get": {
+        "description": "Download a fixed published Shared Skill archive.",
+        "operationId": "agentSharedSkillRevision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.",
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "bytes",
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "default": {
             "content": {

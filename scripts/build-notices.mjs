@@ -17,6 +17,7 @@ export async function copiedNotices(root) {
   return [
     `Copied frontend brand assets\n\n${await notices(path.join(root, 'packages/icons/src/assets'))}`,
     `Unicode CLDR Windows timezone mapping\nhttps://github.com/unicode-org/cldr/blob/c4bb2c199c5385088f52011c4d4c813f2c36db1e/common/supplemental/windowsZones.xml\n\n${await readFile(path.join(root, 'internal/timezone/system_windows_LICENSE.txt'), 'utf8')}`,
+    `Anthropic Skill Creator, adapted for Astral\nhttps://github.com/anthropics/skills/tree/2c5958ecac7cee2b583967a2c4981d0f4a75c579/skills/skill-creator\n\n${await readFile(path.join(root, 'internal/skills/builtin/skill-creator/LICENSE.txt'), 'utf8')}`,
   ]
 }
 

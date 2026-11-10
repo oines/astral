@@ -30,7 +30,7 @@ func TestDiscoveryEntryLeadsToSelfContainedLiveContracts(t *testing.T) {
 	}
 	var index Capabilities
 	read("/v1/capabilities", &index, 200)
-	if len(index.Capabilities) != 8 || index.Authentication == "" || index.Scope == "" || index.OpenAPIURL == "" {
+	if len(index.Capabilities) != 9 || index.Authentication == "" || index.Scope == "" || index.OpenAPIURL == "" {
 		t.Fatalf("entry is missing discovery instructions: %+v", index)
 	}
 	var full map[string]any

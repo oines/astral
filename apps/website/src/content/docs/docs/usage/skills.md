@@ -7,6 +7,12 @@ If you keep explaining the same report format, save it as a skill. A skill conta
 
 For rules specific to a project, such as “Put all output in the reports folder,” use an `AGENTS.md` file in that project's working directory. Skills describe reusable methods; project guidance describes how to work in that directory.
 
+## Use a built-in skill
+
+On a computer with a current Daemon, ask the Bot to create a skill from a repeated workflow, find a decision from an earlier Astral session, or set up a scheduled task or local event hook. The Server supplies the corresponding built-in skills to the computer. They appear alongside your own skills after the first sync. Session history and the Computer API require **Enable Astral API** on the selected computer. The bundled API command helper uses Python 3.8 or later.
+
+When Astral updates the built-in bundle, it replaces the files in the same folder, including any local edits. To keep your edits, ask the Bot to save a copy as a project or user skill before the update.
+
 ## Add a skill
 
 First check the session's computer and working directory. Put the skill on that computer, either yourself or by asking the Bot to create the files.
@@ -59,7 +65,11 @@ Astral reads **the `AGENTS.md` in the current working directory**. It does not s
 
 ## Use skills across computers
 
-A skill stays on the computer where you install it. Copy it to another computer, along with its required scripts and templates, and install any software it needs before using the same method there.
+Use a shared skill when you want the same published version on multiple connected computers. Ask the Bot to create a shared skill or adapt one it can already see. Test it on the current computer, make sure [**Enable Astral API**](/docs/computers/connect/#control-what-the-computer-can-call) is on there, then explicitly ask the Bot to publish it. Until publication, edits are visible only on that computer, where Bots use the same local copy. Other computers receive the published version when they sync, including those with Astral API turned off.
+
+Sync updates an unedited copy in the same folder. If a computer has changes to the same skill, it keeps its edited files. Ask the Bot to compare the local files with the published version, combine the changes you want, and publish the result. Other shared skills can continue to update.
+
+For a project or user skill, copy its folder and any required resources to the other computer. Install any software the skill needs there before using it.
 
 If the Bot cannot find a skill, check:
 
