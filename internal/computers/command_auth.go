@@ -25,6 +25,10 @@ func unauthorizedCommand() error {
 	return &transport.Error{Code: "unauthorized", Message: "a live command API credential is required", Outcome: "not_executed"}
 }
 
+func computerAPIDisabled() error {
+	return &transport.Error{Code: "computer_api_disabled", Message: "Computer API is disabled for this Computer", Outcome: "not_executed"}
+}
+
 func (h *Hub) issueCommandCredential(ctx context.Context, binding domain.ExecutionBinding, execution string, peer *transport.Peer) (string, *commandCredential, error) {
 	if execution == "" {
 		return "", nil, domain.Invalid("process execution identity is required")
@@ -50,6 +54,11 @@ func (h *Hub) issueCommandCredential(ctx context.Context, binding domain.Executi
 	}
 	if err := h.authorize(ctx, binding); err != nil {
 		return "", nil, err
+	}
+	if active.computerAPIDisabled {
+		// Legacy Daemons require this shape to start a process. The random value
+		// never enters the credential registry and cannot authorize a request.
+		return token, nil, nil
 	}
 	lifetime, cancel := context.WithCancel(context.Background())
 	credential := &commandCredential{hash: tokenHash(token), execution: execution, binding: binding, connection: active, ctx: lifetime, cancel: cancel}
@@ -107,10 +116,15 @@ func (h *Hub) ReconcileAgentCommands(ctx context.Context, agentID string) {
 // commandRequest derives authority from the Server's credential record. The
 // Daemon's listener binding must agree, but cannot select another identity.
 func (h *Hub) commandRequest(ctx context.Context, active *connection, call GatewayRequest) (context.Context, GatewayRequest, func(), error) {
+	h.mu.RLock()
+	if active.computerAPIDisabled {
+		h.mu.RUnlock()
+		return nil, GatewayRequest{}, nil, computerAPIDisabled()
+	}
 	if !validAPIToken(call.APIToken) {
+		h.mu.RUnlock()
 		return nil, GatewayRequest{}, nil, unauthorizedCommand()
 	}
-	h.mu.RLock()
 	credential := h.commandCredentials[tokenHash(call.APIToken)]
 	valid := credential != nil && credential.connection == active &&
 		h.live[credential.binding.ComputerID] == active &&

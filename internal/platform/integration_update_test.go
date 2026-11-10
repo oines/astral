@@ -16,7 +16,7 @@ import (
 
 func TestContainerUpdateKeepsContainerAndInstalledEnvironment(t *testing.T) {
 	s, ctx := distributionServer(t)
-	operation, err := s.CreateContainer(ctx, "integration-inplace-update")
+	operation, err := s.CreateContainer(ctx, "integration-inplace-update", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

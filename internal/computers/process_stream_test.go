@@ -47,12 +47,17 @@ func cleanupProcessStream(t *testing.T, process standardtools.Process) {
 }
 
 func TestProcessStartUsesAdvertisedStreamingCapability(t *testing.T) {
-	for _, streaming := range []bool{false, true} {
-		name := "legacy"
-		if streaming {
-			name = "streaming"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		streaming bool
+		disabled  bool
+	}{
+		{name: "legacy"},
+		{name: "streaming", streaming: true},
+		{name: "legacy with API disabled", disabled: true},
+		{name: "streaming with API disabled", streaming: true, disabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			var mu sync.Mutex
 			var methods []string
 			released := make(chan struct{})
@@ -92,12 +97,24 @@ func TestProcessStartUsesAdvertisedStreamingCapability(t *testing.T) {
 					return errors.New("unexpected synthetic process operation")
 				}
 			})
-			if streaming {
+			if test.streaming {
 				advertiseProcessStream(hub, active)
+			}
+			if test.disabled {
+				var computer domain.Computer
+				if err := hub.Store.Get(t.Context(), "computers", binding.ComputerID, &computer); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := hub.UpdateComputer(t.Context(), computer.ID, computer.Revision, nil, &test.disabled); err != nil {
+					t.Fatal(err)
+				}
 			}
 			process, err := (&Backend{Hub: hub}).StartProcess(t.Context(), processStreamInvocation(binding), standardtools.ProcessRequest{Command: "synthetic command"})
 			if err != nil {
 				t.Fatal(err)
+			}
+			if test.disabled {
+				assertNoProcessStreamCredentials(t, hub)
 			}
 			output, err := io.ReadAll(process.Output())
 			if err != nil || string(output) != "synthetic process output\n" {
@@ -117,7 +134,7 @@ func TestProcessStartUsesAdvertisedStreamingCapability(t *testing.T) {
 			observed := append([]string(nil), methods...)
 			mu.Unlock()
 			wanted := []string{"process.start", "process.output", "process.wait", "process.release"}
-			if streaming {
+			if test.streaming {
 				wanted = []string{ProcessStreamCapability, "process.wait", "process.release"}
 			}
 			if !slices.Equal(observed, wanted) {

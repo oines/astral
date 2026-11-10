@@ -736,6 +736,7 @@ export type AstralInternalDomainComputerMaintenance = {
 export type AstralInternalDomainComputerStatus = {
     arch?: string;
     boot_id?: string;
+    computer_api_disabled?: boolean;
     connected_at?: string;
     container?: AstralInternalDomainContainerInfo;
     created_at: string;
@@ -817,6 +818,7 @@ export type AstralInternalDomainDaemonUpdate = {
 };
 
 export type AstralInternalDomainEnrollment = {
+    computer_api_disabled?: boolean;
     computer_id?: string;
     container: boolean;
     created_at: string;
@@ -1015,6 +1017,32 @@ export type AstralInternalDomainOutboxPart = {
     user_id?: string;
 };
 
+export type AstralInternalDomainOwnerComputerStatus = {
+    arch?: string;
+    boot_id?: string;
+    computer_api_disabled?: boolean;
+    connected_at?: string;
+    connection_ip?: string;
+    container?: AstralInternalDomainContainerInfo;
+    created_at: string;
+    daemon_version?: string;
+    home?: string;
+    hostname?: string;
+    id: string;
+    kind: string;
+    last_error?: string;
+    local: boolean;
+    name: string;
+    online: boolean;
+    os?: string;
+    revision: number;
+    revoked: boolean;
+    root?: string;
+    shell?: string;
+    token_id?: string;
+    updated_at: string;
+};
+
 export type AstralInternalDomainProvider = {
     base_url: string;
     created_at: string;
@@ -1035,6 +1063,7 @@ export type AstralInternalDomainProvider = {
 };
 
 export type AstralInternalDomainProvisioning = {
+    computer_api_disabled?: boolean;
     computer_id?: string;
     container_id?: string;
     created_at: string;
@@ -1563,7 +1592,7 @@ export type AstralInternalHttpapiBindingInput = {
 export type AstralInternalHttpapiBootstrap = {
     agents: Array<AstralInternalDomainAgent>;
     auth: AstralInternalAuthView;
-    computers: Array<AstralInternalDomainComputerStatus>;
+    computers: Array<AstralInternalDomainOwnerComputerStatus>;
     host: AstralInternalDomainHostInfo;
     models: Array<AstralInternalDomainModelProfile>;
     network: AstralInternalHttpapiNetworkSettings;
@@ -1585,7 +1614,8 @@ export type AstralInternalHttpapiCompact = {
 };
 
 export type AstralInternalHttpapiComputerUpdate = {
-    name: string;
+    computer_api_disabled?: boolean;
+    name?: string;
     revision: number;
 };
 
@@ -1630,6 +1660,11 @@ export type AstralInternalHttpapiConnectionView = {
     username?: string;
 };
 
+export type AstralInternalHttpapiContainerInput = {
+    computer_api_disabled?: boolean;
+    id: string;
+};
+
 export type AstralInternalHttpapiContextStats = {
     context_window: number;
     estimated_input: number;
@@ -1644,6 +1679,7 @@ export type AstralInternalHttpapiConversationInput = {
 };
 
 export type AstralInternalHttpapiEnrollmentInput = {
+    computer_api_disabled?: boolean;
     container: boolean;
     server_url?: string;
 };
@@ -1661,10 +1697,6 @@ export type AstralInternalHttpapiFork = {
     entry_id: string;
     id: string;
     title: string;
-};
-
-export type AstralInternalHttpapiIntent = {
-    id: string;
 };
 
 export type AstralInternalHttpapiMovePending = {
@@ -2839,13 +2871,13 @@ export type ListComputersResponses = {
     /**
      * OK
      */
-    200: Array<AstralInternalDomainComputerStatus>;
+    200: Array<AstralInternalDomainOwnerComputerStatus>;
 };
 
 export type ListComputersResponse = ListComputersResponses[keyof ListComputersResponses];
 
 export type CreateLocalContainerData = {
-    body: AstralInternalHttpapiIntent;
+    body: AstralInternalHttpapiContainerInput;
     path?: never;
     query?: never;
     url: '/api/v1/computers/containers';
@@ -2949,7 +2981,12 @@ export type ComputerHostResponse = ComputerHostResponses[keyof ComputerHostRespo
 export type UseLocalComputerData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Disable Astral API calls and event delivery from the new local Computer.
+         */
+        computer_api_disabled?: boolean;
+    };
     url: '/api/v1/computers/local';
 };
 
@@ -2966,7 +3003,7 @@ export type UseLocalComputerResponses = {
     /**
      * OK
      */
-    200: AstralInternalDomainComputerStatus;
+    200: AstralInternalDomainOwnerComputerStatus;
 };
 
 export type UseLocalComputerResponse = UseLocalComputerResponses[keyof UseLocalComputerResponses];
@@ -3103,7 +3140,7 @@ export type UpdateComputerResponses = {
     /**
      * OK
      */
-    200: AstralInternalDomainComputerStatus;
+    200: AstralInternalDomainOwnerComputerStatus;
 };
 
 export type UpdateComputerResponse = UpdateComputerResponses[keyof UpdateComputerResponses];

@@ -147,7 +147,7 @@ func newFixture(t *testing.T, computerCount int, generate func(context.Context, 
 			t.Fatal(err)
 		}
 		d.Hello.Home = t.TempDir()
-		enrollment, err := f.hub.Enroll(ctx, server.URL, false, false)
+		enrollment, err := f.hub.Enroll(ctx, server.URL, computers.EnrollmentOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}

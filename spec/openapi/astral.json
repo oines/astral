@@ -2280,6 +2280,9 @@
           "boot_id": {
             "type": "string"
           },
+          "computer_api_disabled": {
+            "type": "boolean"
+          },
           "connected_at": {
             "format": "date-time",
             "type": "string"
@@ -2574,6 +2577,9 @@
       },
       "astral_internal_domain_Enrollment": {
         "properties": {
+          "computer_api_disabled": {
+            "type": "boolean"
+          },
           "computer_id": {
             "type": "string"
           },
@@ -3213,6 +3219,94 @@
         ],
         "type": "object"
       },
+      "astral_internal_domain_OwnerComputerStatus": {
+        "properties": {
+          "arch": {
+            "type": "string"
+          },
+          "boot_id": {
+            "type": "string"
+          },
+          "computer_api_disabled": {
+            "type": "boolean"
+          },
+          "connected_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "connection_ip": {
+            "type": "string"
+          },
+          "container": {
+            "$ref": "#/components/schemas/astral_internal_domain_ContainerInfo"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "daemon_version": {
+            "type": "string"
+          },
+          "home": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "local": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "os": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "revoked": {
+            "type": "boolean"
+          },
+          "root": {
+            "type": "string"
+          },
+          "shell": {
+            "type": "string"
+          },
+          "token_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "created_at",
+          "updated_at",
+          "name",
+          "kind",
+          "local",
+          "revoked",
+          "online"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_Provider": {
         "properties": {
           "base_url": {
@@ -3283,6 +3377,9 @@
       },
       "astral_internal_domain_Provisioning": {
         "properties": {
+          "computer_api_disabled": {
+            "type": "boolean"
+          },
           "computer_id": {
             "type": "string"
           },
@@ -5058,7 +5155,7 @@
           },
           "computers": {
             "items": {
-              "$ref": "#/components/schemas/astral_internal_domain_ComputerStatus"
+              "$ref": "#/components/schemas/astral_internal_domain_OwnerComputerStatus"
             },
             "type": "array"
           },
@@ -5145,6 +5242,9 @@
       },
       "astral_internal_httpapi_ComputerUpdate": {
         "properties": {
+          "computer_api_disabled": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
@@ -5153,8 +5253,7 @@
           }
         },
         "required": [
-          "revision",
-          "name"
+          "revision"
         ],
         "type": "object"
       },
@@ -5313,6 +5412,20 @@
         ],
         "type": "object"
       },
+      "astral_internal_httpapi_ContainerInput": {
+        "properties": {
+          "computer_api_disabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
       "astral_internal_httpapi_ContextStats": {
         "properties": {
           "context_window": {
@@ -5356,6 +5469,9 @@
       },
       "astral_internal_httpapi_EnrollmentInput": {
         "properties": {
+          "computer_api_disabled": {
+            "type": "boolean"
+          },
           "container": {
             "type": "boolean"
           },
@@ -5413,17 +5529,6 @@
           "id",
           "entry_id",
           "title"
-        ],
-        "type": "object"
-      },
-      "astral_internal_httpapi_Intent": {
-        "properties": {
-          "id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
         ],
         "type": "object"
       },
@@ -8455,7 +8560,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/astral_internal_domain_ComputerStatus"
+                    "$ref": "#/components/schemas/astral_internal_domain_OwnerComputerStatus"
                   },
                   "type": "array"
                 }
@@ -8497,7 +8602,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/astral_internal_httpapi_Intent"
+                "$ref": "#/components/schemas/astral_internal_httpapi_ContainerInput"
               }
             }
           },
@@ -8687,12 +8792,23 @@
     "/api/v1/computers/local": {
       "post": {
         "operationId": "useLocalComputer",
+        "parameters": [
+          {
+            "description": "Disable Astral API calls and event delivery from the new local Computer.",
+            "in": "query",
+            "name": "computer_api_disabled",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/astral_internal_domain_ComputerStatus"
+                  "$ref": "#/components/schemas/astral_internal_domain_OwnerComputerStatus"
                 }
               }
             },
@@ -8963,7 +9079,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/astral_internal_domain_ComputerStatus"
+                  "$ref": "#/components/schemas/astral_internal_domain_OwnerComputerStatus"
                 }
               }
             },

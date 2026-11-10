@@ -29,9 +29,11 @@ type GatewayHandler func(context.Context, GatewayRequest) (GatewayResponse, erro
 type WakeHandler func(context.Context, string, WakeRequest) (GatewayResponse, error)
 
 type connection struct {
-	peer      *transport.Peer
-	hello     Hello
-	connected time.Time
+	peer                *transport.Peer
+	hello               Hello
+	connected           time.Time
+	connectionIP        string
+	computerAPIDisabled bool // guarded by Hub.mu
 }
 type authenticationBucket struct {
 	tokens  float64
@@ -39,21 +41,22 @@ type authenticationBucket struct {
 }
 
 type Hub struct {
-	updates            daemonUpdates
-	Store              *persistence.Store
-	Gateway            GatewayHandler
-	Wake               WakeHandler
-	ContainerURL       func(*http.Request, string) string
-	identity           *securetransport.Identity
-	pending            chan struct{}
-	authenticating     map[string]int
-	attempts           map[string]authenticationBucket
-	mu                 sync.RWMutex
-	live               map[string]*connection
-	nextConnection     uint64
-	admittedConnection map[string]uint64
-	grants             map[string]domain.ExecutionBinding
-	commandCredentials map[string]*commandCredential
+	updates             daemonUpdates
+	Store               *persistence.Store
+	Gateway             GatewayHandler
+	Wake                WakeHandler
+	ContainerURL        func(*http.Request, string) string
+	ResolveConnectionIP func(*http.Request) string
+	identity            *securetransport.Identity
+	pending             chan struct{}
+	authenticating      map[string]int
+	attempts            map[string]authenticationBucket
+	mu                  sync.RWMutex
+	live                map[string]*connection
+	nextConnection      uint64
+	admittedConnection  map[string]uint64
+	grants              map[string]domain.ExecutionBinding
+	commandCredentials  map[string]*commandCredential
 }
 
 func NewHub(store *persistence.Store) *Hub {
@@ -73,7 +76,13 @@ func tokenHash(token string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func (h *Hub) Enroll(ctx context.Context, serverURL string, container, local bool) (EnrollmentResult, error) {
+type EnrollmentOptions struct {
+	Container           bool
+	Local               bool
+	ComputerAPIDisabled bool
+}
+
+func (h *Hub) Enroll(ctx context.Context, serverURL string, options EnrollmentOptions) (EnrollmentResult, error) {
 	if h.identity == nil {
 		return EnrollmentResult{}, errors.New("computer identity for this Server is not configured")
 	}
@@ -81,14 +90,17 @@ func (h *Hub) Enroll(ctx context.Context, serverURL string, container, local boo
 		return EnrollmentResult{}, err
 	}
 	token := domain.ID("enroll")
-	e := domain.Enrollment{Meta: domain.Meta{ID: domain.ID("enrollment")}, TokenHash: tokenHash(token), ExpiresAt: time.Now().UTC().Add(15 * time.Minute), Container: container, Local: local, State: "waiting"}
+	e := domain.Enrollment{
+		Meta: domain.Meta{ID: domain.ID("enrollment")}, TokenHash: tokenHash(token), ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+		Container: options.Container, Local: options.Local, ComputerAPIDisabled: options.ComputerAPIDisabled, State: "waiting",
+	}
 	if err := h.Store.Save(ctx, "enrollments", &e.Meta, &e); err != nil {
 		return EnrollmentResult{}, err
 	}
 	cmd := "--server " + shellQuote(serverURL) + " --server-pin " + shellQuote(h.ServerPin()) + " --enrollment " + shellQuote(e.ID) + " --token " + shellQuote(token)
 	ps := "-Server " + powerShellQuote(serverURL) + " -ServerPin " + powerShellQuote(h.ServerPin()) + " -Enrollment " + powerShellQuote(e.ID) + " -Token " + powerShellQuote(token)
 
-	if container {
+	if options.Container {
 		cmd += " --container"
 		ps += " -Container"
 	}
@@ -149,7 +161,8 @@ func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest
 			kind = "container"
 		}
 		c := domain.Computer{Meta: domain.Meta{ID: domain.ID("computer")}, Name: request.Hello.Hostname, Hostname: request.Hello.Hostname,
-			Kind: kind, Local: e.Local && !e.Container, OS: request.Hello.OS, Arch: request.Hello.Arch, Shell: request.Hello.Shell, Home: request.Hello.Home, TokenID: credential}
+			Kind: kind, Local: e.Local && !e.Container, OS: request.Hello.OS, Arch: request.Hello.Arch, Shell: request.Hello.Shell, Home: request.Hello.Home,
+			TokenID: credential, ComputerAPIDisabled: e.ComputerAPIDisabled}
 		applyEnvironment(&c, request.Hello)
 		if err = tx.Save(ctx, "computers", &c.Meta, &c); err != nil {
 			return err
@@ -340,7 +353,11 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 	release()
-	h.serveConnection(r.Context(), conn, request.ComputerID, request.Hello, sequence)
+	connectionIP := source
+	if h.ResolveConnectionIP != nil {
+		connectionIP = h.ResolveConnectionIP(r)
+	}
+	h.serveConnection(r.Context(), conn, request.ComputerID, request.Hello, connectionIP, sequence)
 }
 
 func (h *Hub) authenticateComputer(ctx context.Context, id, token string) (domain.Computer, error) {
@@ -381,17 +398,21 @@ func (h *Hub) reserveConnectionSequence() uint64 {
 	return h.nextConnection
 }
 
-func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hello Hello, sequence uint64) {
-	active := &connection{hello: hello, connected: time.Now().UTC()}
+func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hello Hello, ip string, sequence uint64) {
+	active := &connection{hello: hello, connected: time.Now().UTC(), connectionIP: ip}
 	ready := make(chan struct{})
 	active.peer = transport.New(conn, func(ctx context.Context, request transport.Request, out *transport.Responder) error {
 		<-ready
 		if request.Method == "wake" && h.Wake != nil {
 			h.mu.RLock()
 			current := h.live[id] == active
+			disabled := active.computerAPIDisabled
 			h.mu.RUnlock()
 			if !current {
 				return domain.Offline("the original computer connection is unavailable")
+			}
+			if disabled {
+				return computerAPIDisabled()
 			}
 			var call WakeRequest
 			if json.Unmarshal(request.Params, &call) != nil || call.EndpointID == "" || len(call.Body) > localWakeBodyLimit {
@@ -452,6 +473,7 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 	// Keep this watermark after live is cleared. Otherwise an older handler
 	// could resurrect its connection after the newer connection has exited.
 	h.admittedConnection[id] = sequence
+	active.computerAPIDisabled = current.ComputerAPIDisabled
 	h.live[id] = active
 	h.mu.Unlock()
 	close(ready)
@@ -469,16 +491,33 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 }
 
 func (h *Hub) Status(c domain.Computer) domain.ComputerStatus {
+	status, _ := h.connectionStatus(c)
+	return status
+}
+
+func (h *Hub) OwnerStatus(c domain.Computer) domain.OwnerComputerStatus {
+	c.TokenID = ""
+	status, ip := h.connectionStatus(c)
+	return domain.OwnerComputerStatus{ComputerStatus: status, ConnectionIP: ip}
+}
+
+func (h *Hub) connectionStatus(c domain.Computer) (domain.ComputerStatus, string) {
 	status := domain.ComputerStatus{Computer: c}
 	h.mu.RLock()
 	active := h.live[c.ID]
 	h.mu.RUnlock()
 	if active != nil && !c.Revoked {
+		select {
+		case <-active.peer.Done():
+			return status, ""
+		default:
+		}
 		status.Online, status.BootID = true, active.hello.BootID
 		status.ConnectedAt = &active.connected
 		applyEnvironment(&status.Computer, active.hello)
+		return status, active.connectionIP
 	}
-	return status
+	return status, ""
 }
 
 func (h *Hub) Bind(ctx context.Context, agentID, sessionID, computerID, cwd string) (domain.ExecutionBinding, error) {
@@ -586,6 +625,57 @@ func (h *Hub) JSON(ctx context.Context, method string, call Call, result any) er
 	}
 	return p.JSON(ctx, method, call, result)
 }
+
+// UpdateComputer commits the Owner's settings and publishes API permission
+// under the same lock that admits connections and issues command credentials.
+func (h *Hub) UpdateComputer(ctx context.Context, id string, revision int64, name *string, apiDisabled *bool) (domain.Computer, error) {
+	var computer domain.Computer
+	if name == nil && apiDisabled == nil {
+		return computer, domain.Invalid("Computer name or API setting is required")
+	}
+	if name != nil && strings.TrimSpace(*name) == "" {
+		return computer, domain.Invalid("Computer name is required")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err := h.Store.Update(ctx, func(tx *persistence.Tx) error {
+		if err := tx.Get(ctx, "computers", id, &computer); err != nil {
+			return err
+		}
+		if computer.Revision != revision {
+			return domain.Conflict("Computer changed; reload before saving")
+		}
+		if name != nil {
+			computer.Name = *name
+		}
+		if apiDisabled != nil {
+			computer.ComputerAPIDisabled = *apiDisabled
+		}
+		return tx.Save(ctx, "computers", &computer.Meta, &computer)
+	}); err != nil {
+		return computer, err
+	}
+	if active := h.live[id]; active != nil {
+		active.computerAPIDisabled = computer.ComputerAPIDisabled
+	}
+	if computer.ComputerAPIDisabled {
+		for hash, credential := range h.commandCredentials {
+			if credential.binding.ComputerID == id {
+				delete(h.commandCredentials, hash)
+				credential.cancel()
+			}
+		}
+	}
+	return computer, nil
+}
+
+func (h *Hub) ComputerAPIEnabled(id string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	active := h.live[id]
+	return active != nil && !active.computerAPIDisabled
+}
+
 func (h *Hub) Revoke(ctx context.Context, id string) error {
 	var c domain.Computer
 	if err := h.Store.Get(ctx, "computers", id, &c); err != nil {

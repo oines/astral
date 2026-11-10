@@ -164,20 +164,21 @@ type ContainerInfo struct {
 
 type Computer struct {
 	Meta
-	Name          string         `json:"name"`
-	Kind          string         `json:"kind"`
-	Hostname      string         `json:"hostname,omitempty"`
-	OS            string         `json:"os,omitempty"`
-	Arch          string         `json:"arch,omitempty"`
-	Shell         string         `json:"shell,omitempty"`
-	Home          string         `json:"home,omitempty"`
-	Root          string         `json:"root,omitempty"`
-	DaemonVersion string         `json:"daemon_version,omitempty"`
-	Container     *ContainerInfo `json:"container,omitempty"`
-	TokenHash     string         `json:"-"`
-	TokenID       string         `json:"token_id,omitempty"`
-	Local         bool           `json:"local"`
-	Revoked       bool           `json:"revoked"`
+	Name                string         `json:"name"`
+	Kind                string         `json:"kind"`
+	Hostname            string         `json:"hostname,omitempty"`
+	OS                  string         `json:"os,omitempty"`
+	Arch                string         `json:"arch,omitempty"`
+	Shell               string         `json:"shell,omitempty"`
+	Home                string         `json:"home,omitempty"`
+	Root                string         `json:"root,omitempty"`
+	DaemonVersion       string         `json:"daemon_version,omitempty"`
+	Container           *ContainerInfo `json:"container,omitempty"`
+	TokenHash           string         `json:"-"`
+	TokenID             string         `json:"token_id,omitempty"`
+	Local               bool           `json:"local"`
+	Revoked             bool           `json:"revoked"`
+	ComputerAPIDisabled bool           `json:"computer_api_disabled,omitempty"`
 }
 
 type ComputerStatus struct {
@@ -188,16 +189,22 @@ type ComputerStatus struct {
 	LastError   string     `json:"last_error,omitempty"`
 }
 
+type OwnerComputerStatus struct {
+	ComputerStatus
+	ConnectionIP string `json:"connection_ip,omitempty"`
+}
+
 type Enrollment struct {
 	Meta
-	TokenHash    string    `json:"token_hash"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	ComputerID   string    `json:"computer_id,omitempty"`
-	CredentialID string    `json:"credential_id,omitempty"`
-	Container    bool      `json:"container"`
-	Local        bool      `json:"local"`
-	State        string    `json:"state"`
-	Error        string    `json:"error,omitempty"`
+	TokenHash           string    `json:"token_hash"`
+	ExpiresAt           time.Time `json:"expires_at"`
+	ComputerID          string    `json:"computer_id,omitempty"`
+	CredentialID        string    `json:"credential_id,omitempty"`
+	Container           bool      `json:"container"`
+	Local               bool      `json:"local"`
+	ComputerAPIDisabled bool      `json:"computer_api_disabled,omitempty"`
+	State               string    `json:"state"`
+	Error               string    `json:"error,omitempty"`
 }
 
 // Binding is carried in authenticated Server/Daemon calls. Request bodies at
@@ -394,15 +401,16 @@ type HostInfo struct {
 }
 type Provisioning struct {
 	Meta
-	IntentID     string   `json:"intent_id"`
-	Kind         string   `json:"kind"`
-	State        string   `json:"state"`
-	Phase        string   `json:"phase"`
-	ComputerID   string   `json:"computer_id,omitempty"`
-	EnrollmentID string   `json:"enrollment_id,omitempty"`
-	ContainerID  string   `json:"container_id,omitempty"`
-	Log          []string `json:"log"`
-	Error        string   `json:"error,omitempty"`
+	IntentID            string   `json:"intent_id"`
+	Kind                string   `json:"kind"`
+	State               string   `json:"state"`
+	Phase               string   `json:"phase"`
+	ComputerID          string   `json:"computer_id,omitempty"`
+	EnrollmentID        string   `json:"enrollment_id,omitempty"`
+	ContainerID         string   `json:"container_id,omitempty"`
+	ComputerAPIDisabled bool     `json:"computer_api_disabled,omitempty"`
+	Log                 []string `json:"log"`
+	Error               string   `json:"error,omitempty"`
 }
 
 type Error struct {

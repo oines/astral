@@ -39,8 +39,8 @@ type Config struct {
 	DataDirectory       string
 	Version             string
 	HostInfo            func(context.Context) domain.HostInfo
-	UseLocal            func(context.Context) (domain.ComputerStatus, error)
-	CreateContainer     func(context.Context, string) (domain.Provisioning, error)
+	UseLocal            func(context.Context, bool) (domain.OwnerComputerStatus, error)
+	CreateContainer     func(context.Context, string, *bool) (domain.Provisioning, error)
 	NetworkSettings     func(context.Context) NetworkSettings
 	SaveNetworkSettings func(context.Context, NetworkPatch) (NetworkSettings, error)
 	Updates             serverupdate.Controller
@@ -59,19 +59,19 @@ type Preferences struct {
 	domain.Preferences
 }
 type Bootstrap struct {
-	Auth        auth.View               `json:"auth"`
-	Version     string                  `json:"version"`
-	PublicURL   string                  `json:"public_url"`
-	Network     NetworkSettings         `json:"network"`
-	Host        domain.HostInfo         `json:"host"`
-	Preferences Preferences             `json:"preferences"`
-	Timezone    timezone.View           `json:"timezone"`
-	Onboarding  harness.Onboarding      `json:"onboarding"`
-	Agents      []domain.Agent          `json:"agents"`
-	Sessions    []domain.Session        `json:"sessions"`
-	Schedules   []domain.Schedule       `json:"schedules"`
-	Computers   []domain.ComputerStatus `json:"computers"`
-	Models      []domain.ModelProfile   `json:"models"`
+	Auth        auth.View                    `json:"auth"`
+	Version     string                       `json:"version"`
+	PublicURL   string                       `json:"public_url"`
+	Network     NetworkSettings              `json:"network"`
+	Host        domain.HostInfo              `json:"host"`
+	Preferences Preferences                  `json:"preferences"`
+	Timezone    timezone.View                `json:"timezone"`
+	Onboarding  harness.Onboarding           `json:"onboarding"`
+	Agents      []domain.Agent               `json:"agents"`
+	Sessions    []domain.Session             `json:"sessions"`
+	Schedules   []domain.Schedule            `json:"schedules"`
+	Computers   []domain.OwnerComputerStatus `json:"computers"`
+	Models      []domain.ModelProfile        `json:"models"`
 }
 type ProviderInput struct {
 	domain.Provider
@@ -126,15 +126,18 @@ type Approval struct {
 	Decision core.ApprovalDecision `json:"decision"`
 }
 type EnrollmentInput struct {
-	Container bool   `json:"container"`
-	ServerURL string `json:"server_url,omitempty"`
+	Container           bool   `json:"container"`
+	ServerURL           string `json:"server_url,omitempty"`
+	ComputerAPIDisabled *bool  `json:"computer_api_disabled,omitempty"`
 }
-type Intent struct {
-	ID string `json:"id"`
+type ContainerInput struct {
+	ID                  string `json:"id"`
+	ComputerAPIDisabled *bool  `json:"computer_api_disabled,omitempty"`
 }
 type ComputerUpdate struct {
-	Revision int64  `json:"revision"`
-	Name     string `json:"name"`
+	Revision            int64   `json:"revision"`
+	Name                *string `json:"name,omitempty"`
+	ComputerAPIDisabled *bool   `json:"computer_api_disabled,omitempty"`
 }
 type ConversationInput struct {
 	ExternalID string `json:"external_id"`
@@ -242,15 +245,14 @@ func (a *API) preferences(ctx context.Context) (Preferences, error) {
 	}
 	return p, err
 }
-func (a *API) computers(ctx context.Context) ([]domain.ComputerStatus, error) {
+func (a *API) computers(ctx context.Context) ([]domain.OwnerComputerStatus, error) {
 	records, err := readAll[domain.Computer](ctx, a.Config.Harness.Store, "computers")
 	if err != nil {
 		return nil, err
 	}
-	result := make([]domain.ComputerStatus, 0, len(records))
+	result := make([]domain.OwnerComputerStatus, 0, len(records))
 	for _, c := range records {
-		c.TokenID = ""
-		result = append(result, a.Config.Harness.Hub.Status(c))
+		result = append(result, a.Config.Harness.Hub.OwnerStatus(c))
 	}
 	return result, nil
 }
@@ -344,25 +346,13 @@ func (a *API) systemRoutes() {
 	route[httpcontract.Empty, Usage](a, "GET", "/resources/{kind}/{id}/usage", "resourceUsage", "System", func(r *http.Request, _ httpcontract.Empty) (Usage, error) {
 		return a.usage(r.Context(), r.PathValue("kind"), r.PathValue("id"))
 	})
-	route[httpcontract.Empty, []domain.ComputerStatus](a, "GET", "/computers", "listComputers", "Computers", func(r *http.Request, _ httpcontract.Empty) ([]domain.ComputerStatus, error) {
+	route[httpcontract.Empty, []domain.OwnerComputerStatus](a, "GET", "/computers", "listComputers", "Computers", func(r *http.Request, _ httpcontract.Empty) ([]domain.OwnerComputerStatus, error) {
 		return a.computers(r.Context())
 	})
 	a.registerComputerMaintenance()
-	route[ComputerUpdate, domain.ComputerStatus](a, "PATCH", "/computers/{id}", "updateComputer", "Computers", func(r *http.Request, input ComputerUpdate) (domain.ComputerStatus, error) {
-		var c domain.Computer
-		if err := h.Store.Get(r.Context(), "computers", r.PathValue("id"), &c); err != nil {
-			return domain.ComputerStatus{}, err
-		}
-		if input.Revision != c.Revision {
-			return domain.ComputerStatus{}, domain.Conflict("Computer changed; reload before saving")
-		}
-		if strings.TrimSpace(input.Name) == "" {
-			return domain.ComputerStatus{}, domain.Invalid("Computer name is required")
-		}
-		c.Name = input.Name
-		err := h.Store.Save(r.Context(), "computers", &c.Meta, &c)
-		c.TokenID = ""
-		return h.Hub.Status(c), err
+	route[ComputerUpdate, domain.OwnerComputerStatus](a, "PATCH", "/computers/{id}", "updateComputer", "Computers", func(r *http.Request, input ComputerUpdate) (domain.OwnerComputerStatus, error) {
+		c, err := h.Hub.UpdateComputer(r.Context(), r.PathValue("id"), input.Revision, input.Name, input.ComputerAPIDisabled)
+		return h.Hub.OwnerStatus(c), err
 	})
 	route[httpcontract.Empty, httpcontract.OK](a, "POST", "/computers/{id}/revoke", "revokeComputer", "Computers", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.Hub.Revoke(r.Context(), r.PathValue("id"))
@@ -375,7 +365,8 @@ func (a *API) systemRoutes() {
 		if server == "" {
 			server = a.publicURL()
 		}
-		return h.Hub.Enroll(r.Context(), server, input.Container, false)
+		disabled := input.ComputerAPIDisabled == nil || *input.ComputerAPIDisabled
+		return h.Hub.Enroll(r.Context(), server, computers.EnrollmentOptions{Container: input.Container, ComputerAPIDisabled: disabled})
 	})
 	route[httpcontract.Empty, domain.Enrollment](a, "GET", "/computers/enrollments/{id}", "getEnrollment", "Computers", func(r *http.Request, _ httpcontract.Empty) (domain.Enrollment, error) {
 		var e domain.Enrollment
@@ -383,20 +374,24 @@ func (a *API) systemRoutes() {
 		e.TokenHash, e.CredentialID = "", ""
 		return e, err
 	})
-	route[httpcontract.Empty, domain.ComputerStatus](a, "POST", "/computers/local", "useLocalComputer", "Computers", func(r *http.Request, _ httpcontract.Empty) (domain.ComputerStatus, error) {
+	route[httpcontract.Empty, domain.OwnerComputerStatus](a, "POST", "/computers/local", "useLocalComputer", "Computers", func(r *http.Request, _ httpcontract.Empty) (domain.OwnerComputerStatus, error) {
 		if a.Config.UseLocal == nil {
-			return domain.ComputerStatus{}, domain.Offline("this Server cannot manage a local Daemon")
+			return domain.OwnerComputerStatus{}, domain.Offline("this Server cannot manage a local Daemon")
 		}
-		return a.Config.UseLocal(r.Context())
-	})
-	route[Intent, domain.Provisioning](a, "POST", "/computers/containers", "createLocalContainer", "Computers", func(r *http.Request, input Intent) (domain.Provisioning, error) {
+		disabled := r.URL.Query().Get("computer_api_disabled")
+		if disabled != "" && disabled != "true" && disabled != "false" {
+			return domain.OwnerComputerStatus{}, domain.Invalid("computer_api_disabled must be a boolean")
+		}
+		return a.Config.UseLocal(r.Context(), disabled == "true")
+	}, httpcontract.Parameter{Name: "computer_api_disabled", Type: "boolean", Description: "Disable Astral API calls and event delivery from the new local Computer."})
+	route[ContainerInput, domain.Provisioning](a, "POST", "/computers/containers", "createLocalContainer", "Computers", func(r *http.Request, input ContainerInput) (domain.Provisioning, error) {
 		if input.ID == "" {
 			return domain.Provisioning{}, domain.Invalid("a stable provisioning request ID is required")
 		}
 		if a.Config.CreateContainer == nil {
 			return domain.Provisioning{}, domain.Offline("this Server cannot manage local containers")
 		}
-		return a.Config.CreateContainer(r.Context(), input.ID)
+		return a.Config.CreateContainer(r.Context(), input.ID, input.ComputerAPIDisabled)
 	})
 	route[httpcontract.Empty, domain.Provisioning](a, "GET", "/computers/operations/{id}", "getComputerOperation", "Computers", func(r *http.Request, _ httpcontract.Empty) (domain.Provisioning, error) {
 		var value domain.Provisioning

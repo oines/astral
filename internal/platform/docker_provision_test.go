@@ -331,7 +331,8 @@ func awaitProvisioned(t *testing.T, ctx context.Context, server *Server, id stri
 
 func TestServerContainerProvisioningIncludesPinnedIdentity(t *testing.T) {
 	server, ctx, _, read := provisioningFixture(t)
-	operation, err := server.CreateContainer(ctx, "fresh-pinned-container")
+	disabled := true
+	operation, err := server.CreateContainer(ctx, "fresh-pinned-container", &disabled)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,6 +342,14 @@ func TestServerContainerProvisioningIncludesPinnedIdentity(t *testing.T) {
 	completed := awaitProvisioned(t, ctx, server, operation.ID)
 	if completed.ContainerID != "original-container" || completed.ComputerID != daemon.Credentials.ComputerID {
 		t.Fatal("provisioning did not connect its original container")
+	}
+	var computer domain.Computer
+	if err = server.Store.Get(ctx, "computers", completed.ComputerID, &computer); err != nil || !computer.ComputerAPIDisabled {
+		t.Fatalf("container registration lost its Astral API policy: %+v %v", computer, err)
+	}
+	disabled = false
+	if _, err = server.CreateContainer(ctx, operation.IntentID, &disabled); err == nil {
+		t.Fatal("a conflicting retry silently changed the provisioning policy")
 	}
 	if state.Volume != "astral-"+operation.ID+"-data" {
 		t.Fatal("unexpected container volume")
@@ -393,7 +402,7 @@ func TestContainerRetryCompletesInterruptedProgramInjection(t *testing.T) {
 
 func seedProvisioningRetry(t *testing.T, ctx context.Context, server *Server, statePath, intent string, registered bool) (domain.Provisioning, ConnectOptions, *computers.Credentials) {
 	t.Helper()
-	result, err := server.Hub.Enroll(ctx, server.URL, true, false)
+	result, err := server.Hub.Enroll(ctx, server.URL, computers.EnrollmentOptions{Container: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +471,7 @@ func TestServerContainerExpiredRetryReplacesTokenAndRestartsSameEnvironment(t *t
 	if err := server.Store.Get(ctx, "enrollments", old.EnrollmentID, &original); err != nil {
 		t.Fatal(err)
 	}
-	operation, err := server.CreateContainer(ctx, previous.IntentID)
+	operation, err := server.CreateContainer(ctx, previous.IntentID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,7 +536,7 @@ func TestServerContainerRetryRefusesChangedDockerEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	operation, err := server.CreateContainer(ctx, previous.IntentID)
+	operation, err := server.CreateContainer(ctx, previous.IntentID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +572,7 @@ func TestServerContainerRegisteredRetryKeepsCredentialsAndConsumedEnrollment(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	operation, err := server.CreateContainer(ctx, previous.IntentID)
+	operation, err := server.CreateContainer(ctx, previous.IntentID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +611,7 @@ func TestServerContainerUnregisteredLegacyPublicRetryRequiresExplicitMaintenance
 	if err != nil {
 		t.Fatal(err)
 	}
-	operation, err := server.CreateContainer(ctx, previous.IntentID)
+	operation, err := server.CreateContainer(ctx, previous.IntentID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

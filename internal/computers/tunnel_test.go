@@ -46,7 +46,7 @@ func TestSecureEnrollmentPinConsumptionAndStatus(t *testing.T) {
 	hub, server := secureHub(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	enrollment, err := hub.Enroll(ctx, server.URL, false, false)
+	enrollment, err := hub.Enroll(ctx, server.URL, EnrollmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestConcurrentEnrollmentConsumesTokenOnlyOnce(t *testing.T) {
 	hub, server := secureHub(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	enrollment, err := hub.Enroll(ctx, server.URL, false, false)
+	enrollment, err := hub.Enroll(ctx, server.URL, EnrollmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestSecureContainerPreparationAndPlaintextRejection(t *testing.T) {
 	hub, server := secureHub(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	enrollment, err := hub.Enroll(ctx, server.URL, true, false)
+	enrollment, err := hub.Enroll(ctx, server.URL, EnrollmentOptions{Container: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestTunnelSupportsDoubleTLSAndRetainsOuterCertificateValidation(t *testing.
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	enrollment, err := hub.Enroll(ctx, server.URL, false, false)
+	enrollment, err := hub.Enroll(ctx, server.URL, EnrollmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

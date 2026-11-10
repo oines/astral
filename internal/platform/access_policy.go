@@ -49,15 +49,20 @@ func canonicalOrigin(raw string) string {
 }
 
 func (s *Server) trustedProxy(remote string) bool {
+	address := tcpPeerIP(remote)
+	return address.IsValid() && s.trustedProxyIP(address)
+}
+
+func tcpPeerIP(remote string) netip.Addr {
 	host, _, err := net.SplitHostPort(remote)
 	if err != nil {
-		return false
+		return netip.Addr{}
 	}
-	address, err := netip.ParseAddr(host)
-	if err != nil {
-		return false
-	}
-	address = address.Unmap()
+	address, _ := netip.ParseAddr(host)
+	return address.Unmap()
+}
+
+func (s *Server) trustedProxyIP(address netip.Addr) bool {
 	values := s.Config.TrustedProxies
 	if values == nil {
 		return address.IsLoopback()
@@ -71,6 +76,34 @@ func (s *Server) trustedProxy(remote string) bool {
 		}
 	}
 	return false
+}
+
+// computerConnectionIP is diagnostic only. Trusted proxies must append their
+// actual upstream peer to X-Forwarded-For or replace the incoming header.
+func (s *Server) computerConnectionIP(r *http.Request) string {
+	peer := tcpPeerIP(r.RemoteAddr)
+	if !peer.IsValid() {
+		return ""
+	}
+	direct := peer.WithZone("").String()
+	if !s.trustedProxyIP(peer) {
+		return direct
+	}
+	values := r.Header.Values("X-Forwarded-For")
+	for i := len(values) - 1; i >= 0; i-- {
+		chain := strings.Split(values[i], ",")
+		for j := len(chain) - 1; j >= 0; j-- {
+			address, err := netip.ParseAddr(strings.TrimSpace(chain[j]))
+			if err != nil || address.Zone() != "" {
+				return direct
+			}
+			address = address.Unmap()
+			if !s.trustedProxyIP(address) {
+				return address.String()
+			}
+		}
+	}
+	return direct
 }
 
 func (s *Server) WebOrigins() []string {

@@ -28,6 +28,14 @@ The command contains temporary pairing credentials. Run it only on the intended 
 
 Computers connect outward to the Server. HTTP and HTTPS enrollment addresses are supported; the computer channel encrypts its traffic and verifies the Server's identity. Browser sign-in has separate network requirements described in [Run a Server](/docs/hosting/server/).
 
+## Control what the computer can call
+
+Use **Enable Astral API** when adding a computer or later in its details. For example, leave it off on a remote machine that only needs to run build commands and read or write files. Turn it on for a trusted machine if its commands need to call Astral services or its programs need to wake a session through an event endpoint.
+
+New remote computers, including remote containers, start with the switch off. The server machine, local containers, and computers registered before the upgrade default to on. Choose before generating a remote command so the policy applies from the first connection.
+
+Turning it off blocks API calls and new event deliveries from that computer for every Bot. Astral keeps endpoint settings and continues processing events it already accepted. Bots can still run commands and work with files on the computer according to their permissions. The Server applies this setting to older Daemons without a Daemon update. If a computer's saved connection credentials leak, [revoke its connection](#disconnect-and-stop-a-computer) and pair it again.
+
 ## Grant a Bot access
 
 Once online, allow the computer in **Settings → Bots → your Bot → Computer access**, optionally making it the default. Return to a session for that Bot, select the computer, and try a read-only task:
@@ -39,6 +47,8 @@ Check that the reported location is the one you intended. This completes the pat
 Granting access lets the Bot operate with the computer service account's file and command permissions, beyond its default working folder. Read the [access guidance](/docs/start/safe-use/) before exposing that environment to a public group or untrusted material.
 
 ## Slow or interrupted connections
+
+A computer's details show **Connection IP** while its Daemon is online and an address is available. A direct connection shows the address the Server sees. Behind a correctly configured trusted proxy, it shows the forwarded client address, such as the public egress IP of a Daemon connecting through Cloudflare Tunnel. Astral uses this address for connection diagnostics. [Trusted-proxy configuration](/docs/hosting/server-options/#a-proxy-on-another-machine)
 
 A slow connection can delay command output and file operations. Astral keeps collecting command output on the computer while it is being transferred. When the computer's connection to Server is confirmed lost, its commands are stopped; reconnecting does not restart them. Check any file changes or other effects before asking the Bot to repeat an operation whose result is unknown. Closing a browser tab does not disconnect the computer.
 

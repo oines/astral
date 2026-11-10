@@ -14,6 +14,8 @@ If Docker Desktop, OrbStack, or another compatible runtime is already installed 
 - Choose **Use a local container** to create it on the Astral Server host, including the Server bundled with Desktop. This is not necessarily the device displaying the browser.
 - Choose **Connect another machine**, enable **Run in a container**, and run the generated command on that machine to create it elsewhere.
 
+Leave **Enable Astral API** off if the container only needs to run commands and work with its files. The default is on for a local container and off for one on another machine. See [what the switch controls](/docs/computers/connect/#control-what-the-computer-can-call).
+
 Astral downloads a prepared Ubuntu environment and starts the container. The first download can take time; the dialog or target terminal shows progress and errors. Later creations can reuse the downloaded image.
 
 **Use a local container** connects to the Server through the container runtime's host access, rather than through your public web address or reverse proxy. Astral tests that route from the actual container environment and checks the Server's identity before using it. If local access fails, creation reports that problem instead of falling back to the public address. This applies to new local containers; existing container connections are not changed automatically. The other-machine command continues to use the Server address you selected for that machine.

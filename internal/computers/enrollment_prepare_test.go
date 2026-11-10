@@ -24,7 +24,7 @@ func TestContainerPreparationWindowIsAuthenticatedAndBounded(t *testing.T) {
 	hub.SetIdentity(identity)
 	defer hub.Close()
 	ctx := context.Background()
-	enrollment, err := hub.Enroll(ctx, "https://astral.example", true, false)
+	enrollment, err := hub.Enroll(ctx, "https://astral.example", EnrollmentOptions{Container: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestContainerPreparationWindowIsAuthenticatedAndBounded(t *testing.T) {
 	if err = hub.PrepareContainer(ctx, id, enrollment.Token); err == nil {
 		t.Fatal("revived an expired enrollment")
 	}
-	native, err := hub.Enroll(ctx, "https://astral.example", false, false)
+	native, err := hub.Enroll(ctx, "https://astral.example", EnrollmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

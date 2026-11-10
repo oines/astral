@@ -51,7 +51,7 @@ func distributionServer(t *testing.T) (*Server, context.Context) {
 
 func installerCommand(t *testing.T, ctx context.Context, s *Server, root string, container bool) (*exec.Cmd, string) {
 	t.Helper()
-	enrollment, err := s.Hub.Enroll(ctx, s.URL, container, false)
+	enrollment, err := s.Hub.Enroll(ctx, s.URL, computers.EnrollmentOptions{Container: container})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestDistributionInstallerRegistersActualDaemon(t *testing.T) {
 		case <-ticker.C:
 		}
 	}
-	local, err := s.UseLocal(ctx)
+	local, err := s.UseLocal(ctx, false)
 	if err != nil || remote.ID == local.ID || remote.Kind != "remote" {
 		t.Fatal("the installed daemon did not retain its independent identity")
 	}
@@ -138,7 +138,7 @@ func removeTestContainer(t *testing.T, identity string) {
 
 func TestContainerShortcutAndInstallerUseIndependentRealComputers(t *testing.T) {
 	s, ctx := distributionServer(t)
-	local, err := s.UseLocal(ctx)
+	local, err := s.UseLocal(ctx, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestContainerShortcutAndInstallerUseIndependentRealComputers(t *testing.T) 
 	if err = s.Store.Save(ctx, "agents", &agent.Meta, &agent); err != nil {
 		t.Fatal(err)
 	}
-	operation, err := s.CreateContainer(ctx, "integration-container")
+	operation, err := s.CreateContainer(ctx, "integration-container", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestContainerShortcutAndInstallerUseIndependentRealComputers(t *testing.T) 
 		t.Fatal(err)
 	}
 	checkContainerInfo(t, container, operation.ID)
-	again, err := s.CreateContainer(ctx, "integration-container")
+	again, err := s.CreateContainer(ctx, "integration-container", nil)
 	if err != nil || again.ID != operation.ID || again.ComputerID != operation.ComputerID {
 		t.Fatal("retry duplicated the provisioning operation or Computer")
 	}

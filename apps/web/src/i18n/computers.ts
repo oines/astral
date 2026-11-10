@@ -10,7 +10,7 @@ export const computersEn = {
   computerInfo: {
     type: 'Type', kind: { local: 'Server machine', remote: 'Remote machine', container: 'Container' },
     hostname: 'Hostname', environment: 'Environment',
-    daemonVersion: 'Daemon version', unknownVersion: '—',
+    daemonVersion: 'Daemon version', unknownVersion: '—', connectionIP: 'Connection IP',
     storage: 'Storage', dataDirectory: 'Data directory', userDirectory: 'User directory',
     container: 'Container', containerName: 'Container name', host: 'Host machine', image: 'Image', volume: 'Data volume', mountPath: 'Mount path',
   },
@@ -18,6 +18,13 @@ export const computersEn = {
     serverAddress: 'Server address', serverAddressHint: 'Choose a server address reachable from the target Computer.',
     targetPlatform: 'Target operating system', hostPlatform: 'Container host operating system',
     shell: 'macOS / Linux · Shell', powershell: 'Windows · PowerShell',
+    editConnection: 'Edit connection settings',
+  },
+  computerAPI: {
+    enable: 'Enable Astral API',
+    hint: 'Allows commands on this Computer to call the Astral API and local programs to deliver wake events.',
+    reuseLocalHint: 'This machine uses its saved setting. You can change it in its Computer details.',
+    enabled: 'Astral API enabled', disabled: 'Astral API disabled',
   },
   computerMaintenance: {
     updateDaemon: 'Update Daemon', confirmUpdate: 'Update this Daemon to the latest release? Running tasks will be interrupted.', updateServerHint: 'This Daemon is newer than the Server. Update Desktop or Server to use matching versions.',
@@ -45,7 +52,7 @@ export const computersZh: typeof computersEn = {
   computerInfo: {
     type: '类型', kind: { local: '服务所在电脑', remote: '远程电脑', container: '容器' },
     hostname: '主机名', environment: '运行环境',
-    daemonVersion: 'Daemon 版本', unknownVersion: '—',
+    daemonVersion: 'Daemon 版本', unknownVersion: '—', connectionIP: '连接 IP',
     storage: '存储', dataDirectory: '数据目录', userDirectory: '用户目录',
     container: '容器', containerName: '容器名', host: '所在电脑', image: '镜像', volume: '数据卷', mountPath: '挂载路径',
   },
@@ -53,6 +60,13 @@ export const computersZh: typeof computersEn = {
     serverAddress: '服务器地址', serverAddressHint: '选择目标电脑能够访问的服务器地址。',
     targetPlatform: '目标电脑系统', hostPlatform: '容器所在电脑的系统',
     shell: 'macOS / Linux · Shell', powershell: 'Windows · PowerShell',
+    editConnection: '编辑连接设置',
+  },
+  computerAPI: {
+    enable: '启用 Astral API',
+    hint: '允许在这台电脑上执行的命令调用 Astral API，也允许本机程序投递事件唤醒。',
+    reuseLocalHint: '本机沿用已保存的设置，可在电脑详情中修改。',
+    enabled: '已启用 Astral API', disabled: '已关闭 Astral API',
   },
   computerMaintenance: {
     updateDaemon: '更新 Daemon', confirmUpdate: '将这台电脑的 Daemon 更新到最新版本？正在运行的任务会中断。', updateServerHint: '此 Daemon 比 Server 新，建议更新 Desktop 或 Server。',

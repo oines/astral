@@ -141,7 +141,7 @@ func New(t *testing.T, computerCount int, generate func(context.Context, int, ma
 			t.Fatal(createErr)
 		}
 		d.Hello.Home = t.TempDir()
-		enrollment, enrollErr := p.Hub.Enroll(ctx, server.URL, false, false)
+		enrollment, enrollErr := p.Hub.Enroll(ctx, server.URL, computers.EnrollmentOptions{})
 		if enrollErr != nil {
 			t.Fatal(enrollErr)
 		}

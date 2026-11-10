@@ -612,6 +612,9 @@ func (s *Service) Accept(ctx context.Context, computerID, id string, event Event
 		if c.Revoked {
 			return domain.Forbidden("Computer is revoked")
 		}
+		if c.ComputerAPIDisabled {
+			return &domain.Error{Status: 403, Code: "computer_api_disabled", Message: "Computer API is disabled for this Computer"}
+		}
 		next.Buffer = append(next.Buffer, BatchEvent{EndpointID: id, ComputerID: computerID, ComputerName: c.Name, EventID: event.EventID, Title: e.Title, Prompt: e.Prompt, Notes: e.Notes, Text: body, ReceivedAt: now, Truncated: truncated})
 		next.Bytes += len(body) + configurationBytes
 		if next.Due.IsZero() {

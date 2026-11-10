@@ -1,7 +1,9 @@
 package computers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net"
 	"testing"
 	"time"
@@ -28,7 +30,7 @@ func connectionOrderFixture(t *testing.T) (*Hub, domain.Computer) {
 
 // Calling serveConnection directly lets the tests control the scheduling gap
 // after an authentication acknowledgement without adding a production hook.
-func serveOrderedConnection(t *testing.T, hub *Hub, id, boot string, sequence uint64) (*transport.Peer, <-chan struct{}) {
+func serveOrderedConnection(t *testing.T, hub *Hub, id, boot, ip string, sequence uint64) (*transport.Peer, <-chan struct{}) {
 	t.Helper()
 	server, client := net.Pipe()
 	remote := transport.New(client, func(_ context.Context, _ transport.Request, out *transport.Responder) error {
@@ -37,7 +39,7 @@ func serveOrderedConnection(t *testing.T, hub *Hub, id, boot string, sequence ui
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		hub.serveConnection(t.Context(), server, id, Hello{BootID: boot}, sequence)
+		hub.serveConnection(t.Context(), server, id, Hello{BootID: boot}, ip, sequence)
 	}()
 	t.Cleanup(func() {
 		_ = remote.Close()
@@ -93,11 +95,11 @@ func TestHubLateConnectionCannotReplaceNewerConnection(t *testing.T) {
 	hub, computer := connectionOrderFixture(t)
 	oldSequence := hub.reserveConnectionSequence()
 	newSequence := hub.reserveConnectionSequence()
-	_, currentDone := serveOrderedConnection(t, hub, computer.ID, "new", newSequence)
+	_, currentDone := serveOrderedConnection(t, hub, computer.ID, "new", "203.0.113.2", newSequence)
 	current := waitOrderedConnection(t, hub, computer.ID, "new", currentDone)
 
 	// The older handler resumes only after the newer connection is usable.
-	stale, staleDone := serveOrderedConnection(t, hub, computer.ID, "old", oldSequence)
+	stale, staleDone := serveOrderedConnection(t, hub, computer.ID, "old", "203.0.113.1", oldSequence)
 	waitConnectionExit(t, staleDone)
 	select {
 	case <-stale.Done():
@@ -110,6 +112,15 @@ func TestHubLateConnectionCannotReplaceNewerConnection(t *testing.T) {
 	if active != current {
 		t.Fatal("late older connection replaced the newer connection")
 	}
+	if status := hub.OwnerStatus(computer); !status.Online || status.ConnectionIP != "203.0.113.2" {
+		t.Fatalf("late older connection changed the online address: %+v", status)
+	}
+	if raw, err := json.Marshal(hub.Status(computer)); err != nil || bytes.Contains(raw, []byte(`"connection_ip"`)) {
+		t.Fatalf("connection IP leaked into Daemon or Gateway status: %s %v", raw, err)
+	}
+	if records, err := hub.Store.List(t.Context(), "computers"); err != nil || len(records) != 1 || bytes.Contains(records[0].Data, []byte(`"connection_ip"`)) {
+		t.Fatalf("connection IP entered persisted data: %v", err)
+	}
 	requireConnectionUsable(t, current)
 }
 
@@ -117,12 +128,12 @@ func TestHubLateConnectionCannotReturnAfterNewerConnectionExits(t *testing.T) {
 	hub, computer := connectionOrderFixture(t)
 	oldSequence := hub.reserveConnectionSequence()
 	newSequence := hub.reserveConnectionSequence()
-	current, currentDone := serveOrderedConnection(t, hub, computer.ID, "new", newSequence)
+	current, currentDone := serveOrderedConnection(t, hub, computer.ID, "new", "203.0.113.2", newSequence)
 	_ = waitOrderedConnection(t, hub, computer.ID, "new", currentDone)
 	_ = current.Close()
 	waitConnectionExit(t, currentDone)
 
-	_, staleDone := serveOrderedConnection(t, hub, computer.ID, "old", oldSequence)
+	_, staleDone := serveOrderedConnection(t, hub, computer.ID, "old", "203.0.113.1", oldSequence)
 	waitConnectionExit(t, staleDone)
 	hub.mu.RLock()
 	active := hub.live[computer.ID]
@@ -130,12 +141,15 @@ func TestHubLateConnectionCannotReturnAfterNewerConnectionExits(t *testing.T) {
 	if active != nil {
 		t.Fatal("late older connection became live after newer connection cleanup")
 	}
+	if status := hub.OwnerStatus(computer); status.Online || status.ConnectionIP != "" {
+		t.Fatalf("disconnected Computer retained its address: %+v", status)
+	}
 }
 
 func TestHubFailedAcknowledgementDoesNotSupersedeConnections(t *testing.T) {
 	hub, computer := connectionOrderFixture(t)
 	firstSequence := hub.reserveConnectionSequence()
-	_, firstDone := serveOrderedConnection(t, hub, computer.ID, "first", firstSequence)
+	_, firstDone := serveOrderedConnection(t, hub, computer.ID, "first", "203.0.113.1", firstSequence)
 	first := waitOrderedConnection(t, hub, computer.ID, "first", firstDone)
 	acknowledgedSequence := hub.reserveConnectionSequence()
 	failedSequence := hub.reserveConnectionSequence()
@@ -156,10 +170,13 @@ func TestHubFailedAcknowledgementDoesNotSupersedeConnections(t *testing.T) {
 
 	// A previously acknowledged candidate can still complete admission even
 	// though a later candidate reserved a sequence before its failed write.
-	_, secondDone := serveOrderedConnection(t, hub, computer.ID, "second", acknowledgedSequence)
+	_, secondDone := serveOrderedConnection(t, hub, computer.ID, "second", "203.0.113.2", acknowledgedSequence)
 	second := waitOrderedConnection(t, hub, computer.ID, "second", secondDone)
 	waitConnectionExit(t, firstDone)
 	requireConnectionUsable(t, second)
+	if status := hub.OwnerStatus(computer); !status.Online || status.ConnectionIP != "203.0.113.2" {
+		t.Fatalf("replacement did not update the online address: %+v", status)
+	}
 }
 
 func TestHubConnectionAdmissionRechecksRegistration(t *testing.T) {
@@ -176,7 +193,7 @@ func TestHubConnectionAdmissionRechecksRegistration(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			_, done := serveOrderedConnection(t, hub, computer.ID, "unavailable", sequence)
+			_, done := serveOrderedConnection(t, hub, computer.ID, "unavailable", "", sequence)
 			waitConnectionExit(t, done)
 			hub.mu.RLock()
 			active, watermark := hub.live[computer.ID], hub.admittedConnection[computer.ID]
@@ -191,7 +208,7 @@ func TestHubConnectionAdmissionRechecksRegistration(t *testing.T) {
 func TestHubForgetRemovesWatermarkWithoutAdmittingDeletedConnection(t *testing.T) {
 	hub, computer := connectionOrderFixture(t)
 	sequence := hub.reserveConnectionSequence()
-	_, currentDone := serveOrderedConnection(t, hub, computer.ID, "current", sequence)
+	_, currentDone := serveOrderedConnection(t, hub, computer.ID, "current", "", sequence)
 	_ = waitOrderedConnection(t, hub, computer.ID, "current", currentDone)
 	lateSequence := hub.reserveConnectionSequence()
 	if err := hub.Store.Update(t.Context(), func(tx *persistence.Tx) error {
@@ -201,7 +218,7 @@ func TestHubForgetRemovesWatermarkWithoutAdmittingDeletedConnection(t *testing.T
 	}
 	hub.Forget(computer.ID)
 	waitConnectionExit(t, currentDone)
-	_, lateDone := serveOrderedConnection(t, hub, computer.ID, "late", lateSequence)
+	_, lateDone := serveOrderedConnection(t, hub, computer.ID, "late", "", lateSequence)
 	waitConnectionExit(t, lateDone)
 	hub.mu.RLock()
 	active := hub.live[computer.ID]

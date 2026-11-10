@@ -36,7 +36,7 @@ func TestReportedEnvironmentPersistsAcrossDisconnectAndLegacyReconnect(t *testin
 	}
 	info := domain.ContainerInfo{Name: "astral-persistent", Host: "remote-host", Image: "astral-computer:one", Volume: "astral-persistent-data", MountPath: "/var/lib/astral"}
 	d.Hello.Container = &info
-	e, err := s.hub.Enroll(s.ctx, s.server.URL, true, false)
+	e, err := s.hub.Enroll(s.ctx, s.server.URL, computers.EnrollmentOptions{Container: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestContainerMetadataDoesNotChangeComputerKind(t *testing.T) {
 	s := fixture(t, 1)
 	hello := s.daemons[0].Hello
 	hello.Container = &domain.ContainerInfo{Name: "not-a-container"}
-	e, err := s.hub.Enroll(s.ctx, s.server.URL, false, false)
+	e, err := s.hub.Enroll(s.ctx, s.server.URL, computers.EnrollmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
