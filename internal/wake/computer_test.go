@@ -59,6 +59,41 @@ func acceptComputerEvent(t *testing.T, f *fixture, e domain.WakeEndpoint, id str
 	}
 }
 
+func TestComputerAPIDisableRejectsNewEventsWithoutDroppingAcceptedEvents(t *testing.T) {
+	f := manualWorkerFixture(t, nil)
+	a, b := computerEndpoints(t, f)
+	acceptComputerEvent(t, f, a, "before-disable")
+	var computer domain.Computer
+	if err := f.store.Get(f.ctx, "computers", a.ComputerID, &computer); err != nil {
+		t.Fatal(err)
+	}
+	computer.ComputerAPIDisabled = true
+	if err := f.store.Save(f.ctx, "computers", &computer.Meta, &computer); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.s.Accept(f.ctx, a.ComputerID, a.ID, Event{EventID: "while-disabled", Text: "blocked"})
+	var rejection *domain.Error
+	if !errors.As(err, &rejection) || rejection.Status != 403 || rejection.Code != "computer_api_disabled" {
+		t.Fatalf("disabled source could still accept an event: %v", err)
+	}
+	var receipt eventReceipt
+	if err := f.store.Maintenance(f.ctx, receiptKind, eventKey(a.ID, "while-disabled"), &receipt); !domain.IsMissing(err) {
+		t.Fatalf("rejected event wrote an acceptance receipt: %v", err)
+	}
+	acceptComputerEvent(t, f, b, "another-computer")
+	workerClock(f, MergeWindow)
+	f.s.cycle(f.ctx)
+	batch := receive(t, f.delivered)
+	if len(batch.Events) != 2 || batch.Events[0].EventID != "before-disable" || batch.Events[1].EventID != "another-computer" {
+		t.Fatalf("closing one source changed the accepted batch: %+v", batch)
+	}
+	computer.ComputerAPIDisabled = false
+	if err := f.store.Save(f.ctx, "computers", &computer.Meta, &computer); err != nil {
+		t.Fatal(err)
+	}
+	acceptComputerEvent(t, f, a, "while-disabled")
+}
+
 func TestComputerDeletionFiltersSharedBufferAndPermanentlyRemovesEndpointConfiguration(t *testing.T) {
 	f := manualWorkerFixture(t, nil)
 	a, b := computerEndpoints(t, f)

@@ -17,7 +17,7 @@ func TestContainerPreparationOnlyRewritesVerifiedSameHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close(context.Background()) })
-	enrollment, err := s.Hub.Enroll(context.Background(), s.URL, true, false)
+	enrollment, err := s.Hub.Enroll(context.Background(), s.URL, computers.EnrollmentOptions{Container: true})
 	if err != nil {
 		t.Fatal(err)
 	}

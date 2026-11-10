@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useQuery, useQueryCache } from '@pinia/colada'
 import { listComputersQuery, listComputersQueryKey } from '@astral/sdk/colada'
-import { deleteComputer, revokeComputer, listComputers, updateComputer } from '@astral/sdk'
+import { deleteComputer, revokeComputer, listComputers, updateComputer, type AstralInternalDomainOwnerComputerStatus as OwnerComputerStatus } from '@astral/sdk'
 import { Button, Modal, SettingsSection, SettingsRow } from '@astral/ui'
 import { ArrowLeft, ChevronRight, Monitor, Plus, Server, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
@@ -19,6 +19,7 @@ import ResourceDelete from './ResourceDelete.vue'
 import AddComputerDialog from './AddComputerDialog.vue'
 import CopyValue from '../CopyValue.vue'
 import ComputerMaintenance from './ComputerMaintenance.vue'
+import ComputerAPIAccessRow from './ComputerAPIAccessRow.vue'
 const { t } = useI18n()
 const app = useAppStore()
 const wakeEndpoints = useWakeEndpointStore()
@@ -37,21 +38,25 @@ const removing = ref(false)
 const removalTarget = ref<Computer>()
 function edit(computer: Computer) { selectedID.value = computer.id; action.success.value = ''; action.error.value = '' }
 function add() { adding.value = true }
-async function rename(id: string, name: string) {
-  await saves.run(`computer:${id}`, 'name', {
+async function updateSetting<K extends 'name' | 'computer_api_disabled'>(id: string, field: K, value: NonNullable<Computer[K]>) {
+  const matches = (computer: Computer) => (computer[field] ?? false) === value
+  const confirm = (computer: OwnerComputerStatus) => saves.confirm(listComputersQueryKey(), {
+    ...computer, computer_api_disabled: computer.computer_api_disabled ?? false, connection_ip: computer.connection_ip,
+  })
+  await saves.run(`computer:${id}`, field, {
     write: async () => {
       const current = (await request(listComputers())).find(c => c.id === id)
       if (!current) throw { code: 'not_found', message: t('noComputers') }
-      if (current.name !== name) saves.confirm(listComputersQueryKey(), await request(updateComputer({ path: { id }, body: { name, revision: current.revision } })))
+      confirm(matches(current) ? current : await request(updateComputer({ path: { id }, body: { [field]: value, revision: current.revision } })))
       await app.refresh().catch(() => undefined)
     },
     reconcile: async () => {
       const current = (await request(listComputers())).find(c => c.id === id)
-      if (current) saves.confirm(listComputersQueryKey(), current)
+      if (current) confirm(current)
       await app.refresh().catch(() => undefined)
-      return current?.name === name ? 'applied' : 'not-applied'
+      return current && matches(current) ? 'applied' : 'not-applied'
     },
-  })
+  }, value)
 }
 async function revoke() {
   await action.run(async () => { if (selected.value) await request(revokeComputer({ path: { id: selected.value.id } })); revoking.value = false; await app.refresh() })
@@ -164,13 +169,18 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
             :draft-key="`computer:${selected.id}/name`"
             :label="t('name')"
             required
-            @commit="rename(selected!.id, $event)"
+            @commit="updateSetting(selected!.id, 'name', $event)"
           />
         </SettingsRow>
         <SettingsRow :label="t('computerInfo.type')">
           <span>{{ t(`computerInfo.kind.${computerKind(selected)}`) }}</span>
         </SettingsRow>
-        <SettingsFeedback :scope="`computer:${selected.id}/name`" />
+        <ComputerAPIAccessRow
+          :model-value="!saves.value(`computer:${selected.id}/computer_api_disabled`, selected.computer_api_disabled ?? false)"
+          :disabled="selected.revoked"
+          @update:model-value="updateSetting(selected!.id, 'computer_api_disabled', !$event)"
+        />
+        <SettingsFeedback :scope="[`computer:${selected.id}/name`, `computer:${selected.id}/computer_api_disabled`]" />
       </SettingsSection>
       <SettingsSection
         v-if="selected.kind === 'container'"
@@ -190,6 +200,15 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
       <SettingsSection :title="t('computerInfo.environment')">
         <SettingsRow :label="t('computerInfo.daemonVersion')">
           <span>{{ selected.daemon_version || t('computerInfo.unknownVersion') }}</span>
+        </SettingsRow>
+        <SettingsRow
+          v-if="selected.online && selected.connection_ip"
+          :label="t('computerInfo.connectionIP')"
+        >
+          <CopyValue
+            :value="selected.connection_ip"
+            :label="t('computerInfo.connectionIP')"
+          />
         </SettingsRow>
         <SettingsRow
           v-for="fact in computerEnvironment(selected)"

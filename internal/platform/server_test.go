@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"github.com/oines/astral/internal/computers"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -39,11 +40,12 @@ func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close(context.Background()) })
-	local, err := s.UseLocal(ctx)
-	if err != nil || !local.Online || !local.Local || local.Kind != "local" {
+	var local domain.OwnerComputerStatus
+	err = desktopJSON(ctx, "POST", s.URL+"/api/v1/computers/local", testDesktopToken, nil, &local)
+	if err != nil || !local.Online || !local.Local || local.Kind != "local" || local.ConnectionIP != "127.0.0.1" {
 		t.Fatalf("local shortcut did not connect: %+v %v", local, err)
 	}
-	again, err := s.UseLocal(ctx)
+	again, err := s.UseLocal(ctx, false)
 	if err != nil || again.ID != local.ID {
 		t.Fatal("local shortcut duplicated a Computer")
 	}
@@ -54,11 +56,20 @@ func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testin
 	if err = desktopJSON(ctx, "GET", s.URL+"/api/v1/bootstrap", testDesktopToken, nil, &bootstrap); err != nil {
 		t.Fatal(err)
 	}
-	if bootstrap.Host.Hostname == "" || bootstrap.Host.OS == "" || len(bootstrap.Computers) != 1 {
+	if bootstrap.Host.Hostname == "" || bootstrap.Host.OS == "" || len(bootstrap.Computers) != 1 || bootstrap.Computers[0].ConnectionIP != local.ConnectionIP {
 		t.Fatal("bootstrap confused Server host with browser")
 	}
+	var listed []domain.OwnerComputerStatus
+	if err := desktopJSON(ctx, "GET", s.URL+"/api/v1/computers", testDesktopToken, nil, &listed); err != nil || len(listed) != 1 || listed[0].ConnectionIP != local.ConnectionIP {
+		t.Fatalf("Computer list did not include the live address: %+v %v", listed, err)
+	}
+	name := local.Name
+	var updated domain.OwnerComputerStatus
+	if err := desktopJSON(ctx, "PATCH", s.URL+"/api/v1/computers/"+local.ID, testDesktopToken, httpapi.ComputerUpdate{Revision: local.Revision, Name: &name}, &updated); err != nil || updated.ConnectionIP != local.ConnectionIP {
+		t.Fatalf("Computer update did not include the live address: %+v %v", updated, err)
+	}
 	assertPrivate(t, filepath.Join(s.Config.DataDirectory, "control.json"))
-	enrollment, err := s.Hub.Enroll(ctx, s.URL, false, false)
+	enrollment, err := s.Hub.Enroll(ctx, s.URL, computers.EnrollmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +118,7 @@ func TestLocalComputerReuseAndRemoteEnrollmentUseRealDaemonConnections(t *testin
 	if err = s2.Start(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := s2.UseLocal(ctx)
+	reopened, err := s2.UseLocal(ctx, false)
 	if err != nil || reopened.ID != local.ID || !reopened.Online {
 		t.Fatal("Server restart lost local Computer identity")
 	}
@@ -140,7 +151,7 @@ func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) 
 	// use 15 seconds, followed by a separate 5-second persistence context.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	operation, err := s.CreateContainer(ctx, "retryable-create")
+	operation, err := s.CreateContainer(ctx, "retryable-create", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +167,7 @@ func TestContainerFailureIsDurableAndRequestRetryDoesNotDuplicate(t *testing.T) 
 	if active {
 		await(t, ctx, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return !s.provisioning[operation.ID] })
 	}
-	retry, err := s.CreateContainer(ctx, "retryable-create")
+	retry, err := s.CreateContainer(ctx, "retryable-create", nil)
 	if err != nil || retry.ID != operation.ID {
 		t.Fatal("same request created another operation")
 	}

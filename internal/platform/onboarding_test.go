@@ -116,7 +116,7 @@ func TestOnboardingRequiresBothResourcesAndStartsAWorkingSession(t *testing.T) {
 	if err = s.Start(); err != nil {
 		t.Fatal(err)
 	}
-	local, err := s.UseLocal(ctx)
+	local, err := s.UseLocal(ctx, false)
 	if err != nil || !local.Online {
 		t.Fatal("local Computer did not connect", err)
 	}

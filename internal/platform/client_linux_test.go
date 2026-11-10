@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"github.com/oines/astral/internal/computers"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -36,7 +37,7 @@ func TestLinuxMissingUserManagerFailsBeforePairingAndForegroundSkipsPreparation(
 	}))
 	defer unavailable.Close()
 	ctx := context.Background()
-	enrollment, err := server.Hub.Enroll(ctx, unavailable.URL, false, false)
+	enrollment, err := server.Hub.Enroll(ctx, unavailable.URL, computers.EnrollmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

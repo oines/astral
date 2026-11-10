@@ -43,7 +43,7 @@ func toolImageComputer(t *testing.T, f *fixture) *toolImageSourceFixture {
 	hello.Capabilities = nil
 	server := httptest.NewServer(http.HandlerFunc(f.hub.Connect))
 	t.Cleanup(server.Close)
-	enrollment, err := f.hub.Enroll(f.ctx, server.URL, false, false)
+	enrollment, err := f.hub.Enroll(f.ctx, server.URL, computers.EnrollmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

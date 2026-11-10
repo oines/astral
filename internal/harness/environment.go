@@ -267,7 +267,9 @@ func (r *runtime) collectEnvironment(ctx context.Context) (map[string]any, error
 				binding, bindErr := s.Hub.Bind(scanCtx, r.agentID, r.id, record.ComputerID, record.CWD)
 				if bindErr == nil {
 					currentComputer["cwd"], currentComputer["agent_home"], currentComputer["shell"], currentComputer["boot_id"] = binding.CWD, binding.AgentHome, binding.Shell, binding.BootID
-					localAPI = map[string]string{"base_url": binding.APIURL, "capabilities_url": binding.APIURL + "/v1/capabilities"}
+					if !computer.ComputerAPIDisabled && binding.APIURL != "" {
+						localAPI = map[string]string{"base_url": binding.APIURL, "capabilities_url": binding.APIURL + "/v1/capabilities"}
+					}
 					discovery, bindErr = s.Hub.Discover(scanCtx, binding)
 				}
 				cancel()

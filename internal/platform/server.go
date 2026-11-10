@@ -199,6 +199,7 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 		return nil, identityErr
 	}
 	s.Hub = computers.NewHub(s.Store)
+	s.Hub.ResolveConnectionIP = s.computerConnectionIP
 	s.Hub.SetIdentity(identity)
 	s.Hub.ContainerURL = func(r *http.Request, hostname string) string {
 		local, _ := os.Hostname()
@@ -322,7 +323,7 @@ func (s *Server) Start() error {
 	if !s.Config.NoLocal {
 		ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
 		defer cancel()
-		if _, err := s.useLocal(ctx, false); err != nil {
+		if _, err := s.useLocal(ctx, false, false); err != nil {
 			s.mu.Lock()
 			s.startupError = err.Error()
 			s.mu.Unlock()
@@ -423,19 +424,20 @@ func (s *Server) Close(ctx context.Context) error {
 	}
 	return errors.Join(all...)
 }
-func (s *Server) UseLocal(ctx context.Context) (domain.ComputerStatus, error) {
-	status, err := s.useLocal(ctx, true)
-	if err == nil {
-		s.mu.Lock()
-		s.startupError = ""
-		s.mu.Unlock()
+func (s *Server) UseLocal(ctx context.Context, computerAPIDisabled bool) (domain.OwnerComputerStatus, error) {
+	status, err := s.useLocal(ctx, true, computerAPIDisabled)
+	if err != nil {
+		return domain.OwnerComputerStatus{ComputerStatus: status}, err
 	}
-	return status, err
+	s.mu.Lock()
+	s.startupError = ""
+	s.mu.Unlock()
+	return s.Hub.OwnerStatus(status.Computer), nil
 }
 
 // Re-enrollment is an explicit owner action. Starting the Server may reconnect
 // an existing identity, but must never recreate a deleted registration.
-func (s *Server) useLocal(ctx context.Context, reenroll bool) (domain.ComputerStatus, error) {
+func (s *Server) useLocal(ctx context.Context, reenroll, computerAPIDisabled bool) (domain.ComputerStatus, error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -514,7 +516,7 @@ func (s *Server) useLocal(ctx context.Context, reenroll bool) (domain.ComputerSt
 		}
 	}
 	if credentials.ComputerID == "" {
-		enrollment, enrollErr := s.Hub.Enroll(ctx, localURL, false, true)
+		enrollment, enrollErr := s.Hub.Enroll(ctx, localURL, computers.EnrollmentOptions{Local: true, ComputerAPIDisabled: computerAPIDisabled})
 		if enrollErr != nil {
 			lock.Close()
 			s.mu.Unlock()

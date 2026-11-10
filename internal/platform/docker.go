@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 )
 
@@ -440,7 +441,7 @@ func LaunchContainer(ctx context.Context, options DockerOptions, report func(pha
 	}
 	return id, nil
 }
-func (s *Server) CreateContainer(ctx context.Context, intent string) (domain.Provisioning, error) {
+func (s *Server) CreateContainer(ctx context.Context, intent string, computerAPIDisabled *bool) (domain.Provisioning, error) {
 	if len(intent) > 200 {
 		return domain.Provisioning{}, domain.Invalid("provisioning request ID is too long")
 	}
@@ -456,11 +457,15 @@ func (s *Server) CreateContainer(ctx context.Context, intent string) (domain.Pro
 	if err != nil && !domain.IsMissing(err) {
 		return operation, err
 	}
+	if err == nil && computerAPIDisabled != nil && operation.ComputerAPIDisabled != *computerAPIDisabled {
+		return operation, domain.Conflict("the original container request uses a different Astral API setting")
+	}
 	if err == nil && (operation.State == "connected" || s.provisioning[id]) {
 		return operation, nil
 	}
 	if domain.IsMissing(err) {
 		operation = domain.Provisioning{Meta: domain.Meta{ID: id}, IntentID: intent, Kind: "container", State: "preparing", Phase: "checking_runtime", Log: []string{}}
+		operation.ComputerAPIDisabled = computerAPIDisabled != nil && *computerAPIDisabled
 	}
 	operation.State, operation.Error = "preparing", ""
 	if err = s.Store.Save(ctx, "provisioning", &operation.Meta, &operation); err != nil {
@@ -565,7 +570,7 @@ func (s *Server) provision(operation domain.Provisioning) {
 			// selected reachable route when replacing only the pairing token.
 			localURL = enrollment.ServerURL
 		}
-		result, enrollErr := s.Hub.Enroll(ctx, localURL, true, false)
+		result, enrollErr := s.Hub.Enroll(ctx, localURL, computers.EnrollmentOptions{Container: true, ComputerAPIDisabled: operation.ComputerAPIDisabled})
 		if enrollErr != nil {
 			fail(enrollErr)
 			return

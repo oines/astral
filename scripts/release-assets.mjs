@@ -159,7 +159,11 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   const label = macSigned ? 'Mac signed candidate' : 'unsigned candidate'
   const macStatus = macSigned ? (notarized ? 'verified signed and notarized' : 'verified signed; Apple notarization is pending') + '; final-byte evidence is in mac-signing-report.json' : 'not performed'
   const hostMigration = formats.host_schema >= 4 ? 'The Host 3 → 4 migration restores visibility of Sessions archived while still bound to IM. It appends an unarchived current revision while preserving every earlier revision, IM event and Core history entry; ordinary archived Sessions stay archived. Desktop keeps its existing schema-3-core-11/ data directory.' : 'The supported public data baseline is Host 3 / Core 11.'
-  const capabilities = `Archiving now seals a conversation and its subagents: running work stops, driving inputs are cleared, and fixed-target schedules and event endpoints are disabled. History, export and independent forks remain available. Restore unlocks the conversation without continuing old work or re-enabling automation. Archived targets reject new schedules, event endpoints and delivery; chat binding requires an explicit restore first.
+  const capabilities = `Control Astral API access when adding a Computer or in its details. New remote Computers start with API access off. Turning it off revokes command API credentials and blocks new event deliveries from that Computer. Bots can still run commands and work with files on it. Existing compatible Daemons work with this setting after updating the Server.
+
+Computer details show the IP of the current Daemon connection. For connections through a trusted reverse proxy, Astral uses the forwarded client IP when available, including with Cloudflare Tunnel, nginx, and Caddy.
+
+Archiving now seals a conversation and its subagents: running work stops, driving inputs are cleared, and fixed-target schedules and event endpoints are disabled. History, export and independent forks remain available. Restore unlocks the conversation without continuing old work or re-enabling automation. Archived targets reject new schedules, event endpoints and delivery; chat binding requires an explicit restore first.
 
 The sidebar shows clock and lightning markers together. Open a conversation's three-dot menu to find its automatic tasks at the top; selecting a name opens the matching Bot and task editor. A conversation remains in Now with a blue dot while any of its subagents are working, even when the original agent is idle.
 

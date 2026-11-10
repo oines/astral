@@ -134,6 +134,65 @@ func TestCommandPermissionRemovalCancelsRequestsAndCannotRestoreOldToken(t *test
 	}
 }
 
+func TestComputerAPIDisableCancelsRequestsAndNeverRestoresCredentials(t *testing.T) {
+	hub, binding, active := commandAuthFixture(t, nil)
+	request := GatewayRequest{Binding: binding}
+	var err error
+	request.APIToken, _, err = hub.issueCommandCredential(t.Context(), binding, "before-disable", active.peer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, _, release, err := hub.commandRequest(t.Context(), active, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	var computer domain.Computer
+	if err := hub.Store.Get(t.Context(), "computers", binding.ComputerID, &computer); err != nil {
+		t.Fatal(err)
+	}
+	disabled := true
+	computer, err = hub.UpdateComputer(t.Context(), computer.ID, computer.Revision, nil, &disabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("disabling Computer API left a request alive")
+	}
+	_, _, _, err = hub.commandRequest(t.Context(), active, request)
+	var rejection *transport.Error
+	if !errors.As(err, &rejection) || rejection.Code != "computer_api_disabled" || rejection.Outcome != "not_executed" {
+		t.Fatalf("disabled Computer did not reject the Gateway request before execution: %v", err)
+	}
+	placeholder, lease, err := hub.issueCommandCredential(t.Context(), binding, "while-disabled", active.peer)
+	if err != nil || !validAPIToken(placeholder) || lease != nil || placeholder == request.APIToken {
+		t.Fatalf("command startup did not receive an independent, unregistered compatibility value: %v", err)
+	}
+	disabled = false
+	if _, err := hub.UpdateComputer(t.Context(), computer.ID, computer.Revision, nil, &disabled); err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{request.APIToken, placeholder} {
+		request.APIToken = token
+		_, _, _, err := hub.commandRequest(t.Context(), active, request)
+		var rejection *transport.Error
+		if !errors.As(err, &rejection) || rejection.Code != "unauthorized" {
+			t.Fatalf("enabling Computer API revived an earlier value: %v", err)
+		}
+	}
+	request.APIToken, lease, err = hub.issueCommandCredential(t.Context(), binding, "after-enable", active.peer)
+	if err != nil || lease == nil {
+		t.Fatalf("new command did not receive its credential: %v", err)
+	}
+	_, _, releaseNew, err := hub.commandRequest(t.Context(), active, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseNew()
+}
+
 func TestCommandExitRevokesBeforeOutputIsDrained(t *testing.T) {
 	hub, binding, active := commandAuthFixture(t, func(_ context.Context, request transport.Request, out *transport.Responder) error {
 		if request.Method == "process.wait" {

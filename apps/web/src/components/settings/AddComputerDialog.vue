@@ -15,6 +15,7 @@ import { useAction } from '../../composables/useAction'
 import { useContainerRuntimeCheck } from '../../composables/useContainerRuntimeCheck'
 import { useAppStore } from '../../stores/app'
 import ContainerRuntimeStatus from './ContainerRuntimeStatus.vue'
+import ComputerAPIAccessRow from './ComputerAPIAccessRow.vue'
 import { useClipboard } from '../../composables/useClipboard'
 import { randomID } from '../../lib/browser'
 import { formatDateTime } from '../../lib/timezone'
@@ -28,6 +29,10 @@ const action = useAction()
 const { copy, copied } = useClipboard()
 const list = useQuery(listComputersQuery())
 const mode = ref<'choose' | 'local' | 'container' | 'remote'>('choose')
+const localAPIEnabled = ref(true)
+const containerAPIEnabled = ref(true)
+const remoteAPIEnabled = ref(false)
+const localStarted = ref(false)
 const container = ref(false)
 const commandPlatform = ref<'shell' | 'powershell'>('shell')
 const operation = ref<AstralInternalDomainProvisioning>()
@@ -35,7 +40,9 @@ const enrollment = ref<AstralInternalDomainEnrollment>()
 const enrollmentResult = ref<AstralInternalComputersEnrollmentResult>()
 const computerID = ref('')
 const connected = computed(() => list.data.value?.find(c => c.id === computerID.value && c.online))
-const intent = ref('')
+const existingLocal = computed(() => list.data.value?.find(c => c.local && !c.revoked))
+const localAPIDisabled = computed(() => existingLocal.value ? Boolean(existingLocal.value.computer_api_disabled) : !localAPIEnabled.value)
+const containerIntent = ref<{ id: string; computer_api_disabled: boolean }>()
 const serverAddress = ref('')
 const addressListID = useId()
 const serverAddresses = computed(() => computerServerAddresses(app.data?.network.addresses || [], window.location.origin, Boolean(window.astralDesktop), t('networkBrowserAddress')))
@@ -51,7 +58,8 @@ if (pending) {
     void request(getComputerOperation({ path: { id: saved.id } })).then(value => {
       if (interacted) return
       operation.value = value
-      intent.value = saved.intent
+      const disabled = value.computer_api_disabled ?? false
+      containerIntent.value = { id: saved.intent, computer_api_disabled: disabled }
       computerID.value = value.computer_id || ''
       if (value.state !== 'connected') { mode.value = 'container'; restoring = true; adding.value = true }
       else localStorage.removeItem(activeOperationKey)
@@ -62,6 +70,11 @@ function add() {
   remoteGeneration++
   interacted = true
   mode.value = 'choose'
+  localAPIEnabled.value = true
+  containerAPIEnabled.value = true
+  remoteAPIEnabled.value = false
+  localStarted.value = false
+  containerIntent.value = undefined
   operation.value = undefined
   enrollment.value = undefined
   enrollmentResult.value = undefined
@@ -69,12 +82,14 @@ function add() {
   copied.value = false
   serverAddress.value = serverAddresses.value[0]?.url || app.data?.network.public_urls.value[0] || ''
   commandPlatform.value = app.data?.host.os === 'windows' ? 'powershell' : 'shell'
-  intent.value = randomID()
   action.error.value = ''
 }
 function chooseMode(value: typeof mode.value) {
   interacted = true
-  if (mode.value !== value) remoteGeneration++
+  if (mode.value !== value) {
+    remoteGeneration++
+    if (value === 'local') localStarted.value = false
+  }
   mode.value = value
   computerID.value = value === 'container' ? operation.value?.computer_id || '' : value === 'remote' ? enrollment.value?.computer_id || '' : ''
   action.error.value = ''
@@ -82,9 +97,9 @@ function chooseMode(value: typeof mode.value) {
 }
 async function local() {
   if (action.busy.value) return
-  chooseMode('local')
+  localStarted.value = true
   await action.run(async () => {
-    const c = await request(useLocalComputer())
+    const c = await request(useLocalComputer({ query: { computer_api_disabled: localAPIDisabled.value } }))
     computerID.value = c.id
     await list.refetch()
     await app.refresh()
@@ -92,11 +107,11 @@ async function local() {
 }
 async function localContainer() {
   if (action.busy.value) return
-  chooseMode('container')
+  const attempt = containerIntent.value ??= { id: randomID(), computer_api_disabled: !containerAPIEnabled.value }
   await action.run(async () => {
-    operation.value = await request(createLocalContainer({ body: { id: intent.value } }))
+    operation.value = await request(createLocalContainer({ body: attempt }))
     computerID.value = operation.value.computer_id || ''
-    localStorage.setItem(activeOperationKey, JSON.stringify({ id: operation.value.id, intent: intent.value }))
+    localStorage.setItem(activeOperationKey, JSON.stringify({ id: operation.value.id, intent: attempt.id }))
   })
 }
 async function remote() {
@@ -106,12 +121,14 @@ async function remote() {
   const generation = ++remoteGeneration
   const serverURL = serverAddress.value.trim()
   const useContainer = container.value
+  const apiDisabled = !remoteAPIEnabled.value
   const current = () => generation === remoteGeneration && adding.value && mode.value === 'remote'
     && serverAddress.value.trim() === serverURL && container.value === useContainer
   await action.run(async () => {
     try {
-      const result = await request(enrollComputer({ body: { container: useContainer, server_url: serverURL } }))
+      const result = await request(enrollComputer({ body: { container: useContainer, server_url: serverURL, computer_api_disabled: apiDisabled } }))
       if (!current()) return
+      remoteAPIEnabled.value = !result.enrollment.computer_api_disabled
       enrollmentResult.value = result
       enrollment.value = result.enrollment
     } catch (error) { if (current()) throw error }
@@ -149,13 +166,14 @@ async function copyCommand() {
   await copy(displayedCommand.value)
 }
 watch(commandPlatform, () => { copied.value = false })
-watch([serverAddress, container], () => {
+function resetEnrollment() {
   remoteGeneration++
   enrollmentResult.value = undefined
   enrollment.value = undefined
   computerID.value = ''
   copied.value = false
-})
+}
+watch([serverAddress, container], resetEnrollment)
 watch(adding, open => {
   if (!open) remoteGeneration++
   if (open) void containerRuntime.check()
@@ -187,14 +205,14 @@ function finish() {
       </p>
       <button
         class="computer-option"
-        @click="local"
+        @click="chooseMode('local')"
       >
         <Monitor /><span><strong>{{ t('useServerMachine') }}</strong><small>{{ t('serverMachineHint') }}</small></span><ChevronRight />
       </button>
       <button
         class="computer-option"
         :disabled="containerRuntime.checking.value || !containerRuntime.available.value"
-        @click="localContainer"
+        @click="chooseMode('container')"
       >
         <Server /><span><strong>{{ t('localContainer') }}</strong><small>{{ t('containerMachineHint') }}</small></span><ChevronRight />
       </button>
@@ -249,6 +267,10 @@ function finish() {
               </option>
             </datalist>
           </SettingsRow>
+          <ComputerAPIAccessRow
+            v-model="remoteAPIEnabled"
+            :disabled="action.busy.value || !!enrollmentResult"
+          />
           <SettingsRow :label="t(container ? 'computerCommand.hostPlatform' : 'computerCommand.targetPlatform')">
             <select
               v-model="commandPlatform"
@@ -280,13 +302,22 @@ function finish() {
           </Button>
         </template>
         <template v-else>
-          <pre class="connection-command">{{ displayedCommand }}</pre><Button
-            :busy="action.busy.value"
-            :disabled="!displayedCommand"
-            @click="copyCommand"
-          >
-            <Check v-if="copied" /><Copy v-else />{{ t('copy') }}
-          </Button>
+          <pre class="connection-command">{{ displayedCommand }}</pre>
+          <div class="row">
+            <Button
+              :busy="action.busy.value"
+              :disabled="!displayedCommand"
+              @click="copyCommand"
+            >
+              <Check v-if="copied" /><Copy v-else />{{ t('copy') }}
+            </Button>
+            <Button
+              :disabled="action.busy.value"
+              @click="resetEnrollment"
+            >
+              {{ t('computerCommand.editConnection') }}
+            </Button>
+          </div>
           <p
             v-if="enrollment?.state === 'waiting'"
             class="row muted"
@@ -306,11 +337,43 @@ function finish() {
           </p>
         </template>
       </div>
+      <template v-else-if="mode === 'local' ? !localStarted : !containerIntent">
+        <SettingsSection>
+          <ComputerAPIAccessRow
+            v-if="mode === 'local'"
+            :model-value="!localAPIDisabled"
+            :disabled="!!existingLocal"
+            :description="existingLocal ? t('computerAPI.reuseLocalHint') : undefined"
+            @update:model-value="localAPIEnabled = $event"
+          />
+          <ComputerAPIAccessRow
+            v-else
+            v-model="containerAPIEnabled"
+          />
+        </SettingsSection>
+        <ContainerRuntimeStatus
+          v-if="mode === 'container'"
+          :host="containerRuntime.host.value"
+          :checking="containerRuntime.checking.value"
+          :error="containerRuntime.error.value"
+          @check="containerRuntime.check"
+        />
+        <Button
+          variant="primary"
+          :disabled="mode === 'container' && (containerRuntime.checking.value || !containerRuntime.available.value)"
+          @click="mode === 'local' ? local() : localContainer()"
+        >
+          {{ t(mode === 'local' ? 'useLocal' : 'localContainer') }}
+        </Button>
+      </template>
       <div
         v-else-if="mode === 'container'"
         class="stack"
       >
-        <p class="row">
+        <p
+          v-if="operation || action.busy.value"
+          class="row"
+        >
           <span
             v-if="operation && operation.state !== 'failed'"
             class="spinner"
@@ -326,7 +389,7 @@ function finish() {
           {{ operation.error }}
         </p>
         <Button
-          v-if="operation?.state === 'failed' || action.error.value"
+          v-if="operation?.state === 'failed' || action.error.value || (!operation && !action.busy.value)"
           :busy="action.busy.value"
           @click="localContainer"
         >
@@ -354,6 +417,8 @@ function finish() {
     >
       <span class="badge good align-start"><Check />{{ t('online') }}</span><h2>{{ connected.name }}</h2><p class="muted">
         {{ computerSummary(connected, t) }}
+      </p><p class="muted">
+        {{ t(connected.computer_api_disabled ? 'computerAPI.disabled' : 'computerAPI.enabled') }}
       </p><Button
         variant="primary"
         @click="finish"

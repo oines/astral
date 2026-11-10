@@ -29,7 +29,7 @@ func TestDeletedLocalComputerReenrollmentRequiresExplicitOwnerAction(t *testing.
 			if err = s.Start(); err != nil {
 				t.Fatal(err)
 			}
-			original, err := s.UseLocal(ctx)
+			original, err := s.UseLocal(ctx, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -44,7 +44,7 @@ func TestDeletedLocalComputerReenrollmentRequiresExplicitOwnerAction(t *testing.
 			if err = s.Hub.Revoke(ctx, original.ID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err = s.UseLocal(ctx); err == nil {
+			if _, err = s.UseLocal(ctx, false); err == nil {
 				t.Fatal("UseLocal restored a revoked registration")
 			}
 			var revoked domain.Computer
@@ -65,15 +65,15 @@ func TestDeletedLocalComputerReenrollmentRequiresExplicitOwnerAction(t *testing.
 				if err = s.Start(); err != nil {
 					t.Fatal(err)
 				}
-			} else if _, err = s.useLocal(ctx, false); err == nil {
+			} else if _, err = s.useLocal(ctx, false, false); err == nil {
 				t.Fatal("background reconnect recreated a deleted registration")
 			}
 			items, err := s.Store.List(ctx, "computers")
 			if err != nil || len(items) != 0 {
 				t.Fatal("Server start recreated deleted Computer:", err)
 			}
-			replacement, err := s.UseLocal(ctx)
-			if err != nil || !replacement.Online || replacement.ID == original.ID || replacement.Root != original.Root {
+			replacement, err := s.UseLocal(ctx, true)
+			if err != nil || !replacement.Online || replacement.ID == original.ID || replacement.Root != original.Root || !replacement.ComputerAPIDisabled {
 				t.Fatalf("explicit reconnect did not create a new identity in the same directory: %+v %v", replacement, err)
 			}
 			if raw, err := os.ReadFile(marker); err != nil || string(raw) != "keep workspace" {
@@ -85,9 +85,9 @@ func TestDeletedLocalComputerReenrollmentRequiresExplicitOwnerAction(t *testing.
 			if err = s.Store.Get(ctx, "agents", bot.ID, &retainedBot); err != nil || retainedBot.DefaultComputerID != "" || len(retainedBot.AllowedComputers) != 0 {
 				t.Fatalf("new identity inherited old Bot permissions: %+v %v", retainedBot, err)
 			}
-			again, err := s.UseLocal(ctx)
-			if err != nil || again.ID != replacement.ID {
-				t.Fatal("retry duplicated replacement Computer:", err)
+			again, err := s.UseLocal(ctx, false)
+			if err != nil || again.ID != replacement.ID || !again.ComputerAPIDisabled {
+				t.Fatal("retry duplicated replacement Computer or changed its Astral API policy:", err)
 			}
 		})
 	}

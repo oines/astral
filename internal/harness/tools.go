@@ -65,7 +65,11 @@ func (r *runtime) hostTools() []core.Tool {
 				if err != nil {
 					return core.ToolExecution{}, notExecuted("computer_selection", err)
 				}
-				return resultJSON(map[string]string{"computer_id": b.ComputerID, "cwd": b.CWD, "agent_home": b.AgentHome, "shell": b.Shell, "api_url": b.APIURL}), nil
+				result := map[string]string{"computer_id": b.ComputerID, "cwd": b.CWD, "agent_home": b.AgentHome, "shell": b.Shell}
+				if b.APIURL != "" && r.service.Hub.ComputerAPIEnabled(b.ComputerID) {
+					result["api_url"] = b.APIURL
+				}
+				return resultJSON(result), nil
 			}},
 		core.ToolFunc{Spec: core.ToolDefinition{Name: "web_search", Version: "astral-2", Description: "Search the web with this Agent's selected search provider. Only query is required; omit domains, recency (days), and limit to use the provider's defaults. Optional filters are passed to that provider; unsupported filters return an error. Returns provider_id, query and a results array. Every result has string title, url and summary fields, plus available date/author metadata. Summaries retain source-provided content or excerpts and remain empty if none are available; metadata alone does not contain page content. Results and content are not locally truncated. Errors are reported as failures, not empty results. There is no fallback provider.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","minLength":1},"domains":{"type":"array","items":{"type":"string"},"description":"Restrict to these domain names (no scheme or path)."},"recency":{"type":"integer","minimum":1,"description":"Restrict to the past N days."},"limit":{"type":"integer","minimum":1,"description":"Requested result count, passed directly to the provider."}},"required":["query"],"additionalProperties":false}`)},

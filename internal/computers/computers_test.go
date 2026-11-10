@@ -73,7 +73,7 @@ func fixture(t *testing.T, count int) *setup {
 			t.Fatal(err)
 		}
 		d.Hello.Home = t.TempDir()
-		enrollment, err := hub.Enroll(ctx, server.URL, false, false)
+		enrollment, err := hub.Enroll(ctx, server.URL, computers.EnrollmentOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -278,7 +278,7 @@ func TestProcessOriginalComputerAndBootCannotBeRebound(t *testing.T) {
 
 func TestEnrollmentIsConsumedAndAgentAllowlistRemainsExplicit(t *testing.T) {
 	s := fixture(t, 1)
-	e, err := s.hub.Enroll(s.ctx, s.server.URL, true, false)
+	e, err := s.hub.Enroll(s.ctx, s.server.URL, computers.EnrollmentOptions{Container: true})
 	if err != nil {
 		t.Fatal(err)
 	}

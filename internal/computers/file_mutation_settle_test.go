@@ -222,7 +222,7 @@ func TestDaemonReconnectWaitsForDisconnectedFileMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = d.Close(context.Background()) })
-	enrollment, err := hub.Enroll(ctx, server.URL, false, false)
+	enrollment, err := hub.Enroll(ctx, server.URL, EnrollmentOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
