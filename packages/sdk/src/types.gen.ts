@@ -693,10 +693,7 @@ export type AstralInternalComputersEnrollmentResult = {
 };
 
 export type AstralInternalComputersLocalSkill = {
-    content_digest?: string;
     digest: string;
-    dirty: boolean;
-    error?: string;
     name: string;
     path: string;
     revision: number;
@@ -1466,11 +1463,6 @@ export type AstralInternalGatewaySessionPresentation = {
     title?: string;
 };
 
-export type AstralInternalGatewaySkillPublishInput = {
-    base_revision: number;
-    digest: string;
-};
-
 export type AstralInternalGatewayStoredMessageObservationView = {
     observation: AstralInternalGatewayMessageObservationView;
     sequence: number;
@@ -2142,6 +2134,7 @@ export type AstralInternalServerupdateState = {
 
 export type AstralInternalSkillsManifest = {
     builtin: AstralInternalSkillsVersion;
+    removed?: Array<AstralInternalSkillsVersion>;
     shared: Array<AstralInternalSkillsVersion>;
 };
 
@@ -7166,7 +7159,7 @@ export type AgentSendFileData = {
     body: AstralInternalGatewaySendFile;
     headers: {
         /**
-         * Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.
+         * Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.
          */
         'Idempotency-Key': string;
     };
@@ -7197,7 +7190,7 @@ export type AgentSendTextData = {
     body: AstralInternalGatewaySendText;
     headers: {
         /**
-         * Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.
+         * Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.
          */
         'Idempotency-Key': string;
     };
@@ -7632,11 +7625,44 @@ export type AgentManagedSkillsResponses = {
 
 export type AgentManagedSkillsResponse = AgentManagedSkillsResponses[keyof AgentManagedSkillsResponses];
 
-export type AgentPublishSharedSkillData = {
-    body: AstralInternalGatewaySkillPublishInput;
+export type AgentDeleteSharedSkillData = {
+    body?: never;
     headers: {
         /**
-         * Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.
+         * Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/v1/skills/shared/{name}';
+};
+
+export type AgentDeleteSharedSkillErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentDeleteSharedSkillError = AgentDeleteSharedSkillErrors[keyof AgentDeleteSharedSkillErrors];
+
+export type AgentDeleteSharedSkillResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalSkillsVersion;
+};
+
+export type AgentDeleteSharedSkillResponse = AgentDeleteSharedSkillResponses[keyof AgentDeleteSharedSkillResponses];
+
+export type AgentPublishSharedSkillData = {
+    body?: never;
+    headers: {
+        /**
+         * Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.
          */
         'Idempotency-Key': string;
     };
@@ -7664,48 +7690,6 @@ export type AgentPublishSharedSkillResponses = {
 };
 
 export type AgentPublishSharedSkillResponse = AgentPublishSharedSkillResponses[keyof AgentPublishSharedSkillResponses];
-
-export type AgentSharedSkillRevisionData = {
-    body?: never;
-    headers?: {
-        /**
-         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
-         */
-        Range?: string;
-    };
-    path: {
-        name: string;
-        revision: string;
-    };
-    query?: never;
-    url: '/v1/skills/shared/{name}/revisions/{revision}/content';
-};
-
-export type AgentSharedSkillRevisionErrors = {
-    /**
-     * Range Not Satisfiable
-     */
-    416: AstralInternalHttpcontractError;
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentSharedSkillRevisionError = AgentSharedSkillRevisionErrors[keyof AgentSharedSkillRevisionErrors];
-
-export type AgentSharedSkillRevisionResponses = {
-    /**
-     * OK
-     */
-    200: Blob | File;
-    /**
-     * Partial Content
-     */
-    206: Blob | File;
-};
-
-export type AgentSharedSkillRevisionResponse = AgentSharedSkillRevisionResponses[keyof AgentSharedSkillRevisionResponses];
 
 export type AgentWakeEndpointsData = {
     body?: never;

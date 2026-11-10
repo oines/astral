@@ -595,9 +595,9 @@ Skills 由选中 Computer 的 Daemon 发现：全局根为其操作系统用户 
 
 托管文件由当前 Daemon 实例保存于其数据根下的 `skills/astral-builtin` 与 `skills/astral-shared`。同一实例上的 Bot 共享这些文件。Server 内置整套 Built-in，初始包含 `skill-creator`、`astral-api` 和 `session-history`。会话检索使用 `astral-api` 随包提供的命令脚本。Daemon 通过现有认证隧道在连接时拉取清单，收到变更提示后重新核对，后台补查丢失通知。Built-in 指纹与本机安装记录相同就保留本地文件和修改。指纹变化时，Daemon 下载完整 Bundle，在暂存目录验证后替换原目录。Skill Index 使用固定路径 `skills/astral-builtin/<skill>/SKILL.md`。保留的文件可沿原路径读取新版，Bundle 移除的文件随更新删除。
 
-Shared 由 Server 持久化，每个 Skill 有独立的 Revision 和完整快照。每个 Shared Skill 的本机目录为 Daemon 数据根下的 `skills/astral-shared/<name>`。如果本机内容已与新版本一致，Daemon 只推进本机记录的基准 Revision。如果本机文件仍与原基准一致，Daemon 在暂存目录中校验完整新版，再替换固定目录中的文件。替换期间的临时备份用于中断恢复，更新完成后清理。如果有未发布改动，Daemon 保留本机文件和基准 Revision，并继续同步其他 Skill。Agent 用原有文件工具创建、编辑和验证。只有显式 Publish 才创建 Server Revision。Publish 沿用 Computer API 的电脑开关、命令凭据和访问检查，从活跃命令取得可信 Bot、Session 和来源 Computer。Server 用来源 Computer 和 Skill 名称定位本机目录，向该 Daemon 取快照，校验请求中的 `base_revision` 和 `digest`，在一个事务中推进当前版本并记录幂等回执。电脑关闭 Astral API 时仍接收同步，也能编辑本机文件。跨平台快照含可移植的普通文件和目录，脚本依目标电脑的解释器执行。打包、下载和安装独立于模型请求准备。
+Shared Skill 的本机目录为 Daemon 数据根下的 `skills/astral-shared/<name>`。Agent 使用原有文件工具创建、编辑和验证。Server 只分发当前发布版。Daemon 在清单版本推进时校验下载内容，再整体替换原目录，覆盖本机未发布改动。同一版本重复同步直接跳过。删除共享后，Daemon 移除先前安装的副本，包括有本机改动的副本，并保留仅在本机新建的目录。离线电脑在重新连接后同步。临时备份用于中断恢复，操作完成后清理。
 
-Agent 可通过 `skills` 能力查询本机文件及 Server Revision，读取指定历史 Revision，并按用户意图发布。Revision 冲突保留本机改动，允许对照旧基线和当前版本手工整理，随后明确使用当前 Revision 重新发布。恢复旧版本也产生新的 Revision。旧 Daemon 继续使用已有的本地技能发现，升级到支持托管同步的版本后才接收 Bundle。
+Agent 可通过 `skills` 能力查询当前发布清单和本机目录，并按用户意图发布或删除共享。两项写入都按 Skill 名称操作，使用现有 Computer API 的电脑开关、命令凭据和访问检查。发布时，Server 从发起命令的 Computer 读取整个目录与本机安装基准，校验内容并在事务内检查基准。发布和删除都会推进内部 Revision 并记录幂等回执。关闭 Astral API 的电脑仍可编辑本机文件并接收同步。旧 Daemon 升级后才能按新规则发布、覆盖和同步删除。跨平台包包含可移植的普通文件和目录，脚本依目标电脑的解释器执行。打包、下载和安装独立于模型请求准备。
 
 文件和根目录缺失是正常空状态；不可读、格式错误、扫描限额、Computer 离线、权限收回及旧 Daemon 不支持发现均显式记录，不以 Server 文件系统代替，也不沿用旧 CWD 的发现结果。单文件最多 1 MiB，一次扫描读取最多 16 MiB、目录条目预算 8192、递归深度 32；超限结果标记 partial。发现不可用仍允许纯文本对话，重新连接后的下次运行边界更新快照。
 
