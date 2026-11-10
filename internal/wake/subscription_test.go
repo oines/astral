@@ -53,21 +53,36 @@ func TestConfigurationSubscriptionIgnoresEventAndLimitStatusFlood(t *testing.T) 
 }
 
 func TestConfigurationSubscriptionObservesExternalStoreChanges(t *testing.T) {
-	f := setup(t, nil)
+	delivering := make(chan struct{})
+	finish := make(chan struct{})
+	f := setup(t, func(ctx context.Context, _ Batch) (DeliveryResult, error) {
+		close(delivering)
+		select {
+		case <-finish:
+			return DeliveryResult{Accepted: true, Handled: true}, nil
+		case <-ctx.Done():
+			return DeliveryResult{}, ctx.Err()
+		}
+	})
 	e := f.create(t)
 	if _, err := f.s.Accept(context.Background(), e.ComputerID, e.ID, Event{EventID: "start-worker", Text: "Establish the worker watcher"}); err != nil {
 		t.Fatal(err)
 	}
 	f.advance(MergeWindow)
-	receive(t, f.delivered)
+	select {
+	case <-delivering:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker did not start delivering the event")
+	}
 	configuration, unsubscribe := f.s.SubscribeConfiguration()
 	defer unsubscribe()
-	// This path bypasses the service's explicit configurationChanged call.
-	// The Store watch must still invalidate persistent directory subscribers.
+	// Save while the worker is in its delivery cycle so the invalidation must
+	// survive until the worker returns to waiting for Store changes.
 	e.Notes = "/opt/example/changed-externally.py"
 	if err := f.store.Save(f.ctx, Kind, &e.Meta, &e); err != nil {
 		t.Fatal(err)
 	}
+	close(finish)
 	select {
 	case <-configuration:
 	case <-time.After(3 * time.Second):

@@ -29,6 +29,9 @@ func TestWakeRPCUsesAuthenticatedComputerNotEventClaims(t *testing.T) {
 		return computers.GatewayResponse{Status: status, Body: raw}, nil
 	}
 	for i, daemon := range s.daemons {
+		// The environment RPC waits for the Daemon to publish its connection.
+		// Server-side online status alone does not make the local hook ready.
+		s.bind(t, i)
 		if s.hub.ComputerEventURL(daemon.Credentials.ComputerID) != daemon.Hello.LocalAPIURL {
 			t.Fatal("Hub did not retain actual Daemon local address")
 		}

@@ -751,14 +751,17 @@ func (s *Service) worker() {
 	defer watcher.Close()
 	timer := time.NewTimer(time.Hour)
 	defer timer.Stop()
+	changes := watcher.Changes()
 	for {
-		changes := watcher.Changes()
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-s.wake:
 		case <-timer.C:
 		case <-changes:
+			// Keep the current signal across delivery cycles until it is observed.
+			// Capture the next one before invalidating the cache.
+			changes = watcher.Changes()
 			s.mu.Lock()
 			clear(s.cache)
 			for id := range s.flows {
