@@ -51,18 +51,13 @@ type LocalSkillsStatus struct {
 	SyncError   string       `json:"sync_error,omitempty"`
 }
 
-type installedBundle struct {
-	ID      string         `json:"id,omitempty"` // The fixed path of a legacy installation.
-	Version skills.Version `json:"version"`
-}
-
 type installedShared struct {
 	Version skills.Version `json:"version"`
 	Pending *sharedInstall `json:"pending,omitempty"`
 }
 
 type installedSkills struct {
-	Builtin installedBundle            `json:"builtin"`
+	Builtin skills.Version             `json:"builtin"`
 	Shared  map[string]installedShared `json:"shared"`
 }
 
@@ -145,10 +140,6 @@ func (m *managedSkills) statePath() string   { return filepath.Join(m.root, "sta
 
 func (m *managedSkills) sharedPath(name string) string { return filepath.Join(m.sharedRoot(), name) }
 
-func validSkillGeneration(id string) bool {
-	return strings.HasPrefix(id, "generation-") && validIdentity(id)
-}
-
 func validInstalledSkill(version skills.Version, name string) bool {
 	if version.Name != name || name == "" && version.Revision != 0 || name != "" && version.Revision <= 0 {
 		return false
@@ -214,8 +205,7 @@ func (m *managedSkills) load() error {
 	}
 	var state installedSkills
 	if len(raw) > maxSkillState || json.Unmarshal(raw, &state) != nil ||
-		state.Builtin.ID != "" && !validSkillGeneration(state.Builtin.ID) ||
-		state.Builtin != (installedBundle{}) && !validInstalledSkill(state.Builtin.Version, "") {
+		state.Builtin != (skills.Version{}) && !validInstalledSkill(state.Builtin, "") {
 		return errors.New("invalid managed skills state")
 	}
 	for name, entry := range state.Shared {
@@ -468,8 +458,8 @@ func (m *managedSkills) discoveryRoots() ([]DiscoveryRoot, error) {
 		return nil, err
 	}
 	var roots []DiscoveryRoot
-	if state.Builtin.Version.Digest != "" {
-		roots = append(roots, DiscoveryRoot{Path: m.builtinPath(state.Builtin), Scope: builtinSkillScope, Status: "ok"})
+	if state.Builtin.Digest != "" {
+		roots = append(roots, DiscoveryRoot{Path: m.builtinRoot(), Scope: builtinSkillScope, Status: "ok"})
 	}
 	m.sharedMu.RLock()
 	names, err := m.directDraftNames()
@@ -494,8 +484,8 @@ func (m *managedSkills) status(ctx context.Context) (LocalSkillsStatus, error) {
 	if loadErr != nil {
 		return status, nil
 	}
-	if bundle := state.Builtin; bundle.Version.Digest != "" {
-		status.Builtin = &LocalSkill{Path: m.builtinPath(bundle), Digest: bundle.Version.Digest, DraftID: bundle.ID, Active: true}
+	if state.Builtin.Digest != "" {
+		status.Builtin = &LocalSkill{Path: m.builtinRoot(), Digest: state.Builtin.Digest, Active: true}
 	}
 	inspect := func(name string) {
 		path := m.sharedPath(name)

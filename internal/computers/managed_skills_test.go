@@ -125,49 +125,6 @@ func TestManagedBuiltinUpdatesAtTheSamePath(t *testing.T) {
 	assertReference("version two")
 }
 
-func TestManagedBuiltinKeepsLegacyInstallPath(t *testing.T) {
-	ctx := t.Context()
-	root := t.TempDir()
-	m := newManagedSkills(root)
-	first, _ := managedTestArchive(t, "", 0, "version one")
-	second, secondData := managedTestArchive(t, "", 0, "version two")
-	legacy := installedBundle{ID: "generation-test", Version: first}
-	path := filepath.Join(m.builtinRoot(), legacy.ID)
-	reference := filepath.Join(path, "builtin-test", "reference.txt")
-	entry := filepath.Join(path, "builtin-test", "SKILL.md")
-	writeManagedSkillTestFile(t, entry, managedTestSkillMD("builtin-test", "legacy install"))
-	writeManagedSkillTestFile(t, reference, "legacy local edit")
-	m.mu.Lock()
-	err := m.saveLocked(installedSkills{Builtin: legacy})
-	m.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	m = newManagedSkills(root)
-	if err := m.applyBuiltin(ctx, first, func() ([]byte, error) { return nil, errors.New("unexpected legacy download") }); err != nil {
-		t.Fatal(err)
-	}
-	if data, err := os.ReadFile(reference); err != nil || string(data) != "legacy local edit" {
-		t.Fatalf("legacy edit lost at %s: %q %v", reference, data, err)
-	}
-	if err := m.applyBuiltin(ctx, second, secondData); err != nil {
-		t.Fatal(err)
-	}
-	m = newManagedSkills(root)
-	status, err := m.status(ctx)
-	if err != nil || status.Builtin == nil || status.Builtin.Path != path || status.Builtin.Digest != second.Digest {
-		t.Fatalf("legacy built-in path changed after update: %+v %v", status, err)
-	}
-	if data, err := os.ReadFile(reference); err != nil || string(data) != "version two" {
-		t.Fatalf("legacy path did not receive the update: %q %v", data, err)
-	}
-	result, err := discoverEnvironment(ctx, t.TempDir(), domain.ExecutionBinding{CWD: t.TempDir()}, m)
-	if err != nil || len(result.Skills) != 1 || result.Skills[0].Path != entry {
-		t.Fatalf("skill index lost the legacy path: %+v %v", result, err)
-	}
-}
-
 func TestManagedBuiltinRecoversInterruptedReplacement(t *testing.T) {
 	ctx := t.Context()
 	root := t.TempDir()
@@ -180,7 +137,7 @@ func TestManagedBuiltinRecoversInterruptedReplacement(t *testing.T) {
 	path := m.builtinRoot()
 	reference := filepath.Join(path, "builtin-test", "reference.txt")
 	writeManagedSkillTestFile(t, reference, "local edit")
-	if err := moveManagedSkillPath(path, builtinBackupPath(path), false); err != nil {
+	if err := moveManagedSkillPath(path, m.builtinBackupPath(), false); err != nil {
 		t.Fatal(err)
 	}
 	m = newManagedSkills(root)
@@ -195,15 +152,15 @@ func TestManagedBuiltinRecoversInterruptedReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.replaceBuiltin(path, staged); err != nil {
+	if err := m.replaceBuiltin(staged); err != nil {
 		t.Fatal(err)
 	}
 	// The replacement reached the fixed path, but the fingerprint in state.json
 	// still refers to the previous tree.
 	m = newManagedSkills(root)
 	state, err := m.snapshot()
-	if err != nil || state.Builtin.Version != second {
-		t.Fatalf("restart did not recover the installed version: %+v %v", state.Builtin.Version, err)
+	if err != nil || state.Builtin != second {
+		t.Fatalf("restart did not recover the installed version: %+v %v", state.Builtin, err)
 	}
 	if data, err := os.ReadFile(reference); err != nil || string(data) != "second" {
 		t.Fatalf("restart lost the installed update: %q %v", data, err)
@@ -217,7 +174,7 @@ func TestManagedBuiltinRecoversInterruptedReplacement(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(builtinBackupPath(path)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(m.builtinBackupPath()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("temporary backup remains after recovery: %v", err)
 	}
 }

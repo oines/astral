@@ -13,12 +13,8 @@ import (
 
 const builtinDigestFile = ".astral-builtin-digest"
 
-func (m *managedSkills) builtinPath(bundle installedBundle) string {
-	return filepath.Join(m.builtinRoot(), bundle.ID)
-}
-
-func builtinBackupPath(path string) string {
-	return filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".previous")
+func (m *managedSkills) builtinBackupPath() string {
+	return filepath.Join(m.root, "."+builtinSkillScope+".previous")
 }
 
 func writeBuiltinDigest(path, digest string) error {
@@ -33,18 +29,17 @@ func writeBuiltinDigest(path, digest string) error {
 // A process may stop between moving the old tree and activating the new one,
 // or after activation but before writing state.json. The marker travels with
 // the staged tree, so it identifies the version that actually reached the path.
-func (m *managedSkills) recoverBuiltin(bundle *installedBundle) error {
-	path := m.builtinPath(*bundle)
-	if err := m.restoreBuiltin(path); err != nil {
+func (m *managedSkills) recoverBuiltin(bundle *skills.Version) error {
+	if err := m.restoreBuiltin(); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
-	marker := filepath.Join(path, builtinDigestFile)
+	marker := filepath.Join(m.builtinRoot(), builtinDigestFile)
 	info, err := os.Lstat(marker)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil // Keep the recorded version for legacy bundles or local edits.
+		return nil // A local edit may have removed the marker.
 	}
 	if err != nil {
 		return err
@@ -64,16 +59,17 @@ func (m *managedSkills) recoverBuiltin(bundle *installedBundle) error {
 	if !validInstalledSkill(version, "") {
 		return domain.Invalid("invalid installed built-in skill digest")
 	}
-	bundle.Version = version
-	return os.RemoveAll(builtinBackupPath(path))
+	*bundle = version
+	return os.RemoveAll(m.builtinBackupPath())
 }
 
-func (m *managedSkills) restoreBuiltin(path string) error {
+func (m *managedSkills) restoreBuiltin() error {
+	path := m.builtinRoot()
 	err := m.directory(path, false)
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	backup := builtinBackupPath(path)
+	backup := m.builtinBackupPath()
 	if err := m.directory(backup, false); err != nil {
 		return err
 	}
@@ -83,16 +79,17 @@ func (m *managedSkills) restoreBuiltin(path string) error {
 	if err != nil {
 		return err
 	}
-	return syncManagedSkillDir(filepath.Dir(path))
+	return syncManagedSkillDir(m.root)
 }
 
-func (m *managedSkills) replaceBuiltin(path, staged string) error {
+func (m *managedSkills) replaceBuiltin(staged string) error {
+	path := m.builtinRoot()
 	err := m.directory(path, false)
 	hasOld := err == nil
 	if !hasOld && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	backup := builtinBackupPath(path)
+	backup := m.builtinBackupPath()
 	if err := os.RemoveAll(backup); err != nil {
 		return err
 	}
@@ -118,10 +115,9 @@ func (m *managedSkills) applyBuiltin(ctx context.Context, version skills.Version
 	if err != nil {
 		return err
 	}
-	path := m.builtinPath(state.Builtin)
-	err = m.restoreBuiltin(path)
+	err = m.restoreBuiltin()
 	if !errors.Is(err, os.ErrNotExist) {
-		if err != nil || state.Builtin.Version == version {
+		if err != nil || state.Builtin == version {
 			return err // A matching installation keeps any local changes.
 		}
 	}
@@ -129,8 +125,7 @@ func (m *managedSkills) applyBuiltin(ctx context.Context, version skills.Version
 	if err != nil {
 		return err
 	}
-	parent := filepath.Dir(path)
-	staged, err := m.stageSkill(ctx, parent, version, archive)
+	staged, err := m.stageSkill(ctx, m.root, version, archive)
 	if err != nil {
 		return err
 	}
@@ -138,13 +133,13 @@ func (m *managedSkills) applyBuiltin(ctx context.Context, version skills.Version
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := m.replaceBuiltin(path, staged); err != nil {
+	if err := m.replaceBuiltin(staged); err != nil {
 		return err
 	}
-	err = m.syncSkillDirs(parent)
+	err = m.syncSkillDirs(m.root)
 	m.mu.Lock()
 	next := *m.state.Load()
-	next.Builtin.Version = version
+	next.Builtin = version
 	m.state.Store(&next)
 	if err == nil {
 		err = m.saveLocked(next)
@@ -153,5 +148,5 @@ func (m *managedSkills) applyBuiltin(ctx context.Context, version skills.Version
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(builtinBackupPath(path))
+	return os.RemoveAll(m.builtinBackupPath())
 }
