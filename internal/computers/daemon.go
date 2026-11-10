@@ -461,7 +461,7 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 		return out.JSON(struct{}{})
 	}
 	switch request.Method {
-	case skillStatusMethod, skillExportMethod, skillAcknowledgeMethod:
+	case skillStatusMethod, skillExportMethod:
 		return d.handleManagedSkills(ctx, request, out)
 	}
 	var call Call

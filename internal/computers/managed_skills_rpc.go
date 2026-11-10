@@ -22,7 +22,6 @@ const (
 	skillChangedMethod      = "skills.changed"
 	skillStatusMethod       = "skills.status"
 	skillExportMethod       = "skills.export"
-	skillAcknowledgeMethod  = "skills.acknowledge"
 	skillSyncInterval       = time.Minute
 	skillTransferTimeout    = 2 * time.Minute
 )
@@ -30,7 +29,6 @@ const (
 type skillCall struct {
 	Binding domain.ExecutionBinding `json:"binding"`
 	Name    string                  `json:"name,omitempty"`
-	Version skills.Version          `json:"version,omitempty"`
 }
 
 func readSkillArchive(body io.Reader) ([]byte, error) {
@@ -51,7 +49,7 @@ func signalSkillsChanged(ch chan struct{}) {
 	}
 }
 
-// NotifySkills queues a hint for each participating Daemon after a publication.
+// NotifySkills queues a hint for each participating Daemon after a change.
 // Each connection coalesces hints and also catches up by fetching its manifest.
 func (h *Hub) NotifySkills() {
 	h.mu.RLock()
@@ -153,6 +151,14 @@ func (m *managedSkills) sync(ctx context.Context, peer *transport.Peer) error {
 			errs = append(errs, fmt.Errorf("sync %s: %w", version.Name, err))
 		}
 	}
+	for _, version := range manifest.Removed {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := m.applyShared(ctx, version, nil); err != nil {
+			errs = append(errs, fmt.Errorf("remove %s: %w", version.Name, err))
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -196,17 +202,15 @@ func (d *Daemon) handleManagedSkills(ctx context.Context, request transport.Requ
 		}
 		return out.JSON(status)
 	case skillExportMethod:
-		archive, err := d.skills.export(ctx, call.Name)
+		archive, revision, err := d.skills.export(ctx, call.Name)
 		if err != nil {
+			return err
+		}
+		if err := out.Headers(revision); err != nil {
 			return err
 		}
 		_, err = out.Write(archive)
 		return err
-	case skillAcknowledgeMethod:
-		if err := d.skills.acknowledge(ctx, call.Version); err != nil {
-			return err
-		}
-		return out.JSON(struct{}{})
 	}
 	return domain.Missing("daemon method", request.Method)
 }
@@ -261,30 +265,23 @@ func (h *Hub) SkillsStatus(ctx context.Context, binding domain.ExecutionBinding)
 	return status, h.validateSkillPeer(ctx, binding, peer)
 }
 
-func (h *Hub) ExportSkill(ctx context.Context, binding domain.ExecutionBinding, name string) ([]byte, error) {
+func (h *Hub) ExportSkill(ctx context.Context, binding domain.ExecutionBinding, name string) ([]byte, int64, error) {
 	peer, err := h.skillPeer(ctx, binding)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	_, body, err := peer.Call(ctx, skillExportMethod, skillCall{Binding: binding, Name: name}, nil)
+	meta, body, err := peer.Call(ctx, skillExportMethod, skillCall{Binding: binding, Name: name}, nil)
 	if err != nil {
-		return nil, skillCallError(err)
+		return nil, 0, skillCallError(err)
 	}
 	defer body.Close()
+	var revision *int64
+	if err := json.Unmarshal(meta, &revision); err != nil || revision == nil || *revision < 0 {
+		return nil, 0, &domain.Error{Status: http.StatusNotImplemented, Code: "unsupported", Message: "Update this Computer's Daemon to publish Shared Skills."}
+	}
 	archive, err := readSkillArchive(body)
 	if err != nil {
-		return nil, skillCallError(err)
+		return nil, 0, skillCallError(err)
 	}
-	return archive, h.validateSkillPeer(ctx, binding, peer)
-}
-
-func (h *Hub) AcknowledgeSkillPublish(ctx context.Context, binding domain.ExecutionBinding, version skills.Version) error {
-	peer, err := h.skillPeer(ctx, binding)
-	if err != nil {
-		return err
-	}
-	if err = peer.JSON(ctx, skillAcknowledgeMethod, skillCall{Binding: binding, Version: version}, nil); err != nil {
-		return skillCallError(err)
-	}
-	return h.validateSkillPeer(ctx, binding, peer)
+	return archive, *revision, h.validateSkillPeer(ctx, binding, peer)
 }

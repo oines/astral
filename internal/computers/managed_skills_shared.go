@@ -25,11 +25,8 @@ func (m *managedSkills) sharedStageRoot() string {
 	return filepath.Join(m.root, ".shared-staging")
 }
 
-func (m *managedSkills) sharedUpdateDigest(ctx context.Context, path string) (string, bool, error) {
-	if err := m.directory(path, false); err != nil {
-		return "", false, err
-	}
-	return skills.DirectoryDigestForUpdate(ctx, path)
+func validSharedRemoval(version skills.Version, name string) bool {
+	return version.Name == name && version.Revision > 0 && version.Digest == ""
 }
 
 // Normal installs clean their own staging directory. At startup remove any
@@ -62,7 +59,8 @@ func (m *managedSkills) cleanSharedStages() error {
 
 func (m *managedSkills) applyShared(ctx context.Context, version skills.Version, fetch func() ([]byte, error)) error {
 	name := version.Name
-	if !skills.ValidName(name) || !validInstalledSkill(version, name) {
+	removed := fetch == nil
+	if !skills.ValidName(name) || removed && !validSharedRemoval(version, name) || !removed && !validInstalledSkill(version, name) {
 		return domain.Invalid("invalid shared skill version")
 	}
 	state, err := m.snapshot()
@@ -89,21 +87,8 @@ func (m *managedSkills) applyShared(ctx context.Context, version skills.Version,
 		}
 		return nil
 	}
-	path := m.sharedPath(name)
-	digest, hasGit, err := m.sharedUpdateDigest(ctx, path)
-	hasOld := err == nil
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if !hasOld && base.Revision > 0 {
-		return nil // A local deletion is also an unpublished change.
-	}
-	if hasOld && digest != version.Digest && (digest != base.Digest || hasGit) {
-		return nil
-	}
 	var stage string
-	keepStage := false
-	if digest != version.Digest {
+	if !removed {
 		archive, err := fetch()
 		if err != nil {
 			return err
@@ -112,6 +97,17 @@ func (m *managedSkills) applyShared(ctx context.Context, version skills.Version,
 		if err != nil {
 			return err
 		}
+	} else if base.Digest != "" {
+		if err := m.directory(m.sharedStageRoot(), true); err != nil {
+			return err
+		}
+		stage, err = os.MkdirTemp(m.sharedStageRoot(), ".staging-")
+		if err != nil {
+			return err
+		}
+	}
+	keepStage := false
+	if stage != "" {
 		defer func() {
 			if !keepStage {
 				_ = os.RemoveAll(stage)
@@ -132,7 +128,7 @@ func (m *managedSkills) applyShared(ctx context.Context, version skills.Version,
 		return domain.Conflict("shared skill base changed during sync; retry on the next refresh")
 	}
 	if stage == "" {
-		// The files already match the published revision. Leave them in place.
+		// Remember the removal revision without touching a never-installed directory.
 		return m.saveSharedEntryLocked(name, installedShared{Version: version})
 	}
 	if err := m.directory(m.sharedRoot(), true); err != nil {
@@ -144,73 +140,71 @@ func (m *managedSkills) applyShared(ctx context.Context, version skills.Version,
 		return err
 	}
 	keepStage = true
-	err = m.activateShared(ctx, path, filepath.Join(stage, name), hasOld, base.Digest)
+	err = m.activateShared(m.sharedPath(name), stage, removed)
 	return errors.Join(err, m.recoverSharedLocked(name, current))
 }
 
-func (m *managedSkills) activateShared(ctx context.Context, path, staged string, hadOld bool, expectedDigest string) error {
+func (m *managedSkills) activateShared(path, stage string, removed bool) error {
 	m.sharedMu.Lock()
 	defer m.sharedMu.Unlock()
 	err := m.directory(path, false)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if (err == nil) != hadOld {
-		return nil // A draft appeared or was deleted during the download.
-	}
-	if !hadOld {
-		return moveManagedSkillPath(staged, path, false)
-	}
-
-	backup := filepath.Join(filepath.Dir(staged), ".previous")
-	if _, err := os.Lstat(backup); !errors.Is(err, os.ErrNotExist) {
-		if err != nil {
+	hadOld := err == nil
+	backup := filepath.Join(stage, ".previous")
+	if hadOld {
+		if err := moveManagedSkillPath(path, backup, false); err != nil {
 			return err
 		}
-		return domain.Conflict("a previous shared skill replacement needs recovery")
 	}
-	if err := moveManagedSkillPath(path, backup, false); err != nil {
-		return err
+	if removed {
+		return nil
 	}
-	// Verify the tree that was actually moved, including edits made while the
-	// archive was fetched. This check only runs for an incoming content change.
-	digest, hasGit, err := m.sharedUpdateDigest(ctx, backup)
-	if err == nil && !hasGit && digest == expectedDigest {
-		err = moveManagedSkillPath(staged, path, false)
-		if err == nil {
-			return nil
-		}
+	err = moveManagedSkillPath(filepath.Join(stage, filepath.Base(path)), path, false)
+	if err != nil && hadOld {
+		err = errors.Join(err, moveManagedSkillPath(backup, path, false))
 	}
-	return errors.Join(err, moveManagedSkillPath(backup, path, false))
+	return err
 }
 
-// A staged directory is consumed only by the rename to the stable path. If it
-// is still present after an interruption, roll back. If consumed, finish
-// recording the new base without inspecting or overwriting any newer edits.
+// Renames mark which operation reached the stable path. Complete that
+// operation or restore its backup before accepting another update.
 func (m *managedSkills) recoverSharedLocked(name string, entry installedShared) error {
 	install := entry.Pending
 	path := m.sharedPath(name)
 	stage := filepath.Join(m.sharedStageRoot(), install.Stage)
 	backup := filepath.Join(stage, ".previous")
-	stageErr := m.directory(filepath.Join(stage, name), false)
-	if stageErr != nil && !errors.Is(stageErr, os.ErrNotExist) {
-		return stageErr
-	}
 	entry.Pending = nil
-	// The canonical directory can also be missing after an interruption. If
-	// there is a backup, keep the only working copy instead of discarding it.
+	if err := m.directory(m.sharedRoot(), true); err != nil {
+		return err
+	}
 	_, pathErr := os.Lstat(path)
 	if pathErr != nil && !errors.Is(pathErr, os.ErrNotExist) {
 		return pathErr
 	}
-	if stageErr == nil || errors.Is(pathErr, os.ErrNotExist) {
-		if err := m.restoreShared(path, backup); err != nil {
-			return err
+	if install.Version.Digest == "" {
+		backupErr := m.directory(backup, false)
+		if backupErr != nil && !errors.Is(backupErr, os.ErrNotExist) {
+			return backupErr
 		}
-		if err := m.saveSharedEntryLocked(name, entry); err != nil {
-			return err
+		// A backup proves the removal happened even if the user has since
+		// created a new local directory with the same name.
+		if backupErr == nil || pathErr != nil {
+			entry.Version = install.Version
 		}
-		return os.RemoveAll(stage)
+	} else {
+		stageErr := m.directory(filepath.Join(stage, name), false)
+		if stageErr != nil && !errors.Is(stageErr, os.ErrNotExist) {
+			return stageErr
+		}
+		if pathErr != nil {
+			if err := m.restoreShared(path, backup); err != nil {
+				return err
+			}
+		} else if stageErr != nil {
+			entry.Version = install.Version
+		}
 	}
 	if err := syncManagedSkillDir(m.sharedRoot()); err != nil {
 		return err
@@ -218,16 +212,10 @@ func (m *managedSkills) recoverSharedLocked(name string, entry installedShared) 
 	if err := syncManagedSkillDir(stage); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := os.RemoveAll(backup); err != nil {
+	if err := m.saveSharedEntryLocked(name, entry); err != nil {
 		return err
 	}
-	if err := os.Remove(stage); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := syncManagedSkillDir(m.sharedStageRoot()); err != nil {
-		return err
-	}
-	return m.saveSharedEntryLocked(name, installedShared{Version: install.Version})
+	return os.RemoveAll(stage)
 }
 
 func (m *managedSkills) restoreShared(path, backup string) error {
@@ -241,16 +229,7 @@ func (m *managedSkills) restoreShared(path, backup string) error {
 	m.sharedMu.Lock()
 	defer m.sharedMu.Unlock()
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
-		if err != nil {
-			return err
-		}
-		return domain.Conflict("shared skill recovery found a new local draft; previous files are at " + backup)
-	}
-	if err := moveManagedSkillPath(backup, path, false); err != nil {
 		return err
 	}
-	if err := syncManagedSkillDir(m.sharedRoot()); err != nil {
-		return err
-	}
-	return syncManagedSkillDir(filepath.Dir(backup))
+	return moveManagedSkillPath(backup, path, false)
 }

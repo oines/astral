@@ -36,6 +36,7 @@ type Version struct {
 type Manifest struct {
 	Builtin Version   `json:"builtin"`
 	Shared  []Version `json:"shared"`
+	Removed []Version `json:"removed,omitempty"`
 }
 
 type Selector struct {
@@ -43,13 +44,6 @@ type Selector struct {
 	Name     string `json:"name,omitempty"`
 	Revision int64  `json:"revision,omitempty"`
 	Digest   string `json:"digest,omitempty"`
-}
-
-type PublishRequest struct {
-	Name         string `json:"name"`
-	BaseRevision int64  `json:"base_revision"`
-	Digest       string `json:"digest"`
-	ID           string `json:"id"`
 }
 
 type publication struct {
@@ -64,8 +58,7 @@ func (p publication) version() Version {
 
 type publishReceipt struct {
 	domain.Meta
-	Request   PublishRequest `json:"request"`
-	Published Version        `json:"published"`
+	Published Version `json:"published"`
 }
 
 type Service struct {
@@ -88,7 +81,7 @@ var embeddedBundle = sync.OnceValues(func() (bundle struct {
 		return bundle, err
 	}
 	var out bytes.Buffer
-	if err = writeArchive(context.Background(), source, false, &out, nil); err != nil {
+	if err = writeArchive(context.Background(), source, false, &out); err != nil {
 		return bundle, err
 	}
 	bundle.data, bundle.digest = out.Bytes(), Digest(out.Bytes())
@@ -127,7 +120,11 @@ func (s *Service) Manifest(ctx context.Context) (Manifest, error) {
 		if err = json.Unmarshal(row.Data, &record); err != nil {
 			return Manifest{}, err
 		}
-		manifest.Shared = append(manifest.Shared, record.version())
+		if record.Digest == "" {
+			manifest.Removed = append(manifest.Removed, record.version())
+		} else {
+			manifest.Shared = append(manifest.Shared, record.version())
+		}
 	}
 	return manifest, nil
 }
@@ -150,14 +147,14 @@ func (s *Service) Download(ctx context.Context, sel Selector) (Version, io.ReadC
 			return Version{}, nil, domain.Invalid("Shared download requires a skill name and positive revision")
 		}
 		var record publication
-		if err := s.store.Version(ctx, publicationKind, sel.Name, sel.Revision, &record); err != nil {
+		if err := s.store.Get(ctx, publicationKind, sel.Name, &record); err != nil {
 			return Version{}, nil, err
+		}
+		if record.Digest == "" || record.Revision != sel.Revision || sel.Digest != "" && sel.Digest != record.Digest {
+			return Version{}, nil, domain.Missing("current Shared Skill revision", sel.Name)
 		}
 		if !validDigest(record.Digest) {
 			return Version{}, nil, errors.New("published skill record has an invalid digest")
-		}
-		if sel.Digest != "" && sel.Digest != record.Digest {
-			return Version{}, nil, domain.Missing("Shared snapshot", sel.Digest)
 		}
 		file, err := os.Open(s.snapshotPath(record.Digest))
 		if err != nil {
@@ -200,32 +197,31 @@ func checkPublishAccess(ctx context.Context, tx *persistence.Tx, b domain.Execut
 		return err
 	}
 	if session.AgentID != b.AgentID || session.Deletion != nil {
-		return domain.Forbidden("the publishing Session is unavailable")
+		return domain.Forbidden("the requesting Session is unavailable")
 	}
 	return nil
 }
 
-var publishID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+var requestID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
-func validatePublishRequest(req PublishRequest) error {
-	if !ValidName(req.Name) || req.BaseRevision < 0 || !validDigest(req.Digest) ||
-		!publishID.MatchString(req.ID) {
-		return domain.Invalid("publish requires a valid skill name, base revision, digest and request ID")
+func validateRequest(name, id string) error {
+	if !ValidName(name) || !requestID.MatchString(id) {
+		return domain.Invalid("shared skill operations require a valid name and Idempotency-Key")
 	}
 	return nil
 }
 
-func getReceipt(ctx context.Context, tx *persistence.Tx, b domain.ExecutionBinding, req PublishRequest) (Version, bool, error) {
+func getReceipt(ctx context.Context, tx *persistence.Tx, b domain.ExecutionBinding, name, id string, deleting bool) (Version, bool, error) {
 	var receipt publishReceipt
-	err := tx.Get(ctx, receiptKind, receiptID(b, req.ID), &receipt)
+	err := tx.Get(ctx, receiptKind, receiptID(b, id), &receipt)
 	if domain.IsMissing(err) {
 		return Version{}, false, nil
 	}
 	if err != nil {
 		return Version{}, false, err
 	}
-	if receipt.Request != req {
-		return Version{}, false, domain.Conflict("the publish request ID was used for a different request")
+	if receipt.Published.Name != name || (receipt.Published.Digest == "") != deleting {
+		return Version{}, false, domain.Conflict("the request ID was used for a different shared skill operation")
 	}
 	return receipt.Published, true, nil
 }
@@ -234,10 +230,7 @@ func receiptID(b domain.ExecutionBinding, requestID string) string {
 	return Digest([]byte(b.AgentID + "\x00" + b.ComputerID + "\x00" + requestID))
 }
 
-func (s *Service) Receipt(ctx context.Context, b domain.ExecutionBinding, req PublishRequest) (Version, bool, error) {
-	if err := validatePublishRequest(req); err != nil {
-		return Version{}, false, err
-	}
+func (s *Service) publishReceipt(ctx context.Context, b domain.ExecutionBinding, name, id string) (Version, bool, error) {
 	var version Version
 	var found bool
 	err := s.store.Update(ctx, func(tx *persistence.Tx) error {
@@ -245,7 +238,7 @@ func (s *Service) Receipt(ctx context.Context, b domain.ExecutionBinding, req Pu
 			return err
 		}
 		var err error
-		version, found, err = getReceipt(ctx, tx, b, req)
+		version, found, err = getReceipt(ctx, tx, b, name, id, false)
 		return err
 	})
 	return version, found, err
@@ -255,40 +248,48 @@ type reader interface {
 	Get(context.Context, string, string, any) error
 }
 
-func checkBase(ctx context.Context, db reader, req PublishRequest) (publication, error) {
-	record := publication{Meta: domain.Meta{ID: req.Name}, Name: req.Name}
-	err := db.Get(ctx, publicationKind, req.Name, &record)
+func checkBase(ctx context.Context, db reader, name string, base int64) (publication, error) {
+	record := publication{Meta: domain.Meta{ID: name}, Name: name}
+	err := db.Get(ctx, publicationKind, name, &record)
 	if err != nil && !domain.IsMissing(err) {
 		return publication{}, err
 	}
-	if record.Revision != req.BaseRevision {
-		return publication{}, domain.Conflict(fmt.Sprintf("Shared Skill %q has revision %d, not base revision %d", req.Name, record.Revision, req.BaseRevision))
+	if record.Revision != base {
+		return publication{}, domain.Conflict(fmt.Sprintf("Shared Skill %q changed on the Server. Sync this Computer before publishing again.", name))
 	}
 	return record, nil
 }
 
-func (s *Service) Publish(ctx context.Context, b domain.ExecutionBinding, req PublishRequest, data []byte) (Version, error) {
-	version, found, err := s.Receipt(ctx, b, req)
+func (s *Service) Publish(ctx context.Context, b domain.ExecutionBinding, name, id string, export func() ([]byte, int64, error)) (Version, error) {
+	if err := validateRequest(name, id); err != nil {
+		return Version{}, err
+	}
+	version, found, err := s.publishReceipt(ctx, b, name, id)
 	if err != nil || found {
 		return version, err
 	}
-	if _, err = checkBase(ctx, s.store, req); err != nil {
+	data, base, err := export()
+	if err != nil {
+		return Version{}, err
+	}
+	if _, err = checkBase(ctx, s.store, name, base); err != nil {
 		// A concurrent retry can commit after the first receipt lookup.
-		if v, done, lookupErr := s.Receipt(ctx, b, req); done || lookupErr != nil {
+		if v, done, lookupErr := s.publishReceipt(ctx, b, name, id); done || lookupErr != nil {
 			return v, lookupErr
 		}
 		return Version{}, err
 	}
-	if len(data) > MaxArchiveBytes || Digest(data) != req.Digest {
-		return Version{}, domain.Invalid("published snapshot does not match its digest or exceeds 16 MiB")
+	if len(data) > MaxArchiveBytes {
+		return Version{}, domain.Invalid("published snapshot exceeds 16 MiB")
 	}
-	if err = validateArchive(ctx, data, req.Name); err != nil {
+	if err = validateArchive(ctx, data, name); err != nil {
 		if ctx.Err() != nil {
 			return Version{}, ctx.Err()
 		}
 		return Version{}, domain.Invalid(err.Error())
 	}
-	if err = s.saveSnapshot(ctx, req.Digest, data); err != nil {
+	digest := Digest(data)
+	if err = s.saveSnapshot(ctx, digest, data); err != nil {
 		return Version{}, err
 	}
 	err = s.store.Update(ctx, func(tx *persistence.Tx) error {
@@ -296,26 +297,67 @@ func (s *Service) Publish(ctx context.Context, b domain.ExecutionBinding, req Pu
 			return err
 		}
 		var err error
-		version, found, err = getReceipt(ctx, tx, b, req)
+		version, found, err = getReceipt(ctx, tx, b, name, id, false)
 		if err != nil || found {
 			return err
 		}
-		record, err := checkBase(ctx, tx, req)
+		record, err := checkBase(ctx, tx, name, base)
 		if err != nil {
 			return err
 		}
-		record.Digest = req.Digest
+		record.Digest = digest
 		if err = tx.Save(ctx, publicationKind, &record.Meta, &record); err != nil {
 			return err
 		}
 		version = record.version()
-		receipt := publishReceipt{Meta: domain.Meta{ID: receiptID(b, req.ID)}, Request: req, Published: version}
-		return tx.Save(ctx, receiptKind, &receipt.Meta, &receipt)
+		return saveReceipt(ctx, tx, b, id, version)
 	})
 	if err != nil {
 		return Version{}, err
 	}
 	return version, nil
+}
+
+func (s *Service) Delete(ctx context.Context, b domain.ExecutionBinding, name, id string) (Version, error) {
+	if err := validateRequest(name, id); err != nil {
+		return Version{}, err
+	}
+	var version Version
+	err := s.store.Update(ctx, func(tx *persistence.Tx) error {
+		if err := checkPublishAccess(ctx, tx, b); err != nil {
+			return err
+		}
+		previous, found, err := getReceipt(ctx, tx, b, name, id, true)
+		if err != nil || found {
+			version = previous
+			return err
+		}
+		var record publication
+		if err := tx.Get(ctx, publicationKind, name, &record); err != nil {
+			if domain.IsMissing(err) {
+				return domain.Missing("Shared Skill", name)
+			}
+			return err
+		}
+		if record.Digest != "" {
+			// Keep the revision monotonic when a deleted name is published again.
+			record.Digest = ""
+			if err := tx.Save(ctx, publicationKind, &record.Meta, &record); err != nil {
+				return err
+			}
+		}
+		version = record.version()
+		return saveReceipt(ctx, tx, b, id, version)
+	})
+	if err != nil {
+		return Version{}, err
+	}
+	return version, nil
+}
+
+func saveReceipt(ctx context.Context, tx *persistence.Tx, b domain.ExecutionBinding, id string, version Version) error {
+	receipt := publishReceipt{Meta: domain.Meta{ID: receiptID(b, id)}, Published: version}
+	return tx.Save(ctx, receiptKind, &receipt.Meta, &receipt)
 }
 
 func (s *Service) snapshotPath(digest string) string {

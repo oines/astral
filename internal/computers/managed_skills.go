@@ -28,16 +28,12 @@ const (
 	managedSkillCacheEntryBytes = 4 << 10
 )
 
-// LocalSkill identifies an editable package by its exact path and base revision.
-// ContentDigest describes the files at the time of this status inspection.
+// LocalSkill reports a package path and its last applied Server revision.
 type LocalSkill struct {
-	Name          string `json:"name"`
-	Revision      int64  `json:"revision"`
-	Digest        string `json:"digest"`
-	ContentDigest string `json:"content_digest,omitempty"`
-	Path          string `json:"path"`
-	Dirty         bool   `json:"dirty"`
-	Error         string `json:"error,omitempty"`
+	Name     string `json:"name"`
+	Revision int64  `json:"revision"`
+	Digest   string `json:"digest"`
+	Path     string `json:"path"`
 }
 
 type LocalSkillsStatus struct {
@@ -206,10 +202,13 @@ func (m *managedSkills) load() error {
 		return errors.New("invalid managed skills state")
 	}
 	for name, entry := range state.Shared {
-		if !skills.ValidName(name) || entry.Version != (skills.Version{}) && !validInstalledSkill(entry.Version, name) {
+		if !skills.ValidName(name) || entry.Version != (skills.Version{}) &&
+			!validInstalledSkill(entry.Version, name) && !validSharedRemoval(entry.Version, name) {
 			return errors.New("invalid shared skill state")
 		}
-		if entry.Pending != nil && (!validSharedStage(entry.Pending.Stage) || !validInstalledSkill(entry.Pending.Version, name) || entry.Pending.Version.Revision <= entry.Version.Revision) {
+		if pending := entry.Pending; pending != nil && (!validSharedStage(pending.Stage) ||
+			!validInstalledSkill(pending.Version, name) && !validSharedRemoval(pending.Version, name) ||
+			pending.Version.Revision <= entry.Version.Revision) {
 			return errors.New("invalid pending shared skill update")
 		}
 	}
@@ -256,20 +255,6 @@ func (m *managedSkills) setSyncError(err error) {
 	} else {
 		m.syncErr.Store(&err)
 	}
-}
-
-func (m *managedSkills) pack(ctx context.Context, path string) ([]byte, string, error) {
-	if err := m.directory(path, false); err != nil {
-		return nil, "", err
-	}
-	return skills.Pack(ctx, path)
-}
-
-func (m *managedSkills) contentDigest(ctx context.Context, path string) (string, error) {
-	if err := m.directory(path, false); err != nil {
-		return "", err
-	}
-	return skills.DirectoryDigest(ctx, path)
 }
 
 func flushManagedSkillTree(ctx context.Context, path string) error {
@@ -373,50 +358,32 @@ func (m *managedSkills) saveSharedEntryLocked(name string, entry installedShared
 	return m.saveLocked(next)
 }
 
-func (m *managedSkills) acknowledge(ctx context.Context, version skills.Version) error {
-	name := version.Name
-	if !skills.ValidName(name) || !validInstalledSkill(version, name) {
-		return domain.Invalid("invalid published skill acknowledgement")
+func (m *managedSkills) export(ctx context.Context, name string) ([]byte, int64, error) {
+	if !skills.ValidName(name) {
+		return nil, 0, domain.Invalid("invalid shared skill name")
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.loadErr != nil {
-		return m.loadErr
+		return nil, 0, m.loadErr
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+	// Pin the directory and its applied revision together while packing.
+	m.mu.Lock()
 	entry := m.state.Load().Shared[name]
 	if entry.Pending != nil {
-		if err := m.recoverSharedLocked(name, entry); err != nil {
-			return err
-		}
-		entry = m.state.Load().Shared[name]
-	}
-	base := entry.Version
-	if version.Revision < base.Revision || version == base {
-		return nil // A delayed receipt must never move the local base backwards.
-	}
-	if version.Revision == base.Revision {
-		return domain.Conflict("published skill digest differs at the same revision")
-	}
-	return m.saveSharedEntryLocked(name, installedShared{Version: version})
-}
-
-func (m *managedSkills) export(ctx context.Context, name string) ([]byte, error) {
-	if !skills.ValidName(name) {
-		return nil, domain.Invalid("invalid shared skill name")
+		m.mu.Unlock()
+		return nil, 0, domain.Conflict("shared skill is still synchronizing")
 	}
 	m.sharedMu.RLock()
+	m.mu.Unlock()
 	defer m.sharedMu.RUnlock()
-	if m.loadErr != nil {
-		return nil, m.loadErr
+	path := m.sharedPath(name)
+	if err := m.directory(path, false); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, 0, domain.Missing("local Shared Skill", name)
+		}
+		return nil, 0, err
 	}
-	archive, _, err := m.pack(ctx, m.sharedPath(name))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, domain.Missing("local Shared Skill", name)
-	}
-	return archive, err
+	archive, err := skills.Pack(ctx, path)
+	return archive, entry.Version.Revision, err
 }
 
 func (m *managedSkills) localSharedNames() ([]string, error) {
@@ -482,31 +449,10 @@ func (m *managedSkills) status(ctx context.Context) (LocalSkillsStatus, error) {
 	if state.Builtin.Digest != "" {
 		status.Builtin = &LocalSkill{Path: m.builtinRoot(), Digest: state.Builtin.Digest}
 	}
-	inspect := func(name string) {
-		path := m.sharedPath(name)
-		// Read the base and pin the directory before a sync can swap it.
-		m.mu.Lock()
-		base := m.state.Load().Shared[name].Version
-		m.sharedMu.RLock()
-		m.mu.Unlock()
-		digest, err := m.contentDigest(ctx, path)
-		m.sharedMu.RUnlock()
-		value := LocalSkill{
-			Name: name, Path: path, Revision: base.Revision, Digest: base.Digest,
-			ContentDigest: digest, Dirty: err != nil || digest != base.Digest,
-		}
-		if err != nil {
-			value.Error = err.Error()
-		}
-		status.Shared = append(status.Shared, value)
-	}
-	for name := range state.Shared {
-		if err := ctx.Err(); err != nil {
-			return LocalSkillsStatus{}, err
-		}
-		inspect(name)
-	}
+	m.mu.Lock()
+	shared := m.state.Load().Shared
 	m.sharedMu.RLock()
+	m.mu.Unlock()
 	names, err := m.localSharedNames()
 	m.sharedMu.RUnlock()
 	if err != nil {
@@ -516,9 +462,10 @@ func (m *managedSkills) status(ctx context.Context) (LocalSkillsStatus, error) {
 		if err := ctx.Err(); err != nil {
 			return LocalSkillsStatus{}, err
 		}
-		if _, known := state.Shared[name]; !known {
-			inspect(name)
-		}
+		base := shared[name].Version
+		status.Shared = append(status.Shared, LocalSkill{
+			Name: name, Path: m.sharedPath(name), Revision: base.Revision, Digest: base.Digest,
+		})
 	}
 	sort.Slice(status.Shared, func(i, j int) bool { return status.Shared[i].Name < status.Shared[j].Name })
 	return status, nil

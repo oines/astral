@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/oines/astral/internal/skills"
 )
 
 func TestManagedSharedRecoversInterruptedReplacement(t *testing.T) {
-	for _, label := range []string{"before-activation", "after-activation", "backup-only"} {
+	for _, label := range []string{"before-activation", "after-activation", "backup-only", "recreated-before-activation"} {
 		t.Run(label, func(t *testing.T) {
 			ctx := t.Context()
 			root := t.TempDir()
@@ -51,9 +53,13 @@ func TestManagedSharedRecoversInterruptedReplacement(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if label == "recreated-before-activation" {
+				contents = "recreated before activation"
+				writeManagedSkillTestFile(t, filepath.Join(path, "reference.txt"), contents)
+			}
 			m = newManagedSkills(root)
 			status, err := m.status(ctx)
-			if err != nil || status.SyncError != "" || len(status.Shared) != 1 || status.Shared[0].Revision != want.Revision || status.Shared[0].Dirty != activate {
+			if err != nil || status.SyncError != "" || len(status.Shared) != 1 || status.Shared[0].Revision != want.Revision {
 				t.Fatalf("unexpected recovered version: %+v %v", status, err)
 			}
 			if data, err := os.ReadFile(filepath.Join(path, "reference.txt")); err != nil || string(data) != contents {
@@ -65,5 +71,43 @@ func TestManagedSharedRecoversInterruptedReplacement(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestManagedSharedRecoversInterruptedRemoval(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	m := newManagedSkills(root)
+	first, firstData := managedTestArchive(t, "example", 1, "first")
+	removed := skills.Version{Name: first.Name, Revision: 2}
+	if err := m.applyShared(ctx, first, firstData); err != nil {
+		t.Fatal(err)
+	}
+	stage, err := os.MkdirTemp(m.sharedStageRoot(), ".staging-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := m.state.Load().Shared[first.Name]
+	entry.Pending = &sharedInstall{Stage: filepath.Base(stage), Version: removed}
+	if err := m.saveSharedEntryLocked(first.Name, entry); err != nil {
+		t.Fatal(err)
+	}
+	path := m.sharedPath(first.Name)
+	if err := moveManagedSkillPath(path, filepath.Join(stage, ".previous"), false); err != nil {
+		t.Fatal(err)
+	}
+	newPath := filepath.Join(path, "SKILL.md")
+	newBody := managedTestSkillMD(first.Name, "new local copy")
+	writeManagedSkillTestFile(t, newPath, newBody)
+
+	m = newManagedSkills(root)
+	if err := m.applyShared(ctx, removed, nil); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(newPath); err != nil || string(data) != newBody {
+		t.Fatalf("replayed removal touched files created after the rename: %q %v", data, err)
+	}
+	if _, err := os.Stat(stage); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("temporary directory remains after removal: %s, %v", stage, err)
 	}
 }

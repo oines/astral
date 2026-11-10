@@ -236,23 +236,22 @@ var capabilitySpecs = []capabilitySpec{
 		},
 	},
 	{
-		id: "skills", description: "Inspect managed skills, publish one Shared Skill, and retrieve published revisions.",
+		id: "skills", description: "List managed Skills, publish a local Shared Skill, or delete a Shared Skill.",
 		notes: []string{
-			"GET /v1/skills returns the Server manifest and the source Computer's local paths, revisions and digests. Compare the published revision with the local base revision. content_digest identifies the current local file snapshot; digest identifies the installed base.",
-			"For a new Shared Skill, write SKILL.md and any resources inside a new named directory under local.shared_root using the existing file tools. Publish only on request. The name in the publish route selects the directory on the calling Computer. Use content_digest from a fresh status read as digest, and base_revision=0 for a new name.",
-			"Use one stable Idempotency-Key per publish intent. Repeat the exact request after a lost response. A newer revision causes a conflict while local files stay available. Read the old base and newer revision archives, reconcile the files on this Computer, then explicitly publish with the reviewed remote revision and new content digest.",
-			"Each archive contains the complete Skill directory contents, including any scripts and resources. Save it to a separate local path for comparison. Restore an older version by using its files as a draft and publishing them against the current revision.",
-			"Publication uses the calling command's normal Astral API authorization. Closing Astral API on a Computer prevents its commands from publishing while background Daemon sync continues. Built-in Skills update through the Server bundle.",
+			"GET /v1/skills lists the Server's current Shared Skills and their paths on the calling Computer. For a new Shared Skill, create a named directory under local.shared_root containing SKILL.md and its resources.",
+			"Publish only on request. The name in the publish route selects the directory on the calling Computer. An incoming publication replaces the entire installed directory, including local edits. If the Server has a newer version than this Computer, wait for sync before reviewing and publishing again.",
+			"Delete only on request. Deletion stops distribution and removes previously installed copies as Computers sync. A Computer that never installed the Skill keeps any local directory it created.",
+			"Use one stable Idempotency-Key per publish or delete intent. Repeat the same request with the same key after a lost response. Both operations use the calling command's normal Astral API authorization. Background sync continues on Computers with Astral API disabled.",
 		},
 		examples: []CapabilityExample{
-			{Description: "Read the source Computer's local Shared Skills and the current published revisions.", Method: "GET", Path: "/v1/skills"},
-			{Description: "Publish a local Shared Skill by name with the reviewed base revision and content digest.", Method: "POST", Path: "/v1/skills/shared/{name}/publish", Headers: map[string]string{"Idempotency-Key": "<stable-publish-intent>"}, Body: map[string]any{"base_revision": 3, "digest": "<content-digest>"}},
-			{Description: "Download a fixed published revision as a tar archive.", Method: "GET", Path: "/v1/skills/shared/{name}/revisions/{revision}/content"},
+			{Description: "List local and published Shared Skills.", Method: "GET", Path: "/v1/skills"},
+			{Description: "Publish a local Shared Skill by name.", Method: "POST", Path: "/v1/skills/shared/{name}/publish", Headers: map[string]string{"Idempotency-Key": "<stable-publish-intent>"}},
+			{Description: "Delete a Shared Skill across Computers.", Method: "DELETE", Path: "/v1/skills/shared/{name}", Headers: map[string]string{"Idempotency-Key": "<stable-delete-intent>"}},
 		},
 		routes: []capabilityRoute{
-			{"GET", "/v1/skills", "Read the source Computer's managed Skills and the Server's published versions."},
+			{"GET", "/v1/skills", "List local managed Skills and the Server's current Shared Skills."},
 			{"POST", "/v1/skills/shared/{name}/publish", "Publish a single Shared Skill from the authenticated source Computer."},
-			{"GET", "/v1/skills/shared/{name}/revisions/{revision}/content", "Download a fixed published Shared Skill archive."},
+			{"DELETE", "/v1/skills/shared/{name}", "Stop distributing a Shared Skill and remove its installed copies on sync."},
 		},
 	},
 	{
@@ -282,16 +281,17 @@ func (s *Service) discoveryRoutes() {
 			if operation["description"] == nil {
 				operation["description"] = route.description
 			}
-			if route.method == "POST" && (route.path == "/v1/im/messages" || route.path == "/v1/im/files" || route.path == "/v1/skills/shared/{name}/publish") {
+			switch route.path {
+			case "/v1/im/messages", "/v1/im/files", "/v1/skills/shared/{name}/publish", "/v1/skills/shared/{name}":
 				parameters, _ := operation["parameters"].([]any)
 				operation["parameters"] = append(parameters, map[string]any{"name": "Idempotency-Key", "in": "header", "required": true,
-					"description": "Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.", "schema": map[string]any{"type": "string"}})
+					"description": "Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.", "schema": map[string]any{"type": "string"}})
 			}
 		}
 	}
 	register[httpcontract.Empty, Capabilities](s, "GET", "/v1/capabilities", "agentCapabilities", func(_ *http.Request, _ httpcontract.Empty) (Capabilities, error) {
 		index := Capabilities{
-			Usage:          "Choose a capability and GET its read_url for instructions, examples and the matching OpenAPI request/response schemas. Resolve all relative URLs against local_api.base_url. Use JSON bodies for POST requests; replace example placeholders with actual discovered IDs.",
+			Usage:          "Choose a capability and GET its read_url for instructions, examples and the matching OpenAPI schemas. Resolve relative URLs against local_api.base_url. Use JSON when the operation defines a body and replace example placeholders with actual discovered IDs.",
 			Authentication: commandAuthentication,
 			Scope:          "The Server derives this Bot, Session and source Computer from the command credential and verifies that credential against its original Daemon connection; the shared localhost address does not select an identity. Each operation enforces the Bot's current resource and chat access; available account operations are discovered per account.",
 			OpenAPIURL:     "/v1/openapi.json", Capabilities: []Capability{},

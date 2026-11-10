@@ -37,11 +37,11 @@ func managedTestArchive(t testing.TB, name string, revision int64, text string) 
 	}
 	writeManagedSkillTestFile(t, filepath.Join(path, "SKILL.md"), managedTestSkillMD(frontmatterName, text))
 	writeManagedSkillTestFile(t, filepath.Join(path, "reference.txt"), text)
-	data, digest, err := skills.Pack(context.Background(), root)
+	data, err := skills.Pack(context.Background(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return skills.Version{Name: name, Revision: revision, Digest: digest}, func() ([]byte, error) { return data, nil }
+	return skills.Version{Name: name, Revision: revision, Digest: skills.Digest(data)}, func() ([]byte, error) { return data, nil }
 }
 
 func TestManagedBuiltinUpdatesAtTheSamePath(t *testing.T) {
@@ -203,7 +203,7 @@ func TestManagedSharedUpdatesAtTheSamePath(t *testing.T) {
 		if err != nil || len(status.Shared) != 1 {
 			t.Fatalf("expected one working copy after restart: %+v %v", status, err)
 		}
-		if local := status.Shared[0]; local.Dirty || local.Path != path ||
+		if local := status.Shared[0]; local.Path != path ||
 			local.Revision != version.Revision || local.Digest != version.Digest {
 			t.Fatalf("working copy does not match revision %d at %s: %+v", version.Revision, path, local)
 		}
@@ -222,105 +222,114 @@ func TestManagedSharedUpdatesAtTheSamePath(t *testing.T) {
 	}
 }
 
-func TestManagedSharedPreservesLocalEditsAndDeletion(t *testing.T) {
+func TestManagedSharedOverwritesLocalEditsOnNewRevision(t *testing.T) {
 	ctx := t.Context()
-	root := t.TempDir()
-	m := newManagedSkills(root)
+	m := newManagedSkills(t.TempDir())
 	first, firstData := managedTestArchive(t, "shared-test", 1, "version one")
-	second, secondData := managedTestArchive(t, "shared-test", 2, "version two")
+	second, secondData := managedTestArchive(t, first.Name, 2, "version two")
+	third, thirdData := managedTestArchive(t, first.Name, 3, "version three")
 	if err := m.applyShared(ctx, first, firstData); err != nil {
 		t.Fatal(err)
 	}
 	path := m.sharedPath(first.Name)
 	reference := filepath.Join(path, "reference.txt")
-	noDownload := func() ([]byte, error) { return nil, errors.New("dirty draft started a download") }
-	writeManagedSkillTestFile(t, reference, "already dirty")
-	if err := m.applyShared(ctx, second, noDownload); err != nil {
+	gitHead := filepath.Join(path, ".git", "HEAD")
+	noDownload := func() ([]byte, error) { return nil, errors.New("unexpected download") }
+	writeManagedSkillTestFile(t, reference, "local edit")
+	writeManagedSkillTestFile(t, gitHead, "ref: refs/heads/local-work")
+	if err := m.applyShared(ctx, first, noDownload); err != nil {
 		t.Fatal(err)
 	}
-	if data, err := os.ReadFile(reference); err != nil || string(data) != "already dirty" {
-		t.Fatalf("sync replaced an edited working copy: %q %v", data, err)
+	if err := m.applyShared(ctx, second, func() ([]byte, error) { return []byte("invalid archive"), nil }); err == nil {
+		t.Fatal("accepted an invalid archive")
 	}
-	writeManagedSkillTestFile(t, reference, "version one")
+	if data, err := os.ReadFile(reference); err != nil || string(data) != "local edit" {
+		t.Fatalf("unchanged revision or failed download changed local files: %q %v", data, err)
+	}
 	if err := m.applyShared(ctx, second, func() ([]byte, error) {
 		writeManagedSkillTestFile(t, reference, "edit during download")
 		return secondData()
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if data, err := os.ReadFile(reference); err != nil || string(data) != "edit during download" {
-		t.Fatalf("edit during download was lost: %q %v", data, err)
+	if data, err := os.ReadFile(reference); err != nil || string(data) != "version two" {
+		t.Fatalf("new revision did not overwrite edited files: %q %v", data, err)
 	}
-	status, err := m.status(ctx)
-	if err != nil || len(status.Shared) != 1 || !status.Shared[0].Dirty || status.Shared[0].Path != path || status.Shared[0].Revision != first.Revision {
-		t.Fatalf("sync changed the edited working copy's baseline: %+v %v", status, err)
-	}
-	entries, err := os.ReadDir(m.sharedRoot())
-	if err != nil || len(entries) != 1 || entries[0].Name() != first.Name {
-		t.Fatalf("aborted synchronization left a temporary directory: %v %v", entries, err)
-	}
-	writeManagedSkillTestFile(t, reference, "version one")
-	gitHead := filepath.Join(path, ".git", "HEAD")
-	writeManagedSkillTestFile(t, gitHead, "ref: refs/heads/local-work\n")
-	if err := m.applyShared(ctx, second, noDownload); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(gitHead); err != nil {
-		t.Fatalf("sync discarded local Git metadata: %v", err)
+	if _, err := os.Stat(gitHead); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old Git metadata survived replacement: %v", err)
 	}
 	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
-	m = newManagedSkills(root)
 	if err := m.applyShared(ctx, second, noDownload); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("sync recreated a locally deleted working copy: %v", err)
+		t.Fatalf("same revision recreated a locally deleted directory: %v", err)
+	}
+	if err := m.applyShared(ctx, third, thirdData); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(reference); err != nil || string(data) != "version three" {
+		t.Fatalf("new revision did not reinstall locally deleted files: %q %v", data, err)
 	}
 }
 
-func TestManagedSharedAcknowledgementAdvancesOnlyTheExportedDraft(t *testing.T) {
+func TestManagedSharedRemovalAndRepublication(t *testing.T) {
 	ctx := t.Context()
-	m := newManagedSkills(t.TempDir())
-	name := "new-skill"
-	path := filepath.Join(m.sharedPath(name), "SKILL.md")
-	writeManagedSkillTestFile(t, path, managedTestSkillMD(name, "first draft"))
-	data, err := m.export(ctx, name)
-	if err != nil {
+	root := t.TempDir()
+	m := newManagedSkills(root)
+	first, firstData := managedTestArchive(t, "shared-test", 1, "version one")
+	removed := skills.Version{Name: first.Name, Revision: 2}
+	third, thirdData := managedTestArchive(t, first.Name, 3, "version three")
+	if err := m.applyShared(ctx, first, firstData); err != nil {
 		t.Fatal(err)
 	}
-	first := skills.Version{Name: name, Revision: 1, Digest: skills.Digest(data)}
-	newBody := managedTestSkillMD(name, "continued editing")
-	writeManagedSkillTestFile(t, path, newBody)
-	if err := m.acknowledge(ctx, first); err != nil {
+	path := m.sharedPath(first.Name)
+	entry := filepath.Join(path, "SKILL.md")
+	writeManagedSkillTestFile(t, entry, managedTestSkillMD(first.Name, "local edit"))
+	if err := m.applyShared(ctx, removed, nil); err != nil {
 		t.Fatal(err)
 	}
-	status, err := m.status(ctx)
-	if err != nil || len(status.Shared) != 1 || status.Shared[0].Revision != 1 || status.Shared[0].Digest != first.Digest ||
-		!status.Shared[0].Dirty || status.Shared[0].ContentDigest == first.Digest {
-		t.Fatalf("continued editing did not remain dirty: %+v %v", status, err)
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("global deletion did not remove installed files: %v", err)
 	}
-	if current, err := os.ReadFile(path); err != nil || string(current) != newBody {
-		t.Fatalf("publish acknowledgement wrote working files: %q %v", current, err)
-	}
-	before, err := os.Stat(path)
-	if err != nil {
+
+	// An older version can arrive after the deletion. A second copy of the
+	// removal marker must also leave newly created local files alone.
+	m = newManagedSkills(root)
+	local := managedTestSkillMD(first.Name, "new local content")
+	writeManagedSkillTestFile(t, entry, local)
+	if err := m.applyShared(ctx, first, func() ([]byte, error) { return nil, errors.New("stale publish downloaded") }); err != nil {
 		t.Fatal(err)
 	}
-	second := skills.Version{Name: name, Revision: 2, Digest: status.Shared[0].ContentDigest}
-	if err := m.applyShared(ctx, second, func() ([]byte, error) { return nil, errors.New("matching contents must not download") }); err != nil {
+	if err := m.applyShared(ctx, removed, nil); err != nil {
 		t.Fatal(err)
 	}
-	if after, err := os.Stat(path); err != nil || !os.SameFile(before, after) {
-		t.Fatalf("fast-forward replaced the file with matching content: %v", err)
+	if data, err := os.ReadFile(entry); err != nil || string(data) != local {
+		t.Fatalf("stale sync changed new local files: %q %v", data, err)
 	}
-	if err := m.acknowledge(ctx, first); err != nil {
+	if data, revision, err := m.export(ctx, first.Name); err != nil || len(data) == 0 || revision != removed.Revision {
+		t.Fatalf("export did not use the recorded deletion as its base: %d %v", revision, err)
+	}
+	if err := m.applyShared(ctx, third, thirdData); err != nil {
 		t.Fatal(err)
 	}
-	status, err = m.status(ctx)
-	if err != nil || len(status.Shared) != 1 || status.Shared[0].Revision != 2 || status.Shared[0].Dirty || status.Shared[0].Path != filepath.Dir(path) {
-		t.Fatalf("fast-forward failed or delayed receipt moved the base backwards: %+v %v", status, err)
+	if err := m.applyShared(ctx, removed, nil); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(entry); err != nil || string(data) != managedTestSkillMD(first.Name, "version three") {
+		t.Fatalf("republication was lost: %q %v", data, err)
+	}
+
+	name := "only-local"
+	localPath := filepath.Join(m.sharedPath(name), "SKILL.md")
+	writeManagedSkillTestFile(t, localPath, managedTestSkillMD(name, "never installed"))
+	if err := m.applyShared(ctx, skills.Version{Name: name, Revision: 2}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(localPath); err != nil {
+		t.Fatalf("global deletion removed a never-installed directory: %v", err)
 	}
 }
 

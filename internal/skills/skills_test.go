@@ -35,9 +35,9 @@ func TestPackStableAcrossCopiesAndLocalCaches(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(source, "empty"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	data, digest, err := Pack(ctx, source)
-	if err != nil || digest != Digest(data) {
-		t.Fatalf("pack: digest %q, error %v", digest, err)
+	data, err := Pack(ctx, source)
+	if err != nil {
+		t.Fatal(err)
 	}
 	dest := t.TempDir()
 	if err := Unpack(ctx, data, dest); err != nil {
@@ -54,12 +54,12 @@ func TestPackStableAcrossCopiesAndLocalCaches(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFixture(t, filepath.Join(dest, ".DS_Store"), "local only")
-	if other, err := DirectoryDigest(ctx, dest); err != nil || other != digest {
-		t.Fatalf("round-trip digest %q, want %q, error %v", other, digest, err)
+	if other, err := Pack(ctx, dest); err != nil || !bytes.Equal(other, data) {
+		t.Fatalf("round-trip archive changed, error %v", err)
 	}
 	writeFixture(t, filepath.Join(dest, "scripts", "程序.py"), "print('changed')\n")
-	if other, err := DirectoryDigest(ctx, dest); err != nil || other == digest {
-		t.Fatalf("edited digest %q, original %q, error %v", other, digest, err)
+	if other, err := Pack(ctx, dest); err != nil || bytes.Equal(other, data) {
+		t.Fatalf("edited archive did not change, error %v", err)
 	}
 }
 
@@ -119,32 +119,36 @@ func fixtureStore(t *testing.T) (*persistence.Store, domain.ExecutionBinding) {
 	return store, domain.ExecutionBinding{AgentID: bot.ID, ComputerID: computer.ID, SessionID: session.ID}
 }
 
-func draft(t *testing.T, id string, base int64, name, body string) (PublishRequest, []byte) {
+func archiveFixture(t *testing.T, name, body string) []byte {
 	t.Helper()
 	source := t.TempDir()
 	writeFixture(t, filepath.Join(source, "SKILL.md"), "---\nname: "+name+"\ndescription: A test skill\n---\n"+body+"\n")
-	data, digest, err := Pack(context.Background(), source)
+	data, err := Pack(context.Background(), source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return PublishRequest{Name: name, BaseRevision: base, ID: id, Digest: digest}, data
+	return data
 }
 
-func TestPublishSurvivesRestartAndRetainsRevision(t *testing.T) {
+func exportFixture(data []byte, base int64) func() ([]byte, int64, error) {
+	return func() ([]byte, int64, error) { return data, base, nil }
+}
+
+func TestSharedSkillCurrentPublicationSurvivesRestartAndDeletion(t *testing.T) {
 	ctx := context.Background()
 	store, binding := fixtureStore(t)
 	service, err := New(store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, firstData := draft(t, "create", 0, "demo", "first")
-	v1, err := service.Publish(ctx, binding, first, firstData)
-	if err != nil || v1.Revision != 1 || v1.Digest != first.Digest {
+	firstData := archiveFixture(t, "demo", "first")
+	v1, err := service.Publish(ctx, binding, "demo", "create", exportFixture(firstData, 0))
+	if err != nil || v1.Revision != 1 || v1.Digest != Digest(firstData) {
 		t.Fatalf("first publication: %+v, %v", v1, err)
 	}
-	changed, changedData := draft(t, "edit", 1, "demo", "second")
-	v2, err := service.Publish(ctx, binding, changed, changedData)
-	if err != nil || v2.Revision != 2 || v2.Digest != changed.Digest {
+	changedData := archiveFixture(t, "demo", "second")
+	v2, err := service.Publish(ctx, binding, "demo", "edit", exportFixture(changedData, v1.Revision))
+	if err != nil || v2.Revision != 2 || v2.Digest != Digest(changedData) {
 		t.Fatalf("second publication: %+v, %v", v2, err)
 	}
 	if err = store.Close(); err != nil {
@@ -163,36 +167,66 @@ func TestPublishSurvivesRestartAndRetainsRevision(t *testing.T) {
 	if err != nil || len(manifest.Shared) != 1 || manifest.Shared[0] != v2 || manifest.Builtin.Digest == "" {
 		t.Fatalf("restored manifest: %+v, %v", manifest, err)
 	}
-	retry, err := service.Publish(ctx, binding, first, nil)
+	retry, err := service.Publish(ctx, binding, "demo", "create", nil)
 	if err != nil || retry != v1 {
 		t.Fatalf("retry after newer revision: %+v, %v", retry, err)
 	}
-	mismatch := changed
-	mismatch.ID = first.ID
-	if _, _, err = service.Receipt(ctx, binding, mismatch); err == nil {
-		t.Fatal("receipt accepted an ID previously used for other content")
+	var problem *domain.Error
+	if _, err = service.Publish(ctx, binding, "other", "create", nil); !errors.As(err, &problem) || problem.Status != 409 {
+		t.Fatalf("receipt accepted an ID previously used for another skill: %v", err)
 	}
-	historical, content, err := service.Download(ctx, Selector{Kind: Shared, Name: "demo", Revision: 1})
+	assertUnavailable := func(v Version) {
+		t.Helper()
+		_, content, err := service.Download(ctx, Selector{Kind: Shared, Name: v.Name, Revision: v.Revision, Digest: v.Digest})
+		if content != nil {
+			_ = content.Close()
+		}
+		if !domain.IsMissing(err) {
+			t.Fatalf("revision %d should be unavailable: %v", v.Revision, err)
+		}
+	}
+	assertUnavailable(v1)
+	current, content, err := service.Download(ctx, Selector{Kind: Shared, Name: v2.Name, Revision: v2.Revision})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer content.Close()
 	data, err := io.ReadAll(content)
-	if err != nil || historical != v1 || !bytes.Equal(data, firstData) {
-		t.Fatalf("historical download: %+v, %v", historical, err)
+	_ = content.Close()
+	if err != nil || current != v2 || !bytes.Equal(data, changedData) {
+		t.Fatalf("current download: %+v, %v", current, err)
 	}
-	stale, staleData := draft(t, "stale", 1, "demo", "stale")
-	if _, err = service.Publish(ctx, binding, stale, staleData); err == nil || !strings.Contains(err.Error(), "revision 2") {
-		t.Fatalf("stale edit must report current revision, got %v", err)
+	staleData := archiveFixture(t, "demo", "stale")
+	if _, err = service.Publish(ctx, binding, "demo", "stale", exportFixture(staleData, v1.Revision)); !errors.As(err, &problem) || problem.Status != 409 || !strings.Contains(problem.Error(), "Sync this Computer") {
+		t.Fatalf("stale edit must ask the source Computer to sync: %v", err)
 	}
-	restored := PublishRequest{Name: first.Name, BaseRevision: 2, Digest: first.Digest, ID: "restore"}
-	v3, err := service.Publish(ctx, binding, restored, firstData)
-	if err != nil || v3.Revision != 3 || v3.Digest != v1.Digest {
-		t.Fatalf("restoring an old snapshot must create a new revision: %+v, %v", v3, err)
+	if _, err = service.Delete(ctx, binding, "demo", "create"); !errors.As(err, &problem) || problem.Status != 409 {
+		t.Fatalf("delete accepted an ID previously used for publishing: %v", err)
 	}
-	archives, err := os.ReadDir(service.snapshotDir)
-	if err != nil || len(archives) != 2 {
-		t.Fatalf("three revisions with two distinct contents must keep only two archives: %v, %v", archives, err)
+	removed, err := service.Delete(ctx, binding, "demo", "delete")
+	if err != nil || removed.Name != "demo" || removed.Revision != 3 || removed.Digest != "" {
+		t.Fatalf("deleting shared skill: %+v, %v", removed, err)
+	}
+	manifest, err = service.Manifest(ctx)
+	if err != nil || len(manifest.Shared) != 0 || len(manifest.Removed) != 1 || manifest.Removed[0] != removed {
+		t.Fatalf("manifest after deletion: %+v, %v", manifest, err)
+	}
+	assertUnavailable(v2)
+	assertUnavailable(removed)
+
+	if _, err = service.Publish(ctx, binding, "demo", "stale", exportFixture(staleData, v2.Revision)); !errors.As(err, &problem) || problem.Status != 409 {
+		t.Fatalf("stale edit must not recreate a deleted skill: %v", err)
+	}
+	v4, err := service.Publish(ctx, binding, "demo", "recreate", exportFixture(firstData, removed.Revision))
+	if err != nil || v4.Revision != 4 || v4.Digest != v1.Digest {
+		t.Fatalf("recreating the same name: %+v, %v", v4, err)
+	}
+	retry, err = service.Delete(ctx, binding, "demo", "delete")
+	if err != nil || retry != removed {
+		t.Fatalf("replaying the old deletion: %+v, %v", retry, err)
+	}
+	manifest, err = service.Manifest(ctx)
+	if err != nil || len(manifest.Shared) != 1 || manifest.Shared[0] != v4 || len(manifest.Removed) != 0 {
+		t.Fatalf("recreated publication missing after old deletion retry: %+v, %v", manifest, err)
 	}
 }
 
@@ -205,8 +239,8 @@ func TestPublishHonorsExistingComputerAPIAccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			first, firstData := draft(t, "create", 0, "demo", "first")
-			v1, err := service.Publish(ctx, binding, first, firstData)
+			firstData := archiveFixture(t, "demo", "first")
+			v1, err := service.Publish(ctx, binding, "demo", "create", exportFixture(firstData, 0))
 			if err != nil || v1.Revision != 1 {
 				t.Fatalf("publishing through the existing API binding: %+v, %v", v1, err)
 			}
@@ -231,34 +265,20 @@ func TestPublishHonorsExistingComputerAPIAccess(t *testing.T) {
 				}
 			}
 			var problem *domain.Error
-			if _, _, err := service.Receipt(ctx, binding, first); !errors.As(err, &problem) || problem.Status != 403 {
+			if _, err := service.Publish(ctx, binding, "demo", "create", nil); !errors.As(err, &problem) || problem.Status != 403 {
 				t.Fatalf("receipt remained readable after %s: %v", change, err)
 			}
-			second, secondData := draft(t, "edit", 1, "demo", "second")
-			if _, err := service.Publish(ctx, binding, second, secondData); !errors.As(err, &problem) || problem.Status != 403 {
+			if _, err := service.Publish(ctx, binding, "demo", "edit", nil); !errors.As(err, &problem) || problem.Status != 403 {
 				t.Fatalf("publication was not denied after %s: %v", change, err)
+			}
+			if _, err := service.Delete(ctx, binding, "demo", "delete"); !errors.As(err, &problem) || problem.Status != 403 {
+				t.Fatalf("deletion was not denied after %s: %v", change, err)
 			}
 			manifest, err := service.Manifest(ctx)
 			if err != nil || len(manifest.Shared) != 1 || manifest.Shared[0] != v1 {
 				t.Fatalf("denied publication changed the manifest: %+v, %v", manifest, err)
 			}
 		})
-	}
-}
-
-func BenchmarkDirectoryDigest(b *testing.B) {
-	dir := b.TempDir()
-	const size = 8 << 20
-	if err := os.WriteFile(filepath.Join(dir, "asset.bin"), make([]byte, size), 0600); err != nil {
-		b.Fatal(err)
-	}
-	b.SetBytes(size)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := DirectoryDigest(context.Background(), dir); err != nil {
-			b.Fatal(err)
-		}
 	}
 }
 
@@ -302,30 +322,30 @@ func TestConcurrentPublishHonorsReceiptAndBase(t *testing.T) {
 		version Version
 		err     error
 	}
-	publish := func(a, b PublishRequest, dataA, dataB []byte) (result, result) {
+	publish := func(a, b string, base int64, dataA, dataB []byte) (result, result) {
 		start := make(chan struct{})
 		results := make(chan result, 2)
 		for _, candidate := range []struct {
-			request PublishRequest
-			data    []byte
+			id   string
+			data []byte
 		}{{a, dataA}, {b, dataB}} {
 			go func() {
 				<-start
-				version, err := service.Publish(ctx, binding, candidate.request, candidate.data)
+				version, err := service.Publish(ctx, binding, "demo", candidate.id, exportFixture(candidate.data, base))
 				results <- result{version, err}
 			}()
 		}
 		close(start)
 		return <-results, <-results
 	}
-	first, firstData := draft(t, "create", 0, "demo", "first")
-	a, b := publish(first, first, firstData, firstData)
+	firstData := archiveFixture(t, "demo", "first")
+	a, b := publish("create", "create", 0, firstData, firstData)
 	if a.err != nil || b.err != nil || a.version != b.version || a.version.Revision != 1 {
 		t.Fatalf("concurrent retry must reuse revision 1: %+v, %+v", a, b)
 	}
-	left, leftData := draft(t, "left", 1, "demo", "left")
-	right, rightData := draft(t, "right", 1, "demo", "right")
-	a, b = publish(left, right, leftData, rightData)
+	leftData := archiveFixture(t, "demo", "left")
+	rightData := archiveFixture(t, "demo", "right")
+	a, b = publish("left", "right", 1, leftData, rightData)
 	if a.err != nil {
 		a, b = b, a
 	}
