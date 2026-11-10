@@ -89,7 +89,7 @@ var embeddedBundle = sync.OnceValues(func() (bundle struct {
 		return bundle, err
 	}
 	var out bytes.Buffer
-	if err = writeArchive(context.Background(), source, false, &out); err != nil {
+	if err = writeArchive(context.Background(), source, false, &out, nil); err != nil {
 		return bundle, err
 	}
 	bundle.data, bundle.digest = out.Bytes(), Digest(out.Bytes())

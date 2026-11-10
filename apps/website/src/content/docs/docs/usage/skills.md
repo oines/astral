@@ -67,7 +67,7 @@ Astral reads **the `AGENTS.md` in the current working directory**. It does not s
 
 Use a shared skill when you want the same published version on multiple connected computers. Ask the Bot to create a shared skill or adapt one it can already see. Test it on the current computer, make sure [**Enable Astral API**](/docs/computers/connect/#control-what-the-computer-can-call) is on there, then explicitly ask the Bot to publish it. Until publication, edits are visible only on that computer, where Bots use the same local copy. Other computers receive the published version when they sync, including those with Astral API turned off.
 
-If a computer has changes to the same skill, it keeps its edited files. Ask the Bot to check the skill's local and published versions. It can compare the drafts with the published version, combine the changes you want, and publish the result. Other shared skills can continue to update.
+Sync updates an unedited copy in the same folder. If a computer has changes to the same skill, it keeps its edited files. Ask the Bot to compare the local files with the published version, combine the changes you want, and publish the result. Other shared skills can continue to update.
 
 For a project or user skill, copy its folder and any required resources to the other computer. Install any software the skill needs there before using it.
 

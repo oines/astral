@@ -5,7 +5,7 @@ Read the live `skills` capability, then call `GET /v1/skills` from the Computer 
 ## Create or edit a draft
 
 - For a new skill, check the manifest and local entries for the name. In `local.shared_root`, create `<name>/SKILL.md` and any scripts or references. Use a lowercase, hyphen-separated name and give the entry point a matching `name` and a clear `description`.
-- To edit a skill, choose the intended `local.shared` entry by `name` and `path`, using `active` to identify the copy currently in use. An older draft can also appear in the list. Keep its `draft_id` if that is the copy you intend to work on.
+- To edit an existing skill, find its `local.shared` entry by `name` and use the reported `path`. Normal sync updates that copy in its existing directory when it has no unpublished changes.
 - Edit and test the files with the usual tools. Re-read `GET /v1/skills` after editing. Check the intended path, `draft_id`, local `revision`, and `content_digest`. Use any reported `error` to correct the package before publishing. A local edit affects the shared files on this Computer.
 
 ## Publish one skill

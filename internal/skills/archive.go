@@ -114,7 +114,7 @@ func (w *archiveLimit) Write(p []byte) (int, error) {
 // are normalized so the same checkout has the same digest on every Computer.
 func Pack(ctx context.Context, dir string) ([]byte, string, error) {
 	var out bytes.Buffer
-	if err := writeDirectory(ctx, dir, &out); err != nil {
+	if err := writeDirectory(ctx, dir, &out, nil); err != nil {
 		return nil, "", err
 	}
 	return out.Bytes(), Digest(out.Bytes()), nil
@@ -123,14 +123,26 @@ func Pack(ctx context.Context, dir string) ([]byte, string, error) {
 // DirectoryDigest hashes the same tar bytes as Pack without materializing the
 // archive. This is used for dirty detection before staging or activation.
 func DirectoryDigest(ctx context.Context, dir string) (string, error) {
+	return directoryDigest(ctx, dir, nil)
+}
+
+// DirectoryDigestForUpdate also reports local Git metadata, which is omitted
+// from the published archive but must survive automatic replacement.
+func DirectoryDigestForUpdate(ctx context.Context, dir string) (string, bool, error) {
+	var hasGit bool
+	digest, err := directoryDigest(ctx, dir, &hasGit)
+	return digest, hasGit, err
+}
+
+func directoryDigest(ctx context.Context, dir string, hasGit *bool) (string, error) {
 	hash := sha256.New()
-	if err := writeDirectory(ctx, dir, hash); err != nil {
+	if err := writeDirectory(ctx, dir, hash, hasGit); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func writeDirectory(ctx context.Context, dir string, out io.Writer) error {
+func writeDirectory(ctx context.Context, dir string, out io.Writer, hasGit *bool) error {
 	info, err := os.Lstat(dir)
 	if err != nil {
 		return err
@@ -150,10 +162,10 @@ func writeDirectory(ctx context.Context, dir string, out io.Writer) error {
 	if !os.SameFile(info, opened) {
 		return errors.New("skill package directory changed while packing")
 	}
-	return writeArchive(ctx, root.FS(), true, out)
+	return writeArchive(ctx, root.FS(), true, out, hasGit)
 }
 
-func writeArchive(ctx context.Context, source fs.FS, local bool, out io.Writer) error {
+func writeArchive(ctx context.Context, source fs.FS, local bool, out io.Writer, hasGit *bool) error {
 	var entries []packEntry
 	seen := make(map[string]bool)
 	err := fs.WalkDir(source, ".", func(name string, entry fs.DirEntry, err error) error {
@@ -167,6 +179,9 @@ func writeArchive(ctx context.Context, source fs.FS, local bool, out io.Writer) 
 			return nil
 		}
 		if excluded(entry.Name()) {
+			if hasGit != nil && strings.EqualFold(entry.Name(), ".git") {
+				*hasGit = true
+			}
 			if entry.IsDir() {
 				return fs.SkipDir
 			}

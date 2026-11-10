@@ -166,6 +166,10 @@ func (s *environmentScanner) scanRoot(root DiscoveryRoot) {
 		s.managed.builtinMu.RLock()
 		defer s.managed.builtinMu.RUnlock()
 		err = s.managed.directory(root.Path, false)
+	} else if root.Scope == sharedSkillScope {
+		s.managed.sharedMu.RLock()
+		defer s.managed.sharedMu.RUnlock()
+		err = s.managed.directory(root.Path, false)
 	} else if info, statErr := os.Stat(root.Path); statErr != nil {
 		err = statErr
 	} else if !info.IsDir() {

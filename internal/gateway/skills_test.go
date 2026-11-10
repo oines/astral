@@ -167,14 +167,16 @@ func TestManagedSkillsPublishAndSyncAcrossComputers(t *testing.T) {
 		t.Fatal("publish retry did not return the initial revision")
 	}
 	pathB := waitForSkill(1, "code-review", "astral-shared", "initial revision")
-	waitForSkill(2, "code-review", "astral-shared", "initial revision")
+	pathC := waitForSkill(2, "code-review", "astral-shared", "initial revision")
 	write(pathB, "unpublished B edit")
 	write(pathA, "new published files")
 	second := publish(0, "second", request(0, 1), http.StatusOK)
 	if second.Revision != 2 {
 		t.Fatalf("unexpected second revision: %+v", second)
 	}
-	waitForSkill(2, "code-review", "astral-shared", "new published files")
+	if waitForSkill(2, "code-review", "astral-shared", "new published files") != pathC {
+		t.Fatal("remote sync changed the path of C's unmodified copy")
+	}
 	if waitForSkill(1, "code-review", "astral-shared", "unpublished B edit") != pathB {
 		t.Fatal("remote sync moved B's local draft")
 	}

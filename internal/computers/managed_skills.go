@@ -24,7 +24,6 @@ const (
 	builtinSkillScope           = "astral-builtin"
 	sharedSkillScope            = "astral-shared"
 	localSkillDraft             = "local"
-	skillGenerations            = ".generations"
 	maxSkillState               = 16 << 20
 	managedSkillCacheEntries    = 128
 	managedSkillCacheEntryBytes = 4 << 10
@@ -58,8 +57,8 @@ type installedBundle struct {
 }
 
 type installedShared struct {
-	Active string                    `json:"active"`
-	Drafts map[string]skills.Version `json:"drafts"`
+	Version skills.Version `json:"version"`
+	Pending *sharedInstall `json:"pending,omitempty"`
 }
 
 type installedSkills struct {
@@ -72,6 +71,7 @@ type managedSkills struct {
 	canonicalRoot string
 	mu            sync.Mutex   // Serializes durable state changes, never held by discovery.
 	builtinMu     sync.RWMutex // Keeps Built-in discovery clear of directory renames.
+	sharedMu      sync.RWMutex // Keeps Shared readers clear of directory replacement.
 	state         atomic.Pointer[installedSkills]
 	loadErr       error
 	syncErr       atomic.Pointer[error]
@@ -94,6 +94,12 @@ func newManagedSkills(root string) *managedSkills {
 			err = errors.Join(err, m.saveLocked(state))
 		}
 		m.state.Store(&state)
+		for name, entry := range state.Shared {
+			if entry.Pending != nil {
+				err = errors.Join(err, m.recoverSharedLocked(name, entry))
+			}
+		}
+		err = errors.Join(err, m.cleanSharedStages())
 		m.setSyncError(err)
 	}
 	return m
@@ -137,12 +143,7 @@ func (m *managedSkills) builtinRoot() string { return filepath.Join(m.root, buil
 func (m *managedSkills) sharedRoot() string  { return filepath.Join(m.root, sharedSkillScope) }
 func (m *managedSkills) statePath() string   { return filepath.Join(m.root, "state.json") }
 
-func (m *managedSkills) draftPath(name, id string) string {
-	if id == localSkillDraft {
-		return filepath.Join(m.sharedRoot(), name)
-	}
-	return filepath.Join(m.sharedRoot(), skillGenerations, id, name)
-}
+func (m *managedSkills) sharedPath(name string) string { return filepath.Join(m.sharedRoot(), name) }
 
 func validSkillGeneration(id string) bool {
 	return strings.HasPrefix(id, "generation-") && validIdentity(id)
@@ -218,13 +219,11 @@ func (m *managedSkills) load() error {
 		return errors.New("invalid managed skills state")
 	}
 	for name, entry := range state.Shared {
-		if !skills.ValidName(name) || entry.Active != "" && entry.Drafts[entry.Active].Revision == 0 {
+		if !skills.ValidName(name) || entry.Version != (skills.Version{}) && !validInstalledSkill(entry.Version, name) {
 			return errors.New("invalid shared skill state")
 		}
-		for id, version := range entry.Drafts {
-			if id != localSkillDraft && !validSkillGeneration(id) || !validInstalledSkill(version, name) {
-				return errors.New("invalid shared skill generation")
-			}
+		if entry.Pending != nil && (!validSharedStage(entry.Pending.Stage) || !validInstalledSkill(entry.Pending.Version, name) || entry.Pending.Version.Revision <= entry.Version.Revision) {
+			return errors.New("invalid pending shared skill update")
 		}
 	}
 	m.state.Store(&state)
@@ -256,11 +255,8 @@ func (m *managedSkills) saveLocked(state installedSkills) error {
 	if err = moveManagedSkillPath(file.Name(), m.statePath(), true); err != nil {
 		return err
 	}
-	if err = syncManagedSkillDir(m.root); err != nil {
-		return err
-	}
 	m.state.Store(&state)
-	return nil
+	return syncManagedSkillDir(m.root)
 }
 
 func (m *managedSkills) snapshot() (installedSkills, error) {
@@ -364,32 +360,6 @@ func (m *managedSkills) stageSkill(ctx context.Context, parent string, version s
 	return path, nil
 }
 
-// A selected Shared path stays available to tasks or editors that already use it.
-func (m *managedSkills) prepareShared(ctx context.Context, version skills.Version, archive []byte) (string, string, error) {
-	parent := filepath.Join(m.sharedRoot(), skillGenerations)
-	path, err := m.stageSkill(ctx, parent, version, archive)
-	if err != nil {
-		return "", "", err
-	}
-	keep := false
-	defer func() {
-		if !keep {
-			_ = os.RemoveAll(path)
-		}
-	}()
-	id := "generation-" + strings.TrimPrefix(filepath.Base(path), ".staging-")
-	target := filepath.Join(parent, id)
-	if err := moveManagedSkillPath(path, target, false); err != nil {
-		return "", "", err
-	}
-	path = target
-	if err := m.syncSkillDirs(parent); err != nil {
-		return "", "", err
-	}
-	keep = true
-	return id, path, nil
-}
-
 func (m *managedSkills) syncSkillDirs(parent string) error {
 	base := filepath.Dir(m.root)
 	for dir := parent; ; dir = filepath.Dir(dir) {
@@ -402,114 +372,22 @@ func (m *managedSkills) syncSkillDirs(parent string) error {
 	}
 }
 
-func (m *managedSkills) applyShared(ctx context.Context, version skills.Version, fetch func() ([]byte, error)) error {
-	name := version.Name
-	if !skills.ValidName(name) || !validInstalledSkill(version, name) {
-		return domain.Invalid("invalid shared skill version")
-	}
-	state, err := m.snapshot()
-	if err != nil {
-		return err
-	}
-	entry := state.Shared[name]
-	id := entry.Active
-	if id == "" {
-		path := m.draftPath(name, localSkillDraft)
-		if _, err := os.Lstat(path); err == nil {
-			id = localSkillDraft
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-	base := entry.Drafts[id]
-	if base.Revision >= version.Revision {
-		if base.Revision == version.Revision && base != version {
-			return domain.Conflict("shared skill revision has a different digest than the installed base")
-		}
-		return nil
-	}
-	if id != "" {
-		digest, err := m.contentDigest(ctx, m.draftPath(name, id))
-		if errors.Is(err, os.ErrNotExist) {
-			return nil // Local deletion is also a change to keep.
-		}
-		if err != nil {
-			return err
-		}
-		if digest == version.Digest {
-			// The current bytes already match the published snapshot. Advance
-			// only the base, even if a writer starts a new edit right now.
-			_, err := m.selectShared(ctx, version, entry.Active, id, base, id)
-			return err
-		}
-		if digest != base.Digest {
-			return nil
-		}
-	}
-	archive, err := fetch()
-	if err != nil {
-		return err
-	}
-	nextID, path, err := m.prepareShared(ctx, version, archive)
-	if err != nil {
-		return err
-	}
-	selected := false
-	defer func() {
-		if !selected {
-			_ = os.RemoveAll(path)
-		}
-	}()
-	if id == "" {
-		if _, err = os.Lstat(m.draftPath(name, localSkillDraft)); err == nil {
-			return nil // A new direct draft appeared during the download.
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	} else {
-		digest, err := m.contentDigest(ctx, m.draftPath(name, id))
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		if err != nil || digest != base.Digest {
-			return err
-		}
-	}
-	selected, err = m.selectShared(ctx, version, entry.Active, id, base, nextID)
-	return err
-}
-
-func (m *managedSkills) selectShared(ctx context.Context, version skills.Version, expectedActive, checkedID string, base skills.Version, nextID string) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return false, err
-	}
-	entry := m.state.Load().Shared[version.Name]
-	if entry.Active != expectedActive || entry.Drafts[checkedID] != base {
-		return false, domain.Conflict("shared skill base changed during sync; retry on the next refresh")
-	}
-	return true, m.saveSharedLocked(version, entry, nextID, nextID)
-}
-
-func (m *managedSkills) saveSharedLocked(version skills.Version, entry installedShared, active, id string) error {
+func (m *managedSkills) saveSharedEntryLocked(name string, entry installedShared) error {
 	next := *m.state.Load()
 	next.Shared = maps.Clone(next.Shared)
-	if next.Shared == nil {
-		next.Shared = make(map[string]installedShared)
+	if entry == (installedShared{}) {
+		delete(next.Shared, name)
+	} else {
+		if next.Shared == nil {
+			next.Shared = make(map[string]installedShared)
+		}
+		next.Shared[name] = entry
 	}
-	entry.Active = active
-	entry.Drafts = maps.Clone(entry.Drafts)
-	if entry.Drafts == nil {
-		entry.Drafts = make(map[string]skills.Version)
-	}
-	entry.Drafts[id] = version
-	next.Shared[version.Name] = entry
 	return m.saveLocked(next)
 }
 
 func (m *managedSkills) acknowledge(ctx context.Context, name, id string, version skills.Version) error {
-	if !skills.ValidName(name) || !validInstalledSkill(version, name) || id != localSkillDraft && !validSkillGeneration(id) {
+	if !skills.ValidName(name) || !validInstalledSkill(version, name) || id != localSkillDraft {
 		return domain.Invalid("invalid published skill acknowledgement")
 	}
 	m.mu.Lock()
@@ -521,41 +399,35 @@ func (m *managedSkills) acknowledge(ctx context.Context, name, id string, versio
 		return err
 	}
 	entry := m.state.Load().Shared[name]
-	base, known := entry.Drafts[id]
-	if id != localSkillDraft && !known {
-		return domain.Missing("skill draft", id)
+	if entry.Pending != nil {
+		if err := m.recoverSharedLocked(name, entry); err != nil {
+			return err
+		}
+		entry = m.state.Load().Shared[name]
 	}
+	base := entry.Version
 	if version.Revision < base.Revision || version == base {
 		return nil // A delayed receipt must never move the local base backwards.
 	}
 	if version.Revision == base.Revision {
 		return domain.Conflict("published skill digest differs at the same revision")
 	}
-	if entry.Active == "" {
-		entry.Active = id
-	}
-	return m.saveSharedLocked(version, entry, entry.Active, id)
+	return m.saveSharedEntryLocked(name, installedShared{Version: version})
 }
 
 func (m *managedSkills) export(ctx context.Context, name, id string) ([]byte, error) {
 	if !skills.ValidName(name) {
 		return nil, domain.Invalid("invalid shared skill name")
 	}
-	state, err := m.snapshot()
-	if err != nil {
-		return nil, err
-	}
-	entry := state.Shared[name]
-	if id == "" {
-		id = entry.Active
-		if id == "" {
-			id = localSkillDraft
-		}
-	}
-	if _, exists := entry.Drafts[id]; id != localSkillDraft && !exists {
+	if id != "" && id != localSkillDraft {
 		return nil, domain.Missing("skill draft", id)
 	}
-	archive, _, err := m.pack(ctx, m.draftPath(name, id))
+	m.sharedMu.RLock()
+	defer m.sharedMu.RUnlock()
+	if m.loadErr != nil {
+		return nil, m.loadErr
+	}
+	archive, _, err := m.pack(ctx, m.sharedPath(name))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, domain.Missing("skill draft", id)
 	}
@@ -596,33 +468,17 @@ func (m *managedSkills) discoveryRoots() ([]DiscoveryRoot, error) {
 		return nil, err
 	}
 	var roots []DiscoveryRoot
-	var issues []error
-	add := func(path, scope string) {
-		if err := m.directory(path, false); err == nil {
-			roots = append(roots, DiscoveryRoot{Path: path, Scope: scope, Status: "ok"})
-		} else if !errors.Is(err, os.ErrNotExist) {
-			issues = append(issues, err)
-		}
-	}
 	if state.Builtin.Version.Digest != "" {
 		roots = append(roots, DiscoveryRoot{Path: m.builtinPath(state.Builtin), Scope: builtinSkillScope, Status: "ok"})
 	}
-	for name, entry := range state.Shared {
-		if entry.Active != "" {
-			add(m.draftPath(name, entry.Active), sharedSkillScope)
-		}
-	}
+	m.sharedMu.RLock()
 	names, err := m.directDraftNames()
-	if err != nil {
-		issues = append(issues, err)
-	}
+	m.sharedMu.RUnlock()
 	for _, name := range names {
-		if state.Shared[name].Active == "" {
-			add(m.draftPath(name, localSkillDraft), sharedSkillScope)
-		}
+		roots = append(roots, DiscoveryRoot{Path: m.sharedPath(name), Scope: sharedSkillScope, Status: "ok"})
 	}
 	sort.Slice(roots, func(i, j int) bool { return roots[i].Path < roots[j].Path })
-	return roots, errors.Join(issues...)
+	return roots, err
 }
 
 func (m *managedSkills) status(ctx context.Context) (LocalSkillsStatus, error) {
@@ -641,27 +497,31 @@ func (m *managedSkills) status(ctx context.Context) (LocalSkillsStatus, error) {
 	if bundle := state.Builtin; bundle.Version.Digest != "" {
 		status.Builtin = &LocalSkill{Path: m.builtinPath(bundle), Digest: bundle.Version.Digest, DraftID: bundle.ID, Active: true}
 	}
-	inspect := func(name, id string, base skills.Version, active bool) {
-		path := m.draftPath(name, id)
+	inspect := func(name string) {
+		path := m.sharedPath(name)
+		// Read the base and pin the directory before a sync can swap it.
+		m.mu.Lock()
+		base := m.state.Load().Shared[name].Version
+		m.sharedMu.RLock()
+		m.mu.Unlock()
 		digest, err := m.contentDigest(ctx, path)
+		m.sharedMu.RUnlock()
 		value := LocalSkill{Name: name, Revision: base.Revision, Digest: base.Digest, ContentDigest: digest, Path: path,
-			DraftID: id, Active: active, Dirty: err != nil || digest != base.Digest}
+			DraftID: localSkillDraft, Active: true, Dirty: err != nil || digest != base.Digest}
 		if err != nil {
 			value.Error = err.Error()
 		}
-		if active || value.Dirty && !errors.Is(err, os.ErrNotExist) {
-			status.Shared = append(status.Shared, value)
-		}
+		status.Shared = append(status.Shared, value)
 	}
-	for name, entry := range state.Shared {
-		for id, version := range entry.Drafts {
-			if err := ctx.Err(); err != nil {
-				return LocalSkillsStatus{}, err
-			}
-			inspect(name, id, version, id == entry.Active)
+	for name := range state.Shared {
+		if err := ctx.Err(); err != nil {
+			return LocalSkillsStatus{}, err
 		}
+		inspect(name)
 	}
+	m.sharedMu.RLock()
 	names, err := m.directDraftNames()
+	m.sharedMu.RUnlock()
 	if err != nil {
 		return LocalSkillsStatus{}, fmt.Errorf("list local skill drafts: %w", err)
 	}
@@ -669,20 +529,10 @@ func (m *managedSkills) status(ctx context.Context) (LocalSkillsStatus, error) {
 		if err := ctx.Err(); err != nil {
 			return LocalSkillsStatus{}, err
 		}
-		entry := state.Shared[name]
-		if _, known := entry.Drafts[localSkillDraft]; !known {
-			inspect(name, localSkillDraft, skills.Version{}, entry.Active == "")
+		if _, known := state.Shared[name]; !known {
+			inspect(name)
 		}
 	}
-	sort.Slice(status.Shared, func(i, j int) bool {
-		a, b := status.Shared[i], status.Shared[j]
-		if a.Name != b.Name {
-			return a.Name < b.Name
-		}
-		if a.Active != b.Active {
-			return a.Active
-		}
-		return a.DraftID < b.DraftID
-	})
+	sort.Slice(status.Shared, func(i, j int) bool { return status.Shared[i].Name < status.Shared[j].Name })
 	return status, nil
 }
