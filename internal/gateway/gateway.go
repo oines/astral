@@ -95,6 +95,7 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	s := &Service{Harness: h, Channels: c, Contract: httpcontract.New(), mux: http.NewServeMux()}
 	s.scheduleRoutes()
 	s.wakeRoutes()
+	s.skillRoutes()
 	s.modelRoutes()
 	s.rolloutRoutes()
 	s.computerFileRoutes()

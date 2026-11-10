@@ -692,6 +692,26 @@ export type AstralInternalComputersEnrollmentResult = {
     token: string;
 };
 
+export type AstralInternalComputersLocalSkill = {
+    active: boolean;
+    content_digest?: string;
+    digest: string;
+    dirty: boolean;
+    draft_id: string;
+    error?: string;
+    name: string;
+    path: string;
+    revision: number;
+};
+
+export type AstralInternalComputersLocalSkillsStatus = {
+    builtin?: AstralInternalComputersLocalSkill;
+    builtin_root: string;
+    shared: Array<AstralInternalComputersLocalSkill>;
+    shared_root: string;
+    sync_error?: string;
+};
+
 export type AstralInternalDomainAgent = {
     allowed_computers: Array<string>;
     avatar?: string;
@@ -1300,6 +1320,11 @@ export type AstralInternalGatewayHistoryPage = {
     subagent_activity_next_cursor?: string;
 };
 
+export type AstralInternalGatewayManagedSkillsView = {
+    local: AstralInternalComputersLocalSkillsStatus;
+    manifest: AstralInternalSkillsManifest;
+};
+
 export type AstralInternalGatewayMessageAttachmentView = {
     kind: string;
     media_type?: string;
@@ -1441,6 +1466,12 @@ export type AstralInternalGatewaySendText = {
 export type AstralInternalGatewaySessionPresentation = {
     archived?: boolean;
     title?: string;
+};
+
+export type AstralInternalGatewaySkillPublishInput = {
+    base_revision: number;
+    digest: string;
+    draft_id: string;
 };
 
 export type AstralInternalGatewayStoredMessageObservationView = {
@@ -2110,6 +2141,17 @@ export type AstralInternalServerupdateState = {
     retry?: 'check' | 'update';
     unavailable?: string;
     version?: string;
+};
+
+export type AstralInternalSkillsManifest = {
+    builtin: AstralInternalSkillsVersion;
+    shared: Array<AstralInternalSkillsVersion>;
+};
+
+export type AstralInternalSkillsVersion = {
+    digest: string;
+    name: string;
+    revision: number;
 };
 
 export type AstralInternalStorageAgent = {
@@ -7127,7 +7169,7 @@ export type AgentSendFileData = {
     body: AstralInternalGatewaySendFile;
     headers: {
         /**
-         * Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.
+         * Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.
          */
         'Idempotency-Key': string;
     };
@@ -7158,7 +7200,7 @@ export type AgentSendTextData = {
     body: AstralInternalGatewaySendText;
     headers: {
         /**
-         * Stable identity of this send intent. Reuse only with the same body to inspect its existing outcome.
+         * Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.
          */
         'Idempotency-Key': string;
     };
@@ -7567,6 +7609,106 @@ export type AgentRolloutResponses = {
 };
 
 export type AgentRolloutResponse = AgentRolloutResponses[keyof AgentRolloutResponses];
+
+export type AgentManagedSkillsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/skills';
+};
+
+export type AgentManagedSkillsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentManagedSkillsError = AgentManagedSkillsErrors[keyof AgentManagedSkillsErrors];
+
+export type AgentManagedSkillsResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayManagedSkillsView;
+};
+
+export type AgentManagedSkillsResponse = AgentManagedSkillsResponses[keyof AgentManagedSkillsResponses];
+
+export type AgentPublishSharedSkillData = {
+    body: AstralInternalGatewaySkillPublishInput;
+    headers: {
+        /**
+         * Stable identity of this operation. Reuse only with the same body to inspect its existing outcome.
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/v1/skills/shared/{name}/publish';
+};
+
+export type AgentPublishSharedSkillErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentPublishSharedSkillError = AgentPublishSharedSkillErrors[keyof AgentPublishSharedSkillErrors];
+
+export type AgentPublishSharedSkillResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalSkillsVersion;
+};
+
+export type AgentPublishSharedSkillResponse = AgentPublishSharedSkillResponses[keyof AgentPublishSharedSkillResponses];
+
+export type AgentSharedSkillRevisionData = {
+    body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
+    path: {
+        name: string;
+        revision: string;
+    };
+    query?: never;
+    url: '/v1/skills/shared/{name}/revisions/{revision}/content';
+};
+
+export type AgentSharedSkillRevisionErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentSharedSkillRevisionError = AgentSharedSkillRevisionErrors[keyof AgentSharedSkillRevisionErrors];
+
+export type AgentSharedSkillRevisionResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
+};
+
+export type AgentSharedSkillRevisionResponse = AgentSharedSkillRevisionResponses[keyof AgentSharedSkillRevisionResponses];
 
 export type AgentWakeEndpointsData = {
     body?: never;

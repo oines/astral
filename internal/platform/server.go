@@ -28,6 +28,7 @@ import (
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/securetransport"
 	"github.com/oines/astral/internal/serverupdate"
+	"github.com/oines/astral/internal/skills"
 	"github.com/oines/astral/internal/storage"
 )
 
@@ -199,6 +200,10 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 		return nil, identityErr
 	}
 	s.Hub = computers.NewHub(s.Store)
+	s.Hub.Skills, err = skills.New(s.Store)
+	if err != nil {
+		return nil, err
+	}
 	s.Hub.ResolveConnectionIP = s.computerConnectionIP
 	s.Hub.SetIdentity(identity)
 	s.Hub.ContainerURL = func(r *http.Request, hostname string) string {

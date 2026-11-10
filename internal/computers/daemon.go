@@ -55,15 +55,19 @@ type Daemon struct {
 	apiTokens      map[string]*daemonProcess
 	outputBudget   *processOutputBudget
 	fileWriteSlots chan struct{}
+	skills         *managedSkills
 	closed         bool
 }
 type daemonConnection struct {
-	peer        *transport.Peer
-	executions  map[string]string
-	closing     bool
-	mutations   sync.WaitGroup
-	cleanupOnce sync.Once
-	cleanupErr  error
+	peer         *transport.Peer
+	executions   map[string]string
+	closing      bool
+	mutations    sync.WaitGroup
+	skillChanges chan struct{}
+	skillsDone   chan struct{}
+	cancelSkills context.CancelFunc
+	cleanupOnce  sync.Once
+	cleanupErr   error
 }
 type localGateway struct {
 	binding domain.ExecutionBinding
@@ -108,9 +112,9 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 			return nil, fmt.Errorf("invalid container information: %w", err)
 		}
 	}
-	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability, FileListCapability, ProcessStreamCapability}},
+	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability, FileListCapability, ProcessStreamCapability, ManagedSkillsCapability}},
 		httpClient: client, gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, apiTokens: map[string]*daemonProcess{},
-		outputBudget: newProcessOutputBudget(256 << 20), fileWriteSlots: make(chan struct{}, 8)}, nil
+		outputBudget: newProcessOutputBudget(256 << 20), fileWriteSlots: make(chan struct{}, 8), skills: newManagedSkills(root)}, nil
 }
 
 // Run reconnects the same boot identity after reaping disconnected commands.
@@ -153,7 +157,7 @@ func (d *Daemon) Connect(ctx context.Context) error {
 	if err := d.ensureLocalAPI(); err != nil {
 		return err
 	}
-	conn, _, err := authenticateTunnel(ctx, d.Credentials.ServerURL, d.Credentials.ServerPin, tunnelRequest{Operation: "connect", ComputerID: d.Credentials.ComputerID, Token: d.Credentials.Token, Hello: d.Hello}, d.httpClient)
+	conn, capabilities, err := authenticateTunnel(ctx, d.Credentials.ServerURL, d.Credentials.ServerPin, tunnelRequest{Operation: "connect", ComputerID: d.Credentials.ComputerID, Token: d.Credentials.Token, Hello: d.Hello}, d.httpClient)
 	if err != nil {
 		return err
 	}
@@ -164,6 +168,12 @@ func (d *Daemon) Connect(ctx context.Context) error {
 		return errors.New("daemon is closed")
 	}
 	generation := &daemonConnection{executions: map[string]string{}}
+	var syncCtx context.Context
+	if capabilities.ManagedSkills && d.skills != nil {
+		generation.skillChanges = make(chan struct{}, 1)
+		generation.skillsDone = make(chan struct{})
+		syncCtx, generation.cancelSkills = context.WithCancel(ctx)
+	}
 	peer := transport.New(conn, func(ctx context.Context, request transport.Request, out *transport.Responder) error {
 		return d.handle(ctx, generation, request, out)
 	})
@@ -171,6 +181,12 @@ func (d *Daemon) Connect(ctx context.Context) error {
 	d.connection = generation
 	d.peer = peer
 	d.mu.Unlock()
+	if generation.skillChanges != nil {
+		go func() {
+			defer close(generation.skillsDone)
+			d.skills.syncLoop(syncCtx, generation)
+		}()
+	}
 	stop := context.AfterFunc(ctx, func() { _ = peer.Close() })
 	<-peer.Done()
 	stop()
@@ -209,6 +225,10 @@ func (d *Daemon) cleanupConnection(generation *daemonConnection) error {
 			}
 		}
 		d.mu.Unlock()
+		if generation.cancelSkills != nil {
+			generation.cancelSkills()
+			<-generation.skillsDone
+		}
 		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		results := make(chan error, len(processes))
@@ -403,6 +423,10 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 	if !connected {
 		return domain.Offline("daemon connection is no longer active")
 	}
+	if request.Method == skillChangedMethod && generation.skillChanges != nil {
+		signalSkillsChanged(generation.skillChanges)
+		return out.JSON(struct{}{})
+	}
 	if request.Method == DaemonUpdateCapability {
 		var binary releasefeed.Binary
 		if json.Unmarshal(request.Params, &binary) != nil {
@@ -436,6 +460,10 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 		}
 		return out.JSON(struct{}{})
 	}
+	switch request.Method {
+	case skillStatusMethod, skillExportMethod, skillAcknowledgeMethod:
+		return d.handleManagedSkills(ctx, request, out)
+	}
 	var call Call
 	if json.Unmarshal(request.Params, &call) != nil {
 		return domain.Invalid("invalid daemon call")
@@ -465,7 +493,7 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 		return err
 	}
 	if request.Method == EnvironmentDiscoveryCapability {
-		result, err := discoverEnvironment(ctx, d.Hello.Home, call.Binding)
+		result, err := discoverEnvironment(ctx, d.Hello.Home, call.Binding, d.skills)
 		if err != nil {
 			return err
 		}

@@ -22,6 +22,7 @@ import (
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/securetransport"
 	"github.com/oines/astral/internal/serviceurl"
+	"github.com/oines/astral/internal/skills"
 	"github.com/oines/astral/internal/transport"
 )
 
@@ -34,6 +35,7 @@ type connection struct {
 	connected           time.Time
 	connectionIP        string
 	computerAPIDisabled bool // guarded by Hub.mu
+	skillChanges        chan struct{}
 }
 type authenticationBucket struct {
 	tokens  float64
@@ -43,6 +45,7 @@ type authenticationBucket struct {
 type Hub struct {
 	updates             daemonUpdates
 	Store               *persistence.Store
+	Skills              *skills.Service
 	Gateway             GatewayHandler
 	Wake                WakeHandler
 	ContainerURL        func(*http.Request, string) string
@@ -346,6 +349,7 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 			response.Error = "Computer is unavailable"
 		} else {
 			sequence = h.reserveConnectionSequence()
+			response.ManagedSkills = h.Skills != nil && slices.Contains(request.Hello.Capabilities, ManagedSkillsCapability)
 		}
 	}
 	if writeAuthentication(conn, response) != nil || response.Error != "" || request.Operation != "connect" {
@@ -400,9 +404,15 @@ func (h *Hub) reserveConnectionSequence() uint64 {
 
 func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hello Hello, ip string, sequence uint64) {
 	active := &connection{hello: hello, connected: time.Now().UTC(), connectionIP: ip}
+	if h.Skills != nil && slices.Contains(hello.Capabilities, ManagedSkillsCapability) {
+		active.skillChanges = make(chan struct{}, 1)
+	}
 	ready := make(chan struct{})
 	active.peer = transport.New(conn, func(ctx context.Context, request transport.Request, out *transport.Responder) error {
 		<-ready
+		if request.Method == skillManifestMethod || request.Method == skillDownloadMethod {
+			return h.serveSkillSync(ctx, id, active, request, out)
+		}
 		if request.Method == "wake" && h.Wake != nil {
 			h.mu.RLock()
 			current := h.live[id] == active
@@ -480,6 +490,9 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 	if old != nil {
 		h.revokeConnectionCredentials(old)
 		_ = old.peer.Close()
+	}
+	if active.skillChanges != nil {
+		go active.sendSkillNotifications()
 	}
 	<-active.peer.Done()
 	h.revokeConnectionCredentials(active)

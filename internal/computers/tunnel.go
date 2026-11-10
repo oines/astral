@@ -35,6 +35,7 @@ type tunnelResponse struct {
 	Credentials       *Credentials           `json:"credentials,omitempty"`
 	Status            *domain.ComputerStatus `json:"status,omitempty"`
 	LocalContainerURL string                 `json:"local_container_url,omitempty"`
+	ManagedSkills     bool                   `json:"managed_skills,omitempty"`
 	Error             string                 `json:"error,omitempty"`
 }
 

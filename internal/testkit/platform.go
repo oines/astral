@@ -56,6 +56,11 @@ func Await(t *testing.T, ctx context.Context, check func() bool) {
 	}
 }
 func New(t *testing.T, computerCount int, generate func(context.Context, int, map[string]any) any) *Platform {
+	return NewWithHub(t, computerCount, generate, nil)
+}
+
+// NewWithHub applies test service wiring before Daemons connect.
+func NewWithHub(t *testing.T, computerCount int, generate func(context.Context, int, map[string]any) any, configure func(*Platform)) *Platform {
 	t.Helper()
 	// The fixture budget includes database/identity setup and multiple real
 	// platform operations, which are substantially slower under native -race.
@@ -71,6 +76,9 @@ func New(t *testing.T, computerCount int, generate func(context.Context, int, ma
 		t.Fatal(err)
 	}
 	p.Hub = computers.NewHub(p.Store)
+	if configure != nil {
+		configure(p)
+	}
 	identity, err := securetransport.Load(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

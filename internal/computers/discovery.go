@@ -104,9 +104,10 @@ type environmentScanner struct {
 	result  EnvironmentDiscovery
 	entries int
 	bytes   int
+	managed *managedSkills
 }
 
-func discoverEnvironment(ctx context.Context, home string, b domain.ExecutionBinding) (EnvironmentDiscovery, error) {
+func discoverEnvironment(ctx context.Context, home string, b domain.ExecutionBinding, managed ...*managedSkills) (EnvironmentDiscovery, error) {
 	s := &environmentScanner{ctx: ctx, result: EnvironmentDiscovery{ComputerID: b.ComputerID, CWD: b.CWD, Status: "ok", Skills: []DiscoveredSkill{}, SkillRoots: []DiscoveryRoot{}}}
 	// Only this exact file is workspace guidance. Never walk parents.
 	path := filepath.Join(b.CWD, "AGENTS.md")
@@ -117,28 +118,20 @@ func discoverEnvironment(ctx context.Context, home string, b domain.ExecutionBin
 		s.result.AgentsMD.Status = "unreadable"
 		s.issue(path, "agents_unreadable", err.Error())
 	}
-	for _, root := range []DiscoveryRoot{
+	roots := []DiscoveryRoot{
 		{Path: filepath.Join(home, ".agents", "skills"), Scope: "global", Status: "ok"},
 		{Path: filepath.Join(b.CWD, ".agents", "skills"), Scope: "workspace", Status: "ok"},
-	} {
-		before := len(s.result.Issues)
-		info, err := os.Stat(root.Path)
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-			root.Status = "missing"
-		case err != nil:
-			root.Status = "unreadable"
-			s.issue(root.Path, "root_unreadable", err.Error())
-		case !info.IsDir():
-			root.Status = "invalid"
-			s.issue(root.Path, "root_invalid", "Skills root must be a directory.")
-		default:
-			s.walk(root.Path, root.Scope, 0, map[string]bool{})
-			if len(s.result.Issues) > before {
-				root.Status = "partial"
-			}
+	}
+	if len(managed) > 0 && managed[0] != nil {
+		s.managed = managed[0]
+		installed, err := managed[0].discoveryRoots()
+		if err != nil {
+			s.issue(managed[0].root, "managed_skills_unavailable", err.Error())
 		}
-		s.result.SkillRoots = append(s.result.SkillRoots, root)
+		roots = append(roots, installed...)
+	}
+	for _, root := range roots {
+		s.scanRoot(root)
 	}
 	if err := ctx.Err(); err != nil {
 		return EnvironmentDiscovery{}, err
@@ -164,6 +157,34 @@ func discoverEnvironment(ctx context.Context, home string, b domain.ExecutionBin
 		return a.Message < b.Message
 	})
 	return s.result, nil
+}
+
+func (s *environmentScanner) scanRoot(root DiscoveryRoot) {
+	before := len(s.result.Issues)
+	var err error
+	if root.Scope == builtinSkillScope {
+		s.managed.builtinMu.RLock()
+		defer s.managed.builtinMu.RUnlock()
+		err = s.managed.directory(root.Path, false)
+	} else if info, statErr := os.Stat(root.Path); statErr != nil {
+		err = statErr
+	} else if !info.IsDir() {
+		root.Status = "invalid"
+		s.issue(root.Path, "root_invalid", "Skills root must be a directory.")
+	}
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		root.Status = "missing"
+	case err != nil:
+		root.Status = "unreadable"
+		s.issue(root.Path, "root_unreadable", err.Error())
+	case root.Status == "ok":
+		s.walk(root.Path, root.Scope, 0, map[string]bool{})
+		if len(s.result.Issues) > before {
+			root.Status = "partial"
+		}
+	}
+	s.result.SkillRoots = append(s.result.SkillRoots, root)
 }
 
 func (s *environmentScanner) issue(path, code, message string) {
@@ -218,6 +239,12 @@ func (s *environmentScanner) walk(path, scope string, depth int, ancestors map[s
 		s.issue(path, "path_unreadable", err.Error())
 		return
 	}
+	managed := scope == builtinSkillScope || scope == sharedSkillScope
+	if !managed && s.managed != nil {
+		if relative, err := filepath.Rel(s.managed.canonicalRoot, real); err == nil && filepath.IsLocal(relative) {
+			return // Managed generations are only discovered through their selected roots.
+		}
+	}
 	if ancestors[real] {
 		s.issue(path, "symlink_cycle", "Skipped a cyclic skill directory link.")
 		return
@@ -254,22 +281,35 @@ func (s *environmentScanner) walk(path, scope string, depth int, ancestors map[s
 			continue
 		}
 		skillPath := filepath.Join(path, child.Name())
+		if managed && child.Type()&os.ModeSymlink != 0 {
+			s.issue(skillPath, "skill_invalid", "Managed skill entry points must be ordinary files.")
+			return
+		}
 		data, err := s.read(skillPath)
 		if err != nil {
 			s.issue(skillPath, "skill_unreadable", err.Error())
 			return
 		}
-		name, description, err := skillFrontmatter(data)
+		digest := fileDigest(data)
+		var name, description string
+		if managed && s.managed != nil {
+			name, description, err = s.managed.metadata.frontmatter(digest, data)
+		} else {
+			name, description, err = skillFrontmatter(data)
+		}
 		if err != nil {
 			s.issue(skillPath, "skill_invalid", err.Error())
 			return
 		}
-		s.result.Skills = append(s.result.Skills, DiscoveredSkill{Name: name, Description: description, Path: skillPath, Scope: scope, SHA256: fileDigest(data)})
+		s.result.Skills = append(s.result.Skills, DiscoveredSkill{Name: name, Description: description, Path: skillPath, Scope: scope, SHA256: digest})
 		// A skill directory is a package. Its examples/assets are not other skills.
 		return
 	}
+	if scope == sharedSkillScope {
+		return // This root is a single shared package, not a category directory.
+	}
 	for _, child := range children {
-		if child.IsDir() || child.Type()&os.ModeSymlink != 0 {
+		if child.IsDir() || !managed && child.Type()&os.ModeSymlink != 0 {
 			if s.entries >= maxDiscoveryEntries || s.bytes >= maxDiscoveryReadBytes {
 				s.issue(path, "scan_limit", "Skills discovery limit reached; catalog is incomplete.")
 				break
