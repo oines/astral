@@ -20,7 +20,6 @@ type ManagedSkillsView struct {
 type SkillPublishInput struct {
 	BaseRevision *int64 `json:"base_revision"`
 	Digest       string `json:"digest"`
-	DraftID      string `json:"draft_id"`
 }
 
 func (s *Service) skillRoutes() {
@@ -79,19 +78,19 @@ func (s *Service) publishSharedSkill(r *http.Request, input SkillPublishInput) (
 	if service == nil {
 		return skills.Version{}, domain.Missing("capability", "skills")
 	}
-	if input.BaseRevision == nil || input.DraftID == "" {
-		return skills.Version{}, domain.Invalid("base_revision and draft_id are required; read the local draft with GET /v1/skills")
+	if input.BaseRevision == nil {
+		return skills.Version{}, domain.Invalid("base_revision is required; read the local skill revision with GET /v1/skills")
 	}
 	request := skills.PublishRequest{
 		Name: r.PathValue("name"), BaseRevision: *input.BaseRevision, Digest: input.Digest,
-		DraftID: input.DraftID, ID: r.Header.Get("Idempotency-Key"),
+		ID: r.Header.Get("Idempotency-Key"),
 	}
 	version, found, err := service.Receipt(ctx, b, request)
 	if err != nil {
 		return skills.Version{}, err
 	}
 	if !found {
-		data, err := hub.ExportSkill(ctx, b, request.Name, request.DraftID)
+		data, err := hub.ExportSkill(ctx, b, request.Name)
 		if err != nil {
 			return skills.Version{}, err
 		}
@@ -101,8 +100,8 @@ func (s *Service) publishSharedSkill(r *http.Request, input SkillPublishInput) (
 		}
 	}
 	// The published revision is already durable. If this Computer disconnects
-	// here, retrying the same intent can acknowledge the original draft again.
-	_ = hub.AcknowledgeSkillPublish(ctx, b, request.Name, request.DraftID, version)
+	// here, retrying the same intent can acknowledge the published version.
+	_ = hub.AcknowledgeSkillPublish(ctx, b, version)
 	hub.NotifySkills()
 	return version, nil
 }

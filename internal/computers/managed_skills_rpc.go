@@ -30,7 +30,6 @@ const (
 type skillCall struct {
 	Binding domain.ExecutionBinding `json:"binding"`
 	Name    string                  `json:"name,omitempty"`
-	DraftID string                  `json:"draft_id,omitempty"`
 	Version skills.Version          `json:"version,omitempty"`
 }
 
@@ -197,14 +196,14 @@ func (d *Daemon) handleManagedSkills(ctx context.Context, request transport.Requ
 		}
 		return out.JSON(status)
 	case skillExportMethod:
-		archive, err := d.skills.export(ctx, call.Name, call.DraftID)
+		archive, err := d.skills.export(ctx, call.Name)
 		if err != nil {
 			return err
 		}
 		_, err = out.Write(archive)
 		return err
 	case skillAcknowledgeMethod:
-		if err := d.skills.acknowledge(ctx, call.Name, call.DraftID, call.Version); err != nil {
+		if err := d.skills.acknowledge(ctx, call.Version); err != nil {
 			return err
 		}
 		return out.JSON(struct{}{})
@@ -262,12 +261,12 @@ func (h *Hub) SkillsStatus(ctx context.Context, binding domain.ExecutionBinding)
 	return status, h.validateSkillPeer(ctx, binding, peer)
 }
 
-func (h *Hub) ExportSkill(ctx context.Context, binding domain.ExecutionBinding, name, draftID string) ([]byte, error) {
+func (h *Hub) ExportSkill(ctx context.Context, binding domain.ExecutionBinding, name string) ([]byte, error) {
 	peer, err := h.skillPeer(ctx, binding)
 	if err != nil {
 		return nil, err
 	}
-	_, body, err := peer.Call(ctx, skillExportMethod, skillCall{Binding: binding, Name: name, DraftID: draftID}, nil)
+	_, body, err := peer.Call(ctx, skillExportMethod, skillCall{Binding: binding, Name: name}, nil)
 	if err != nil {
 		return nil, skillCallError(err)
 	}
@@ -279,12 +278,12 @@ func (h *Hub) ExportSkill(ctx context.Context, binding domain.ExecutionBinding, 
 	return archive, h.validateSkillPeer(ctx, binding, peer)
 }
 
-func (h *Hub) AcknowledgeSkillPublish(ctx context.Context, binding domain.ExecutionBinding, name, draftID string, version skills.Version) error {
+func (h *Hub) AcknowledgeSkillPublish(ctx context.Context, binding domain.ExecutionBinding, version skills.Version) error {
 	peer, err := h.skillPeer(ctx, binding)
 	if err != nil {
 		return err
 	}
-	if err = peer.JSON(ctx, skillAcknowledgeMethod, skillCall{Binding: binding, Name: name, DraftID: draftID, Version: version}, nil); err != nil {
+	if err = peer.JSON(ctx, skillAcknowledgeMethod, skillCall{Binding: binding, Version: version}, nil); err != nil {
 		return skillCallError(err)
 	}
 	return h.validateSkillPeer(ctx, binding, peer)

@@ -121,14 +121,14 @@ func TestManagedSkillsPublishAndSyncAcrossComputers(t *testing.T) {
 		}
 		return view
 	}
-	draft := func(computer int) computers.LocalSkill {
+	localSkill := func(computer int) computers.LocalSkill {
 		t.Helper()
 		for _, item := range status(computer).Local.Shared {
-			if item.Name == "code-review" && item.Active {
+			if item.Name == "code-review" {
 				return item
 			}
 		}
-		t.Fatal("active local draft missing")
+		t.Fatal("local code-review skill missing")
 		return computers.LocalSkill{}
 	}
 	write := func(path, body string) {
@@ -154,8 +154,8 @@ func TestManagedSkillsPublishAndSyncAcrossComputers(t *testing.T) {
 	}
 	request := func(computer int, base int64) gateway.SkillPublishInput {
 		t.Helper()
-		local := draft(computer)
-		return gateway.SkillPublishInput{BaseRevision: &base, DraftID: local.DraftID, Digest: local.ContentDigest}
+		local := localSkill(computer)
+		return gateway.SkillPublishInput{BaseRevision: &base, Digest: local.ContentDigest}
 	}
 
 	pathA := filepath.Join(status(0).Local.SharedRoot, "code-review", "SKILL.md")

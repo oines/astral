@@ -693,11 +693,9 @@ export type AstralInternalComputersEnrollmentResult = {
 };
 
 export type AstralInternalComputersLocalSkill = {
-    active: boolean;
     content_digest?: string;
     digest: string;
     dirty: boolean;
-    draft_id: string;
     error?: string;
     name: string;
     path: string;
@@ -1471,7 +1469,6 @@ export type AstralInternalGatewaySessionPresentation = {
 export type AstralInternalGatewaySkillPublishInput = {
     base_revision: number;
     digest: string;
-    draft_id: string;
 };
 
 export type AstralInternalGatewayStoredMessageObservationView = {

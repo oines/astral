@@ -238,19 +238,19 @@ var capabilitySpecs = []capabilitySpec{
 	{
 		id: "skills", description: "Inspect managed skills, publish one Shared Skill, and retrieve published revisions.",
 		notes: []string{
-			"GET /v1/skills returns the Server manifest and the source Computer's local paths, revisions and digests. Compare the published revision with the draft's base revision. content_digest identifies the current local file snapshot; digest identifies the installed base. Paths on other Computers are not interchangeable.",
-			"For a new Shared Skill, write SKILL.md and any resources inside a new named directory under local.shared_root using the existing file tools. Publish only on request. Publish the exact draft_id and content_digest from a fresh status read. Use base_revision=0 for a new name.",
+			"GET /v1/skills returns the Server manifest and the source Computer's local paths, revisions and digests. Compare the published revision with the local base revision. content_digest identifies the current local file snapshot; digest identifies the installed base.",
+			"For a new Shared Skill, write SKILL.md and any resources inside a new named directory under local.shared_root using the existing file tools. Publish only on request. The name in the publish route selects the directory on the calling Computer. Use content_digest from a fresh status read as digest, and base_revision=0 for a new name.",
 			"Use one stable Idempotency-Key per publish intent. Repeat the exact request after a lost response. A newer revision causes a conflict while local files stay available. Read the old base and newer revision archives, reconcile the files on this Computer, then explicitly publish with the reviewed remote revision and new content digest.",
 			"Each archive contains the complete Skill directory contents, including any scripts and resources. Save it to a separate local path for comparison. Restore an older version by using its files as a draft and publishing them against the current revision.",
 			"Publication uses the calling command's normal Astral API authorization. Closing Astral API on a Computer prevents its commands from publishing while background Daemon sync continues. Built-in Skills update through the Server bundle.",
 		},
 		examples: []CapabilityExample{
-			{Description: "Read the source Computer's local Shared drafts and the current published revisions.", Method: "GET", Path: "/v1/skills"},
-			{Description: "Publish one inspected draft, substituting its actual ID, base revision and content digest.", Method: "POST", Path: "/v1/skills/shared/{name}/publish", Headers: map[string]string{"Idempotency-Key": "<stable-publish-intent>"}, Body: map[string]any{"base_revision": 3, "draft_id": "<draft-id>", "digest": "<content-digest>"}},
+			{Description: "Read the source Computer's local Shared Skills and the current published revisions.", Method: "GET", Path: "/v1/skills"},
+			{Description: "Publish a local Shared Skill by name with the reviewed base revision and content digest.", Method: "POST", Path: "/v1/skills/shared/{name}/publish", Headers: map[string]string{"Idempotency-Key": "<stable-publish-intent>"}, Body: map[string]any{"base_revision": 3, "digest": "<content-digest>"}},
 			{Description: "Download a fixed published revision as a tar archive.", Method: "GET", Path: "/v1/skills/shared/{name}/revisions/{revision}/content"},
 		},
 		routes: []capabilityRoute{
-			{"GET", "/v1/skills", "Read installed skills, drafts and the Server's managed Skills manifest."},
+			{"GET", "/v1/skills", "Read the source Computer's managed Skills and the Server's published versions."},
 			{"POST", "/v1/skills/shared/{name}/publish", "Publish a single Shared Skill from the authenticated source Computer."},
 			{"GET", "/v1/skills/shared/{name}/revisions/{revision}/content", "Download a fixed published Shared Skill archive."},
 		},

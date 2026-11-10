@@ -203,8 +203,8 @@ func TestManagedSharedUpdatesAtTheSamePath(t *testing.T) {
 		if err != nil || len(status.Shared) != 1 {
 			t.Fatalf("expected one working copy after restart: %+v %v", status, err)
 		}
-		if local := status.Shared[0]; !local.Active || local.Dirty || local.Path != path ||
-			local.DraftID != localSkillDraft || local.Revision != version.Revision || local.Digest != version.Digest {
+		if local := status.Shared[0]; local.Dirty || local.Path != path ||
+			local.Revision != version.Revision || local.Digest != version.Digest {
 			t.Fatalf("working copy does not match revision %d at %s: %+v", version.Revision, path, local)
 		}
 		if data, err := os.ReadFile(filepath.Join(path, "reference.txt")); err != nil || string(data) != contents {
@@ -286,14 +286,14 @@ func TestManagedSharedAcknowledgementAdvancesOnlyTheExportedDraft(t *testing.T) 
 	name := "new-skill"
 	path := filepath.Join(m.sharedPath(name), "SKILL.md")
 	writeManagedSkillTestFile(t, path, managedTestSkillMD(name, "first draft"))
-	data, err := m.export(ctx, name, localSkillDraft)
+	data, err := m.export(ctx, name)
 	if err != nil {
 		t.Fatal(err)
 	}
 	first := skills.Version{Name: name, Revision: 1, Digest: skills.Digest(data)}
 	newBody := managedTestSkillMD(name, "continued editing")
 	writeManagedSkillTestFile(t, path, newBody)
-	if err := m.acknowledge(ctx, name, localSkillDraft, first); err != nil {
+	if err := m.acknowledge(ctx, first); err != nil {
 		t.Fatal(err)
 	}
 	status, err := m.status(ctx)
@@ -315,7 +315,7 @@ func TestManagedSharedAcknowledgementAdvancesOnlyTheExportedDraft(t *testing.T) 
 	if after, err := os.Stat(path); err != nil || !os.SameFile(before, after) {
 		t.Fatalf("fast-forward replaced the file with matching content: %v", err)
 	}
-	if err := m.acknowledge(ctx, name, localSkillDraft, first); err != nil {
+	if err := m.acknowledge(ctx, first); err != nil {
 		t.Fatal(err)
 	}
 	status, err = m.status(ctx)

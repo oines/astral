@@ -2125,9 +2125,6 @@
       },
       "astral_internal_computers_LocalSkill": {
         "properties": {
-          "active": {
-            "type": "boolean"
-          },
           "content_digest": {
             "type": "string"
           },
@@ -2136,9 +2133,6 @@
           },
           "dirty": {
             "type": "boolean"
-          },
-          "draft_id": {
-            "type": "string"
           },
           "error": {
             "type": "string"
@@ -2158,8 +2152,6 @@
           "revision",
           "digest",
           "path",
-          "draft_id",
-          "active",
           "dirty"
         ],
         "type": "object"
@@ -4749,15 +4741,11 @@
           },
           "digest": {
             "type": "string"
-          },
-          "draft_id": {
-            "type": "string"
           }
         },
         "required": [
           "base_revision",
-          "digest",
-          "draft_id"
+          "digest"
         ],
         "type": "object"
       },
@@ -18173,7 +18161,7 @@
     },
     "/v1/skills": {
       "get": {
-        "description": "Read installed skills, drafts and the Server's managed Skills manifest.",
+        "description": "Read the source Computer's managed Skills and the Server's published versions.",
         "operationId": "agentManagedSkills",
         "responses": {
           "200": {

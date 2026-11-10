@@ -23,7 +23,6 @@ import (
 const (
 	builtinSkillScope           = "astral-builtin"
 	sharedSkillScope            = "astral-shared"
-	localSkillDraft             = "local"
 	maxSkillState               = 16 << 20
 	managedSkillCacheEntries    = 128
 	managedSkillCacheEntryBytes = 4 << 10
@@ -37,8 +36,6 @@ type LocalSkill struct {
 	Digest        string `json:"digest"`
 	ContentDigest string `json:"content_digest,omitempty"`
 	Path          string `json:"path"`
-	DraftID       string `json:"draft_id"`
-	Active        bool   `json:"active"`
 	Dirty         bool   `json:"dirty"`
 	Error         string `json:"error,omitempty"`
 }
@@ -376,8 +373,9 @@ func (m *managedSkills) saveSharedEntryLocked(name string, entry installedShared
 	return m.saveLocked(next)
 }
 
-func (m *managedSkills) acknowledge(ctx context.Context, name, id string, version skills.Version) error {
-	if !skills.ValidName(name) || !validInstalledSkill(version, name) || id != localSkillDraft {
+func (m *managedSkills) acknowledge(ctx context.Context, version skills.Version) error {
+	name := version.Name
+	if !skills.ValidName(name) || !validInstalledSkill(version, name) {
 		return domain.Invalid("invalid published skill acknowledgement")
 	}
 	m.mu.Lock()
@@ -405,12 +403,9 @@ func (m *managedSkills) acknowledge(ctx context.Context, name, id string, versio
 	return m.saveSharedEntryLocked(name, installedShared{Version: version})
 }
 
-func (m *managedSkills) export(ctx context.Context, name, id string) ([]byte, error) {
+func (m *managedSkills) export(ctx context.Context, name string) ([]byte, error) {
 	if !skills.ValidName(name) {
 		return nil, domain.Invalid("invalid shared skill name")
-	}
-	if id != "" && id != localSkillDraft {
-		return nil, domain.Missing("skill draft", id)
 	}
 	m.sharedMu.RLock()
 	defer m.sharedMu.RUnlock()
@@ -419,12 +414,12 @@ func (m *managedSkills) export(ctx context.Context, name, id string) ([]byte, er
 	}
 	archive, _, err := m.pack(ctx, m.sharedPath(name))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, domain.Missing("skill draft", id)
+		return nil, domain.Missing("local Shared Skill", name)
 	}
 	return archive, err
 }
 
-func (m *managedSkills) directDraftNames() ([]string, error) {
+func (m *managedSkills) localSharedNames() ([]string, error) {
 	if err := m.directory(m.sharedRoot(), false); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -441,7 +436,7 @@ func (m *managedSkills) directDraftNames() ([]string, error) {
 		return nil, err
 	}
 	if len(entries) > maxDiscoveryEntries {
-		return nil, domain.Invalid("too many shared skill drafts")
+		return nil, domain.Invalid("too many local Shared Skills")
 	}
 	var names []string
 	for _, entry := range entries {
@@ -462,7 +457,7 @@ func (m *managedSkills) discoveryRoots() ([]DiscoveryRoot, error) {
 		roots = append(roots, DiscoveryRoot{Path: m.builtinRoot(), Scope: builtinSkillScope, Status: "ok"})
 	}
 	m.sharedMu.RLock()
-	names, err := m.directDraftNames()
+	names, err := m.localSharedNames()
 	m.sharedMu.RUnlock()
 	for _, name := range names {
 		roots = append(roots, DiscoveryRoot{Path: m.sharedPath(name), Scope: sharedSkillScope, Status: "ok"})
@@ -485,7 +480,7 @@ func (m *managedSkills) status(ctx context.Context) (LocalSkillsStatus, error) {
 		return status, nil
 	}
 	if state.Builtin.Digest != "" {
-		status.Builtin = &LocalSkill{Path: m.builtinRoot(), Digest: state.Builtin.Digest, Active: true}
+		status.Builtin = &LocalSkill{Path: m.builtinRoot(), Digest: state.Builtin.Digest}
 	}
 	inspect := func(name string) {
 		path := m.sharedPath(name)
@@ -496,8 +491,10 @@ func (m *managedSkills) status(ctx context.Context) (LocalSkillsStatus, error) {
 		m.mu.Unlock()
 		digest, err := m.contentDigest(ctx, path)
 		m.sharedMu.RUnlock()
-		value := LocalSkill{Name: name, Revision: base.Revision, Digest: base.Digest, ContentDigest: digest, Path: path,
-			DraftID: localSkillDraft, Active: true, Dirty: err != nil || digest != base.Digest}
+		value := LocalSkill{
+			Name: name, Path: path, Revision: base.Revision, Digest: base.Digest,
+			ContentDigest: digest, Dirty: err != nil || digest != base.Digest,
+		}
 		if err != nil {
 			value.Error = err.Error()
 		}
@@ -510,10 +507,10 @@ func (m *managedSkills) status(ctx context.Context) (LocalSkillsStatus, error) {
 		inspect(name)
 	}
 	m.sharedMu.RLock()
-	names, err := m.directDraftNames()
+	names, err := m.localSharedNames()
 	m.sharedMu.RUnlock()
 	if err != nil {
-		return LocalSkillsStatus{}, fmt.Errorf("list local skill drafts: %w", err)
+		return LocalSkillsStatus{}, fmt.Errorf("list local Shared Skills: %w", err)
 	}
 	for _, name := range names {
 		if err := ctx.Err(); err != nil {

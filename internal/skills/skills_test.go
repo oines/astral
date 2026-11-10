@@ -127,7 +127,7 @@ func draft(t *testing.T, id string, base int64, name, body string) (PublishReque
 	if err != nil {
 		t.Fatal(err)
 	}
-	return PublishRequest{Name: name, BaseRevision: base, ID: id, DraftID: "draft-" + id, Digest: digest}, data
+	return PublishRequest{Name: name, BaseRevision: base, ID: id, Digest: digest}, data
 }
 
 func TestPublishSurvivesRestartAndRetainsRevision(t *testing.T) {
@@ -185,7 +185,7 @@ func TestPublishSurvivesRestartAndRetainsRevision(t *testing.T) {
 	if _, err = service.Publish(ctx, binding, stale, staleData); err == nil || !strings.Contains(err.Error(), "revision 2") {
 		t.Fatalf("stale edit must report current revision, got %v", err)
 	}
-	restored := PublishRequest{Name: first.Name, BaseRevision: 2, Digest: first.Digest, ID: "restore", DraftID: "draft-restore"}
+	restored := PublishRequest{Name: first.Name, BaseRevision: 2, Digest: first.Digest, ID: "restore"}
 	v3, err := service.Publish(ctx, binding, restored, firstData)
 	if err != nil || v3.Revision != 3 || v3.Digest != v1.Digest {
 		t.Fatalf("restoring an old snapshot must create a new revision: %+v, %v", v3, err)

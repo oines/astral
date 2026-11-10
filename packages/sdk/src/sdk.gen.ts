@@ -3316,7 +3316,7 @@ export const agentRollout = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 /**
- * Read installed skills, drafts and the Server's managed Skills manifest.
+ * Read the source Computer's managed Skills and the Server's published versions.
  */
 export const agentManagedSkills = <ThrowOnError extends boolean = false>(options?: Options<AgentManagedSkillsData, ThrowOnError>): RequestResult<AgentManagedSkillsResponses, AgentManagedSkillsErrors, ThrowOnError> => (options?.client ?? client).get<AgentManagedSkillsResponses, AgentManagedSkillsErrors, ThrowOnError>({
     security: [{

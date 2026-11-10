@@ -49,7 +49,6 @@ type PublishRequest struct {
 	Name         string `json:"name"`
 	BaseRevision int64  `json:"base_revision"`
 	Digest       string `json:"digest"`
-	DraftID      string `json:"draft_id"`
 	ID           string `json:"id"`
 }
 
@@ -210,8 +209,8 @@ var publishID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
 func validatePublishRequest(req PublishRequest) error {
 	if !ValidName(req.Name) || req.BaseRevision < 0 || !validDigest(req.Digest) ||
-		!publishID.MatchString(req.ID) || !publishID.MatchString(req.DraftID) {
-		return domain.Invalid("publish requires a valid skill name, base revision, digest, draft ID and request ID")
+		!publishID.MatchString(req.ID) {
+		return domain.Invalid("publish requires a valid skill name, base revision, digest and request ID")
 	}
 	return nil
 }
@@ -226,7 +225,7 @@ func getReceipt(ctx context.Context, tx *persistence.Tx, b domain.ExecutionBindi
 		return Version{}, false, err
 	}
 	if receipt.Request != req {
-		return Version{}, false, domain.Conflict("the publish request ID was used for different draft content")
+		return Version{}, false, domain.Conflict("the publish request ID was used for a different request")
 	}
 	return receipt.Published, true, nil
 }

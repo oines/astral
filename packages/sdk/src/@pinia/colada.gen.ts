@@ -2462,7 +2462,7 @@ export const agentRolloutQuery = defineQueryOptions<Options<AgentRolloutData>, A
 export const agentManagedSkillsQueryKey = (options?: Options<AgentManagedSkillsData>) => createQueryKey('agentManagedSkills', options);
 
 /**
- * Read installed skills, drafts and the Server's managed Skills manifest.
+ * Read the source Computer's managed Skills and the Server's published versions.
  */
 export const agentManagedSkillsQuery = defineQueryOptions<Options<AgentManagedSkillsData>, AgentManagedSkillsResponse, AgentManagedSkillsError>((options?: Options<AgentManagedSkillsData>) => ({
     key: agentManagedSkillsQueryKey(options),
