@@ -23,6 +23,7 @@ const window = 8
 const maxCalls = 128
 const heartbeatInterval = 20 * time.Second
 const heartbeatTimeout = 10 * time.Second
+const heartbeatMaxWait = 2 * time.Minute
 
 var ErrDisconnected = errors.New("computer connection closed")
 
@@ -53,17 +54,18 @@ type Request struct {
 type Handler func(context.Context, Request, *Responder) error
 
 type Peer struct {
-	conn        net.Conn
-	handler     Handler
-	ctx         context.Context
-	cancel      context.CancelCauseFunc
-	write       sync.Mutex
-	mu          sync.Mutex
-	streams     map[string]*stream
-	pingID      string
-	pingReplies chan string
-	pong        chan struct{}
-	done        chan struct{}
+	conn                 net.Conn
+	handler              Handler
+	ctx                  context.Context
+	cancel               context.CancelCauseFunc
+	write                sync.Mutex
+	mu                   sync.Mutex
+	streams              map[string]*stream
+	pingID               string
+	lastTransferProgress time.Time
+	pingReplies          chan string
+	pong                 chan struct{}
+	done                 chan struct{}
 }
 
 type stream struct {
@@ -164,7 +166,13 @@ func (p *Peer) remove(s *stream, err error) {
 	p.mu.Unlock()
 	s.cancel(err)
 }
-func (p *Peer) find(id string) *stream { p.mu.Lock(); defer p.mu.Unlock(); return p.streams[id] }
+func (f frame) isTransferProgress() bool {
+	if f.Method != "" || len(f.Params) != 0 || len(f.Meta) != 0 || f.Error != nil {
+		return false
+	}
+	return f.Kind == "credit" && len(f.Data) == 0 ||
+		f.Kind == "data" && len(f.Data) > 0 && len(f.Data) <= chunkSize
+}
 
 func (p *Peer) sendHeartbeats(interval, timeout time.Duration) {
 	ticker := time.NewTicker(interval)
@@ -187,21 +195,43 @@ func (p *Peer) heartbeat(timeout time.Duration) bool {
 		p.mu.Unlock()
 		return false
 	}
-	p.pingID = domain.ID("heartbeat")
-	id := p.pingID
+	id := domain.ID("heartbeat")
+	p.pingID = id
+	started := time.Now()
+	p.lastTransferProgress = started
+	limit := started.Add(heartbeatMaxWait)
+
+	// Keep the deadline running even when the ping is blocked in the writer.
+	var timer *time.Timer
+	timer = time.AfterFunc(time.Until(started.Add(min(timeout, heartbeatMaxWait))), func() {
+		p.mu.Lock()
+		if p.pingID != id {
+			p.mu.Unlock()
+			return
+		}
+		// The reply can be queued behind RPC traffic on the same connection.
+		deadline := p.lastTransferProgress.Add(timeout)
+		if deadline.After(limit) {
+			deadline = limit
+		}
+		if remaining := time.Until(deadline); remaining > 0 {
+			timer.Reset(remaining)
+			p.mu.Unlock()
+			return
+		}
+		p.pingID = ""
+		p.mu.Unlock()
+
+		_ = p.conn.SetDeadline(time.Now())
+		_ = p.Close()
+	})
 	p.mu.Unlock()
 	defer func() {
 		p.mu.Lock()
 		p.pingID = ""
+		timer.Stop()
 		p.mu.Unlock()
 	}()
-	// Include time spent waiting for the writer: an unresponsive connection
-	// must not postpone its heartbeat deadline by blocking a protocol write.
-	timer := time.AfterFunc(timeout, func() {
-		_ = p.conn.SetDeadline(time.Now())
-		_ = p.Close()
-	})
-	defer timer.Stop()
 	if err := p.send(frame{ID: id, Kind: "ping"}); err != nil {
 		_ = p.Close()
 		return false
@@ -293,7 +323,14 @@ func (p *Peer) read() {
 			go p.serve(s, f)
 			continue
 		}
-		s := p.find(f.ID)
+		// A late credit can arrive after its stream has ended and still
+		// confirms the peer is delivering traffic over this connection.
+		p.mu.Lock()
+		if p.pingID != "" && f.isTransferProgress() {
+			p.lastTransferProgress = time.Now()
+		}
+		s := p.streams[f.ID]
+		p.mu.Unlock()
 		// Acknowledgments and cancellation can cross a terminal response.
 		if s == nil {
 			continue

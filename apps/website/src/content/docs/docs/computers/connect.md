@@ -52,6 +52,8 @@ A computer's details show **Connection IP** while its Daemon is online and an ad
 
 A slow connection can delay command output and file operations. Astral keeps collecting command output on the computer while it is being transferred. When the computer's connection to Server is confirmed lost, its commands are stopped; reconnecting does not restart them. Check any file changes or other effects before asking the Bot to repeat an operation whose result is unknown. Closing a browser tab does not disconnect the computer.
 
+If a computer repeatedly goes offline during large file transfers, update Astral Server and the Daemon on each computer involved in the transfer. If Desktop manages your Server, update Desktop.
+
 ## The computer is not usable yet
 
 | What you see | What to check |
