@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
 import test from 'node:test'
-import { appleSigningTeam, cleanupCredentials, parseKeychainSearchList, parseSigningIdentity, safeCommand, setupCredentials, validatePublicCertificate } from './mac-credentials.mjs'
+import { appleSigningTeam, cleanupCredentials, notaryCredentialHTTPStatus, parseKeychainSearchList, parseSigningIdentity, safeCommand, setupCredentials, validatePublicCertificate } from './mac-credentials.mjs'
 import { ensureSigningEnvironment, readEncryptedP12, terminalQuestion, uploadSigningCredentials } from './setup-apple-signing.mjs'
 
 // Synthetic, self-signed PUBLIC test certificate. Its private key was discarded;
@@ -166,6 +166,13 @@ test('subprocess failure never repeats secret arguments or child stderr', () => 
     assert.ok(!error.message.includes('process.stderr'))
     return true
   })
+})
+
+test('notary diagnostics extract only an HTTP error status', () => {
+  assert.equal(notaryCredentialHTTPStatus('Error: HTTP status code: 403. Secret following the code'), '403')
+  assert.equal(notaryCredentialHTTPStatus('Output\nError: HTTP status code: 503.'), '503')
+  assert.equal(notaryCredentialHTTPStatus('Error: HTTP status code: 200. Private response'), undefined)
+  assert.equal(notaryCredentialHTTPStatus('Error: private account detail'), undefined)
 })
 
 test('local P12 inspection sends its password through stdin and reads only the public certificate', async t => {

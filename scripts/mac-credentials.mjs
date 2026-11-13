@@ -11,7 +11,11 @@ const directoryPrefix = 'astral-signing-'
 const keychainName = 'astral-signing.keychain-db'
 const day = 86_400_000
 
-// Never expose child_process errors or stderr: security/notarytool accept
+export function notaryCredentialHTTPStatus(stderr) {
+  return /^Error: HTTP status code: ([45][0-9]{2})\b/m.exec(stderr)?.[1]
+}
+
+// Never expose child_process errors or raw stderr: security/notarytool accept
 // credentials as arguments and their default error messages can repeat them.
 export function safeCommand(executable, args, { input, environment = process.env, timeout = 180_000 } = {}) {
   let result
@@ -25,6 +29,10 @@ export function safeCommand(executable, args, { input, environment = process.env
   }
   if (result.error || result.signal || result.status !== 0) {
     const status = Number.isInteger(result.status) ? result.status : 'unavailable'
+    if (executable === '/usr/bin/xcrun' && args[0] === 'notarytool' && args[1] === 'store-credentials') {
+      const httpStatus = notaryCredentialHTTPStatus(result.stderr || '')
+      if (httpStatus) throw new Error(`Apple notarization credential validation failed (HTTP ${httpStatus}).`)
+    }
     throw new Error(`${path.basename(executable)} failed (exit ${status}).`)
   }
   return { stdout: result.stdout || '', stderr: result.stderr || '' }
