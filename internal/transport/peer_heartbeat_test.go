@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -181,6 +182,136 @@ func TestHeartbeatTimeoutIncludesBlockedWrite(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("blocked ping write postponed the heartbeat timeout")
 	}
+}
+
+func newHeartbeatTestPeer(t *testing.T) (*Peer, net.Conn) {
+	t.Helper()
+	local, remote := net.Pipe()
+	peer := newPeer(local, nil, time.Hour, heartbeatTimeout)
+	t.Cleanup(func() { _ = peer.Close(); _ = remote.Close() })
+	if err := remote.SetDeadline(time.Now().Add(heartbeatMaxWait + time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	return peer, remote
+}
+
+func runTestHeartbeat(peer *Peer) <-chan bool {
+	result := make(chan bool, 1)
+	go func() { result <- peer.heartbeat(heartbeatTimeout) }()
+	return result
+}
+
+func requireHeartbeatFrame(t *testing.T, conn net.Conn, kind string) frame {
+	t.Helper()
+	f, err := readTestFrame(conn)
+	if err != nil || f.Kind != kind {
+		t.Fatalf("read %s: got kind=%q err=%v", kind, f.Kind, err)
+	}
+	return f
+}
+
+func requireHeartbeatWrite(t *testing.T, conn net.Conn, f frame) {
+	t.Helper()
+	if err := writeTestFrame(conn, f); err != nil {
+		t.Fatalf("write %s: %v", f.Kind, err)
+	}
+	synctest.Wait()
+}
+
+func requireHeartbeatPending(t *testing.T, peer *Peer) {
+	t.Helper()
+	synctest.Wait()
+	select {
+	case <-peer.Done():
+		t.Fatal("peer closed while the heartbeat was pending")
+	default:
+	}
+}
+
+func requireHeartbeatResult(t *testing.T, result <-chan bool, want bool) {
+	t.Helper()
+	synctest.Wait()
+	select {
+	case got := <-result:
+		if got != want {
+			t.Fatalf("heartbeat success=%t, want %t", got, want)
+		}
+	default:
+		t.Fatal("heartbeat did not finish")
+	}
+}
+
+func TestHeartbeatAllowsLateCreditWhilePingWriteIsBlocked(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		peer, remote := newHeartbeatTestPeer(t)
+		s, err := peer.makeStream("finished-file", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sent := make(chan error, 1)
+		go func() {
+			_, err := s.write([]byte("file"))
+			sent <- err
+		}()
+		data := requireHeartbeatFrame(t, remote, "data")
+		if err := <-sent; err != nil {
+			t.Fatal(err)
+		}
+		peer.remove(s, nil)
+
+		result := runTestHeartbeat(peer)
+		time.Sleep(heartbeatTimeout * 3 / 4)
+		// The receiver can acknowledge the final bytes after the sender
+		// has already retired the stream. Hold the ping on the write side
+		// while that credit arrives in the other direction.
+		requireHeartbeatWrite(t, remote, frame{ID: data.ID, Kind: "credit"})
+		time.Sleep(heartbeatTimeout / 2)
+		requireHeartbeatPending(t, peer)
+		ping := requireHeartbeatFrame(t, remote, "ping")
+		requireHeartbeatWrite(t, remote, frame{ID: ping.ID, Kind: "pong"})
+		requireHeartbeatResult(t, result, true)
+	})
+}
+
+func TestHeartbeatExpiresAfterLastValidTransferFrame(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		peer, remote := newHeartbeatTestPeer(t)
+		result := runTestHeartbeat(peer)
+		ping := requireHeartbeatFrame(t, remote, "ping")
+		s, err := peer.makeStream("file", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(heartbeatTimeout * 3 / 4)
+		requireHeartbeatWrite(t, remote, frame{ID: s.id, Kind: "data", Data: []byte("file")})
+		time.Sleep(heartbeatTimeout * 3 / 4)
+		requireHeartbeatPending(t, peer)
+		requireHeartbeatWrite(t, remote, frame{ID: ping.ID + "-wrong", Kind: "pong"})
+		requireHeartbeatWrite(t, remote, frame{ID: "retired-file", Kind: "credit", Data: []byte("invalid credit")})
+		time.Sleep(heartbeatTimeout / 4)
+		requireHeartbeatResult(t, result, false)
+	})
+}
+
+func TestHeartbeatCapsWaitWithContinuousTransferFrames(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		peer, remote := newHeartbeatTestPeer(t)
+		result := runTestHeartbeat(peer)
+		requireHeartbeatFrame(t, remote, "ping")
+		s, err := peer.makeStream("file", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const step = heartbeatTimeout / 2
+		for elapsed := step; elapsed < heartbeatMaxWait; elapsed += step {
+			time.Sleep(step)
+			requireHeartbeatPending(t, peer)
+			requireHeartbeatWrite(t, remote, frame{ID: s.id, Kind: "data", Data: []byte("file")})
+			<-s.data
+		}
+		time.Sleep(step)
+		requireHeartbeatResult(t, result, false)
+	})
 }
 
 type cancelOnMarshal struct{ cancel context.CancelFunc }
