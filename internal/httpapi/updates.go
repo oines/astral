@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"bufio"
+	"io"
 	"net/http"
 
 	"github.com/oines/astral/internal/domain"
@@ -44,6 +46,20 @@ func (a *API) updateRoutes() {
 func emptyUpdateIntent(r *http.Request) error {
 	if r.ContentLength == 0 {
 		return nil
+	}
+	if r.ContentLength < 0 {
+		// A proxy can send a bodyless POST with chunked transfer encoding.
+		body := bufio.NewReader(r.Body)
+		if _, err := body.Peek(1); err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return domain.Invalid("invalid request body: " + err.Error())
+		}
+		r.Body = struct {
+			io.Reader
+			io.Closer
+		}{body, r.Body}
 	}
 	var input struct{}
 	return httpcontract.Decode(r, &input)

@@ -174,6 +174,8 @@ Authorization: Bearer <当前命令的调用凭据>
 
 给当前绑定聊天发送文字或附件时，Bot 优先使用 `send_message`。自定义脚本使用 `POST /v1/im/messages` 或 `/v1/im/files` 前，先读取目标聊天的 `message-tool` 能力说明；这两个 HTTP 发送接口要求稳定的 `Idempotency-Key`，并提供发送记录供查询。
 
+在 Telegram 聊天中，可以直接把原始 MP3 作为文档附件上传。如果希望 Telegram 使用音乐播放器展示，请使用具名操作 `sendAudio`。
+
 本页的 **具名平台操作**只尝试一次，不使用上述发送接口的幂等约定。成功读取 `result`；失败时读取响应的 `code`、`message` 并按原因处理：
 
 | 返回情况 | 处理方法 |

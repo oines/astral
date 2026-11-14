@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -83,5 +84,39 @@ func TestUnmanagedServerCannotRequestReplacement(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != 409 {
 		t.Fatal("unmanaged Server update was not refused")
+	}
+}
+
+func TestServerUpdatesAcceptChunkedEmptyIntent(t *testing.T) {
+	p := testkit.New(t, 1, nil)
+	api, server := apiFixture(t, p)
+	controller := &updateFixture{}
+	api.Config.Updates = controller
+	for _, action := range []string{"check", "apply"} {
+		for _, test := range []struct {
+			name   string
+			body   string
+			status int
+		}{
+			{"empty", "", http.StatusOK},
+			{"empty object", `{}`, http.StatusOK},
+			{"unknown field", `{"version":"99.0.0"}`, http.StatusBadRequest},
+			{"whitespace", " \n", http.StatusBadRequest},
+			{"multiple values", `{} {}`, http.StatusBadRequest},
+		} {
+			t.Run(action+"/"+test.name, func(t *testing.T) {
+				// Wrapping the reader makes its length unknown, so the HTTP client
+				// sends a chunked request even when the body has zero bytes.
+				body := io.NopCloser(strings.NewReader(test.body))
+				response := request(t, p.Context, server, "POST", "/api/v1/updates/"+action, body, true)
+				defer response.Body.Close()
+				if response.StatusCode != test.status {
+					t.Fatalf("got status %d, want %d", response.StatusCode, test.status)
+				}
+			})
+		}
+	}
+	if controller.checks != 2 || controller.applies != 2 {
+		t.Fatalf("expected only empty intents to reach the updater, got %d checks and %d applies", controller.checks, controller.applies)
 	}
 }
