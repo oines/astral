@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -104,5 +106,22 @@ func TestDaemonUpdateEndpointIsOwnerOnlyAndRejectsArbitrarySources(t *testing.T)
 	response.Body.Close()
 	if response.StatusCode != 400 {
 		t.Fatalf("update request accepted an arbitrary download source: %d", response.StatusCode)
+	}
+	for _, test := range []struct {
+		name   string
+		body   string
+		status int
+	}{
+		{"empty", "", http.StatusServiceUnavailable},
+		{"unknown field", `{"url":"https://attacker.invalid/astral"}`, http.StatusBadRequest},
+	} {
+		t.Run("chunked/"+test.name, func(t *testing.T) {
+			body := io.NopCloser(strings.NewReader(test.body))
+			response := request(t, p.Context, server, "POST", "/api/v1/computers/maintenance/daemon-update/update", body, true)
+			defer response.Body.Close()
+			if response.StatusCode != test.status {
+				t.Fatalf("got status %d, want %d", response.StatusCode, test.status)
+			}
+		})
 	}
 }

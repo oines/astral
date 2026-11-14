@@ -174,6 +174,8 @@ Feishu message operations require an archived message in the authorized chat and
 
 The Bot should use `send_message` for text or attachments in its currently bound chat. Before using `POST /v1/im/messages` or `/v1/im/files` from a script, read the target chat's `message-tool` capability. These HTTP send endpoints require a stable `Idempotency-Key` and provide send records for outcome checks.
 
+In Telegram chats, you can attach the original MP3 as a document. To display it in Telegram's music player, use the named `sendAudio` operation.
+
 **Named platform operations** on this page make one attempt and do not use that send-idempotency contract. Read `result` on success. On failure, inspect `code` and `message`:
 
 | Result | Action |

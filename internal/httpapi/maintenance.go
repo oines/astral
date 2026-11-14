@@ -30,11 +30,8 @@ func (a *API) registerComputerMaintenance() {
 		return value, nil
 	})
 	route[httpcontract.Empty, domain.DaemonUpdate](a, "POST", "/computers/maintenance/{id}/update", "updateComputerDaemon", "Computers", func(r *http.Request, _ httpcontract.Empty) (domain.DaemonUpdate, error) {
-		if r.ContentLength != 0 {
-			var input struct{}
-			if err := httpcontract.Decode(r, &input); err != nil {
-				return domain.DaemonUpdate{}, err
-			}
+		if err := emptyUpdateIntent(r); err != nil {
+			return domain.DaemonUpdate{}, err
 		}
 		return a.Config.Harness.Hub.UpdateDaemon(r.Context(), r.PathValue("id"))
 	})

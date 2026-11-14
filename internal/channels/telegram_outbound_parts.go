@@ -99,7 +99,12 @@ func (t *telegram) sendParts(ctx context.Context, send Send) (Receipt, error) {
 				return Receipt{}, &SendError{Message: "Telegram media source could not be opened: " + err.Error()}
 			}
 			files[id] = Download{Body: stream, Name: p.FileName, MediaType: p.MediaType, Size: p.Size}
-			media = append(media, map[string]any{"id": id, "media": map[string]any{"type": kind, "media": "attach://" + id}})
+			attachment := map[string]any{"type": kind, "media": "attach://" + id}
+			if kind == "document" {
+				// A rich document block requires Telegram to preserve the declared media type.
+				attachment["disable_content_type_detection"] = true
+			}
+			media = append(media, map[string]any{"id": id, "media": attachment})
 			// Media are separate native blocks; only their required block boundaries
 			// are generated. Text/mention adjacency has no inserted whitespace.
 			if format == "markdown" {

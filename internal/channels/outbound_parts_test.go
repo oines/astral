@@ -158,26 +158,44 @@ func TestAttachmentConvenienceKeepsAutomaticPhotosAndExplicitFilesStayDocuments(
 	if err != nil {
 		t.Fatal(err)
 	}
+	mp3 := []byte("ID3\x04\x00\x00\x00\x00\x00\x00\xff\xfb\x90\x64")
+	audio, err := p.Harness.Files.Upload(p.Context, source, "audio.mp3", bytes.NewReader(mp3))
+	if err != nil {
+		t.Fatal(err)
+	}
 	startChannels(t, service, p.Context)
-	for _, asDocument := range []bool{false, true} {
-		intent := "photo"
-		want := "photo"
-		if asDocument {
-			intent = "photo-as-document"
-			want = "document"
-		}
-		receipts, err := service.SendMessage(p.Context, p.Agent.ID, binding.SessionID, intent, harness.MessageTarget{BindingID: binding.ID, ConversationID: binding.ConversationID}, harness.MessageArgs{MessageOptions: domain.MessageOptions{AsDocument: asDocument}, Text: "caption", Attachments: []string{filestream.URL(image)}})
-		if err != nil || len(receipts) != 1 || len(receipts[0].Parts) != 2 || receipts[0].Parts[1].Type != "image" {
-			t.Fatalf("convenience lost image type: %#v %v", receipts, err)
-		}
-		bot.mu.Lock()
-		rich := bot.sendParameters[len(bot.sendParameters)-1]["rich_message"].(map[string]any)
-		media := rich["media"].([]any)
-		kind := media[0].(map[string]any)["media"].(map[string]any)["type"]
-		bot.mu.Unlock()
-		if kind != want {
-			t.Fatalf("as_document=%v produced %v, want %s", asDocument, kind, want)
-		}
+	for i, test := range []struct {
+		name       string
+		file       domain.FileRef
+		payload    []byte
+		asDocument bool
+		partType   string
+		mediaType  string
+	}{
+		{name: "photo", file: image, payload: bot.png, partType: "image", mediaType: "photo"},
+		{name: "photo-as-document", file: image, payload: bot.png, asDocument: true, partType: "image", mediaType: "document"},
+		{name: "mp3-as-document", file: audio, payload: mp3, partType: "file", mediaType: "document"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			receipts, err := service.SendMessage(p.Context, p.Agent.ID, binding.SessionID, test.name, harness.MessageTarget{BindingID: binding.ID, ConversationID: binding.ConversationID}, harness.MessageArgs{MessageOptions: domain.MessageOptions{AsDocument: test.asDocument}, Text: "caption", Attachments: []string{filestream.URL(test.file)}})
+			if err != nil || len(receipts) != 1 || len(receipts[0].Parts) != 2 || receipts[0].Parts[1].Type != test.partType {
+				t.Fatalf("convenience lost %s part: %#v %v", test.partType, receipts, err)
+			}
+			bot.mu.Lock()
+			defer bot.mu.Unlock()
+			if len(bot.uploads) != i+1 || !bytes.Equal(bot.uploads[i], test.payload) {
+				t.Fatal("multipart upload did not preserve source bytes")
+			}
+			rich := bot.sendParameters[i]["rich_message"].(map[string]any)
+			media := rich["media"].([]any)[0].(map[string]any)["media"].(map[string]any)
+			if media["type"] != test.mediaType {
+				t.Fatalf("rich media type = %v, want %s", media["type"], test.mediaType)
+			}
+			disabled, present := media["disable_content_type_detection"]
+			if test.mediaType == "document" && disabled != true || test.mediaType == "photo" && present {
+				t.Fatalf("unexpected content type detection setting for %s: %v (present: %v)", test.mediaType, disabled, present)
+			}
+		})
 	}
 	explicit := SendRequest{IntentID: "explicit-document", Parts: []domain.OutboundPart{{Type: "file", FileURI: filestream.URL(image)}}}
 	receipts, err := service.Send(p.Context, p.Agent.ID, binding.SessionID, explicit)
