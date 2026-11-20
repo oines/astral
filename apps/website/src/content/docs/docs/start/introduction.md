@@ -1,42 +1,42 @@
 ---
-title: "What you can do with Astral"
-description: "Give an AI assistant a task, let it work on your computer, and collect the results."
+title: "What Astral can do"
+description: "Give a personal AI assistant access to your computers to work with files, run tools, and report back."
 ---
 
-Astral is an AI assistant that can use your computer. Describe a task in ordinary language, and it can read the material you provide, run tools, create files, and explain the results in a conversation.
+Astral is an open-source personal AI assistant that works directly on your computers. Describe what you want in plain language—it can read files, run commands, edit code, create documents, and explain what it did.
 
-You might ask it to:
+Common ways people use it:
 
-- Read meeting notes and save a list of action items.
-- Check a set of spreadsheets for missing data and produce a summary.
-- Explain how to run a code project, or change the code and run its tests.
+- **Summarize notes:** read meeting notes or scattered docs, extract action items, and save a clean report.
+- **Work with data:** inspect spreadsheets for gaps or anomalies and generate a summary.
+- **Work on real projects:** explore a codebase, make edits, run tests, and use the CLI tools already installed on your machine.
+- **Span machines and chats:** move across your laptop, desktop, and servers in one session, or send tasks from Telegram, QQ, WeChat, and Feishu.
 
-What Astral can do depends on the model you connect, the computers you allow it to use, and the tools available on those computers. Start with a small task whose result you can check.
+## Up and running in 5 minutes
 
-## Start on your own computer
+1. **[Download and install Desktop](/docs/start/get-astral/):** the fastest way to start—it bundles the local runtime and needs no extra sign-in setup.
+2. **[Connect a model and pick a computer](/docs/start/first-steps/):** add an AI model service you already have access to, then select the computer Astral can use.
+3. **Run a small test task:** ask it to inspect a folder or work on a copy of a file so you can see how tool calls and results look.
 
-1. [Download and install the desktop app](/docs/start/get-astral/).
-2. Follow [Your first task](/docs/start/first-steps/) to connect a model service and choose your computer.
-3. Send a task in Astral, then review the actions it takes and the result it returns.
+:::note[Bring your own model]
+Astral provides the agent runtime, not model credits. You connect your own model provider—see [Prepare a model account](/docs/start/first-steps/#prepare-a-model-account).
+:::
 
-You need an account with a usable model service. Astral connects to that service; the provider manages its usage allowance and charges. See [Prepare a model account](/docs/start/first-steps/#prepare-a-model-account) for the information you need.
+## Three concepts to know
 
-## After your first task
+| Concept | What it is | When to care |
+| --- | --- | --- |
+| **Bot** | An assistant you configure with its own instructions, models, computer access, and chat accounts. | Astral starts with a default **Astral** Bot. [Add more Bots](/docs/usage/bots/) when you want to separate personal work from shared group chats. |
+| **Session** | A continuous thread of work with a Bot that can span multiple computers. | Keep follow-ups in the same session; start a new one for unrelated tasks. |
+| **Computer** | The machine where files live and commands run—your local machine, another computer, or a Docker container. | Start on your local machine; [connect other computers](/docs/computers/connect/) whenever you need them. |
 
-To work on your own material, follow [Work with files](/docs/usage/files/). To have Astral do something on a schedule, see [Schedule a task](/docs/usage/schedules/).
+## Where to go next
 
-You can also send tasks through [QQ, Weixin, Feishu, or Telegram](/docs/chat/overview/). Connect a chat platform after completing your first task inside Astral.
+- **Work with your files:** see [Files and results](/docs/usage/files/) to upload material or point Astral at local paths.
+- **Automate recurring work:** see [Schedules and events](/docs/usage/schedules/) for timed runs and local event wake-ups.
+- **Delegate from chat apps:** see [Connect a chat](/docs/chat/overview/) for Telegram, QQ, WeChat, or Feishu.
+- **Keep Bots online 24/7:** see [Desktop or Server?](/docs/hosting/architecture/) to deploy on a Linux server.
 
-For an assistant that stays online, [install Astral on a server that remains running](/docs/hosting/server/). To work on files on a different computer, [connect that computer](/docs/computers/connect/).
-
-## What is a Bot?
-
-A Bot is the assistant you configure. Astral creates your first Bot for you, so you can start with that one.
-
-A **conversation** holds an ongoing piece of work. You might use one conversation for meeting notes and another for a spreadsheet, both with the same Bot.
-
-When you want separate assistants for private work and shared chats, or assistants with access to different computers, [configure additional Bots](/docs/usage/bots/).
-
-## Before working on real files
-
-Allowing a Bot to use a computer gives it access to files and commands on that machine. Try your first tasks on copies. Before using sensitive material or shared group chats, read [Permissions and privacy](/docs/start/safe-use/).
+:::caution[Before touching real files]
+Authorizing a computer lets the Bot read files and run commands with that OS account's permissions. Try your first tasks on copies, and read [Permissions and privacy](/docs/start/safe-use/) before handling sensitive files or shared groups.
+:::

@@ -1,88 +1,61 @@
 ---
-title: "Sign-in and account protection"
-description: "Set up browser sign-in, add verification, or recover access to Astral."
+title: "Sign-in and security"
+description: "Set up browser sign-in, add 2FA or Passkeys, restrict management hostnames, and recover locked accounts."
 ---
 
-Using Astral in a browser requires an administrator account. This account can manage every Bot, conversation, and computer, including private conversations. Share it only with trusted administrators.
+Browser access to Astral requires an administrator account. Because it controls every Bot, session (including private sessions), and computer, share it only with trusted administrators. Desktop opens directly without sign-in unless you enable browser access.
 
-The desktop app opens directly. Set up web sign-in when you want to access it from a browser.
+## 1. Set up web sign-in
 
-## Set up web sign-in
-
-**A Server installed with the official Linux installer** already has the username and password you chose during installation. You can sign in with those details.
-
-**In Desktop**, open **Settings → Security & access → Web sign-in** and set a username and password.
-
-If the browser says sign-in has not been set up and you use a standalone Server, open a terminal on the server as the OS account running Astral:
+- **Official Linux Server installer:** already created during installation—sign in directly.
+- **Desktop app:** configure under **Settings → Security & access → Web sign-in**.
+- **Standalone Server without credentials yet:** run on the server as the OS account running Astral (replace `admin`; add `--data /path/to/server-data` for custom directories):
 
 ```sh
 astral auth setup --username admin
 ```
 
-Replace `admin` with your preferred username. Enter and confirm the password when prompted, then sign in through the browser. Password characters are hidden in the terminal.
+## 2. Add a second factor and save recovery codes
 
-The command finds existing installations. If there is more than one, select the intended one when prompted. For a manually configured data directory, add `--data /path/to/server-data`, matching the Server's startup `--data` path.
+Under **Settings → Security & access → Sign-in protection**, add one or more verification methods:
 
-## Add a second verification step
-
-Under **Settings → Security & access → Sign-in protection**, add a verification method:
-
-| Method | What you need |
+| Method | Requirements |
 | --- | --- |
-| Authenticator codes | An authenticator app on your phone to generate login codes |
-| Passkey | An actual HTTPS page and a browser or device that supports Passkeys |
+| **Authenticator codes** | Any TOTP authenticator app on your phone |
+| **Passkey** | A real [HTTPS domain](/docs/hosting/server/#use-an-https-reverse-proxy) and a Passkey-capable browser/device (Passkeys bind to the exact domain) |
 
-Once you add and confirm a method, password sign-in requires a second verification step. You can add more than one method so you have an alternative when a device is unavailable.
-
-A Passkey belongs to the domain where it was added. Use the same HTTPS address to sign in; if you change domains, add a Passkey at the new address. If Desktop's embedded page cannot configure it, open your [HTTPS address](/docs/hosting/server/#use-an-https-reverse-proxy) in a browser first.
-
-## Recovery codes and active logins
-
-After enabling sign-in protection, generate and save recovery codes in security settings. They can help you sign in if your phone is lost or your authenticator is unavailable. Each code works once; generating a new set invalidates the old set.
-
-Use **Signed-in devices** to sign out a browser or command-line login. Remove any login you do not recognize. **Sign out all devices** also signs out the browser you are using.
+:::tip[Save recovery codes right away]
+Generate and store **recovery codes** offline so a lost phone won't lock you out. Each code works once; regenerating invalidates old codes. Use **Signed-in devices** anytime to revoke unfamiliar sessions.
+:::
 
 ## Recover account access
 
-Start with the situation you see:
-
-| What happened | What to do |
+| Situation | Next step |
 | --- | --- |
-| You forgot the password | Reset the account using the steps below |
-| Your authenticator or Passkey is unavailable | Try a saved recovery code; reset the account if no method is available |
-| Changing your username or password returned you to sign-in | Sign in with the new details |
-| The page does not open, or its hostname is rejected | Use [connection troubleshooting](/docs/hosting/troubleshooting/#the-page-will-not-open-or-sign-in-fails) or the hostname steps below |
+| Forgot password | Reset the account below (Astral has no email reset) |
+| Authenticator or Passkey unavailable | Sign in with a recovery code, or reset the account below |
+| Returned to sign-in after editing credentials | Sign in with your new username or password |
+| Page won't open or hostname rejected | Check [Troubleshooting](/docs/hosting/troubleshooting/#the-page-will-not-open-or-sign-in-fails) or **Hostname restriction** below |
 
-If you can still open Desktop, recover web sign-in from its security settings. For a standalone Server, run this in a server terminal as the OS account running Astral:
+If Desktop is accessible, recover web sign-in in its security settings. On a standalone Server, run as the Astral OS account:
 
 ```sh
 astral auth reset --username admin
 ```
 
-Replace `admin` with the username you want after the reset, then enter a new password. Add `--data /path/to/server-data` for a custom installation when needed.
-
-**Reset removes existing authenticators and Passkeys and signs out existing web logins.** Sign in with the new details, then add your verification methods again. Bots, history, and connected computers remain. Astral does not have an email password-recovery flow.
+:::caution[What reset changes]
+Resetting removes existing authenticators and Passkeys and signs out all web sessions—sign in with your new password and re-add 2FA afterward. Bots, histories, and connected computers remain intact.
+:::
 
 ## Hostname restriction
 
-To allow management access only through particular domains or IP addresses, open **Settings → Security & access**, enable **Restrict hostnames**, edit the list, and select **Save hostname settings**.
+To accept management traffic only on specific domains or IPs, enable **Restrict hostnames** under **Settings → Security & access**, enter bare hostnames/IPs only (e.g., `astral.example.com` for `https://astral.example.com:8443`—no scheme, port, path, or `*`), keep your current address in the list, and click **Save hostname settings**.
 
-For example, if the address is `https://astral.example.com:8443`, enter `astral.example.com`. Use only domains or IP addresses, without a scheme, port, path, or `*`. Keep the domain or IP you are currently using so you retain access.
-
-A fresh Server has this restriction turned off. Enabling it does not replace account sign-in.
-
-If a configuration change causes `403 unrecognized management host`, SSH into the server and inspect the setting:
+If a mistake triggers `403 unrecognized management host`, SSH into the server to inspect or disable the restriction (keeps your saved list and 2FA; takes effect immediately while running; add `--data` for custom dirs):
 
 ```sh
 astral config hostnames show
-```
-
-To restore browser access, turn off hostname restriction:
-
-```sh
 astral config hostnames disable
 ```
 
-This retains the list and sign-in protection. It applies immediately while the service is running, or on the next start while stopped. If the command reports that a startup argument or environment variable controls the restriction, update that service configuration and restart. Add `--data /path/to/server-data` for a custom directory.
-
-For control over the computers and files a Bot can use, see [Permissions and safe use](/docs/start/safe-use/).
+If the command reports that flags or environment variables control the restriction, update your service configuration and restart. For Bot-level machine and file boundaries, see [Permissions and privacy](/docs/start/safe-use/).

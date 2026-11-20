@@ -5,63 +5,173 @@ const { locale } = Astro.props as { locale: Locale };
 const zh = locale === 'zh-cn';
 const executions = [
   {
-    machine: 'MacBook', os: 'macOS', icon: Laptop,
+    id: 'macbook',
+    machine: 'MacBook', os: 'macOS', prompt: '%', icon: Laptop, open: false,
     response: zh ? '先读取 MacBook 上的项目说明，确认检查方式。' : 'First, I’ll read the project instructions on your MacBook.',
     tool: zh ? '读取项目说明' : 'Read project instructions',
     command: 'cat ~/Projects/atlas/README.md',
     output: 'atlas/\n  src/             Application source\n  tests/           Test suite\n  package.json     Build & test commands',
   },
   {
-    machine: zh ? '家庭服务器' : 'Home server', os: 'Linux', icon: Server,
+    id: 'server',
+    machine: zh ? '家庭服务器' : 'Home server', os: 'Linux', prompt: '$', icon: Server, open: true,
     response: zh ? '接着在 Linux 服务器已有的项目目录中运行测试。' : 'Next, I’ll run the tests in the existing checkout on your Linux server.',
     tool: zh ? '运行测试' : 'Run tests',
     command: 'cd /srv/atlas && pnpm test',
     output: 'Test suite passed.\nExit code: 0',
   },
   {
-    machine: zh ? '台式机' : 'Desktop', os: 'Windows', icon: Monitor,
+    id: 'desktop',
+    machine: zh ? '台式机' : 'Desktop', os: 'Windows', prompt: 'PS>', icon: Monitor, open: false,
     response: zh ? '再用 Windows 台式机上的环境检查构建。' : 'Then I’ll check the build in your Windows environment.',
     tool: zh ? '检查构建' : 'Check the build',
     command: 'Set-Location C:\\Projects\\atlas; pnpm build',
     output: 'Build completed.\nOutput: dist/',
   },
 ];
+const expandLabel = zh ? '展开全部' : 'Expand all';
+const collapseLabel = zh ? '收起全部' : 'Collapse all';
 ---
-<section class="workflow" id="workflow" aria-label={zh ? '一个 Session 跨多台电脑执行的示例' : 'One session running across multiple computers'}>
-  <div class="workflow-topline">
-    <span class="workflow-title">{zh ? '一个 Session，跨电脑执行' : 'One session, across computers'}</span>
-    <span class="example-label">{zh ? '交互示例' : 'Interactive example'}</span>
-  </div>
-  <div class="session-transcript" aria-label={zh ? '完整会话记录' : 'Complete session transcript'}>
-    <div class="session-user">
-      <span class="sr-only">{zh ? '你：' : 'You:'}</span>
-      <p>{zh ? '检查 atlas 项目在这几台电脑上的运行情况，把结果汇总给我。' : 'Check the atlas project across my computers and summarize the results here.'}</p>
+<div class="demo-stage">
+  <section class="workflow" id="workflow" aria-label={zh ? '一个 Session 跨多台电脑执行的示例' : 'One session running across multiple computers'}>
+    <div class="workflow-topline">
+      <div class="workflow-heading">
+        <span class="workflow-title">{zh ? '一个 Session，跨电脑执行' : 'One session, across computers'}</span>
+      </div>
+      <div class="workflow-machines" role="group" aria-label={zh ? '本次会话涉及的电脑' : 'Computers in this session'}>
+        {executions.map((execution) => (
+          <button
+            type="button"
+            class="machine-chip"
+            data-machine-chip={execution.id}
+            data-active={execution.open ? 'true' : undefined}
+          >
+            <span class="machine-dot" aria-hidden="true"></span>
+            <execution.icon size={13} stroke-width={1.6} aria-hidden="true" />
+            <span>{execution.machine}</span>
+          </button>
+        ))}
+      </div>
+      <div class="workflow-controls">
+        <button
+          type="button"
+          class="workflow-toggle"
+          data-workflow-toggle
+          data-expand-label={expandLabel}
+          data-collapse-label={collapseLabel}
+          hidden
+        >
+          {expandLabel}
+        </button>
+        <span class="example-label">{zh ? '交互示例' : 'Interactive example'}</span>
+      </div>
     </div>
-    <div class="session-assistant">
-      <img class="session-avatar" src="/brand/astral-mark.svg" width="25" height="25" alt="Astral" />
-      <div class="session-response">
-        <ol class="session-executions" aria-label={zh ? '同一会话中的执行记录' : 'Executions in this session'}>
-          {executions.map((execution) => <li>
-            <p>{execution.response}</p>
-            <details class="session-execution">
+    <div class="session-transcript" aria-label={zh ? '完整会话记录' : 'Complete session transcript'}>
+      <div class="session-user">
+        <span class="sr-only">{zh ? '你：' : 'You:'}</span>
+        <p>{zh ? '检查 atlas 项目在这几台电脑上的运行情况，把结果汇总给我。' : 'Check the atlas project across my computers and summarize the results here.'}</p>
+      </div>
+      <div class="session-assistant">
+        <div class="session-rail" aria-hidden="true">
+          <img class="session-avatar" src="/brand/astral-mark.svg" width="24" height="24" alt="Astral" />
+          <span class="session-rail-line"></span>
+        </div>
+        <div class="session-response">
+          <ol class="session-executions" aria-label={zh ? '同一会话中的执行记录' : 'Executions in this session'}>
+            {executions.map((execution) => (
+              <li class="execution-step" data-machine-step={execution.id} data-active={execution.open ? 'true' : undefined}>
+                <p>{execution.response}</p>
+                <details class="session-execution" data-machine-detail={execution.id} open={execution.open}>
+                  <summary>
+                    <span class="execution-action">
+                      <span class="execution-check" aria-hidden="true"><Check size={11} stroke-width={2.2} /></span>
+                      <span>{execution.tool}</span>
+                    </span>
+                    <span class="execution-computer">
+                      <execution.icon size={13} stroke-width={1.6} aria-hidden="true" />
+                      <span>{execution.machine}</span>
+                      <small>{execution.os}</small>
+                    </span>
+                    <ChevronRight class="execution-chevron" size={14} aria-hidden="true" />
+                  </summary>
+                  <div class="execution-detail">
+                    <div class="execution-command"><span class="execution-prompt" aria-hidden="true">{execution.prompt}</span><code>{execution.command}</code></div>
+                    <pre>{execution.output}</pre>
+                  </div>
+                </details>
+              </li>
+            ))}
+          </ol>
+          <div class="session-result">
+            <p>{zh ? 'Linux 测试和 Windows 构建均已完成。项目说明、执行结果和环境信息已整理到同一份报告中：' : 'The Linux tests and Windows build are complete. I’ve brought the project notes, results, and environment details into one report:'}</p>
+            <details class="session-report-card">
               <summary>
-                <span class="execution-action"><Check size={14} aria-hidden="true" />{execution.tool}</span>
-                <span class="execution-computer"><execution.icon size={15} stroke-width={1.5} aria-hidden="true" /><span>{execution.machine}{' '}<small>{execution.os}</small></span></span>
-                <ChevronRight class="execution-chevron" size={14} aria-hidden="true" />
+                <span class="file-badge" aria-hidden="true"><FileText size={14} /></span>
+                <span>platform-check.md<span class="attachment-hint">{zh ? '查看示例报告' : 'Preview sample report'}</span></span>
+                <ChevronRight class="attachment-chevron" size={14} aria-hidden="true" />
               </summary>
-              <div class="execution-detail">
-                <code>{execution.command}</code>
-                <pre>{execution.output}</pre>
+              <div class="attachment-preview">
+                <ul>
+                  <li><strong>MacBook (macOS)</strong> — {zh ? '已读取 README.md 与构建测试脚本。' : 'Read README.md and confirmed test and build scripts.'}</li>
+                  <li><strong>{zh ? '家庭服务器 (Linux)' : 'Home server (Linux)'}</strong> — {zh ? '测试套件全部通过（退出码 0）。' : 'Test suite passed (exit code 0).'}</li>
+                  <li><strong>{zh ? '台式机 (Windows)' : 'Desktop (Windows)'}</strong> — {zh ? '构建完成，产物位于 dist/。' : 'Build completed with output in dist/.'}</li>
+                </ul>
               </div>
             </details>
-          </li>)}
-        </ol>
-        <div class="session-result">
-          <p>{zh ? 'Linux 测试和 Windows 构建均已完成。项目说明、执行结果和环境信息已整理到同一份报告中。' : 'The Linux tests and Windows build are complete. I’ve brought the project notes, results, and environment details into one report.'}</p>
-          <span class="session-report"><FileText size={15} aria-hidden="true" />platform-check.md</span>
+          </div>
         </div>
       </div>
     </div>
-  </div>
-  <p class="workflow-caption">{zh ? '消息、执行记录和结果，始终在这一个 Session 中。' : 'Every message, execution, and result stays in this session.'}</p>
-</section>
+    <p class="workflow-caption">{zh ? '消息、执行记录和结果始终留在同一个 Session 中；文件仍保存在各自所在的电脑上。' : 'Messages, executions, and results stay in this session; files remain on their source computers.'}</p>
+  </section>
+</div>
+<script>
+  const root = document.querySelector('#workflow');
+  const toggle = root?.querySelector<HTMLButtonElement>('[data-workflow-toggle]');
+  const items = root ? [...root.querySelectorAll<HTMLDetailsElement>('[data-machine-detail]')] : [];
+  const chips = root ? [...root.querySelectorAll<HTMLButtonElement>('[data-machine-chip]')] : [];
+  const steps = root ? [...root.querySelectorAll<HTMLLIElement>('[data-machine-step]')] : [];
+
+  const syncState = (focusId?: string) => {
+    for (const chip of chips) {
+      const id = chip.dataset.machineChip;
+      const detail = items.find((item) => item.dataset.machineDetail === id);
+      const active = focusId ? id === focusId : Boolean(detail?.open);
+      chip.toggleAttribute('data-active', active);
+    }
+    for (const step of steps) {
+      const id = step.dataset.machineStep;
+      const detail = items.find((item) => item.dataset.machineDetail === id);
+      step.toggleAttribute('data-active', Boolean(detail?.open));
+    }
+    if (toggle) {
+      const allOpen = items.every((item) => item.open);
+      toggle.textContent = allOpen ? (toggle.dataset.collapseLabel || '') : (toggle.dataset.expandLabel || '');
+      toggle.setAttribute('aria-pressed', String(allOpen));
+    }
+  };
+
+  if (toggle && items.length > 0) {
+    toggle.hidden = false;
+    syncState();
+    toggle.addEventListener('click', () => {
+      const shouldOpen = !items.every((item) => item.open);
+      for (const item of items) item.open = shouldOpen;
+      syncState();
+    });
+    for (const item of items) {
+      item.addEventListener('toggle', () => syncState());
+      item.addEventListener('mouseenter', () => syncState(item.dataset.machineDetail));
+      item.addEventListener('mouseleave', () => syncState());
+    }
+    for (const chip of chips) {
+      chip.addEventListener('click', () => {
+        const id = chip.dataset.machineChip;
+        const target = items.find((item) => item.dataset.machineDetail === id);
+        if (!target) return;
+        target.open = !target.open;
+        syncState(target.open ? id : undefined);
+      });
+    }
+  }
+</script>

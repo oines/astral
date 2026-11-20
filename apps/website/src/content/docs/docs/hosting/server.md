@@ -1,89 +1,69 @@
 ---
-title: "Install Server on Linux"
-description: "Install the background service, set up sign-in, and complete your first task in a browser."
+title: "Run a Server"
+description: "Install Astral Server on Linux with one command, create an admin login, and optionally serve it over HTTPS."
 ---
 
-Use this guide to run Astral on a Linux server that stays on. Once installed, you can use Astral through a browser and close the installation terminal while it keeps running.
+Deploy Astral on an always-on Linux server so you can open it from any browser and keep chat integrations and schedules running while your laptop is closed.
 
-## Before you start
+## Prerequisites
 
-You need a Linux server using systemd, with an x86_64 or ARM64 CPU and terminal or SSH access. Bash, curl, Python 3, sha256sum, flock, systemctl, and loginctl must already be installed.
-
-Sign in as the OS account that will run Astral. The installer requests sudo when needed to prepare background operation or register the command. Running as root also gives Bot commands on the server root privileges; Astral can run under an ordinary account.
+- A systemd-based Linux server (`x86_64` or `ARM64`) with `bash`, `curl`, `python3`, `sha256sum`, `flock`, `systemctl`, and `loginctl`.
+- Sign in over SSH as the OS user that will run Astral (an ordinary user is recommended; running as `root` gives Bot commands on the host root privileges).
 
 ## 1. Run the installer
 
-Copy this command into a terminal **on the server**:
+Run this **in the server's terminal** (if GitHub is unreachable, see [the proxy command](#when-github-is-unreachable) below):
 
 ```sh
 curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
   https://github.com/oines/astral/releases/latest/download/install-server.sh | bash
 ```
 
-The installer downloads and verifies the program, then starts its background service. If GitHub downloads fail, use the [alternative download command](#when-github-is-unreachable) below. If it reports a missing system component or permission, resolve that error and run it again.
+## 2. Create your web sign-in account
 
-## 2. Set up sign-in
+Follow the prompt to set an Astral administrator username and password (separate from your SSH credentials). Once you see `Astral Server … is ready`, the service is running and enabled at boot—you can close SSH (if you ever forget the password, [reset it on the server](/docs/hosting/security/#recover-account-access)).
 
-Enter an Astral administrator username and password when prompted, then confirm the password. Password characters are hidden as you type.
+## 3. Open Astral in your browser
 
-You will use this account to sign in to Astral in a browser. It is configured separately from your SSH account. Keep it safe; if you forget the password, you can [reset web sign-in](/docs/hosting/security/#recover-account-access) on the server.
+Visit `http://SERVER_IP:4545` (or the address printed by the installer), sign in, and follow [Your first task](/docs/start/first-steps/).
 
-Installation is complete when the terminal displays `Astral Server … is ready`. You can close SSH: the service keeps running and starts again when the server boots. The installer enables user lingering when needed so this account's user services can run after logout.
-
-## 3. Open Astral and complete a task
-
-On your own computer, open `http://SERVER_IP:4545`, replacing `SERVER_IP` with the server's actual address. You can also use an address printed by the installer if it is reachable from your network. Sign in with the username and password you just created.
-
-Follow [Complete your first task](/docs/start/first-steps/) to connect a model, choose the server machine, and send a task. The selected computer is the server. To work with files on your laptop, [connect the laptop](/docs/computers/connect/) separately.
-
-If the page does not open, use [the connection checks](/docs/hosting/troubleshooting/#the-page-will-not-open-or-sign-in-fails) to check the service, address, and firewall. For ongoing access over the public internet, you can configure your own [HTTPS address](#use-an-https-reverse-proxy).
+:::note[The local computer here is the server]
+Selecting the Astral host targets this Linux server. To work on files on your laptop, [connect your laptop](/docs/computers/connect/) separately. If the page won't open, check [Troubleshooting](/docs/hosting/troubleshooting/#the-page-will-not-open-or-sign-in-fails).
+:::
 
 ## Manage the background service
 
-Run these commands on the server as **the same OS account used for installation**. Stopping or restarting interrupts running tasks.
+Run on the server as **the same OS user used for installation** (stopping or restarting interrupts active tasks):
 
-| What you need | Command |
+| Action | Command |
 | --- | --- |
-| Check service status | `systemctl --user status astral-server.service` |
-| Read logs | `journalctl --user -u astral-server.service` |
-| Stop now | `systemctl --user stop astral-server.service` |
-| Start again | `systemctl --user start astral-server.service` |
-| Restart | `systemctl --user restart astral-server.service` |
-| Disable startup at boot | `systemctl --user disable astral-server.service` |
-| Enable startup at boot | `systemctl --user enable astral-server.service` |
+| Status / logs | `systemctl --user status astral-server.service` / `journalctl --user -u astral-server.service` |
+| Start / stop / restart | `systemctl --user start\|stop\|restart astral-server.service` |
+| Boot startup on / off | `systemctl --user enable\|disable astral-server.service` |
 
-`stop` ends the current run; `disable` only changes automatic startup. Use both actions to stop and disable the service. If a command reports `Failed to connect to bus`, see [the user-manager checks](/docs/hosting/troubleshooting/#cannot-connect-to-the-user-service-manager).
+If you see `Failed to connect to bus`, check [Cannot connect to the user service manager](/docs/hosting/troubleshooting/#cannot-connect-to-the-user-service-manager).
 
 ## Update
 
-Finish or stop current tasks, then open **Settings → About & diagnostics** and check for updates. When supported by your installation, select **Update and restart**.
-
-You can also rerun the installation command on the server under the original OS account. If you chose a custom directory, keep the same `--root`. Updates preserve your account, conversations, computer identities, and settings. See [Updates and backups](/docs/hosting/maintenance/) for backup and recovery steps.
+Stop or finish active tasks, then open **Settings → About & diagnostics** and click **Update and restart**—or rerun the install command above under the same OS user (keep `--root` if customized). Accounts, sessions, computer identities, and settings are preserved; see [Updates and backups](/docs/hosting/maintenance/).
 
 ## Uninstall the background service
 
-After stopping current tasks, run as the original OS account on the server:
+After stopping active tasks, run as the original OS user (append `--root /original/path` if customized):
 
 ```sh
 curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-  https://github.com/oines/astral/releases/latest/download/install-server.sh \
-  -o install-server.sh
+  https://github.com/oines/astral/releases/latest/download/install-server.sh -o install-server.sh
 bash install-server.sh --uninstall
 ```
 
-For a custom installation directory, change the last line to `bash install-server.sh --uninstall --root /original/absolute/installation/path`.
-
-The script stops the service, disables automatic startup, and removes programs and command entries that can be safely removed. **Your account, conversations, computer files, settings, and backups remain.** Reinstall into the same directory to use them again. One complete release remains for reinstallation checks and recovery; commands shared with other computer installations also remain.
-
-Uninstalling does not remove Docker containers, remote computer files, or account-wide lingering. A modified service definition or mismatched installation causes cleanup to stop with an explanation. Before separately deleting data, review [what to back up](/docs/hosting/maintenance/#what-to-back-up).
+:::note[Your data stays safe]
+Uninstalling stops the service and cleans up binaries—**your account, sessions, files, settings, and backups remain** for reinstallation. Docker containers and account-wide lingering are untouched; review [what to back up](/docs/hosting/maintenance/#what-to-back-up) before deleting data manually.
+:::
 
 ## Use an HTTPS reverse proxy
 
-To use an address such as `https://astral.example.com`, configure Caddy, Nginx, or your existing proxy to provide HTTPS. Astral itself serves HTTP on port `4545` by default.
-
-Point your domain at the server and allow external access to ports `80` and `443`. If you have no proxy yet, [install Caddy using its official guide](https://caddyserver.com/docs/install) and start its service.
-
-With the official Caddy service, add this site to `/etc/caddy/Caddyfile`, keeping any existing sites and replacing the example domain:
+For public internet access (and Passkeys), place Caddy, Nginx, or another HTTPS proxy in front of Astral's default HTTP port `4545`. With [Caddy](https://caddyserver.com/docs/install), point your domain at the server, open ports `80`/`443`, and add to `/etc/caddy/Caddyfile`:
 
 ```text title="Caddyfile"
 astral.example.com {
@@ -91,19 +71,17 @@ astral.example.com {
 }
 ```
 
-Save the file and reload the configuration as described in [Caddy's service guide](https://caddyserver.com/docs/running#using-the-service):
+Reload Caddy (see [Caddy's service docs](https://caddyserver.com/docs/running#using-the-service)):
 
 ```sh
 sudo systemctl reload caddy
 ```
 
-Open your HTTPS address and sign in. A fresh Astral installation needs no domain registration. If you enabled hostname restriction, first [allow the domain](/docs/hosting/security/#hostname-restriction).
-
-A proxy on another machine also needs [trusted-proxy configuration](/docs/hosting/server-options/#a-proxy-on-another-machine). Passkeys must be configured and used from an actual HTTPS page.
+Fresh installs need no domain registration; if hostname restriction is on, [allow the domain first](/docs/hosting/security/#hostname-restriction). If the proxy runs on another host, configure [trusted proxies](/docs/hosting/server-options/#a-proxy-on-another-machine).
 
 ## When GitHub is unreachable
 
-You can explicitly choose the third-party [GH-Proxy service](https://gh-proxy.com/docs/github-accelerator/). This command proxies both the installer and its subsequent program downloads:
+Use the third-party [GH-Proxy service](https://gh-proxy.com/en/docs/github-accelerator/) to proxy both the installer and release downloads (checksums are still verified; clear later with `--github-proxy ''`):
 
 ```sh
 curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
@@ -111,8 +89,4 @@ curl --fail --silent --show-error --location --proto '=https' --proto-redir '=ht
   | bash -s -- --github-proxy https://gh-proxy.org/
 ```
 
-Downloads are still verified. This proxy is used only for GitHub downloads, and its availability depends on the service and your network. To stop using it later, rerun the installer with `--github-proxy ''`. Omitting the option retains your previous choice.
-
-## Need a custom deployment?
-
-[Server deployment options](/docs/hosting/server-options/) covers unattended installation, custom directories and ports, foreground operation, and access restrictions. For container computers, follow [Use containers](/docs/computers/containers/) to prepare Docker. Installing Astral does not install Docker or change Docker group membership.
+For unattended installs, custom ports/directories, or foreground runs, see [Server options](/docs/hosting/server-options/). For container computers, see [Containers](/docs/computers/containers/).

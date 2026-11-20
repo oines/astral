@@ -1,125 +1,117 @@
 ---
-title: "Connect a computer"
-description: "Choose where a Bot works, connect the machine, and grant access."
+title: "Connect computers"
+description: "Connect your local machine or other computers to Astral, then authorize a Bot to use them."
 ---
 
-A Bot needs a computer to read files, write files, and run commands. It can use the machine running Astral or another device. After connecting a computer, choose which Bot may use it.
+A Bot needs an online **computer** to read files and run commands. You can use the machine running Astral itself, or connect additional laptops, desktops, and servers.
 
-## Use the server machine
+Setup takes two steps: **1. Connect the computer → 2. Grant a Bot access**. Connecting a machine alone does not make it visible to any Bot.
 
-To work with files on the Astral host, choose **Use the server machine** under **Settings → Computers → Add Computer**. With Desktop, this is normally the machine running the app. In a browser connected to a standalone Server, it means the Server host.
+## Option 1: Use the Astral host
 
-For example, opening an office Server's web interface on a laptop does not make the laptop the local computer. Connect the laptop separately or upload the files you need from it.
+To work with files on the machine running Astral, go to **Settings → Computers → Add Computer** and choose **Use the server machine**.
 
-Local operations use the operating-system account running Astral Server. Once the computer is online, continue to [granting access and trying a task](#grant-a-bot-access). For a separate Linux environment, use a [container computer](/docs/computers/containers/).
+- **Desktop:** the computer running the Desktop app.
+- **Standalone Server:** the Linux server hosting Astral (not the laptop running your browser).
 
-## Connect another machine
+Commands run under the OS account hosting Astral Server. Once it shows online, jump to [Grant a Bot access](#grant-a-bot-access). For a separate Linux environment, use a [container computer](/docs/computers/containers/) instead.
 
-Generate a command under **Settings → Computers → Add Computer → Connect another machine**, then run it in a terminal on **the machine you want to connect**. Use Shell on macOS or Linux, or PowerShell on Windows.
+## Option 2: Connect another machine
 
-Before generating it, choose:
+Open **Settings → Computers → Add Computer → Connect another machine** to generate an enrollment command, then run it in a terminal on **the target computer** (Shell on macOS/Linux, PowerShell on Windows).
 
-- **Server address:** the target machine must be able to reach this Astral Server. Use a reachable LAN address on the same network or a VPN address over your VPN. `127.0.0.1` refers to the machine itself and cannot reach a Server on a different host.
-- **Operating system:** choose the system running the command. For a container, this is the container host's system.
+Before generating the command, check two fields:
+- **Server address:** an address the target computer can reach (LAN IP on the same network, or your VPN address). `127.0.0.1` points to the target itself and cannot reach another host.
+- **Operating system:** the OS running the command (for a container, pick the host OS).
 
-Run the **complete command** as the system user whose file permissions you want the Bot to have. It installs a background service and the `astral` command. Return to Astral and wait for the computer to appear online. Terminal errors identify any failed connection or installation step.
+Run the **complete command** as the system user whose file permissions you want the Bot to have. It installs the background service and the `astral` CLI, then brings the computer online in Astral.
 
-The command contains temporary pairing credentials. Run it only on the intended computer and generate another if it expires. The target must be able to download matching official release files. An unpublished development version needs separately prepared programs; see [Build from source](/docs/hosting/build-from-source/).
-
-Computers connect outward to the Server. HTTP and HTTPS enrollment addresses are supported; the computer channel encrypts its traffic and verifies the Server's identity. Browser sign-in has separate network requirements described in [Run a Server](/docs/hosting/server/).
-
-## Control what the computer can call
-
-Use **Enable Astral API** when adding a computer or later in its details. For example, leave it off on a remote machine that only needs to run build commands and read or write files. Turn it on for a trusted machine if its commands need to call Astral services or its programs need to wake a session through an event endpoint.
-
-New remote computers, including remote containers, start with the switch off. The server machine, local containers, and computers registered before the upgrade default to on. Choose before generating a remote command so the policy applies from the first connection.
-
-Turning it off blocks API calls and new event deliveries from that computer for every Bot. Astral keeps endpoint settings and continues processing events it already accepted. Bots can still run commands and work with files on the computer according to their permissions. The Server applies this setting to older Daemons without a Daemon update. If a computer's saved connection credentials leak, [revoke its connection](#disconnect-and-stop-a-computer) and pair it again.
+:::note[Pairing credentials and transport]
+Enrollment commands carry temporary pairing credentials—use them only on the intended machine and regenerate if expired. Computers connect outward to Server over an encrypted channel that verifies the Server's identity, using either HTTP or HTTPS enrollment URLs.
+:::
 
 ## Grant a Bot access
 
-Once online, allow the computer in **Settings → Bots → your Bot → Computer access**, optionally making it the default. Return to a session for that Bot, select the computer, and try a read-only task:
+Once the computer is online, enable it under **Settings → Bots → your Bot → Computer access** (optionally set it as the default for new sessions).
+
+Open a session for that Bot, select the computer, and verify with a read-only check:
 
 > Tell me the current computer's name and working directory, then list the files in that directory without changing anything.
 
-Check that the reported location is the one you intended. This completes the path from connection to usable access. The default applies to new sessions; existing sessions keep their selections.
+:::caution[Scope of access]
+The Bot inherits the file and command permissions of the OS account running the service, not just the default working directory. Review [Permissions and privacy](/docs/start/safe-use/) before exposing a machine to a public group or untrusted files.
+:::
 
-Granting access lets the Bot operate with the computer service account's file and command permissions, beyond its default working folder. Read the [access guidance](/docs/start/safe-use/) before exposing that environment to a public group or untrusted material.
+## Control what the computer can call
 
-## Slow or interrupted connections
+Toggle **Enable Astral API** when adding a computer or anytime in its details:
 
-A computer's details show **Connection IP** while its Daemon is online and an address is available. A direct connection shows the address the Server sees. Behind a correctly configured trusted proxy, it shows the forwarded client address, such as the public egress IP of a Daemon connecting through Cloudflare Tunnel. Astral uses this address for connection diagnostics. [Trusted-proxy configuration](/docs/hosting/server-options/#a-proxy-on-another-machine)
-
-A slow connection can delay command output and file operations. Astral keeps collecting command output on the computer while it is being transferred. When the computer's connection to Server is confirmed lost, its commands are stopped; reconnecting does not restart them. Check any file changes or other effects before asking the Bot to repeat an operation whose result is unknown. Closing a browser tab does not disconnect the computer.
-
-If a computer repeatedly goes offline during large file transfers, update Astral Server and the Daemon on each computer involved in the transfer. If Desktop manages your Server, update Desktop.
-
-## The computer is not usable yet
-
-| What you see | What to check |
+| Use case | Recommended setting |
 | --- | --- |
-| Astral keeps waiting for the computer | Read the target terminal's error and check that it can reach the Server address used in the command. |
-| Installation fails during download | Check access to official release files. Use the fallback below if GitHub is unreachable. |
-| The script reports an existing `astral` command | The installer does not overwrite another command. If you manually added an older `astral.exe` directory to PATH, remove that directory from PATH, open a new terminal, and rerun the enrollment command. Do not delete programs or data used by a running service. |
-| The computer is online but absent from a session's choices | Check that Bot's Computer access. Connecting alone does not grant permission. |
-| It connects but cannot read a file | Check that the file is on this computer and readable by the background service's system user. |
-| A previously working computer is offline | Check that both machines are running, then inspect the target's background service. |
+| Remote build host that only runs commands and edits files | **Off** (default for new remote computers and remote containers) |
+| Trusted machine whose scripts call Astral APIs or deliver local event wake-ups | **On** (default for the server host and local containers) |
 
-## When the target Computer cannot reach GitHub
-
-Select the public download proxy in the target terminal before pasting the full connection or update command from Astral. Keep its Server address and pairing parameters intact.
-
-macOS / Linux:
-
-```sh
-export ASTRAL_GITHUB_PROXY=https://gh-proxy.org/
-```
-
-Windows PowerShell:
-
-```powershell
-$env:ASTRAL_GITHUB_PROXY = 'https://gh-proxy.org/'
-```
-
-This third-party service handles installation-script and GitHub release downloads. The computer's connection to Astral Server does not pass through it. See the [download proxy guide](/docs/hosting/server/#when-github-is-unreachable). Clear the selection for the current terminal with `unset ASTRAL_GITHUB_PROXY` in Shell or `$env:ASTRAL_GITHUB_PROXY = ''` in PowerShell.
+When turned off, Server blocks API calls and new event deliveries from that computer across all Bots—without blocking normal commands or file edits, and without needing a Daemon update. If a computer's credentials ever leak, [revoke its connection](#disconnect-and-stop-a-computer) and re-pair.
 
 ## Update a connected Daemon
 
-The Daemon is the Astral service running on a connected computer. For a remote computer, use **Daemon maintenance → Update Daemon** in its details. The server-machine Daemon updates with Desktop or Server.
+The Daemon is the Astral background service running on each connected computer. The host Daemon updates with Desktop or Server; update remote computers from their details via **Daemon maintenance → Update Daemon**.
 
-Updating interrupts running tasks, so finish or stop important work first. Astral downloads, verifies, and restarts the service. Check its version after it reconnects. Computer identity, credentials, and working files remain. If the Daemon is newer than the Server, you can also arrange a Desktop or Server update.
+:::caution[Updates interrupt active tasks]
+Updating restarts the background service, so finish or stop important work first. Computer identity, credentials, and working files stay intact.
+:::
 
-For an offline computer, an unsupported managed update, or a failed update, use the command provided in the same section. Run a native computer's command on that computer, and a container's command on its host. Native updates keep the original enrollment user's permissions.
+If a machine is offline or managed update fails, run the update command shown in the same section directly on that machine (or on the container host).
 
-## Background services
+## When the target Computer cannot reach GitHub
 
-The remote background service belongs to the system user who ran the enrollment command: a user LaunchAgent on macOS, user systemd on Linux, or a scheduled task on Windows. Choosing another user changes which files the Bot can access.
+If GitHub is unreachable from the target computer, set a download proxy in its terminal before pasting the full enrollment or update command (only installer scripts and release downloads use this proxy—normal computer-to-Server traffic does not; see [download proxy guide](/docs/hosting/server/#when-github-is-unreachable)):
 
-An ordinary Linux account needs working user services before background enrollment. Enrollment does not elevate it or automatically configure lingering to keep it running after logout. To enroll as root, log in as root or run `sudo -i` before pasting the full command, avoiding another account's environment. The Bot's commands will then have root permissions.
+```sh
+# macOS / Linux (clear with: unset ASTRAL_GITHUB_PROXY)
+export ASTRAL_GITHUB_PROXY=https://gh-proxy.org/
+```
 
-Root background enrollment prepares user services and enables lingering so they can run without a login session. A failed preparation stops before pairing. Lingering affects the whole account; uninstalling Astral does not disable it or stop the whole user manager. Foreground and container enrollment skip this preparation.
+```powershell
+# Windows PowerShell (clear with: $env:ASTRAL_GITHUB_PROXY = '')
+$env:ASTRAL_GITHUB_PROXY = 'https://gh-proxy.org/'
+```
+
+## Quick troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Stuck waiting for enrollment | Read the terminal output on the target machine and verify it can reach the Server address. |
+| Download fails during install | Set `ASTRAL_GITHUB_PROXY` above; unpublished source builds require [Build from source](/docs/hosting/build-from-source/). |
+| Existing `astral` command reported | The installer won't overwrite another binary. Remove any manually added old `astral.exe` folder from PATH, reopen the terminal, and rerun (don't delete files of a running service). |
+| Online, but missing in a session | Grant permission in that Bot's **Computer access** settings. |
+| Cannot read a file | Verify the file lives on this computer and is readable by the service's OS account. |
+| Keeps dropping during large transfers | Update Astral Server (or Desktop) and the Daemon on each involved computer. |
 
 ## Disconnect and stop a computer
 
-Stop affected sessions and check for remaining work, then choose the action that matches your aim:
+Stop active sessions first, then pick the level you need:
 
-- To remove one Bot's access, revoke permission in that Bot's Computer access settings.
-- To disconnect the computer from all Bots, choose **Revoke connection** in its details. You can then delete its Astral registration.
-- To stop the background service, run these commands on the target as the user who enrolled it.
-
-```sh
-astral computer service stop
-astral computer service status
-```
-
-Use `astral computer service start` when you want it running again. For longer-term removal, uninstall the service:
+- **Remove one Bot's access:** uncheck the computer in that Bot's **Computer access**.
+- **Disconnect from all Bots:** select **Revoke connection** in computer details (you can then delete its registration).
+- **Stop or uninstall the background service** (run as the user who enrolled it):
 
 ```sh
-astral computer service uninstall
+astral computer service stop      # Pause (use start to resume, status to inspect)
+astral computer service uninstall # Remove the background service
 ```
 
-If several instances are installed, select the intended one. For unattended commands, add `--root /path/to/computer` to specify its data directory. Copy the path from Computer details if an older custom directory is not discovered.
+:::caution[What deleting a registration does]
+- **Permanently deleting a registration** removes all event wake-up endpoints on that computer and clears buffered events not yet delivered to a session (existing session history and other computers' events stay intact).
+- **Working files are kept.** Deleting a registration does not stop or uninstall the remote Daemon or delete Docker containers/volumes—manage containers on their host.
+:::
 
-Permanently deleting a Computer’s Astral registration also deletes all event endpoints belonging to it and clears its events that have not entered conversation context. Existing conversation history and events from other Computers remain, including when they share the same target conversation. Revoking a connection or removing one Bot’s access does not perform this deletion.
+<details class="astral-doc-details">
+<summary>Connection IP, slow networks, Linux background services, and multiple instances</summary>
 
-Revoking access blocks subsequent operations; it does not undo completed file changes. Deleting the registration or uninstalling the service keeps working files. Deleting a registration does not stop or uninstall the Daemon, or remove containers and volumes. Stop containers through the host's container manager and back up work before deletion. Desktop manages its local service with the app and its background-running settings.
+- **Connection IP & trusted proxies:** Online computers show **Connection IP** in details—the peer address seen by Server, or the forwarded client IP when behind a [configured trusted proxy](/docs/hosting/server-options/#a-proxy-on-another-machine) such as Cloudflare Tunnel.
+- **Slow or dropped links:** Slow links delay output while Astral buffers command output on the machine. Once a disconnect is confirmed, running commands are stopped and do not auto-restart on reconnect; check file state before re-running. Closing a browser tab never disconnects a computer.
+- **OS service types & Linux lingering:** macOS uses a user LaunchAgent, Linux uses user systemd, and Windows uses a user scheduled task. Ordinary Linux accounts need working user services and do not automatically enable lingering. To enroll as `root`, log in as root or run `sudo -i` first—root background enrollment sets up user services and lingering automatically (uninstalling Astral does not disable account-wide lingering; foreground and container modes skip this).
+- **Multiple instances:** Follow the prompt when running `astral computer service`, or pass `--root /path/to/computer` for non-interactive commands (copy legacy custom paths from computer details). Desktop manages its local service via its app settings.
+
+</details>

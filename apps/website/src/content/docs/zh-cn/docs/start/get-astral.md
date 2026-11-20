@@ -11,18 +11,34 @@ description: "在自己的电脑上安装 Astral，或选择在长期运行的�
 
 ## 选择桌面安装包
 
-<p><span data-astral-release-status data-fallback-version="0.1.13" data-latest-prefix="最新发行版：" aria-live="polite">可用版本：v0.1.13</span> · <a data-astral-release-notes href="https://github.com/oines/astral/releases/tag/v0.1.13">发行说明、全部文件与校验和</a> · <a href="https://github.com/oines/astral/releases/latest">在 GitHub 查看最新版</a></p>
+<p><span data-astral-release-status data-fallback-version="0.1.45" data-latest-prefix="最新发行版：" aria-live="polite">可用版本：v0.1.45</span> · <a data-astral-release-notes href="https://github.com/oines/astral/releases/tag/v0.1.45">发行说明、全部文件与校验和</a> · <a href="https://github.com/oines/astral/releases/latest">在 GitHub 查看最新版</a></p>
+
+<div class="astral-download-panel" data-astral-download-panel data-locale="zh-cn" data-pagefind-ignore hidden>
+  <div class="astral-download-panel-head">
+    <strong data-astral-panel-heading></strong>
+    <p data-astral-panel-note></p>
+  </div>
+  <div class="astral-download-panel-actions">
+    <a class="astral-download-primary" data-astral-panel-primary href="#下载桌面版"></a>
+    <a class="astral-download-secondary" data-astral-panel-secondary href="#下载桌面版"></a>
+  </div>
+</div>
+
+<label class="astral-mirror-toggle" data-astral-mirror-wrap data-pagefind-ignore hidden>
+  <input type="checkbox" data-astral-mirror />
+  <span>GitHub 下载较慢或失败时，切换为第三方 GH-Proxy 镜像链接</span>
+</label>
 
 先确认自己的电脑类型：Mac 使用 Apple M 系列芯片时选“Apple 芯片”，使用 Intel 时选“Intel”；采用 Intel 或 AMD 处理器的 Windows/Linux 电脑选 x64 或 x86_64，ARM 设备选 ARM64。
 
 | 平台 | 架构 | 下载 |
 | --- | --- | --- |
-| macOS | Apple 芯片 | <a data-astral-download="mac-arm64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-mac-arm64.dmg">DMG</a> |
-| macOS | Intel | <a data-astral-download="mac-x64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-mac-x64.dmg">DMG</a> |
-| Windows | x64 | <a data-astral-download="win-x64-exe" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-win-x64.exe">EXE 安装包</a> |
-| Windows | ARM64 | <a data-astral-download="win-arm64-exe" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-win-arm64.exe">EXE 安装包</a> |
-| Linux | x86_64 | <a data-astral-download="linux-x64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-x86_64.AppImage">AppImage</a> · <a data-astral-download="linux-x64-deb" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-amd64.deb">DEB</a> |
-| Linux | ARM64 | <a data-astral-download="linux-arm64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-arm64.AppImage">AppImage</a> · <a data-astral-download="linux-arm64-deb" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-arm64.deb">DEB</a> |
+| macOS | Apple 芯片 | <a data-astral-download="mac-arm64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-mac-arm64.dmg">DMG</a> |
+| macOS | Intel | <a data-astral-download="mac-x64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-mac-x64.dmg">DMG</a> |
+| Windows | x64 | <a data-astral-download="win-x64-exe" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-win-x64.exe">EXE 安装包</a> |
+| Windows | ARM64 | <a data-astral-download="win-arm64-exe" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-win-arm64.exe">EXE 安装包</a> |
+| Linux | x86_64 | <a data-astral-download="linux-x64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-linux-x86_64.AppImage">AppImage</a> · <a data-astral-download="linux-x64-deb" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-linux-amd64.deb">DEB</a> |
+| Linux | ARM64 | <a data-astral-download="linux-arm64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-linux-arm64.AppImage">AppImage</a> · <a data-astral-download="linux-arm64-deb" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-linux-arm64.deb">DEB</a> |
 
 ## 安装并打开
 
@@ -49,7 +65,7 @@ curl --fail --silent --show-error --location --proto '=https' --proto-redir '=ht
 
 ## GitHub 下载失败时
 
-可以使用第三方 [GH-Proxy 下载代理](https://gh-proxy.com/docs/github-accelerator/)。对桌面安装包：
+可以直接勾选上方的“切换为第三方 GH-Proxy 镜像链接”开关，再点击任意桌面下载链接；也可以手动使用第三方 [GH-Proxy 下载代理](https://gh-proxy.com/docs/github-accelerator/)：
 
 1. 复制上表中安装包的完整链接。
 2. 在链接开头加上 `https://gh-proxy.org/`，中间不加空格。

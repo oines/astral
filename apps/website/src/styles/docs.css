@@ -60,27 +60,67 @@
 .content-panel + .content-panel { border-top: 0; padding-top: 10px; }
 h1#_top { letter-spacing: -.04em; font-weight: 550; line-height: 1.3; }
 .sl-markdown-content { font-size: 15px; }
-.sl-markdown-content :is(h2,h3,h4) { font-weight: 550; letter-spacing: -.02em; }
-.sl-markdown-content h2 { margin-top: 2.5em; }
+.sl-markdown-content :is(h2,h3,h4) { font-weight: 550; letter-spacing: -.018em; }
+:lang(zh-CN) .sl-markdown-content :is(h1,h2,h3,h4) { letter-spacing: -.01em; }
+.sl-markdown-content h2 { margin-top: 2.6em; padding-top: 1.1em; border-top: 1px solid var(--line); }
+.sl-markdown-content h2:first-of-type { margin-top: 2em; }
 .sl-markdown-content :is(p,li) { line-height: 1.85; }
-.sl-markdown-content a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-.sl-markdown-content a:hover { color: var(--ink); }
-.sl-markdown-content :not(pre) > code { border-radius: 3px; padding: .13em .3em; font-size: .85em; }
-.sl-markdown-content blockquote { background: var(--canvas); border-color: var(--line); color: var(--muted); font-size: 14px; padding: 12px 18px; }
-.sl-markdown-content table { font-size: 13px; }
-.sl-markdown-content :is(th,td) { padding: .75em 1em .75em 0; border-color: var(--line); }
-.sl-markdown-content th { font-weight: 550; }
-.expressive-code { --ec-brdCol: var(--line); --ec-brdRad: 7px; --ec-codeFontSize: .8rem; margin-block: 24px; }
+.sl-markdown-content :is(ul,ol) > li + li { margin-top: .45em; }
+.sl-markdown-content a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 42%, transparent); transition: color 140ms, text-decoration-color 140ms; }
+.sl-markdown-content a:hover { color: var(--ink); text-decoration-color: var(--ink); }
+.sl-markdown-content :not(pre) > code { border-radius: 4px; padding: .15em .38em; font-size: .85em; background: var(--surface); }
+.sl-markdown-content blockquote { background: var(--canvas); border: 1px solid var(--line); border-inline-start: 3px solid var(--line-strong); border-radius: 0 7px 7px 0; color: var(--ink); font-size: 14.5px; padding: 14px 18px; }
+.sl-markdown-content table { font-size: 13.5px; width: 100%; border-collapse: collapse; }
+.sl-markdown-content :is(th,td) { padding: .75em 1em; border-color: var(--line); text-align: left; vertical-align: top; }
+.sl-markdown-content th { font-weight: 550; background: var(--canvas); color: var(--ink); }
+.expressive-code { --ec-brdCol: var(--line); --ec-brdRad: 8px; --ec-codeFontSize: .8rem; margin-block: 22px; }
 .right-sidebar { border-left-color: var(--line); }
 .right-sidebar-panel { padding-top: 39px; }
 .right-sidebar a { font-size: 12px; }
-.pagination-links a { box-shadow: none; border-color: var(--line); border-radius: 7px; padding: 16px 20px; }
-.pagination-links .link-title { font-size: 16px; font-weight: 500; }
-.starlight-aside { border-radius: 6px; border: 1px solid var(--line); background: var(--canvas); color: var(--ink); padding: 16px 20px; }
-.starlight-aside .starlight-aside__title { font-size: 14px; font-weight: 550; color: var(--ink); }
-.starlight-aside .starlight-aside__content { font-size: 14px; }
+.pagination-links a { box-shadow: none; border-color: var(--line); border-radius: 8px; padding: 16px 20px; transition: border-color 140ms, background 140ms; }
+.pagination-links a:hover { border-color: var(--subtle); background: var(--canvas); }
+.pagination-links .link-title { font-size: 15.5px; font-weight: 500; }
+.starlight-aside { border-radius: 7px; border: 1px solid var(--line); border-inline-start-width: 3px; background: var(--canvas); color: var(--ink); padding: 15px 18px; margin-block: 22px; }
+.starlight-aside--note { border-inline-start-color: var(--accent); }
+.starlight-aside--tip { border-inline-start-color: var(--ok); }
+.starlight-aside--caution { border-inline-start-color: #b67b2a; }
+.starlight-aside--danger { border-inline-start-color: #b44a3e; }
+:root[data-theme='dark'] .starlight-aside--caution { border-inline-start-color: #d6a054; }
+:root[data-theme='dark'] .starlight-aside--danger { border-inline-start-color: #de7a6f; }
+.starlight-aside .starlight-aside__title { font-size: 13.5px; font-weight: 550; color: var(--ink); }
+.starlight-aside .starlight-aside__content { font-size: 14px; color: var(--muted); }
+.starlight-aside .starlight-aside__content strong { color: var(--ink); }
 .header .mobile-menu-toggle { display: none; }
 .sl-menu-button { box-shadow: none !important; border-radius: 6px !important; background: transparent !important; color: var(--ink) !important; }
+
+/* Download recommendation bar & mirror toggle on Get Astral */
+.astral-download-panel { margin: 18px 0 14px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); display: flex; flex-direction: column; gap: 14px; }
+.astral-download-panel[hidden], .astral-mirror-toggle[hidden] { display: none !important; }
+.astral-download-panel-head strong { display: block; font-size: 14px; font-weight: 550; color: var(--ink); line-height: 1.5; }
+.astral-download-panel-head p { margin: 4px 0 0 !important; font-size: 13px; color: var(--muted); line-height: 1.7; }
+.astral-download-panel-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.sl-markdown-content a.astral-download-primary { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 16px; border-radius: 7px; background: var(--ink); color: var(--page); text-decoration: none; font-size: 13.5px; font-weight: 500; transition: background 140ms; }
+.sl-markdown-content a.astral-download-primary:hover { background: color-mix(in srgb, var(--ink) 84%, var(--page)); color: var(--page); }
+.sl-markdown-content a.astral-download-secondary { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 14px; border-radius: 7px; border: 1px solid var(--line); background: var(--raised); color: var(--ink); text-decoration: none; font-size: 13px; font-weight: 450; transition: background 140ms, border-color 140ms; }
+.sl-markdown-content a.astral-download-secondary:hover { background: var(--surface); border-color: var(--subtle); color: var(--ink); }
+.astral-mirror-toggle { display: inline-flex; align-items: center; gap: 9px; margin: 4px 0 18px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--page); font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+.astral-mirror-toggle:hover { border-color: var(--subtle); color: var(--ink); }
+.astral-mirror-toggle input { width: 15px; height: 15px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+
+/* Inline architecture diagrams in documentation */
+.astral-diagram { margin: 24px 0; padding: 18px 18px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); }
+.astral-diagram svg { display: block; width: 100%; height: auto; }
+.astral-diagram figcaption { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.7; color: var(--muted); }
+
+/* Collapsible detailed behavior rules inside task-first guides */
+.sl-markdown-content details.astral-doc-details { margin: 18px 0 22px; padding: 0 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--canvas); }
+.sl-markdown-content details.astral-doc-details > summary { padding: 12px 0; font-size: 13.5px; font-weight: 500; color: var(--ink); cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sl-markdown-content details.astral-doc-details > summary::-webkit-details-marker { display: none; }
+.sl-markdown-content details.astral-doc-details > summary::after { content: '+'; font-size: 16px; line-height: 1; color: var(--muted); font-weight: 400; }
+.sl-markdown-content details.astral-doc-details[open] > summary::after { content: '−'; }
+.sl-markdown-content details.astral-doc-details[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.sl-markdown-content details.astral-doc-details > p:last-child { margin-bottom: 14px; }
+.sl-markdown-content details.astral-doc-details p { font-size: 14px; color: var(--muted); }
 @media (max-width: 1100px) {
   .header .site-header { gap: 16px; }
   .header .site-nav { gap: 17px; }

@@ -11,18 +11,34 @@ To keep Astral on a separate Linux server and use it through a browser, follow [
 
 ## Choose a desktop download
 
-<p><span data-astral-release-status data-fallback-version="0.1.13" data-latest-prefix="Latest release: " aria-live="polite">Available version: v0.1.13</span> · <a data-astral-release-notes href="https://github.com/oines/astral/releases/tag/v0.1.13">Release notes, all assets, and checksums</a> · <a href="https://github.com/oines/astral/releases/latest">Latest on GitHub</a></p>
+<p><span data-astral-release-status data-fallback-version="0.1.45" data-latest-prefix="Latest release: " aria-live="polite">Available version: v0.1.45</span> · <a data-astral-release-notes href="https://github.com/oines/astral/releases/tag/v0.1.45">Release notes, all assets, and checksums</a> · <a href="https://github.com/oines/astral/releases/latest">Latest on GitHub</a></p>
+
+<div class="astral-download-panel" data-astral-download-panel data-locale="en" data-pagefind-ignore hidden>
+  <div class="astral-download-panel-head">
+    <strong data-astral-panel-heading></strong>
+    <p data-astral-panel-note></p>
+  </div>
+  <div class="astral-download-panel-actions">
+    <a class="astral-download-primary" data-astral-panel-primary href="#download-desktop"></a>
+    <a class="astral-download-secondary" data-astral-panel-secondary href="#download-desktop"></a>
+  </div>
+</div>
+
+<label class="astral-mirror-toggle" data-astral-mirror-wrap data-pagefind-ignore hidden>
+  <input type="checkbox" data-astral-mirror />
+  <span>Switch desktop links to the third-party GH-Proxy mirror (when GitHub is slow or unreachable)</span>
+</label>
 
 For a Mac with an Apple M-series chip, choose Apple silicon; for an Intel Mac, choose Intel. Windows and Linux computers with Intel or AMD processors use x64 or x86_64 packages. ARM devices use ARM64.
 
 | Platform | Architecture | Download |
 | --- | --- | --- |
-| macOS | Apple silicon | <a data-astral-download="mac-arm64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-mac-arm64.dmg">DMG</a> |
-| macOS | Intel | <a data-astral-download="mac-x64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-mac-x64.dmg">DMG</a> |
-| Windows | x64 | <a data-astral-download="win-x64-exe" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-win-x64.exe">EXE installer</a> |
-| Windows | ARM64 | <a data-astral-download="win-arm64-exe" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-win-arm64.exe">EXE installer</a> |
-| Linux | x86_64 | <a data-astral-download="linux-x64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-x86_64.AppImage">AppImage</a> · <a data-astral-download="linux-x64-deb" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-amd64.deb">DEB</a> |
-| Linux | ARM64 | <a data-astral-download="linux-arm64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-arm64.AppImage">AppImage</a> · <a data-astral-download="linux-arm64-deb" href="https://github.com/oines/astral/releases/download/v0.1.13/Astral-0.1.13-linux-arm64.deb">DEB</a> |
+| macOS | Apple silicon | <a data-astral-download="mac-arm64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-mac-arm64.dmg">DMG</a> |
+| macOS | Intel | <a data-astral-download="mac-x64-dmg" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-mac-x64.dmg">DMG</a> |
+| Windows | x64 | <a data-astral-download="win-x64-exe" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-win-x64.exe">EXE installer</a> |
+| Windows | ARM64 | <a data-astral-download="win-arm64-exe" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-win-arm64.exe">EXE installer</a> |
+| Linux | x86_64 | <a data-astral-download="linux-x64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-linux-x86_64.AppImage">AppImage</a> · <a data-astral-download="linux-x64-deb" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-linux-amd64.deb">DEB</a> |
+| Linux | ARM64 | <a data-astral-download="linux-arm64-appimage" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-linux-arm64.AppImage">AppImage</a> · <a data-astral-download="linux-arm64-deb" href="https://github.com/oines/astral/releases/download/v0.1.45/Astral-0.1.45-linux-arm64.deb">DEB</a> |
 
 ## Install and open Astral
 
@@ -49,7 +65,7 @@ See [Install Server](/docs/hosting/server/) for requirements, remote access, and
 
 ## When GitHub downloads fail
 
-You can use the third-party [GH-Proxy download service](https://gh-proxy.com/en/docs/github-accelerator/). For a desktop package:
+You can check “Switch desktop links to the third-party GH-Proxy mirror” above and download directly, or manually use the third-party [GH-Proxy download service](https://gh-proxy.com/en/docs/github-accelerator/):
 
 1. Copy its complete download link from the table above.
 2. Add `https://gh-proxy.org/` at the beginning, with no space.

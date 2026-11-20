@@ -1,121 +1,81 @@
 ---
-title: "Use sessions"
-description: "Start a task, add instructions while it runs, and return to earlier work."
+title: "Sessions and subagents"
+description: "Run tasks, steer mid-turn, delegate parallel work to subagents, and manage archiving, privacy, and storage."
 ---
 
-A session is where you work with a Bot on a task. You can ask follow-up questions, change the brief, and return later with the earlier discussion still available. After first-time setup, you can start with the existing Astral Bot.
+A **session** is an ongoing workspace where you and a Bot work on a task—ask follow-ups, adjust requirements, switch computers, and return anytime with context intact.
 
-You need an available [model](/docs/usage/models/) and an [online computer the Bot can use](/docs/computers/connect/). The model interprets your request; the computer runs operations and holds the files.
+## Start a task and steer mid-run
 
-## Start a task
+Open a new session, verify the selected computer is where working files belong, and state the goal, source files, and constraints:
 
-Create a session in the main interface and check that its selected computer is where you want the working files to live. Describe the result, source material, and important limits. For example:
+> Create weekly-plan.md in the current working directory with Monday through Friday and three empty slots per day. Send me a file link and confirm which computer and folder you used.
 
-> Create weekly-plan.md in the current working directory. Include Monday through Friday with three empty task slots for each day. Give me a file link and tell me which computer and folder you saved it in.
+When the Bot is busy, choose how to deliver follow-up input:
 
-Open the finished file to check its contents. See [Files and results](/docs/usage/files/) for providing your own material and downloading output.
+| Mode | When to use it | How to send |
+| --- | --- | --- |
+| **Queue (default)** | Wait until the current turn finishes (e.g., “Put the results in a table next”). Editable and reorderable while waiting. | Normal send |
+| **Steer** | Course-correct as soon as the Bot can accept input (e.g., “Only include this year's data”). Already-started actions are not undone. | Pick **Steer** in input bar, or press `Cmd/Ctrl + Enter` |
 
-## Add instructions during work
-
-Choose how soon the Bot should handle the new message:
-
-- **Queue** waits until the current turn finishes. Use it for a next step such as “After that, put the results in a table.” You can edit, delete, or reorder queued messages that have not been processed.
-- **Steer** passes an instruction to the Bot as soon as it can accept input during the current work. Use it for corrections such as “Only include this year's data.” An operation that has already started is not automatically undone.
-
-Web input defaults to Queue. Choose the mode in the input area, or use Command/Ctrl+Enter to Steer directly. You can also send instructions from Astral to sessions connected to messaging platforms. For messages sent on those platforms, see [Groups and proactive participation](/docs/chat/groups/).
-
-## Inspect tool activity
-
-Expand an activity line, then select a tool call to see what the Bot did and its result:
-
-- **Image reads:** view thumbnails in the expanded result and select an image to open the larger preview.
-- **Subagent controls:** see which subagent was queried, given another instruction, assigned a model, stopped, or deleted, together with the returned status or error.
-- **Message sends:** review the destination, text, attachments, reply target, and send result. An unconfirmed result stays unconfirmed until there is a definite outcome.
-
-The same details are available when reading a subagent's conversation. Expanding a historical operation only displays its record; it does not run it again.
+Expand any activity line to inspect commands, image thumbnails, subagent controls, and chat send results (viewing history never re-runs an action).
 
 ## Delegate background work
 
-The original conversation and its subagents use a common source for system instructions and tool descriptions. After updating Astral, existing subagents use the current instructions in new requests. Applying a Bot persona also updates their next new request, including during an active task. Requests already frozen and their retries retain their original content; configuration changes do not start idle subagents.
+For long or parallel work, the Bot can hand subtasks to **subagents**—or you can ask directly:
 
-For a longer task or work that can proceed in parallel, the Bot can delegate parts to **subagents**. You can ask for this explicitly, for example:
+> Check the backend and frontend separately with subagents. Keep the review read-only and summarize the risks here when finished.
 
-> Check the backend and frontend separately with subagents. Keep the review read-only and summarize the risks here when the checks finish.
+- **Keep working in the main thread:** you can keep talking in the original session while subagents run.
+- **Inspect live activity:** click any subagent status line to open its full conversation and tool logs in the right-hand panel; switch tabs without losing your reading spot or draft.
+- **Reuse and shared files:** subagents keep their history for follow-ups and start on the parent's current computer and directory. Ask for read-only checks or separate directories when tasks shouldn't touch the same files.
 
-You can ask the Bot to name subagents, such as “Source check” and “Frontend review.” If it leaves the name blank, Astral assigns a short code that stays the same. The initial task text is not used as the name, and follow-up instructions do not rename the subagent.
+<details class="astral-doc-details">
+<summary>Subagent naming, model switching, timelines, and compatibility details</summary>
 
-Only the root Bot in the original conversation can create subagents: original conversation → subagent. Subagents cannot delegate further. Subagents created at deeper levels in an earlier version remain available in their original positions; model changes and session cleanup still include their complete tree.
+- **Hierarchy & naming:** Only the user-facing root Bot can create subagents (deeper subagents from earlier versions stay viewable and are included in model switches and cleanup). Ask the Bot to name subagents; unnamed ones receive a permanent short code.
+- **Panel & timeline:** The subagent list groups **Running** above **Ended** (most recent first). The timeline logs starts, completions, failures, and stops. Deleting a subagent keeps status entries but closes access to its transcript.
+- **Progress & control:** The Bot can finish its turn while waiting and wake when a subagent completes or errors; progress notes reach the parent without interrupting it. Manage or stop subagents through the original conversation (stopping the main session alone does not stop background subagents; permanently deleting the main session deletes its full subagent tree).
+- **Instructions & model changes:** Subagents share system instructions, tool descriptions, and Bot persona updates on new requests (in-flight requests keep original settings). Changing the model in the main session input bar updates all existing subagents; you can also ask the Bot to change one named subagent's model without affecting others or starting a new turn. Ordinary forks keep independent settings.
 
-You continue using the original conversation while the subagents work. The Bot can also delegate partway through a task. It can finish its current round while waiting for results and resume when a subagent finishes or encounters a run error. It can then review the result or error, choose another model, retry, assign a follow-up, or report back to you. The notification preserves what happened during the run; the parent assesses whether the task itself succeeded. Subagents are instructed to report useful progress as they work and to end their round after reporting a blocker that needs outside action. Progress reports reach the parent without interrupting it for every update.
+</details>
 
-The subagent list shows **Running** above **Ended** (including failed runs), with the most recent run activity first in each group.
+## Stop, continue, and switch computers
 
-Select a subagent’s status line in the conversation to open its full conversation and tool activity in the right-hand panel. For deeper subagents created in an earlier version, select their status lines to open them in the same workspace. Switch between open conversations using the tabs at the top. Each tab retains its reading position, and your original conversation and draft stay in place.
-
-The timeline records when each round starts and ends, such as “Source check started working” and “Source check completed,” including failures and confirmed stops. Older subagent status records load together with the corresponding conversation history. Reusing a subagent adds new records, which remain after a refresh or reconnection. After a subagent is deleted, its existing status records remain, but its conversation can no longer be opened.
-
-Subagent conversations belong to the original conversation. They are read-only and do not appear as separate conversations in the main sidebar. A parent can read the conversations, tool activity and run errors throughout its delegated subagent tree to investigate a problem before deciding how to continue. Managing a subagent still goes through its direct parent. Send corrections, follow-up requests, or instructions to stop a subtask in the original conversation; the Bot manages its own subagents. Stopping the original conversation alone does not stop every subagent working in the background. Permanently deleting it also removes all of its subagents, including those that started with independent histories and any deeper subagents from earlier versions.
-
-To change the model or reasoning settings for this work, use the picker in the original conversation's input area. The choice updates all existing subagents, including deeper levels, and replaces any model they were previously assigned. Requests already sent keep their original settings; following requests and subtasks that have not started use the new choice. The selection survives a restart. New subagents inherit the latest choice by default; the Bot can still choose another model for a new subagent, and your next change in the original conversation updates it again. Other conversations and ordinary copies made with **Fork from here** keep their own settings.
-
-You can also ask the Bot to change the model and reasoning settings for one existing subagent. Its parent changes only that subagent; any subagents below it keep their own settings. For example, ask for a more capable model for “Source check” while the other work continues as before. A model change alone does not start another round of work. Your next change in the original conversation's picker updates all existing subagents again.
-
-Subagents retain their histories after a round ends, so the Bot can reuse them for related follow-up work. They use the same Bot's permitted computers and normally start on the parent's current computer and working directory. Their files may be shared with the original conversation and other subagents. Ask for read-only checks or separate working directories when tasks should not modify the same files.
-
-## Stop and continue
-
-Select Stop and wait for the session to leave its running state. Files already changed and messages already sent remain. Before continuing important work, review the last execution steps and check the actual files.
-
-When **Continue** is available, resume using the existing context or send revised instructions first. For example: “Tell me which files have already changed before doing the remaining work.” If the computer is offline or the model connection failed, restore that connection first.
-
-You can change the selected computer while the session is idle. During a task, the Bot can also use other computers it has permission to access. Files do not move with that selection; see [Work across computers](/docs/computers/across-computers/).
+- **Stop:** click **Stop** and wait for the session to go idle. Files already modified and messages already sent remain—review the last tool steps before resuming.
+- **Continue:** resume when **Continue** appears, or send revised guidance first (e.g., “List which files changed before finishing”).
+- **Switch computers:** pick another computer when idle, or let the Bot switch across authorized machines mid-task. Files stay on their original machines—see [Work across computers](/docs/computers/across-computers/).
 
 ## Separate unrelated work
 
-Keep follow-up questions and revisions in the same session so the Bot can use the earlier discussion. Start a separate session for unrelated work, such as a photo collection and a financial report.
+Start a new session for unrelated tasks. Organize existing ones with:
 
-Archiving seals an ordinary session and removes it from the sidebar, including when it is currently open. It stops the session and its subagents and disables schedules and event endpoints targeting it. Files already changed and messages already sent remain. Sessions bound to a platform chat use the chat's name and cannot be renamed or archived. To start fresh in a connected chat while keeping the old history, [replace its session](/docs/chat/overview/).
-
-An old session link still opens its history for reading, exporting, or forking into a new independent session. Sending, continuing, compaction, and model or computer changes are unavailable while archived. Choose **Restore session** on that page, or restore it through **Settings → Data & storage → your Bot → Other sessions**, before working in the original session again. Restoring does not continue stopped work or re-enable its schedules and event endpoints; resume those explicitly when needed.
-
-Copying or forking a session lets you explore another approach from existing work. The copy is independent: later messages do not synchronize, and schedules are not copied.
+- **Archive:** seals an ordinary session and removes it from the sidebar, stopping the session and its subagents and disabling schedules/event endpoints targeting it (changed files and sent messages stay). Old links remain readable, exportable, and forkable; click **Restore session** on the page or go to **Settings → Data & storage → your Bot → Other sessions** to reopen (resume work or re-enable schedules manually afterward).
+- **Fork from here:** creates an independent copy from any message to try another direction (messages don't sync, and schedules aren't copied).
+- **Chat-bound sessions:** use the chat name and cannot be renamed or archived; use [Change conversation](/docs/chat/overview/) to start fresh.
 
 ## Private sessions
 
-If one Bot handles both personal work and group chats, make personal sessions private to prevent its other sessions from looking up those records.
+If one Bot handles both personal work and group chats, select **Make private** from the sidebar menu on personal sessions.
 
-Choose **Make private** in the sidebar session menu. You can still open and manage it through Desktop or a browser.
+- **What it protects:** hides the session, its bound chat, its schedules, and its subagents (plus future forks) from built-in lookups by other sessions of the same Bot. You can still open and manage it in Desktop or a browser.
+- **What stays separate:** history is still stored, requests still go to your model provider, and files on shared computers need OS-level isolation—see [Permissions and privacy](/docs/start/safe-use/).
 
-Other sessions cannot discover, read, or change an ordinary private session through the built-in API. This also protects its currently bound chat and schedules targeting it. The private session can still read its own resources, other non-private sessions of the same Bot, and its complete delegated subagent tree. Ordinary forks inherit its private setting. When a chat is rebound, access follows the new session relationship.
+## Long conversations and timezone
 
-Subagents inherit their original conversation’s private setting whether they copy existing context or start with an independent history. Changing that setting updates existing subagents and their descendants too. A private subagent can be read by itself and every parent above it in its delegation chain, so they can review all levels of their work; other sessions cannot look it up or read it.
-
-Private sessions still retain history and send task context to the selected model service. Files shared on a computer and information already copied elsewhere need separate protection. Read [Use Astral safely](/docs/start/safe-use/) before working with sensitive material.
-
-## Long conversations
-
-As a session grows, Astral asks the model to summarize older context while retaining recent messages. The original history remains available. Incoming chat messages and pictures use the model's context space even when the Bot does not reply. If summarization fails, existing context and pending messages remain; address the displayed error before continuing.
-
-## Timezone
-
-Open **Settings → General → Timezone** to choose the timezone used for displayed dates and schedules. **Follow system** uses the host running Astral. If you access it from another location, you may want to choose a timezone explicitly.
-
-Changing this setting updates displayed times across clients without changing when past messages occurred. See [Scheduled tasks](/docs/usage/schedules/) to arrange future work.
+- **Automatic compaction:** as a session grows long, Astral summarizes older context while keeping recent messages and full readable history. (Unanswered chat messages and images also consume context.) If compaction fails, existing context and pending messages stay safe until the error is fixed.
+- **Timezone:** set global display and schedule time under **Settings → General → Timezone**. **Follow system** uses the Astral host's timezone—choose explicitly if you access a remote Server from another region.
 
 ## Manage session and chat storage
 
-To reclaim storage, open **Settings → Data & storage**, review total usage, then select a Bot and find the relevant chat or session. Sizes marked “about” estimate content size for comparison; the overview shows actual disk use.
+Open **Settings → Data & storage** to check disk use and clean up per Bot (“about” sizes are estimates for comparison):
 
-An ordinary session must be archived and unbound from a chat before you can **permanently delete** it. Deletion removes its history, model-call records, pending messages, recall records, and schedules. It also permanently removes all its subagents and their descendants, including subagents with independent histories. Ordinary sessions created with **Fork from here**, working files on computers, and messages on external platforms remain.
+- **Permanently delete an ordinary session:** archive and unbind it from any chat first. Deletion removes history, model logs, pending messages, recall data, schedules, and all subagents—leaving forks, computer files, and external chat messages untouched.
+- **Clean up a connected chat:**
 
-For a connected chat, Astral keeps two kinds of records: the **IM archive** contains platform chat material, while the **session** contains the Bot's task history and execution records. Choose the action that matches what you want to remove:
-
-| Your aim | Action | Effect |
+| Goal | Action | Effect |
 | --- | --- | --- |
-| Remove older platform chat archives | **Clear IM archive** | Deletes archives before your chosen date. Messages awaiting processing stay temporarily. Session history and platform messages remain. |
-| Remove old archives regularly | **Archive retention** | The default is Keep forever. Choosing 30, 90, or 180 days immediately removes eligible old archives, then checks daily. Returning to Keep forever stops expiry but cannot restore deleted content. |
-| Remove the chat's current task history | **Clear session** | Stops work, permanently deletes the old session, its subagents, and its schedules, and creates a session with the same private setting. The IM archive, account settings, and platform messages remain. |
+| Remove older platform chat archives | **Clear IM archive** / **Archive retention** (30/90/180 days) | Removes IM archives before the cutoff while keeping session history and platform messages. |
+| Clear the chat's task history | **Clear session** | Stops work, deletes the old session, subagents, and schedules, and starts a fresh session with the same private setting; IM archive and platform messages remain. |
 
-Clearing the IM archive leaves material already included in a session. Clear that session separately if needed. To begin a new topic while keeping earlier work, use **Change conversation** instead.
-
-The list updates after cleanup; disk space may be reclaimed later. Follow any error shown for the affected action. If the connection drops, reconnect and check the result before repeating cleanup. See [Storage maintenance](/docs/hosting/maintenance/#review-and-clean-storage) for backups and application files.
+See [Updates and backups](/docs/hosting/maintenance/#review-and-clean-storage) for backups and application file cleanup.
