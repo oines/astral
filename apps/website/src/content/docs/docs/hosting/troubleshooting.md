@@ -1,6 +1,6 @@
 ---
-title: "When something goes wrong"
-description: "Find help for connection failures, failed tasks, offline computers, and missing chat replies."
+title: "Troubleshooting"
+description: "Quickly diagnose connection failures, stalled tasks, offline computers, and missing chat replies."
 ---
 
 Choose the situation closest to yours below. Keep any specific error shown on the page: it can identify whether the failure is in sign-in, a model connection, or an operation on a particular computer.

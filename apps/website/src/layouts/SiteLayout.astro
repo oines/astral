@@ -6,6 +6,8 @@ import '../styles/base.css';
 interface Props { locale: Locale; title: string; description: string; }
 const { locale, title, description } = Astro.props;
 const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
+const ogImagePath = locale === 'zh-cn' ? '/brand/og-zh-cn.png' : '/brand/og-en.png';
+const ogImage = Astro.site ? new URL(ogImagePath, Astro.site).href : ogImagePath;
 ---
 <!doctype html>
 <html lang={locale === 'en' ? 'en' : 'zh-CN'} data-theme="light">
@@ -19,7 +21,14 @@ const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : un
     <meta property="og:site_name" content="Astral" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta name="twitter:card" content="summary" />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
     <link rel="icon" type="image/svg+xml" href="/brand/astral-mark.svg" />
     <link rel="preload" href="/fonts/inter-latin-variable.woff2" as="font" type="font/woff2" crossorigin />
     {canonical && <link rel="canonical" href={canonical} />}
@@ -43,5 +52,13 @@ const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : un
   </body>
 </html>
 <style>
-  .marketing-header { position: sticky; top: 0; z-index: 20; background: var(--page); border-bottom: 1px solid var(--line); }
+  .marketing-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in srgb, var(--page) 86%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
 </style>

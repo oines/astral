@@ -1,36 +1,46 @@
 ---
-title: "Before your first task"
-description: "Prepare a model account, choose where tasks run, and try a simple task you can check."
+title: "Your first task"
+description: "Prepare a model account, confirm which computer runs tasks, and verify everything with a safe read-only check."
 ---
 
-On first launch, Astral guides you through two choices: a model and a computer. Follow that setup in the app. This page covers what to prepare beforehand and how to check that everything works.
+On first launch, Astral walks you through two steps: **connecting a model** and **choosing a computer**. Follow the in-app guide—this page tells you what to prepare beforehand and how to verify everything works end to end.
 
 ## Prepare a model account
 
-Astral uses the model service you connect to understand tasks. Start with a service you already have access to, and check how it connects:
+Pick a model provider you already have access to and prepare the credentials it uses:
 
-- **API key:** create a key in the service's developer portal or account console, ready to paste into Astral. Some presets include a **Get API key** link. The provider manages model access, usage allowance, and charges.
-- **Account sign-in:** if Astral offers sign-in for that service, follow its authorization prompt.
-- **A model service you host:** provide its API address and any required key. That address must be reachable from the machine running Astral.
+| Connection type | What to prepare |
+| --- | --- |
+| **API key** | Create a key in the provider's developer console (an application key, not your chat website password). Some presets include a **Get API key** link right in the form. |
+| **Account sign-in** | For providers with built-in sign-in, follow the browser authorization prompt. |
+| **Self-hosted / custom endpoint** | Have the Base URL and any required key ready. The machine running Astral must be able to reach that address. |
 
-An API key is a secret for applications to use; a chat website password cannot replace it. Whether an existing chat subscription works depends on the service's connection method and account permissions.
+:::tip[Remember to select a model]
+After saving a provider, pick at least one enabled model so setup can continue. If the list is empty or a model shows missing limits, see [Models and web search](/docs/usage/models/).
+:::
 
-After connecting a service, select an available model. If the list is empty or a model cannot be selected, use [Models and web search](/docs/usage/models/) to check authorization, allowance, or missing model information.
+## Check which computer will run tasks
 
-## Check where tasks will run
+- **Desktop app:** select the computer you are using right now.
+- **Server via browser:** **Astral host** refers to the server, not your laptop. To work on files on your laptop, upload them or [connect your laptop](/docs/computers/connect/) later.
 
-In the desktop app, you can start with your own computer. When accessing Server through a browser, **Astral host means the server**. To work on files from your laptop, upload them or [connect that laptop](/docs/computers/connect/).
+:::caution[First-time access and shared chats]
+Finishing setup authorizes the default Bot to read files and run commands on the selected computer. Start with test copies—and before connecting a public group chat, set up a [dedicated Bot and separate environment](/docs/start/safe-use/#use-a-separate-environment-for-public-groups).
+:::
 
-Completing setup grants the Bot access to files and commands on the selected computer. Use test material for your first attempts. Before connecting a shared group, arrange a [dedicated Bot and separate environment](/docs/start/safe-use/#use-a-separate-environment-for-public-groups).
-
-## Try a task you can verify
+## Verify with a read-only task
 
 Once the chat opens, send:
 
 > Tell me which computer you are using and the current working directory, then list the files in that directory. Do not change any files yet.
 
-Check the computer named in the execution record and the directory and file list returned. An empty directory is a valid result. This checks that the model can understand your request and that the computer can execute it.
+Check two things:
+1. Expand the tool activity and verify the computer name and directory match what you expect (an empty folder is fine).
+2. Make sure it **actually ran a computer tool** rather than answering only in text. If it didn't, ask it to check with its tools.
 
-If the assistant only answers in text, ask it to actually check using its computer tools. If it reports an error, distinguish a model connection problem from an offline computer, then follow [Troubleshooting](/docs/hosting/troubleshooting/).
+Once this succeeds, both your model connection and computer execution are ready. If an error appears, note whether it points to the model or the computer and check [Troubleshooting](/docs/hosting/troubleshooting/).
 
-Next, try [working with a file](/docs/usage/files/). Connecting [QQ, Feishu, or another chat platform](/docs/chat/overview/) can wait until that task succeeds.
+## Next steps
+
+- Try [Files and results](/docs/usage/files/) with a sample document to test uploading, previews, and downloads.
+- Once your first task works inside Astral, [connect Telegram, QQ, WeChat, or Feishu](/docs/chat/overview/).

@@ -1,54 +1,66 @@
 ---
-title: "Connect a chat platform"
-description: "Give Astral tasks in Telegram, QQ, Weixin, or Feishu and receive results in the same chat."
+title: "Connect a chat"
+description: "Send tasks from Telegram, QQ, WeChat, or Feishu and get answers and files right back in the same chat."
 ---
 
-A connected chat lets you give Astral tasks from your usual messaging app. It uses the model and computers you configured, then sends back the results or files you ask to share. Each chat has its own Astral conversation, keeping tasks and follow-up messages together.
+Once connected, you can message Astral from your everyday chat apps. It runs tasks on your authorized computers and sends back the answers or files you ask for. **Each connected chat maps to its own Astral session**, so you can inspect or continue the same work in either place.
 
-[Complete a task inside Astral](/docs/start/first-steps/) before connecting a platform. Astral must stay running to receive messages. To use it while your own computer is off, see [Running Astral](/docs/hosting/architecture/).
+:::tip[Verify inside Astral first]
+[Complete your first task](/docs/start/first-steps/) inside Astral before connecting a chat platform. Astral must stay running to receive messages—see [Desktop or Server?](/docs/hosting/architecture/) if you want it online while your laptop is closed.
+:::
 
-## Choose your connection method
+## 1. Choose a platform and connect an account
 
-Start at **Settings → Bots → your Bot → Connect a platform** and follow the guide for your account:
+Open **Settings → Bots → your Bot → Connect a platform** and follow the setup guide for your platform:
 
-| Account | Guide |
-| --- | --- |
-| Telegram bot | [Connect Telegram](/docs/chat/telegram/) and get a token through BotFather |
-| Regular QQ account or official QQ bot | [Connect QQ](/docs/chat/qq/) using NapCat or QQ Open Platform, respectively |
-| Bot authorized through a Weixin QR code | [Connect Weixin](/docs/chat/weixin/), currently for private chats |
-| Feishu enterprise custom-app bot | [Connect Feishu](/docs/chat/feishu/), including permissions, releases, and event configuration |
+| Platform | How it connects | Supported chats |
+| --- | --- | --- |
+| **[Telegram](/docs/chat/telegram/)** | Bot token from BotFather | Private chats, groups |
+| **[QQ](/docs/chat/qq/)** | Regular QQ (NapCat) or Official QQ Bot | Private chats, groups |
+| **[Weixin](/docs/chat/weixin/)** | QR-code authorized Bot | Private chats only |
+| **[Feishu](/docs/chat/feishu/)** | Enterprise custom-app bot (permissions, release, events) | Private chats, groups |
 
-One Astral Bot can connect several platform accounts, each with its own chats. Group members can ask the Bot to use its authorized computers and platform permissions. Use a dedicated Bot and a [separate execution environment](/docs/start/safe-use/) for public groups.
+One Astral Bot can connect multiple platform accounts, each managing its own credentials and allowed chats.
 
-## Choose chats after connecting the account
+:::caution[Isolate public groups]
+Group members can ask the Bot to use its authorized computers and chat-account permissions. Set up a dedicated Bot and [separate environment](/docs/start/safe-use/#use-a-separate-environment-for-public-groups) before connecting a public group.
+:::
 
-New accounts use **Only specified chats** with an empty list. The platform guide explains how to discover a chat or get its Chat ID; then add it under the account's **Connected chats**.
+## 2. Choose which chats to allow
 
-A new conversation starts with fresh work context. Choosing an existing conversation continues that context; it must belong to the same Bot and be unbound. Before connecting a group, check that any existing context is suitable for its members.
+New accounts start in **Only specified chats** mode (empty list), which is the safest default:
 
-You can instead allow **All chats the account can access**. A new private message, or the first group mention or reply addressed to the Bot, then creates a conversation automatically. This expands the Bot's chat access; keep specified mode if it should serve only a few chats.
+1. Follow the platform guide to discover the chat or copy its Chat ID, then add it under **Connected chats**.
+2. Choose either a **new session** for a clean slate or an unbound **existing session** from the same Bot (make sure any existing history is safe to share with a group).
+3. Switch to **All chats the account can access** only if you want new private messages or first group mentions/replies to create sessions automatically.
 
-## Confirm the connection with a new message
+## 3. Send a fresh message to verify
 
-After adding the chat, return to the platform and **send a new message**:
+Return to your chat app and send a **new message** (mention or reply to the Bot in a group; earlier discovery messages do not auto-run):
 
 > Please reply in this chat with “Connection successful” and tell me which computer you are using.
 
-Mention the Bot in a group or reply to a message it sent. Earlier discovery messages do not become tasks after authorization.
+Once you see activity inside Astral and receive the reply in your chat app, you're connected. Try sending an image or small file next and ask the Bot to send a summary back.
 
-Check both the processing in Astral and the reply in the original chat. Next, send an image or small file and ask the Bot to read it and send it back. Say “send it back to this chat” when you want a result delivered. Text the Bot outputs directly appears only in the Astral web interface; people in the group or private chat cannot see it. The Bot uses `send_message` to send a reply to the chat.
+:::note[Ask explicitly when you want files or replies sent back]
+Working text inside Astral stays in the web interface—chat participants only see messages delivered through the sending tool (`send_message`). Say “send it back to this chat” when you want a file or final answer delivered there.
+:::
 
-After handling a direct trigger, such as a private message, mention or reply to the Bot, Astral reminds it once if it finishes normally without using the sending tool. It can still choose not to reply, and Astral does not automatically forward its working text. This follow-up reminder does not apply to proactive participation or to send attempts that failed or have an unconfirmed outcome; it does not resend those attempts.
+## Everyday management
 
-## What matters during everyday use
+| Goal | How to do it |
+| --- | --- |
+| Control when the Bot speaks in groups | Mentions and replies wake it by default; see [Group chats](/docs/chat/groups/) for proactive participation. |
+| Remove a single chat | Switch to **Only specified chats** first (existing entries and settings stay intact), then remove it. |
+| Pause an account | Turn off **Enabled** to stop incoming messages while keeping history (stop active computer tasks separately in the session). |
+| Start a fresh thread for a chat | Use **Change conversation**—both sessions pause with histories preserved (restore an archived target before binding). |
+| List members or manage group files | Just ask the Bot directly; only see [Platform APIs](/docs/chat/platform-api/) for custom scripts. |
 
-- **Group replies:** mentions and replies call the Bot by default. See [Group collaboration](/docs/chat/groups/) for ordinary discussion.
-- **Removing one chat:** first switch to **Only specified chats**. Switching retains connected chats and their settings.
-- **Pausing an account:** turn off **Enabled** to stop reception and keep history. Stop any computer task already in progress separately in its conversation.
-- **Changing the bound conversation:** stops work in both the original and target conversations and retains their histories. Restore an archived target first; binding does not restore it automatically. Previously accepted sends keep their original destination.
+<details class="astral-doc-details">
+<summary>Missed-reply reminders and model error recovery details</summary>
 
-If the model runs out of quota, rejects its credentials, or denies access, Astral keeps the error in the corresponding conversation and pauses processing while continuing to receive and archive platform messages. After restoring quota or correcting the credentials, open that conversation in Astral and send a new input to retry. Successfully switching to an available model also retries processing of waiting messages. Rate limits, temporary service failures, and network errors retry at intervals. Sending more chat messages does not make them retry sooner.
+- **One-time reminder on direct triggers:** For private messages, mentions, or replies, if the Bot finishes normally without calling the sending tool, Astral nudges it once. It may still opt not to reply, and Astral never forwards internal working text automatically. This does not apply to proactive participation or failed/unconfirmed send attempts.
+- **Quota, credential, or permission errors:** Processing pauses with the error shown while Astral keeps receiving and archiving incoming chat messages. After fixing credentials/quota, send new input in Astral—or switch to another working model—to resume queued messages. Rate limits and transient network errors retry on intervals; sending more chat messages will not speed up retries.
+- **Summary exceeds context window:** Processing pauses while waiting messages stay safe. Switch to a model with a larger window or fix the model's window settings to trigger compaction and resume.
 
-Processing also pauses if the conversation reports that its summary input exceeds the model's context window. Waiting messages are retained. Choose a model that can accommodate that summary input or correct its window configuration before retrying; service recovery or more chat messages do not remove this limit. Successfully switching the conversation's model, or correcting its window or connection configuration, triggers another processing attempt. Work continues after compaction succeeds and the complete context passes its budget checks.
-
-Ask the Bot directly to look up members or manage group files. Read the [Platform API reference](/docs/chat/platform-api/) only when you need custom calls.
+</details>

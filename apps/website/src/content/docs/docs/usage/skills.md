@@ -1,30 +1,31 @@
 ---
-title: "Skills and project guidance"
-description: "Save reusable working methods and instructions for a particular project."
+title: "Skills and AGENTS.md"
+description: "Save reusable workflows as skills (SKILL.md), or add project conventions in AGENTS.md."
 ---
 
-If you keep explaining the same report format, save it as a skill. A skill contains instructions, optionally with scripts or templates, that the Bot can use for relevant tasks. A one-off requirement can stay in your conversation.
+When you repeat the same formatting rules or multi-step workflow, save it as a **skill**. When rules belong only to one folder (such as “put outputs in `reports/`”), put them in **`AGENTS.md`**. One-off requests can stay in your prompt.
 
-For rules specific to a project, such as “Put all output in the reports folder,” use an `AGENTS.md` file in that project's working directory. Skills describe reusable methods; project guidance describes how to work in that directory.
+| Purpose | File | Scope |
+| --- | --- | --- |
+| Reusable methods (with optional scripts or templates) | `SKILL.md` | Current project, local user, or **Shared skills** synced across all computers |
+| Folder layout and project rules | `AGENTS.md` | **Current working directory only** (parent folders are not searched) |
 
-## Use a built-in skill
+## Built-in skills
 
-On a computer with a current Daemon, ask the Bot to create a skill from a repeated workflow, find a decision from an earlier Astral session, or set up a scheduled task or local event hook. The Server supplies the corresponding built-in skills to the computer. They appear alongside your own skills after the first sync. Session history and the Computer API require **Enable Astral API** on the selected computer. The bundled API command helper uses Python 3.8 or later.
+On computers running a current Daemon, Server syncs built-in skills automatically—letting you ask the Bot to turn a workflow into a skill, search past Astral sessions, or configure schedules and local event wake-ups.
 
-When Astral updates the built-in bundle, it replaces the files in the same folder, including any local edits. To keep your edits, ask the Bot to save a copy as a project or user skill before the update.
+:::note[Requirements for Astral API skills]
+Session search and Computer API calls require [**Enable Astral API**](/docs/computers/connect/#control-what-the-computer-can-call) on that computer; the bundled API helper requires Python 3.8+. Updating Astral replaces the built-in skill directory—save any local customizations as a project or user skill first.
+:::
 
-## Add a skill
+## Create a skill
 
-First check the session's computer and working directory. Put the skill on that computer, either yourself or by asking the Bot to create the files.
+Verify your session's computer and working directory, then create the file yourself or ask the Bot to write it:
 
-Choose its location:
+- **Current project only:** `.agents/skills/<skill-name>/SKILL.md`
+- **All projects for this OS user on this computer:** `~/.agents/skills/<skill-name>/SKILL.md`
 
-| Where you want to use it | Location |
-| --- | --- |
-| Across projects for the same system user on this computer | `~/.agents/skills/` in that user's home directory |
-| In the current project | `.agents/skills/` under the current working directory |
-
-Each skill has a folder containing a file named `SKILL.md`. For example, create `.agents/skills/meeting-actions/SKILL.md` with:
+Example `.agents/skills/meeting-actions/SKILL.md`:
 
 ```md
 ---
@@ -33,51 +34,46 @@ description: Turn meeting notes into actions, owners, and due dates.
 ---
 
 Read the meeting notes identified by the user.
-Create a table with action, owner, and due-date columns.
-Mark an unspecified owner or date as "To confirm."
-Keep the source notes unchanged. Save the result separately and provide a file link.
+Create a table with action, owner, and due-date columns; mark missing details as "To confirm."
+Keep the original notes unchanged, save the result separately, and provide a file link.
 ```
 
-The block between the first two `---` lines describes the skill: `name` identifies it and `description` says when to use it. Both must be nonempty. The rest explains the method. Put supporting scripts and templates in the same folder and explain how they should be used.
-
-After saving, ask the Bot which skills it can see, then try:
+Both `name` and `description` inside the opening `---` block are required so the Bot knows when to pick it up. Put helper scripts or templates in the same folder. Afterward, ask the Bot which skills it sees and try it:
 
 > Use the meeting-actions skill to process the meeting notes I attached.
 
-Check the table and output file against the instructions. Review a third-party skill's source, instructions, and scripts before using it; see [outside content and skills](/docs/start/safe-use/#use-care-with-third-party-material-and-skills).
+:::caution[Inspect third-party skills first]
+Skills can bundle executable scripts—always review their source, instructions, and code before use. See [Permissions and privacy](/docs/start/safe-use/#use-care-with-third-party-material-and-skills).
+:::
 
-## Add project guidance
+## Add project guidance (AGENTS.md)
 
-Place `AGENTS.md` in the directory the session actually uses. Explain the project's purpose, file organization, and working conventions. For example:
+Place `AGENTS.md` in the exact working directory your session uses:
 
 ```md
 # Project guidance
 
 This directory holds weekly operations reports.
-Source material is in input/. Put generated reports in reports/.
-Keep source files unchanged and name new reports by date.
-Cite the source file for numbers and flag uncertain information.
+Source files live in input/. Write reports to reports/ named by date.
+Keep source files untouched, cite numbers, and flag uncertain details.
 ```
 
-Ask the Bot to confirm its working directory and summarize the guidance it found.
+Ask the Bot to confirm its working directory and summarize the conventions it read. Remember: if the file is `/work/reports/AGENTS.md` but the session moves into `/work/reports/input/`, switch back to the project root or add guidance where you work.
 
-Astral reads **the `AGENTS.md` in the current working directory**. It does not search parent directories. If the file is `/work/reports/AGENTS.md` but the session is working in `/work/reports/input/`, return to the project directory or provide guidance in the directory actually being used.
+## Sync across computers: Shared skills
 
-## Use skills across computers
+Use **shared skills** to keep one published version synced across every connected computer:
 
-Use a shared skill when you want the same published version on multiple connected computers. Ask the Bot to create a shared skill or adapt one it can already see. Test it on the current computer, make sure [**Enable Astral API**](/docs/computers/connect/#control-what-the-computer-can-call) is on there, then explicitly ask the Bot to publish it. Until publication, edits are visible only on that computer, where Bots use the same local copy. Other computers receive the published version when they sync, including those with Astral API turned off.
+1. Ask the Bot to create or edit a shared skill and test it locally first (unpublished edits stay on the current computer).
+2. Ensure [**Enable Astral API**](/docs/computers/connect/#control-what-the-computer-can-call) is enabled on this computer, then explicitly ask the Bot to **publish** it.
+3. Other computers sync the published version automatically—even those with Astral API turned off (sync replaces the folder; copy any local edits to a project or user skill to preserve them).
+4. To remove a shared skill everywhere, ask the Bot by name from a computer with Astral API enabled (offline computers clean up when reconnecting).
 
-When a new version arrives, it replaces the skill folder on each computer, including any unpublished edits. Ask the Bot to copy any edits you want to keep to a project or user skill folder.
+Older computer services need a [Daemon update](/docs/computers/connect/#update-a-connected-daemon) to publish and sync under these rules. Regular project and user skills stay local—copy them manually and install required software on other machines.
 
-To remove a shared skill from all computers, explicitly ask the Bot to delete the shared skill by name. Use a computer with **Enable Astral API** turned on. Each computer removes its installed folder when it syncs, including any local edits. An offline computer syncs after reconnecting. [Update older computer services](/docs/computers/connect/#update-a-connected-daemon) to publish and sync under these rules.
+## Skill not showing up?
 
-For a project or user skill, copy its folder and any required resources to the other computer. Install any software the skill needs there before using it.
-
-If the Bot cannot find a skill, check:
-
-1. The selected computer and current working directory.
-2. The folder location, the exact `SKILL.md` filename, and whether the computer service's system account can read it.
-3. The opening `---` block and its nonempty `name` and `description` fields.
-4. Whether the computer service needs an [update](/docs/computers/connect/#update-a-connected-daemon).
-
-If the skill is visible but fails to run, check that its required software and files exist on the current computer rather than only on another machine.
+1. Verify the session's selected computer and current working directory.
+2. Check the folder path, exact `SKILL.md` filename, and read permissions for the service OS account.
+3. Confirm the opening `---` header has non-empty `name` and `description` fields.
+4. Check if the computer Daemon needs an [update](/docs/computers/connect/#update-a-connected-daemon); if visible but failing to run, confirm required tools and files exist on the **current computer**.

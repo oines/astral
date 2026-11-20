@@ -1,60 +1,64 @@
 ---
-title: "Configure a Bot"
-description: "Choose how an assistant works, which model it uses, and which computers it can access."
+title: "Configure Bots"
+description: "Set up a Bot's working preferences, model priority and fallback, computer access, and chat accounts."
 ---
 
-A Bot is an assistant you use over time. It has a name and working preferences, can hold multiple sessions, and can connect to several messaging accounts. First-time setup provides an Astral Bot that you can use for everyday work.
+A **Bot** is an assistant with its own persona, model priority list, computer access, and chat accounts. Astral includes a default **Astral** Bot ready for everyday use.
 
-Create another Bot when you need different behavior or access. A personal assistant might use your work computer, while a public-group Bot uses a dedicated container and chat account. For a different topic, you can simply [start another session](/docs/usage/conversations/#separate-unrelated-work).
+- **New topic, same assistant** → [start a new session](/docs/usage/conversations/#separate-unrelated-work).
+- **Different behavior or trust level** (e.g., personal laptop vs. public group container) → create another Bot.
 
-## Basic settings
+Open the Bot switcher in the sidebar and choose **Manage Bot**, or go to **Settings → Bots → your Bot**.
 
-In the main sidebar, open the Bot selector and choose **Manage Bot** to go directly to the selected Bot's **Basic settings**. You can also open **Settings → Bots → your Bot → Basic settings**.
+## Basic settings and persona
 
-Model and search connections live in the [global settings](/docs/usage/models/), where you manage credentials once and choose resources for each Bot.
+Model providers and web search live in [global settings](/docs/usage/models/); here you simply pick which ones this Bot uses.
 
-Deleting a search service turns off web search for every Bot that uses it. The confirmation lists the affected Bots; existing sessions and messages are kept. You can choose another search service later.
+Use **Persona** for standing instructions across all of this Bot's tasks (leave blank if not needed):
 
-Use the persona for preferences that should apply across tasks. For example:
+> Help me organize daily work. Lead with actionable suggestions. Mark unspecified owners or due dates as “To confirm” instead of guessing.
 
-> Help me organize my daily work. Start with practical recommendations. If a source does not specify an owner or date, mark it as “To confirm” rather than filling it in.
-
-Select **Apply persona** to use it in subsequent model requests across this Bot's sessions, including existing subagents that are already working. Requests already frozen retain their original instructions. Clear it and apply again to remove it. Applying a persona does not start idle sessions or subagents. Proactive group-participation decisions also use the current persona. Leave it empty when you have no standing preferences to add.
+Click **Apply persona** so subsequent model requests (including active subagents and proactive group decisions) use it. Clear and apply again to remove it.
 
 ## Keep work moving when a model is unavailable
 
-Under **Model priority**, put the model you want new sessions to prefer first and add alternatives below it. Each model keeps its own reasoning choice. Use connections that you trust with the same task material: continuing with another model sends the conversation and its necessary context to that model's service too.
+Under **Basic settings → Model priority**, put your preferred model first and add backups beneath it (each row keeps its own reasoning settings; drag the handle to reorder and auto-save).
 
-Drag a row by its handle to change the order. With the handle focused, use Up or Down to move it one place, or Home or End to move it to the top or bottom. The completed move saves automatically.
+:::note[Only add providers you trust with the task]
+When Astral falls back to another model, the conversation and required context are sent to that provider too.
+:::
 
-Astral tries the models in order. Quota, authorization, and other errors that need a different model move to the next available candidate. Temporary connection failures are retried up to five times per model, including the first attempt, before trying the next one. Subagents use the same recovery rules. Models or connections you disable are skipped while their positions remain in the list.
+- **How fallback works:** Quota or auth errors move immediately to the next candidate; temporary network/service errors retry first, then fail over. Subagents follow the same rules.
+- **Per-session overrides:** Picking a model in a session's input bar makes it that session's preferred model while keeping the Bot's list as backups (e.g., Bot list `A → B → C` + manual choice `B` tries `B → A → C`; picking `D` tries `D → A → B → C`).
+- **Update all active sessions:** Click **Apply to unarchived sessions** to reset every unarchived session (and its subagents) to prefer the first model in the list.
+- **Automatically restore the preferred model** (off by default): Periodically probes the session's preferred model with a real request (which may incur charges) and switches back once healthy; if all candidates fail, waits and retries every minute instead of halting immediately.
 
-List changes save automatically and update the alternatives available to existing sessions too. Each existing session keeps its preferred model. Choosing a model in the conversation's input area makes it that session's preferred choice: with a Bot list of A → B → C, choosing B gives B → A → C; choosing a model D outside the list gives D → A → B → C.
+<details class="astral-doc-details">
+<summary>Retry counts, keyboard reordering, archived sessions, and group-participation model details</summary>
 
-To make existing sessions prefer the Bot list's first model, select **Apply to unarchived sessions** and review the confirmation. This affects this Bot’s unarchived sessions and their subagents, replacing individually chosen preferred models. Archived sessions and their subagents keep their saved choices, including after restoration. Requests already sent finish with their original model; later requests use the new preference. Tasks you stopped remain stopped.
+- **Retry limit:** Transient connection errors retry up to 5 times per model (including the first attempt) before moving on. Disabled models or providers remain in the list and are skipped.
+- **Archived sessions & in-flight requests:** **Apply to unarchived sessions** leaves archived sessions untouched (even after restoration). Requests already sent finish on their original model, and manually stopped tasks stay stopped. Turning on automatic recovery later does not restart past failed tasks automatically—continue the session manually.
+- **Group participation model:** Defaults to **Follow the Session’s current model** (tracking automatic failovers and reasoning settings), or you can pin a fixed model and switch back anytime.
+- **Keyboard sorting & deleting search:** Focus a drag handle and use Up/Down or `Home`/`End` to reorder. Deleting a global web search connection disables search for every Bot using it while preserving sessions.
 
-**Automatically restore the preferred model** is off by default. When enabled, Astral periodically makes a real request to each affected session's preferred model and switches back after it responds successfully, at the next request boundary. Checks may incur model charges. If all candidates fail, the task waits for recovery instead of ending; checks are spaced one minute apart after each check finishes. With the option off, a task stops with an error once no candidate can continue. Fix the connection, quota, or model choices, then continue the session. Enabling automatic recovery later also requires continuing the failed session; it does not restart old failed tasks on its own.
-
-The group-participation model remains a separate setting. When it follows the session, it uses the model actually serving that session. After choosing a fixed model, you can return to **Follow the Session’s current model** in the same menu; its reasoning settings will follow the session too.
+</details>
 
 ## Computer access
 
-Open the Bot's **Computer access** page, or choose **Manage Computers** from the conversation's computer menu. Allow the computers it needs and optionally choose a default. New sessions start with that default; existing sessions can select another allowed computer.
+Open **Computer access** (or pick **Manage Computers** from the session's computer menu) to allow the computers this Bot can use and set an optional default for new sessions.
 
-If the computer is not connected yet, follow [Connect a computer](/docs/computers/connect/), then return here to grant access. Permission allows the Bot to read files, write files, and run commands with the rights of the computer service's operating-system account. Grant only the computers this Bot needs, especially before [using it in a public group](/docs/start/safe-use/#group-chats-use-a-dedicated-bot).
-
-Revoking access to the default computer also clears that default. Choose another computer explicitly when work should continue elsewhere.
+- Need to add a machine first? Follow [Connect computers](/docs/computers/connect/).
+- Revoking access to the default computer clears the default. For public groups, double-check that only a dedicated computer or container is allowed—see [Group chats: use a dedicated Bot](/docs/start/safe-use/#group-chats-use-a-dedicated-bot).
 
 ## Platforms and accounts
 
-To use the Bot from a messaging app, choose **Connect platform** in its settings, select Telegram, QQ, WeChat, or Feishu, and follow the [platform guide](/docs/chat/overview/).
-
-A Bot can connect several accounts, including more than one on the same platform. Each account has its own credentials, enabled state, allowed chats, and session bindings.
+Choose **Connect platform** in Bot settings and follow [Connect a chat](/docs/chat/overview/) for Telegram, QQ, WeChat, or Feishu. One Bot can hold multiple accounts (even on the same platform), each with isolated credentials, enabled state, and allowed chats.
 
 ## Disable or delete
 
-To stop receiving messages temporarily, disable the relevant platform account and keep its records. To stop the Bot using a particular computer, revoke that computer's access.
+- **Pause incoming chats:** disable that platform account to keep history intact.
+- **Block a computer:** uncheck it under **Computer access**.
 
-Delete the Bot when you want to remove the assistant completely. This permanently removes its sessions and schedules, platform credentials, and chat data stored by Astral. Save any records you need first.
-
-Accounts, chats, and messages on the external platforms remain, as do working files on computers. Manage those separately where they are stored.
+:::caution[Deleting a Bot is permanent]
+Deleting a Bot permanently removes all its sessions, schedules, platform credentials, and chat data stored by Astral. Save anything important first. External chat messages and files on your computers remain untouched.
+:::

@@ -157,3 +157,64 @@ test('unexpected duplicate page links stop the refresh before requesting a relea
   assert.equal(requests.length, 0)
   assertFallback(page)
 })
+
+test('GH-Proxy mirror toggle prefixes and restores downloads across release refreshes', async () => {
+  const page = fixture()
+  let mirrorHandler
+  const mirrorCheckbox = {
+    checked: false,
+    dataset: {},
+    addEventListener: (event, cb) => { if (event === 'change') mirrorHandler = cb },
+  }
+  const mirrorWrap = { hidden: true }
+  const primary = { dataset: {}, href: '#download-desktop', textContent: '' }
+  const secondary = { dataset: {}, href: '#download-desktop', textContent: '' }
+  const heading = { textContent: '' }
+  const note = { textContent: '' }
+  const panel = {
+    hidden: true,
+    dataset: { locale: 'en' },
+    querySelector: selector => ({
+      '[data-astral-panel-heading]': heading,
+      '[data-astral-panel-note]': note,
+      '[data-astral-panel-primary]': primary,
+      '[data-astral-panel-secondary]': secondary,
+    })[selector],
+    querySelectorAll: selector => selector === '[data-astral-recommended-target]' ? [primary, secondary] : [],
+  }
+  const origQuery = page.document.querySelector
+  page.document.createElement = () => ({})
+  page.document.querySelector = selector => ({
+    '[data-astral-mirror]': mirrorCheckbox,
+    '[data-astral-mirror-wrap]': mirrorWrap,
+    '[data-astral-download-panel]': panel,
+  })[selector] ?? origQuery(selector)
+
+  let respond
+  const response = new Promise(resolve => { respond = resolve })
+  vm.runInNewContext(source, {
+    document: page.document,
+    navigator: { platform: 'MacIntel', userAgent: 'Mozilla/5.0 (Macintosh)' },
+    AbortSignal,
+    fetch: () => response,
+  })
+  assert.equal(mirrorWrap.hidden, false)
+  assert.equal(panel.hidden, false)
+  assert.equal(primary.href, urlFor('0.1.0', targets[0]))
+  assert.equal(secondary.href, urlFor('0.1.0', targets[1]))
+
+  mirrorCheckbox.checked = true
+  mirrorHandler()
+  assert.equal(primary.href, `https://gh-proxy.org/${urlFor('0.1.0', targets[0])}`)
+  assert.equal(page.links.get('mac-arm64-dmg')[0].href, `https://gh-proxy.org/${urlFor('0.1.0', targets[0])}`)
+
+  respond({ ok: true, json: async () => release('0.1.2') })
+  await settle()
+  assert.equal(primary.href, `https://gh-proxy.org/${urlFor('0.1.2', targets[0])}`)
+  assert.equal(page.links.get('mac-arm64-dmg')[0].href, `https://gh-proxy.org/${urlFor('0.1.2', targets[0])}`)
+
+  mirrorCheckbox.checked = false
+  mirrorHandler()
+  assert.equal(primary.href, urlFor('0.1.2', targets[0]))
+  assert.equal(page.links.get('mac-arm64-dmg')[0].href, urlFor('0.1.2', targets[0]))
+})
