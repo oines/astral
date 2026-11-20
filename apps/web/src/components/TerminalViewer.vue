@@ -14,8 +14,16 @@ let observer: ResizeObserver | undefined
 let shown = ''
 function theme() {
   const style = getComputedStyle(document.documentElement)
-  const background = props.inline ? style.getPropertyValue('--raised').trim() : '#212121'
-  terminal.options.theme = { background, foreground: props.inline ? style.getPropertyValue('--ink').trim() : '#ececec', cursor: background }
+  const background = props.inline ? style.getPropertyValue('--bg').trim() : '#212121'
+  const muted = style.getPropertyValue('--muted').trim() || '#888888'
+  terminal.options.theme = {
+    background,
+    foreground: props.inline ? style.getPropertyValue('--ink').trim() : '#ececec',
+    cursor: background,
+    scrollbarSliderBackground: props.inline ? `${muted}47` : '#ffffff38',
+    scrollbarSliderHoverBackground: props.inline ? `${muted}7a` : '#ffffff5c',
+    scrollbarSliderActiveBackground: props.inline ? `${muted}a3` : '#ffffff80',
+  }
 }
 function fitContent() {
   fit.fit()
@@ -53,3 +61,10 @@ onBeforeUnmount(() => { observer?.disconnect(); terminal.dispose() })
     :style="inline ? { height: `${height}px` } : undefined"
   />
 </template>
+<style scoped>
+.terminal-viewer :deep(.xterm-scrollable-element > .shadow) { display: none !important; box-shadow: none !important; }
+.terminal-viewer :deep(.xterm-scrollable-element > .scrollbar.vertical) { width: 8px !important; }
+.terminal-viewer :deep(.xterm-scrollable-element > .scrollbar.vertical > .slider) { width: 4px !important; left: 2px !important; border-radius: 999px; }
+.terminal-viewer :deep(.xterm-scrollable-element > .scrollbar.horizontal) { height: 8px !important; }
+.terminal-viewer :deep(.xterm-scrollable-element > .scrollbar.horizontal > .slider) { height: 4px !important; top: 2px !important; border-radius: 999px; }
+</style>

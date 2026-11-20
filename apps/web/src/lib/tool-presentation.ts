@@ -1,4 +1,4 @@
-import type { Content, Entry } from './types'
+import type { Content, Entry, ProcessStatus } from './types'
 import { imageURL, object } from './api'
 
 function text(value: unknown) { return typeof value === 'string' ? value : '' }
@@ -132,10 +132,142 @@ export function sentMessageDetails(entry: Entry) {
   }
 }
 
-export function toolPresentation(entry: Entry) {
+const fileToolNames = new Set(['read', 'read_file', 'write', 'write_file', 'edit', 'edit_file', 'apply_patch'])
+const directFilePreviewNames = new Set(['read', 'read_file', 'write', 'write_file'])
+const semanticDetailNames = new Set(['agent_control', 'send_message', 'spawn_agent', 'web_search'])
+
+function isAbsolutePath(path: string) {
+  return path.startsWith('/') || path.startsWith('\\\\') || /^[a-zA-Z]:[\\/]/.test(path)
+}
+
+function joinPath(cwd: string, rel: string) {
+  if (!cwd) return rel
+  const sep = cwd.includes('\\') && !cwd.includes('/') ? '\\' : '/'
+  const base = cwd.replace(/[\\/]+$/, '')
+  const tail = rel.replace(/^\.[\\/]/, '')
+  return tail ? `${base}${sep}${tail}` : base
+}
+
+export function fileToolTarget(entry: Entry) {
+  const name = entry.tool?.invocation.call.name ?? ''
+  if (!fileToolNames.has(name)) return undefined
+  const args = object(entry.tool?.invocation.call.arguments)
+  const rawPath = text(args.path) || text(args.file_path)
+  if (!rawPath) return undefined
+  const binding = object(entry.tool?.invocation.binding)
+  const computerID = text(binding.computer_id)
+  if (!computerID) return undefined
+  const cwd = text(binding.cwd)
+  const resolved = isAbsolutePath(rawPath) ? rawPath : joinPath(cwd, rawPath)
+  return { computerID, path: resolved, displayPath: rawPath }
+}
+
+export function sourceHost(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, '')
+  } catch {
+    return ''
+  }
+}
+
+export function spawnAgentDetails(entry: Entry) {
+  const args = object(entry.tool?.invocation.call.arguments)
+  const data = object(toolResultData(entry))
+  const selection = object(data.selection)
+  const model = text(selection.id) || text(args.model)
+  const reasoningSupplied = Object.hasOwn(selection, 'reasoning') || Object.hasOwn(args, 'reasoning')
+  const reasoningValue = Object.hasOwn(selection, 'reasoning') ? selection.reasoning : args.reasoning
+  return {
+    sessionID: text(data.session_id),
+    name: text(data.name) || text(args.name),
+    task: text(args.task),
+    inheritContext: args.inherit_context === true,
+    model,
+    reasoning: reasoningDetails(reasoningValue, reasoningSupplied),
+    fallback: toolResultFallbackText(entry),
+    error: toolResultError(entry),
+  }
+}
+
+export function toolHasOutputOrPatch(entry: Entry, liveText = '', process?: ProcessStatus) {
+  const details = object(entry.tool?.result?.details)
+  const output = typeof details.output === 'string' ? details.output : liveText
+  const patch = typeof (details.patch || details.diff) === 'string' ? String(details.patch || details.diff) : ''
+  return {
+    output,
+    patch,
+    hasOutput: Boolean(output.trim()) || Boolean(process?.has_output),
+    hasPatch: Boolean(patch.trim()),
+  }
+}
+
+export type ToolInteractionMode = 'static' | 'file' | 'expand'
+
+export function toolInteractionMode(
+  entry: Entry,
+  options: { active?: boolean; process?: ProcessStatus; liveText?: string; targetTruncated?: boolean } = {},
+): ToolInteractionMode {
+  const name = entry.tool?.invocation.call.name ?? ''
+  const result = entry.tool?.result
+  const details = object(result?.details)
+  const { hasOutput, hasPatch } = toolHasOutputOrPatch(entry, options.liveText, options.process)
+  const hasExitError = (details.exit_code !== undefined && details.exit_code !== 0)
+    || (options.process?.exit_code !== undefined && options.process.exit_code !== 0)
+    || Boolean(options.process?.error)
+
+  if (options.active || options.process?.running) return 'expand'
+  if (toolResultError(entry) || hasExitError) return 'expand'
+  if ((result?.content || []).some(part => part.type === 'image')) return 'expand'
+  if (semanticDetailNames.has(name)) return 'expand'
+  if (hasPatch) return 'expand'
+
+  if (directFilePreviewNames.has(name)) {
+    if (fileToolTarget(entry)) return 'file'
+    return hasOutput || Boolean(toolResultText(entry).trim()) ? 'expand' : 'static'
+  }
+  if (name === 'switch_computer') return 'static'
+  if (name === 'exec_command' || name === 'write_stdin') {
+    const args = object(entry.tool?.invocation.call.arguments)
+    const command = text(args.command) || text(args.cmd)
+    if (hasOutput || options.process || command.includes('\n') || options.targetTruncated) return 'expand'
+    return 'static'
+  }
+  if (hasOutput || Boolean(toolResultText(entry).trim())) return 'expand'
+  return 'static'
+}
+
+export function toolPresentation(entry: Entry, computers: Array<{ id: string; name: string }> = []) {
   const name = entry.tool?.invocation.call.name ?? ''
   const args = object(entry.tool?.invocation.call.arguments)
-  const labels: Record<string, string> = { exec_command: 'runCommand', read: 'readFile', read_file: 'readFile', write_file: 'writeFile', apply_patch: 'editFile', edit_file: 'editFile', web_search: 'webSearch', send_message: 'sendMessage', spawn_agent: 'spawnSubagent', agent_control: 'controlSubagent' }
+  const data = object(toolResultData(entry))
+  const labels: Record<string, string> = {
+    exec_command: 'runCommand',
+    write_stdin: text(args.chars) ? 'writeStdin' : 'readStdin',
+    read: 'readFile',
+    read_file: 'readFile',
+    write: 'writeFile',
+    write_file: 'writeFile',
+    apply_patch: 'editFile',
+    edit: 'editFile',
+    edit_file: 'editFile',
+    web_search: 'webSearch',
+    send_message: 'sendMessage',
+    spawn_agent: 'spawnSubagent',
+    agent_control: 'controlSubagent',
+    switch_computer: 'switchComputer',
+  }
   const command = String(args.command || args.cmd || '')
-  return { name, label: labels[name], command, target: command || String(args.path || args.query || args.url || '') }
+  let target = command || String(args.path || args.file_path || args.query || args.url || '')
+  if (name === 'switch_computer') {
+    const computerID = text(args.computer_id) || text(data.computer_id)
+    const computerName = computers.find(item => item.id === computerID)?.name || text(data.computer_name) || computerID
+    const cwd = text(args.cwd) || text(data.cwd)
+    target = [computerName, cwd].filter(Boolean).join(' · ')
+  } else if (name === 'spawn_agent') {
+    const firstLine = text(args.task).trim().split('\n').find(line => line.trim()) || ''
+    target = text(data.name) || text(args.name) || firstLine
+  } else if (name === 'write_stdin') {
+    target = text(args.chars).replace(/\s+/g, ' ').trim()
+  }
+  return { name, label: labels[name], command, target }
 }

@@ -32,6 +32,7 @@ type Snapshot struct {
 	SubagentActivity           []domain.SubagentActivity `json:"subagent_activity"`
 	SubagentActivityCursor     string                    `json:"subagent_activity_cursor"`
 	SubagentActivityNextCursor string                    `json:"subagent_activity_next_cursor,omitempty"`
+	Processes                  []harness.ProcessStatus   `json:"processes,omitempty"`
 }
 type Event struct {
 	Epoch                  string                    `json:"epoch"`
@@ -40,6 +41,7 @@ type Event struct {
 	View                   *harness.View             `json:"view,omitempty"`
 	SubagentActivity       []domain.SubagentActivity `json:"subagent_activity,omitempty"`
 	SubagentActivityCursor string                    `json:"subagent_activity_cursor,omitempty"`
+	Process                *harness.ProcessStatus    `json:"process,omitempty"`
 }
 
 func (a *API) streamRoutes() {
@@ -48,6 +50,7 @@ func (a *API) streamRoutes() {
 		handler           http.HandlerFunc
 	}{
 		{"/sessions/{id}/events", "sessionEvents", "text/event-stream", a.events},
+		{"/sessions/{id}/processes/{execution}/output", "sessionProcessOutput", "text/event-stream", a.processOutput},
 		{"/sessions/{id}/rollout", "exportRollout", "application/x-ndjson", a.exportRollout},
 		{"/sessions/{id}/entries/{entry}/images/{index}", "historyImage", "application/octet-stream", a.historyImage},
 		{"/files/{id}/content", "fileContent", "application/octet-stream", a.fileContent},
@@ -111,9 +114,9 @@ func (a *API) snapshot(r *http.Request) (Snapshot, error) {
 func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 	h := a.Config.Harness
 	snapshot := Snapshot{Epoch: h.RuntimeID}
-	var viewErr, historyErr, traceErr, activityErr error
+	var viewErr, historyErr, traceErr, activityErr, processErr error
 	var reads sync.WaitGroup
-	reads.Add(4)
+	reads.Add(5)
 	go func() { defer reads.Done(); snapshot.View, viewErr = h.View(r.Context(), r.PathValue("id")) }()
 	go func() {
 		defer reads.Done()
@@ -129,6 +132,10 @@ func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 		defer reads.Done()
 		snapshot.Trace, traceErr = timelineHistory(r.Context(), h.CoreStore, r.PathValue("id"), "", 60, true)
 	}()
+	go func() {
+		defer reads.Done()
+		snapshot.Processes, processErr = h.SessionProcesses(r.Context(), r.PathValue("id"))
+	}()
 	reads.Wait()
 	if viewErr != nil {
 		return snapshot, viewErr
@@ -141,6 +148,9 @@ func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 	}
 	if activityErr != nil {
 		return snapshot, activityErr
+	}
+	if processErr != nil {
+		return snapshot, processErr
 	}
 	snapshot.View.EventSequence = min(snapshot.View.EventSequence, watermark)
 
@@ -184,6 +194,8 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	activityWatch := h.Store.Watch(persistence.ChangeKey{Kind: persistence.SubagentActivityKind, ID: r.PathValue("id")})
 	defer activityWatch.Close()
 	activityChanges := activityWatch.Changes()
+	processChanges, stopProcessWatch := h.WatchProcesses(r.PathValue("id"))
+	defer stopProcessWatch()
 	boundary, err := h.Snapshot(r.Context(), r.PathValue("id"))
 	if err != nil {
 		httpcontract.Failure(w, r, err)
@@ -262,6 +274,14 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 			if !refreshActivity() {
 				return
 			}
+		case status, ok := <-processChanges:
+			if !ok {
+				return
+			}
+			s := status
+			if !send("event", "", Event{Epoch: h.RuntimeID, Process: &s}) {
+				return
+			}
 		case _, ok := <-hostChanges.C:
 			if !ok || !refresh() {
 				return
@@ -320,6 +340,87 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 		case <-keepalive.C:
 			_ = controller.SetWriteDeadline(time.Now().Add(15 * time.Second))
 			if _, err = io.WriteString(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			if controller.Flush() != nil {
+				return
+			}
+		}
+	}
+}
+
+func (a *API) processOutput(w http.ResponseWriter, r *http.Request) {
+	h := a.Config.Harness
+	snapshot, sub, err := h.ObserveProcessOutput(r.Context(), r.PathValue("id"), r.PathValue("execution"))
+	if err != nil {
+		httpcontract.Failure(w, r, err)
+		return
+	}
+	if sub != nil {
+		defer sub.Close()
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("X-Accel-Buffering", "no")
+	controller := http.NewResponseController(w)
+	send := func(kind string, value any) bool {
+		raw, marshalErr := json.Marshal(value)
+		if marshalErr != nil {
+			return false
+		}
+		_ = controller.SetWriteDeadline(time.Now().Add(15 * time.Second))
+		if _, writeErr := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", kind, raw); writeErr != nil {
+			return false
+		}
+		return controller.Flush() == nil
+	}
+	if !send("snapshot", snapshot) {
+		return
+	}
+	if sub == nil {
+		_ = send("done", harness.ProcessOutputUpdate{Done: true, ExitCode: snapshot.ExitCode, Error: snapshot.Error, Truncated: snapshot.Truncated})
+		return
+	}
+	updates := make(chan harness.ProcessOutputUpdate, 4)
+	go func() {
+		defer close(updates)
+		for {
+			update, ok := sub.Next(r.Context())
+			if !ok {
+				return
+			}
+			select {
+			case updates <- update:
+			case <-r.Context().Done():
+				return
+			}
+			if update.Done {
+				return
+			}
+		}
+	}()
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case update, ok := <-updates:
+			if !ok {
+				return
+			}
+			if update.Chunk != "" || update.Reset {
+				if !send("update", update) {
+					return
+				}
+			}
+			if update.Done {
+				_ = send("done", update)
+				return
+			}
+		case <-keepalive.C:
+			_ = controller.SetWriteDeadline(time.Now().Add(15 * time.Second))
+			if _, writeErr := io.WriteString(w, ": keepalive\n\n"); writeErr != nil {
 				return
 			}
 			if controller.Flush() != nil {

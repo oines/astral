@@ -433,3 +433,45 @@ func TestTimelineForkKeepsInheritedHistoryAndCurrentWriterTrace(t *testing.T) {
 		}
 	}
 }
+
+func TestTimelineCompactionFileBindingAndPlatformMetadata(t *testing.T) {
+	compaction := timelineEntry(core.Entry{
+		ID:   "cmp-1",
+		Kind: core.EntryCompaction,
+		Compaction: &core.CompactionRecord{
+			Summary:      "Condensed earlier turns.",
+			Instructions: "Keep API decisions.",
+			ModelID:      "secret-model",
+			InputTokens:  90000,
+		},
+	})
+	if compaction.Compaction == nil || compaction.Compaction.Summary != "Condensed earlier turns." || compaction.Compaction.Instructions != "Keep API decisions." || compaction.Compaction.ModelID != "" || timelineUnit(compaction) != "compaction:cmp-1" {
+		t.Fatalf("unexpected compaction projection: %+v", compaction.Compaction)
+	}
+
+	fileTool := timelineEntry(core.Entry{
+		ID:   "read-1",
+		Kind: core.EntryToolResult,
+		Tool: &core.ToolRecord{
+			Invocation: core.Invocation{
+				Call:    core.ToolCall{Name: "read_file"},
+				Binding: json.RawMessage(`{"computer_id":"comp_1","cwd":"/work/repo","agent_id":"agent_1","session_id":"sess_1"}`),
+			},
+		},
+	})
+	if string(fileTool.Tool.Invocation.Binding) != `{"computer_id":"comp_1","cwd":"/work/repo"}` {
+		t.Fatalf("unexpected file tool binding projection: %s", fileTool.Tool.Invocation.Binding)
+	}
+
+	imMsg := timelineEntry(core.Entry{
+		ID:   "im-1",
+		Kind: core.EntryMessage,
+		Message: &core.Message{
+			Role:     core.RoleUser,
+			Metadata: json.RawMessage(`{"source":"im","platform":"feishu","display_text":"hi","sender":{"name":"Lin"},"secret":"drop"}`),
+		},
+	})
+	if !strings.Contains(string(imMsg.Message.Metadata), `"platform":"feishu"`) || strings.Contains(string(imMsg.Message.Metadata), "secret") {
+		t.Fatalf("unexpected IM platform metadata projection: %s", imMsg.Message.Metadata)
+	}
+}

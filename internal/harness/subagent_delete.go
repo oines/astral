@@ -239,6 +239,9 @@ func (s *Service) deleteSubagentTree(ctx context.Context, id string, revision in
 			if err := tx.PurgeSubagentActivities(ctx, target); err != nil {
 				return err
 			}
+			if err := purgeSessionProcessOutputs(ctx, tx, target); err != nil {
+				return err
+			}
 			if err := tx.DeleteMaintenance(ctx, subagentModelChangeKind, target); err != nil {
 				return err
 			}

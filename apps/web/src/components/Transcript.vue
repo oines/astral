@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useNow } from '@vueuse/core'
-import { useClipboard } from '../composables/useClipboard'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Button, Popover, useDelayedPending } from '@astral/ui'
-import { ArrowDown, Check, Clock3, Copy, Ellipsis, File, GitBranch, Zap } from '@astral/icons'
+import { Button, useDelayedPending } from '@astral/ui'
+import { ArrowDown, Clock3, File, Zap } from '@astral/icons'
 import type { Content, Entry, FileRef } from '../lib/types'
-import { errorText, fileURL, imageURL, object } from '../lib/api'
+import { fileURL, imageURL, object } from '../lib/api'
 import { durableTranscriptGroups, externalMessage, liveTranscriptGroups, messageText, scheduledMessage, type SessionState, type TranscriptGroup } from '../lib/session-state'
+import { platformLabel } from '../lib/im-platforms'
 import { useSurfaceStore } from '../stores/surface'
 import Markdown from './Markdown.vue'
 import ActivityLine from './ActivityLine.vue'
+import TranscriptActions from './TranscriptActions.vue'
+import CompactionDivider from './CompactionDivider.vue'
+import UserMessageText from './UserMessageText.vue'
 import { useTranscriptScroll } from '../composables/useTranscriptScroll'
 import { createMessageTimeFormatter } from '../lib/message-time'
 import { formatDateTime } from '../lib/timezone'
@@ -19,6 +21,7 @@ import type { TranscriptPosition } from '../lib/transcript-position'
 import { messageAttachments } from '../lib/message-attachments'
 import { useImagePreviewStore } from '../stores/image-preview'
 import SubagentBubble from './SubagentBubble.vue'
+
 const props = defineProps<{ state: SessionState; sessionID: string; loadOlder: () => Promise<boolean>; loadingHistory?: boolean; readonly?: boolean }>()
 const emit = defineEmits<{ fork: [entryID: string]; position: [state: SessionState, position: TranscriptPosition] }>()
 const { t, locale } = useI18n()
@@ -30,6 +33,7 @@ const content = ref<HTMLElement>()
 const needsHistory = computed(() => !!props.state.historyCursor && props.state.historyStartTime === undefined)
 const waitingHistory = useDelayedPending(needsHistory)
 const scroll = useTranscriptScroll({ scroller, content, sessionID: computed(() => props.sessionID), hasMore: computed(() => !!props.state.historyCursor || !!props.state.subagentActivityNextCursor), needsHistory, loadOlder: () => props.loadOlder(), getPosition: () => props.state.scrollPosition, savePosition: position => emit('position', props.state, position) })
+
 const durable = computed(() => {
   // Live deltas touch previews/tools, not this revision or the durable entries.
   void props.state.historyRevision
@@ -37,22 +41,57 @@ const durable = computed(() => {
 })
 const groups = computed(() => liveTranscriptGroups(props.state, durable.value))
 const attachmentCache = new WeakMap<Entry, ReturnType<typeof messageAttachments>>()
-const now = useNow({ interval: 60_000 })
 const formatTimestamp = computed(() => createMessageTimeFormatter(locale.value, app.displayTimezone))
-const timestamps = computed(() => Object.fromEntries(groups.value.filter(group => group.role === 'assistant' && !group.active).map(group => [group.key, formatTimestamp.value(group.entries.findLast(entry => messageText(entry))?.time, now.value)])))
-const { copy, copied } = useClipboard()
-const copiedGroup = ref('')
-const copyError = ref('')
+
+// Track unseen activity at the tail while the reader is scrolled up.
+const unseenNew = ref(false)
+const tailSignature = computed(() => {
+  const last = groups.value.at(-1)
+  if (!last) return ''
+  const lastBlock = last.blocks.at(-1)
+  const blockLen = lastBlock?.kind === 'text' ? lastBlock.text.length : lastBlock?.kind === 'process' ? lastBlock.items.length : 0
+  return `${groups.value.length}:${last.key}:${last.entries.length}:${last.blocks.length}:${blockLen}`
+})
+const tailStreaming = computed(() => Boolean(groups.value.at(-1)?.active))
+const hasNewActivity = computed(() => scroll.showJump.value && (unseenNew.value || tailStreaming.value))
+
+watch(tailSignature, (next, prev) => {
+  if (prev && next !== prev && scroll.showJump.value) unseenNew.value = true
+})
+watch(() => scroll.showJump.value, shown => {
+  if (!shown) unseenNew.value = false
+})
+watch(() => props.sessionID, () => { unseenNew.value = false })
+
 function groupText(group: TranscriptGroup) { return group.entries.map(messageText).filter(text => text.trim()).join('\n\n') }
+function groupTime(group: TranscriptGroup) {
+  if (group.role === 'assistant') return group.entries.findLast(entry => messageText(entry))?.time
+  if (group.role === 'user') {
+    const entry = group.entries.at(-1)
+    if (!entry || scheduledMessage(entry) || externalMessage(entry)) return undefined
+    return entry.time
+  }
+  return undefined
+}
+function groupProcessKey(group: TranscriptGroup) {
+  const processes = props.state.processes
+  if (!processes || group.role !== 'assistant') return ''
+  let sig = ''
+  for (const block of group.blocks) {
+    if (block.kind !== 'process') continue
+    for (const item of block.items) {
+      if (item.kind !== 'tool') continue
+      const execID = item.entry.tool?.invocation.execution_id
+      const proc = execID ? processes[execID] : undefined
+      if (proc) sig += `${execID}:${proc.running ? 1 : 0}:${proc.exit_code ?? ''};`
+    }
+  }
+  return sig
+}
 function statusText(group: TranscriptGroup) {
   const params = { ...group.statusParams }
   if (params.time) params.time = formatDateTime(String(params.time), locale.value, app.displayTimezone, { timeStyle: 'medium' })
   return t(group.status ?? '', params)
-}
-async function copyGroup(group: TranscriptGroup) {
-  copiedGroup.value = group.key
-  copyError.value = ''
-  try { await copy(groupText(group)) } catch (error) { copyError.value = errorText(error) }
 }
 function fork(group: TranscriptGroup) {
   const entry = group.entries.at(-1)
@@ -79,9 +118,13 @@ function openImage(entry: Entry, index: number) {
     name: image.file?.display_name || t('imagePreviewTitle'),
   })), index)
 }
-function sender(entry: Entry) {
+function senderInfo(entry: Entry) {
   const meta = object(entry.message?.metadata)
-  return meta.source === 'im' ? String(object(meta.sender).name ?? '') : ''
+  if (meta.source !== 'im') return undefined
+  const name = String(object(meta.sender).name ?? '').trim()
+  if (!name) return undefined
+  const platform = typeof meta.platform === 'string' && meta.platform.trim() ? platformLabel(meta.platform.trim(), locale.value) : ''
+  return { name, platform }
 }
 function imageDimensions(image: Content) {
   const metadata = object(image.metadata)
@@ -89,8 +132,8 @@ function imageDimensions(image: Content) {
   const height = Number(metadata.height)
   return { width: width > 0 ? width : undefined, height: height > 0 ? height : undefined }
 }
-function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMessage(entry)?.deliveredAt, now.value) }
-function externalTime(entry: Entry) { return formatTimestamp.value(externalMessage(entry)?.deliveredAt, now.value) }
+function scheduledTime(entry: Entry) { return formatTimestamp.value(scheduledMessage(entry)?.deliveredAt, new Date()) }
+function externalTime(entry: Entry) { return formatTimestamp.value(externalMessage(entry)?.deliveredAt, new Date()) }
 </script>
 <template>
   <div class="transcript-viewport">
@@ -125,11 +168,17 @@ function externalTime(entry: Entry) { return formatTimestamp.value(externalMessa
         <section
           v-for="(group, groupIndex) in groups"
           :key="group.key"
-          v-memo="[group, now, locale, app.displayTimezone, copiedGroup, copied, copyError]"
+          v-memo="[group, groupIndex === groups.length - 1, locale, app.displayTimezone, groupProcessKey(group)]"
           class="transcript-turn"
           :class="`turn-${group.role}`"
         >
-          <template v-if="group.role === 'assistant'">
+          <CompactionDivider
+            v-if="group.role === 'compaction' && group.entries[0]"
+            :entry="group.entries[0]"
+            :session-i-d="sessionID"
+            @expand="scroll.pause"
+          />
+          <template v-else-if="group.role === 'assistant'">
             <div
               v-for="block in group.blocks"
               :key="block.key"
@@ -169,7 +218,7 @@ function externalTime(entry: Entry) { return formatTimestamp.value(externalMessa
             </p>
           </template>
           <article
-            v-for="entry in group.entries.filter(entry => group.role === 'user' || attachments(entry).images.length || attachments(entry).files.length)"
+            v-for="entry in group.role === 'compaction' ? [] : group.entries.filter(entry => group.role === 'user' || attachments(entry).images.length || attachments(entry).files.length)"
             :key="entry.id"
             :data-scroll-anchor="entry.id"
             :class="['message', group.role === 'user' ? 'message-user' : 'message-attachments']"
@@ -199,10 +248,12 @@ function externalTime(entry: Entry) { return formatTimestamp.value(externalMessa
               >{{ externalTime(entry)?.label }}</time>
             </div>
             <div
-              v-else-if="sender(entry)"
+              v-else-if="senderInfo(entry)"
               class="message-sender"
             >
-              {{ sender(entry) }} · Telegram
+              {{ senderInfo(entry)?.name }}<template v-if="senderInfo(entry)?.platform">
+                · {{ senderInfo(entry)?.platform }}
+              </template>
             </div>
             <div
               v-if="attachments(entry).images.length"
@@ -246,65 +297,21 @@ function externalTime(entry: Entry) { return formatTimestamp.value(externalMessa
                 <File /><span>{{ file.display_name }}</span>
               </button>
             </div>
-            <div
+            <UserMessageText
               v-if="group.role === 'user' && messageText(entry).trim()"
-              class="user-text"
-            >
-              {{ messageText(entry) }}
-            </div>
+              :text="messageText(entry)"
+              @expand="scroll.pause"
+            />
           </article>
-          <div
-            v-if="groupText(group) && !group.active"
-            class="message-actions"
-            :class="{ persistent: group.role === 'assistant' && groupIndex === groups.length - 1 }"
-          >
-            <Button
-              variant="ghost"
-              size="icon"
-              :title="t(copied && copiedGroup === group.key ? 'copied' : 'copy')"
-              :aria-label="t(copied && copiedGroup === group.key ? 'copied' : 'copy')"
-              @click="copyGroup(group)"
-            >
-              <Check v-if="copied && copiedGroup === group.key" /><Copy v-else />
-            </Button>
-            <Popover
-              v-if="group.role === 'assistant' && !readonly"
-              :label="t('common.more')"
-            >
-              <template #trigger>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  :title="t('common.more')"
-                  :aria-label="t('common.more')"
-                >
-                  <Ellipsis />
-                </Button>
-              </template>
-              <template #default="{ close }">
-                <button
-                  class="menu-item"
-                  @click="fork(group); close()"
-                >
-                  <GitBranch />{{ t('fork') }}
-                </button>
-              </template>
-            </Popover>
-            <time
-              v-if="group.role === 'assistant' && timestamps[group.key]"
-              class="message-time"
-              :datetime="timestamps[group.key]?.dateTime"
-              :title="timestamps[group.key]?.full"
-              :aria-label="timestamps[group.key]?.full"
-            >{{ timestamps[group.key]?.label }}</time>
-          </div>
-          <p
-            v-if="copyError && copiedGroup === group.key"
-            class="copy-error text-danger"
-            role="status"
-          >
-            {{ copyError }}
-          </p>
+          <TranscriptActions
+            v-if="group.role !== 'compaction' && groupText(group) && !group.active"
+            :role="group.role"
+            :text="groupText(group)"
+            :time="groupTime(group)"
+            :persistent="group.role === 'assistant' && groupIndex === groups.length - 1"
+            :can-fork="group.role === 'assistant' && !readonly"
+            @fork="fork(group)"
+          />
         </section>
       </div>
     </div>
@@ -313,10 +320,15 @@ function externalTime(entry: Entry) { return formatTimestamp.value(externalMessa
         v-if="scroll.showJump.value"
         class="scroll-bottom"
         size="icon"
-        :aria-label="t('bottom')"
-        @click="scroll.bottom"
+        :aria-label="t(hasNewActivity ? 'jumpToLatestNew' : 'bottom')"
+        @click="unseenNew = false; scroll.bottom()"
       >
         <ArrowDown />
+        <span
+          v-if="hasNewActivity"
+          class="scroll-bottom-dot"
+          aria-hidden="true"
+        />
       </Button>
     </Transition>
   </div>

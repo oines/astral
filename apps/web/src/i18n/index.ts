@@ -108,4 +108,5 @@ const zh: typeof en = {
   contextWindow: '上下文窗口', maxOutput: '最大输出 Token', reset: '使用推荐值', overrides: '自定义值', recommendations: '推荐值',
   disconnect: '退出登录', loading: '加载中…', empty: '暂无内容。', inspect: '查看', result: '结果', source: '来源', terminal: '终端输出',
 }
-export const i18n = createI18n({ legacy: false, locale: localStorage.getItem('astral:language') || 'zh', fallbackLocale: 'en', messages: { en, zh } })
+const initialLocale = typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function' ? localStorage.getItem('astral:language') || 'zh' : 'zh'
+export const i18n = createI18n({ legacy: false, locale: initialLocale, fallbackLocale: 'en', messages: { en, zh } })

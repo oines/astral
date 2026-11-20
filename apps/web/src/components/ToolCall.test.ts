@@ -5,11 +5,15 @@ import { renderToString } from 'vue/server-renderer'
 import { createPinia, setActivePinia } from 'pinia'
 import ToolCall from './ToolCall.vue'
 import ToolResultImages from './ToolResultImages.vue'
-import type { Entry } from '../lib/types'
+import type { Entry, ProcessStatus } from '../lib/types'
 import { useImagePreviewStore } from '../stores/image-preview'
 
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
-vi.mock('@astral/ui', () => ({ Collapse: defineComponent({ setup(_props, { slots }) { return () => h('div', slots.default?.()) } }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }), createI18n: () => ({ global: { locale: { value: 'en' } } }) }))
+vi.mock('../stores/app', () => ({ useAppStore: () => ({ computers: [], sessions: [], sessionViews: {}, deletedSessions: new Set() }) }))
+vi.mock('@astral/ui', () => ({
+  Collapse: defineComponent({ setup(_props, { slots }) { return () => h('div', slots.default?.()) } }),
+  useDelayedPending: () => ({ value: false }),
+}))
 vi.mock('./Markdown.vue', () => ({ default: defineComponent({ props: { content: { type: String, default: '' } }, setup(props) { return () => h('div', props.content) } }) }))
 
 type Node = { type: string; text: string; props: Record<string, unknown>; children: Node[]; parent?: Node }
@@ -34,18 +38,21 @@ function entry(id: string, sequence: number, finished = true): Entry {
 }
 let dispose: (() => void) | undefined
 afterEach(() => { dispose?.(); setActivePinia(undefined); vi.useRealTimers() })
-function mount(initial: Entry) {
+function mount(initial: Entry, extra: { live?: { name: string; started: boolean; ended: boolean; text: string }; process?: ProcessStatus } = {}) {
   vi.useFakeTimers()
+  const pinia = createPinia()
+  setActivePinia(pinia)
   const root = node('root')
-  const props = reactive({ entry: initial, sessionID: 'session', live: { name: 'exec_command', started: true, ended: false, text: 'streaming output' } })
+  const props = reactive<{ entry: Entry; sessionID: string; live: { name: string; started: boolean; ended: boolean; text: string }; process?: ProcessStatus }>({ entry: initial, sessionID: 'session', live: { name: 'exec_command', started: true, ended: false, text: 'streaming output' }, ...extra })
   // Vitest compiles this SFC for SSR. A no-op client render lets us exercise
   // its real setup/watch lifecycle without installing a browser DOM emulator.
   const component = { ...ToolCall, render: () => null } as unknown as Component
   const app = renderer.createApp(defineComponent({ setup: () => () => h(component, props) }))
+  app.use(pinia)
   app.provide(ssrContextKey, {})
   app.mount(root)
   dispose = () => app.unmount()
-  const state = (app._instance!.subTree.component as unknown as { setupState: { toggle: () => void; open: boolean; output: string } }).setupState
+  const state = (app._instance!.subTree.component as unknown as { setupState: { toggle: () => void; open: boolean; output: string; active: boolean; mode: string } }).setupState
   const click = () => state.toggle()
   return { state, props, click }
 }
@@ -167,5 +174,84 @@ describe('semantic tool details in root and readonly child transcripts', () => {
     expect(html).toContain('Older tool response: request processed.')
     expect(html).toContain(name === 'agent_control' ? 'exact-child-id' : 'exact-original-chat')
     expect(html).not.toContain('toolSelectedAgent')
+  })
+
+  it('keeps async exec_command spinning after tool_result until the background process exits', async () => {
+    const yielded = entry('async-cmd', 3)
+    yielded.tool!.result!.details = { output: 'starting server\n', session_id: 42 }
+    const view = mount(yielded, {
+      live: { name: 'exec_command', started: true, ended: true, text: '' },
+      process: { execution_id: 'exec', running: true, has_output: true },
+    })
+    expect(view.state.active).toBe(true)
+    expect(view.state.mode).toBe('expand')
+    view.props.process = { execution_id: 'exec', running: false, exit_code: 0, has_output: true }
+    await nextTick()
+    expect(view.state.active).toBe(false)
+  })
+
+  it('omits disclosure affordance for static short commands and switch_computer', async () => {
+    const shortCmd = entry('short-cmd', 3)
+    shortCmd.tool!.invocation.call.arguments = { cmd: 'mkdir -p dist' }
+    shortCmd.tool!.result!.details = { output: '', exit_code: 0 }
+    const shortHtml = await renderDetails(shortCmd)
+    expect(shortHtml).toContain('tool-call-static')
+    expect(shortHtml).not.toContain('aria-expanded')
+
+    const switched = entry('switch-comp', 4)
+    switched.tool!.invocation.call = { id: 'sw', name: 'switch_computer', arguments: { computer_id: 'comp_1', cwd: '/work' } }
+    switched.tool!.result!.content = [{ type: 'text', text: '{"computer_id":"comp_1","cwd":"/work"}' }]
+    const switchHtml = await renderDetails(switched)
+    expect(switchHtml).toContain('tool-call-static')
+    expect(switchHtml).toContain('/work')
+    expect(switchHtml).not.toContain('aria-expanded')
+  })
+
+  it('turns ordinary read_file with a bound computer into a direct workspace preview trigger', async () => {
+    const read = entry('read-text', 3)
+    read.tool!.invocation.call = { id: 'rd', name: 'read_file', arguments: { path: 'src/app.ts' } }
+    read.tool!.invocation.binding = { computer_id: 'comp_1', cwd: '/repo' }
+    read.tool!.result = { outcome: 'succeeded', content: [{ type: 'text', text: 'const x = 1' }] }
+    const html = await renderDetails(read)
+    expect(html).toContain('tool-call-file')
+    expect(html).not.toContain('aria-expanded')
+    expect(html).not.toContain('const x = 1')
+  })
+
+  it('renders web_search sources with host and summary without dumping raw JSON', async () => {
+    const search = entry('search-1', 3)
+    const payload = { query: 'astral', results: [{ title: 'Astral Docs', url: 'https://www.example.com/docs', summary: 'Concise summary text' }] }
+    search.tool!.invocation.call = { id: 'ws', name: 'web_search', arguments: { query: 'astral' } }
+    search.tool!.result = { outcome: 'succeeded', details: payload, content: [{ type: 'text', text: JSON.stringify(payload) }] }
+    const html = await renderDetails(search)
+    expect(html).toContain('Astral Docs')
+    expect(html).toContain('example.com')
+    expect(html).toContain('Concise summary text')
+    expect(html).toContain('tool-source-summary')
+    expect(html).not.toContain('{&quot;query&quot;')
+  })
+
+  it('renders spawn_agent semantically without dumping JSON', async () => {
+    const spawn = entry('spawn-1', 3)
+    const response = { session_id: 'child-1', name: 'Researcher', selection: { id: 'gpt-5' } }
+    spawn.tool!.invocation.call = { id: 'sp', name: 'spawn_agent', arguments: { name: 'Researcher', task: 'Inspect logs', inherit_context: true } }
+    spawn.tool!.result = { outcome: 'succeeded', details: response, content: [{ type: 'text', text: JSON.stringify(response) }] }
+    const html = await renderDetails(spawn)
+    expect(html).toContain('Researcher')
+    expect(html).toContain('Inspect logs')
+    expect(html).toContain('toolSpawnInherit')
+    expect(html).not.toContain('{&quot;session_id&quot;')
+  })
+
+  it('renders inline diff for edit_file patches without dumping fallback text', async () => {
+    const edit = entry('edit-1', 3)
+    edit.tool!.invocation.call = { id: 'ed', name: 'edit_file', arguments: { path: 'a.ts' } }
+    edit.tool!.invocation.binding = { computer_id: 'comp_1', cwd: '/repo' }
+    edit.tool!.result = { outcome: 'succeeded', details: { patch: '@@ -1,2 +1,2 @@\n-old\n+new\n' }, content: [{ type: 'text', text: 'raw fallback text' }] }
+    const html = await renderDetails(edit)
+    expect(html).toContain('inline-diff')
+    expect(html).toContain('inline-diff-add')
+    expect(html).toContain('inline-diff-del')
+    expect(html).not.toContain('raw fallback text')
   })
 })

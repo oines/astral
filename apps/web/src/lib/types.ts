@@ -5,6 +5,7 @@ export type {
   AstralInternalHttpapiEvent as SessionEvent,
   AstralInternalHttpapiSnapshot as Snapshot,
   AstralInternalHarnessView as SessionView,
+  AstralInternalHarnessProcessStatus as ProcessStatus,
   AstralInternalDomainSession as Session,
   AstralInternalDomainAgent as Agent,
   AstralInternalDomainModelProfile as Profile,

@@ -1,5 +1,5 @@
 import { markRaw } from 'vue'
-import type { Entry, SessionEvent, SessionView, Snapshot } from './types'
+import type { Entry, ProcessStatus, SessionEvent, SessionView, Snapshot } from './types'
 import type { TranscriptPosition } from './transcript-position'
 import { carryTranscriptIdentity, reconcileTranscriptGroups } from './transcript-identity'
 import { object } from './api'
@@ -18,6 +18,7 @@ export interface SessionState {
   trace: Record<string, Entry>
   previews: Record<string, Preview>
   tools: Record<string, LiveTool>
+  processes: Record<string, ProcessStatus>
   completedAttempts: Set<string>
   completedRuns: Set<string>
   historyCursor?: string
@@ -31,7 +32,7 @@ export interface SessionState {
   subagentActivityBoundary?: { sequence: number; cursor?: string }
 }
 export function emptyState(): SessionState {
-  return { epoch: '', sequence: 0, historyRevision: 0, entries: {}, trace: {}, previews: {}, tools: {}, completedAttempts: new Set(), completedRuns: new Set(), subagentActivity: {} }
+  return { epoch: '', sequence: 0, historyRevision: 0, entries: {}, trace: {}, previews: {}, tools: {}, processes: {}, completedAttempts: new Set(), completedRuns: new Set(), subagentActivity: {} }
 }
 export function addSubagentActivity(state: SessionState, activities: SubagentActivity[] = [], cursor?: string) {
   const retained = state.subagentActivity ??= {}
@@ -89,6 +90,7 @@ export function fromSnapshot(snapshot: Snapshot): SessionState {
   for (const entry of snapshot.history.entries ?? []) addEntry(state, entry, true)
   addSubagentActivity(state, snapshot.subagent_activity, snapshot.subagent_activity_cursor)
   state.subagentActivityNextCursor = snapshot.subagent_activity_next_cursor
+  for (const process of snapshot.processes ?? []) state.processes[process.execution_id] = process
   return state
 }
 export function interruptPreviews(state: SessionState) {
@@ -132,6 +134,9 @@ export function reconcileSnapshot(previous: SessionState, snapshot: Snapshot): S
     const current = next.tools[id]
     next.tools[id] = current ? { ...current, text: tool.text, ended: tool.ended || current.ended } : tool
   }
+  for (const [id, process] of Object.entries(previous.processes ?? {})) {
+    if (!next.processes[id] && !process.running) next.processes[id] = process
+  }
   const currentAttempt = next.view?.attempt
   for (const [id, preview] of Object.entries(previous.previews)) {
     if (currentAttempt && (currentAttempt.state === 'retrying' || currentAttempt.attempt_id !== id)) continue
@@ -143,6 +148,10 @@ export function reconcileSnapshot(previous: SessionState, snapshot: Snapshot): S
 export function applyEvent(state: SessionState, envelope: SessionEvent): boolean {
   if (envelope.epoch !== state.epoch) return false
   addSubagentActivity(state, envelope.subagent_activity, envelope.subagent_activity_cursor)
+  if (envelope.process) {
+    state.processes ??= {}
+    state.processes[envelope.process.execution_id] = envelope.process
+  }
   const e = envelope.core
   if (e && e.sequence <= state.sequence) return true
   if (envelope.view && envelope.view.event_sequence >= (state.view?.event_sequence ?? 0)) state.view = envelope.view
@@ -218,7 +227,7 @@ export function visibleEntry(entry: Entry) {
 function historyEntryTime(entry: Entry): number | undefined {
   const message = conversationMessage(entry)
   const assistantProcess = message?.role === 'assistant' && !message.is_error && !['error', 'cancelled'].includes(message.finish_reason ?? '') && message.content?.some(part => part.type === 'reasoning' && part.text || part.type === 'tool_call' && part.tool_call)
-  if (!entry.tool && !visibleEntry(entry) && !assistantProcess) return
+  if (!entry.tool && !entry.compaction && !visibleEntry(entry) && !assistantProcess) return
   const time = Date.parse(entry.time)
   return Number.isFinite(time) ? time : 0
 }
@@ -261,7 +270,7 @@ export type TranscriptBlock =
   | { kind: 'process'; key: string; items: ProcessItem[]; active?: boolean }
 export interface TranscriptGroup {
   key: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'compaction'
   runID?: string
   entries: Entry[]
   blocks: TranscriptBlock[]
@@ -345,7 +354,9 @@ export function durableTranscriptGroups(state: SessionState): TranscriptGroup[] 
   for (const entry of entries) {
     while (activityIndex < activities.length && compareEventTime(activities[activityIndex]!.activity.time, entry.time) < 0) activityRow(activities[activityIndex++]!.activity)
     const message = conversationMessage(entry)
-    if (message?.role === 'user' && visibleEntry(entry)) {
+    if (entry.kind === 'compaction' && entry.compaction) {
+      groups.push({ key: `compaction:${entry.id}`, role: 'compaction', entries: [entry], blocks: [] })
+    } else if (message?.role === 'user' && visibleEntry(entry)) {
       groups.push({ key: entry.id, role: 'user', entries: [entry], blocks: [] })
     } else if (entry.kind === 'message' && message?.role === 'assistant' && !message.is_error && !['error', 'cancelled'].includes(message.finish_reason ?? '')) {
       const group = assistant(entry.run_id, `run:${entry.run_id}:${entry.id}`)
@@ -411,7 +422,7 @@ export function liveTranscriptGroups(state: SessionState, durable: TranscriptGro
     process(group).active = true
     groups.push(group)
   }
-  return reconcileTranscriptGroups(state, groups.filter(group => group.role === 'user' || group.blocks.length || group.status))
+  return reconcileTranscriptGroups(state, groups.filter(group => group.role !== 'assistant' || group.blocks.length || group.status))
 }
 
 export function transcriptGroups(state: SessionState): TranscriptGroup[] {

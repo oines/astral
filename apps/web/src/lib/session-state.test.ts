@@ -393,4 +393,21 @@ describe('stable incremental transcript presentation', () => {
     next.epoch = 'server-b'
     expect(reconcileSnapshot(old, next).previews).toEqual({})
   })
+
+  it('tracks compaction dividers and async process status across snapshots and events', () => {
+    const snap = snapshot([
+      entry('q1', 1, { message: { role: 'user', content: [{ type: 'text', text: 'First' }] } }),
+      entry('cmp', 2, { kind: 'compaction', time: '2026-11-20T10:00:00Z', compaction: { summary: 'Earlier summary', input_tokens: 1000, model_id: 'm', through_id: 'q1' } }),
+      entry('q2', 3, { message: { role: 'user', content: [{ type: 'text', text: 'Second' }] } }),
+    ])
+    snap.view = { ...snap.view, status: 'idle', run_id: undefined }
+    snap.processes = [{ execution_id: 'exec-1', running: true, has_output: true }]
+    const state = fromSnapshot(snap)
+    expect(transcriptGroups(state).map(group => group.role)).toEqual(['user', 'compaction', 'user'])
+    expect(state.processes['exec-1']?.running).toBe(true)
+
+    applyEvent(state, { epoch: 'server-a', process: { execution_id: 'exec-1', running: false, exit_code: 0, has_output: true } })
+    expect(state.processes['exec-1']?.running).toBe(false)
+    expect(state.processes['exec-1']?.exit_code).toBe(0)
+  })
 })

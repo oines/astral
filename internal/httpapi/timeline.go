@@ -18,7 +18,12 @@ func timelineEntry(entry core.Entry) core.Entry {
 	entry.Created = nil
 	entry.Configuration = nil
 	entry.Input = nil
-	entry.Compaction = nil
+	if entry.Compaction != nil {
+		entry.Compaction = &core.CompactionRecord{
+			Summary:      entry.Compaction.Summary,
+			Instructions: entry.Compaction.Instructions,
+		}
+	}
 	entry.Approval = nil
 	if entry.Message != nil {
 		message := *entry.Message
@@ -32,7 +37,7 @@ func timelineEntry(entry core.Entry) core.Entry {
 		} else {
 			message.Content = timelineContent(message.Content)
 			visibleMetadata := map[string]json.RawMessage{}
-			for _, key := range []string{"source", "display_text", "files", "sender", "schedule", "external", "accepted_at"} {
+			for _, key := range []string{"source", "platform", "display_text", "files", "sender", "schedule", "external", "accepted_at"} {
 				if value, ok := metadata[key]; ok {
 					visibleMetadata[key] = value
 				}
@@ -67,22 +72,34 @@ func timelineEntry(entry core.Entry) core.Entry {
 	return entry
 }
 
-// A send's frozen destination belongs to the historical invocation, even if the
-// Session is later rebound. Keep only its two display identifiers; Computer
-// routing, credentials and other tools' opaque bindings stay out of the UI.
+// Keep only explicit UI display identifiers from historical tool bindings.
+// Send destinations freeze their target chat; file tools freeze their execution
+// Computer and CWD so clicking a path opens the right file in the workspace.
 func timelineToolTarget(inv core.Invocation) json.RawMessage {
-	if inv.Call.Name != "send_message" {
+	switch inv.Call.Name {
+	case "send_message":
+		var target struct {
+			BindingID      string `json:"binding_id,omitempty"`
+			ConversationID string `json:"conversation_id"`
+		}
+		if json.Unmarshal(inv.Binding, &target) != nil || target.ConversationID == "" {
+			return nil
+		}
+		visible, _ := json.Marshal(target)
+		return visible
+	case "read", "read_file", "write", "write_file", "edit", "edit_file", "apply_patch":
+		var target struct {
+			ComputerID string `json:"computer_id"`
+			CWD        string `json:"cwd,omitempty"`
+		}
+		if json.Unmarshal(inv.Binding, &target) != nil || target.ComputerID == "" {
+			return nil
+		}
+		visible, _ := json.Marshal(target)
+		return visible
+	default:
 		return nil
 	}
-	var target struct {
-		BindingID      string `json:"binding_id,omitempty"`
-		ConversationID string `json:"conversation_id"`
-	}
-	if json.Unmarshal(inv.Binding, &target) != nil || target.ConversationID == "" {
-		return nil
-	}
-	visible, _ := json.Marshal(target)
-	return visible
 }
 
 func timelineContent(content []core.Content) []core.Content {
@@ -117,6 +134,9 @@ func timelineContent(content []core.Content) []core.Content {
 // environment or configuration event. Run facts are retained for terminal state
 // reconciliation without consuming the visible-content budget.
 func timelineUnit(entry core.Entry) string {
+	if entry.Compaction != nil {
+		return "compaction:" + entry.ID
+	}
 	if entry.Tool != nil {
 		id := entry.Tool.Invocation.ExecutionID
 		if id == "" {

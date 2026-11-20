@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -231,6 +232,9 @@ func (t hostTool) Execute(ctx context.Context, inv core.Invocation, emit func(co
 						result.Content[i].Text = strings.Replace(result.Content[i].Text, fmt.Sprintf("Process running with session ID %d\n", internalID), fmt.Sprintf("Process running with session ID %d\n", publicID), 1)
 					}
 				}
+				if t.Definition().Name == "exec_command" {
+					r.markProcessAsync(original.ExecutionID)
+				}
 			} else if handle.ID != "" {
 				handle.Retired = true
 				if err = r.service.Store.Save(persist, "process_handles", &handle.Meta, &handle); err != nil {
@@ -316,23 +320,39 @@ func (b *trackedBackend) StartProcess(ctx context.Context, inv core.Invocation, 
 	if err != nil {
 		return nil, err
 	}
+	observer := b.runtime.registerObserver(inv.ExecutionID)
+	tracked := &trackedProcess{
+		Process:   process,
+		runtime:   b.runtime,
+		execution: inv.ExecutionID,
+		observer:  observer,
+		output:    &observedOutput{ReadCloser: process.Output(), observer: observer},
+	}
 	b.runtime.processMu.Lock()
-	b.runtime.processes[inv.ExecutionID] = process
+	b.runtime.processes[inv.ExecutionID] = tracked
 	b.runtime.processMu.Unlock()
-	return &trackedProcess{Process: process, runtime: b.runtime, execution: inv.ExecutionID}, nil
+	return tracked, nil
 }
 
 type trackedProcess struct {
 	standardtools.Process
 	runtime   *runtime
 	execution string
+	observer  *processObserver
+	output    io.ReadCloser
+}
+
+func (p *trackedProcess) Output() io.ReadCloser {
+	return p.output
 }
 
 func (p *trackedProcess) Wait() (int, error) {
-	defer func() {
-		p.runtime.processMu.Lock()
-		delete(p.runtime.processes, p.execution)
-		p.runtime.processMu.Unlock()
-	}()
-	return p.Process.Wait()
+	code, err := p.Process.Wait()
+	p.runtime.processMu.Lock()
+	delete(p.runtime.processes, p.execution)
+	p.runtime.processMu.Unlock()
+	if p.observer != nil {
+		p.observer.markExited(code, err)
+	}
+	return code, err
 }

@@ -1524,6 +1524,15 @@ export type AstralInternalHarnessPendingInput = {
     metadata: AstralInternalMessagesMetadata;
 };
 
+export type AstralInternalHarnessProcessStatus = {
+    error?: string;
+    execution_id: string;
+    exit_code?: number;
+    has_output?: boolean;
+    running: boolean;
+    truncated?: boolean;
+};
+
 export type AstralInternalHarnessSessionSummary = {
     agent_id: string;
     archived: boolean;
@@ -1708,6 +1717,7 @@ export type AstralInternalHttpapiEvent = {
     core?: AstralCoreEvent;
     entry?: AstralCoreEntry;
     epoch: string;
+    process?: AstralInternalHarnessProcessStatus;
     subagent_activity?: Array<AstralInternalDomainSubagentActivity>;
     subagent_activity_cursor?: string;
     view?: AstralInternalHarnessView;
@@ -1880,6 +1890,7 @@ export type AstralInternalHttpapiSessionPresentation = {
 export type AstralInternalHttpapiSnapshot = {
     epoch: string;
     history: AstralInternalGatewayHistoryPage;
+    processes?: Array<AstralInternalHarnessProcessStatus>;
     subagent_activity: Array<AstralInternalDomainSubagentActivity>;
     subagent_activity_cursor: string;
     subagent_activity_next_cursor?: string;
@@ -1924,6 +1935,7 @@ export type AstralInternalMessagesMetadata = {
     event_id?: string;
     files?: Array<AstralInternalDomainFileRef>;
     forward_origin?: AstralInternalDomainForwardOrigin;
+    platform?: string;
     reply_forward_origin?: AstralInternalDomainForwardOrigin;
     schedule?: AstralInternalMessagesScheduleMetadata;
     sender: AstralInternalDomainSender;
@@ -5164,6 +5176,37 @@ export type MovePendingResponses = {
 };
 
 export type MovePendingResponse = MovePendingResponses[keyof MovePendingResponses];
+
+export type SessionProcessOutputData = {
+    body?: never;
+    path: {
+        id: string;
+        execution: string;
+    };
+    query?: {
+        session_id?: string;
+        download?: boolean;
+    };
+    url: '/api/v1/sessions/{id}/processes/{execution}/output';
+};
+
+export type SessionProcessOutputErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SessionProcessOutputError = SessionProcessOutputErrors[keyof SessionProcessOutputErrors];
+
+export type SessionProcessOutputResponses = {
+    /**
+     * OK
+     */
+    200: string;
+};
+
+export type SessionProcessOutputResponse = SessionProcessOutputResponses[keyof SessionProcessOutputResponses];
 
 export type ExportRolloutData = {
     body?: never;

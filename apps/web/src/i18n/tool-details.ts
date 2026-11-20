@@ -8,6 +8,13 @@ export const toolDetailsEn = {
   toolMessageAttachmentMode: 'Attachment delivery', toolMessageAsDocument: 'As documents',
   toolMessageSent: 'Sent', toolMessageNotSent: 'Not sent', toolMessageFailed: 'Sending failed', toolMessageUnknown: 'Sending result unconfirmed',
   toolMessageQueued: 'Waiting to send', toolMessageAccepted: 'Send request accepted', toolMessageConversationID: 'Conversation ID', toolMessageBindingID: 'Binding ID', toolMessageReceipts: 'Platform message IDs',
+  switchComputer: 'Switch computer', writeStdin: 'Send command input', readStdin: 'Read command output',
+  backgroundRunning: 'Running in background', executionWithBackground: '{summary} · {count} running in background',
+  copyCommand: 'Copy command', copyOutput: 'Copy output', openFilePreview: 'Open in workspace', outputTruncated: 'Earlier output was truncated.',
+  toolSpawnContext: 'Context', toolSpawnInherit: 'Inherit conversation', toolSpawnFresh: 'Start fresh', toolSpawnTask: 'Task',
+  compactedContext: 'Context compacted', compactionInstructions: 'Instructions', compactionSummary: 'Summary',
+  showMore: 'Show more', showLess: 'Show less', collapseDetails: 'Collapse details',
+  jumpToLatestNew: 'Jump to latest (new activity)',
 }
 export const toolDetailsZh: typeof toolDetailsEn = {
   toolAction: '操作', toolTargetAgent: '子代理', toolSelectedAgent: '指定子代理', toolIdentifiers: '标识与回执',
@@ -19,4 +26,11 @@ export const toolDetailsZh: typeof toolDetailsEn = {
   toolMessageAttachmentMode: '附件发送方式', toolMessageAsDocument: '作为文件',
   toolMessageSent: '已发送', toolMessageNotSent: '未发送', toolMessageFailed: '发送失败', toolMessageUnknown: '发送结果未确认',
   toolMessageQueued: '等待发送', toolMessageAccepted: '发送请求已接受', toolMessageConversationID: '聊天标识', toolMessageBindingID: '绑定标识', toolMessageReceipts: '平台消息标识',
+  switchComputer: '切换电脑', writeStdin: '向命令输入', readStdin: '读取命令输出',
+  backgroundRunning: '后台运行中', executionWithBackground: '{summary} · {count} 个后台命令运行中',
+  copyCommand: '复制命令', copyOutput: '复制输出', openFilePreview: '在侧栏查看', outputTruncated: '较早的输出已截断。',
+  toolSpawnContext: '上下文', toolSpawnInherit: '继承当前会话', toolSpawnFresh: '独立开始', toolSpawnTask: '任务',
+  compactedContext: '已压缩上下文', compactionInstructions: '压缩要求', compactionSummary: '摘要',
+  showMore: '展开全部', showLess: '收起', collapseDetails: '收起详情',
+  jumpToLatestNew: '回到最新消息（有新内容）',
 }

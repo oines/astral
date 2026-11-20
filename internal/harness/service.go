@@ -65,6 +65,8 @@ type Service struct {
 	modelFallbackScheduleMu sync.Mutex
 	modelFallbackUpdates    map[string]modelFallbackScheduleUpdate
 	modelFallbackWake       chan struct{}
+	processWatchMu          sync.Mutex
+	processWatchers         map[string]map[chan ProcessStatus]struct{}
 }
 
 type runtime struct {
@@ -83,6 +85,7 @@ type runtime struct {
 	environmentMu     sync.Mutex
 	processMu         sync.Mutex
 	processes         map[string]standardtools.Process
+	processObservers  map[string]*processObserver
 	usageHead         string
 	messageTool       core.ToolDefinition
 	compactionPrompt  string

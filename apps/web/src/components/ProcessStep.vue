@@ -6,6 +6,7 @@ import { Collapse } from '@astral/ui'
 import type { ProcessItem, SessionState } from '../lib/session-state'
 import ToolCall from './ToolCall.vue'
 import Markdown from './Markdown.vue'
+
 defineProps<{ item: ProcessItem; sessionID: string; state: SessionState }>()
 const emit = defineEmits<{ expand: [] }>()
 const { t } = useI18n()
@@ -18,6 +19,7 @@ function toggle() { emit('expand'); open.value = !open.value }
     :entry="item.entry"
     :session-i-d="sessionID"
     :live="state.tools[item.entry.tool!.invocation.execution_id]"
+    :process="state.processes?.[item.entry.tool!.invocation.execution_id]"
     @expand="emit('expand')"
   />
   <div
@@ -25,6 +27,7 @@ function toggle() { emit('expand'); open.value = !open.value }
     class="reasoning"
   >
     <button
+      type="button"
       class="reasoning-heading"
       :aria-expanded="open"
       @click="toggle"
@@ -35,11 +38,21 @@ function toggle() { emit('expand'); open.value = !open.value }
       />
     </button>
     <Collapse :open="open">
-      <Markdown
-        :content="item.text"
-        :session-i-d="sessionID"
-        :streaming="item.streaming"
-      />
+      <div class="disclosure-body">
+        <button
+          type="button"
+          class="disclosure-rail"
+          :aria-label="t('collapseDetails')"
+          @click="toggle"
+        />
+        <div class="reasoning-content">
+          <Markdown
+            :content="item.text"
+            :session-i-d="sessionID"
+            :streaming="item.streaming"
+          />
+        </div>
+      </div>
     </Collapse>
   </div>
 </template>

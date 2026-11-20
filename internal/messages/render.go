@@ -32,6 +32,7 @@ func Escape(value string) string {
 
 type Metadata struct {
 	Source             string                `json:"source"`
+	Platform           string                `json:"platform,omitempty"`
 	DeliveryID         string                `json:"delivery_id"`
 	EventID            string                `json:"event_id,omitempty"`
 	ConversationID     string                `json:"conversation_id,omitempty"`
@@ -100,7 +101,7 @@ func ChatContext(connection domain.Connection, conversation domain.Conversation)
 	return body.String()
 }
 
-func Observation(event domain.Observation, _ domain.Connection, conversation domain.Conversation, files []domain.FileRef, mediaError string) core.Message {
+func Observation(event domain.Observation, connection domain.Connection, conversation domain.Conversation, files []domain.FileRef, mediaError string) core.Message {
 	var body strings.Builder
 	sender := event.Sender.Name
 	if event.Sender.Username != "" {
@@ -219,7 +220,7 @@ func Observation(event domain.Observation, _ domain.Connection, conversation dom
 		body.WriteString("\n</message>")
 	}
 	_, images := AttachmentParts(files)
-	metadata, _ := json.Marshal(Metadata{Source: "im", DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: observationDisplayText(event), Sender: event.Sender, Files: files, Attachments: event.Attachments, ForwardOrigin: event.ForwardOrigin, ReplyForwardOrigin: event.ReplyForwardOrigin})
+	metadata, _ := json.Marshal(Metadata{Source: "im", Platform: connection.Platform, DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: observationDisplayText(event), Sender: event.Sender, Files: files, Attachments: event.Attachments, ForwardOrigin: event.ForwardOrigin, ReplyForwardOrigin: event.ReplyForwardOrigin})
 	return core.Message{Role: core.RoleUser, ContextKind: "im.observation", Content: append(core.Text(body.String()), images...), Metadata: metadata}
 }
 

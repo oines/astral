@@ -107,7 +107,7 @@ func TestCompactObservationsKeepTheirConversationAndDeliveryIdentity(t *testing.
 			if err := json.Unmarshal(message.Metadata, &meta); err != nil {
 				t.Fatal(err)
 			}
-			wantMeta := Metadata{Source: "im", DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: event.Text, Sender: event.Sender}
+			wantMeta := Metadata{Source: "im", Platform: connection.Platform, DeliveryID: event.ID, EventID: event.ID, ConversationID: conversation.ID, DisplayText: event.Text, Sender: event.Sender}
 			if !reflect.DeepEqual(meta, wantMeta) {
 				t.Fatalf("rendering changed stored delivery metadata: %+v", meta)
 			}
