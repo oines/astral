@@ -32,6 +32,7 @@ type ConnectOptions struct {
 	Root         string `json:"root,omitempty"`
 	Foreground   bool   `json:"foreground,omitempty"`
 	Container    bool   `json:"container,omitempty"`
+	Temporary    bool   `json:"temporary,omitempty"`
 }
 
 var identityPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
@@ -56,6 +57,12 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 	}
 	if !identityPattern.MatchString(options.EnrollmentID) {
 		return domain.Invalid("invalid enrollment identity")
+	}
+	if options.Temporary {
+		if options.Container {
+			return domain.Invalid("temporary mode cannot be combined with --container")
+		}
+		return connectTemporary(ctx, options, report)
 	}
 	root, err := connectRoot(options)
 	if err != nil {
@@ -144,7 +151,11 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 		}
 		report("Service status: " + prefix + quote(executable) + " computer service status --root " + quote(root))
 	}
-	if err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: credentialsPath, EnvironmentPATH: os.Getenv("PATH")}); err != nil {
+	proxy, err := githubrelease.Proxy()
+	if err != nil {
+		return err
+	}
+	if err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: credentialsPath, EnvironmentPATH: os.Getenv("PATH"), GitHubProxy: proxy}); err != nil {
 		return fmt.Errorf("computer registered, but its current-user service could not be installed: %w", err)
 	}
 	if err = rememberComputerInstallation(root); err != nil {
@@ -172,6 +183,65 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 		}
 	}
 }
+func connectTemporary(ctx context.Context, options ConnectOptions, report func(string)) error {
+	root, err := os.MkdirTemp("", "astral-temp-daemon-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(root)
+	bootstrap, err := computers.NewDaemon(root, computers.Credentials{ServerURL: options.ServerURL, ServerPin: options.ServerPin, Temporary: true})
+	if err != nil {
+		return err
+	}
+	bootstrap.Hello.Version = DaemonVersion
+	registerCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	credentials, err := computers.RegisterRemote(registerCtx, options.ServerURL, options.ServerPin, options.EnrollmentID, options.Token, bootstrap.Hello)
+	cancel()
+	if err != nil {
+		return err
+	}
+	if !credentials.Temporary {
+		return domain.Forbidden("this enrollment is not a temporary Computer enrollment")
+	}
+	// Temporary credentials stay strictly in memory; never write credentials.json.
+	credentials.ServerURL = options.ServerURL
+	d, err := computers.NewDaemon(root, credentials)
+	if err != nil {
+		return err
+	}
+	d.Hello.Version = DaemonVersion
+	defer func() {
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer closeCancel()
+		_ = d.Close(closeCtx)
+	}()
+	if report != nil {
+		report("Temporary Computer connected: " + credentials.ComputerID)
+		if d.Hello.InitialCWD != "" {
+			report("Working directory: " + d.Hello.InitialCWD)
+		}
+		report("Press Ctrl+C or close this terminal to disconnect and remove it.")
+	}
+	err = d.Run(ctx, func(err error) {
+		if err != nil && report != nil && ctx.Err() == nil {
+			var domainErr *domain.Error
+			if errors.As(err, &domainErr) && domainErr.Code == "forbidden" {
+				report("Temporary Computer ended: " + domainErr.Message)
+				return
+			}
+			report("Temporary Daemon connection interrupted: " + err.Error())
+		}
+	})
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	var domainErr *domain.Error
+	if errors.As(err, &domainErr) && domainErr.Code == "forbidden" {
+		return nil
+	}
+	return err
+}
+
 func computerStatus(ctx context.Context, c computers.Credentials) (domain.ComputerStatus, error) {
 	var status domain.ComputerStatus
 	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)

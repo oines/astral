@@ -2,7 +2,7 @@ import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } fro
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { desktopNames, digest, distributionNames } from './release-assets.mjs'
+import { desktopNames, digest, executableNames } from './release-assets.mjs'
 import { downloadArtifact } from './rolling-release-inputs.mjs'
 import { isDirectInvocation, readReleaseVersion, repositoryRoot } from './release-version.mjs'
 import { validateBuildMetadata } from './rolling-release-version.mjs'
@@ -96,7 +96,7 @@ export async function gatherPackageInputs({ root = repositoryRoot, environment =
     }))
     const failed = downloads.find(value => value.status === 'rejected')
     if (failed) throw failed.reason
-    const signedNames = [...distributionNames, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'release-formats.json', 'checksums.txt']
+    const signedNames = [...executableNames, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'release-formats.json', 'checksums.txt']
     const plans = new Map([
       ['signed-distribution', signedNames], ['mac-notary-binaries', ['binaries.json']],
       ...['x64', 'arm64'].map(arch => [`desktop-mac-${arch}`, [...desktopNames(version).filter(name => name.includes(`-mac-${arch}.`)), `notarization/${arch}.json`]]),
@@ -108,11 +108,11 @@ export async function gatherPackageInputs({ root = repositoryRoot, environment =
     const checksums = new Map()
     for (const line of (await readFile(path.join(temporary, 'signed-distribution/checksums.txt'), 'utf8')).trim().split('\n')) {
       const match = /^([a-f0-9]{64}) {2}([A-Za-z0-9._-]+)$/.exec(line)
-      requireValue(match && distributionNames.includes(match[2]) && !checksums.has(match[2]), 'Signed program checksums are invalid or ambiguous.')
+      requireValue(match && executableNames.includes(match[2]) && !checksums.has(match[2]), 'Signed program checksums are invalid or ambiguous.')
       checksums.set(match[2], match[1])
     }
-    requireValue(checksums.size === distributionNames.length, 'Signed program checksum inventory is incomplete.')
-    for (const name of distributionNames) requireValue(await digest(path.join(temporary, 'signed-distribution', name)) === checksums.get(name), 'Signed program bytes differ from their frozen checksums.')
+    requireValue(checksums.size === executableNames.length, 'Signed program checksum inventory is incomplete.')
+    for (const name of executableNames) requireValue(await digest(path.join(temporary, 'signed-distribution', name)) === checksums.get(name), 'Signed program bytes differ from their frozen checksums.')
     const partials = [
       ['mac-notary-binaries', 'binaries.json', undefined],
       ...['x64', 'arm64'].map(arch => [`desktop-mac-${arch}`, `notarization/${arch}.json`, arch]),

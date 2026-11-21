@@ -2,28 +2,30 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import { createSession, continueSession, decideApproval, inputReceipt, movePending, removePending, updatePending, selectComputer, selectModel, stopSession, submitInput, uploadAttachment } from '@astral/sdk'
-import { ArrowUp, ArrowDown, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, Bot, ListEnd, CornerDownRight, Trash2, Ellipsis, Pencil, Settings2 } from '@astral/icons'
+import { createSession, continueSession, decideApproval, disconnectTemporaryComputer, inputReceipt, movePending, removePending, updatePending, selectComputer, selectModel, stopSession, submitInput, uploadAttachment } from '@astral/sdk'
+import { ArrowUp, ArrowDown, Square, Plus, X, CircleAlert, Monitor, File, ChevronDown, Check, Bot, ListEnd, CornerDownRight, Trash2, Ellipsis, Pencil, Settings2, Terminal } from '@astral/icons'
 import { Button, Popover, useDelayedPending } from '@astral/ui'
-import type { SessionView } from '../lib/types'
+import type { Computer, SessionView } from '../lib/types'
 import { clone, errorText, fileURL, jsonEqual, request } from '../lib/api'
 import { prepareInputAttempt, sameInputContent } from '../lib/input-attempt'
 import { useAppStore } from '../stores/app'
 import ModelSelection from './ModelSelection.vue'
 import ComposerContext from './ComposerContext.vue'
+import TemporaryComputerDialog from './TemporaryComputerDialog.vue'
 import type { ModelSelection as Selection } from '../lib/model-reasoning'
 import { modelUnavailableLabel } from '../lib/model-availability'
 import { useImagePreviewStore } from '../stores/image-preview'
 import { useSurfaceStore } from '../stores/surface'
 import type { FileRef } from '../lib/types'
 import { revealOverflowLabel } from '../lib/overflow-label'
+import { formatDateTime } from '../lib/timezone'
 const props = defineProps<{ view: SessionView; live: boolean }>()
 const showConnection = useDelayedPending(() => !props.live)
 const emit = defineEmits<{ compact: []; started: [id: string] }>()
 const app = useAppStore()
 const images = useImagePreviewStore()
 const surface = useSurfaceStore()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const draftKey = props.view.id || `new:${props.view.agent_id}`
 if (!app.drafts[draftKey]) app.drafts[draftKey] = { text: '', files: [] }
 const draft = app.drafts[draftKey]!
@@ -67,11 +69,56 @@ const unavailableReason = computed(() => selectedProfile.value?.unavailable_reas
 const canContinue = computed(() => view.value.can_continue)
 const continuing = computed(() => !editing.value && !composerText.value.trim() && !attachments.value.length && canContinue.value)
 const agent = computed(() => app.agents.find(a => a.id === view.value.agent_id))
-const computers = computed(() => app.computers.filter(c => agent.value?.allowed_computers.includes(c.id) && !c.revoked))
+const isRootSession = computed(() => !view.value.subagent_parent_id)
+const rootSessionID = computed(() => view.value.subagent_parent_id || view.value.id)
+const computers = computed(() => app.computers.filter(c => {
+  if (c.revoked) return false
+  if (c.temporary) {
+    return Boolean(rootSessionID.value) && c.owner_session_id === rootSessionID.value && c.owner_agent_id === view.value.agent_id
+  }
+  return Boolean(agent.value?.allowed_computers.includes(c.id))
+}))
 const contextUsage = computed(() => view.value.context_usage)
 const ratio = computed(() => contextUsage.value?.context_window ? Math.min(100, Math.round(contextUsage.value.input_tokens / contextUsage.value.context_window * 100)) : undefined)
 const computer = computed(() => computers.value.find(c => c.id === view.value.computer_id))
 const modelBusy = ref(false)
+const temporaryDialogOpen = ref(false)
+const disconnectingID = ref('')
+
+function temporaryComputerDetail(c: Computer) {
+  const parts: string[] = []
+  if (c.initial_cwd) parts.push(c.initial_cwd)
+  if (c.expires_at) {
+    parts.push(t('temporaryComputer.expiresAt', {
+      time: formatDateTime(c.expires_at, locale.value, app.displayTimezone, { timeStyle: 'short' }),
+    }))
+  }
+  return parts.join(locale.value === 'zh' ? '，' : ', ')
+}
+
+async function ensureSessionForTemporary(): Promise<string> {
+  await ensureSession()
+  return view.value.id
+}
+
+async function disconnectTemporary(id: string) {
+  if (view.value.archived || disconnectingID.value) return
+  disconnectingID.value = id
+  try {
+    await action(async () => {
+      await request(disconnectTemporaryComputer({ path: { id } }))
+      if (homeSelection.value.computer_id === id) {
+        homeSelection.value = { ...homeSelection.value, computer_id: '' }
+      }
+      if (draft.session?.computer_id === id) {
+        draft.session.computer_id = ''
+      }
+      await app.refresh()
+    })
+  } finally {
+    disconnectingID.value = ''
+  }
+}
 function previewAttachment(file: FileRef) {
   if (file.media_type.startsWith('image/')) {
     const imageFiles = attachments.value.filter(item => item.media_type.startsWith('image/'))
@@ -593,27 +640,64 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
                   @pointerenter="revealOverflowLabel($event, 'span')"
                   @focus="revealOverflowLabel($event, 'span')"
                 >
-                  <Monitor /><span>{{ computer?.name || t('missing') }}</span><ChevronDown />
+                  <Monitor /><span>{{ computer?.name || t('missing') }}</span><span
+                    v-if="computer?.temporary"
+                    class="composer-temp-tag"
+                  >{{ t('temporaryComputer.badge') }}</span><ChevronDown />
                 </button>
               </template>
               <template #default="{ close }">
                 <div class="popover-label">
                   {{ t('computer') }}
                 </div>
-                <button
+                <div
                   v-for="c in computers"
                   :key="c.id"
+                  class="computer-menu-row"
+                >
+                  <button
+                    type="button"
+                    class="menu-item computer-menu-choice"
+                    :disabled="running"
+                    @click="changeComputer(c.id); close()"
+                  >
+                    <Monitor />
+                    <span class="computer-menu-text">
+                      <span class="computer-menu-name">
+                        {{ c.name }}<span
+                          v-if="c.temporary"
+                          class="composer-temp-tag"
+                        >{{ t('temporaryComputer.badge') }}</span><small
+                          v-if="!c.online"
+                          class="muted"
+                        > · {{ t('offline') }}</small>
+                      </span>
+                      <small
+                        v-if="c.temporary && temporaryComputerDetail(c)"
+                        class="computer-menu-detail muted"
+                      >{{ temporaryComputerDetail(c) }}</small>
+                    </span>
+                    <Check v-if="view.computer_id === c.id" />
+                  </button>
+                  <button
+                    v-if="c.temporary && !view.archived"
+                    type="button"
+                    class="computer-menu-disconnect"
+                    :disabled="disconnectingID === c.id"
+                    @click.stop="disconnectTemporary(c.id)"
+                  >
+                    {{ t('temporaryComputer.disconnect') }}
+                  </button>
+                </div>
+                <hr class="separator">
+                <button
+                  v-if="isRootSession && !view.archived"
                   type="button"
                   class="menu-item"
-                  :disabled="running"
-                  @click="changeComputer(c.id); close()"
+                  @click="temporaryDialogOpen = true; close()"
                 >
-                  <Monitor /><span>{{ c.name }}<small
-                    v-if="!c.online"
-                    class="muted"
-                  > · {{ t('offline') }}</small></span><Check v-if="view.computer_id === c.id" />
+                  <Terminal />{{ t('temporaryComputer.action') }}
                 </button>
-                <hr class="separator">
                 <RouterLink
                   class="menu-item"
                   :to="{ path: '/settings/agents', query: { agent: view.agent_id, tab: 'computers' } }"
@@ -676,5 +760,11 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
     >
       <span class="spinner" />{{ t('reconnecting') }}
     </div>
+    <TemporaryComputerDialog
+      v-if="temporaryDialogOpen && isRootSession && !view.archived"
+      v-model:open="temporaryDialogOpen"
+      :session-id="view.id"
+      :ensure-session="ensureSessionForTemporary"
+    />
   </div>
 </template>

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSSRApp, defineComponent, getCurrentInstance, ref } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import AddComputerDialog from './AddComputerDialog.vue'
+import { resetDownloadSourceState, useDownloadSource } from '../../lib/download-source'
 
 interface Setup {
   chooseMode: (mode: 'local' | 'container' | 'remote') => void
@@ -13,6 +14,7 @@ interface Setup {
   containerAPIEnabled: boolean
   remoteAPIEnabled: boolean
   serverAddress: string
+  displayedCommand: string
 }
 
 const fixture = vi.hoisted(() => ({
@@ -46,6 +48,7 @@ vi.mock('@astral/ui', () => ({
 }))
 
 beforeEach(() => {
+  resetDownloadSourceState()
   fixture.setup = undefined
   fixture.computers = []
   fixture.createLocalContainer.mockReset().mockResolvedValue({ data: { id: 'operation', state: 'starting' } })
@@ -117,5 +120,27 @@ describe('adding a Computer configures Astral API before connecting', () => {
     await setup.remote()
     expect(fixture.enrollComputer).toHaveBeenLastCalledWith({ body: { container: false, server_url: 'https://astral.example', computer_api_disabled: false } })
     expect(setup.remoteAPIEnabled).toBe(true)
+  })
+
+  it('rewrites remote installer commands immediately when switching download source without resetting enrollment', async () => {
+    const rawShell = 'curl --fail --silent --show-error --location --proto \'=https\' --proto-redir \'=https\' "${ASTRAL_GITHUB_PROXY:+${ASTRAL_GITHUB_PROXY%/}/}https://github.com/oines/astral/releases/latest/download/install-computer.sh" | sh -s -- --server \'https://astral.example\''
+    fixture.enrollComputer.mockResolvedValueOnce({
+      data: {
+        enrollment: { id: 'enr_1', state: 'waiting', computer_api_disabled: true },
+        command: rawShell,
+        powershell_command: '',
+      },
+    })
+    const setup = await dialog()
+    setup.chooseMode('remote')
+    setup.serverAddress = 'https://astral.example'
+    await setup.remote()
+    expect(setup.displayedCommand).toBe(rawShell)
+
+    const source = useDownloadSource()
+    source.preset.value = 'edgeone'
+    expect(setup.displayedCommand).toContain('https://edgeone.gh-proxy.org/https://github.com/oines/astral/releases/latest/download/install-computer.sh')
+    expect(setup.displayedCommand).toContain("ASTRAL_GITHUB_PROXY='https://edgeone.gh-proxy.org/' sh -s --")
+    expect(fixture.enrollComputer).toHaveBeenCalledOnce()
   })
 })

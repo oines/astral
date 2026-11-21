@@ -172,6 +172,7 @@ type Computer struct {
 	Shell               string         `json:"shell,omitempty"`
 	Home                string         `json:"home,omitempty"`
 	Root                string         `json:"root,omitempty"`
+	InitialCWD          string         `json:"initial_cwd,omitempty"`
 	DaemonVersion       string         `json:"daemon_version,omitempty"`
 	Container           *ContainerInfo `json:"container,omitempty"`
 	TokenHash           string         `json:"-"`
@@ -179,6 +180,10 @@ type Computer struct {
 	Local               bool           `json:"local"`
 	Revoked             bool           `json:"revoked"`
 	ComputerAPIDisabled bool           `json:"computer_api_disabled,omitempty"`
+	Temporary           bool           `json:"temporary,omitempty"`
+	OwnerSessionID      string         `json:"owner_session_id,omitempty"`
+	OwnerAgentID        string         `json:"owner_agent_id,omitempty"`
+	ExpiresAt           *time.Time     `json:"expires_at,omitempty"`
 }
 
 type ComputerStatus struct {
@@ -202,6 +207,10 @@ type Enrollment struct {
 	CredentialID        string    `json:"credential_id,omitempty"`
 	Container           bool      `json:"container"`
 	Local               bool      `json:"local"`
+	Temporary           bool      `json:"temporary,omitempty"`
+	OwnerSessionID      string    `json:"owner_session_id,omitempty"`
+	OwnerAgentID        string    `json:"owner_agent_id,omitempty"`
+	TTLSeconds          int       `json:"ttl_seconds,omitempty"`
 	ComputerAPIDisabled bool      `json:"computer_api_disabled,omitempty"`
 	State               string    `json:"state"`
 	Error               string    `json:"error,omitempty"`

@@ -338,6 +338,15 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .composer-picker > span { min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 .composer-picker > svg { width: 14px; height: 14px; }
 .composer-picker > svg:last-child { width: 12px; height: 12px; }
+.composer-temp-tag { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 11px; line-height: 16px; font-weight: 500; flex-shrink: 0; }
+.computer-menu-row { display: flex; align-items: center; gap: 4px; }
+.computer-menu-choice { flex: 1; min-width: 0; }
+.computer-menu-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; }
+.computer-menu-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.computer-menu-detail { font-size: 11px; line-height: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.computer-menu-disconnect { flex-shrink: 0; padding: 4px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--danger); font-size: 12px; line-height: 18px; cursor: pointer; }
+.computer-menu-disconnect:hover:not(:disabled) { background: var(--hover); }
+.computer-menu-disconnect:disabled { opacity: 0.5; cursor: default; }
 .model-picker { color: var(--ink); }
 .model-selection { display: flex; align-items: center; min-width: 0; }
 .preference-control > .model-selection, .model-selection-trigger { width: 100%; }

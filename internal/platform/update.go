@@ -12,6 +12,7 @@ import (
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/daemonservice"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/releasefeed"
 )
 
@@ -97,6 +98,13 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 	report("Updating Astral Daemon to " + options.Version + "; restarting its current-user service interrupts running tasks.")
 	next := previous
 	next.Executable = executable
+	if rawProxy, explicit := os.LookupEnv(githubrelease.ProxyEnvironment); explicit {
+		normalized, proxyErr := githubrelease.NormalizeProxy(rawProxy)
+		if proxyErr != nil {
+			return proxyErr
+		}
+		next.GitHubProxy = normalized
+	}
 	if err = manager.Install(ctx, next); err == nil {
 		err = manager.Restart(ctx)
 	}

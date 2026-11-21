@@ -60,7 +60,7 @@ Applications pull the pinned environment, create the data volume and container, 
 
 ## Public assets and capabilities
 
-A complete public Release contains these six unified executable names:
+A complete public Release contains six unified Server/CLI executables (`distribution_names`) plus six standalone lightweight Daemon executables (`daemon_names`, built with `-tags daemon`):
 
 ```text
 astral-darwin-amd64
@@ -69,12 +69,18 @@ astral-linux-amd64
 astral-linux-arm64
 astral-windows-amd64.exe
 astral-windows-arm64.exe
+astral-daemon-darwin-amd64
+astral-daemon-darwin-arm64
+astral-daemon-linux-amd64
+astral-daemon-linux-arm64
+astral-daemon-windows-amd64.exe
+astral-daemon-windows-arm64.exe
 ```
 
-All six are needed by a Server or Desktop that offers enrollment of other platforms. Other assets are:
+All six unified `astral-*` binaries are needed by a Server or Desktop that offers enrollment of other platforms; Computer installers and remote Daemon updates prefer `astral-daemon-*` and fall back to `astral-*` on older releases. Desktop packages bundle only the six unified `astral-*` binaries (not the six standalone Daemons). All four Darwin executables (`astral-darwin-*` and `astral-daemon-darwin-*`) are signed and notarized together. Other assets are:
 
 - Desktop DMG/ZIP, NSIS/ZIP and AppImage/DEB files named `Astral-${version}-${os}-${arch}.${ext}`. Mac and Windows use `x64` or `arm64`; Linux AppImages use `x86_64` or `arm64`, and Linux DEBs use `amd64` or `arm64`.
-- `checksums.txt`, covering exactly the six unified executables.
+- `checksums.txt`, covering all twelve executables (six unified `astral-*` plus six standalone `astral-daemon-*`).
 - `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt` and the versioned Linux `install-server.sh`.
 - `release-manifest.json`, identifying the source, CI/build runs, runtime data formats, asset sizes/hashes and implemented update capabilities.
 - `mac-signing-report.json` schema 3, containing three distinct Accepted Apple submission IDs, signature/package checks, certificate expiration, both actual `native_tested_arches` and exact Mac artifact hashes. Historical schema 2 reports remain readable as historical evidence; they do not establish new dual-native acceptance.

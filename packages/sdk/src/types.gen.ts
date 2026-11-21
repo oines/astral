@@ -686,6 +686,8 @@ export type AstralInternalComputersDirectoryPage = {
 
 export type AstralInternalComputersEnrollmentResult = {
     command: string;
+    direct_command?: string;
+    direct_powershell_command?: string;
     enrollment: AstralInternalDomainEnrollment;
     powershell_command: string;
     server_pin: string;
@@ -756,19 +758,24 @@ export type AstralInternalDomainComputerStatus = {
     container?: AstralInternalDomainContainerInfo;
     created_at: string;
     daemon_version?: string;
+    expires_at?: string;
     home?: string;
     hostname?: string;
     id: string;
+    initial_cwd?: string;
     kind: string;
     last_error?: string;
     local: boolean;
     name: string;
     online: boolean;
     os?: string;
+    owner_agent_id?: string;
+    owner_session_id?: string;
     revision: number;
     revoked: boolean;
     root?: string;
     shell?: string;
+    temporary?: boolean;
     token_id?: string;
     updated_at: string;
 };
@@ -842,9 +849,13 @@ export type AstralInternalDomainEnrollment = {
     expires_at: string;
     id: string;
     local: boolean;
+    owner_agent_id?: string;
+    owner_session_id?: string;
     revision: number;
     state: string;
+    temporary?: boolean;
     token_hash: string;
+    ttl_seconds?: number;
     updated_at: string;
 };
 
@@ -1041,19 +1052,24 @@ export type AstralInternalDomainOwnerComputerStatus = {
     container?: AstralInternalDomainContainerInfo;
     created_at: string;
     daemon_version?: string;
+    expires_at?: string;
     home?: string;
     hostname?: string;
     id: string;
+    initial_cwd?: string;
     kind: string;
     last_error?: string;
     local: boolean;
     name: string;
     online: boolean;
     os?: string;
+    owner_agent_id?: string;
+    owner_session_id?: string;
     revision: number;
     revoked: boolean;
     root?: string;
     shell?: string;
+    temporary?: boolean;
     token_id?: string;
     updated_at: string;
 };
@@ -1707,10 +1723,17 @@ export type AstralInternalHttpapiConversationInput = {
     topic_id?: string;
 };
 
+export type AstralInternalHttpapiDaemonUpdateInput = {
+    github_proxy?: string;
+};
+
 export type AstralInternalHttpapiEnrollmentInput = {
     computer_api_disabled?: boolean;
     container: boolean;
     server_url?: string;
+    session_id?: string;
+    temporary?: boolean;
+    ttl_seconds?: number;
 };
 
 export type AstralInternalHttpapiEvent = {
@@ -3080,7 +3103,7 @@ export type ComputerMaintenanceResponses = {
 export type ComputerMaintenanceResponse = ComputerMaintenanceResponses[keyof ComputerMaintenanceResponses];
 
 export type UpdateComputerDaemonData = {
-    body?: never;
+    body?: AstralInternalHttpapiDaemonUpdateInput;
     path: {
         id: string;
     };
@@ -3188,6 +3211,33 @@ export type UpdateComputerResponses = {
 };
 
 export type UpdateComputerResponse = UpdateComputerResponses[keyof UpdateComputerResponses];
+
+export type DisconnectTemporaryComputerData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/computers/{id}/disconnect';
+};
+
+export type DisconnectTemporaryComputerErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type DisconnectTemporaryComputerError = DisconnectTemporaryComputerErrors[keyof DisconnectTemporaryComputerErrors];
+
+export type DisconnectTemporaryComputerResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type DisconnectTemporaryComputerResponse = DisconnectTemporaryComputerResponses[keyof DisconnectTemporaryComputerResponses];
 
 export type ListComputerDirectoryData = {
     body?: never;

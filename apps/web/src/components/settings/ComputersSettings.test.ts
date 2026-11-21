@@ -11,14 +11,17 @@ interface Setup {
   confirmRemoval: () => void
   remove: () => Promise<void>
   revoke: () => Promise<void>
+  disconnectTemporary: (id: string) => Promise<void>
   removing: boolean
   updateSetting: (id: string, field: 'computer_api_disabled', value: boolean) => Promise<void>
 }
 const fixture = vi.hoisted(() => ({
   setup: undefined as Setup | undefined,
   list: undefined as unknown as { data: Ref<Computer[]> },
-  app: { agents: [], refresh: vi.fn(async () => {}) },
-  remove: vi.fn(async () => ({ data: { ok: true } })), revoke: vi.fn(async () => ({ data: { ok: true } })), forgetComputer: vi.fn(), cache: vi.fn(),
+  app: { agents: [], sessions: [] as { id: string; title: string }[], displayTimezone: 'UTC', refresh: vi.fn(async () => {}) },
+  remove: vi.fn(async () => ({ data: { ok: true } })), revoke: vi.fn(async () => ({ data: { ok: true } })),
+  disconnectTemporaryComputer: vi.fn(async () => ({ data: { ok: true } })),
+  forgetComputer: vi.fn(), cache: vi.fn(),
   listComputers: vi.fn<() => Promise<{ data: OwnerComputerStatus[] }>>(),
   updateComputer: vi.fn<() => Promise<{ data: OwnerComputerStatus }>>(),
   confirm: vi.fn(),
@@ -31,11 +34,12 @@ vi.mock('../../composables/useSettingsSave', () => ({ useSettingsSave: () => ({
 }) }))
 vi.mock('@astral/sdk', async importOriginal => ({
   ...await importOriginal<object>(), deleteComputer: fixture.remove, revokeComputer: fixture.revoke,
+  disconnectTemporaryComputer: fixture.disconnectTemporaryComputer,
   listComputers: fixture.listComputers, updateComputer: fixture.updateComputer,
 }))
 vi.mock('@astral/sdk/colada', () => ({ listComputersQuery: () => ({}), listComputersQueryKey: () => ['computers'] }))
 vi.mock('@pinia/colada', () => ({ useQuery: () => fixture.list, useQueryCache: () => ({ setQueryData: fixture.cache }) }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale: { value: 'en' } }) }))
 vi.mock('./ResourceDelete.vue', () => ({ default: { render: () => null } }))
 vi.mock('./AddComputerDialog.vue', () => ({ default: { render: () => null } }))
 vi.mock('./ComputerMaintenance.vue', () => ({ default: { render: () => null } }))
@@ -62,6 +66,8 @@ beforeEach(() => {
   fixture.app.refresh.mockReset().mockResolvedValue(undefined)
   fixture.remove.mockReset().mockResolvedValue({ data: { ok: true } })
   fixture.revoke.mockReset().mockResolvedValue({ data: { ok: true } })
+  fixture.disconnectTemporaryComputer.mockReset().mockResolvedValue({ data: { ok: true } })
+  fixture.app.sessions = []
   fixture.forgetComputer.mockClear(); fixture.cache.mockClear()
   fixture.listComputers.mockReset(); fixture.updateComputer.mockReset(); fixture.confirm.mockClear()
 })
@@ -101,5 +107,36 @@ describe('permanent Computer removal updates the shared endpoint directory', () 
     expect(fixture.revoke).toHaveBeenCalledOnce()
     expect(fixture.remove).not.toHaveBeenCalled()
     expect(fixture.forgetComputer).not.toHaveBeenCalled()
+  })
+})
+
+describe('temporary Computers section', () => {
+  it('hides the temporary section when none exist, renders it separately when active, and supports one-step disconnect', async () => {
+    const emptyHTML = await renderToString(createSSRApp(ComputersSettings))
+    expect(emptyHTML).not.toContain('temporaryComputer.disconnectAndRemove')
+
+    const temp = {
+      id: 'temp-lab',
+      revision: 1,
+      name: 'Lab Machine',
+      revoked: false,
+      online: true,
+      kind: 'remote',
+      temporary: true,
+      owner_session_id: 'sess-1',
+      expires_at: '2026-11-21T15:30:00Z',
+      created_at: '',
+      updated_at: '',
+    } as Computer
+    fixture.app.sessions = [{ id: 'sess-1', title: 'Lab Assignment' }]
+    fixture.list = { data: ref([computer, temp]) }
+    const html = await renderToString(createSSRApp(ComputersSettings))
+    expect(html).toContain('Lab Machine')
+    expect(html).toContain('temporaryComputer.disconnectAndRemove')
+    expect(html).toContain('temporaryComputer.usedInSession')
+
+    await fixture.setup!.disconnectTemporary('temp-lab')
+    expect(fixture.disconnectTemporaryComputer).toHaveBeenCalledWith({ path: { id: 'temp-lab' } })
+    expect(fixture.cache).toHaveBeenCalledWith(['computers'], [computer])
   })
 })

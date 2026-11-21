@@ -37,6 +37,7 @@ type tunnelResponse struct {
 	LocalContainerURL string                 `json:"local_container_url,omitempty"`
 	ManagedSkills     bool                   `json:"managed_skills,omitempty"`
 	Error             string                 `json:"error,omitempty"`
+	ErrorCode         string                 `json:"error_code,omitempty"`
 }
 
 // These bounded frames are used only for the initial authentication exchange.
@@ -120,7 +121,11 @@ func authenticateTunnel(ctx context.Context, serverURL, pin string, request tunn
 		err = readAuthentication(conn, &response)
 	}
 	if err == nil && response.Error != "" {
-		err = errors.New(response.Error)
+		if response.ErrorCode == "forbidden" {
+			err = domain.Forbidden(response.Error)
+		} else {
+			err = errors.New(response.Error)
+		}
 	}
 	if err != nil {
 		_ = conn.Close()

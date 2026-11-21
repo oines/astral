@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { buildServer, embedWeb, root, run } from './build-lib.mjs'
+import { buildDaemon, buildServer, embedWeb, root, run } from './build-lib.mjs'
 
 run('pnpm', ['openapi-generate'])
 run('pnpm', ['sdk-generate'])
@@ -15,5 +15,12 @@ for (const system of ['darwin', 'linux', 'windows']) {
     sums.push(`${hash}  ${path.basename(output)}`)
   }
 }
+for (const system of ['darwin', 'linux', 'windows']) {
+  for (const arch of ['arm64', 'amd64']) {
+    const output = await buildDaemon(system, arch)
+    const hash = createHash('sha256').update(await readFile(output)).digest('hex')
+    sums.push(`${hash}  ${path.basename(output)}`)
+  }
+}
 await writeFile(path.join(root, 'dist/bin/checksums.txt'), `${sums.join('\n')}\n`)
-console.log('Built macOS, Linux, and Windows distributions in dist/bin.')
+console.log('Built macOS, Linux, and Windows Server and standalone Daemon distributions in dist/bin.')

@@ -54,3 +54,13 @@ export async function buildServer(system, arch, { buildRoot = root, environment 
   })
   return output
 }
+export async function buildDaemon(system, arch, { buildRoot = root, environment = process.env } = {}) {
+  const version = await readReleaseVersion(buildRoot, environment)
+  const output = path.join(buildRoot, 'dist/bin', `astral-daemon-${system}-${arch}${system === 'windows' ? '.exe' : ''}`)
+  await mkdir(path.dirname(output), { recursive: true })
+  run('go', ['build', '-tags', 'daemon', '-trimpath', '-ldflags', `-s -w -X github.com/oines/astral/internal/cli.Version=${version}`, '-o', output, './cmd/daemon'], {
+    cwd: buildRoot,
+    env: { ...environment, GOWORK: environment.GOWORK || 'auto', CGO_ENABLED: '0', GOOS: system, GOARCH: arch },
+  })
+  return output
+}

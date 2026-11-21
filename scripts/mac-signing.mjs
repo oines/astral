@@ -2,12 +2,13 @@ import { execFile } from 'node:child_process'
 import { lstat, open, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { digest, distributionNames } from './release-assets.mjs'
+import { digest, distributionNames, executableNames } from './release-assets.mjs'
 import { isDirectInvocation } from './release-version.mjs'
 
 const execute = promisify(execFile)
 export const personalTeam = '6N6W6Z6739'
-export const darwinNames = ['astral-darwin-amd64', 'astral-darwin-arm64']
+export const darwinServerNames = ['astral-darwin-amd64', 'astral-darwin-arm64']
+export const darwinNames = ['astral-darwin-amd64', 'astral-darwin-arm64', 'astral-daemon-darwin-amd64', 'astral-daemon-darwin-arm64']
 const jitEntitlement = 'com.apple.security.cs.allow-jit'
 const machoMagic = new Set(['feedface', 'cefaedfe', 'feedfacf', 'cffaedfe', 'cafebabe', 'bebafeca', 'cafebabf', 'bfbafeca'])
 
@@ -65,34 +66,35 @@ async function architecturesOf(target, command) {
   return architectures
 }
 
-async function distributionFiles(directory) {
-  for (const name of distributionNames) {
+async function distributionFiles(directory, names = executableNames) {
+  for (const name of names) {
     const file = path.join(directory, name)
     const info = await lstat(file)
     if (!info.isFile() || info.size === 0) throw new Error(`Missing regular distribution executable: ${file}`)
   }
 }
 
-export async function verifyChecksums(directory) {
-  await distributionFiles(directory)
+export async function verifyChecksums(directory, { names = executableNames, allowSubset = false } = {}) {
+  await distributionFiles(directory, names)
   if (!(await lstat(path.join(directory, 'checksums.txt'))).isFile()) throw new Error('Distribution checksums must be a regular file.')
   const text = await readFile(path.join(directory, 'checksums.txt'), 'utf8')
   const lines = text.trimEnd().split('\n')
   const records = new Map()
   for (const line of lines) {
     const entry = /^([a-f0-9]{64}) {2}(astral-[a-z0-9.-]+)$/.exec(line)
-    if (!entry || !distributionNames.includes(entry[2]) || records.has(entry[2])) throw new Error('Distribution checksums must contain each of the six executable names exactly once.')
+    const permitted = allowSubset ? executableNames : names
+    if (!entry || !permitted.includes(entry[2]) || records.has(entry[2])) throw new Error('Distribution checksums must contain each executable name exactly once.')
     records.set(entry[2], entry[1])
   }
-  if (records.size !== distributionNames.length) throw new Error('Distribution checksum inventory is incomplete.')
-  for (const name of distributionNames) {
-    if (records.get(name) !== await digest(path.join(directory, name))) throw new Error(`Distribution checksum mismatch: ${name}`)
+  if (!allowSubset && records.size !== names.length) throw new Error('Distribution checksum inventory is incomplete.')
+  for (const name of names) {
+    if (!records.has(name) || records.get(name) !== await digest(path.join(directory, name))) throw new Error(`Distribution checksum mismatch: ${name}`)
   }
 }
 
-export async function verifyBinaries(directory, { configuration = signingEnvironment(), command = macCommand } = {}) {
-  await verifyChecksums(directory)
-  for (const name of darwinNames) {
+export async function verifyBinaries(directory, { configuration = signingEnvironment(), command = macCommand, names = executableNames, darwin = darwinNames, allowSubset = false } = {}) {
+  await verifyChecksums(directory, { names, allowSubset })
+  for (const name of darwin) {
     const target = path.join(directory, name)
     const expectedArch = name.endsWith('amd64') ? 'x86_64' : 'arm64'
     const architectures = await architecturesOf(target, command)
@@ -109,7 +111,7 @@ export async function signBinaries(directory, { configuration = signingEnvironme
   // Every consumer receives the exact same already-signed Go bytes. Refresh the
   // complete manifest before Electron seals it into the application resources.
   const sums = []
-  for (const name of distributionNames) sums.push(`${await digest(path.join(directory, name))}  ${name}`)
+  for (const name of executableNames) sums.push(`${await digest(path.join(directory, name))}  ${name}`)
   await writeFile(path.join(directory, 'checksums.txt'), `${sums.join('\n')}\n`)
   await verifyBinaries(directory, { configuration, command })
 }
@@ -140,7 +142,7 @@ export async function verifyApp(app, { configuration = signingEnvironment(), com
   if (!app.endsWith('.app') || !(await lstat(app)).isDirectory()) throw new Error('Pass the unpacked Astral.app bundle.')
   const contents = path.join(app, 'Contents')
   const binaries = path.join(contents, 'Resources/bin')
-  await verifyBinaries(binaries, { configuration, command })
+  await verifyBinaries(binaries, { configuration, command, names: distributionNames, darwin: darwinServerNames, allowSubset: true })
   const files = await enclosedMachO(contents)
   const main = path.join(contents, 'MacOS/Astral')
   if (!files.includes(main) || !files.some(file => file.includes('Astral Helper (Renderer).app/Contents/MacOS/'))) {

@@ -51,8 +51,8 @@ const creating = ref<Agent>()
 const deleting = ref<Agent>()
 const search = ref('')
 const visibleAgents = computed(() => app.agents.filter(a => a.name.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())))
-const computers = computed(() => app.computers.filter(c => !c.revoked || selected.value?.allowed_computers?.includes(c.id)))
-const allowedComputers = computed(() => app.computers.filter(c => !c.revoked && selected.value?.allowed_computers?.includes(c.id)))
+const computers = computed(() => app.computers.filter(c => !c.temporary && (!c.revoked || selected.value?.allowed_computers?.includes(c.id))))
+const allowedComputers = computed(() => app.computers.filter(c => !c.temporary && !c.revoked && selected.value?.allowed_computers?.includes(c.id)))
 
 function newBot() { action.error.value = ''; creating.value = { ...newMeta(), name: '', avatar: '', default_model_id: '', model_auto_restore: false, allowed_computers: [] } }
 function openAgent(id: string) { void router.push({ path: '/settings/agents', query: { agent: id } }) }

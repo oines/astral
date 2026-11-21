@@ -281,6 +281,9 @@ func (s *Service) Create(ctx context.Context, agentID string, input CreateInput)
 		if c.Revoked {
 			return domain.Forbidden("Computer is revoked")
 		}
+		if c.Temporary {
+			return domain.Forbidden("temporary Computers cannot register event endpoints")
+		}
 		return tx.Save(ctx, Kind, &e.Meta, &e)
 	})
 	if err == nil {
@@ -611,6 +614,9 @@ func (s *Service) Accept(ctx context.Context, computerID, id string, event Event
 		}
 		if c.Revoked {
 			return domain.Forbidden("Computer is revoked")
+		}
+		if c.Temporary {
+			return domain.Forbidden("temporary Computers cannot register event endpoints")
 		}
 		if c.ComputerAPIDisabled {
 			return &domain.Error{Status: 403, Code: "computer_api_disabled", Message: "Computer API is disabled for this Computer"}

@@ -56,6 +56,9 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 		if c.Revoked {
 			return domain.Invalid("a revoked Computer cannot be assigned")
 		}
+		if c.Temporary {
+			return domain.Invalid("a temporary Computer belongs only to its Session")
+		}
 	}
 	if agent.ID == "" {
 		agent.ID = domain.ID("agent")
@@ -88,6 +91,9 @@ func (s *Service) SaveAgent(ctx context.Context, agent *domain.Agent) error {
 			}
 			if computer.Revoked {
 				return domain.Invalid("a revoked Computer cannot be assigned")
+			}
+			if computer.Temporary {
+				return domain.Invalid("a temporary Computer belongs only to its Session")
 			}
 		}
 		return tx.Save(ctx, "agents", &agent.Meta, agent)
@@ -407,6 +413,12 @@ func (s *Service) Fork(ctx context.Context, id, head, title, newID string) (doma
 	record.Source, record.ConversationID, record.BindingID, record.ChannelPlatform = "web", "", "", ""
 	record.Pinned, record.Archived = false, false
 	record.ParentSessionID, record.ForkEntryID = id, head
+	if record.ComputerID != "" {
+		var comp domain.Computer
+		if err := s.Store.Get(ctx, "computers", record.ComputerID, &comp); err == nil && comp.Temporary {
+			record.ComputerID, record.CWD = "", ""
+		}
+	}
 	record.TitleSource = domain.TitleManual
 	if strings.TrimSpace(title) != "" {
 		record.Title = title
@@ -448,7 +460,11 @@ func (s *Service) SaveAgentSessionPresentation(ctx context.Context, agentID, id 
 
 func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id string, title *string, pinned, archived, private *bool) error {
 	if archived != nil {
-		return s.archiveSession(ctx, agentID, id, title, pinned, archived, private)
+		err := s.archiveSession(ctx, agentID, id, title, pinned, archived, private)
+		if err == nil && *archived {
+			s.CleanupSessionTemporaryComputers(ctx, id)
+		}
+		return err
 	}
 	if agentID != "" {
 		var record domain.Session

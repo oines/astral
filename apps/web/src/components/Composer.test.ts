@@ -11,8 +11,10 @@ import Composer from './Composer.vue'
 const fixture = vi.hoisted(() => ({
   app: {
     drafts: {} as Record<string, unknown>, models: [] as { id: string; available: boolean }[],
-    agents: [] as { id: string; name: string; allowed_computers: string[] }[], computers: [] as { id: string; name: string; online: boolean; revoked: boolean }[],
+    agents: [] as { id: string; name: string; allowed_computers: string[] }[],
+    computers: [] as { id: string; name: string; online: boolean; revoked: boolean; temporary?: boolean; owner_session_id?: string; owner_agent_id?: string; initial_cwd?: string; expires_at?: string }[],
     data: { preferences: {} as { running_input?: 'steer' | 'follow_up' } }, preferences: vi.fn(async () => undefined),
+    refresh: vi.fn(async () => undefined), displayTimezone: 'UTC',
   },
   continueSession: vi.fn(async () => ({ data: { ok: true } })),
   submitInput: vi.fn(async (options: { body: { id: string; text: string; mode: string } }) => ({ data: { ok: true }, options })),
@@ -20,19 +22,29 @@ const fixture = vi.hoisted(() => ({
   createSession: vi.fn(async () => ({ data: undefined as unknown as SessionView })),
   selectComputer: vi.fn(async () => ({ data: { ok: true } })),
   selectModel: vi.fn(async () => ({ data: { ok: true } })),
+  disconnectTemporaryComputer: vi.fn(async () => ({ data: { ok: true } })),
   closeComputerMenu: vi.fn(),
   computerMenu: [] as VNode[],
   send: undefined as undefined | (() => Promise<void>),
   handlers: undefined as undefined | { keyboard: (event: KeyboardEvent) => void; composerText: string; sendLabel: string; error: string; toggleQueue: () => Promise<void> },
 }))
 vi.mock('../stores/app', () => ({ useAppStore: () => reactive(fixture.app) }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale: { value: 'en' } }) }))
 vi.mock('../lib/api', async importOriginal => ({
   ...await importOriginal<object>(),
   errorText: (error: unknown) => String(error), fileURL: () => '',
   request: async (promise: Promise<{ data: unknown }>) => (await promise).data,
 }))
-vi.mock('@astral/sdk', async (importOriginal) => ({ ...await importOriginal<object>(), continueSession: fixture.continueSession, submitInput: fixture.submitInput, inputReceipt: fixture.inputReceipt, createSession: fixture.createSession, selectComputer: fixture.selectComputer, selectModel: fixture.selectModel }))
+vi.mock('@astral/sdk', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  continueSession: fixture.continueSession,
+  submitInput: fixture.submitInput,
+  inputReceipt: fixture.inputReceipt,
+  createSession: fixture.createSession,
+  selectComputer: fixture.selectComputer,
+  selectModel: fixture.selectModel,
+  disconnectTemporaryComputer: fixture.disconnectTemporaryComputer,
+}))
 vi.mock('./ModelSelection.vue', () => ({ default: { render: () => null } }))
 vi.mock('@astral/ui', async () => ({
   ...await import('../../../../packages/ui/src/useDelayedPending'),
@@ -243,8 +255,14 @@ describe('queue controls in IM-bound sessions', () => {
 
 function computerMenuButtons(items: VNode[] = fixture.computerMenu): VNode[] {
   return items.flatMap(item => [
-    ...(item.type === 'button' && item.props?.class === 'menu-item' ? [item] : []),
+    ...(item.type === 'button' && typeof item.props?.class === 'string' && item.props.class.includes('computer-menu-choice') ? [item] : []),
     ...(Array.isArray(item.children) ? computerMenuButtons(item.children.filter((child): child is VNode => typeof child === 'object' && child !== null && 'type' in child)) : []),
+  ])
+}
+function disconnectButtons(items: VNode[] = fixture.computerMenu): VNode[] {
+  return items.flatMap(item => [
+    ...(item.type === 'button' && item.props?.class === 'computer-menu-disconnect' ? [item] : []),
+    ...(Array.isArray(item.children) ? disconnectButtons(item.children.filter((child): child is VNode => typeof child === 'object' && child !== null && 'type' in child)) : []),
   ])
 }
 function manageComputersLink() {
@@ -270,8 +288,9 @@ describe('Composer Computer management entry', () => {
     expect(trigger).not.toContain('disabled')
     expect(computerMenuButtons()).toHaveLength(1)
     expect(computerMenuButtons()[0]!.props?.disabled).toBe(true)
+    expect(html).toContain('temporaryComputer.action')
     expect(html).toContain('href="/settings/agents?agent=current-bot&amp;tab=computers"')
-    expect(html).toMatch(/<hr class="separator">\s*<a[^>]*class="menu-item"/)
+    expect(html).toMatch(/<hr class="separator">[\s\S]*<a[^>]*class="menu-item"/)
     const link = manageComputersLink()
     expect(link.to).toEqual({ path: '/settings/agents', query: { agent: 'current-bot', tab: 'computers' } })
     link.onClick()
@@ -281,6 +300,34 @@ describe('Composer Computer management entry', () => {
     expect(fixture.createSession).not.toHaveBeenCalled()
     expect(fixture.selectComputer).not.toHaveBeenCalled()
     expect(fixture.submitInput).not.toHaveBeenCalled()
+  })
+
+  it('scopes temporary Computers to the owning root Session and supports inline disconnect', async () => {
+    computersFor('current-bot')
+    fixture.app.computers.push(
+      { id: 'temp-mine', name: 'Lab PC', online: true, revoked: false, temporary: true, owner_session_id: 'session', owner_agent_id: 'current-bot', initial_cwd: 'D:\\lab3', expires_at: '2026-11-21T15:30:00Z' },
+      { id: 'temp-other', name: 'Other Lab PC', online: true, revoked: false, temporary: true, owner_session_id: 'other-session', owner_agent_id: 'current-bot' },
+    )
+    const html = await renderToString(createSSRApp(Composer, { live: true, view: { ...view(false), id: 'session', agent_id: 'current-bot', status: 'idle' } }))
+    expect(html).toContain('Lab PC')
+    expect(html).toContain('D:\\lab3')
+    expect(html).not.toContain('Other Lab PC')
+    expect(computerMenuButtons()).toHaveLength(2)
+    expect(disconnectButtons()).toHaveLength(1)
+    const disconnectClick = disconnectButtons()[0]!.props!.onClick as (event: { stopPropagation: () => void }) => void
+    disconnectClick({ stopPropagation: () => {} })
+    await setImmediate()
+    expect(fixture.disconnectTemporaryComputer).toHaveBeenCalledExactlyOnceWith({ path: { id: 'temp-mine' } })
+  })
+
+  it('hides temporary connect action in subagent views while still showing root Session temporary Computers', async () => {
+    computersFor('current-bot')
+    fixture.app.computers.push(
+      { id: 'temp-root', name: 'Lab PC', online: true, revoked: false, temporary: true, owner_session_id: 'root-session', owner_agent_id: 'current-bot' },
+    )
+    const html = await renderToString(createSSRApp(Composer, { live: true, view: { ...view(false), id: 'sub-session', subagent_parent_id: 'root-session', agent_id: 'current-bot', status: 'idle' } }))
+    expect(html).toContain('Lab PC')
+    expect(html).not.toContain('temporaryComputer.action')
   })
 
   it('offers Bot Computer permissions when no Computers are currently authorized', async () => {

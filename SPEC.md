@@ -325,9 +325,20 @@ Linux Server 的 Local Computer 是 Linux 服务所在机器。访问网页的�
 
 接入命令包含目标 Server URL、SPKI SHA-256 公钥指纹和临时注册 Token。脚本与程序从官方 GitHub HTTPS release 资产下载并校验，不通过用户可能使用 HTTP 的 Server 下载可执行代码。Daemon 先验证内层 TLS 的 Server 身份，再发送注册凭据；注册成功只下发一次独立电脑凭据并消费临时 Token。普通注册有效期 15 分钟，容器准备可延长到创建注册记录后的固定 90 分钟；不能通过重试不断延长。完整命令在使用或过期前仍是敏感信息，不能因传输加密而宣称泄漏无害。重复运行成功命令只能复用目标机器已保存的凭据，不能再次从已消费 Token 领取长期凭据。
 
+### 临时 Computer（会话级）
+
+除全局永久 Computer 外，根会话输入区的电脑菜单提供“临时连接电脑”入口，用于校园机房、公用电脑或短期虚拟机等不想安装后台服务的场景：
+
+- **作用域**：临时 Computer 严格绑定发起配对的根会话及该根会话的子代理，不加入任何 Bot 的 `AllowedComputers`，不能设为 Bot 默认电脑，也不被其他会话、其他 Bot 或 Fork 出的新会话继承。
+- **不可信主机硬约束**：临时配对强制 `computer_api_disabled=true` 且注册后不可开启，Daemon 不启动本地 loopback API、不注入 `ASTRAL_API_TOKEN`、不声明且不同步 Managed Skills。
+- **零本机安装**：`install-computer.sh --temporary` / `install-computer.ps1 -Temporary` 跳过 `PATH` 修改、符号链接与后台服务注册，下载轻量 `astral-daemon` 到系统临时目录并在前台运行 `computer connect --temporary`；凭据仅驻留内存、不写 `credentials.json`，退出时自动删除临时目录。初始工作目录为运行命令时的终端当前目录（`InitialCWD`），不创建长期 `agents/<id>/home`。已有二进制时也可直接运行直连命令。
+- **上线与自动清理**：连接成功后不自动切换会话当前电脑，仅向所属会话（空闲时被动注入 `astral.environment`、运行中于下一次请求边界）追加上下文提醒。终端 `Ctrl+C` 发送 `daemon.leave` 立即清理；异常掉线经短暂宽限期（默认 2 分钟）清理；到达有效期（30 分钟至 12 小时，默认 4 小时）、归档或删除所属根会话、Server 重启检测到已过期或孤立、或用户点击“断开 / 断开并移除”时一并撤销并删除记录、清空仍指向它的会话指针（不自动替换为其他电脑），历史对话与既有 `FileRef` 保持不变。
+
 ### 跨平台、后台运行与更新
 
-macOS、Windows、Linux 共用统一可执行程序，包含 Server、嵌入 Web UI、CLI 和 Daemon。Windows 的桌面、Server 与裸机 Daemon 原生运行，不要求 WSL。Windows 接入提供 PowerShell 命令，使用现代 Windows 内置 `curl.exe` 从官方 HTTPS 下载 bootstrap 并检查成功后才执行；macOS/Linux 提供 shell 命令，选择依据目标电脑的平台。
+macOS、Windows、Linux 发行统一可执行程序 `astral-*`（包含 Server、嵌入 Web UI、CLI 与 Daemon）以及通过 `-tags daemon` 裁剪构建的轻量独立 `astral-daemon-*`（去除 SQLite、Web UI、HTTP API、Harness 与 IM 渠道依赖，约 9.9 MB）。电脑安装脚本与 Daemon 更新优先下载校验 `astral-daemon-*`，旧发行版自动回退 `astral-*`。Windows 的桌面、Server 与裸机 Daemon 原生运行，不要求 WSL。Windows 接入提供 PowerShell 命令，使用现代 Windows 内置 `curl.exe` 从官方 HTTPS 下载 bootstrap 并检查成功后才执行；macOS/Linux 提供 shell 命令，选择依据目标电脑的平台。
+
+远程接入、临时连接和 Daemon 维护界面均提供“下载源”选择（默认 GitHub 官方，可选验证过的第三方 HTTPS 镜像或自定义 HTTPS 前缀），切换下载源即时改写命令而无需重新生成配对凭据；永久 Daemon 的安装与在线更新会将规范化后的 `ASTRAL_GITHUB_PROXY` 持久化到用户服务配置（systemd / launchd / Windows 任务计划启动脚本），选择“GitHub 官方”显式传空值即恢复直连。镜像仅路由固定官方 GitHub release API 与资产，始终执行 SHA-256 校验，不路由电脑与 Server 的日常通信。
 
 Desktop 三个平台均隐藏独立系统标题栏，使用 44px 的应用顶部区域。macOS 保留左侧红绿灯和现有侧栏开关位置；Windows、Linux 使用右侧原生最小化、最大化／还原、关闭按钮，侧栏开关靠左，不保留红绿灯空位。顶部空白区域通过原生拖动区域支持移动窗口及双击最大化／还原，交互控件排除在拖动区域外；保留系统缩放、窗口贴靠及原有关闭后驻留行为。窗口按钮随应用实际浅色／深色主题变化，页面内容避让窗口按钮；普通浏览器不增加桌面标题栏。
 

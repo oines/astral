@@ -16,8 +16,10 @@ import { useContainerRuntimeCheck } from '../../composables/useContainerRuntimeC
 import { useAppStore } from '../../stores/app'
 import ContainerRuntimeStatus from './ContainerRuntimeStatus.vue'
 import ComputerAPIAccessRow from './ComputerAPIAccessRow.vue'
+import DownloadSourceRow from './DownloadSourceRow.vue'
 import { useClipboard } from '../../composables/useClipboard'
 import { randomID } from '../../lib/browser'
+import { applyDownloadSource, useDownloadSource } from '../../lib/download-source'
 import { formatDateTime } from '../../lib/timezone'
 defineProps<{ confirmLabel?: string }>()
 const adding = defineModel<boolean>('open', { default: false })
@@ -45,8 +47,13 @@ const localAPIDisabled = computed(() => existingLocal.value ? Boolean(existingLo
 const containerIntent = ref<{ id: string; computer_api_disabled: boolean }>()
 const serverAddress = ref('')
 const addressListID = useId()
+const downloadSource = useDownloadSource()
 const serverAddresses = computed(() => computerServerAddresses(app.data?.network.addresses || [], window.location.origin, Boolean(window.astralDesktop), t('networkBrowserAddress')))
-const displayedCommand = computed(() => commandPlatform.value === 'powershell' ? enrollmentResult.value?.powershell_command || '' : enrollmentResult.value?.command || '')
+const displayedCommand = computed(() => {
+  if (!downloadSource.valid.value) return ''
+  const raw = commandPlatform.value === 'powershell' ? enrollmentResult.value?.powershell_command || '' : enrollmentResult.value?.command || ''
+  return applyDownloadSource(raw, commandPlatform.value, downloadSource.proxy.value)
+})
 const activeOperationKey = 'astral:pending-container'
 let restoring = false
 let interacted = false
@@ -165,7 +172,7 @@ async function copyCommand() {
   if (!enrollmentResult.value) return
   await copy(displayedCommand.value)
 }
-watch(commandPlatform, () => { copied.value = false })
+watch([commandPlatform, downloadSource.preset, downloadSource.customURL], () => { copied.value = false })
 function resetEnrollment() {
   remoteGeneration++
   enrollmentResult.value = undefined
@@ -284,6 +291,7 @@ function finish() {
               </option>
             </select>
           </SettingsRow>
+          <DownloadSourceRow :disabled="action.busy.value" />
         </SettingsSection>
         <template v-if="!enrollmentResult">
           <p class="muted">
@@ -295,7 +303,7 @@ function finish() {
           >{{ t('useContainer') }}</label><Button
             variant="primary"
             :busy="action.busy.value"
-            :disabled="!serverAddress.trim()"
+            :disabled="!serverAddress.trim() || !downloadSource.valid.value"
             @click="remote"
           >
             {{ t('generateCommand') }}

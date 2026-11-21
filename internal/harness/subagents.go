@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -266,8 +265,12 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 		if err = s.Store.Get(ctx, "agents", source.AgentID, &agent); err != nil {
 			return SubagentView{}, err
 		}
-		if !slices.Contains(agent.AllowedComputers, computerID) {
+		var computer domain.Computer
+		if err = s.Store.Get(ctx, "computers", computerID, &computer); err != nil {
 			return SubagentView{}, domain.Forbidden("Computer is not allowed for this Bot")
+		}
+		if !domain.ComputerAllowedForSession(agent, source, computer) {
+			return SubagentView{}, domain.Forbidden("Computer is not allowed for this Session")
 		}
 	}
 	title := strings.TrimSpace(input.Name)

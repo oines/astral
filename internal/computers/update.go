@@ -1,3 +1,5 @@
+//go:build !daemon
+
 package computers
 
 import (
@@ -9,16 +11,16 @@ import (
 	"time"
 
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/releasefeed"
 	"github.com/oines/astral/internal/transport"
 )
-
-const DaemonUpdateCapability = "management.update"
 
 type daemonUpdates struct {
 	sync.Mutex
 	values           map[string]domain.DaemonUpdate
 	latest           func(context.Context, string, string) (releasefeed.Binary, error)
+	latestWithProxy  func(context.Context, string, string, githubrelease.ProxyOverride) (releasefeed.Binary, error)
 	cancel           map[string]context.CancelFunc
 	contexts         map[string]context.Context
 	closed           bool
@@ -44,8 +46,19 @@ func (h *Hub) CanUpdateDaemon(id string) bool {
 // gateway. The Server resolves latest itself; clients cannot supply executable
 // URLs, checksums, versions, credentials or an execution binding.
 func (h *Hub) UpdateDaemon(ctx context.Context, id string) (domain.DaemonUpdate, error) {
+	return h.UpdateDaemonWithProxy(ctx, id, githubrelease.ProxyOverride{})
+}
+
+func (h *Hub) UpdateDaemonWithProxy(ctx context.Context, id string, override githubrelease.ProxyOverride) (domain.DaemonUpdate, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.DaemonUpdate{}, err
+	}
+	if override.Set {
+		normalized, err := githubrelease.NormalizeProxy(override.Prefix)
+		if err != nil {
+			return domain.DaemonUpdate{}, domain.Invalid(err.Error())
+		}
+		override.Prefix = normalized
 	}
 	var computer domain.Computer
 	if err := h.Store.Get(ctx, "computers", id, &computer); err != nil {
@@ -53,6 +66,9 @@ func (h *Hub) UpdateDaemon(ctx context.Context, id string) (domain.DaemonUpdate,
 	}
 	if computer.Local || computer.Kind == "local" {
 		return domain.DaemonUpdate{}, domain.Conflict("the local Daemon updates with Desktop or Server")
+	}
+	if computer.Temporary {
+		return domain.DaemonUpdate{}, domain.Conflict("temporary Computers do not support managed Daemon updates")
 	}
 	if computer.Revoked {
 		return domain.DaemonUpdate{}, domain.Forbidden("Computer is revoked")
@@ -91,7 +107,7 @@ func (h *Hub) UpdateDaemon(ctx context.Context, id string) (domain.DaemonUpdate,
 	h.updates.Unlock()
 	// Managed update ownership outlives an HTTP request/tab closure, while the
 	// bounded request to the old Daemon still cancels on tunnel disconnection.
-	go h.runDaemonUpdate(updateCtx, cancel, id, active)
+	go h.runDaemonUpdate(updateCtx, cancel, id, active, override)
 	return operation, nil
 }
 
@@ -101,7 +117,7 @@ func (h *Hub) setDaemonUpdate(id string, value domain.DaemonUpdate) {
 	h.updates.values[id] = value
 }
 
-func (h *Hub) runDaemonUpdate(ctx context.Context, cancel context.CancelFunc, id string, original *connection) {
+func (h *Hub) runDaemonUpdate(ctx context.Context, cancel context.CancelFunc, id string, original *connection, override githubrelease.ProxyOverride) {
 	defer cancel()
 	defer func() {
 		h.updates.Lock()
@@ -113,14 +129,24 @@ func (h *Hub) runDaemonUpdate(ctx context.Context, cancel context.CancelFunc, id
 	}()
 	state := h.DaemonUpdateStatus(id)
 	fail := func(err error) { state.State = "failed"; state.Error = err.Error(); h.setDaemonUpdate(id, state) }
-	resolve := h.updates.latest
-	if resolve == nil {
-		resolve = releasefeed.Latest
+	var (
+		binary releasefeed.Binary
+		err    error
+	)
+	if h.updates.latestWithProxy != nil {
+		binary, err = h.updates.latestWithProxy(ctx, original.hello.OS, original.hello.Arch, override)
+	} else if h.updates.latest != nil {
+		binary, err = h.updates.latest(ctx, original.hello.OS, original.hello.Arch)
+	} else {
+		binary, err = releasefeed.LatestWithProxy(ctx, original.hello.OS, original.hello.Arch, override)
 	}
-	binary, err := resolve(ctx, original.hello.OS, original.hello.Arch)
 	if err != nil {
 		fail(err)
 		return
+	}
+	if override.Set {
+		prefix := override.Prefix
+		binary.GitHubProxy = &prefix
 	}
 	if comparison, e := releasefeed.Compare(binary.Version, original.hello.Version); e == nil && comparison <= 0 {
 		state.State = "current"

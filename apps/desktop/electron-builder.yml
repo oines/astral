@@ -13,7 +13,9 @@ extraResources:
   - from: ../../dist/bin
     to: bin
     filter:
-      - astral-*
+      - astral-darwin-*
+      - astral-linux-*
+      - astral-windows-*
       - checksums.txt
       - THIRD_PARTY_NOTICES.txt
       - LICENSE.txt

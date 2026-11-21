@@ -110,9 +110,14 @@ func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bri
 	s.Schedules = schedule.New(store, s.deliverSchedule, s.scheduleAccepted, func() { s.notify("") }, s.Timezone)
 	s.WakeEndpoints = wake.New(store, s.deliverWake, func() { s.notify("") })
 	s.WakeEndpoints.SetComputerURLResolver(hub.ComputerEventURL)
+	if hub != nil {
+		hub.OnTemporaryConnected = s.handleTemporaryComputerConnected
+		hub.CleanupTemporary = s.cleanupTemporaryComputerAsync
+	}
 	s.subagentWorkers.Add(1)
 	go s.subagentWorker()
 	s.startModelFallbackWorker()
+	s.RecoverTemporaryComputers(ctx)
 	return s
 }
 func (s *Service) Changes() <-chan string { return s.changes }

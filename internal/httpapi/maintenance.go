@@ -6,9 +6,16 @@ import (
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/httpcontract"
 	"github.com/oines/astral/internal/releasefeed"
 )
+
+type DaemonUpdateInput struct {
+	GitHubProxy *string `json:"github_proxy,omitempty"`
+}
+
+func (DaemonUpdateInput) OptionalBody() {}
 
 func (a *API) registerComputerMaintenance() {
 	route[httpcontract.Empty, domain.ComputerMaintenance](a, "GET", "/computers/maintenance/{id}", "computerMaintenance", "Computers", func(r *http.Request, _ httpcontract.Empty) (domain.ComputerMaintenance, error) {
@@ -25,15 +32,16 @@ func (a *API) registerComputerMaintenance() {
 			value.ServerNewer = comparison < 0
 			value.DaemonNewer = comparison > 0
 		}
-		value.CanUpdate = !computer.Local && computer.Kind != "local" && !computer.Revoked && status.Online && a.Config.Harness.Hub.CanUpdateDaemon(computer.ID)
+		value.CanUpdate = !computer.Local && computer.Kind != "local" && !computer.Temporary && !computer.Revoked && status.Online && a.Config.Harness.Hub.CanUpdateDaemon(computer.ID)
 		value.Update = a.Config.Harness.Hub.DaemonUpdateStatus(computer.ID)
 		return value, nil
 	})
-	route[httpcontract.Empty, domain.DaemonUpdate](a, "POST", "/computers/maintenance/{id}/update", "updateComputerDaemon", "Computers", func(r *http.Request, _ httpcontract.Empty) (domain.DaemonUpdate, error) {
-		if err := emptyUpdateIntent(r); err != nil {
-			return domain.DaemonUpdate{}, err
+	route[DaemonUpdateInput, domain.DaemonUpdate](a, "POST", "/computers/maintenance/{id}/update", "updateComputerDaemon", "Computers", func(r *http.Request, input DaemonUpdateInput) (domain.DaemonUpdate, error) {
+		var override githubrelease.ProxyOverride
+		if input.GitHubProxy != nil {
+			override = githubrelease.ProxyOverride{Set: true, Prefix: *input.GitHubProxy}
 		}
-		return a.Config.Harness.Hub.UpdateDaemon(r.Context(), r.PathValue("id"))
+		return a.Config.Harness.Hub.UpdateDaemonWithProxy(r.Context(), r.PathValue("id"), override)
 	})
 }
 
@@ -42,6 +50,9 @@ func maintenanceCommands(computer domain.Computer) (domain.ComputerMaintenance, 
 	if computer.Local || computer.Kind == "local" {
 		value.Manager = "desktop"
 		return value, nil
+	}
+	if computer.Temporary {
+		return value, domain.Conflict("Temporary Computers cannot be updated.")
 	}
 	if computer.Revoked {
 		return value, domain.Forbidden("This Computer's connection has been revoked.")

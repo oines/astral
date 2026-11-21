@@ -19,6 +19,10 @@ import (
 )
 
 type Empty struct{}
+
+// OptionalBody marks a request struct that accepts an empty HTTP body in
+// addition to a JSON object body.
+type OptionalBody interface{ OptionalBody() }
 type OK struct {
 	OK bool `json:"ok"`
 }
@@ -127,7 +131,8 @@ func (c *Contract) Describe(o Operation) {
 		operation["parameters"] = parameters
 	}
 	if o.Request != nil && o.Request != reflect.TypeFor[Empty]() {
-		operation["requestBody"] = map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": c.schema(o.Request)}}}
+		required := !o.Request.Implements(reflect.TypeFor[OptionalBody]())
+		operation["requestBody"] = map[string]any{"required": required, "content": map[string]any{"application/json": map[string]any{"schema": c.schema(o.Request)}}}
 	}
 	path, ok := c.Paths[o.Path].(map[string]any)
 	if !ok {
@@ -234,6 +239,25 @@ func JSON(w http.ResponseWriter, status int, value any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
 }
+func decodeRequest(r *http.Request, target any, optional bool) error {
+	if optional {
+		if r.ContentLength == 0 {
+			return nil
+		}
+		if r.ContentLength < 0 {
+			raw, err := io.ReadAll(io.LimitReader(r.Body, (1<<20)+2))
+			if err != nil {
+				return domain.Invalid("invalid request body: " + err.Error())
+			}
+			if len(raw) == 0 {
+				return nil
+			}
+			r.Body = io.NopCloser(strings.NewReader(string(raw)))
+		}
+	}
+	return Decode(r, target)
+}
+
 func Decode(r *http.Request, target any) error {
 	if r.Header.Get("Content-Type") != "" && !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		return domain.Invalid("expected application/json")
@@ -279,7 +303,8 @@ func Register[Request, Response any](contract *Contract, mux *http.ServeMux, ope
 	mux.HandleFunc(operation.Method+" "+operation.Path, func(w http.ResponseWriter, r *http.Request) {
 		var request Request
 		if operation.Request != reflect.TypeFor[Empty]() {
-			if err := Decode(r, &request); err != nil {
+			optional := operation.Request.Implements(reflect.TypeFor[OptionalBody]())
+			if err := decodeRequest(r, &request, optional); err != nil {
 				Failure(w, r, err)
 				return
 			}

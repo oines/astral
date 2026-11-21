@@ -3,14 +3,14 @@ import { constants } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { desktopNames, digest, distributionNames } from './release-assets.mjs'
+import { desktopNames, digest, executableNames } from './release-assets.mjs'
 import { verifyReleaseBundle } from './release-draft.mjs'
 import { gatherPackageInputs, validatePackageReferences } from './rolling-release-package-inputs.mjs'
 import { isDirectInvocation, repositoryRoot } from './release-version.mjs'
 
 const descriptorName = 'package-inputs.json'
 function requireValue(value, message) { if (!value) throw new Error(message) }
-const payloadNames = version => [...distributionNames, ...desktopNames(version)]
+const payloadNames = version => [...executableNames, ...desktopNames(version)]
 
 async function emptyOutput(directory, input) {
   requireValue(path.resolve(directory) !== path.resolve(input) && !path.resolve(directory).startsWith(`${path.resolve(input)}${path.sep}`), 'Restored output must be outside its sealed metadata input.')
@@ -104,7 +104,7 @@ export async function restoreReleaseInputs({ input, output, root = repositoryRoo
     const packageOutput = path.join(temporary, 'payloads')
     await gather({ ...transport, root, environment, references, output: packageOutput, copyNotarization: false })
     for (const name of payload) {
-      const artifact = distributionNames.includes(name) ? 'signed-distribution' : name.includes('-mac-') ? `desktop-mac-${name.includes('-arm64.') ? 'arm64' : 'x64'}` : name.includes('-win-') ? 'desktop-win' : 'desktop-linux'
+      const artifact = executableNames.includes(name) ? 'signed-distribution' : name.includes('-mac-') ? `desktop-mac-${name.includes('-arm64.') ? 'arm64' : 'x64'}` : name.includes('-win-') ? 'desktop-win' : 'desktop-linux'
       const source = path.join(packageOutput, artifact, name)
       requireValue(await digest(source) === sums.get(name), `Original package bytes differ from the sealed release index: ${name}.`)
       await copy(source, path.join(output, name))

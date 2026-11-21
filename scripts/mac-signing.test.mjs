@@ -6,7 +6,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { assertEntitlements, assertSigningMetadata, darwinNames, signBinaries, signingEnvironment, verifyApp, verifyBinaries, verifyChecksums } from './mac-signing.mjs'
-import { digest, distributionNames } from './release-assets.mjs'
+import { digest, distributionNames, executableNames } from './release-assets.mjs'
 
 const environment = {
   APPLE_TEAM_ID: '6N6W6Z6739',
@@ -74,7 +74,7 @@ test('Electron only allows JIT and Go programs receive no entitlements', () => {
 test('signing final bytes refreshes all six hashes before verification and rejects subsequent tampering', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'astral-signing-fixture-'))
   try {
-    for (const name of distributionNames) await writeFile(path.join(directory, name), `unsigned ${name}\n`)
+    for (const name of executableNames) await writeFile(path.join(directory, name), `unsigned ${name}\n`)
     await writeFile(path.join(directory, 'checksums.txt'), 'stale pre-sign build manifest\n')
     const calls = []
     const command = async (executable, args) => {
@@ -93,10 +93,10 @@ test('signing final bytes refreshes all six hashes before verification and rejec
       return { stdout: '', stderr: '' }
     }
     await signBinaries(directory, { configuration, command })
-    assert.equal(calls.filter(call => call.args.includes('--sign')).length, 2)
-    assert.deepEqual(calls.slice(0, 2).map(call => path.basename(call.args.at(-1))), darwinNames)
+    assert.equal(calls.filter(call => call.args.includes('--sign')).length, 4)
+    assert.deepEqual(calls.slice(0, 4).map(call => path.basename(call.args.at(-1))), darwinNames)
     const manifest = await readFile(path.join(directory, 'checksums.txt'), 'utf8')
-    for (const name of distributionNames) assert.ok(manifest.includes(`${await digest(path.join(directory, name))}  ${name}\n`))
+    for (const name of executableNames) assert.ok(manifest.includes(`${await digest(path.join(directory, name))}  ${name}\n`))
     await verifyBinaries(directory, { configuration, command })
     await writeFile(path.join(directory, darwinNames[0]), 'tampered')
     await assert.rejects(verifyChecksums(directory), /checksum mismatch/)
