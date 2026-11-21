@@ -103,6 +103,10 @@ export async function verifyBinaries(directory, { configuration = signingEnviron
   }
 }
 
+export function verifyEmbeddedBinaries(directory, options) {
+  return verifyBinaries(directory, { ...options, names: distributionNames, darwin: darwinServerNames, allowSubset: true })
+}
+
 export async function signBinaries(directory, { configuration = signingEnvironment(), command = macCommand } = {}) {
   await distributionFiles(directory)
   for (const name of darwinNames) {
@@ -142,7 +146,7 @@ export async function verifyApp(app, { configuration = signingEnvironment(), com
   if (!app.endsWith('.app') || !(await lstat(app)).isDirectory()) throw new Error('Pass the unpacked Astral.app bundle.')
   const contents = path.join(app, 'Contents')
   const binaries = path.join(contents, 'Resources/bin')
-  await verifyBinaries(binaries, { configuration, command, names: distributionNames, darwin: darwinServerNames, allowSubset: true })
+  await verifyEmbeddedBinaries(binaries, { configuration, command })
   const files = await enclosedMachO(contents)
   const main = path.join(contents, 'MacOS/Astral')
   if (!files.includes(main) || !files.some(file => file.includes('Astral Helper (Renderer).app/Contents/MacOS/'))) {

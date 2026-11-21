@@ -35,8 +35,8 @@ module.exports = {
     timestamp: 'http://timestamp.apple.com/ts01',
   },
   async afterPack(context) {
-    const { verifyBinaries } = await signing()
-    await verifyBinaries(path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app/Contents/Resources/bin`))
+    const { verifyEmbeddedBinaries } = await signing()
+    await verifyEmbeddedBinaries(path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app/Contents/Resources/bin`))
   },
   async afterSign(context) {
     const { verifyApp } = await signing()

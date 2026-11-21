@@ -7,9 +7,18 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
+import { bindDaemonReleaseFixture } from './daemon-update-fixture.mjs'
 
 const exec = promisify(execFile)
 const directEnvironment = { ...process.env, ASTRAL_GITHUB_PROXY: '' }
+
+test('native update acceptance routes the current release client and retains source validation', async () => {
+  const source = await fs.readFile(new URL('../internal/releasefeed/releases.go', import.meta.url), 'utf8')
+  const fixture = bindDaemonReleaseFixture(source, 'local test certificate', '127.0.0.1:1234')
+  assert.ok(fixture.includes('Transport: transport, Timeout: 5 * time.Minute, CheckRedirect: githubrelease.CheckRedirectWithProxy(override)'))
+  assert.ok(fixture.includes('roots.AppendCertsFromPEM([]byte("local test certificate"))'))
+  assert.ok(fixture.includes('DialContext(ctx, network, "127.0.0.1:1234")'))
+})
 
 test('real root Daemon acceptance refuses a developer account before commands or installation', async () => {
   const environment = { ...process.env, CI: '', GITHUB_ACTIONS: '', RUNNER_TEMP: '' }

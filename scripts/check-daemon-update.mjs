@@ -13,6 +13,7 @@ import { userInfo } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { bindDaemonReleaseFixture } from './daemon-update-fixture.mjs'
 
 if (process.env.CI !== 'true' || process.env.GITHUB_ACTIONS !== 'true' || !process.env.RUNNER_TEMP) throw new Error('Real Daemon update acceptance requires a disposable GitHub Actions user; never run on a developer account.')
 if (!['darwin', 'win32', 'linux'].includes(process.platform)) throw new Error('Unsupported native Daemon update platform.')
@@ -27,7 +28,8 @@ const temporary = await mkdtemp(path.join(process.env.RUNNER_TEMP, 'astral-daemo
 const source = path.join(temporary, 'source')
 const daemonRoot = path.join(temporary, 'remote computer')
 const oldBinary = path.join(temporary, `old-astral${suffix}`)
-const newBinary = path.join(temporary, `new-astral${suffix}`)
+const unifiedBinary = path.join(temporary, `new-astral${suffix}`)
+const standaloneBinary = path.join(temporary, `new-astral-daemon${suffix}`)
 const fixtureBinary = path.join(temporary, `fixture-server${suffix}`)
 const readyFile = path.join(temporary, 'ready.json')
 const processFile = path.join(temporary, 'command-processes.json')
@@ -35,7 +37,11 @@ const credentialFile = path.join(daemonRoot, 'credentials.json')
 const oldVersion = '0.1.0'
 const newVersion = '0.1.1'
 const owner = randomBytes(32).toString('hex')
-const assetName = `astral-${system}-${architecture}${suffix}`
+const unifiedName = `astral-${system}-${architecture}${suffix}`
+const standaloneName = `astral-daemon-${system}-${architecture}${suffix}`
+// The root run exercises older releases that published only the unified CLI.
+const assetName = rootUser ? unifiedName : standaloneName
+const assets = new Map()
 const feedRequests = []
 let allowDownload
 const downloadGate = new Promise(resolve => { allowDownload = resolve })
@@ -47,7 +53,6 @@ let serviceID
 let created = false
 let uninstalled = false
 let retain = false
-let checksum
 let fixtureOutput = ''
 let rootPrepared = false
 const rootLingerWasEnabled = rootUser && await lstat('/var/lib/systemd/linger/root').then(info => {
@@ -138,14 +143,14 @@ func main(){pub,key,e:=ed25519.GenerateKey(rand.Reader);if e!=nil{panic(e)};cert
       response.end(JSON.stringify({ tag_name: `v${newVersion}`, draft: false, prerelease: false }))
     } else if (url.pathname === `${releasePath}/checksums.txt`) {
       response.writeHead(200, { 'Content-Type': 'text/plain' })
-      response.end(`${checksum}  ${assetName}\n`)
+      response.end([...assets].map(([name, asset]) => `${asset.sha256}  ${name}\n`).join(''))
     } else if (url.pathname === `${releasePath}/${assetName}`) {
       response.writeHead(200, { 'Content-Type': 'application/octet-stream' })
       // Keep the first update active until the second click is acknowledged,
       // so deduplication does not depend on runner or network speed.
       void downloadGate.then(() => {
         if (response.destroyed) return
-        const stream = createReadStream(newBinary)
+        const stream = createReadStream(assets.get(assetName).path)
         stream.on('error', () => response.destroy())
         response.once('close', () => stream.destroy())
         stream.pipe(response)
@@ -158,23 +163,22 @@ func main(){pub,key,e:=ed25519.GenerateKey(rand.Reader);if e!=nil{panic(e)};cert
   for (const file of ['go.mod', 'go.sum']) await copyFile(path.join(repository, file), path.join(source, file))
   await cp(path.join(repository, 'internal'), path.join(source, 'internal'), { recursive: true, filter: name => !name.endsWith('_test.go') })
   await cp(path.join(repository, 'cmd/astral'), path.join(source, 'cmd/astral'), { recursive: true })
+  await cp(path.join(repository, 'cmd/daemon'), path.join(source, 'cmd/daemon'), { recursive: true })
   const releaseSource = path.join(source, 'internal/releasefeed/releases.go')
   const original = await readFile(path.join(repository, 'internal/releasefeed/releases.go'), 'utf8')
-  let copied = original
-  function replaceOnce(before, after) { assert.equal(copied.split(before).length - 1, 1, `Fixture source contract changed: ${before}`); copied = copied.replace(before, after) }
-  replaceOnce('func client() *http.Client {', `func client() *http.Client {\n roots:=x509.NewCertPool();if !roots.AppendCertsFromPEM([]byte(${JSON.stringify(tls.cert)})){panic("invalid fixture CA")} `)
-  replaceOnce('"crypto/sha256"', '"crypto/sha256"\n"crypto/tls"\n"crypto/x509"\n"net"')
-  // Keep the official URLs intact so the real download-source guard runs.
-  // Only this disposable copy's transport connects to the ephemeral TLS
-  // fixture, whose CA and 127.0.0.1 certificate identity remain verified.
-  replaceOnce('return &http.Client{Timeout:', `return &http.Client{Transport:&http.Transport{TLSClientConfig:&tls.Config{RootCAs:roots,ServerName:"127.0.0.1"},DialContext:func(ctx context.Context,network,address string)(net.Conn,error){return (&net.Dialer{}).DialContext(ctx,network,${JSON.stringify(releaseAddress)})}},Timeout:`)
-  await writeFile(releaseSource, copied)
+  await writeFile(releaseSource, bindDaemonReleaseFixture(original, tls.cert, releaseAddress))
   const buildEnvironment = { ...process.env, GOWORK: 'off', CGO_ENABLED: '0' }
-  for (const [version, target] of [[oldVersion, oldBinary], [newVersion, newBinary]]) {
-    await command('go', ['build', '-trimpath', '-ldflags', `-s -w -X github.com/oines/astral/internal/cli.Version=${version}`, '-o', target, './cmd/astral'], { cwd: source, env: buildEnvironment, timeout: 300_000 })
+  const programs = [
+    { version: oldVersion, target: oldBinary, command: './cmd/astral' },
+    { version: newVersion, target: unifiedBinary, command: './cmd/astral', name: unifiedName },
+  ]
+  if (!rootUser) programs.push({ version: newVersion, target: standaloneBinary, command: './cmd/daemon', name: standaloneName })
+  for (const { version, target, command: main, name } of programs) {
+    const tags = main === './cmd/daemon' ? ['-tags', 'daemon'] : []
+    await command('go', ['build', ...tags, '-trimpath', '-ldflags', `-s -w -X github.com/oines/astral/internal/cli.Version=${version}`, '-o', target, main], { cwd: source, env: buildEnvironment, timeout: 300_000 })
     if (system !== 'windows') await chmod(target, 0o700)
+    if (name) assets.set(name, { path: target, sha256: createHash('sha256').update(await readFile(target)).digest('hex') })
   }
-  checksum = createHash('sha256').update(await readFile(newBinary)).digest('hex')
   const fixtureDirectory = path.join(source, 'cmd/daemon-update-fixture')
   await mkdir(fixtureDirectory)
   // This test-only Server starts an ordinary bound command through Backend.
@@ -262,7 +266,7 @@ func run()error{var c config;raw,e:=os.ReadFile(os.Args[1]);if e!=nil{return e};
   assert.ok(alive(newPID))
   await waitFor(() => !alive(oldPID) && !alive(commands.parent) && !alive(commands.child), 'Old Daemon or bound command descendants survived update')
   const spec = JSON.parse(await readFile(path.join(daemonRoot, 'service/spec.json'), 'utf8'))
-  assert.equal(createHash('sha256').update(await readFile(spec.executable)).digest('hex'), checksum)
+  assert.equal(createHash('sha256').update(await readFile(spec.executable)).digest('hex'), assets.get(assetName).sha256)
   assert.notEqual(spec.executable, oldBinary)
   assert.equal(await readFile(credentialFile, 'utf8'), credentials)
   assert.equal(await readFile(agentFile, 'utf8'), 'Agent files survive a native management update.\n')
