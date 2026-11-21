@@ -32,17 +32,6 @@ func validLocalAPIURL(raw string) bool {
 	return err == nil && port > 0 && port <= 65535
 }
 
-// ComputerEventURL returns the actual local entry point advertised by the live
-// owning Daemon. It never substitutes the Server or another Computer's address.
-func (h *Hub) ComputerEventURL(id string) string {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if active := h.live[id]; active != nil {
-		return active.hello.LocalAPIURL
-	}
-	return ""
-}
-
 func (d *Daemon) ensureLocalAPI() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -53,7 +42,7 @@ func (d *Daemon) startLocalAPILocked() error {
 	if d.closed {
 		return domain.Offline("daemon is closed")
 	}
-	if d.localAPI != nil {
+	if d.Temporary || d.localAPI != nil {
 		return nil
 	}
 	path := filepath.Join(d.Root, "local-api.json")

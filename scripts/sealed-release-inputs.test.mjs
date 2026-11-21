@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { collectCandidate, desktopNames, distributionNames } from './release-assets.mjs'
+import { collectCandidate, desktopNames, executableNames } from './release-assets.mjs'
 import { desktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { imageRepository, platforms, recipeHash, recipePath } from './computer-image-contract.mjs'
 import { verifyReleaseBundle } from './release-draft.mjs'
@@ -22,9 +22,9 @@ async function fixture(t) {
   await mkdir(path.join(root, 'apps/desktop'), { recursive: true })
   await writeFile(path.join(root, '.release-metadata/release-build.json'), JSON.stringify(metadata))
   for (const name of ['package.json', 'apps/desktop/package.json']) await writeFile(path.join(root, name), JSON.stringify({ version: '0.1.13' }))
-  const signed = Object.fromEntries([...distributionNames, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1'].map(name => [name, `Frozen ${name}`]))
+  const signed = Object.fromEntries([...executableNames, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1'].map(name => [name, `Frozen ${name}`]))
   signed['release-formats.json'] = JSON.stringify({ schema_version: 1, version, source_sha: source })
-  signed['checksums.txt'] = distributionNames.map(name => `${hash(signed[name])}  ${name}`).join('\n') + '\n'
+  signed['checksums.txt'] = executableNames.map(name => `${hash(signed[name])}  ${name}`).join('\n') + '\n'
   const payloads = new Map([
     ['signed-distribution', signed], ['mac-notary-binaries', { 'binaries.json': JSON.stringify({ version, source_sha: source }) }],
     ...['x64', 'arm64'].map(arch => [`desktop-mac-${arch}`, { ...Object.fromEntries(desktopNames(version).filter(name => name.includes(`-mac-${arch}.`)).map(name => [name, `Frozen ${name}`])), [`notarization/${arch}.json`]: JSON.stringify({ version, source_sha: source, arch }) }]),
@@ -58,7 +58,7 @@ async function fixture(t) {
     build_provenance: metadata, ...Object.fromEntries(['candidate_run_url', 'packaging_run_url', 'ci_run_url'].map(key => [key, 'https://github.com/oines/astral/actions/runs/900'])) }
   bytes.set('release-manifest.json', JSON.stringify(manifest))
   bytes.set('SHA256SUMS', [...bytes].map(([name, value]) => `${hash(value)}  ${name}`).join('\n') + '\n')
-  assert.equal(bytes.size, 35)
+  assert.equal(bytes.size, 41)
   await mkdir(directory)
   for (const [name, value] of bytes) await writeFile(path.join(directory, name), value)
   // Existing release-publish tests cover the full public manifest/signing
@@ -75,18 +75,18 @@ async function fixture(t) {
   return { root, directory, output, restored, environment, bytes, payloads, artifacts, downloads, download, verify, seal, restore }
 }
 
-test('seal uploads only 17 original metadata files plus separately attested artifact references, then restores exactly the same 35 assets', async t => {
+test('seal uploads only 17 original metadata files plus separately attested artifact references, then restores exactly the same 41 assets', async t => {
   const f = await fixture(t)
   const sealed = await f.seal()
-  assert.equal(sealed.public_assets, 35)
+  assert.equal(sealed.public_assets, 41)
   assert.equal(sealed.metadata_files, 18)
   const names = await readdir(f.output)
-  assert.ok(!names.some(name => distributionNames.includes(name) || desktopNames('0.1.14').includes(name)))
+  assert.ok(!names.some(name => executableNames.includes(name) || desktopNames('0.1.14').includes(name)))
   assert.ok(names.includes('package-inputs.json'))
   const originalDescriptor = await readFile(path.join(f.root, '.release-metadata/package-inputs.json'))
   assert.deepEqual(await readFile(path.join(f.output, 'package-inputs.json')), originalDescriptor)
   const restored = await f.restore(sealed)
-  assert.equal(restored.public_assets, 35)
+  assert.equal(restored.public_assets, 41)
   assert.deepEqual(restored.artifact_ids, sealed.artifact_ids)
   assert.deepEqual(f.downloads, sealed.artifact_ids)
   await f.verify(f.restored)
@@ -120,7 +120,7 @@ test('a real collector and the production bundle verifier accept the unchanged r
     schema_version: 3, version, source_sha: source, team_id: '6N6W6Z6739', certificate_expires_at: '2099-01-01T00:00:00.000Z', status: 'signed', notarization_status: 'accepted', native_tested_arches: ['x64', 'arm64'],
     checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: true, gatekeeper: true, packaged_app_startup_shutdown: true },
     notarizations: [{ kind: 'binaries' }, { kind: 'dmg', arch: 'arm64' }, { kind: 'dmg', arch: 'x64' }].map((value, index) => ({ ...value, id: `12345678-1234-4234-8234-${String(index + 1).padStart(12, '0')}`, status: 'Accepted' })),
-    assets: [...f.bytes].filter(([name]) => name.startsWith('astral-darwin-') || name.includes('-mac-')).map(([name, value]) => ({ name, size: Buffer.byteLength(value), sha256: hash(value) })),
+    assets: [...f.bytes].filter(([name]) => name.startsWith('astral-darwin-') || name.startsWith('astral-daemon-darwin-') || name.includes('-mac-')).map(([name, value]) => ({ name, size: Buffer.byteLength(value), sha256: hash(value) })),
   }
   await writeFile(path.join(input, 'mac-signing-report.json'), JSON.stringify(report))
   const directory = path.join(f.root, 'valid-accepted'), output = path.join(f.root, 'valid-metadata'), restored = path.join(f.root, 'valid-restored')
@@ -139,7 +139,7 @@ test('a real collector and the production bundle verifier accept the unchanged r
   await restoreReleaseInputs({ input: output, output: restored, root: f.root, environment: publicationEnvironment, download: f.download,
     fetch: () => assert.fail('Reconstruction uses the original IDs, never a new artifact inventory.') })
   const verified = await verifyReleaseBundle(restored, { environment: publicationEnvironment, requireSeal: true })
-  assert.equal(verified.files.length, 35)
+  assert.equal(verified.files.length, 41)
   for (const name of verified.files) assert.deepEqual(await readFile(path.join(restored, name)), await readFile(path.join(directory, name)), name)
 })
 
@@ -157,9 +157,9 @@ test('missing metadata, unexpected large payloads and missing descriptor attesta
   const f = await fixture(t)
   const sealed = await f.seal()
   await assert.rejects(restoreReleaseInputs({ input: f.output, output: f.restored, root: f.root, environment: { ...f.environment, ASTRAL_RELEASE_BUNDLE_SHA256: sealed.bundle_sha256 } }), /both independently verified/)
-  await writeFile(path.join(f.output, distributionNames[0]), 'unexpected duplicate payload')
+  await writeFile(path.join(f.output, executableNames[0]), 'unexpected duplicate payload')
   await assert.rejects(f.restore(sealed), /Unexpected or missing/)
-  await rm(path.join(f.output, distributionNames[0]))
+  await rm(path.join(f.output, executableNames[0]))
   await rm(path.join(f.output, 'RELEASE_NOTES.md'))
   await assert.rejects(f.restore(sealed), /Unexpected or missing/)
   assert.deepEqual(f.downloads, [])

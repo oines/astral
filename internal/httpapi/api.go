@@ -127,6 +127,9 @@ type Approval struct {
 }
 type EnrollmentInput struct {
 	Container           bool   `json:"container"`
+	Temporary           bool   `json:"temporary,omitempty"`
+	SessionID           string `json:"session_id,omitempty"`
+	TTLSeconds          int    `json:"ttl_seconds,omitempty"`
 	ServerURL           string `json:"server_url,omitempty"`
 	ComputerAPIDisabled *bool  `json:"computer_api_disabled,omitempty"`
 }
@@ -357,6 +360,9 @@ func (a *API) systemRoutes() {
 	route[httpcontract.Empty, httpcontract.OK](a, "POST", "/computers/{id}/revoke", "revokeComputer", "Computers", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.Hub.Revoke(r.Context(), r.PathValue("id"))
 	})
+	route[httpcontract.Empty, httpcontract.OK](a, "POST", "/computers/{id}/disconnect", "disconnectTemporaryComputer", "Computers", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.DisconnectTemporaryComputer(r.Context(), r.PathValue("id"))
+	})
 	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/computers/{id}", "deleteComputer", "Computers", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.DeleteComputer(r.Context(), r.PathValue("id"), revision(r))
 	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
@@ -364,6 +370,38 @@ func (a *API) systemRoutes() {
 		server := input.ServerURL
 		if server == "" {
 			server = a.publicURL()
+		}
+		if input.Temporary {
+			if input.Container {
+				return computers.EnrollmentResult{}, domain.Invalid("temporary Computers cannot use container mode")
+			}
+			if input.SessionID == "" {
+				return computers.EnrollmentResult{}, domain.Invalid("session_id is required for temporary Computers")
+			}
+			var session domain.Session
+			if err := h.Store.Get(r.Context(), "sessions", input.SessionID, &session); err != nil {
+				return computers.EnrollmentResult{}, err
+			}
+			if session.Deletion != nil {
+				return computers.EnrollmentResult{}, domain.Missing("Session", input.SessionID)
+			}
+			if session.Archived {
+				return computers.EnrollmentResult{}, domain.Conflict("restore this Session before attaching a temporary Computer")
+			}
+			if session.SubagentParentID != "" {
+				return computers.EnrollmentResult{}, domain.Forbidden("attach temporary Computers from the root Session")
+			}
+			var ttl time.Duration
+			if input.TTLSeconds > 0 {
+				ttl = time.Duration(input.TTLSeconds) * time.Second
+			}
+			return h.Hub.Enroll(r.Context(), server, computers.EnrollmentOptions{
+				Temporary:           true,
+				OwnerSessionID:      session.ID,
+				OwnerAgentID:        session.AgentID,
+				TTL:                 ttl,
+				ComputerAPIDisabled: true,
+			})
 		}
 		disabled := input.ComputerAPIDisabled == nil || *input.ComputerAPIDisabled
 		return h.Hub.Enroll(r.Context(), server, computers.EnrollmentOptions{Container: input.Container, ComputerAPIDisabled: disabled})

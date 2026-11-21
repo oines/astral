@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	sessions "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/channels"
@@ -182,18 +183,40 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	}, httpcontract.Parameter{Name: "after", Type: "integer"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "q"})
 	s.recallRoutes()
 	register[httpcontract.Empty, []domain.ComputerStatus](s, "GET", "/v1/computers", "agentComputers", func(r *http.Request, _ httpcontract.Empty) ([]domain.ComputerStatus, error) {
+		b := binding(r)
 		var agent domain.Agent
-		if err := h.Store.Get(r.Context(), "agents", binding(r).AgentID, &agent); err != nil {
+		if err := h.Store.Get(r.Context(), "agents", b.AgentID, &agent); err != nil {
 			return nil, err
 		}
+		var session domain.Session
+		_ = h.Store.Get(r.Context(), "sessions", b.SessionID, &session)
+		rootID := domain.RootSessionID(session)
 		result := []domain.ComputerStatus{}
+		seen := map[string]bool{}
 		for _, id := range agent.AllowedComputers {
 			var computer domain.Computer
 			if err := h.Store.Get(r.Context(), "computers", id, &computer); err != nil {
 				continue
 			}
 			computer.TokenID = ""
+			seen[id] = true
 			result = append(result, h.Hub.Status(computer))
+		}
+		if items, err := h.Store.List(r.Context(), "computers"); err == nil && rootID != "" {
+			now := time.Now()
+			for _, item := range items {
+				var computer domain.Computer
+				if json.Unmarshal(item.Data, &computer) != nil || !computer.Temporary || computer.Revoked || seen[computer.ID] {
+					continue
+				}
+				if computer.ExpiresAt != nil && now.After(*computer.ExpiresAt) {
+					continue
+				}
+				if computer.OwnerSessionID == rootID && computer.OwnerAgentID == b.AgentID {
+					computer.TokenID = ""
+					result = append(result, h.Hub.Status(computer))
+				}
+			}
 		}
 		return result, nil
 	})

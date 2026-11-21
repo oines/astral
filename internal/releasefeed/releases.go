@@ -23,9 +23,17 @@ import (
 var versionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 type Binary struct {
-	Version string `json:"version"`
-	Name    string `json:"name"`
-	SHA256  string `json:"sha256"`
+	Version     string  `json:"version"`
+	Name        string  `json:"name"`
+	SHA256      string  `json:"sha256"`
+	GitHubProxy *string `json:"github_proxy,omitempty"`
+}
+
+func (b Binary) ProxyOverride() githubrelease.ProxyOverride {
+	if b.GitHubProxy == nil {
+		return githubrelease.ProxyOverride{}
+	}
+	return githubrelease.ProxyOverride{Set: true, Prefix: *b.GitHubProxy}
 }
 
 func Compare(a, b string) (int, error) {
@@ -64,12 +72,23 @@ func AssetName(platform, arch string) (string, error) {
 	return name, nil
 }
 
-func client() *http.Client {
-	return &http.Client{Timeout: 5 * time.Minute, CheckRedirect: githubrelease.CheckRedirect}
+func DaemonAssetName(platform, arch string) (string, error) {
+	if (platform != "darwin" && platform != "windows" && platform != "linux") || (arch != "arm64" && arch != "amd64") {
+		return "", errors.New("unsupported Daemon platform or architecture")
+	}
+	name := "astral-daemon-" + platform + "-" + arch
+	if platform == "windows" {
+		name += ".exe"
+	}
+	return name, nil
 }
 
-func get(ctx context.Context, c *http.Client, url string) (io.ReadCloser, error) {
-	address, err := githubrelease.Address(url)
+func clientWithProxy(override githubrelease.ProxyOverride) *http.Client {
+	return &http.Client{Timeout: 5 * time.Minute, CheckRedirect: githubrelease.CheckRedirectWithProxy(override)}
+}
+
+func getWithProxy(ctx context.Context, c *http.Client, url string, override githubrelease.ProxyOverride) (io.ReadCloser, error) {
+	address, err := githubrelease.AddressWithProxy(url, override)
 	if err != nil {
 		return nil, err
 	}
@@ -93,19 +112,24 @@ func base(version string) string {
 	return "https://github.com/oines/astral/releases/download/v" + version
 }
 
-// Latest pins both the immutable release tag and that release's checksum.
-func Latest(ctx context.Context, platform, arch string) (Binary, error) {
-	c := client()
+// LatestWithProxy pins the release tag and checksum. Legacy Daemons require
+// the unified executable, including when the release also has standalone assets.
+func LatestWithProxy(ctx context.Context, platform, arch string, override githubrelease.ProxyOverride, standalone bool) (Binary, error) {
+	c := clientWithProxy(override)
 	defer c.CloseIdleConnections()
-	return latest(ctx, platform, arch, c)
+	return latestWithProxy(ctx, platform, arch, c, override, standalone)
 }
 
-func latest(ctx context.Context, platform, arch string, c *http.Client) (Binary, error) {
-	name, err := AssetName(platform, arch)
+func latestWithProxy(ctx context.Context, platform, arch string, c *http.Client, override githubrelease.ProxyOverride, standalone bool) (Binary, error) {
+	daemonName, err := DaemonAssetName(platform, arch)
 	if err != nil {
 		return Binary{}, err
 	}
-	body, err := get(ctx, c, "https://api.github.com/repos/oines/astral/releases/latest")
+	fullName, err := AssetName(platform, arch)
+	if err != nil {
+		return Binary{}, err
+	}
+	body, err := getWithProxy(ctx, c, "https://api.github.com/repos/oines/astral/releases/latest", override)
 	if err != nil {
 		return Binary{}, err
 	}
@@ -120,7 +144,7 @@ func latest(ctx context.Context, platform, arch string, c *http.Client) (Binary,
 	if err != nil || release.Draft || release.Prerelease || !versionPattern.MatchString(version) || release.Tag != "v"+version {
 		return Binary{}, errors.New("official latest release has an invalid version")
 	}
-	body, err = get(ctx, c, base(version)+"/checksums.txt")
+	body, err = getWithProxy(ctx, c, base(version)+"/checksums.txt", override)
 	if err != nil {
 		return Binary{}, err
 	}
@@ -132,15 +156,29 @@ func latest(ctx context.Context, platform, arch string, c *http.Client) (Binary,
 	if len(raw) > 65536 {
 		return Binary{}, errors.New("release checksum list is too large")
 	}
-	value := Binary{Version: version, Name: name}
+	var daemonSHA, fullSHA string
 	for _, line := range strings.Split(string(raw), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) == 2 && strings.TrimPrefix(fields[1], "*") == name {
-			if value.SHA256 != "" {
+		if len(fields) != 2 {
+			continue
+		}
+		target := strings.TrimPrefix(fields[1], "*")
+		switch target {
+		case daemonName:
+			if daemonSHA != "" {
 				return Binary{}, errors.New("duplicate release checksum")
 			}
-			value.SHA256 = fields[0]
+			daemonSHA = fields[0]
+		case fullName:
+			if fullSHA != "" {
+				return Binary{}, errors.New("duplicate release checksum")
+			}
+			fullSHA = fields[0]
 		}
+	}
+	value := Binary{Version: version, Name: daemonName, SHA256: daemonSHA}
+	if !standalone || value.SHA256 == "" {
+		value.Name, value.SHA256 = fullName, fullSHA
 	}
 	if err = value.Validate(platform, arch); err != nil {
 		return Binary{}, err
@@ -149,18 +187,19 @@ func latest(ctx context.Context, platform, arch string, c *http.Client) (Binary,
 }
 
 // Verify rechecks a staged descriptor against its immutable official release.
-// A local handoff file is not an authority to choose executable bytes.
-func (b Binary) Verify(ctx context.Context) error {
-	c := client()
+// override must come from trusted configuration or an authenticated Server.
+// Neither the bytes nor the verification source may be chosen by a local handoff.
+func (b Binary) Verify(ctx context.Context, override githubrelease.ProxyOverride) error {
+	c := clientWithProxy(override)
 	defer c.CloseIdleConnections()
-	return b.verify(ctx, c)
+	return b.verifyWithProxy(ctx, c, override)
 }
 
-func (b Binary) verify(ctx context.Context, c *http.Client) error {
+func (b Binary) verifyWithProxy(ctx context.Context, c *http.Client, override githubrelease.ProxyOverride) error {
 	if !versionPattern.MatchString(b.Version) || strings.ContainsAny(b.Name, "/\\") {
 		return errors.New("invalid release descriptor")
 	}
-	body, err := get(ctx, c, base(b.Version)+"/checksums.txt")
+	body, err := getWithProxy(ctx, c, base(b.Version)+"/checksums.txt", override)
 	if err != nil {
 		return err
 	}
@@ -189,29 +228,42 @@ func (b Binary) verify(ctx context.Context, c *http.Client) error {
 }
 
 func (b Binary) Validate(platform, arch string) error {
-	name, err := AssetName(platform, arch)
+	fullName, err := AssetName(platform, arch)
 	if err != nil {
 		return err
 	}
+	daemonName, err := DaemonAssetName(platform, arch)
+	if err != nil {
+		return err
+	}
+	if b.GitHubProxy != nil {
+		if _, err := githubrelease.NormalizeProxy(*b.GitHubProxy); err != nil {
+			return err
+		}
+	}
 	raw, err := hex.DecodeString(b.SHA256)
-	if !versionPattern.MatchString(b.Version) || b.Name != name || err != nil || len(raw) != sha256.Size || strings.ToLower(b.SHA256) != b.SHA256 {
+	if !versionPattern.MatchString(b.Version) || (b.Name != daemonName && b.Name != fullName) || err != nil || len(raw) != sha256.Size || strings.ToLower(b.SHA256) != b.SHA256 {
 		return errors.New("invalid official release descriptor")
 	}
 	return nil
 }
 
 func (b Binary) Download(ctx context.Context, target string) error {
-	c := client()
-	defer c.CloseIdleConnections()
-	return b.download(ctx, target, c)
+	return b.DownloadWithProxy(ctx, target, b.ProxyOverride())
 }
 
-func (b Binary) download(ctx context.Context, target string, c *http.Client) error {
+func (b Binary) DownloadWithProxy(ctx context.Context, target string, override githubrelease.ProxyOverride) error {
+	c := clientWithProxy(override)
+	defer c.CloseIdleConnections()
+	return b.downloadWithProxy(ctx, target, c, override)
+}
+
+func (b Binary) downloadWithProxy(ctx context.Context, target string, c *http.Client, override githubrelease.ProxyOverride) error {
 	// The URL is derived only from a validated release tag and asset name.
 	if !versionPattern.MatchString(b.Version) || strings.ContainsAny(b.Name, "/\\") {
 		return errors.New("invalid release download")
 	}
-	body, err := get(ctx, c, base(b.Version)+"/"+b.Name)
+	body, err := getWithProxy(ctx, c, base(b.Version)+"/"+b.Name, override)
 	if err != nil {
 		return err
 	}

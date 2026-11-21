@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { desktopNames, distributionNames } from './release-assets.mjs'
+import { desktopNames, executableNames } from './release-assets.mjs'
 import { gatherPackageInputs } from './rolling-release-package-inputs.mjs'
 
 const hash = value => createHash('sha256').update(value).digest('hex')
@@ -18,9 +18,9 @@ async function fixture(t) {
   for (const name of ['package.json', 'apps/desktop/package.json']) await writeFile(path.join(root, name), JSON.stringify({ version: '0.1.13' }))
   const metadata = { schema_version: 1, repository: 'oines/astral', source_sha: source, version, build_run_id: 800, build_run_attempt: 1, build_run_number: 1, build_run_url: 'https://github.com/oines/astral/actions/runs/800', workflow_path: '.github/workflows/prepare-release.yml' }
   await writeFile(path.join(root, '.release-metadata/release-build.json'), JSON.stringify(metadata))
-  const signed = Object.fromEntries([...distributionNames, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1'].map(name => [name, `Fixture ${name}`]))
+  const signed = Object.fromEntries([...executableNames, 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1'].map(name => [name, `Fixture ${name}`]))
   signed['release-formats.json'] = JSON.stringify({ schema_version: 1, version, source_sha: source })
-  signed['checksums.txt'] = distributionNames.map(name => `${hash(signed[name])}  ${name}`).join('\n') + '\n'
+  signed['checksums.txt'] = executableNames.map(name => `${hash(signed[name])}  ${name}`).join('\n') + '\n'
   const payloads = new Map([
     ['signed-distribution', signed], ['mac-notary-binaries', { 'binaries.json': JSON.stringify({ version, source_sha: source }) }],
     ...['x64', 'arm64'].map(arch => [`desktop-mac-${arch}`, { ...Object.fromEntries(desktopNames(version).filter(name => name.includes(`-mac-${arch}.`)).map(name => [name, `Fixture ${name}`])), [`notarization/${arch}.json`]: JSON.stringify({ version, source_sha: source, arch }) }]),
@@ -125,7 +125,7 @@ test('unexpected package files and wrong actual source or version fail before co
     f => { f.payloads.get('desktop-win')['unexpected.json'] = '{}' },
     f => { f.payloads.get('signed-distribution')['release-formats.json'] = JSON.stringify({ schema_version: 1, version: f.version, source_sha: 'c'.repeat(40) }) },
     f => { f.payloads.get('desktop-mac-x64')['notarization/x64.json'] = JSON.stringify({ version: '0.1.15', source_sha: f.source, arch: 'x64' }) },
-    f => { f.payloads.get('signed-distribution')[distributionNames[0]] = 'Changed signed program' },
+    f => { f.payloads.get('signed-distribution')[executableNames[0]] = 'Changed signed program' },
   ]) {
     const f = await fixture(t); change(f)
     await assert.rejects(gatherPackageInputs(f.options), /payload|frozen release|frozen checksums/)

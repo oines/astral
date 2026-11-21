@@ -8,6 +8,8 @@ import { recipeHash, recipePath, validateLock } from './computer-image-contract.
 import { validateBuildMetadata } from './rolling-release-version.mjs'
 
 export const distributionNames = ['darwin', 'linux', 'windows'].flatMap(system => ['amd64', 'arm64'].map(arch => `astral-${system}-${arch}${system === 'windows' ? '.exe' : ''}`))
+export const daemonNames = ['darwin', 'linux', 'windows'].flatMap(system => ['amd64', 'arm64'].map(arch => `astral-daemon-${system}-${arch}${system === 'windows' ? '.exe' : ''}`))
+export const executableNames = [...distributionNames, ...daemonNames]
 
 export function desktopNames(version) {
   return [['mac', ['dmg', 'zip']], ['win', ['exe', 'zip']], ['linux', ['AppImage', 'deb']]]
@@ -55,10 +57,10 @@ export async function validateMacSigningReport(report, { version, sourceSHA, fil
       ['arm64', 'x64'].some(arch => notarizations.filter(item => item.kind === 'dmg' && item.arch === arch).length !== 1)) throw new Error('Mac signing report must contain exactly three distinct non-rejected binary and DMG notarizations.')
   const accepted = notarizations.every(item => item.status === 'Accepted')
   if (report.notarization_status !== (accepted ? 'accepted' : 'pending') || report.checks.stapling !== accepted || report.checks.gatekeeper !== accepted) throw new Error('Mac notarization status and acceptance checks must accurately match every submission.')
-  const names = [...distributionNames.filter(name => name.startsWith('astral-darwin-')), ...desktopNames(version).filter(name => name.includes('-mac-'))]
+  const names = [...executableNames.filter(name => name.startsWith('astral-darwin-') || name.startsWith('astral-daemon-darwin-')), ...desktopNames(version).filter(name => name.includes('-mac-'))]
   if (!Array.isArray(report.assets) || report.assets.length !== names.length ||
       new Set(report.assets.map(asset => asset?.name)).size !== names.length ||
-      report.assets.some(asset => !asset || !names.includes(asset.name) || !Number.isSafeInteger(asset.size) || asset.size <= 0 || !/^[a-f0-9]{64}$/.test(asset.sha256 || ''))) throw new Error('Mac signing report must describe exactly the two Darwin binaries and four Mac packages.')
+      report.assets.some(asset => !asset || !names.includes(asset.name) || !Number.isSafeInteger(asset.size) || asset.size <= 0 || !/^[a-f0-9]{64}$/.test(asset.sha256 || ''))) throw new Error('Mac signing report must describe exactly the four Darwin binaries and four Mac packages.')
   for (const asset of report.assets) {
     const file = files.get(asset.name)
     if (!file || (await stat(file)).size !== asset.size || await digest(file) !== asset.sha256) throw new Error(`Mac signing report does not match final artifact bytes: ${asset.name}`)
@@ -100,7 +102,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   if (path.resolve(input) === path.resolve(output) || path.resolve(output).startsWith(`${path.resolve(input)}${path.sep}`)) throw new Error('Output must be outside the input artifact directory.')
   await mkdir(output, { recursive: true })
   if ((await readdir(output)).length) throw new Error('Candidate output directory must be empty; refusing to mix earlier release files.')
-  const required = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'release-formats.json', ...(macSigned ? [macSigningReportName] : [])]
+  const required = [...executableNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'release-formats.json', ...(macSigned ? [macSigningReportName] : [])]
   const allowed = new Set([...required, 'checksums.txt', 'release-formats.json'])
   const inputs = new Map()
   for (const file of await walk(input)) {
@@ -127,7 +129,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   required.push(...desktopUpdateFeeds(version).map(feed => feed.name))
   const records = []
   for (const name of required.sort()) records.push({ name, size: (await stat(path.join(output, name))).size, sha256: await digest(path.join(output, name)) })
-  await writeFile(path.join(output, 'checksums.txt'), `${distributionNames.map(name => `${records.find(record => record.name === name).sha256}  ${name}`).join('\n')}\n`)
+  await writeFile(path.join(output, 'checksums.txt'), `${executableNames.map(name => `${records.find(record => record.name === name).sha256}  ${name}`).join('\n')}\n`)
   records.push({ name: 'checksums.txt', size: (await stat(path.join(output, 'checksums.txt'))).size, sha256: await digest(path.join(output, 'checksums.txt')) })
   const manifest = {
     schema_version: 1,
@@ -153,6 +155,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
     signing: { macos: macSigned ? (notarized ? 'signed-and-notarized' : 'signed-notarization-pending') : 'not-signed-or-notarized', windows: 'not-signed', linux: 'not-signed' },
     desktop_updater: 'electron-updater',
     distribution_names: distributionNames,
+    daemon_names: daemonNames,
     assets: records,
   }
   await writeFile(path.join(output, 'release-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
@@ -235,7 +238,7 @@ Versioned migrations are bundled with the latest binary. Upgrades apply missing 
 - Release packaging: ${runURL}
 - Native acceptance covers the runner architecture; cross-building an installer does not establish native execution on every architecture.
 
-The six unified Server/Web UI/CLI/Daemon binaries and three-platform Desktop packages are included. checksums.txt covers the six binaries; SHA256SUMS covers all attached files except itself. Checksums describe exact release bytes and do not independently establish publisher authenticity.
+The release includes Desktop packages, six unified Server/CLI binaries, and six lightweight Daemon binaries. checksums.txt covers all twelve executables. SHA256SUMS covers all attached files except itself. Checksums describe exact release bytes and do not independently establish publisher authenticity.
 `
   const body = publicRelease ? `# Astral ${version}
 

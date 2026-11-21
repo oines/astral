@@ -1,3 +1,5 @@
+//go:build !daemon
+
 // Package computers implements authenticated outbound Daemon connections.
 package computers
 
@@ -35,6 +37,8 @@ type connection struct {
 	connected           time.Time
 	connectionIP        string
 	computerAPIDisabled bool // guarded by Hub.mu
+	temporary           bool // guarded by Hub.mu
+	gracefulLeave       bool // guarded by Hub.mu
 	skillChanges        chan struct{}
 }
 type authenticationBucket struct {
@@ -42,28 +46,45 @@ type authenticationBucket struct {
 	updated time.Time
 }
 
+const (
+	DefaultTemporaryTTL    = 4 * time.Hour
+	MinTemporaryTTL        = 30 * time.Minute
+	MaxTemporaryTTL        = 12 * time.Hour
+	DefaultDisconnectGrace = 2 * time.Minute
+)
+
 type Hub struct {
-	updates             daemonUpdates
-	Store               *persistence.Store
-	Skills              *skills.Service
-	Gateway             GatewayHandler
-	Wake                WakeHandler
-	ContainerURL        func(*http.Request, string) string
-	ResolveConnectionIP func(*http.Request) string
-	identity            *securetransport.Identity
-	pending             chan struct{}
-	authenticating      map[string]int
-	attempts            map[string]authenticationBucket
-	mu                  sync.RWMutex
-	live                map[string]*connection
-	nextConnection      uint64
-	admittedConnection  map[string]uint64
-	grants              map[string]domain.ExecutionBinding
-	commandCredentials  map[string]*commandCredential
+	updates              daemonUpdates
+	Store                *persistence.Store
+	Skills               *skills.Service
+	Gateway              GatewayHandler
+	Wake                 WakeHandler
+	ContainerURL         func(*http.Request, string) string
+	ResolveConnectionIP  func(*http.Request) string
+	OnTemporaryConnected func(domain.Computer)
+	CleanupTemporary     func(string)
+	DisconnectGrace      time.Duration
+	identity             *securetransport.Identity
+	pending              chan struct{}
+	authenticating       map[string]int
+	attempts             map[string]authenticationBucket
+	mu                   sync.RWMutex
+	live                 map[string]*connection
+	nextConnection       uint64
+	admittedConnection   map[string]uint64
+	grants               map[string]domain.ExecutionBinding
+	commandCredentials   map[string]*commandCredential
+	tempExpiryTimers     map[string]*time.Timer
+	tempGraceTimers      map[string]*time.Timer
 }
 
 func NewHub(store *persistence.Store) *Hub {
-	return &Hub{Store: store, live: map[string]*connection{}, admittedConnection: map[string]uint64{}, grants: map[string]domain.ExecutionBinding{}, commandCredentials: map[string]*commandCredential{}, pending: make(chan struct{}, 64), authenticating: map[string]int{}, attempts: map[string]authenticationBucket{}}
+	return &Hub{
+		Store: store, live: map[string]*connection{}, admittedConnection: map[string]uint64{},
+		grants: map[string]domain.ExecutionBinding{}, commandCredentials: map[string]*commandCredential{},
+		tempExpiryTimers: map[string]*time.Timer{}, tempGraceTimers: map[string]*time.Timer{},
+		pending: make(chan struct{}, 64), authenticating: map[string]int{}, attempts: map[string]authenticationBucket{},
+	}
 }
 
 func (h *Hub) SetIdentity(identity *securetransport.Identity) { h.identity = identity }
@@ -82,6 +103,10 @@ func tokenHash(token string) string {
 type EnrollmentOptions struct {
 	Container           bool
 	Local               bool
+	Temporary           bool
+	OwnerSessionID      string
+	OwnerAgentID        string
+	TTL                 time.Duration
 	ComputerAPIDisabled bool
 }
 
@@ -92,25 +117,60 @@ func (h *Hub) Enroll(ctx context.Context, serverURL string, options EnrollmentOp
 	if err := serviceurl.Validate(serverURL); err != nil {
 		return EnrollmentResult{}, err
 	}
+	ttlSeconds := 0
+	if options.Temporary {
+		if options.Container || options.Local {
+			return EnrollmentResult{}, domain.Invalid("temporary Computers cannot use container or local mode")
+		}
+		if options.OwnerSessionID == "" || options.OwnerAgentID == "" {
+			return EnrollmentResult{}, domain.Invalid("temporary Computer enrollment requires an owning Session and Bot")
+		}
+		ttl := options.TTL
+		if ttl == 0 {
+			ttl = DefaultTemporaryTTL
+		}
+		if ttl < MinTemporaryTTL || ttl > MaxTemporaryTTL {
+			return EnrollmentResult{}, domain.Invalid("temporary Computer lifetime must be between 30 minutes and 12 hours")
+		}
+		ttlSeconds = int(ttl / time.Second)
+		// Temporary Computers are untrusted hosts and never receive Astral API access.
+		options.ComputerAPIDisabled = true
+	}
 	token := domain.ID("enroll")
 	e := domain.Enrollment{
 		Meta: domain.Meta{ID: domain.ID("enrollment")}, TokenHash: tokenHash(token), ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
-		Container: options.Container, Local: options.Local, ComputerAPIDisabled: options.ComputerAPIDisabled, State: "waiting",
+		Container: options.Container, Local: options.Local, Temporary: options.Temporary,
+		OwnerSessionID: options.OwnerSessionID, OwnerAgentID: options.OwnerAgentID, TTLSeconds: ttlSeconds,
+		ComputerAPIDisabled: options.ComputerAPIDisabled, State: "waiting",
 	}
 	if err := h.Store.Save(ctx, "enrollments", &e.Meta, &e); err != nil {
 		return EnrollmentResult{}, err
 	}
 	cmd := "--server " + shellQuote(serverURL) + " --server-pin " + shellQuote(h.ServerPin()) + " --enrollment " + shellQuote(e.ID) + " --token " + shellQuote(token)
 	ps := "-Server " + powerShellQuote(serverURL) + " -ServerPin " + powerShellQuote(h.ServerPin()) + " -Enrollment " + powerShellQuote(e.ID) + " -Token " + powerShellQuote(token)
+	directArgs := "--server " + shellQuote(serverURL) + " --server-pin " + shellQuote(h.ServerPin()) + " --enrollment " + shellQuote(e.ID) + " --token " + shellQuote(token)
+	directPSArgs := "--server " + powerShellQuote(serverURL) + " --server-pin " + powerShellQuote(h.ServerPin()) + " --enrollment " + powerShellQuote(e.ID) + " --token " + powerShellQuote(token)
 
 	if options.Container {
 		cmd += " --container"
 		ps += " -Container"
 	}
-	return EnrollmentResult{Enrollment: e, Token: token, ServerPin: h.ServerPin(), Command: ShellInstallerCommand(cmd), PowerShellCommand: PowerShellInstallerCommand(ps)}, nil
+	if options.Temporary {
+		cmd += " --temporary"
+		ps += " -Temporary"
+		directArgs += " --temporary"
+		directPSArgs += " --temporary"
+	}
+	result := EnrollmentResult{
+		Enrollment: e, Token: token, ServerPin: h.ServerPin(),
+		Command: ShellInstallerCommand(cmd), PowerShellCommand: PowerShellInstallerCommand(ps),
+	}
+	if options.Temporary {
+		result.DirectCommand = DirectShellCommand(directArgs)
+		result.DirectPowerShellCommand = DirectPowerShellCommand(directPSArgs)
+	}
+	return result, nil
 }
-func shellQuote(value string) string      { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
-func powerShellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
 
 // PrepareContainer claims the normal short-lived enrollment before expensive
 // image setup. Retries cannot extend it beyond the fixed creation-time limit.
@@ -135,6 +195,7 @@ func (h *Hub) PrepareContainer(ctx context.Context, id, token string) error {
 
 func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest) (Credentials, error) {
 	var credentials Credentials
+	var expiresAt *time.Time
 	err := h.Store.Update(ctx, func(tx *persistence.Tx) error {
 		var e domain.Enrollment
 		if err := tx.Get(ctx, "enrollments", id, &e); err != nil {
@@ -163,19 +224,39 @@ func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest
 		if e.Container {
 			kind = "container"
 		}
+		if e.Temporary {
+			kind = "temporary"
+		}
+		apiDisabled := e.ComputerAPIDisabled
+		if e.Temporary {
+			var ownerSession domain.Session
+			if err := tx.Get(ctx, "sessions", e.OwnerSessionID, &ownerSession); err != nil || ownerSession.Deletion != nil || ownerSession.Archived || ownerSession.AgentID != e.OwnerAgentID {
+				return domain.Forbidden("owning Session is no longer available for this temporary Computer")
+			}
+			ttl := time.Duration(e.TTLSeconds) * time.Second
+			if ttl <= 0 {
+				ttl = DefaultTemporaryTTL
+			}
+			exp := time.Now().UTC().Add(ttl)
+			expiresAt = &exp
+			apiDisabled = true
+		}
 		c := domain.Computer{Meta: domain.Meta{ID: domain.ID("computer")}, Name: request.Hello.Hostname, Hostname: request.Hello.Hostname,
-			Kind: kind, Local: e.Local && !e.Container, OS: request.Hello.OS, Arch: request.Hello.Arch, Shell: request.Hello.Shell, Home: request.Hello.Home,
-			TokenID: credential, ComputerAPIDisabled: e.ComputerAPIDisabled}
+			Kind: kind, Local: e.Local && !e.Container && !e.Temporary, OS: request.Hello.OS, Arch: request.Hello.Arch, Shell: request.Hello.Shell, Home: request.Hello.Home,
+			TokenID: credential, ComputerAPIDisabled: apiDisabled, Temporary: e.Temporary, OwnerSessionID: e.OwnerSessionID, OwnerAgentID: e.OwnerAgentID, ExpiresAt: expiresAt}
 		applyEnvironment(&c, request.Hello)
 		if err = tx.Save(ctx, "computers", &c.Meta, &c); err != nil {
 			return err
 		}
 		e.State, e.ComputerID, e.CredentialID, e.TokenHash = "registered", c.ID, credential, ""
-		credentials.ComputerID, credentials.Token, credentials.ServerPin = c.ID, token, h.ServerPin()
+		credentials.ComputerID, credentials.Token, credentials.ServerPin, credentials.Temporary = c.ID, token, h.ServerPin(), e.Temporary
 		return tx.Save(ctx, "enrollments", &e.Meta, &e)
 	})
 	if err != nil {
-		return credentials, err
+		return Credentials{}, err
+	}
+	if expiresAt != nil {
+		h.scheduleTemporaryExpiry(credentials.ComputerID, *expiresAt)
 	}
 	return credentials, nil
 }
@@ -190,6 +271,9 @@ func validateHello(hello Hello) error {
 	}
 	if hello.Root != "" && (!absoluteTargetPath(hello.OS, hello.Root) || len(hello.Root) > 1024) {
 		return domain.Invalid("daemon reported an invalid data directory")
+	}
+	if hello.InitialCWD != "" && (!absoluteTargetPath(hello.OS, hello.InitialCWD) || len(hello.InitialCWD) > 1024) {
+		return domain.Invalid("daemon reported an invalid working directory")
 	}
 	if c := hello.Container; c != nil {
 		if c.Name == "" || len(c.Name) > 250 || len(c.Host) > 250 || len(c.Image) > 512 || len(c.Volume) > 250 ||
@@ -211,12 +295,15 @@ func applyEnvironment(c *domain.Computer, hello Hello) bool {
 	if hello.Root != "" {
 		c.Root = hello.Root
 	}
+	if hello.InitialCWD != "" {
+		c.InitialCWD = hello.InitialCWD
+	}
 	if c.Kind == "container" && hello.Container != nil {
 		value := *hello.Container
 		c.Container = &value
 	}
 	sameContainer := c.Container == previous.Container || c.Container != nil && previous.Container != nil && *c.Container == *previous.Container
-	return c.Hostname != previous.Hostname || c.OS != previous.OS || c.Arch != previous.Arch || c.Shell != previous.Shell || c.Home != previous.Home || c.Root != previous.Root || c.DaemonVersion != previous.DaemonVersion || !sameContainer
+	return c.Hostname != previous.Hostname || c.OS != previous.OS || c.Arch != previous.Arch || c.Shell != previous.Shell || c.Home != previous.Home || c.Root != previous.Root || c.InitialCWD != previous.InitialCWD || c.DaemonVersion != previous.DaemonVersion || !sameContainer
 }
 
 // Connect is the only network entry for enrollment and Computer authentication.
@@ -314,6 +401,7 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := tunnelResponse{}
+	var authedComputer domain.Computer
 	switch request.Operation {
 	case "register":
 		credentials, err := h.Register(r.Context(), request.EnrollmentID, EnrollmentRequest{Token: request.Token, Hello: request.Hello})
@@ -332,13 +420,17 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 	case "status", "connect":
 		computer, err := h.authenticateComputer(r.Context(), request.ComputerID, request.Token)
 		if err != nil {
-			response.Error = "invalid Computer credential"
+			response.Error = err.Error()
+			response.ErrorCode = "forbidden"
 		} else if request.Operation == "status" {
 			status := h.Status(computer)
 			status.TokenID = ""
 			response.Status = &status
+			response.UpdateTarget = h.daemonUpdateTarget(computer.ID)
 		} else if err = validateHello(request.Hello); err != nil {
 			response.Error = err.Error()
+		} else {
+			authedComputer = computer
 		}
 	default:
 		response.Error = "unsupported Computer authentication operation"
@@ -347,9 +439,10 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 	if request.Operation == "connect" && response.Error == "" {
 		if err = h.saveEnvironment(r.Context(), request.ComputerID, request.Hello); err != nil {
 			response.Error = "Computer is unavailable"
+			response.ErrorCode = "forbidden"
 		} else {
 			sequence = h.reserveConnectionSequence()
-			response.ManagedSkills = h.Skills != nil && slices.Contains(request.Hello.Capabilities, ManagedSkillsCapability)
+			response.ManagedSkills = !authedComputer.Temporary && h.Skills != nil && slices.Contains(request.Hello.Capabilities, ManagedSkillsCapability)
 		}
 	}
 	if writeAuthentication(conn, response) != nil || response.Error != "" || request.Operation != "connect" {
@@ -368,6 +461,10 @@ func (h *Hub) authenticateComputer(ctx context.Context, id, token string) (domai
 	var computer domain.Computer
 	if token == "" || h.Store.Get(ctx, "computers", id, &computer) != nil || computer.Revoked {
 		return computer, domain.Forbidden("invalid Computer credential")
+	}
+	if computer.Temporary && computer.ExpiresAt != nil && time.Now().After(*computer.ExpiresAt) {
+		go h.triggerTemporaryCleanup(id)
+		return computer, domain.Forbidden("temporary Computer expired")
 	}
 	secret, err := h.Store.Secret(ctx, computer.TokenID)
 	if err != nil || secret == "" || subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
@@ -410,6 +507,14 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 	ready := make(chan struct{})
 	active.peer = transport.New(conn, func(ctx context.Context, request transport.Request, out *transport.Responder) error {
 		<-ready
+		if request.Method == DaemonLeaveMethod {
+			h.mu.Lock()
+			if h.live[id] == active && active.temporary {
+				active.gracefulLeave = true
+			}
+			h.mu.Unlock()
+			return out.JSON(struct{}{})
+		}
 		if request.Method == skillManifestMethod || request.Method == skillDownloadMethod {
 			return h.serveSkillSync(ctx, id, active, request, out)
 		}
@@ -473,7 +578,7 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 	})
 	h.mu.Lock()
 	var current domain.Computer
-	if sequence <= h.admittedConnection[id] || h.Store.Get(ctx, "computers", id, &current) != nil || current.Revoked {
+	if sequence <= h.admittedConnection[id] || h.Store.Get(ctx, "computers", id, &current) != nil || current.Revoked || (current.Temporary && current.ExpiresAt != nil && time.Now().After(*current.ExpiresAt)) {
 		h.mu.Unlock()
 		close(ready)
 		_ = active.peer.Close()
@@ -483,24 +588,52 @@ func (h *Hub) serveConnection(ctx context.Context, conn net.Conn, id string, hel
 	// Keep this watermark after live is cleared. Otherwise an older handler
 	// could resurrect its connection after the newer connection has exited.
 	h.admittedConnection[id] = sequence
-	active.computerAPIDisabled = current.ComputerAPIDisabled
+	active.temporary = current.Temporary
+	active.computerAPIDisabled = current.ComputerAPIDisabled || current.Temporary
+	if current.Temporary {
+		active.skillChanges = nil
+		if grace := h.tempGraceTimers[id]; grace != nil {
+			grace.Stop()
+			delete(h.tempGraceTimers, id)
+		}
+	}
 	h.live[id] = active
+	onTempConnect := h.OnTemporaryConnected
 	h.mu.Unlock()
+	if current.Temporary && current.ExpiresAt != nil {
+		h.scheduleTemporaryExpiry(id, *current.ExpiresAt)
+	}
 	close(ready)
 	if old != nil {
 		h.revokeConnectionCredentials(old)
 		_ = old.peer.Close()
+	}
+	if current.Temporary && onTempConnect != nil {
+		go onTempConnect(current)
 	}
 	if active.skillChanges != nil {
 		go active.sendSkillNotifications()
 	}
 	<-active.peer.Done()
 	h.revokeConnectionCredentials(active)
+	var shouldCleanupNow, shouldScheduleGrace bool
 	h.mu.Lock()
 	if h.live[id] == active {
 		delete(h.live, id)
+		if active.temporary {
+			if active.gracefulLeave || (current.ExpiresAt != nil && time.Now().After(*current.ExpiresAt)) {
+				shouldCleanupNow = true
+			} else {
+				shouldScheduleGrace = true
+			}
+		}
 	}
 	h.mu.Unlock()
+	if shouldCleanupNow {
+		go h.triggerTemporaryCleanup(id)
+	} else if shouldScheduleGrace {
+		h.scheduleTemporaryGrace(id)
+	}
 }
 
 func (h *Hub) Status(c domain.Computer) domain.ComputerStatus {
@@ -577,9 +710,6 @@ func (h *Hub) authorize(ctx context.Context, b domain.ExecutionBinding) error {
 	if err := h.Store.Get(ctx, "agents", b.AgentID, &agent); err != nil {
 		return err
 	}
-	if !slices.Contains(agent.AllowedComputers, b.ComputerID) {
-		return domain.Forbidden("computer is not allowed for this agent")
-	}
 	var session domain.Session
 	if err := h.Store.Get(ctx, "sessions", b.SessionID, &session); err != nil {
 		return err
@@ -596,6 +726,12 @@ func (h *Hub) authorize(ctx context.Context, b domain.ExecutionBinding) error {
 	}
 	if computer.Revoked {
 		return domain.Forbidden("computer access was revoked")
+	}
+	if computer.Temporary && computer.ExpiresAt != nil && time.Now().After(*computer.ExpiresAt) {
+		return domain.Forbidden("temporary Computer expired")
+	}
+	if !domain.ComputerAllowedForSession(agent, session, computer) {
+		return domain.Forbidden("computer is not allowed for this session")
 	}
 	return nil
 }
@@ -662,6 +798,9 @@ func (h *Hub) UpdateComputer(ctx context.Context, id string, revision int64, nam
 			computer.Name = *name
 		}
 		if apiDisabled != nil {
+			if computer.Temporary && !*apiDisabled {
+				return domain.Invalid("temporary Computers cannot enable Astral API")
+			}
 			computer.ComputerAPIDisabled = *apiDisabled
 		}
 		return tx.Save(ctx, "computers", &computer.Meta, &computer)
@@ -708,6 +847,65 @@ func (h *Hub) Revoke(ctx context.Context, id string) error {
 	return nil
 }
 
+func (h *Hub) disconnectGrace() time.Duration {
+	if h.DisconnectGrace > 0 {
+		return h.DisconnectGrace
+	}
+	return DefaultDisconnectGrace
+}
+
+func (h *Hub) scheduleTemporaryExpiry(id string, expiresAt time.Time) {
+	delay := time.Until(expiresAt)
+	if delay <= 0 {
+		go h.triggerTemporaryCleanup(id)
+		return
+	}
+	h.mu.Lock()
+	if old := h.tempExpiryTimers[id]; old != nil {
+		old.Stop()
+	}
+	h.tempExpiryTimers[id] = time.AfterFunc(delay, func() {
+		h.triggerTemporaryCleanup(id)
+	})
+	h.mu.Unlock()
+}
+
+func (h *Hub) scheduleTemporaryGrace(id string) {
+	delay := h.disconnectGrace()
+	h.mu.Lock()
+	if old := h.tempGraceTimers[id]; old != nil {
+		old.Stop()
+	}
+	h.tempGraceTimers[id] = time.AfterFunc(delay, func() {
+		h.mu.RLock()
+		online := h.live[id] != nil
+		h.mu.RUnlock()
+		if !online {
+			h.triggerTemporaryCleanup(id)
+		}
+	})
+	h.mu.Unlock()
+}
+
+func (h *Hub) ArmTemporaryTimers(id string, expiresAt time.Time) {
+	h.scheduleTemporaryExpiry(id, expiresAt)
+	h.scheduleTemporaryGrace(id)
+}
+
+func (h *Hub) triggerTemporaryCleanup(id string) {
+	h.mu.RLock()
+	cleanup := h.CleanupTemporary
+	h.mu.RUnlock()
+	if cleanup != nil {
+		cleanup(id)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = h.Revoke(ctx, id)
+	h.Forget(id)
+}
+
 // Forget releases Server-side connection and execution grant state after a
 // registration has been deleted. It does not manage the remote Daemon process.
 func (h *Hub) Forget(id string) {
@@ -715,6 +913,14 @@ func (h *Hub) Forget(id string) {
 	active := h.live[id]
 	delete(h.live, id)
 	delete(h.admittedConnection, id)
+	if timer := h.tempExpiryTimers[id]; timer != nil {
+		timer.Stop()
+		delete(h.tempExpiryTimers, id)
+	}
+	if timer := h.tempGraceTimers[id]; timer != nil {
+		timer.Stop()
+		delete(h.tempGraceTimers, id)
+	}
 	for key, grant := range h.grants {
 		if grant.ComputerID == id {
 			delete(h.grants, key)
@@ -733,6 +939,14 @@ func (h *Hub) Close() error {
 	peers := make([]*transport.Peer, 0, len(h.live))
 	for _, active := range h.live {
 		peers = append(peers, active.peer)
+	}
+	for id, timer := range h.tempExpiryTimers {
+		timer.Stop()
+		delete(h.tempExpiryTimers, id)
+	}
+	for id, timer := range h.tempGraceTimers {
+		timer.Stop()
+		delete(h.tempGraceTimers, id)
 	}
 	clear(h.grants)
 	h.mu.Unlock()

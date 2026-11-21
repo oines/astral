@@ -1,3 +1,5 @@
+//go:build !daemon
+
 package computers
 
 import (
@@ -9,20 +11,33 @@ import (
 	"time"
 
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/releasefeed"
 	"github.com/oines/astral/internal/transport"
 )
 
-const DaemonUpdateCapability = "management.update"
+type managedDaemonUpdate struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	target *releasefeed.Binary
+}
 
 type daemonUpdates struct {
 	sync.Mutex
 	values           map[string]domain.DaemonUpdate
-	latest           func(context.Context, string, string) (releasefeed.Binary, error)
-	cancel           map[string]context.CancelFunc
-	contexts         map[string]context.Context
+	latest           func(context.Context, string, string, githubrelease.ProxyOverride, bool) (releasefeed.Binary, error)
+	running          map[string]*managedDaemonUpdate
 	closed           bool
 	reconnectTimeout time.Duration
+}
+
+func (h *Hub) daemonUpdateTarget(id string) *releasefeed.Binary {
+	h.updates.Lock()
+	defer h.updates.Unlock()
+	if op := h.updates.running[id]; op != nil {
+		return op.target
+	}
+	return nil
 }
 
 // DaemonUpdateStatus is transient. Reconnected Hello metadata remains the
@@ -44,8 +59,19 @@ func (h *Hub) CanUpdateDaemon(id string) bool {
 // gateway. The Server resolves latest itself; clients cannot supply executable
 // URLs, checksums, versions, credentials or an execution binding.
 func (h *Hub) UpdateDaemon(ctx context.Context, id string) (domain.DaemonUpdate, error) {
+	return h.UpdateDaemonWithProxy(ctx, id, githubrelease.ProxyOverride{})
+}
+
+func (h *Hub) UpdateDaemonWithProxy(ctx context.Context, id string, override githubrelease.ProxyOverride) (domain.DaemonUpdate, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.DaemonUpdate{}, err
+	}
+	if override.Set {
+		normalized, err := githubrelease.NormalizeProxy(override.Prefix)
+		if err != nil {
+			return domain.DaemonUpdate{}, domain.Invalid(err.Error())
+		}
+		override.Prefix = normalized
 	}
 	var computer domain.Computer
 	if err := h.Store.Get(ctx, "computers", id, &computer); err != nil {
@@ -53,6 +79,9 @@ func (h *Hub) UpdateDaemon(ctx context.Context, id string) (domain.DaemonUpdate,
 	}
 	if computer.Local || computer.Kind == "local" {
 		return domain.DaemonUpdate{}, domain.Conflict("the local Daemon updates with Desktop or Server")
+	}
+	if computer.Temporary {
+		return domain.DaemonUpdate{}, domain.Conflict("temporary Computers do not support managed Daemon updates")
 	}
 	if computer.Revoked {
 		return domain.DaemonUpdate{}, domain.Forbidden("Computer is revoked")
@@ -81,17 +110,16 @@ func (h *Hub) UpdateDaemon(ctx context.Context, id string) (domain.DaemonUpdate,
 	}
 	operation := domain.DaemonUpdate{State: "checking", StartedAt: time.Now().UTC()}
 	h.updates.values[id] = operation
-	if h.updates.cancel == nil {
-		h.updates.cancel = map[string]context.CancelFunc{}
-		h.updates.contexts = map[string]context.Context{}
+	if h.updates.running == nil {
+		h.updates.running = map[string]*managedDaemonUpdate{}
 	}
 	updateCtx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
-	h.updates.cancel[id] = cancel
-	h.updates.contexts[id] = updateCtx
+	op := &managedDaemonUpdate{ctx: updateCtx, cancel: cancel}
+	h.updates.running[id] = op
 	h.updates.Unlock()
 	// Managed update ownership outlives an HTTP request/tab closure, while the
 	// bounded request to the old Daemon still cancels on tunnel disconnection.
-	go h.runDaemonUpdate(updateCtx, cancel, id, active)
+	go h.runDaemonUpdate(op, id, active, override)
 	return operation, nil
 }
 
@@ -101,13 +129,13 @@ func (h *Hub) setDaemonUpdate(id string, value domain.DaemonUpdate) {
 	h.updates.values[id] = value
 }
 
-func (h *Hub) runDaemonUpdate(ctx context.Context, cancel context.CancelFunc, id string, original *connection) {
-	defer cancel()
+func (h *Hub) runDaemonUpdate(op *managedDaemonUpdate, id string, original *connection, override githubrelease.ProxyOverride) {
+	ctx := op.ctx
+	defer op.cancel()
 	defer func() {
 		h.updates.Lock()
-		if h.updates.contexts[id] == ctx {
-			delete(h.updates.cancel, id)
-			delete(h.updates.contexts, id)
+		if h.updates.running[id] == op {
+			delete(h.updates.running, id)
 		}
 		h.updates.Unlock()
 	}()
@@ -115,12 +143,17 @@ func (h *Hub) runDaemonUpdate(ctx context.Context, cancel context.CancelFunc, id
 	fail := func(err error) { state.State = "failed"; state.Error = err.Error(); h.setDaemonUpdate(id, state) }
 	resolve := h.updates.latest
 	if resolve == nil {
-		resolve = releasefeed.Latest
+		resolve = releasefeed.LatestWithProxy
 	}
-	binary, err := resolve(ctx, original.hello.OS, original.hello.Arch)
+	standalone := slices.Contains(original.hello.Capabilities, StandaloneUpdateCapability)
+	binary, err := resolve(ctx, original.hello.OS, original.hello.Arch, override, standalone)
 	if err != nil {
 		fail(err)
 		return
+	}
+	if override.Set {
+		prefix := override.Prefix
+		binary.GitHubProxy = &prefix
 	}
 	if comparison, e := releasefeed.Compare(binary.Version, original.hello.Version); e == nil && comparison <= 0 {
 		state.State = "current"
@@ -135,6 +168,9 @@ func (h *Hub) runDaemonUpdate(ctx context.Context, cancel context.CancelFunc, id
 		fail(domain.Offline("Computer reconnected before update started; retry"))
 		return
 	}
+	h.updates.Lock()
+	op.target = &binary
+	h.updates.Unlock()
 	state.State = "downloading"
 	state.Version = binary.Version
 	h.setDaemonUpdate(id, state)
@@ -176,7 +212,7 @@ func (h *Hub) cancelDaemonUpdates() {
 	h.updates.Lock()
 	defer h.updates.Unlock()
 	h.updates.closed = true
-	for _, cancel := range h.updates.cancel {
-		cancel()
+	for _, op := range h.updates.running {
+		op.cancel()
 	}
 }

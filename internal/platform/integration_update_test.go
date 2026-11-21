@@ -91,7 +91,7 @@ PY`
 		t.Fatal(err)
 	}
 	binary := filepath.Join(t.TempDir(), "astral")
-	build := exec.CommandContext(ctx, "go", "build", "-trimpath", "-ldflags", "-X github.com/oines/astral/internal/cli.Version=integration-updated", "-o", binary, "./cmd/astral")
+	build := exec.CommandContext(ctx, "go", "build", "-tags", "daemon", "-trimpath", "-ldflags", "-X github.com/oines/astral/internal/cli.Version=integration-updated", "-o", binary, "./cmd/daemon")
 	build.Dir = "../.."
 	build.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+probe.Arch, "CGO_ENABLED=0")
 	if output, err := build.CombinedOutput(); err != nil {

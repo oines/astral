@@ -67,6 +67,11 @@ func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) er
 	} else if err != nil {
 		return err
 	}
+	// Deletion intent seals existing Sessions against further registration.
+	// Use the durable Bot owner even when a retry already removed a Session.
+	if err := s.cleanupTemporaryComputers(ctx, func(c domain.Computer) bool { return c.OwnerAgentID == id }); err != nil {
+		return err
+	}
 	// IM workers include polling, Inbox, Probe, and in-flight sends. Their
 	// cancellation and join must precede permanent channel-store cleanup.
 	if im, ok := s.IM.(interface {

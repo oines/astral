@@ -113,6 +113,9 @@ func TestDaemonUpdateEndpointIsOwnerOnlyAndRejectsArbitrarySources(t *testing.T)
 		status int
 	}{
 		{"empty", "", http.StatusServiceUnavailable},
+		{"valid proxy", `{"github_proxy":"https://edgeone.gh-proxy.org/"}`, http.StatusServiceUnavailable},
+		{"explicit direct", `{"github_proxy":""}`, http.StatusServiceUnavailable},
+		{"invalid proxy", `{"github_proxy":"http://insecure.example/"}`, http.StatusBadRequest},
 		{"unknown field", `{"url":"https://attacker.invalid/astral"}`, http.StatusBadRequest},
 	} {
 		t.Run("chunked/"+test.name, func(t *testing.T) {

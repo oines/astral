@@ -37,6 +37,7 @@ type Daemon struct {
 	Credentials Credentials
 	Root        string
 	Hello       Hello
+	Temporary   bool
 	// Update is a Host management operation, never an Agent execution capability.
 	Update         func(context.Context, releasefeed.Binary) error
 	updateMu       sync.Mutex
@@ -112,9 +113,20 @@ func NewDaemon(root string, credentials Credentials) (*Daemon, error) {
 			return nil, fmt.Errorf("invalid container information: %w", err)
 		}
 	}
-	return &Daemon{Root: root, Credentials: credentials, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, Container: container, Capabilities: []string{EnvironmentDiscoveryCapability, FileListCapability, ProcessStreamCapability, ManagedSkillsCapability}},
+	capabilities := []string{EnvironmentDiscoveryCapability, FileListCapability, ProcessStreamCapability}
+	var managed *managedSkills
+	var initialCWD string
+	if credentials.Temporary {
+		if cwd, wdErr := os.Getwd(); wdErr == nil && filepath.IsAbs(cwd) {
+			initialCWD = filepath.Clean(cwd)
+		}
+	} else {
+		capabilities = append(capabilities, ManagedSkillsCapability)
+		managed = newManagedSkills(root)
+	}
+	return &Daemon{Root: root, Credentials: credentials, Temporary: credentials.Temporary, Hello: Hello{BootID: domain.ID("boot"), Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Shell: shell, Home: home, Root: root, InitialCWD: initialCWD, Container: container, Capabilities: capabilities},
 		httpClient: client, gateways: map[string]*localGateway{}, processes: map[string]*daemonProcess{}, apiTokens: map[string]*daemonProcess{},
-		outputBudget: newProcessOutputBudget(256 << 20), fileWriteSlots: make(chan struct{}, 8), skills: newManagedSkills(root)}, nil
+		outputBudget: newProcessOutputBudget(256 << 20), fileWriteSlots: make(chan struct{}, 8), skills: managed}, nil
 }
 
 // Run reconnects the same boot identity after reaping disconnected commands.
@@ -131,6 +143,12 @@ func (d *Daemon) Run(ctx context.Context, report func(error)) error {
 		d.mu.Unlock()
 		if errors.Is(err, errDaemonCleanup) || closed {
 			return err
+		}
+		if d.Temporary {
+			var domainErr *domain.Error
+			if errors.As(err, &domainErr) && domainErr.Code == "forbidden" {
+				return err
+			}
 		}
 		timer := time.NewTimer(backoff)
 		select {
@@ -157,7 +175,13 @@ func (d *Daemon) Connect(ctx context.Context) error {
 	if err := d.ensureLocalAPI(); err != nil {
 		return err
 	}
-	conn, capabilities, err := authenticateTunnel(ctx, d.Credentials.ServerURL, d.Credentials.ServerPin, tunnelRequest{Operation: "connect", ComputerID: d.Credentials.ComputerID, Token: d.Credentials.Token, Hello: d.Hello}, d.httpClient)
+	// Keep the admitted tunnel writable for the bounded leave handshake.
+	// Dialing and authentication must still stop immediately on cancellation.
+	tunnelCtx, cancelTunnel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelTunnel()
+	stopDialCancel := context.AfterFunc(ctx, cancelTunnel)
+	conn, capabilities, err := authenticateTunnel(tunnelCtx, d.Credentials.ServerURL, d.Credentials.ServerPin, tunnelRequest{Operation: "connect", ComputerID: d.Credentials.ComputerID, Token: d.Credentials.Token, Hello: d.Hello}, d.httpClient)
+	stopDialCancel()
 	if err != nil {
 		return err
 	}
@@ -187,7 +211,17 @@ func (d *Daemon) Connect(ctx context.Context) error {
 			d.skills.syncLoop(syncCtx, generation)
 		}()
 	}
-	stop := context.AfterFunc(ctx, func() { _ = peer.Close() })
+	stop := context.AfterFunc(ctx, func() {
+		if d.Temporary {
+			leaveCtx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+			stopTimeout := context.AfterFunc(leaveCtx, cancelTunnel)
+			_ = peer.JSON(leaveCtx, DaemonLeaveMethod, struct{}{}, nil)
+			stopTimeout()
+			cancel()
+		}
+		cancelTunnel()
+		_ = peer.Close()
+	})
 	<-peer.Done()
 	stop()
 	return errors.Join(transport.ErrDisconnected, d.cleanupConnection(generation))
@@ -327,12 +361,23 @@ func validIdentity(value string) bool {
 	return true
 }
 func (d *Daemon) environment(b domain.ExecutionBinding) (domain.ExecutionBinding, error) {
-	b.AgentHome = filepath.Join(d.Root, "agents", b.AgentID, "home")
-	if err := os.MkdirAll(b.AgentHome, 0700); err != nil {
-		return b, err
-	}
-	if b.CWD == "" {
-		b.CWD = b.AgentHome
+	if d.Temporary {
+		base := d.Hello.InitialCWD
+		if base == "" {
+			base = d.Hello.Home
+		}
+		b.AgentHome = base
+		if b.CWD == "" {
+			b.CWD = base
+		}
+	} else {
+		b.AgentHome = filepath.Join(d.Root, "agents", b.AgentID, "home")
+		if err := os.MkdirAll(b.AgentHome, 0700); err != nil {
+			return b, err
+		}
+		if b.CWD == "" {
+			b.CWD = b.AgentHome
+		}
 	}
 	if !filepath.IsAbs(b.CWD) {
 		return b, domain.Invalid("working directory must be absolute on the target Computer")
@@ -352,7 +397,7 @@ func (d *Daemon) backend(b domain.ExecutionBinding, apiToken string) (*local.Bac
 		return nil, domain.Forbidden("execution environment was not prepared")
 	}
 	env := []string{"ASTRAL_AGENT_HOME=" + b.AgentHome}
-	if apiToken != "" {
+	if apiToken != "" && !d.Temporary {
 		env = append(env, CommandAPITokenEnv+"="+apiToken)
 	}
 	return local.New(local.Options{CWD: b.CWD, Shell: b.Shell, Env: env})

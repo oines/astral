@@ -7,11 +7,9 @@ Use the `astral` command to operate Astral from a terminal or your own scripts. 
 
 ## Prepare the command and account
 
-After an official Server or computer enrollment installation, this should work in the same terminal:
+An official Server installation includes the full `astral` CLI. If you already have it from an earlier computer enrollment, manual updates keep its management commands. Run `astral help` and check that it lists `connect` and `sessions`.
 
-```sh
-astral version
-```
+On a machine with only the lightweight Daemon, download the **unified** executable for your OS and CPU, together with `checksums.txt` from the same [GitHub release](https://github.com/oines/astral/releases/latest). For example, choose `astral-darwin-arm64` on Apple silicon or `astral-windows-amd64.exe` on Intel/AMD Windows. Match its SHA-256 to the entry for that exact filename. On macOS/Linux, make the verified file executable with `chmod +x <filename>`. Use its full path in place of `astral` in the commands below. This also works on a computer without a local Server.
 
 Have the Astral web address, administrator username, and password ready. Verify that the account works in a browser. Command-line sign-in lets you operate Astral; to let Astral work on this computer, use [computer enrollment](/docs/computers/connect/) instead.
 

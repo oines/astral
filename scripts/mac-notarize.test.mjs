@@ -583,7 +583,7 @@ function notarizationReports() {
   const common = { version: '0.1.14', source_sha: 'a'.repeat(40), team_id: '6N6W6Z6739', certificate_expires_at: '2030-01-01T00:00:00.000Z' }
   const asset = name => ({ name, size: 100, sha256: 'b'.repeat(64) })
   return [
-    { ...common, notarizations: [{ kind: 'binaries', id: submissionID, status: 'Accepted' }], assets: ['astral-darwin-amd64', 'astral-darwin-arm64'].map(asset) },
+    { ...common, notarizations: [{ kind: 'binaries', id: submissionID, status: 'Accepted' }], assets: ['astral-darwin-amd64', 'astral-darwin-arm64', 'astral-daemon-darwin-amd64', 'astral-daemon-darwin-arm64'].map(asset) },
     ...['x64', 'arm64'].map((arch, index) => ({
       ...common, arch, native_tested: true,
       notarizations: [{ kind: 'dmg', arch, id: `${index ? 'd' : 'c'}2345678-1234-4234-8234-123456789abc`, status: 'Accepted' }],
@@ -601,7 +601,7 @@ test('parallel native Mac evidence produces one deterministic report without sig
   assert.equal(combined.notarization_status, 'accepted')
   assert.equal(combined.native_tested_arch, undefined)
   assert.equal(combined.notarizations.length, 3)
-  assert.equal(combined.assets.length, 6)
+  assert.equal(combined.assets.length, 8)
   assert.deepEqual(combineNotarizationReports(reports.toReversed(), configuration), combined)
 })
 

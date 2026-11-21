@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/oines/astral/internal/githubrelease"
 )
 
 type roundTrip func(*http.Request) (*http.Response, error)
@@ -59,30 +61,30 @@ func testLatestPinsTagAndChecksBytes(t *testing.T, prefix string) {
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
-	b, err := latest(context.Background(), "linux", "arm64", c)
+	b, err := latestWithProxy(context.Background(), "linux", "arm64", c, githubrelease.ProxyOverride{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Another release is published after resolution but before bytes transfer.
 	// Download must retain the resolved version and checksum, not follow latest.
 	latestTag = "v0.1.9"
-	if err = b.verify(context.Background(), c); err != nil {
+	if err = b.verifyWithProxy(context.Background(), c, githubrelease.ProxyOverride{}); err != nil {
 		t.Fatal(err)
 	}
 	forged := b
 	forged.SHA256 = strings.Repeat("b", 64)
-	if err = forged.verify(context.Background(), c); err == nil {
+	if err = forged.verifyWithProxy(context.Background(), c, githubrelease.ProxyOverride{}); err == nil {
 		t.Fatal("local handoff replaced the official checksum")
 	}
 	target := filepath.Join(t.TempDir(), "astral")
-	if err = b.download(context.Background(), target, c); err != nil {
+	if err = b.downloadWithProxy(context.Background(), target, c, githubrelease.ProxyOverride{}); err != nil {
 		t.Fatal(err)
 	}
 	if b.Version != "0.1.8" || latestReads != 1 {
 		t.Fatal("download changed the pinned version after a new latest release")
 	}
 	corrupt = true
-	if err = b.download(context.Background(), target, c); err == nil {
+	if err = b.downloadWithProxy(context.Background(), target, c, githubrelease.ProxyOverride{}); err == nil {
 		t.Fatal("accepted corrupted binary")
 	}
 	raw, _ := os.ReadFile(target)

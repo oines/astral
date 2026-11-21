@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import test from 'node:test'
 import { desktopArtifactName, desktopUpdateFeeds, writeDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
-import { collectCandidate, desktopNames, digest, distributionNames, macSigningReportName } from './release-assets.mjs'
+import { collectCandidate, daemonNames, desktopNames, digest, distributionNames, executableNames, macSigningReportName } from './release-assets.mjs'
 import { compareVersions, createDraft, verifyReleaseBundle } from './release-draft.mjs'
 import { readReleaseVersion } from './release-version.mjs'
 import { imageRepository, platforms, recipeHash, recipePath } from './computer-image-contract.mjs'
@@ -70,9 +70,9 @@ async function fixture(t, { rolling = false, candidate = false, unsigned = false
   const version = rolling ? '0.1.14' : await readReleaseVersion()
   const tag = `v${version}`
   const macSigned = !unsigned
-  const names = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1']
+  const names = [...executableNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1']
   for (const name of names) await writeFile(path.join(directory, name), `Small fixture: ${name}\n`)
-  await writeFile(path.join(directory, 'checksums.txt'), `${(await Promise.all(distributionNames.map(async name => `${await digest(path.join(directory, name))}  ${name}`))).join('\n')}\n`)
+  await writeFile(path.join(directory, 'checksums.txt'), `${(await Promise.all(executableNames.map(async name => `${await digest(path.join(directory, name))}  ${name}`))).join('\n')}\n`)
   names.push('checksums.txt')
   if (macSigned) {
     const report = {
@@ -80,7 +80,7 @@ async function fixture(t, { rolling = false, candidate = false, unsigned = false
       certificate_expires_at: new Date(Date.now() + 366 * 86_400_000).toISOString(), status: 'signed', notarization_status: 'accepted', ...(rolling ? { native_tested_arches: ['x64', 'arm64'] } : { native_tested_arch: 'arm64' }),
       checks: { signatures: true, hardened_runtime: true, secure_timestamps: true, embedded_checksums: true, stapling: true, gatekeeper: true, packaged_app_startup_shutdown: true },
       notarizations: [{ kind: 'binaries' }, { kind: 'dmg', arch: 'arm64' }, { kind: 'dmg', arch: 'x64' }].map((item, index) => ({ ...item, id: `12345678-1234-4234-8234-${String(index + 1).padStart(12, '0')}`, status: 'Accepted' })),
-      assets: await Promise.all(names.filter(name => name.startsWith('astral-darwin-') || name.includes('-mac-')).map(async name => ({ name, size: (await readFile(path.join(directory, name))).length, sha256: await digest(path.join(directory, name)) }))),
+      assets: await Promise.all(names.filter(name => name.startsWith('astral-darwin-') || name.startsWith('astral-daemon-darwin-') || name.includes('-mac-')).map(async name => ({ name, size: (await readFile(path.join(directory, name))).length, sha256: await digest(path.join(directory, name)) }))),
     }
     await writeFile(path.join(directory, macSigningReportName), JSON.stringify(report))
     names.push(macSigningReportName)
@@ -116,6 +116,7 @@ async function fixture(t, { rolling = false, candidate = false, unsigned = false
     migration_status: 'goose', migration_baselines: { host: 3, core: 11 }, migration_targets: { host: 3, core: 11 }, desktop_updater: 'electron-updater',
     signing: { macos: macSigned ? 'signed-and-notarized' : 'not-signed-or-notarized', windows: 'not-signed', linux: 'not-signed' },
     distribution_names: distributionNames,
+    daemon_names: daemonNames,
     assets: await Promise.all(names.map(async name => ({ name, size: (await readFile(path.join(directory, name))).length, sha256: await digest(path.join(directory, name)) }))),
   }
   await writeFile(path.join(directory, 'release-manifest.json'), JSON.stringify(manifest))
@@ -496,13 +497,13 @@ test('rolling publication consumes the sealed bundle without changing a single f
   const environment = { ...value.options.environment }
   delete environment.GH_TOKEN
   const verified = await verifyReleaseBundle(value.directory, { environment })
-  assert.equal(verified.files.length, 35)
+  assert.equal(verified.files.length, 41)
   assert.equal(verified.sealSHA256, value.options.environment.ASTRAL_RELEASE_BUNDLE_SHA256)
   assert.equal(value.remote.calls.length, 0)
   const release = await createDraft(value.directory, value.options)
   assert.equal(release.draft, false)
   assert.deepEqual(await bundleSnapshot(value.directory), before)
-  assert.equal(value.remote.assets.length, 35)
+  assert.equal(value.remote.assets.length, 41)
 })
 
 test('rolling publication requires the producer seal and rejects a consistently rewritten bundle', async t => {
@@ -585,7 +586,7 @@ test('rolling collection seals final metadata once and preserves every packaged 
   const output = path.join(input, '..', path.basename(input) + '-sealed')
   t.after(() => rm(input, { recursive: true, force: true }))
   t.after(() => rm(output, { recursive: true, force: true }))
-  const names = [...distributionNames, ...desktopNames(value.manifest.version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'release-formats.json', macSigningReportName]
+  const names = [...executableNames, ...desktopNames(value.manifest.version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'release-formats.json', macSigningReportName]
   for (const name of names) await copyFile(path.join(value.directory, name), path.join(input, name))
   const before = await bundleSnapshot(input)
   const manifest = await collectCandidate({ input, output, sourceSHA, repository,
@@ -598,6 +599,6 @@ test('rolling collection seals final metadata once and preserves every packaged 
   assert.deepEqual(await bundleSnapshot(input), before)
   const environment = { ...value.options.environment, ASTRAL_RELEASE_BUNDLE_SHA256: await digest(path.join(output, 'SHA256SUMS')) }
   const verified = await verifyReleaseBundle(output, { environment, requireSeal: true })
-  assert.equal(verified.files.length, 35)
+  assert.equal(verified.files.length, 41)
   for (const name of names) assert.equal(await digest(path.join(output, name)), await digest(path.join(input, name)))
 })

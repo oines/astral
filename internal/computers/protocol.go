@@ -16,6 +16,17 @@ import (
 // Older peers continue to use process.start followed by process.output.
 const ProcessStreamCapability = "process.start_stream"
 
+// DaemonUpdateCapability triggers a Host-initiated managed Daemon update over
+// the authenticated Computer tunnel.
+const DaemonUpdateCapability = "management.update"
+
+// Both the running Daemon and its update supervisor can accept standalone assets.
+const StandaloneUpdateCapability = "management.update.standalone"
+
+// DaemonLeaveMethod notifies the Hub that a temporary Daemon is exiting cleanly
+// so the Server can immediately revoke and clean up its registration.
+const DaemonLeaveMethod = "daemon.leave"
+
 type Hello struct {
 	Version      string                `json:"version,omitempty"`
 	LocalAPIURL  string                `json:"local_api_url,omitempty"`
@@ -26,6 +37,7 @@ type Hello struct {
 	Shell        string                `json:"shell"`
 	Home         string                `json:"home"`
 	Root         string                `json:"root,omitempty"`
+	InitialCWD   string                `json:"initial_cwd,omitempty"`
 	Container    *domain.ContainerInfo `json:"container,omitempty"`
 	Capabilities []string              `json:"capabilities,omitempty"`
 }
@@ -38,13 +50,16 @@ type Credentials struct {
 	ServerPin  string `json:"server_pin"`
 	ComputerID string `json:"computer_id"`
 	Token      string `json:"token"`
+	Temporary  bool   `json:"temporary,omitempty"`
 }
 type EnrollmentResult struct {
-	ServerPin         string            `json:"server_pin"`
-	Enrollment        domain.Enrollment `json:"enrollment"`
-	Token             string            `json:"token"`
-	Command           string            `json:"command"`
-	PowerShellCommand string            `json:"powershell_command"`
+	ServerPin               string            `json:"server_pin"`
+	Enrollment              domain.Enrollment `json:"enrollment"`
+	Token                   string            `json:"token"`
+	Command                 string            `json:"command"`
+	PowerShellCommand       string            `json:"powershell_command"`
+	DirectCommand           string            `json:"direct_command,omitempty"`
+	DirectPowerShellCommand string            `json:"direct_powershell_command,omitempty"`
 }
 type Call struct {
 	Binding   domain.ExecutionBinding      `json:"binding"`

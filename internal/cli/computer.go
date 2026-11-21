@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -11,8 +12,82 @@ import (
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/daemonservice"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/platform"
 )
+
+var Version = "dev"
+
+func flags(name string, stderr io.Writer) *flag.FlagSet {
+	f := flag.NewFlagSet(name, flag.ContinueOnError)
+	f.SetOutput(stderr)
+	return f
+}
+
+func computer(ctx context.Context, args []string, out, stderr io.Writer) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: astral computer connect|daemon|service|update")
+	}
+	switch args[0] {
+	case "status":
+		return computerStatus(ctx, args[1:], out, stderr)
+	case "probe":
+		return computerProbe(ctx, args[1:], stderr)
+	case "connect":
+		f := flags("computer connect", stderr)
+		var options platform.ConnectOptions
+		f.StringVar(&options.ServerURL, "server", "", "Astral Server URL")
+		f.StringVar(&options.ServerPin, "server-pin", "", "Server SPKI SHA256 fingerprint")
+		f.StringVar(&options.EnrollmentID, "enrollment", "", "temporary enrollment identity")
+		f.StringVar(&options.Token, "token", "", "temporary enrollment token")
+		f.StringVar(&options.Root, "root", "", "Daemon's persistent directory")
+		f.BoolVar(&options.Container, "container", false, "create a Computer in the local container runtime")
+		f.BoolVar(&options.Foreground, "foreground", false, "keep the Daemon in the foreground")
+		f.BoolVar(&options.Temporary, "temporary", false, "connect temporarily without installing a service or saving credentials")
+		enrollmentFile := f.String("enrollment-file", "", "private enrollment configuration file")
+		if err := f.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *enrollmentFile != "" {
+			var saved platform.ConnectOptions
+			if err := platform.ReadJSON(*enrollmentFile, &saved); err != nil {
+				return err
+			}
+			saved.Root, saved.Foreground, saved.Container, saved.Temporary = options.Root, options.Foreground, options.Container, options.Temporary
+			options = saved
+		}
+		return platform.Connect(ctx, options, func(message string) { fmt.Fprintln(out, message) })
+	case "daemon":
+		f := flags("computer daemon", stderr)
+		root := f.String("root", "", "Daemon data directory")
+		credentials := f.String("credentials", "", "private credentials file")
+		logPath := f.String("log", "", "append Daemon diagnostics to this file")
+		parentPID := f.Int("parent-pid", 0, "stop this managed Daemon when its service launcher exits")
+		if err := f.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *root == "" || *credentials == "" {
+			return fmt.Errorf("--root and --credentials are required")
+		}
+		if *parentPID != 0 {
+			managed, cancel, err := platform.ManagedContext(ctx, *parentPID, nil)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			ctx = managed
+		}
+		return platform.RunDaemonLogged(ctx, *root, *credentials, *logPath, func(message string) { fmt.Fprintln(stderr, message) })
+	case "service":
+		return computerService(ctx, args[1:], out, stderr)
+	case "update":
+		return computerUpdate(ctx, args[1:], out, stderr)
+	case "supervise":
+		return computerSupervise(ctx, args[1:], out, stderr)
+	default:
+		return fmt.Errorf("unknown Computer command")
+	}
+}
 
 // computerProbe is an internal, credential-free container route check. The
 // caller selects the first address that reaches the intended pinned Server.
@@ -67,7 +142,11 @@ func computerService(ctx context.Context, args []string, out, stderr io.Writer) 
 		if e != nil {
 			return e
 		}
-		err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: filepath.Join(absolute, "credentials.json"), EnvironmentPATH: os.Getenv("PATH")})
+		proxy, e := githubrelease.Proxy()
+		if e != nil {
+			return e
+		}
+		err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: filepath.Join(absolute, "credentials.json"), EnvironmentPATH: os.Getenv("PATH"), GitHubProxy: &proxy})
 	case "start":
 		err = manager.Start(ctx)
 	case "stop":
@@ -113,6 +192,14 @@ func computerUpdate(ctx context.Context, args []string, out, stderr io.Writer) e
 	container := f.String("container", "", "existing Astral container identity or name")
 	f.Bool("update", false, "installer update operation")
 	managed := f.Bool("managed-helper", false, "one-shot current-user update job")
+	var downloadSource githubrelease.ProxyOverride
+	f.Func("github-proxy", "HTTPS GitHub download prefix (empty for direct downloads)", func(raw string) error {
+		prefix, err := githubrelease.NormalizeProxy(raw)
+		if err == nil {
+			downloadSource = githubrelease.ProxyOverride{Set: true, Prefix: prefix}
+		}
+		return err
+	})
 	containerEndpoint := ""
 	if err := f.Parse(args); err != nil {
 		return err
@@ -145,7 +232,7 @@ func computerUpdate(ctx context.Context, args []string, out, stderr io.Writer) e
 		defer file.Close()
 		out = io.MultiWriter(out, file)
 	}
-	err := platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, Container: *container, Version: Version, ContainerEndpoint: containerEndpoint}, func(message string) { fmt.Fprintln(out, message) })
+	err := platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, Container: *container, Version: Version, ContainerEndpoint: containerEndpoint, DownloadSource: downloadSource, ManagedHelper: *managed}, func(message string) { fmt.Fprintln(out, message) })
 	if err != nil && *managed {
 		fmt.Fprintln(out, "Daemon update failed:", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/releasefeed"
 	"github.com/oines/astral/internal/transport"
@@ -40,7 +41,7 @@ func updateFixture(t *testing.T) (*Hub, *Daemon, *connection) {
 	active := &connection{peer: transport.New(b, nil), hello: d.Hello, connected: time.Now()}
 	h.live[c.ID] = active
 	name, _ := releasefeed.AssetName(d.Hello.OS, d.Hello.Arch)
-	h.updates.latest = func(context.Context, string, string) (releasefeed.Binary, error) {
+	h.updates.latest = func(context.Context, string, string, githubrelease.ProxyOverride, bool) (releasefeed.Binary, error) {
 		return releasefeed.Binary{Version: "0.1.1", Name: name, SHA256: strings.Repeat("a", 64)}, nil
 	}
 	h.updates.reconnectTimeout = 100 * time.Millisecond
@@ -129,7 +130,7 @@ func TestDaemonUpdateCurrentVersionAndMissingManagementCapability(t *testing.T) 
 	h, d, active := updateFixture(t)
 	id := d.Credentials.ComputerID
 	name, _ := releasefeed.AssetName(d.Hello.OS, d.Hello.Arch)
-	h.updates.latest = func(context.Context, string, string) (releasefeed.Binary, error) {
+	h.updates.latest = func(context.Context, string, string, githubrelease.ProxyOverride, bool) (releasefeed.Binary, error) {
 		return releasefeed.Binary{Version: "0.1.0", Name: name, SHA256: strings.Repeat("a", 64)}, nil
 	}
 	if _, err := h.UpdateDaemon(context.Background(), id); err != nil {
@@ -178,7 +179,7 @@ func TestDaemonUpdateDownloadCancelsWhenTunnelDisconnects(t *testing.T) {
 func TestDaemonUpdateDoesNotDowngradeToOlderLatestRelease(t *testing.T) {
 	h, d, _ := updateFixture(t)
 	name, _ := releasefeed.AssetName(d.Hello.OS, d.Hello.Arch)
-	h.updates.latest = func(context.Context, string, string) (releasefeed.Binary, error) {
+	h.updates.latest = func(context.Context, string, string, githubrelease.ProxyOverride, bool) (releasefeed.Binary, error) {
 		return releasefeed.Binary{Version: "0.0.9", Name: name, SHA256: strings.Repeat("a", 64)}, nil
 	}
 	d.Update = func(context.Context, releasefeed.Binary) error {
@@ -191,5 +192,42 @@ func TestDaemonUpdateDoesNotDowngradeToOlderLatestRelease(t *testing.T) {
 	state := waitUpdateState(t, h, d.Credentials.ComputerID, "current")
 	if state.Version != "0.1.0" {
 		t.Fatal("no-op must report the installed version")
+	}
+}
+
+func TestManagedUpdateUsesAdvertisedAssetFormatAndPinsSelectedSource(t *testing.T) {
+	for _, standalone := range []bool{false, true} {
+		h, d, active := updateFixture(t)
+		if standalone {
+			active.hello.Capabilities = append(active.hello.Capabilities, StandaloneUpdateCapability)
+		}
+		source := githubrelease.ProxyOverride{Set: true, Prefix: "https://mirror.example/"}
+		name, _ := releasefeed.AssetName(d.Hello.OS, d.Hello.Arch)
+		if standalone {
+			name, _ = releasefeed.DaemonAssetName(d.Hello.OS, d.Hello.Arch)
+		}
+		h.updates.latest = func(_ context.Context, _, _ string, resolvedSource githubrelease.ProxyOverride, resolvedStandalone bool) (releasefeed.Binary, error) {
+			if resolvedSource != source || resolvedStandalone != standalone {
+				t.Errorf("release selection: source=%+v, standalone=%t", resolvedSource, resolvedStandalone)
+			}
+			return releasefeed.Binary{Version: "0.1.1", Name: name, SHA256: strings.Repeat("a", 64)}, nil
+		}
+		id := d.Credentials.ComputerID
+		d.Update = func(_ context.Context, binary releasefeed.Binary) error {
+			target := h.daemonUpdateTarget(id)
+			if target == nil || target.Name != name || target.ProxyOverride() != source || binary.Name != name || binary.ProxyOverride() != source {
+				t.Errorf("invalid handoff: target=%+v, descriptor=%+v", target, binary)
+			}
+			next := *active
+			next.hello.BootID, next.hello.Version = "replacement", binary.Version
+			h.mu.Lock()
+			h.live[id] = &next
+			h.mu.Unlock()
+			return nil
+		}
+		if _, err := h.UpdateDaemonWithProxy(context.Background(), id, source); err != nil {
+			t.Fatal(err)
+		}
+		waitUpdateState(t, h, id, "complete")
 	}
 }

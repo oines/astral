@@ -31,7 +31,10 @@ func (s *Service) DeleteSession(ctx context.Context, id string, revision int64) 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return s.deleteSession(ctx, id, revision, false)
+	if err := s.deleteSession(ctx, id, revision, false); err != nil {
+		return err
+	}
+	return s.CleanupSessionTemporaryComputers(ctx, id)
 }
 
 func (s *Service) deleteSession(ctx context.Context, id string, revision int64, deletingAgent bool) error {

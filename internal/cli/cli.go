@@ -1,3 +1,5 @@
+//go:build !daemon
+
 // Package cli delegates owner operations to the same HTTP API used by Web and
 // Desktop. Service/Daemon startup and explicit offline maintenance run locally.
 package cli
@@ -23,8 +25,6 @@ import (
 	"github.com/oines/astral/internal/serviceurl"
 )
 
-var Version = "dev"
-
 func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	platform.DaemonVersion = Version
 	err := run(ctx, args, out, stderr)
@@ -33,11 +33,6 @@ func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
 		return 1
 	}
 	return 0
-}
-func flags(name string, stderr io.Writer) *flag.FlagSet {
-	f := flag.NewFlagSet(name, flag.ContinueOnError)
-	f.SetOutput(stderr)
-	return f
 }
 func run(ctx context.Context, args []string, out, stderr io.Writer) error {
 	if len(args) == 0 {
@@ -306,70 +301,6 @@ func serveNetworkOptions(config *platform.Config, f *flag.FlagSet, listen string
 		}
 	}
 	return nil
-}
-
-func computer(ctx context.Context, args []string, out, stderr io.Writer) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: astral computer connect|daemon|service|update")
-	}
-	switch args[0] {
-	case "status":
-		return computerStatus(ctx, args[1:], out, stderr)
-	case "probe":
-		return computerProbe(ctx, args[1:], stderr)
-	case "connect":
-		f := flags("computer connect", stderr)
-		var options platform.ConnectOptions
-		f.StringVar(&options.ServerURL, "server", "", "Astral Server URL")
-		f.StringVar(&options.ServerPin, "server-pin", "", "Server SPKI SHA256 fingerprint")
-		f.StringVar(&options.EnrollmentID, "enrollment", "", "temporary enrollment identity")
-		f.StringVar(&options.Token, "token", "", "temporary enrollment token")
-		f.StringVar(&options.Root, "root", "", "Daemon's persistent directory")
-		f.BoolVar(&options.Container, "container", false, "create a Computer in the local container runtime")
-		f.BoolVar(&options.Foreground, "foreground", false, "keep the Daemon in the foreground")
-		enrollmentFile := f.String("enrollment-file", "", "private enrollment configuration file")
-		if err := f.Parse(args[1:]); err != nil {
-			return err
-		}
-		if *enrollmentFile != "" {
-			var saved platform.ConnectOptions
-			if err := platform.ReadJSON(*enrollmentFile, &saved); err != nil {
-				return err
-			}
-			saved.Root, saved.Foreground, saved.Container = options.Root, options.Foreground, options.Container
-			options = saved
-		}
-		return platform.Connect(ctx, options, func(message string) { fmt.Fprintln(out, message) })
-	case "daemon":
-		f := flags("computer daemon", stderr)
-		root := f.String("root", "", "Daemon data directory")
-		credentials := f.String("credentials", "", "private credentials file")
-		logPath := f.String("log", "", "append Daemon diagnostics to this file")
-		parentPID := f.Int("parent-pid", 0, "stop this managed Daemon when its service launcher exits")
-		if err := f.Parse(args[1:]); err != nil {
-			return err
-		}
-		if *root == "" || *credentials == "" {
-			return fmt.Errorf("--root and --credentials are required")
-		}
-		if *parentPID != 0 {
-			managed, cancel, err := platform.ManagedContext(ctx, *parentPID, nil)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			ctx = managed
-		}
-		return platform.RunDaemonLogged(ctx, *root, *credentials, *logPath, func(message string) { fmt.Fprintln(stderr, message) })
-	case "service":
-		return computerService(ctx, args[1:], out, stderr)
-	case "update":
-		return computerUpdate(ctx, args[1:], out, stderr)
-	case "supervise":
-		return computerSupervise(ctx, args[1:], out, stderr)
-	default:
-		return fmt.Errorf("unknown Computer command")
-	}
 }
 
 type ownerConfig struct {

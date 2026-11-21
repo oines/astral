@@ -2,13 +2,14 @@
 import { computed, ref } from 'vue'
 import { useQuery, useQueryCache } from '@pinia/colada'
 import { listComputersQuery, listComputersQueryKey } from '@astral/sdk/colada'
-import { deleteComputer, revokeComputer, listComputers, updateComputer, type AstralInternalDomainOwnerComputerStatus as OwnerComputerStatus } from '@astral/sdk'
+import { deleteComputer, disconnectTemporaryComputer, revokeComputer, listComputers, updateComputer, type AstralInternalDomainOwnerComputerStatus as OwnerComputerStatus } from '@astral/sdk'
 import { Button, Modal, SettingsSection, SettingsRow } from '@astral/ui'
-import { ArrowLeft, ChevronRight, Monitor, Plus, Server, Search } from '@astral/icons'
+import { ArrowLeft, ChevronRight, Monitor, Plus, Server, Search, Terminal } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Computer } from '../../lib/types'
 import { request } from '../../lib/api'
 import { computerEnvironment, computerKind, computerStorage, computerSummary, containerIdentity } from '../../lib/computer-info'
+import { formatDateTime } from '../../lib/timezone'
 import { useAction } from '../../composables/useAction'
 import { useSettingsSave } from '../../composables/useSettingsSave'
 import SettingsText from './SettingsText.vue'
@@ -20,7 +21,7 @@ import AddComputerDialog from './AddComputerDialog.vue'
 import CopyValue from '../CopyValue.vue'
 import ComputerMaintenance from './ComputerMaintenance.vue'
 import ComputerAPIAccessRow from './ComputerAPIAccessRow.vue'
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const app = useAppStore()
 const wakeEndpoints = useWakeEndpointStore()
 const action = useAction()
@@ -28,9 +29,39 @@ const saves = useSettingsSave()
 const list = useQuery(listComputersQuery())
 const cache = useQueryCache()
 const search = ref('')
-const visibleComputers = computed(() => (list.data.value || []).filter(c => `${c.name} ${c.hostname || ''} ${c.container?.name || ''} ${c.container?.host || ''}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => Number(a.revoked) - Number(b.revoked) || Number(b.online) - Number(a.online)))
+const permanentComputers = computed(() => (list.data.value || []).filter(c => !c.temporary))
+const temporaryComputers = computed(() => (list.data.value || []).filter(c => c.temporary && !c.revoked))
+const visibleComputers = computed(() => permanentComputers.value.filter(c => `${c.name} ${c.hostname || ''} ${c.container?.name || ''} ${c.container?.host || ''}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).sort((a, b) => Number(a.revoked) - Number(b.revoked) || Number(b.online) - Number(a.online)))
 const selectedID = ref('')
-const selected = computed(() => list.data.value?.find(c => c.id === selectedID.value))
+const selected = computed(() => permanentComputers.value.find(c => c.id === selectedID.value))
+const disconnectingID = ref('')
+
+function temporarySummary(computer: Computer) {
+  const time = computer.expires_at
+    ? formatDateTime(computer.expires_at, locale.value, app.displayTimezone, { timeStyle: 'short' })
+    : '—'
+  const sessionTitle = computer.owner_session_id
+    ? app.sessions.find(s => s.id === computer.owner_session_id)?.title?.trim()
+    : ''
+  if (sessionTitle) {
+    return t('temporaryComputer.usedInSession', { session: sessionTitle, time })
+  }
+  return t('temporaryComputer.usedInUnknownSession', { time })
+}
+
+async function disconnectTemporary(id: string) {
+  if (disconnectingID.value || action.busy.value) return
+  disconnectingID.value = id
+  try {
+    await action.run(async () => {
+      await request(disconnectTemporaryComputer({ path: { id } }))
+      cache.setQueryData(listComputersQueryKey(), (list.data.value || []).filter(value => value.id !== id))
+      await app.refresh().catch(() => undefined)
+    })
+  } finally {
+    disconnectingID.value = ''
+  }
+}
 const adding = ref(false)
 const assign = ref(false)
 const revoking = ref(false)
@@ -107,7 +138,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
         </Button>
       </div>
       <div
-        v-if="list.data.value?.length"
+        v-if="permanentComputers.length"
         class="resource-list"
       >
         <button
@@ -128,7 +159,7 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
         </p>
       </div>
       <div
-        v-else
+        v-else-if="!temporaryComputers.length"
         class="empty-state"
       >
         <Monitor /><strong>{{ t('noComputers') }}</strong><p>{{ t('noComputersHint') }}</p><Button
@@ -138,6 +169,35 @@ const assigned = computed(() => app.agents.filter(a => a.allowed_computers.inclu
           {{ t('newComputer') }}
         </Button>
       </div>
+      <SettingsSection
+        v-if="temporaryComputers.length"
+        :title="t('temporaryComputer.sectionTitle')"
+      >
+        <div
+          v-for="c in temporaryComputers"
+          :key="c.id"
+          class="resource-row resource-row-static"
+        >
+          <span class="resource-symbol"><Terminal /></span>
+          <span>
+            <strong>{{ c.name }}</strong>
+            <small>{{ temporarySummary(c) }}</small>
+          </span>
+          <span
+            class="badge"
+            :class="{ good: c.online }"
+          >{{ t(c.online ? 'online' : 'offline') }}</span>
+          <Button
+            size="small"
+            variant="danger"
+            :busy="disconnectingID === c.id"
+            :disabled="Boolean(disconnectingID) || action.busy.value"
+            @click="disconnectTemporary(c.id)"
+          >
+            {{ t('temporaryComputer.disconnectAndRemove') }}
+          </Button>
+        </div>
+      </SettingsSection>
     </template>
     <template v-else>
       <button

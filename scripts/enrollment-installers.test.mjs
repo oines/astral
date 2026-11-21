@@ -7,9 +7,18 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
+import { bindDaemonReleaseFixture } from './daemon-update-fixture.mjs'
 
 const exec = promisify(execFile)
 const directEnvironment = { ...process.env, ASTRAL_GITHUB_PROXY: '' }
+
+test('native update acceptance routes the current release client and retains source validation', async () => {
+  const source = await fs.readFile(new URL('../internal/releasefeed/releases.go', import.meta.url), 'utf8')
+  const fixture = bindDaemonReleaseFixture(source, 'local test certificate', '127.0.0.1:1234')
+  assert.ok(fixture.includes('Transport: transport, Timeout: 5 * time.Minute, CheckRedirect: githubrelease.CheckRedirectWithProxy(override)'))
+  assert.ok(fixture.includes('roots.AppendCertsFromPEM([]byte("local test certificate"))'))
+  assert.ok(fixture.includes('DialContext(ctx, network, "127.0.0.1:1234")'))
+})
 
 test('real root Daemon acceptance refuses a developer account before commands or installation', async () => {
   const environment = { ...process.env, CI: '', GITHUB_ACTIONS: '', RUNNER_TEMP: '' }
@@ -95,7 +104,7 @@ test('Shell update downloads the official release without a Server URL, pin, or 
     return true
   })
   const request = await fs.readFile(log, 'utf8')
-  assert.match(request, /https:\/\/github\.com\/oines\/astral\/releases\/latest\/download\/astral-/)
+  assert.match(request, /https:\/\/github\.com\/oines\/astral\/releases\/latest\/download\/checksums\.txt/)
   assert.match(request, /--location --proto =https --proto-redir =https/)
   assert.doesNotMatch(request, /\/health|\/downloads\//)
 })
@@ -127,7 +136,7 @@ const prefix = 'https://github.com/oines/astral/releases/latest/download/';
 const at = url.indexOf(prefix);
 if (at < 0) process.exit(64);
 const name = url.slice(at + prefix.length);
-if (name !== ${JSON.stringify(binaryName)} && name !== 'checksums.txt') process.exit(64);
+if (![${JSON.stringify(binaryName)}, ${JSON.stringify(binaryName.replace('astral-', 'astral-daemon-'))}, 'checksums.txt'].includes(name)) process.exit(64);
 if (name === 'checksums.txt' && process.env.ASTRAL_TEST_BAD_CHECKSUM === '1') fs.writeFileSync(target, '0'.repeat(64) + '  ' + ${JSON.stringify(binaryName)} + '\\n');
 else fs.copyFileSync(path.join(${JSON.stringify(payload)}, name), target);
 `, { mode: 0o755 })
@@ -144,8 +153,8 @@ test('Shell GitHub proxy covers both public downloads and never receives Server 
   const urls = (await fs.readFile(fixture.log, 'utf8')).trim().split('\n').map(JSON.parse)
   assert.deepEqual(urls, [
     'http://server.tailnet.ts.net:4545/health',
-    `https://proxy.example/prefix/https://github.com/oines/astral/releases/latest/download/${fixture.binaryName}`,
     'https://proxy.example/prefix/https://github.com/oines/astral/releases/latest/download/checksums.txt',
+    `https://proxy.example/prefix/https://github.com/oines/astral/releases/latest/download/${fixture.binaryName}`,
   ])
   assert.deepEqual((await fs.readFile(fixture.execution, 'utf8')).trim().split('\n'), ['computer', 'connect', ...original])
   assert.equal(await fs.readFile(fixture.selection, 'utf8'), 'https://proxy.example/prefix/')
@@ -169,6 +178,42 @@ test('Shell command remains usable on the same PATH and follows a verified Compu
   assert.notEqual(second, first)
   const terminal = await exec('sh', ['-c', 'astral version'], { env: fixture.env })
   assert.equal(terminal.stdout.trim(), '0.1.10')
+})
+
+test('Shell manual updates keep the installed CLI variant across the first split release', { skip: process.platform === 'win32' }, async t => {
+  for (const existing of [true, false]) await t.test(existing ? 'existing unified CLI' : 'new lightweight Daemon', async t => {
+    const f = await shellProxyFixture(t)
+    const args = ['internal/platform/installers/install.sh', '--update']
+    const daemonName = f.binaryName.replace('astral-', 'astral-daemon-')
+    const manifest = []
+    for (const name of [f.binaryName, daemonName]) {
+      const full = name === f.binaryName
+      const metadata = full ? { version: '1.0', data_formats: { host: 3, core: 11 } } : { version: '1.0' }
+      const program = `#!/bin/sh
+case "$1 $2" in
+  "version --json") echo '${JSON.stringify(metadata)}';;
+  "version ") echo '1.0';;
+  "doctor ") exit ${full ? 0 : 1};;
+  "computer update") exit 0;;
+  *) exit 1;;
+esac
+`
+      await fs.writeFile(path.join(f.payload, name), program)
+      manifest.push(`${createHash('sha256').update(program).digest('hex')}  ${name}\n`)
+    }
+    if (existing) {
+      await fs.writeFile(path.join(f.payload, 'checksums.txt'), manifest[0])
+      await exec('sh', args, { env: f.env })
+    }
+    await fs.writeFile(path.join(f.payload, 'checksums.txt'), manifest.join(''))
+    // Run twice to also cover subsequent updates of a lightweight installation.
+    for (let i = 0; i < 2; i++) {
+      await exec('sh', args, { env: f.env })
+      const urls = (await fs.readFile(f.log, 'utf8')).trim().split('\n').map(JSON.parse)
+      assert.equal(path.basename(urls.at(-1)), existing ? f.binaryName : daemonName)
+    }
+    if (existing) await exec('sh', ['-c', 'astral doctor'], { env: f.env })
+  })
 })
 
 test('Shell restores the previous command when Computer setup fails after command verification', { skip: process.platform === 'win32' }, async t => {
@@ -244,7 +289,7 @@ test('Shell GitHub proxy environment is optional and explicit empty selects dire
     await exec('sh', ['internal/platform/installers/install.sh', ...args], { env: { ...fixture.env, ASTRAL_GITHUB_PROXY: 'https://gh-proxy.org/' } })
     const urls = (await fs.readFile(fixture.log, 'utf8')).trim().split('\n').map(JSON.parse)
     const proxy = direct ? '' : 'https://gh-proxy.org/'
-    assert.deepEqual(urls, [`${proxy}https://github.com/oines/astral/releases/latest/download/${fixture.binaryName}`, `${proxy}https://github.com/oines/astral/releases/latest/download/checksums.txt`])
+    assert.deepEqual(urls, [`${proxy}https://github.com/oines/astral/releases/latest/download/checksums.txt`, `${proxy}https://github.com/oines/astral/releases/latest/download/${fixture.binaryName}`])
     assert.deepEqual((await fs.readFile(fixture.execution, 'utf8')).trim().split('\n'), ['computer', 'update', '--update', '--root', path.join(fixture.root, 'existing')])
     assert.equal(await fs.readFile(fixture.selection, 'utf8'), proxy)
   })
@@ -358,7 +403,7 @@ test('Windows PowerShell applies an explicit GitHub proxy only to official publi
       return true
     })
     const url = await fs.readFile(output, 'utf8')
-    assert.match(url, new RegExp(`^${proxy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}https://github\\.com/oines/astral/releases/latest/download/astral-windows-(amd64|arm64)\\.exe$`))
+    assert.match(url, new RegExp(`^${proxy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}https://github\\.com/oines/astral/releases/latest/download/checksums\\.txt$`))
     assert.doesNotMatch(url, /fixture-token|fixture-enrollment|127\.0\.0\.1/)
   })
   assert.deepEqual(healthRequests, ['/health', '/health', '/health', '/health'])
@@ -493,15 +538,22 @@ test('Windows PowerShell keeps astral usable across upgrades, passes the proxy a
   t.after(() => fs.rm(root, { recursive: true, force: true }))
   const original = await fs.readFile('internal/platform/installers/install.ps1', 'utf8')
   const fixture = original.replace('[Net.ServicePointManager]::SecurityProtocol =', `function Get-OfficialAsset([string]$Name, [string]$Target) {
-  if ($Name -eq 'checksums.txt') { [IO.File]::WriteAllText($Target, (Get-FileSHA256 $env:ASTRAL_TEST_BINARY_FILE) + '  astral-windows-' + $arch + '.exe') }
-  else { [IO.File]::Copy($env:ASTRAL_TEST_BINARY_FILE, $Target) }
+  if ($Name -eq 'checksums.txt') {
+    $sha = Get-FileSHA256 $env:ASTRAL_TEST_BINARY_FILE
+    $entries = @($sha + '  astral-windows-' + $arch + '.exe')
+    if ($env:ASTRAL_TEST_SPLIT) { $entries += ($sha + '  astral-daemon-windows-' + $arch + '.exe') }
+    [IO.File]::WriteAllLines($Target, $entries)
+  } else {
+    [IO.File]::WriteAllText(($env:ASTRAL_TEST_PROXY_FILE + '.asset'), $Name)
+    [IO.File]::Copy($env:ASTRAL_TEST_BINARY_FILE, $Target)
+  }
 }
 [Net.ServicePointManager]::SecurityProtocol =`)
   assert.notEqual(fixture, original)
   const installer = path.join(root, 'install.ps1')
   const driver = path.join(root, 'driver.ps1')
   await fs.writeFile(installer, fixture)
-  await fs.writeFile(driver, `param([string]$Installer, [string]$Proxy)
+  await fs.writeFile(driver, `param([string]$Installer, [string]$Proxy, [switch]$TestTemporary)
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $env:ASTRAL_TEST_BINARY_FILE)) {
   Add-Type -OutputType ConsoleApplication -OutputAssembly $env:ASTRAL_TEST_BINARY_FILE -TypeDefinition @"
@@ -510,7 +562,12 @@ using System.IO;
 public class AstralFixture {
   public static int Main(string[] args) {
     if (args.Length == 1 && args[0] == "version") { Console.WriteLine("$env:ASTRAL_TEST_VERSION"); return 0; }
-    File.WriteAllText(Environment.GetEnvironmentVariable("ASTRAL_TEST_PROXY_FILE"), Environment.GetEnvironmentVariable("ASTRAL_GITHUB_PROXY") ?? "");
+    if (args.Length == 2 && args[0] == "version" && args[1] == "--json") { Console.WriteLine("{\\"data_formats\\":{}}"); return 0; }
+    if (args.Length == 1 && args[0] == "doctor") { Console.WriteLine("ready"); return 0; }
+    string log = Environment.GetEnvironmentVariable("ASTRAL_TEST_PROXY_FILE");
+    File.WriteAllLines(log + ".args", args);
+    File.WriteAllText(log + ".self", typeof(AstralFixture).Assembly.Location);
+    File.WriteAllText(log, Environment.GetEnvironmentVariable("ASTRAL_GITHUB_PROXY") ?? "");
     if (Environment.GetEnvironmentVariable("ASTRAL_TEST_CONNECT_FAIL") == "1") return 77;
     return 0;
   }
@@ -518,7 +575,12 @@ public class AstralFixture {
 "@
 }
 $env:ASTRAL_GITHUB_PROXY = 'https://parent.example/'
-& $Installer -Update -GitHubProxy $Proxy
+if ($TestTemporary) {
+  function Invoke-WebRequest { }
+  & $Installer -Temporary -Server 'http://127.0.0.1' -ServerPin ('a' * 64) -Enrollment enrollment -Token token
+} else {
+  & $Installer -Update -GitHubProxy $Proxy
+}
 if ($env:ASTRAL_GITHUB_PROXY -ne 'https://parent.example/') { throw 'The installer changed the calling session environment.' }
 `)
   const commands = path.join(root, 'commands')
@@ -527,16 +589,32 @@ if ($env:ASTRAL_GITHUB_PROXY -ne 'https://parent.example/') { throw 'The install
   const targets = []
   for (const [selected, version] of [['https://selected.example/path', '0.1.9'], ['', '0.1.10']]) {
     const output = path.join(root, selected ? 'selected.txt' : 'direct.txt')
-    const env = { ...environment, PATH: `${commands};${process.env.PATH}`, LOCALAPPDATA: path.join(root, 'LocalAppData'), ASTRAL_TEST_PROXY_FILE: output, ASTRAL_TEST_BINARY_FILE: path.join(root, `fixture-${version}.exe`), ASTRAL_TEST_VERSION: version }
+    const env = { ...environment, PATH: `${commands};${process.env.PATH}`, LOCALAPPDATA: path.join(root, 'LocalAppData'), ASTRAL_TEST_SPLIT: selected ? '' : '1', ASTRAL_TEST_PROXY_FILE: output, ASTRAL_TEST_BINARY_FILE: path.join(root, `fixture-${version}.exe`), ASTRAL_TEST_VERSION: version }
     await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', driver, '-Installer', installer, '-Proxy', selected], {
       env, timeout: 20000,
     })
     assert.equal(await fs.readFile(output, 'utf8'), selected ? `${selected}/` : '')
+    assert.match(await fs.readFile(output + '.asset', 'utf8'), /^astral-windows-/)
+    const argv = (await fs.readFile(output + '.args', 'utf8')).trim().split(/\r?\n/)
+    if (env.ASTRAL_TEST_SPLIT) {
+      assert.ok(argv.includes('--github-proxy='))
+      assert.equal((await exec('cmd.exe', ['/d', '/c', 'astral doctor'], { env })).stdout.trim(), 'ready')
+    } else {
+      assert.ok(argv.every(arg => !arg.startsWith('--github-proxy=')))
+    }
     const terminal = await exec('cmd.exe', ['/d', '/c', 'astral version'], { env, timeout: 12000 })
     assert.equal(terminal.stdout.trim(), version)
     targets.push(await fs.realpath(path.join(env.LOCALAPPDATA, 'Astral/bin/current')))
   }
   assert.notEqual(targets[0], targets[1])
+  const tempLog = path.join(root, 'temporary.txt')
+  const tempLocal = path.join(root, 'TemporaryLocalData')
+  const tempEnv = { ...environment, PATH: `${commands};${process.env.PATH}`, LOCALAPPDATA: tempLocal, ASTRAL_TEST_SPLIT: '1', ASTRAL_TEST_PROXY_FILE: tempLog, ASTRAL_TEST_BINARY_FILE: path.join(root, 'fixture-0.1.10.exe') }
+  await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', driver, '-Installer', installer, '-TestTemporary'], { env: tempEnv, timeout: 20000 })
+  assert.match(await fs.readFile(tempLog + '.asset', 'utf8'), /^astral-daemon-windows-/)
+  assert.deepEqual((await fs.readFile(tempLog + '.args', 'utf8')).trim().split(/\r?\n/), ['computer', 'connect', '--temporary', '--server', 'http://127.0.0.1', '--server-pin', 'a'.repeat(64), '--enrollment', 'enrollment', '--token', 'token'])
+  await assert.rejects(fs.access(path.dirname(await fs.readFile(tempLog + '.self', 'utf8'))))
+  await assert.rejects(fs.access(path.join(tempLocal, 'Astral')))
   const failedEnvironment = { ...environment, PATH: `${commands};${process.env.PATH}`, LOCALAPPDATA: path.join(root, 'LocalAppData'), ASTRAL_TEST_PROXY_FILE: path.join(root, 'failed.txt'), ASTRAL_TEST_BINARY_FILE: path.join(root, 'fixture-0.1.11.exe'), ASTRAL_TEST_VERSION: '0.1.11', ASTRAL_TEST_CONNECT_FAIL: '1' }
   await assert.rejects(exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', driver, '-Installer', installer, '-Proxy', ''], {
     env: failedEnvironment, timeout: 20000,
@@ -556,4 +634,56 @@ if ($env:ASTRAL_GITHUB_PROXY -ne 'https://parent.example/') { throw 'The install
     return true
   })
   assert.equal(await fs.readFile(command, 'utf8'), unrelated)
+})
+
+test('Shell installer prefers standalone astral-daemon and temporary mode leaves no installed command or files', { skip: process.platform === 'win32' }, async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'astral-daemon-temp-test-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const bin = path.join(root, 'commands')
+  const payload = path.join(root, 'payload')
+  const tmpDir = path.join(root, 'tmp')
+  await fs.mkdir(bin)
+  await fs.mkdir(payload)
+  await fs.mkdir(tmpDir)
+  await fs.symlink(process.execPath, path.join(bin, 'node'))
+  const daemonName = `astral-daemon-${process.platform === 'darwin' ? 'darwin' : 'linux'}-${process.arch === 'x64' ? 'amd64' : process.arch}`
+  const binary = Buffer.from('#!/bin/sh\nprintf "%s\\n" "$0" > "$ASTRAL_TEST_SELF_LOG"\nprintf "%s\\n" "$@" > "$ASTRAL_TEST_EXEC_LOG"\n')
+  await fs.writeFile(path.join(payload, daemonName), binary)
+  await fs.writeFile(path.join(payload, 'checksums.txt'), `${createHash('sha256').update(binary).digest('hex')}  ${daemonName}\n`)
+  const log = path.join(root, 'downloads.jsonl')
+  const selfLog = path.join(root, 'self.txt')
+  const execLog = path.join(root, 'exec.txt')
+  await fs.writeFile(path.join(bin, 'curl'), `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+const url = args.find(arg => /^https?:/.test(arg));
+fs.appendFileSync(process.env.ASTRAL_TEST_CURL_LOG, JSON.stringify(url) + '\\n');
+const target = args[args.indexOf('-o') + 1];
+if (url === 'http://server.tailnet.ts.net:4545/health') { fs.writeFileSync(target, '{}'); process.exit(0); }
+const prefix = 'https://github.com/oines/astral/releases/latest/download/';
+const at = url.indexOf(prefix);
+if (at < 0) process.exit(64);
+const name = url.slice(at + prefix.length);
+fs.copyFileSync(path.join(${JSON.stringify(payload)}, name), target);
+`, { mode: 0o755 })
+  const env = { ...directEnvironment, PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin`, TMPDIR: tmpDir, XDG_DATA_HOME: path.join(root, 'data'), ASTRAL_TEST_CURL_LOG: log, ASTRAL_TEST_SELF_LOG: selfLog, ASTRAL_TEST_EXEC_LOG: execLog }
+  await assert.rejects(exec('sh', ['internal/platform/installers/install.sh', '--temporary', '--container', '--server', 'http://server.tailnet.ts.net:4545', '--server-pin', 'a'.repeat(64)], { env }), error => {
+    assert.match(error.stderr, /Temporary mode cannot be combined/)
+    return true
+  })
+  const args = ['--temporary', '--server', 'http://server.tailnet.ts.net:4545', '--server-pin', 'a'.repeat(64), '--enrollment', 'enr-1', '--token', 'tok-1']
+  await exec('sh', ['internal/platform/installers/install.sh', ...args, '--github-proxy', 'https://edgeone.gh-proxy.org/'], { env })
+  const urls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(JSON.parse)
+  assert.deepEqual(urls, [
+    'http://server.tailnet.ts.net:4545/health',
+    'https://edgeone.gh-proxy.org/https://github.com/oines/astral/releases/latest/download/checksums.txt',
+    `https://edgeone.gh-proxy.org/https://github.com/oines/astral/releases/latest/download/${daemonName}`,
+  ])
+  assert.deepEqual((await fs.readFile(execLog, 'utf8')).trim().split('\n'), ['computer', 'connect', ...args])
+  const ranBinary = (await fs.readFile(selfLog, 'utf8')).trim()
+  assert.ok(ranBinary.startsWith(tmpDir))
+  await assert.rejects(fs.access(ranBinary))
+  await assert.rejects(fs.access(path.join(bin, 'astral')))
+  await assert.rejects(fs.access(path.join(root, 'data')))
 })

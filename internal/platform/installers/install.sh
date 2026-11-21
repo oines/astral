@@ -4,6 +4,8 @@ umask 077
 server=
 server_pin=
 update=0
+temporary_mode=0
+container_mode=0
 github_proxy=${ASTRAL_GITHUB_PROXY:-}
 install_base="${XDG_DATA_HOME:-$HOME/.local/share}/astral/bin"
 command_path=
@@ -151,9 +153,21 @@ next_pin=0
 for arg in "$@"; do
   if [ "$next_server" = 1 ]; then server=$arg; next_server=0; continue; fi
   if [ "$next_pin" = 1 ]; then server_pin=$arg; next_pin=0; continue; fi
-  case "$arg" in --server) next_server=1 ;; --server-pin) next_pin=1 ;; --update) update=1 ;; esac
+  case "$arg" in
+    --server) next_server=1 ;;
+    --server-pin) next_pin=1 ;;
+    --update) update=1 ;;
+    --temporary) temporary_mode=1 ;;
+    --container) container_mode=1 ;;
+  esac
 done
-select_command_entry
+if [ "$temporary_mode" = 1 ] && { [ "$update" = 1 ] || [ "$container_mode" = 1 ]; }; then
+  echo "Temporary mode cannot be combined with --update or --container." >&2
+  exit 2
+fi
+if [ "$temporary_mode" != 1 ]; then
+  select_command_entry
+fi
 if [ "$update" != 1 ]; then
   if [ -z "$server" ]; then echo "Missing Astral Server URL." >&2; exit 2; fi
   case "$server" in http://*|https://*) ;; *) echo "Astral Server URL must use HTTP or HTTPS." >&2; exit 2 ;; esac
@@ -173,9 +187,13 @@ elif [ -n "$server" ] || [ -n "$server_pin" ]; then
 fi
 case "$(uname -s)" in Darwin) target_os=darwin ;; Linux) target_os=linux ;; *) echo "Use install.ps1 on Windows." >&2; exit 2 ;; esac
 case "$(uname -m)" in arm64|aarch64) target_arch=arm64 ;; x86_64|amd64) target_arch=amd64 ;; *) echo "Unsupported CPU architecture." >&2; exit 2 ;; esac
-mkdir -p "$install_base"
-chmod 700 "$install_base"
-temporary="$(mktemp -d "$install_base/install.XXXXXX")"
+if [ "$temporary_mode" = 1 ]; then
+  temporary="$(mktemp -d "${TMPDIR:-/tmp}/astral-temp.XXXXXX")"
+else
+  mkdir -p "$install_base"
+  chmod 700 "$install_base"
+  temporary="$(mktemp -d "$install_base/install.XXXXXX")"
+fi
 cleanup() {
   status=$?
   trap - EXIT HUP INT TERM
@@ -193,18 +211,35 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-binary_name="astral-$target_os-$target_arch"
+daemon_binary_name="astral-daemon-$target_os-$target_arch"
+full_binary_name="astral-$target_os-$target_arch"
 # The Server may use HTTP, so executable trust must come from the official
 # HTTPS release, never from that Server or its unauthenticated checksum file.
 release_base=https://github.com/oines/astral/releases/latest/download
-curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' "$github_proxy$release_base/$binary_name" -o "$temporary/astral"
 curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' "$github_proxy$release_base/checksums.txt" -o "$temporary/checksums.txt"
+binary_name=$daemon_binary_name
+# A Computer-only install publishes its executable on PATH. Preserve the
+# management commands if this installation already provides the unified CLI.
+if [ "$temporary_mode" != 1 ] && [ "$command_reused" != 1 ] && [ -x "$install_base/current/astral" ]; then
+  metadata=$("$install_base/current/astral" version --json) || computer_install_error 'Could not identify the installed Astral command.'
+  case "$metadata" in *'"data_formats"'*) binary_name=$full_binary_name ;; esac
+fi
 expected="$(awk -v file="$binary_name" '$2 == file { print $1 }' "$temporary/checksums.txt")"
+if [ -z "$expected" ]; then
+  binary_name=$full_binary_name
+  expected="$(awk -v file="$binary_name" '$2 == file { print $1 }' "$temporary/checksums.txt")"
+fi
+if [ "${#expected}" != 64 ]; then echo "Astral binary checksum was missing or ambiguous; the installed version is unchanged." >&2; exit 1; fi
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' "$github_proxy$release_base/$binary_name" -o "$temporary/astral"
 if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$temporary/astral" | awk '{print $1}')"; else actual="$(shasum -a 256 "$temporary/astral" | awk '{print $1}')"; fi
-if [ "${#expected}" != 64 ] || [ "$actual" != "$expected" ]; then echo "Astral binary checksum did not match; the installed version is unchanged." >&2; exit 1; fi
+if [ "$actual" != "$expected" ]; then echo "Astral binary checksum did not match; the installed version is unchanged." >&2; exit 1; fi
+chmod 700 "$temporary/astral"
+if [ "$temporary_mode" = 1 ]; then
+  "$temporary/astral" computer connect "$@"
+  exit $?
+fi
 release="$install_base/$actual"
 mkdir -p "$release"
-chmod 700 "$temporary/astral"
 # Versioned executables let existing services keep running until the new binary
 # and service definition are ready. Agent homes never contain program files.
 if [ ! -f "$release/astral" ]; then mv "$temporary/astral" "$release/astral"; fi

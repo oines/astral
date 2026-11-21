@@ -21,12 +21,15 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+
+	"github.com/oines/astral/internal/githubrelease"
 )
 
 type Spec struct {
-	Executable      string `json:"executable"`
-	Credentials     string `json:"credentials"`
-	EnvironmentPATH string `json:"environment_path"`
+	Executable      string  `json:"executable"`
+	Credentials     string  `json:"credentials"`
+	EnvironmentPATH string  `json:"environment_path"`
+	GitHubProxy     *string `json:"github_proxy,omitempty"`
 }
 
 type Status struct {
@@ -171,6 +174,13 @@ func (m *Manager) install(ctx context.Context, spec Spec, force bool) error {
 		if strings.ContainsAny(value, "\x00\r\n") {
 			return errors.New("service definition contains a control character")
 		}
+	}
+	if spec.GitHubProxy != nil {
+		normalizedProxy, err := githubrelease.NormalizeProxy(*spec.GitHubProxy)
+		if err != nil {
+			return err
+		}
+		spec.GitHubProxy = &normalizedProxy
 	}
 	if !filepath.IsAbs(spec.Executable) || !filepath.IsAbs(spec.Credentials) {
 		return errors.New("service executable and credentials must use absolute paths")
@@ -536,14 +546,22 @@ func (m *Manager) systemd(spec Spec) string {
 	for _, arg := range m.args(spec) {
 		argv = append(argv, systemdQuote(arg, true))
 	}
-	return "[Unit]\nDescription=" + m.name + "\n\n[Service]\nType=simple\nEnvironment=" + systemdQuote("PATH="+spec.EnvironmentPATH, false) + "\nEnvironment=" + systemdQuote("XDG_CONFIG_HOME="+m.configHome, false) + "\nExecStart=" + strings.Join(argv, " ") + "\nUMask=0077\nRestart=always\nRestartSec=5\nTimeoutStopSec=30\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n"
+	proxyLine := ""
+	if spec.GitHubProxy != nil {
+		proxyLine = "\nEnvironment=" + systemdQuote(githubrelease.ProxyEnvironment+"="+*spec.GitHubProxy, false)
+	}
+	return "[Unit]\nDescription=" + m.name + "\n\n[Service]\nType=simple\nEnvironment=" + systemdQuote("PATH="+spec.EnvironmentPATH, false) + "\nEnvironment=" + systemdQuote("XDG_CONFIG_HOME="+m.configHome, false) + proxyLine + "\nExecStart=" + strings.Join(argv, " ") + "\nUMask=0077\nRestart=always\nRestartSec=5\nTimeoutStopSec=30\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n"
 }
 func (m *Manager) launchd(spec Spec, launcher string) string {
 	args := "<string>" + xmlQuote(launcher) + "</string>"
 	for _, arg := range m.args(spec) {
 		args += "<string>" + xmlQuote(arg) + "</string>"
 	}
-	return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>` + m.target + `</string><key>ProgramArguments</key><array>` + args + `</array><key>EnvironmentVariables</key><dict><key>PATH</key><string>` + xmlQuote(spec.EnvironmentPATH) + `</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>5</integer><key>StandardOutPath</key><string>` + xmlQuote(filepath.Join(m.root, "service-launch.log")) + `</string><key>StandardErrorPath</key><string>` + xmlQuote(filepath.Join(m.root, "service-launch.log")) + `</string></dict></plist>`
+	proxyEnv := ""
+	if spec.GitHubProxy != nil {
+		proxyEnv = `<key>` + githubrelease.ProxyEnvironment + `</key><string>` + xmlQuote(*spec.GitHubProxy) + `</string>`
+	}
+	return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>` + m.target + `</string><key>ProgramArguments</key><array>` + args + `</array><key>EnvironmentVariables</key><dict><key>PATH</key><string>` + xmlQuote(spec.EnvironmentPATH) + `</string>` + proxyEnv + `</dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>5</integer><key>StandardOutPath</key><string>` + xmlQuote(filepath.Join(m.root, "service-launch.log")) + `</string><key>StandardErrorPath</key><string>` + xmlQuote(filepath.Join(m.root, "service-launch.log")) + `</string></dict></plist>`
 }
 func windowsArg(v string) string {
 	// CommandLineToArgvW escaping; a trailing backslash must be doubled before
@@ -596,7 +614,11 @@ func (m *Manager) windowsScript(spec Spec) string {
 	// Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
 	// Daemon startup diagnostics use stderr, so keep only native execution in
 	// Continue mode. A failed launch must retain a nonzero exit code.
-	return "\ufeff$ErrorActionPreference = 'Stop'\r\n[Console]::OutputEncoding = [Text.UTF8Encoding]::new()\r\n$OutputEncoding = [Console]::OutputEncoding\r\n$env:PATH = " + psQuote(spec.EnvironmentPATH) + "\r\n$LASTEXITCODE = 1\r\n$ErrorActionPreference = 'Continue'\r\n& " + psQuote(spec.Executable) + " " + strings.Join(args, " ") + " >> " + psQuote(filepath.Join(m.root, "service-launch.log")) + " 2>&1\r\nexit $LASTEXITCODE\r\n"
+	proxyLine := ""
+	if spec.GitHubProxy != nil {
+		proxyLine = "$env:" + githubrelease.ProxyEnvironment + " = " + psQuote(*spec.GitHubProxy) + "\r\n"
+	}
+	return "\ufeff$ErrorActionPreference = 'Stop'\r\n[Console]::OutputEncoding = [Text.UTF8Encoding]::new()\r\n$OutputEncoding = [Console]::OutputEncoding\r\n$env:PATH = " + psQuote(spec.EnvironmentPATH) + "\r\n" + proxyLine + "$LASTEXITCODE = 1\r\n$ErrorActionPreference = 'Continue'\r\n& " + psQuote(spec.Executable) + " " + strings.Join(args, " ") + " >> " + psQuote(filepath.Join(m.root, "service-launch.log")) + " 2>&1\r\nexit $LASTEXITCODE\r\n"
 }
 func utf16XML(value string) []byte {
 	raw := []byte{0xff, 0xfe}

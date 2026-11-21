@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/oines/astral/internal/githubrelease"
 )
 
 type fakeService struct {
@@ -390,7 +392,7 @@ func TestLinuxDaemonAndUpdateHelperRetainResolvedConfigurationAcrossManagerEnvir
 		}
 		return commandResult{}, nil
 	}
-	if err := daemonManager.StartUpdate(context.Background(), spec.Executable); err != nil {
+	if err := daemonManager.StartUpdate(context.Background(), spec.Executable, githubrelease.ProxyOverride{}); err != nil {
 		t.Fatal(err)
 	}
 	if helperConfig != chosen {

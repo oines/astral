@@ -2101,6 +2101,12 @@
           "command": {
             "type": "string"
           },
+          "direct_command": {
+            "type": "string"
+          },
+          "direct_powershell_command": {
+            "type": "string"
+          },
           "enrollment": {
             "$ref": "#/components/schemas/astral_internal_domain_Enrollment"
           },
@@ -2348,6 +2354,10 @@
           "daemon_version": {
             "type": "string"
           },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "home": {
             "type": "string"
           },
@@ -2355,6 +2365,9 @@
             "type": "string"
           },
           "id": {
+            "type": "string"
+          },
+          "initial_cwd": {
             "type": "string"
           },
           "kind": {
@@ -2375,6 +2388,12 @@
           "os": {
             "type": "string"
           },
+          "owner_agent_id": {
+            "type": "string"
+          },
+          "owner_session_id": {
+            "type": "string"
+          },
           "revision": {
             "type": "integer"
           },
@@ -2386,6 +2405,9 @@
           },
           "shell": {
             "type": "string"
+          },
+          "temporary": {
+            "type": "boolean"
           },
           "token_id": {
             "type": "string"
@@ -2657,14 +2679,26 @@
           "local": {
             "type": "boolean"
           },
+          "owner_agent_id": {
+            "type": "string"
+          },
+          "owner_session_id": {
+            "type": "string"
+          },
           "revision": {
             "type": "integer"
           },
           "state": {
             "type": "string"
           },
+          "temporary": {
+            "type": "boolean"
+          },
           "token_hash": {
             "type": "string"
+          },
+          "ttl_seconds": {
+            "type": "integer"
           },
           "updated_at": {
             "format": "date-time",
@@ -3298,6 +3332,10 @@
           "daemon_version": {
             "type": "string"
           },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "home": {
             "type": "string"
           },
@@ -3305,6 +3343,9 @@
             "type": "string"
           },
           "id": {
+            "type": "string"
+          },
+          "initial_cwd": {
             "type": "string"
           },
           "kind": {
@@ -3325,6 +3366,12 @@
           "os": {
             "type": "string"
           },
+          "owner_agent_id": {
+            "type": "string"
+          },
+          "owner_session_id": {
+            "type": "string"
+          },
           "revision": {
             "type": "integer"
           },
@@ -3336,6 +3383,9 @@
           },
           "shell": {
             "type": "string"
+          },
+          "temporary": {
+            "type": "boolean"
           },
           "token_id": {
             "type": "string"
@@ -5560,6 +5610,14 @@
         ],
         "type": "object"
       },
+      "astral_internal_httpapi_DaemonUpdateInput": {
+        "properties": {
+          "github_proxy": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "astral_internal_httpapi_EnrollmentInput": {
         "properties": {
           "computer_api_disabled": {
@@ -5570,6 +5628,15 @@
           },
           "server_url": {
             "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "temporary": {
+            "type": "boolean"
+          },
+          "ttl_seconds": {
+            "type": "integer"
           }
         },
         "required": [
@@ -9053,6 +9120,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_httpapi_DaemonUpdateInput"
+              }
+            }
+          },
+          "required": false
+        },
         "responses": {
           "200": {
             "content": {
@@ -9228,6 +9305,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_domain_OwnerComputerStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Computers"
+        ]
+      }
+    },
+    "/api/v1/computers/{id}/disconnect": {
+      "post": {
+        "operationId": "disconnectTemporaryComputer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_OK"
                 }
               }
             },

@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import { lstat, readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { digest, desktopNames, distributionNames, macSigningReportName, validateMacSigningReport, validateDataFormats } from './release-assets.mjs'
+import { daemonNames, digest, desktopNames, distributionNames, executableNames, macSigningReportName, validateMacSigningReport, validateDataFormats } from './release-assets.mjs'
 import { desktopUpdateFeeds, validateDesktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { isDirectInvocation, readReleaseVersion, validateTag, validateVersion } from './release-version.mjs'
 import { validateBuildMetadata } from './rolling-release-version.mjs'
@@ -39,7 +39,7 @@ async function inspectReleaseBundle(directory, { publicRelease, environment, req
         typeof manifest.ci_run_url !== 'string' || !manifest.ci_run_url.startsWith(runPrefix) || !/^\d+$/.test(manifest.ci_run_url.slice(runPrefix.length))) throw new Error('Public publishing requires this GitHub Actions run and its matching release/CI metadata.')
     if (!Number.isSafeInteger(manifest.host_schema) || manifest.host_schema < 1 || !Number.isSafeInteger(manifest.core_format) || manifest.core_format < 1 || manifest.data_formats?.host !== manifest.host_schema || manifest.data_formats?.core !== manifest.core_format || Object.keys(manifest.data_formats).length !== 2) throw new Error('Public release data baseline does not match its migration metadata.')
   }
-  const requiredNames = [...distributionNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'checksums.txt', 'release-formats.json', ...desktopUpdateFeeds(version).map(feed => feed.name), 'release-manifest.json', 'RELEASE_NOTES.md', ...(macSigned ? [macSigningReportName] : [])]
+  const requiredNames = [...executableNames, ...desktopNames(version), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1', 'checksums.txt', 'release-formats.json', ...desktopUpdateFeeds(version).map(feed => feed.name), 'release-manifest.json', 'RELEASE_NOTES.md', ...(macSigned ? [macSigningReportName] : [])]
   const sumLines = (await readFile(path.join(directory, 'SHA256SUMS'), 'utf8')).trim().split('\n')
   const sums = new Map()
   for (const line of sumLines) {
@@ -67,7 +67,7 @@ async function inspectReleaseBundle(directory, { publicRelease, environment, req
   for (const asset of manifest.assets) {
     if (!asset || !manifestNames.includes(asset.name) || !Number.isSafeInteger(asset.size) || asset.size <= 0 || sums.get(asset.name) !== asset.sha256 || (await stat(path.join(directory, asset.name))).size !== asset.size) throw new Error('Manifest asset inventory does not match the final size and SHA256 inventory.')
   }
-  if (publicRelease && (!Array.isArray(manifest.distribution_names) || manifest.distribution_names.length !== distributionNames.length || new Set(manifest.distribution_names).size !== distributionNames.length || distributionNames.some(name => !manifest.distribution_names.includes(name)))) throw new Error('Public release executable inventory is incomplete.')
+  if (publicRelease && (!Array.isArray(manifest.distribution_names) || manifest.distribution_names.length !== distributionNames.length || new Set(manifest.distribution_names).size !== distributionNames.length || distributionNames.some(name => !manifest.distribution_names.includes(name)) || !Array.isArray(manifest.daemon_names) || manifest.daemon_names.length !== daemonNames.length || new Set(manifest.daemon_names).size !== daemonNames.length || daemonNames.some(name => !manifest.daemon_names.includes(name)))) throw new Error('Public release executable inventory is incomplete.')
   if (macSigned) {
     const report = JSON.parse(await readFile(path.join(directory, macSigningReportName), 'utf8'))
     await validateMacSigningReport(report, { version, sourceSHA: manifest.source_sha, files: new Map(requiredNames.map(name => [name, path.join(directory, name)])) })

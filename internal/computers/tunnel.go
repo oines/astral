@@ -16,6 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/releasefeed"
 	"github.com/oines/astral/internal/securetransport"
 	"github.com/oines/astral/internal/serviceurl"
 )
@@ -32,11 +33,13 @@ type tunnelRequest struct {
 	Hostname     string `json:"hostname,omitempty"`
 }
 type tunnelResponse struct {
+	UpdateTarget      *releasefeed.Binary    `json:"update_target,omitempty"`
 	Credentials       *Credentials           `json:"credentials,omitempty"`
 	Status            *domain.ComputerStatus `json:"status,omitempty"`
 	LocalContainerURL string                 `json:"local_container_url,omitempty"`
 	ManagedSkills     bool                   `json:"managed_skills,omitempty"`
 	Error             string                 `json:"error,omitempty"`
+	ErrorCode         string                 `json:"error_code,omitempty"`
 }
 
 // These bounded frames are used only for the initial authentication exchange.
@@ -120,7 +123,11 @@ func authenticateTunnel(ctx context.Context, serverURL, pin string, request tunn
 		err = readAuthentication(conn, &response)
 	}
 	if err == nil && response.Error != "" {
-		err = errors.New(response.Error)
+		if response.ErrorCode == "forbidden" {
+			err = domain.Forbidden(response.Error)
+		} else {
+			err = errors.New(response.Error)
+		}
 	}
 	if err != nil {
 		_ = conn.Close()
@@ -170,15 +177,22 @@ func PrepareRemoteContainer(ctx context.Context, serverURL, pin, id, token, host
 	return response.LocalContainerURL, nil
 }
 func RemoteStatus(ctx context.Context, credentials Credentials) (domain.ComputerStatus, error) {
+	status, _, err := RemoteUpdateStatus(ctx, credentials)
+	return status, err
+}
+
+// RemoteUpdateStatus obtains the Server-authorized target separately from a
+// local update handoff. Older Servers return the status alone.
+func RemoteUpdateStatus(ctx context.Context, credentials Credentials) (domain.ComputerStatus, *releasefeed.Binary, error) {
 	client := NewHTTPClient()
 	defer client.CloseIdleConnections()
 	conn, response, err := authenticateTunnel(ctx, credentials.ServerURL, credentials.ServerPin, tunnelRequest{Operation: "status", ComputerID: credentials.ComputerID, Token: credentials.Token}, client)
 	if err != nil {
-		return domain.ComputerStatus{}, err
+		return domain.ComputerStatus{}, nil, err
 	}
 	defer conn.Close()
 	if response.Status == nil {
-		return domain.ComputerStatus{}, errors.New("no computer status returned by Server")
+		return domain.ComputerStatus{}, nil, errors.New("no computer status returned by Server")
 	}
-	return *response.Status, nil
+	return *response.Status, response.UpdateTarget, nil
 }

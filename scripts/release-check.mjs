@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { desktopUpdateFeeds } from './desktop-update-feeds.mjs'
 import { imageRepository, platforms, recipeHash } from './computer-image-contract.mjs'
-import { desktopNames, digest, distributionNames, macSigningReportName } from './release-assets.mjs'
+import { daemonNames, desktopNames, digest, distributionNames, executableNames, macSigningReportName } from './release-assets.mjs'
 import { isDirectInvocation, repositoryRoot, validateTag, validateVersion } from './release-version.mjs'
 
 // Kilobyte fixtures only: no dependencies, network, build, real Astral execution,
@@ -51,8 +51,10 @@ export async function checkReleaseTools() {
     await writeFile(path.join(temporary, 'internal/platform/computer-image/Dockerfile'), Buffer.concat([recipe, Buffer.from('\n')]))
     rejects('release-version.mjs', ['formats', '--binary', process.execPath, '--sha', sourceSHA], 'does not match the current Dockerfile')
     await writeFile(path.join(temporary, 'internal/platform/computer-image/Dockerfile'), recipe)
-    const packageNames = [...distributionNames, ...desktopNames('0.1.0'), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1']
+    const packageNames = [...executableNames, ...desktopNames('0.1.0'), 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt', 'install-server.sh', 'install-computer.sh', 'install-computer.ps1']
     assert.equal(distributionNames.length, 6)
+    assert.equal(daemonNames.length, 6)
+    assert.equal(executableNames.length, 12)
     assert.equal(desktopNames('0.1.0').length, 12)
     for (const name of packageNames) await writeFile(path.join(temporary, 'input', name), `Small fixture only: ${name}\n`)
     await writeFile(path.join(temporary, 'input', 'checksums.txt'), 'stale build checksum: must be recalculated\n')
@@ -73,10 +75,10 @@ export async function checkReleaseTools() {
       assert.equal((await readFile(path.join(temporary, 'complete-output', asset.name))).length, asset.size)
     }
     const distributionSums = (await readFile(path.join(temporary, 'complete-output', 'checksums.txt'), 'utf8')).trim().split('\n')
-    assert.equal(distributionSums.length, 6)
+    assert.equal(distributionSums.length, 12)
     for (const line of distributionSums) {
       const [expected, name] = line.split('  ')
-      assert(distributionNames.includes(name))
+      assert(executableNames.includes(name))
       assert.equal(await digest(path.join(temporary, 'complete-output', name)), expected)
     }
     const allSums = (await readFile(path.join(temporary, 'complete-output', 'SHA256SUMS'), 'utf8')).trim().split('\n')
@@ -114,7 +116,7 @@ export async function checkReleaseTools() {
     rejects('release-assets.mjs', [...baseArgs, '--mac-signed', '--output', 'missing-signing-report'], 'Missing required release artifact: mac-signing-report.json')
     // Public mode has no unsigned fallback, even without an explicit --mac-signed flag.
     rejects('release-assets.mjs', [...publicArgs, '--output', 'public-missing-signing-report'], 'Missing required release artifact: mac-signing-report.json')
-    const macNames = packageNames.filter(name => name.startsWith('astral-darwin-') || name.includes('-mac-'))
+    const macNames = packageNames.filter(name => name.startsWith('astral-darwin-') || name.startsWith('astral-daemon-darwin-') || name.includes('-mac-'))
     const signedReport = {
       schema_version: 2, version: '0.1.0', source_sha: sourceSHA, team_id: '6N6W6Z6739',
       certificate_expires_at: new Date(Date.now() + 366 * 24 * 60 * 60 * 1000).toISOString(),
@@ -172,6 +174,7 @@ export async function checkReleaseTools() {
     assert.equal(publicManifest.desktop_updater, 'electron-updater')
     assert.deepEqual(publicManifest.signing, signedManifest.signing)
     assert.deepEqual(publicManifest.distribution_names, distributionNames)
+    assert.deepEqual(publicManifest.daemon_names, daemonNames)
     assert.deepEqual(publicManifest.assets, signedManifest.assets)
     for (const asset of publicManifest.assets) {
       assert.equal(await digest(path.join(temporary, 'public-output', asset.name)), asset.sha256)
@@ -236,8 +239,8 @@ export async function checkReleaseTools() {
       ['missing-check', report => { delete report.checks.packaged_app_startup_shutdown }, 'must pass every required'],
       ['wrong-report-hash', report => { report.assets[0].sha256 = '0'.repeat(64) }, 'does not match final artifact bytes'],
       ['wrong-report-size', report => { report.assets[0].size++ }, 'does not match final artifact bytes'],
-      ['missing-report-asset', report => { report.assets.pop() }, 'exactly the two Darwin binaries'],
-      ['duplicate-report-asset', report => { report.assets[1] = report.assets[0] }, 'exactly the two Darwin binaries'],
+      ['missing-report-asset', report => { report.assets.pop() }, 'exactly the four Darwin binaries'],
+      ['duplicate-report-asset', report => { report.assets[1] = report.assets[0] }, 'exactly the four Darwin binaries'],
       ['missing-notarization', report => { report.notarizations.pop() }, 'exactly three distinct non-rejected'],
       ['failed-notarization', report => { report.notarizations[0].status = 'Invalid' }, 'exactly three distinct non-rejected'],
       ['wrong-notarization-uuid', report => { report.notarizations[0].id = 'not-a-uuid' }, 'exactly three distinct non-rejected'],

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/oines/astral/internal/githubrelease"
 )
 
 func TestWindowsUpdateQueryAcceptsMissingTask(t *testing.T) {
@@ -56,7 +58,7 @@ func TestUpdateHelperUsesIndependentUserJob(t *testing.T) {
 				}
 				return original(ctx, name, args...)
 			}
-			if err := m.StartUpdate(context.Background(), spec.Executable); err != nil {
+			if err := m.StartUpdate(context.Background(), spec.Executable, githubrelease.ProxyOverride{Set: true, Prefix: "https://mirror.example/path"}); err != nil {
 				t.Fatal(err)
 			}
 			m.FinishUpdate(context.Background())
@@ -65,6 +67,13 @@ func TestUpdateHelperUsesIndependentUserJob(t *testing.T) {
 				if strings.Contains(calls, forbidden) {
 					t.Fatalf("unsafe updater: %s", calls)
 				}
+			}
+			job := calls
+			if platform == "windows" {
+				job = taskXML
+			}
+			if !strings.Contains(job, "--github-proxy=https://mirror.example/path/") {
+				t.Fatalf("helper lost authenticated download source: %s", job)
 			}
 			if !strings.Contains(calls, "--managed-helper") && platform != "windows" {
 				t.Fatal("helper did not use managed cleanup")

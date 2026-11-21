@@ -20,14 +20,15 @@ const environmentSnapshotHeading = "Current Astral environment snapshot:"
 const modelContextKind = "astral.model"
 
 type environmentMetadata struct {
-	Version      int                          `json:"version"`
-	SessionID    string                       `json:"session_id,omitempty"`
-	Fingerprint  string                       `json:"fingerprint"`
-	CompactionID string                       `json:"compaction_id,omitempty"`
-	Model        modelbridge.ModelDescription `json:"model"`
-	ComputerID   string                       `json:"computer_id,omitempty"`
-	BootID       string                       `json:"boot_id,omitempty"`
-	SkillHashes  map[string]string            `json:"skill_hashes,omitempty"`
+	Version            int                          `json:"version"`
+	SessionID          string                       `json:"session_id,omitempty"`
+	Fingerprint        string                       `json:"fingerprint"`
+	CompactionID       string                       `json:"compaction_id,omitempty"`
+	Model              modelbridge.ModelDescription `json:"model"`
+	ComputerID         string                       `json:"computer_id,omitempty"`
+	BootID             string                       `json:"boot_id,omitempty"`
+	SkillHashes        map[string]string            `json:"skill_hashes,omitempty"`
+	TemporaryComputers map[string]string            `json:"temporary_computers,omitempty"`
 }
 
 type modelContextMetadata struct {
@@ -85,10 +86,19 @@ func (r *runtime) collectEnvironmentContext(ctx context.Context, boundary core.C
 		return nil, err
 	}
 	latest, previousModel := environmentState(boundary.Context.Request.Messages)
-	metadata := environmentMetadata{Version: 3, SessionID: r.id, Fingerprint: digest(encode(snapshot)), CompactionID: boundary.CompactionID, Model: model, SkillHashes: map[string]string{}}
+	metadata := environmentMetadata{Version: 3, SessionID: r.id, Fingerprint: digest(encode(snapshot)), CompactionID: boundary.CompactionID, Model: model, SkillHashes: map[string]string{}, TemporaryComputers: map[string]string{}}
 	if computer, ok := snapshot["current_computer"].(map[string]any); ok {
 		metadata.ComputerID, _ = computer["id"].(string)
 		metadata.BootID, _ = computer["boot_id"].(string)
+	}
+	for _, computer := range snapshot["allowed_computers"].([]map[string]any) {
+		if temp, _ := computer["temporary"].(bool); temp {
+			id, _ := computer["id"].(string)
+			name, _ := computer["name"].(string)
+			if id != "" {
+				metadata.TemporaryComputers[id] = name
+			}
+		}
 	}
 	for _, skill := range snapshot["discovery"].(computers.EnvironmentDiscovery).Skills {
 		metadata.SkillHashes[skill.Path] = skill.SHA256
@@ -194,6 +204,28 @@ func modelEnvironment(snapshot map[string]any, previous, current environmentMeta
 			}
 		}
 	}
+	if previous.Fingerprint != "" {
+		addedIDs := []string{}
+		for id := range current.TemporaryComputers {
+			if _, existed := previous.TemporaryComputers[id]; !existed {
+				addedIDs = append(addedIDs, id)
+			}
+		}
+		sort.Strings(addedIDs)
+		for _, id := range addedIDs {
+			updates = append(updates, temporaryComputerNotice(current.TemporaryComputers[id], id, true))
+		}
+		removedIDs := []string{}
+		for id := range previous.TemporaryComputers {
+			if _, exists := current.TemporaryComputers[id]; !exists {
+				removedIDs = append(removedIDs, id)
+			}
+		}
+		sort.Strings(removedIDs)
+		for _, id := range removedIDs {
+			updates = append(updates, temporaryComputerNotice(previous.TemporaryComputers[id], id, false))
+		}
+	}
 	if len(updates) > 0 {
 		visible["updates"] = updates
 	}
@@ -250,7 +282,29 @@ func (r *runtime) collectEnvironment(ctx context.Context) (map[string]any, error
 	var currentComputer map[string]any
 	var localAPI map[string]string
 	discovery := computers.UnavailableDiscovery("not_selected", "Select a Computer to discover its skills and workspace guidance.")
-	for _, id := range agent.AllowedComputers {
+	candidateIDs := append([]string{}, agent.AllowedComputers...)
+	seenIDs := map[string]bool{}
+	for _, id := range candidateIDs {
+		seenIDs[id] = true
+	}
+	rootID := domain.RootSessionID(record)
+	if allComputers, listErr := s.Store.List(ctx, "computers"); listErr == nil {
+		now := time.Now()
+		for _, item := range allComputers {
+			var c domain.Computer
+			if json.Unmarshal(item.Data, &c) != nil || !c.Temporary || c.Revoked {
+				continue
+			}
+			if c.ExpiresAt != nil && now.After(*c.ExpiresAt) {
+				continue
+			}
+			if c.OwnerSessionID == rootID && c.OwnerAgentID == record.AgentID && !seenIDs[c.ID] {
+				seenIDs[c.ID] = true
+				candidateIDs = append(candidateIDs, c.ID)
+			}
+		}
+	}
+	for _, id := range candidateIDs {
 		var computer domain.Computer
 		if err := s.Store.Get(ctx, "computers", id, &computer); err != nil {
 			allowed = append(allowed, map[string]any{"id": id, "status": "unavailable"})
@@ -258,16 +312,33 @@ func (r *runtime) collectEnvironment(ctx context.Context) (map[string]any, error
 		}
 		status := s.Hub.Status(computer)
 		value := map[string]any{"id": id, "name": computer.Name, "kind": computer.Kind, "os": status.OS, "arch": status.Arch, "online": status.Online, "revoked": computer.Revoked}
+		if computer.Temporary {
+			value["temporary"] = true
+			value["computer_api_disabled"] = true
+			if status.InitialCWD != "" {
+				value["initial_cwd"] = status.InitialCWD
+			}
+			if computer.ExpiresAt != nil {
+				value["expires_at"] = computer.ExpiresAt.UTC().Format(time.RFC3339)
+			}
+		}
 		allowed = append(allowed, value)
 		if id == record.ComputerID {
 			currentComputer = map[string]any{"id": id, "name": computer.Name, "kind": computer.Kind, "os": status.OS, "arch": status.Arch, "online": status.Online, "revoked": computer.Revoked, "cwd": record.CWD, "shell": status.Shell}
+			if computer.Temporary {
+				currentComputer["temporary"] = true
+				currentComputer["computer_api_disabled"] = true
+				if computer.ExpiresAt != nil {
+					currentComputer["expires_at"] = computer.ExpiresAt.UTC().Format(time.RFC3339)
+				}
+			}
 			discovery = computers.UnavailableDiscovery("unavailable", "The selected Computer is offline or access was revoked.")
 			if status.Online && !computer.Revoked {
 				scanCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				binding, bindErr := s.Hub.Bind(scanCtx, r.agentID, r.id, record.ComputerID, record.CWD)
 				if bindErr == nil {
 					currentComputer["cwd"], currentComputer["agent_home"], currentComputer["shell"], currentComputer["boot_id"] = binding.CWD, binding.AgentHome, binding.Shell, binding.BootID
-					if !computer.ComputerAPIDisabled && binding.APIURL != "" {
+					if !computer.ComputerAPIDisabled && !computer.Temporary && binding.APIURL != "" {
 						localAPI = map[string]string{"base_url": binding.APIURL, "capabilities_url": binding.APIURL + "/v1/capabilities"}
 					}
 					discovery, bindErr = s.Hub.Discover(scanCtx, binding)

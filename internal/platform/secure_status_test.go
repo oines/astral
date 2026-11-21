@@ -14,12 +14,18 @@ import (
 	"github.com/coder/websocket"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/releasefeed"
 	"github.com/oines/astral/internal/securetransport"
 )
 
 // secureStatusFixture exercises the real WebSocket/TLS/status client while
 // allowing updater tests to model a changing process without Docker or builds.
 func secureStatusFixture(t *testing.T, status func() domain.ComputerStatus) (*httptest.Server, computers.Credentials) {
+	t.Helper()
+	return secureUpdateStatusFixture(t, status, nil)
+}
+
+func secureUpdateStatusFixture(t *testing.T, status func() domain.ComputerStatus, target *releasefeed.Binary) (*httptest.Server, computers.Credentials) {
 	t.Helper()
 	identity, err := securetransport.Load(t.TempDir())
 	if err != nil {
@@ -70,7 +76,7 @@ func secureStatusFixture(t *testing.T, status func() domain.ComputerStatus) (*ht
 			t.Error("invalid encrypted status credential")
 			return
 		}
-		data, err = json.Marshal(map[string]any{"status": status()})
+		data, err = json.Marshal(map[string]any{"status": status(), "update_target": target})
 		if err != nil {
 			t.Error(err)
 			return

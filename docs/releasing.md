@@ -14,7 +14,7 @@ The manifest records this producer metadata as `build_provenance`, plus the pack
 
 ### Preparation
 
-`prepare-release.yml` responds to application changes on `main`. It freezes and builds the six-program distribution without waiting for source tests. Exact-source validation runs alongside packaging in the protected stage; sealing still requires all validation jobs to succeed. Service lifecycle, final installers and the pinned multi-architecture Computer environment are checked in the protected stage against the shared release programs instead of producing another set of release packages.
+`prepare-release.yml` responds to application changes on `main`. It freezes and builds the unified and standalone Daemon distributions without waiting for source tests. Exact-source validation runs alongside packaging in the protected stage; sealing still requires all validation jobs to succeed. Service lifecycle, final installers and the pinned multi-architecture Computer environment are checked in the protected stage against the shared release programs instead of producing another set of release packages.
 
 The push trigger matches product source, packaged resources, installers, shared dependencies and build/package/signing inputs. README files, engineering documentation, the independent website, tests, workflow configuration and verification/orchestration scripts alone do not start preparation. They do not allocate a version, cancel an existing preparation or replace its pending release request. Pull-request source checks and the website's own checks still apply. Mixed commits containing a product input do prepare a release; additions, edits and deletions use the same path rules. The shared root package manifest and dependency locks remain product inputs, even when a website dependency update also edits them. Runtime Markdown such as the embedded compact prompt and packaged third-party notices is included, rather than excluding Markdown by extension.
 
@@ -30,7 +30,7 @@ The pre-publication `0.0.0` update fixture is required when the full diff from t
 
 The protected stage performs these operations once:
 
-1. Sign both Darwin programs, refresh all six program checksums and share that same distribution with every desktop build. Windows and Linux packages also include the signed Darwin programs used to enroll other computers.
+1. Sign all four Darwin programs, refresh all twelve program checksums and share that same distribution with every desktop build. Windows and Linux packages also include the signed Darwin programs used to enroll other computers.
 2. Notarize the signed standalone Mac programs once, in parallel with desktop packaging. Windows/Linux do not wait for that Apple submission.
 3. Build, sign and notarize Intel and Apple silicon Apps concurrently on their respective native runners. Each opens the final ZIP and DMG, checks signatures, architecture, tickets and Gatekeeper acceptance, exercises native startup/shutdown, and validates an actual update with retained data. The signing report aggregates both native architectures. See [Apple signing](apple-signing.md).
 4. Build Windows and Linux packages once from the shared signed distribution. Retain final Windows ZIP startup/cleanup, NSIS replacement, installed Linux DEB startup, AppImage replacement and current-user headless installation/recovery acceptance. When required by the change scope, pre-publication update fixtures use the same payload with an older App version and a loopback feed; they are distinct from untouched official previous releases.
@@ -60,7 +60,7 @@ Applications pull the pinned environment, create the data volume and container, 
 
 ## Public assets and capabilities
 
-A complete public Release contains these six unified executable names:
+A complete public Release contains six unified Server/CLI executables (`distribution_names`) plus six standalone lightweight Daemon executables (`daemon_names`, built with `-tags daemon`):
 
 ```text
 astral-darwin-amd64
@@ -69,12 +69,18 @@ astral-linux-amd64
 astral-linux-arm64
 astral-windows-amd64.exe
 astral-windows-arm64.exe
+astral-daemon-darwin-amd64
+astral-daemon-darwin-arm64
+astral-daemon-linux-amd64
+astral-daemon-linux-arm64
+astral-daemon-windows-amd64.exe
+astral-daemon-windows-arm64.exe
 ```
 
-All six are needed by a Server or Desktop that offers enrollment of other platforms. Other assets are:
+All six unified `astral-*` binaries are needed by a Server or Desktop that offers enrollment of other platforms; Computer installers and remote Daemon updates prefer `astral-daemon-*` and fall back to `astral-*` on older releases. Desktop packages bundle only the six unified `astral-*` binaries (not the six standalone Daemons). All four Darwin executables (`astral-darwin-*` and `astral-daemon-darwin-*`) are signed and notarized together. Other assets are:
 
 - Desktop DMG/ZIP, NSIS/ZIP and AppImage/DEB files named `Astral-${version}-${os}-${arch}.${ext}`. Mac and Windows use `x64` or `arm64`; Linux AppImages use `x86_64` or `arm64`, and Linux DEBs use `amd64` or `arm64`.
-- `checksums.txt`, covering exactly the six unified executables.
+- `checksums.txt`, covering all twelve executables (six unified `astral-*` plus six standalone `astral-daemon-*`).
 - `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt` and the versioned Linux `install-server.sh`.
 - `release-manifest.json`, identifying the source, CI/build runs, runtime data formats, asset sizes/hashes and implemented update capabilities.
 - `mac-signing-report.json` schema 3, containing three distinct Accepted Apple submission IDs, signature/package checks, certificate expiration, both actual `native_tested_arches` and exact Mac artifact hashes. Historical schema 2 reports remain readable as historical evidence; they do not establish new dual-native acceptance.

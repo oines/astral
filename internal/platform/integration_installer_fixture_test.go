@@ -3,12 +3,9 @@
 package platform
 
 import (
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,31 +20,29 @@ import (
 // production installers retain their fixed official HTTPS release origin.
 func installerReleaseFixture(t *testing.T, directory, distribution string) (script, certificate string) {
 	t.Helper()
-	name := "astral-" + runtime.GOOS + "-" + runtime.GOARCH
+	name := "astral-daemon-" + runtime.GOOS + "-" + runtime.GOARCH
 	installer := "install.sh"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 		installer = "install.ps1"
 	}
 	binary := filepath.Join(distribution, name)
-	file, err := os.Open(binary)
+	if _, err := os.Stat(binary); err != nil {
+		t.Fatal(err)
+	}
+	// Use the publisher's manifest as shipped. Serving only the expected
+	// standalone asset also checks that installation selects it from both names.
+	manifest, err := os.ReadFile(filepath.Join(distribution, "checksums.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	hash := sha256.New()
-	_, err = io.Copy(hash, file)
-	_ = file.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest := hex.EncodeToString(hash.Sum(nil)) + "  " + name + "\n"
 	release := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/" + name:
 			http.ServeFile(w, r, binary)
 		case "/checksums.txt":
 			w.Header().Set("Content-Type", "text/plain")
-			_, _ = io.WriteString(w, manifest)
+			_, _ = w.Write(manifest)
 		default:
 			http.NotFound(w, r)
 		}

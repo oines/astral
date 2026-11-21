@@ -6,7 +6,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { assertEntitlements, assertSigningMetadata, darwinNames, signBinaries, signingEnvironment, verifyApp, verifyBinaries, verifyChecksums } from './mac-signing.mjs'
-import { digest, distributionNames } from './release-assets.mjs'
+import { daemonNames, digest, distributionNames, executableNames } from './release-assets.mjs'
 
 const environment = {
   APPLE_TEAM_ID: '6N6W6Z6739',
@@ -28,6 +28,7 @@ test('the locked electron-builder v26 schema loads the independent signed config
   const builderRequire = createRequire(require.resolve('electron-builder'))
   const { getConfig, validateConfiguration } = builderRequire('app-builder-lib/out/util/config/config.js')
   const previous = Object.fromEntries(Object.keys(environment).map(key => [key, process.env[key]]))
+  const appOutDir = await mkdtemp(path.join(tmpdir(), 'astral-release-hooks-'))
   try {
     Object.assign(process.env, environment)
     const config = await getConfig(fileURLToPath(new URL('../apps/desktop/', import.meta.url)), 'electron-builder.release.cjs')
@@ -44,7 +45,20 @@ test('the locked electron-builder v26 schema loads the independent signed config
     assert.ok(ignored.test('/release/Astral.app/Contents/Resources/bin/astral-darwin-arm64'))
     assert.ok(!ignored.test('/release/Astral.app/Contents/MacOS/Astral'))
     assert.ok(!ignored.test('/release/Astral.app/Contents/Resources/bin/astral-darwin-arm64-other'))
+
+    // Exercise the loaded hooks on the actual Desktop layout. They must reach
+    // integrity checks on a bundled program even though six Daemons are absent.
+    const binaries = path.join(appOutDir, 'Astral.app/Contents/Resources/bin')
+    await mkdir(binaries, { recursive: true })
+    for (const name of distributionNames) await writeFile(path.join(binaries, name), name)
+    const sums = await Promise.all(distributionNames.map(async name => `${await digest(path.join(binaries, name))}  ${name}`))
+    await writeFile(path.join(binaries, 'checksums.txt'), [...sums, ...daemonNames.map(name => `${'1'.repeat(64)}  ${name}`)].join('\n') + '\n')
+    await writeFile(path.join(binaries, 'astral-linux-amd64'), 'modified after signing')
+    const packed = { appOutDir, packager: { appInfo: { productFilename: 'Astral' } } }
+    await assert.rejects(config.afterPack(packed), /Distribution checksum mismatch: astral-linux-amd64/)
+    await assert.rejects(config.afterSign(packed), /Distribution checksum mismatch: astral-linux-amd64/)
   } finally {
+    await rm(appOutDir, { recursive: true, force: true })
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key]
       else process.env[key] = value
@@ -71,10 +85,10 @@ test('Electron only allows JIT and Go programs receive no entitlements', () => {
   }
 })
 
-test('signing final bytes refreshes all six hashes before verification and rejects subsequent tampering', async () => {
+test('signing final bytes refreshes all release executable hashes before verification and rejects subsequent tampering', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'astral-signing-fixture-'))
   try {
-    for (const name of distributionNames) await writeFile(path.join(directory, name), `unsigned ${name}\n`)
+    for (const name of executableNames) await writeFile(path.join(directory, name), `unsigned ${name}\n`)
     await writeFile(path.join(directory, 'checksums.txt'), 'stale pre-sign build manifest\n')
     const calls = []
     const command = async (executable, args) => {
@@ -93,10 +107,10 @@ test('signing final bytes refreshes all six hashes before verification and rejec
       return { stdout: '', stderr: '' }
     }
     await signBinaries(directory, { configuration, command })
-    assert.equal(calls.filter(call => call.args.includes('--sign')).length, 2)
-    assert.deepEqual(calls.slice(0, 2).map(call => path.basename(call.args.at(-1))), darwinNames)
+    assert.equal(calls.filter(call => call.args.includes('--sign')).length, 4)
+    assert.deepEqual(calls.slice(0, 4).map(call => path.basename(call.args.at(-1))), darwinNames)
     const manifest = await readFile(path.join(directory, 'checksums.txt'), 'utf8')
-    for (const name of distributionNames) assert.ok(manifest.includes(`${await digest(path.join(directory, name))}  ${name}\n`))
+    for (const name of executableNames) assert.ok(manifest.includes(`${await digest(path.join(directory, name))}  ${name}\n`))
     await verifyBinaries(directory, { configuration, command })
     await writeFile(path.join(directory, darwinNames[0]), 'tampered')
     await assert.rejects(verifyChecksums(directory), /checksum mismatch/)

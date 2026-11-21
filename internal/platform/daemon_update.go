@@ -12,6 +12,10 @@ import (
 	"github.com/oines/astral/internal/releasefeed"
 )
 
+// An older resident supervisor can only validate unified executable names,
+// even after its child has been updated to a newer version.
+const standaloneSupervisorEnv = "ASTRAL_CONTAINER_STANDALONE_UPDATE"
+
 const containerUpdateRequest = "/usr/local/lib/astral/update-request.json"
 
 type containerUpdate struct {
@@ -31,6 +35,9 @@ func configureDaemonUpdate(d *computers.Daemon) {
 		}
 	}
 	d.Hello.Capabilities = append(d.Hello.Capabilities, computers.DaemonUpdateCapability)
+	if !supervised || os.Getenv(standaloneSupervisorEnv) == "1" {
+		d.Hello.Capabilities = append(d.Hello.Capabilities, computers.StandaloneUpdateCapability)
+	}
 	d.Update = func(ctx context.Context, binary releasefeed.Binary) error {
 		if err := binary.Validate(runtime.GOOS, runtime.GOARCH); err != nil {
 			return err
@@ -69,6 +76,6 @@ func configureDaemonUpdate(d *computers.Daemon) {
 		if state.State != "running" {
 			return fmt.Errorf("managed Daemon service is not running (state=%s, id=%s, backend=%s); use the update command", state.State, state.ID, state.Backend)
 		}
-		return manager.StartUpdate(ctx, target)
+		return manager.StartUpdate(ctx, target, binary.ProxyOverride())
 	}
 }

@@ -20,15 +20,31 @@ Commands run under the OS account hosting Astral Server. Once it shows online, j
 
 Open **Settings → Computers → Add Computer → Connect another machine** to generate an enrollment command, then run it in a terminal on **the target computer** (Shell on macOS/Linux, PowerShell on Windows).
 
-Before generating the command, check two fields:
+Before generating the command, check three fields:
 - **Server address:** an address the target computer can reach (LAN IP on the same network, or your VPN address). `127.0.0.1` points to the target itself and cannot reach another host.
 - **Operating system:** the OS running the command (for a container, pick the host OS).
+- **Download source:** keep **Official GitHub**, or choose a third-party mirror / custom HTTPS URL if the target machine cannot reach GitHub directly.
 
-Run the **complete command** as the system user whose file permissions you want the Bot to have. It installs the background service and the `astral` CLI, then brings the computer online in Astral.
+Run the **complete command** as the system user whose file permissions you want the Bot to have. The installer downloads the standalone `astral-daemon` binary, installs the user background service, and brings the computer online in Astral. Permanent services remember the selected download source. If a previous computer installation supplied the full management CLI, manual updates keep that CLI available. See [terminal access](/docs/hosting/command-line/) to use it from another machine.
 
 :::note[Pairing credentials and transport]
 Enrollment commands carry temporary pairing credentials—use them only on the intended machine and regenerate if expired. Computers connect outward to Server over an encrypted channel that verifies the Server's identity, using either HTTP or HTTPS enrollment URLs.
 :::
+
+## Option 3: Connect a temporary computer (one session only)
+
+For shared lab computers, borrowed laptops, or short-lived virtual machines where you do not want to install a background service, connect a **temporary computer** directly from the session you are working in:
+
+1. Open the computer menu in a root session's input bar and choose **Connect temporary Computer**.
+2. Set the **Server address**, **Duration** (2, 4, or 8 hours), **Target operating system**, and **Download source**, then click **Generate command**.
+3. Open a terminal in the folder you want to work in and run the command (or check **Already have astral-daemon** if you brought `astral-daemon` on a USB drive).
+
+What makes a temporary computer different:
+- **Zero local installation:** downloads into a temporary directory, runs in the foreground, does not modify `PATH`, requires no administrator privileges, does not write `credentials.json`, and deletes its temporary folder on exit.
+- **Starts in your current folder:** the session's initial working directory on that machine is the folder where you ran the command.
+- **Scoped to one session:** only the owning root session and its subagents can use it—never other sessions or Bots. Connecting it notifies the session context without automatically switching your active computer; select it in the computer menu (or ask the Bot to switch) when you are ready.
+- **Untrusted-host defaults:** **Astral API** is permanently disabled and cannot be turned on; Managed Skills are not synced to the machine.
+- **Automatic cleanup:** press `Ctrl+C`, close the terminal, let the duration expire, archive/delete the session, or click **Disconnect** in the session's computer menu (or **Disconnect and remove** under **Settings → Computers → Temporary connections**). Once removed, it disappears from all lists while your conversation history remains intact.
 
 ## Grant a Bot access
 
@@ -55,17 +71,19 @@ When turned off, Server blocks API calls and new event deliveries from that comp
 
 ## Update a connected Daemon
 
-The Daemon is the Astral background service running on each connected computer. The host Daemon updates with Desktop or Server; update remote computers from their details via **Daemon maintenance → Update Daemon**.
+The Daemon is the Astral background service running on each connected computer. The host Daemon updates with Desktop or Server; update remote computers from their details via **Daemon maintenance → Update Daemon**. You can pick a **Download source** in the same section before starting the update—the Daemon uses it for that download and remembers it in its user service configuration (pick **Official GitHub** to switch back to direct downloads).
 
 :::caution[Updates interrupt active tasks]
 Updating restarts the background service, so finish or stop important work first. Computer identity, credentials, and working files stay intact.
 :::
 
-If a machine is offline or managed update fails, run the update command shown in the same section directly on that machine (or on the container host).
+If a machine is offline or managed update fails, copy the update command shown in the same section and run it directly on that machine (or on the container host; container computers let you pick the host OS).
 
 ## When the target Computer cannot reach GitHub
 
-If GitHub is unreachable from the target computer, set a download proxy in its terminal before pasting the full enrollment or update command (only installer scripts and release downloads use this proxy—normal computer-to-Server traffic does not; see [download proxy guide](/docs/hosting/server/#when-github-is-unreachable)):
+Choose a mirror or custom HTTPS prefix under **Download source** when adding a remote computer, connecting a temporary computer, or updating a Daemon. Switching the download source updates the command immediately without regenerating the pairing token.
+
+Only installer scripts and release downloads use the mirror—normal computer-to-Server traffic stays direct, and every downloaded binary is still verified against SHA-256 checksums. If you run installer commands manually from a script, you can also set `ASTRAL_GITHUB_PROXY` in the terminal beforehand (see [download proxy guide](/docs/hosting/server/#when-github-is-unreachable)):
 
 ```sh
 # macOS / Linux (clear with: unset ASTRAL_GITHUB_PROXY)

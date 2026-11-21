@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/releasefeed"
 )
 
@@ -22,7 +23,7 @@ func TestContainerSupervisorPreservesEnvironmentAndRecoversFailedRelease(t *test
 	if runtime.GOOS == "windows" {
 		t.Skip("Linux container process lifecycle uses Unix signals")
 	}
-	for _, scenario := range []string{"success", "broken", "tampered-after-manifest", "manifest-rejected", "invalid-stage", "stale-boot", "not-newer", "cancelled-verification", "restart-failed"} {
+	for _, scenario := range []string{"success", "authorized-source", "broken", "tampered-after-manifest", "manifest-rejected", "invalid-stage", "stale-boot", "not-newer", "cancelled-verification", "restart-failed"} {
 		t.Run(scenario, func(t *testing.T) {
 			broken := scenario == "broken"
 			tampered := scenario == "tampered-after-manifest"
@@ -46,7 +47,7 @@ func TestContainerSupervisorPreservesEnvironmentAndRecoversFailedRelease(t *test
 				return []byte("#!/bin/sh\ntrap 'exit 0' INT TERM\nprintf '%s %s\\n' " + quote(version) + " \"$$\" > " + quote(marker) + "\nwhile :; do sleep 1; done\n")
 			}
 			paths := containerSupervisorPaths{binary: filepath.Join(programs, "astral"), backup: filepath.Join(programs, ".astral-previous"), request: filepath.Join(programs, "update.json"), reconnectTimeout: 500 * time.Millisecond}
-			if scenario == "success" || rejected {
+			if scenario == "success" || scenario == "authorized-source" || rejected {
 				// Allow the real shell startup and TLS status polling to complete
 				// under race instrumentation and concurrent package tests.
 				paths.reconnectTimeout = 3 * time.Second
@@ -54,7 +55,14 @@ func TestContainerSupervisorPreservesEnvironmentAndRecoversFailedRelease(t *test
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			var verifications atomic.Int64
-			paths.verify = func(context.Context, releasefeed.Binary) error {
+			source := githubrelease.ProxyOverride{}
+			if scenario == "authorized-source" {
+				source = githubrelease.ProxyOverride{Set: true, Prefix: "https://mirror.example/"}
+			}
+			paths.verify = func(_ context.Context, _ releasefeed.Binary, received githubrelease.ProxyOverride) error {
+				if received != source {
+					t.Errorf("supervisor verification source = %+v, want %+v", received, source)
+				}
 				attempt := verifications.Add(1)
 				if cancelled {
 					cancel()
@@ -85,7 +93,19 @@ func TestContainerSupervisorPreservesEnvironmentAndRecoversFailedRelease(t *test
 			}
 			old := script("0.1.0")
 			_ = os.WriteFile(paths.binary, old, 0700)
-			_, credentials := secureStatusFixture(t, func() domain.ComputerStatus {
+			next := script("0.1.1")
+			if broken {
+				next = []byte("#!/bin/sh\nexit 17\n")
+			}
+			hash := sha256.Sum256(next)
+			descriptor := releasefeed.Binary{Version: "0.1.1", Name: "astral-linux-" + runtime.GOARCH, SHA256: fmt.Sprintf("%x", hash)}
+			var approved *releasefeed.Binary
+			if scenario == "authorized-source" {
+				selected := descriptor
+				selected.GitHubProxy = &source.Prefix
+				approved = &selected
+			}
+			_, credentials := secureUpdateStatusFixture(t, func() domain.ComputerStatus {
 				raw, _ := os.ReadFile(marker)
 				fields := strings.Fields(string(raw))
 				status := domain.ComputerStatus{}
@@ -95,7 +115,7 @@ func TestContainerSupervisorPreservesEnvironmentAndRecoversFailedRelease(t *test
 					status.DaemonVersion = fields[0]
 				}
 				return status
-			})
+			}, approved)
 			if err := WriteJSON(filepath.Join(root, "credentials.json"), credentials); err != nil {
 				t.Fatal(err)
 			}
@@ -123,12 +143,7 @@ func TestContainerSupervisorPreservesEnvironmentAndRecoversFailedRelease(t *test
 				}
 				return false
 			})
-			next := script("0.1.1")
-			if broken {
-				next = []byte("#!/bin/sh\nexit 17\n")
-			}
-			hash := sha256.Sum256(next)
-			descriptor := releasefeed.Binary{Version: "0.1.1", Name: "astral-linux-" + runtime.GOARCH, SHA256: fmt.Sprintf("%x", hash)}
+
 			stage := filepath.Join(programs, ".astral-release-"+descriptor.SHA256)
 			_ = os.WriteFile(stage, next, 0700)
 			request := containerUpdate{Binary: descriptor, Path: stage, PreviousBoot: previousBoot}

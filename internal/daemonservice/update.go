@@ -7,12 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/oines/astral/internal/githubrelease"
 )
 
 // StartUpdate launches a separate, visible current-user job. A child of the
 // Daemon would be killed by systemd's cgroup or Windows' service lifecycle when
 // the old Daemon stops, so ordinary process detachment is insufficient.
-func (m *Manager) StartUpdate(ctx context.Context, executable string) error {
+func (m *Manager) StartUpdate(ctx context.Context, executable string, source githubrelease.ProxyOverride) error {
 	if !filepath.IsAbs(executable) || strings.ContainsAny(executable, "\x00\r\n") {
 		return fmt.Errorf("update executable must be an absolute path")
 	}
@@ -20,6 +22,13 @@ func (m *Manager) StartUpdate(ctx context.Context, executable string) error {
 		return fmt.Errorf("update executable is unavailable")
 	}
 	args := []string{"computer", "update", "--root", m.root, "--managed-helper"}
+	if source.Set {
+		prefix, err := githubrelease.NormalizeProxy(source.Prefix)
+		if err != nil {
+			return err
+		}
+		args = append(args, "--github-proxy="+prefix)
+	}
 	log := filepath.Join(m.root, "update.log")
 	switch m.platform {
 	case "linux":

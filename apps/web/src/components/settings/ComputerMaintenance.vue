@@ -5,15 +5,27 @@ import { Button, ConfirmPopover, SettingsRow, SettingsSection, useDelayedPending
 import { useI18n } from 'vue-i18n'
 import type { Computer } from '../../lib/types'
 import { errorText, request } from '../../lib/api'
+import { applyDownloadSource, useDownloadSource } from '../../lib/download-source'
 import CopyValue from '../CopyValue.vue'
+import DownloadSourceRow from './DownloadSourceRow.vue'
 import { useAction } from '../../composables/useAction'
 
 const props = defineProps<{ computer: Computer }>()
 const { t } = useI18n()
 const maintenance = ref<AstralInternalDomainComputerMaintenance>()
 const commandPlatform = ref<'shell' | 'powershell'>('shell')
+const downloadSource = useDownloadSource()
 const local = computed(() => props.computer.local || props.computer.kind === 'local')
-const command = computed(() => commandPlatform.value === 'powershell' ? maintenance.value?.powershell_command : maintenance.value?.command)
+const isContainer = computed(() => props.computer.kind === 'container')
+const effectivePlatform = computed<'shell' | 'powershell'>(() => isContainer.value ? commandPlatform.value : (props.computer.os === 'windows' ? 'powershell' : 'shell'))
+const command = computed(() => {
+  if (!downloadSource.valid.value) return ''
+  const raw = effectivePlatform.value === 'powershell' ? maintenance.value?.powershell_command || '' : maintenance.value?.command || ''
+  return applyDownloadSource(raw, effectivePlatform.value, downloadSource.proxy.value)
+})
+const confirmDescription = computed(() => downloadSource.isMirror.value
+  ? t('computerMaintenance.confirmUpdateWithSource', { source: downloadSource.displayLabel(t) })
+  : t('computerMaintenance.confirmUpdate'))
 const error = ref('')
 const loading = ref(false)
 const waiting = useDelayedPending(loading)
@@ -27,7 +39,7 @@ async function load() {
   clearTimeout(poll)
   error.value = ''
   loading.value = false
-  if (local.value || props.computer.revoked) return
+  if (local.value || props.computer.revoked || props.computer.temporary) return
   loading.value = true
   try {
     const result = await request(computerMaintenance({ path: { id: props.computer.id } }))
@@ -41,10 +53,14 @@ async function load() {
   }
 }
 async function update() {
+  if (!downloadSource.valid.value) return
   await action.run(async () => {
     const previous = maintenance.value?.update.started_at
     try {
-      const result = await request(updateComputerDaemon({ path: { id: props.computer.id } }))
+      const result = await request(updateComputerDaemon({
+        path: { id: props.computer.id },
+        body: { github_proxy: downloadSource.proxy.value },
+      }))
       if (maintenance.value) maintenance.value.update = result
     } catch (e) {
       await load()
@@ -61,7 +77,7 @@ watch([() => props.computer.id, () => props.computer.root, () => props.computer.
 <template>
   <SettingsSection
     :title="t('computerMaintenance.title')"
-    :description="t(local ? 'computerMaintenance.localHint' : computer.kind === 'container' ? 'computerMaintenance.containerHint' : 'computerMaintenance.remoteHint')"
+    :description="t(local ? 'computerMaintenance.localHint' : isContainer ? 'computerMaintenance.containerHint' : 'computerMaintenance.remoteHint')"
   >
     <SettingsRow
       v-if="local"
@@ -70,11 +86,12 @@ watch([() => props.computer.id, () => props.computer.root, () => props.computer.
       <span>{{ t('computerMaintenance.withServer') }}</span>
     </SettingsRow>
     <template v-else>
+      <DownloadSourceRow :disabled="updating || action.busy.value" />
       <SettingsRow :label="t('computerMaintenance.updateDaemon')">
         <ConfirmPopover
           v-model:open="confirming"
           :title="t('computerMaintenance.updateDaemon')"
-          :description="t('computerMaintenance.confirmUpdate')"
+          :description="confirmDescription"
           :confirm-label="t('computerMaintenance.updateDaemon')"
           :cancel-label="t('cancel')"
           :busy="action.busy.value"
@@ -85,7 +102,7 @@ watch([() => props.computer.id, () => props.computer.root, () => props.computer.
           <template #trigger>
             <Button
               size="small"
-              :disabled="!maintenance?.can_update || updating || action.busy.value"
+              :disabled="!maintenance?.can_update || updating || action.busy.value || !downloadSource.valid.value"
               :busy="updating"
             >
               {{ t('computerMaintenance.updateDaemon') }}
@@ -107,10 +124,13 @@ watch([() => props.computer.id, () => props.computer.root, () => props.computer.
       >
         {{ maintenance.update.error || t(`computerMaintenance.states.${maintenance.update.state}`) }}
       </p>
-      <SettingsRow :label="t(computer.kind === 'container' ? 'computerCommand.hostPlatform' : 'computerCommand.targetPlatform')">
+      <SettingsRow
+        v-if="isContainer"
+        :label="t('computerCommand.hostPlatform')"
+      >
         <select
           v-model="commandPlatform"
-          :aria-label="t(computer.kind === 'container' ? 'computerCommand.hostPlatform' : 'computerCommand.targetPlatform')"
+          :aria-label="t('computerCommand.hostPlatform')"
         >
           <option value="shell">
             {{ t('computerCommand.shell') }}

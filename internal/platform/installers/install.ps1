@@ -6,7 +6,8 @@ param(
   [string]$Root,
   [switch]$Container,
   [switch]$Update,
-	[switch]$Foreground,
+  [switch]$Foreground,
+  [switch]$Temporary,
   [string]$ContainerID,
   [Alias('github-proxy', '-github-proxy')]
   [AllowEmptyString()]
@@ -76,6 +77,9 @@ function Get-OfficialAsset([string]$Name, [string]$Target) {
   } finally { $client.Dispose(); $handler.Dispose() }
 }
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+if ($Temporary -and ($Update -or $Container -or $ContainerID)) {
+  throw 'Temporary mode cannot be combined with -Update, -Container or -ContainerID.'
+}
 if (-not $Update) {
   $serverUri = [Uri]$Server
   if (-not $serverUri.IsAbsoluteUri -or -not $serverUri.Host -or $serverUri.Scheme -notin @('http', 'https') -or $serverUri.UserInfo -or $serverUri.Query -or $serverUri.Fragment) { throw 'Astral Server URL must use HTTP or HTTPS without credentials, a query or a fragment.' }
@@ -143,47 +147,76 @@ namespace AstralInstaller {
   }
   return [AstralInstaller.NativePath]::Expand([IO.Path]::GetFullPath($Path)).TrimEnd('\')
 }
-if (Test-Path -LiteralPath $current) {
-  $link = Get-Item -LiteralPath $current -Force
-  $targets = @($link.Target)
-  if ($link.LinkType -ne 'Junction' -or $targets.Count -ne 1) { throw 'The Computer current executable must be an installer-managed junction.' }
-  $longInstallBase = Get-LongInstallerPath $installBase
-  $longTarget = Get-LongInstallerPath $targets[0]
-  if ($longTarget -notmatch ('^' + [Regex]::Escape($longInstallBase + '\') + '[a-f0-9]{64}$')) { throw 'The Computer current executable must be an installer-managed junction.' }
-}
-$existingCommand = Get-Command astral -ErrorAction SilentlyContinue
-if ($existingCommand) {
-  if ($existingCommand.CommandType -ne 'Application' -or -not (Test-ManagedCommand $existingCommand.Source)) { throw "An unrelated astral command already exists: $($existingCommand.Name). It was not replaced." }
-  $commandPath = $existingCommand.Source
-} else {
-  foreach ($directory in ($env:PATH -split ';')) {
-    $directory = $directory.Trim('"')
-    if (Test-CommandDirectory $directory) { $commandPath = Join-Path $directory 'astral.cmd'; break }
+if (-not $Temporary) {
+  if (Test-Path -LiteralPath $current) {
+    $link = Get-Item -LiteralPath $current -Force
+    $targets = @($link.Target)
+    if ($link.LinkType -ne 'Junction' -or $targets.Count -ne 1) { throw 'The Computer current executable must be an installer-managed junction.' }
+    $longInstallBase = Get-LongInstallerPath $installBase
+    $longTarget = Get-LongInstallerPath $targets[0]
+    if ($longTarget -notmatch ('^' + [Regex]::Escape($longInstallBase + '\') + '[a-f0-9]{64}$')) { throw 'The Computer current executable must be an installer-managed junction.' }
   }
-  if (-not $commandPath) { $commandPath = Join-Path $installBase 'astral.cmd'; $addCommandDirectory = $true }
-  if ((Test-Path -LiteralPath $commandPath) -and -not (Test-ManagedCommand $commandPath)) { throw "Refusing to replace an unrelated command: $commandPath" }
+  $existingCommand = Get-Command astral -ErrorAction SilentlyContinue
+  if ($existingCommand) {
+    if ($existingCommand.CommandType -ne 'Application' -or -not (Test-ManagedCommand $existingCommand.Source)) { throw "An unrelated astral command already exists: $($existingCommand.Name). It was not replaced." }
+    $commandPath = $existingCommand.Source
+  } else {
+    foreach ($directory in ($env:PATH -split ';')) {
+      $directory = $directory.Trim('"')
+      if (Test-CommandDirectory $directory) { $commandPath = Join-Path $directory 'astral.cmd'; break }
+    }
+    if (-not $commandPath) { $commandPath = Join-Path $installBase 'astral.cmd'; $addCommandDirectory = $true }
+    if ((Test-Path -LiteralPath $commandPath) -and -not (Test-ManagedCommand $commandPath)) { throw "Refusing to replace an unrelated command: $commandPath" }
+  }
+  $stagingDirectory = Join-Path $installBase ([Guid]::NewGuid().ToString('N'))
+} else {
+  $stagingDirectory = Join-Path ([IO.Path]::GetTempPath()) ('astral-temp-' + [Guid]::NewGuid().ToString('N'))
 }
-$temporary = Join-Path $installBase ([Guid]::NewGuid().ToString('N'))
-[IO.Directory]::CreateDirectory($temporary) | Out-Null
+[IO.Directory]::CreateDirectory($stagingDirectory) | Out-Null
 try {
-  $name = "astral-windows-$arch.exe"
-  $download = Join-Path $temporary 'astral.exe'
-  Get-OfficialAsset $name $download
-  $manifestPath = Join-Path $temporary 'checksums.txt'
+  $daemonName = "astral-daemon-windows-$arch.exe"
+  $fullName = "astral-windows-$arch.exe"
+  $manifestPath = Join-Path $stagingDirectory 'checksums.txt'
   Get-OfficialAsset 'checksums.txt' $manifestPath
   $manifest = [IO.File]::ReadAllText($manifestPath)
-  $matches = @($manifest -split "`n" | Where-Object { $_ -match ('^([a-fA-F0-9]{64})\s+' + [Regex]::Escape($name) + '\s*$') })
-  if ($matches.Count -ne 1) { throw 'Astral distribution has no unique checksum.' }
-  $expected = ($matches[0] -split '\s+')[0].ToLowerInvariant()
+  $name = $daemonName
+  $checksumLines = @($manifest -split "`n" | Where-Object { $_ -match ('^([a-fA-F0-9]{64})\s+' + [Regex]::Escape($name) + '\s*$') })
+  $hasStandalone = $checksumLines.Count -gt 0
+  $keepFullCLI = $false
+  $currentProgram = Join-Path $current 'astral.exe'
+  if (-not $Temporary -and $hasStandalone -and (Test-Path -LiteralPath $currentProgram -PathType Leaf)) {
+    # Only the unified CLI reports Host/Core data formats in version metadata.
+    $metadata = (& $currentProgram version --json | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not identify the installed Astral command.' }
+    $keepFullCLI = $metadata -match '"data_formats"\s*:'
+  }
+  if (-not $hasStandalone -or $keepFullCLI) {
+    $name = $fullName
+    $checksumLines = @($manifest -split "`n" | Where-Object { $_ -match ('^([a-fA-F0-9]{64})\s+' + [Regex]::Escape($name) + '\s*$') })
+  }
+  if ($checksumLines.Count -ne 1) { throw 'Astral distribution has no unique checksum.' }
+  $expected = ($checksumLines[0] -split '\s+')[0].ToLowerInvariant()
+  $download = Join-Path $stagingDirectory 'astral.exe'
+  Get-OfficialAsset $name $download
   $actual = Get-FileSHA256 $download
   if ($actual -ne $expected) { throw 'Astral checksum did not match; the installed version is unchanged.' }
+  if ($Temporary) {
+    $tempArgs = @('computer', 'connect', '--temporary', '--server', $Server, '--server-pin', $ServerPin, '--enrollment', $Enrollment, '--token', $Token)
+    & $download @tempArgs
+    if ($LASTEXITCODE -ne 0) { throw "Astral exited with code $LASTEXITCODE. See the diagnostic above." }
+    return
+  }
   $release = Join-Path $installBase $actual
   [IO.Directory]::CreateDirectory($release) | Out-Null
   $executable = Join-Path $release 'astral.exe'
   if ((Test-Path -LiteralPath $executable) -and (Get-FileSHA256 $executable) -ne $actual) { throw 'An installed release is damaged. Remove that version directory and rerun this command.' }
   if (-not (Test-Path -LiteralPath $executable)) { Move-Item -LiteralPath $download -Destination $executable }
   $arguments = @('computer')
-  if ($Update) { $arguments += @('update', '--update') }
+  if ($Update) {
+    $arguments += @('update', '--update')
+    # Windows PowerShell removes an environment variable assigned an empty string.
+    if ($hasStandalone) { $arguments += ('--github-proxy=' + $GitHubProxy) }
+  }
   else { $arguments += @('connect', '--server', $Server, '--server-pin', $ServerPin, '--enrollment', $Enrollment, '--token', $Token) }
   if ($Root) { $arguments += @('--root', $Root) }
   if ($Foreground) { $arguments += '--foreground' }
@@ -248,5 +281,5 @@ try {
     if (Test-Path -LiteralPath $pendingCurrent) { [IO.Directory]::Delete($pendingCurrent) }
   }
 } finally {
-  Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $stagingDirectory -Recurse -Force -ErrorAction SilentlyContinue
 }
