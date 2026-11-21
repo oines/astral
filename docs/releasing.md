@@ -14,7 +14,7 @@ The manifest records this producer metadata as `build_provenance`, plus the pack
 
 ### Preparation
 
-`prepare-release.yml` responds to application changes on `main`. It freezes and builds the six-program distribution without waiting for source tests. Exact-source validation runs alongside packaging in the protected stage; sealing still requires all validation jobs to succeed. Service lifecycle, final installers and the pinned multi-architecture Computer environment are checked in the protected stage against the shared release programs instead of producing another set of release packages.
+`prepare-release.yml` responds to application changes on `main`. It freezes and builds the unified and standalone Daemon distributions without waiting for source tests. Exact-source validation runs alongside packaging in the protected stage; sealing still requires all validation jobs to succeed. Service lifecycle, final installers and the pinned multi-architecture Computer environment are checked in the protected stage against the shared release programs instead of producing another set of release packages.
 
 The push trigger matches product source, packaged resources, installers, shared dependencies and build/package/signing inputs. README files, engineering documentation, the independent website, tests, workflow configuration and verification/orchestration scripts alone do not start preparation. They do not allocate a version, cancel an existing preparation or replace its pending release request. Pull-request source checks and the website's own checks still apply. Mixed commits containing a product input do prepare a release; additions, edits and deletions use the same path rules. The shared root package manifest and dependency locks remain product inputs, even when a website dependency update also edits them. Runtime Markdown such as the embedded compact prompt and packaged third-party notices is included, rather than excluding Markdown by extension.
 
@@ -30,7 +30,7 @@ The pre-publication `0.0.0` update fixture is required when the full diff from t
 
 The protected stage performs these operations once:
 
-1. Sign both Darwin programs, refresh all six program checksums and share that same distribution with every desktop build. Windows and Linux packages also include the signed Darwin programs used to enroll other computers.
+1. Sign all four Darwin programs, refresh all twelve program checksums and share that same distribution with every desktop build. Windows and Linux packages also include the signed Darwin programs used to enroll other computers.
 2. Notarize the signed standalone Mac programs once, in parallel with desktop packaging. Windows/Linux do not wait for that Apple submission.
 3. Build, sign and notarize Intel and Apple silicon Apps concurrently on their respective native runners. Each opens the final ZIP and DMG, checks signatures, architecture, tickets and Gatekeeper acceptance, exercises native startup/shutdown, and validates an actual update with retained data. The signing report aggregates both native architectures. See [Apple signing](apple-signing.md).
 4. Build Windows and Linux packages once from the shared signed distribution. Retain final Windows ZIP startup/cleanup, NSIS replacement, installed Linux DEB startup, AppImage replacement and current-user headless installation/recovery acceptance. When required by the change scope, pre-publication update fixtures use the same payload with an older App version and a loopback feed; they are distinct from untouched official previous releases.

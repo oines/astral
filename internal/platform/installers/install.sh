@@ -218,6 +218,12 @@ full_binary_name="astral-$target_os-$target_arch"
 release_base=https://github.com/oines/astral/releases/latest/download
 curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' "$github_proxy$release_base/checksums.txt" -o "$temporary/checksums.txt"
 binary_name=$daemon_binary_name
+# A Computer-only install publishes its executable on PATH. Preserve the
+# management commands if this installation already provides the unified CLI.
+if [ "$temporary_mode" != 1 ] && [ "$command_reused" != 1 ] && [ -x "$install_base/current/astral" ]; then
+  metadata=$("$install_base/current/astral" version --json) || computer_install_error 'Could not identify the installed Astral command.'
+  case "$metadata" in *'"data_formats"'*) binary_name=$full_binary_name ;; esac
+fi
 expected="$(awk -v file="$binary_name" '$2 == file { print $1 }' "$temporary/checksums.txt")"
 if [ -z "$expected" ]; then
   binary_name=$full_binary_name

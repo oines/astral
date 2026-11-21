@@ -52,28 +52,16 @@ function powerShellQuote(value: string) {
   return `'${value.replaceAll("'", "''")}'`
 }
 
-const SHELL_INSTALLER_URL_TOKEN = '"${ASTRAL_GITHUB_PROXY:+${ASTRAL_GITHUB_PROXY%/}/}https://github.com/oines/astral/releases/latest/download/install-computer.sh"'
-const SHELL_INSTALLER_URL = 'https://github.com/oines/astral/releases/latest/download/install-computer.sh'
-
 export function applyDownloadSource(command: string, platform: 'shell' | 'powershell', proxy: string): string {
   if (!command) return ''
   const checked = normalizeGitHubProxy(proxy)
-  if (!checked.ok || !checked.value) return command
-  const prefix = checked.value
+  if (!checked.ok) return ''
   if (platform === 'powershell') {
-    if (command.startsWith('& { ')) {
-      return `& { $env:ASTRAL_GITHUB_PROXY = ${powerShellQuote(prefix)}; ${command.slice(4)}`
-    }
-    return `$env:ASTRAL_GITHUB_PROXY = ${powerShellQuote(prefix)}; ${command}`
+    // Environment variables outlive a PowerShell script block, including when the installer throws.
+    return `& { $previousAstralProxy = $env:ASTRAL_GITHUB_PROXY; try { $env:ASTRAL_GITHUB_PROXY = ${powerShellQuote(checked.value)}; ${command} } finally { $env:ASTRAL_GITHUB_PROXY = $previousAstralProxy } }`
   }
-  let rewritten = command
-  if (rewritten.includes(SHELL_INSTALLER_URL_TOKEN)) {
-    rewritten = rewritten.replace(SHELL_INSTALLER_URL_TOKEN, shellQuote(`${prefix}${SHELL_INSTALLER_URL}`))
-  }
-  if (rewritten.includes('| sh -s -- ')) {
-    rewritten = rewritten.replace('| sh -s -- ', `| ASTRAL_GITHUB_PROXY=${shellQuote(prefix)} sh -s -- `)
-  }
-  return rewritten
+  // Both the bootstrap download and the installer inherit this selection within the subshell.
+  return `(export ASTRAL_GITHUB_PROXY=${shellQuote(checked.value)}; ${command})`
 }
 
 interface StoredSource {

@@ -238,7 +238,7 @@ Versioned migrations are bundled with the latest binary. Upgrades apply missing 
 - Release packaging: ${runURL}
 - Native acceptance covers the runner architecture; cross-building an installer does not establish native execution on every architecture.
 
-The six unified Server/Web UI/CLI/Daemon binaries and three-platform Desktop packages are included. checksums.txt covers the six binaries; SHA256SUMS covers all attached files except itself. Checksums describe exact release bytes and do not independently establish publisher authenticity.
+The release includes Desktop packages, six unified Server/CLI binaries, and six lightweight Daemon binaries. checksums.txt covers all twelve executables. SHA256SUMS covers all attached files except itself. Checksums describe exact release bytes and do not independently establish publisher authenticity.
 `
   const body = publicRelease ? `# Astral ${version}
 

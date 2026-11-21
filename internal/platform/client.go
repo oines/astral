@@ -155,7 +155,7 @@ func Connect(ctx context.Context, options ConnectOptions, report func(string)) e
 	if err != nil {
 		return err
 	}
-	if err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: credentialsPath, EnvironmentPATH: os.Getenv("PATH"), GitHubProxy: proxy}); err != nil {
+	if err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: credentialsPath, EnvironmentPATH: os.Getenv("PATH"), GitHubProxy: &proxy}); err != nil {
 		return fmt.Errorf("computer registered, but its current-user service could not be installed: %w", err)
 	}
 	if err = rememberComputerInstallation(root); err != nil {

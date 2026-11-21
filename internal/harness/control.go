@@ -462,7 +462,7 @@ func (s *Service) saveSessionPresentation(ctx context.Context, agentID, id strin
 	if archived != nil {
 		err := s.archiveSession(ctx, agentID, id, title, pinned, archived, private)
 		if err == nil && *archived {
-			s.CleanupSessionTemporaryComputers(ctx, id)
+			return s.CleanupSessionTemporaryComputers(ctx, id)
 		}
 		return err
 	}

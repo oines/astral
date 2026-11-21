@@ -1,3 +1,4 @@
+import { execFileSync, spawnSync } from 'node:child_process'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { applyDownloadSource, normalizeGitHubProxy, resetDownloadSourceState, useDownloadSource } from './download-source'
 
@@ -16,18 +17,38 @@ describe('download-source', () => {
     expect(normalizeGitHubProxy('not a url')).toEqual({ ok: false, reason: 'invalid' })
   })
 
-  it('rewrites shell and PowerShell commands in place for mirrors and leaves direct untouched', () => {
-    const shell = 'curl --fail --silent --show-error --location --proto \'=https\' --proto-redir \'=https\' "${ASTRAL_GITHUB_PROXY:+${ASTRAL_GITHUB_PROXY%/}/}https://github.com/oines/astral/releases/latest/download/install-computer.sh" | sh -s -- --server \'https://astral.example\' --temporary'
-    expect(applyDownloadSource(shell, 'shell', '')).toBe(shell)
-    expect(applyDownloadSource(shell, 'shell', 'https://edgeone.gh-proxy.org/')).toBe(
-      "curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' 'https://edgeone.gh-proxy.org/https://github.com/oines/astral/releases/latest/download/install-computer.sh' | ASTRAL_GITHUB_PROXY='https://edgeone.gh-proxy.org/' sh -s -- --server 'https://astral.example' --temporary",
-    )
+  const official = 'https://github.com/oines/astral/releases/latest/download/install-computer.sh'
+  const shell = 'curl --fail --silent --show-error --location --proto \'=https\' --proto-redir \'=https\' "${ASTRAL_GITHUB_PROXY:+${ASTRAL_GITHUB_PROXY%/}/}https://github.com/oines/astral/releases/latest/download/install-computer.sh" | sh -s -- --temporary'
+  const mirror = 'https://cdn.gh-proxy.org/'
+  const original = 'https://previous.example/'
 
-    const ps = "& { $astralInstallerUrl = 'https://github.com/oines/astral/releases/latest/download/install-computer.ps1'; if ($env:ASTRAL_GITHUB_PROXY) { $astralInstallerUrl = $env:ASTRAL_GITHUB_PROXY.TrimEnd('/') + '/' + $astralInstallerUrl }; & ([scriptblock]::Create(($astralInstaller -join \"`n\"))) -Temporary }"
-    expect(applyDownloadSource(ps, 'powershell', '')).toBe(ps)
-    expect(applyDownloadSource(ps, 'powershell', 'https://cdn.gh-proxy.org/')).toBe(
-      "& { $env:ASTRAL_GITHUB_PROXY = 'https://cdn.gh-proxy.org/'; $astralInstallerUrl = 'https://github.com/oines/astral/releases/latest/download/install-computer.ps1'; if ($env:ASTRAL_GITHUB_PROXY) { $astralInstallerUrl = $env:ASTRAL_GITHUB_PROXY.TrimEnd('/') + '/' + $astralInstallerUrl }; & ([scriptblock]::Create(($astralInstaller -join \"`n\"))) -Temporary }",
-    )
+  it.skipIf(process.platform === 'win32').each(['', mirror])('uses the selected source %j for both shell downloads and preserves the terminal', source => {
+    const script = `
+      exec 2>&1
+      curl() {
+        for url do :; done
+        printf 'bootstrap=%s\\n' "$url" >&2
+        printf '%s\\n' 'printf "installer=%s\\n" "$ASTRAL_GITHUB_PROXY"'
+      }
+      ${applyDownloadSource(shell, 'shell', source)}
+      printf 'terminal=%s\\n' "$ASTRAL_GITHUB_PROXY"
+    `
+    const out = execFileSync('sh', ['-c', script], { encoding: 'utf8', env: { ...process.env, ASTRAL_GITHUB_PROXY: original } })
+    expect(out.trim().split('\n')).toEqual([`bootstrap=${source}${official}`, `installer=${source}`, `terminal=${original}`])
+  })
+
+  const powershell = process.platform === 'win32' ? 'powershell.exe' : 'pwsh'
+  const hasPowerShell = !spawnSync(powershell, ['-NoProfile', '-Command', 'exit 0']).error
+  it.skipIf(!hasPowerShell).each(['', mirror])('restores the PowerShell terminal on success and failure for source %j', source => {
+    const report = 'Write-Output ("installer=" + $env:ASTRAL_GITHUB_PROXY)'
+    const script = [
+      applyDownloadSource(`& { ${report} }`, 'powershell', source),
+      'Write-Output ("terminal=" + $env:ASTRAL_GITHUB_PROXY)',
+      `try { ${applyDownloadSource(`& { ${report}; throw 'installer failed' }`, 'powershell', source)} } catch { Write-Output $_.Exception.Message }`,
+      'Write-Output ("terminal=" + $env:ASTRAL_GITHUB_PROXY)',
+    ].join('\n')
+    const out = execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', env: { ...process.env, ASTRAL_GITHUB_PROXY: original } })
+    expect(out.trim().split(/\r?\n/)).toEqual([`installer=${source}`, `terminal=${original}`, `installer=${source}`, 'installer failed', `terminal=${original}`])
   })
 
   it('tracks preset and custom URL validation state', () => {

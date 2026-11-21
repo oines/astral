@@ -175,7 +175,13 @@ func (d *Daemon) Connect(ctx context.Context) error {
 	if err := d.ensureLocalAPI(); err != nil {
 		return err
 	}
-	conn, capabilities, err := authenticateTunnel(ctx, d.Credentials.ServerURL, d.Credentials.ServerPin, tunnelRequest{Operation: "connect", ComputerID: d.Credentials.ComputerID, Token: d.Credentials.Token, Hello: d.Hello}, d.httpClient)
+	// Keep the admitted tunnel writable for the bounded leave handshake.
+	// Dialing and authentication must still stop immediately on cancellation.
+	tunnelCtx, cancelTunnel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelTunnel()
+	stopDialCancel := context.AfterFunc(ctx, cancelTunnel)
+	conn, capabilities, err := authenticateTunnel(tunnelCtx, d.Credentials.ServerURL, d.Credentials.ServerPin, tunnelRequest{Operation: "connect", ComputerID: d.Credentials.ComputerID, Token: d.Credentials.Token, Hello: d.Hello}, d.httpClient)
+	stopDialCancel()
 	if err != nil {
 		return err
 	}
@@ -208,9 +214,12 @@ func (d *Daemon) Connect(ctx context.Context) error {
 	stop := context.AfterFunc(ctx, func() {
 		if d.Temporary {
 			leaveCtx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+			stopTimeout := context.AfterFunc(leaveCtx, cancelTunnel)
 			_ = peer.JSON(leaveCtx, DaemonLeaveMethod, struct{}{}, nil)
+			stopTimeout()
 			cancel()
 		}
+		cancelTunnel()
 		_ = peer.Close()
 	})
 	<-peer.Done()

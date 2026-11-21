@@ -24,6 +24,8 @@ type UpdateOptions struct {
 	// Automatically selected container installations must retain their original
 	// local Docker endpoint instead of updating a same-named container elsewhere.
 	ContainerEndpoint string
+	DownloadSource    githubrelease.ProxyOverride
+	ManagedHelper     bool
 }
 
 // UpdateComputer is deliberately a local command. The caller downloads this
@@ -53,11 +55,11 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 		}
 		defer os.RemoveAll(directory)
 		binary := filepath.Join(directory, "astral")
-		release, err := releasefeed.Latest(ctx, "linux", probe.Arch)
+		release, err := releasefeed.LatestWithProxy(ctx, "linux", probe.Arch, options.DownloadSource, true)
 		if err != nil {
 			return err
 		}
-		if err = release.Download(ctx, binary); err != nil {
+		if err = release.DownloadWithProxy(ctx, binary, options.DownloadSource); err != nil {
 			return err
 		}
 		report("Updating the Daemon in the existing container; restarting it interrupts running tasks. Its files and installed software are retained.")
@@ -94,16 +96,13 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 	if err != nil {
 		return err
 	}
-	before, _ := computerStatus(ctx, credentials)
+	statusCtx, cancelStatus := context.WithTimeout(ctx, 3*time.Second)
+	before, authorized, _ := computers.RemoteUpdateStatus(statusCtx, credentials)
+	cancelStatus()
 	report("Updating Astral Daemon to " + options.Version + "; restarting its current-user service interrupts running tasks.")
-	next := previous
-	next.Executable = executable
-	if rawProxy, explicit := os.LookupEnv(githubrelease.ProxyEnvironment); explicit {
-		normalized, proxyErr := githubrelease.NormalizeProxy(rawProxy)
-		if proxyErr != nil {
-			return proxyErr
-		}
-		next.GitHubProxy = normalized
+	next, err := options.serviceSpec(previous, executable, authorized)
+	if err != nil {
+		return err
 	}
 	if err = manager.Install(ctx, next); err == nil {
 		err = manager.Restart(ctx)
@@ -132,6 +131,27 @@ func UpdateComputer(ctx context.Context, options UpdateOptions, report func(stri
 		return errors.Join(fmt.Errorf("daemon update failed: %w", err), fmt.Errorf("restore previous service failed; credentials and Agent files remain at %s: %w", root, restore))
 	}
 	return fmt.Errorf("daemon update failed; the previous service executable was restored: %w", err)
+}
+
+func (options UpdateOptions) serviceSpec(previous daemonservice.Spec, executable string, authorized *releasefeed.Binary) (daemonservice.Spec, error) {
+	next := previous
+	next.Executable = executable
+	source := options.DownloadSource
+	if options.ManagedHelper && !source.Set && authorized != nil && authorized.Version == options.Version {
+		// An old Daemon launches the new helper without a proxy argument.
+		source = authorized.ProxyOverride()
+	}
+	if !source.Set && !options.ManagedHelper {
+		source.Prefix, source.Set = os.LookupEnv(githubrelease.ProxyEnvironment)
+	}
+	if source.Set {
+		prefix, err := githubrelease.NormalizeProxy(source.Prefix)
+		if err != nil {
+			return previous, err
+		}
+		next.GitHubProxy = &prefix
+	}
+	return next, nil
 }
 
 // Keep the current and rollback programs, rather than accumulating every

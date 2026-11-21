@@ -42,7 +42,7 @@ func TestLatestPrefersStandaloneDaemonAndSupportsProxyOverride(t *testing.T) {
 	t.Setenv(githubrelease.ProxyEnvironment, "https://env-proxy.example/")
 
 	// Explicit proxy override wins over environment variable.
-	bin, err := latestWithProxy(context.Background(), "windows", "amd64", c, githubrelease.ProxyOverride{Set: true, Prefix: "https://edgeone.gh-proxy.org"})
+	bin, err := latestWithProxy(context.Background(), "windows", "amd64", c, githubrelease.ProxyOverride{Set: true, Prefix: "https://edgeone.gh-proxy.org"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,9 +55,14 @@ func TestLatestPrefersStandaloneDaemonAndSupportsProxyOverride(t *testing.T) {
 		}
 	}
 
+	unified, err := latestWithProxy(context.Background(), "windows", "amd64", c, githubrelease.ProxyOverride{Set: true}, false)
+	if err != nil || unified.Name != "astral-windows-amd64.exe" || unified.SHA256 != fullSHA {
+		t.Fatalf("legacy Daemon cannot consume selected release: %+v, %v", unified, err)
+	}
+
 	// Explicit empty override forces direct GitHub even when env var is set.
 	requestedURLs = nil
-	bin, err = latestWithProxy(context.Background(), "windows", "amd64", c, githubrelease.ProxyOverride{Set: true, Prefix: ""})
+	bin, err = latestWithProxy(context.Background(), "windows", "amd64", c, githubrelease.ProxyOverride{Set: true, Prefix: ""}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +80,7 @@ func TestLatestPrefersStandaloneDaemonAndSupportsProxyOverride(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
-	legacy, err := latestWithProxy(context.Background(), "linux", "amd64", legacyClient, githubrelease.ProxyOverride{Set: true, Prefix: ""})
+	legacy, err := latestWithProxy(context.Background(), "linux", "amd64", legacyClient, githubrelease.ProxyOverride{Set: true, Prefix: ""}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

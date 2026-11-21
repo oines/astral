@@ -47,10 +47,10 @@ type authenticationBucket struct {
 }
 
 const (
-	DefaultTemporaryTTL       = 4 * time.Hour
-	MinTemporaryTTL           = 30 * time.Minute
-	MaxTemporaryTTL           = 12 * time.Hour
-	DefaultDisconnectGrace    = 2 * time.Minute
+	DefaultTemporaryTTL    = 4 * time.Hour
+	MinTemporaryTTL        = 30 * time.Minute
+	MaxTemporaryTTL        = 12 * time.Hour
+	DefaultDisconnectGrace = 2 * time.Minute
 )
 
 type Hub struct {
@@ -195,6 +195,7 @@ func (h *Hub) PrepareContainer(ctx context.Context, id, token string) error {
 
 func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest) (Credentials, error) {
 	var credentials Credentials
+	var expiresAt *time.Time
 	err := h.Store.Update(ctx, func(tx *persistence.Tx) error {
 		var e domain.Enrollment
 		if err := tx.Get(ctx, "enrollments", id, &e); err != nil {
@@ -226,7 +227,6 @@ func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest
 		if e.Temporary {
 			kind = "temporary"
 		}
-		var expiresAt *time.Time
 		apiDisabled := e.ComputerAPIDisabled
 		if e.Temporary {
 			var ownerSession domain.Session
@@ -250,13 +250,13 @@ func (h *Hub) Register(ctx context.Context, id string, request EnrollmentRequest
 		}
 		e.State, e.ComputerID, e.CredentialID, e.TokenHash = "registered", c.ID, credential, ""
 		credentials.ComputerID, credentials.Token, credentials.ServerPin, credentials.Temporary = c.ID, token, h.ServerPin(), e.Temporary
-		if e.Temporary && expiresAt != nil {
-			h.scheduleTemporaryExpiry(c.ID, *expiresAt)
-		}
 		return tx.Save(ctx, "enrollments", &e.Meta, &e)
 	})
 	if err != nil {
-		return credentials, err
+		return Credentials{}, err
+	}
+	if expiresAt != nil {
+		h.scheduleTemporaryExpiry(credentials.ComputerID, *expiresAt)
 	}
 	return credentials, nil
 }
@@ -426,6 +426,7 @@ func (h *Hub) Connect(w http.ResponseWriter, r *http.Request) {
 			status := h.Status(computer)
 			status.TokenID = ""
 			response.Status = &status
+			response.UpdateTarget = h.daemonUpdateTarget(computer.ID)
 		} else if err = validateHello(request.Hello); err != nil {
 			response.Error = err.Error()
 		} else {

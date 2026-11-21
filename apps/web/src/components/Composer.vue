@@ -108,7 +108,7 @@ async function disconnectTemporary(id: string) {
     await action(async () => {
       await request(disconnectTemporaryComputer({ path: { id } }))
       if (homeSelection.value.computer_id === id) {
-        homeSelection.value = { ...homeSelection.value, computer_id: '' }
+        delete draft.selection?.computer_id
       }
       if (draft.session?.computer_id === id) {
         draft.session.computer_id = ''
@@ -202,6 +202,10 @@ async function send(overrideMode?: string) {
     attempt.value = undefined
     if (!props.view.id) {
       const id = view.value.id
+      // The next draft can reuse this Bot's permanent Computer choices only.
+      if (draft.selection?.computer_id && !agent.value?.allowed_computers.includes(draft.selection.computer_id)) {
+        delete draft.selection.computer_id
+      }
       draft.session = undefined
       draft.confirmedModelSelection = undefined
       emit('started', id)

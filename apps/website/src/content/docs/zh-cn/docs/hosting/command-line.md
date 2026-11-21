@@ -7,11 +7,9 @@ description: "连接已有 Astral，查询 Bot、发送任务和导出会话。"
 
 ## 准备命令和账户
 
-官方 Server 或电脑接入安装完成后，同一终端中应可以运行：
+官方 Server 安装会提供完整的 `astral` CLI。如果以前通过电脑接入安装过完整版，手动更新会保留已有的管理命令。运行 `astral help`，确认列表中有 `connect` 和 `sessions`。
 
-```sh
-astral version
-```
+如果电脑上只有轻量 Daemon，从[同一个 GitHub Release](https://github.com/oines/astral/releases/latest) 下载适合操作系统和 CPU 的**完整版**以及 `checksums.txt`。例如，Apple 芯片的 Mac 选择 `astral-darwin-arm64`，Intel 或 AMD 的 Windows 电脑选择 `astral-windows-amd64.exe`。核对文件的 SHA-256 与清单中对应文件名的值。macOS / Linux 上用 `chmod +x <文件名>` 添加执行权限。下文命令中的 `astral` 可以直接换成该程序的完整路径，无需在本机部署 Server。
 
 准备 Astral 的网页访问地址、管理员用户名和密码。这个账户应已经能在浏览器中登录。命令行登录用于操作 Astral；如果只是想让 Astral 使用这台电脑，改用[电脑接入流程](/zh-cn/docs/computers/connect/)。
 

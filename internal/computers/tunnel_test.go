@@ -114,6 +114,49 @@ func TestConcurrentEnrollmentConsumesTokenOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestTemporaryRegistrationCommitsBeforeTakingHubLock(t *testing.T) {
+	hub, server := secureHub(t)
+	ctx := t.Context()
+	owner := domain.Session{Meta: domain.Meta{ID: "session"}, AgentID: "agent"}
+	if err := hub.Store.Save(ctx, "sessions", &owner.Meta, &owner); err != nil {
+		t.Fatal(err)
+	}
+	enrollment, err := hub.Enroll(ctx, server.URL, EnrollmentOptions{Temporary: true, OwnerSessionID: owner.ID, OwnerAgentID: owner.AgentID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemon, err := NewDaemon(t.TempDir(), Credentials{ServerURL: server.URL, Temporary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Connection admission and Computer settings can hold the Hub lock
+	// while reading the single-connection store. Registration must leave
+	// that store available while waiting to arm its timer.
+	hub.mu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		_, err := hub.Register(ctx, enrollment.Enrollment.ID, EnrollmentRequest{Token: enrollment.Token, Hello: daemon.Hello})
+		done <- err
+	}()
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var saved domain.Enrollment
+	for {
+		err = hub.Store.Get(readCtx, "enrollments", enrollment.Enrollment.ID, &saved)
+		if err != nil || saved.State == "registered" {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	hub.mu.Unlock()
+	if registerErr := <-done; registerErr != nil {
+		t.Fatal(registerErr)
+	}
+	if err != nil {
+		t.Fatalf("registration held the store while waiting for the Hub lock: %v", err)
+	}
+}
+
 func TestSecureContainerPreparationAndPlaintextRejection(t *testing.T) {
 	hub, server := secureHub(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

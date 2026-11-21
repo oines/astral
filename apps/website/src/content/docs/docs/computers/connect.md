@@ -25,7 +25,7 @@ Before generating the command, check three fields:
 - **Operating system:** the OS running the command (for a container, pick the host OS).
 - **Download source:** keep **Official GitHub**, or choose a third-party mirror / custom HTTPS URL if the target machine cannot reach GitHub directly.
 
-Run the **complete command** as the system user whose file permissions you want the Bot to have. The installer downloads the standalone `astral-daemon` binary, installs the user background service, and brings the computer online in Astral. Permanent services remember any selected download source for future Daemon updates.
+Run the **complete command** as the system user whose file permissions you want the Bot to have. The installer downloads the standalone `astral-daemon` binary, installs the user background service, and brings the computer online in Astral. Permanent services remember the selected download source. If a previous computer installation supplied the full management CLI, manual updates keep that CLI available. See [terminal access](/docs/hosting/command-line/) to use it from another machine.
 
 :::note[Pairing credentials and transport]
 Enrollment commands carry temporary pairing credentials—use them only on the intended machine and regenerate if expired. Computers connect outward to Server over an encrypted channel that verifies the Server's identity, using either HTTP or HTTPS enrollment URLs.

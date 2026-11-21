@@ -146,7 +146,7 @@ func computerService(ctx context.Context, args []string, out, stderr io.Writer) 
 		if e != nil {
 			return e
 		}
-		err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: filepath.Join(absolute, "credentials.json"), EnvironmentPATH: os.Getenv("PATH"), GitHubProxy: proxy})
+		err = manager.Install(ctx, daemonservice.Spec{Executable: executable, Credentials: filepath.Join(absolute, "credentials.json"), EnvironmentPATH: os.Getenv("PATH"), GitHubProxy: &proxy})
 	case "start":
 		err = manager.Start(ctx)
 	case "stop":
@@ -192,6 +192,14 @@ func computerUpdate(ctx context.Context, args []string, out, stderr io.Writer) e
 	container := f.String("container", "", "existing Astral container identity or name")
 	f.Bool("update", false, "installer update operation")
 	managed := f.Bool("managed-helper", false, "one-shot current-user update job")
+	var downloadSource githubrelease.ProxyOverride
+	f.Func("github-proxy", "HTTPS GitHub download prefix (empty for direct downloads)", func(raw string) error {
+		prefix, err := githubrelease.NormalizeProxy(raw)
+		if err == nil {
+			downloadSource = githubrelease.ProxyOverride{Set: true, Prefix: prefix}
+		}
+		return err
+	})
 	containerEndpoint := ""
 	if err := f.Parse(args); err != nil {
 		return err
@@ -224,7 +232,7 @@ func computerUpdate(ctx context.Context, args []string, out, stderr io.Writer) e
 		defer file.Close()
 		out = io.MultiWriter(out, file)
 	}
-	err := platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, Container: *container, Version: Version, ContainerEndpoint: containerEndpoint}, func(message string) { fmt.Fprintln(out, message) })
+	err := platform.UpdateComputer(ctx, platform.UpdateOptions{Root: *root, Container: *container, Version: Version, ContainerEndpoint: containerEndpoint, DownloadSource: downloadSource, ManagedHelper: *managed}, func(message string) { fmt.Fprintln(out, message) })
 	if err != nil && *managed {
 		fmt.Fprintln(out, "Daemon update failed:", err)
 	}

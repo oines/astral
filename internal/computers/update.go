@@ -16,15 +16,28 @@ import (
 	"github.com/oines/astral/internal/transport"
 )
 
+type managedDaemonUpdate struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	target *releasefeed.Binary
+}
+
 type daemonUpdates struct {
 	sync.Mutex
 	values           map[string]domain.DaemonUpdate
-	latest           func(context.Context, string, string) (releasefeed.Binary, error)
-	latestWithProxy  func(context.Context, string, string, githubrelease.ProxyOverride) (releasefeed.Binary, error)
-	cancel           map[string]context.CancelFunc
-	contexts         map[string]context.Context
+	latest           func(context.Context, string, string, githubrelease.ProxyOverride, bool) (releasefeed.Binary, error)
+	running          map[string]*managedDaemonUpdate
 	closed           bool
 	reconnectTimeout time.Duration
+}
+
+func (h *Hub) daemonUpdateTarget(id string) *releasefeed.Binary {
+	h.updates.Lock()
+	defer h.updates.Unlock()
+	if op := h.updates.running[id]; op != nil {
+		return op.target
+	}
+	return nil
 }
 
 // DaemonUpdateStatus is transient. Reconnected Hello metadata remains the
@@ -97,17 +110,16 @@ func (h *Hub) UpdateDaemonWithProxy(ctx context.Context, id string, override git
 	}
 	operation := domain.DaemonUpdate{State: "checking", StartedAt: time.Now().UTC()}
 	h.updates.values[id] = operation
-	if h.updates.cancel == nil {
-		h.updates.cancel = map[string]context.CancelFunc{}
-		h.updates.contexts = map[string]context.Context{}
+	if h.updates.running == nil {
+		h.updates.running = map[string]*managedDaemonUpdate{}
 	}
 	updateCtx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
-	h.updates.cancel[id] = cancel
-	h.updates.contexts[id] = updateCtx
+	op := &managedDaemonUpdate{ctx: updateCtx, cancel: cancel}
+	h.updates.running[id] = op
 	h.updates.Unlock()
 	// Managed update ownership outlives an HTTP request/tab closure, while the
 	// bounded request to the old Daemon still cancels on tunnel disconnection.
-	go h.runDaemonUpdate(updateCtx, cancel, id, active, override)
+	go h.runDaemonUpdate(op, id, active, override)
 	return operation, nil
 }
 
@@ -117,29 +129,24 @@ func (h *Hub) setDaemonUpdate(id string, value domain.DaemonUpdate) {
 	h.updates.values[id] = value
 }
 
-func (h *Hub) runDaemonUpdate(ctx context.Context, cancel context.CancelFunc, id string, original *connection, override githubrelease.ProxyOverride) {
-	defer cancel()
+func (h *Hub) runDaemonUpdate(op *managedDaemonUpdate, id string, original *connection, override githubrelease.ProxyOverride) {
+	ctx := op.ctx
+	defer op.cancel()
 	defer func() {
 		h.updates.Lock()
-		if h.updates.contexts[id] == ctx {
-			delete(h.updates.cancel, id)
-			delete(h.updates.contexts, id)
+		if h.updates.running[id] == op {
+			delete(h.updates.running, id)
 		}
 		h.updates.Unlock()
 	}()
 	state := h.DaemonUpdateStatus(id)
 	fail := func(err error) { state.State = "failed"; state.Error = err.Error(); h.setDaemonUpdate(id, state) }
-	var (
-		binary releasefeed.Binary
-		err    error
-	)
-	if h.updates.latestWithProxy != nil {
-		binary, err = h.updates.latestWithProxy(ctx, original.hello.OS, original.hello.Arch, override)
-	} else if h.updates.latest != nil {
-		binary, err = h.updates.latest(ctx, original.hello.OS, original.hello.Arch)
-	} else {
-		binary, err = releasefeed.LatestWithProxy(ctx, original.hello.OS, original.hello.Arch, override)
+	resolve := h.updates.latest
+	if resolve == nil {
+		resolve = releasefeed.LatestWithProxy
 	}
+	standalone := slices.Contains(original.hello.Capabilities, StandaloneUpdateCapability)
+	binary, err := resolve(ctx, original.hello.OS, original.hello.Arch, override, standalone)
 	if err != nil {
 		fail(err)
 		return
@@ -161,6 +168,9 @@ func (h *Hub) runDaemonUpdate(ctx context.Context, cancel context.CancelFunc, id
 		fail(domain.Offline("Computer reconnected before update started; retry"))
 		return
 	}
+	h.updates.Lock()
+	op.target = &binary
+	h.updates.Unlock()
 	state.State = "downloading"
 	state.Version = binary.Version
 	h.setDaemonUpdate(id, state)
@@ -202,7 +212,7 @@ func (h *Hub) cancelDaemonUpdates() {
 	h.updates.Lock()
 	defer h.updates.Unlock()
 	h.updates.closed = true
-	for _, cancel := range h.updates.cancel {
-		cancel()
+	for _, op := range h.updates.running {
+		op.cancel()
 	}
 }

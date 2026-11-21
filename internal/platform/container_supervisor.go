@@ -14,13 +14,14 @@ import (
 	"time"
 
 	"github.com/oines/astral/internal/computers"
+	"github.com/oines/astral/internal/githubrelease"
 	"github.com/oines/astral/internal/releasefeed"
 )
 
 type containerSupervisorPaths struct {
 	binary, backup, request string
 	reconnectTimeout        time.Duration
-	verify                  func(context.Context, releasefeed.Binary) error
+	verify                  func(context.Context, releasefeed.Binary, githubrelease.ProxyOverride) error
 }
 
 type supervisedDaemon struct {
@@ -34,7 +35,7 @@ func startSupervisedDaemon(binary, root, enrollment string, out, stderr io.Write
 		args = []string{"computer", "connect", "--root", root, "--enrollment-file", enrollment, "--foreground"}
 	}
 	command := exec.Command(binary, args...)
-	command.Env = append(os.Environ(), "ASTRAL_CONTAINER_SUPERVISOR=1")
+	command.Env = append(os.Environ(), "ASTRAL_CONTAINER_SUPERVISOR=1", standaloneSupervisorEnv+"=1")
 	command.Stdout, command.Stderr = out, stderr
 	if err := command.Start(); err != nil {
 		return nil, err
@@ -147,7 +148,9 @@ func superviseContainer(ctx context.Context, root, enrollment string, out, stder
 		if err = ReadJSON(filepath.Join(root, "credentials.json"), &credentials); err != nil {
 			return err
 		}
-		before, e := computerStatus(ctx, credentials)
+		statusCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		before, authorized, e := computers.RemoteUpdateStatus(statusCtx, credentials)
+		cancel()
 		if e != nil || before.BootID != update.PreviousBoot {
 			if err = rejectUpdate(errors.New("original Daemon is no longer connected")); err != nil {
 				return err
@@ -162,9 +165,24 @@ func superviseContainer(ctx context.Context, root, enrollment string, out, stder
 		}
 		verify := paths.verify
 		if verify == nil {
-			verify = func(ctx context.Context, b releasefeed.Binary) error { return b.Verify(ctx) }
+			verify = func(ctx context.Context, b releasefeed.Binary, source githubrelease.ProxyOverride) error {
+				return b.Verify(ctx, source)
+			}
 		}
-		if err = verify(ctx, update.Binary); err != nil {
+		// The handoff file carries staged bytes. Only the authenticated Server
+		// can choose a mirror for the independent manifest check. An older
+		// Server uses the supervisor's own configured source.
+		var source githubrelease.ProxyOverride
+		if authorized != nil {
+			if authorized.Version != update.Binary.Version || authorized.Name != update.Binary.Name || authorized.SHA256 != update.Binary.SHA256 {
+				if err = rejectUpdate(errors.New("staged release differs from the Server update")); err != nil {
+					return err
+				}
+				continue
+			}
+			source = authorized.ProxyOverride()
+		}
+		if err = verify(ctx, update.Binary, source); err != nil {
 			if err = rejectUpdate(err); err != nil {
 				return err
 			}

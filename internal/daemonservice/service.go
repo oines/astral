@@ -26,10 +26,10 @@ import (
 )
 
 type Spec struct {
-	Executable      string `json:"executable"`
-	Credentials     string `json:"credentials"`
-	EnvironmentPATH string `json:"environment_path"`
-	GitHubProxy     string `json:"github_proxy,omitempty"`
+	Executable      string  `json:"executable"`
+	Credentials     string  `json:"credentials"`
+	EnvironmentPATH string  `json:"environment_path"`
+	GitHubProxy     *string `json:"github_proxy,omitempty"`
 }
 
 type Status struct {
@@ -170,16 +170,18 @@ func (m *Manager) Reinstall(ctx context.Context, spec Spec) error {
 }
 
 func (m *Manager) install(ctx context.Context, spec Spec, force bool) error {
-	for _, value := range []string{spec.Executable, spec.Credentials, spec.EnvironmentPATH, spec.GitHubProxy} {
+	for _, value := range []string{spec.Executable, spec.Credentials, spec.EnvironmentPATH} {
 		if strings.ContainsAny(value, "\x00\r\n") {
 			return errors.New("service definition contains a control character")
 		}
 	}
-	normalizedProxy, err := githubrelease.NormalizeProxy(spec.GitHubProxy)
-	if err != nil {
-		return err
+	if spec.GitHubProxy != nil {
+		normalizedProxy, err := githubrelease.NormalizeProxy(*spec.GitHubProxy)
+		if err != nil {
+			return err
+		}
+		spec.GitHubProxy = &normalizedProxy
 	}
-	spec.GitHubProxy = normalizedProxy
 	if !filepath.IsAbs(spec.Executable) || !filepath.IsAbs(spec.Credentials) {
 		return errors.New("service executable and credentials must use absolute paths")
 	}
@@ -545,8 +547,8 @@ func (m *Manager) systemd(spec Spec) string {
 		argv = append(argv, systemdQuote(arg, true))
 	}
 	proxyLine := ""
-	if spec.GitHubProxy != "" {
-		proxyLine = "\nEnvironment=" + systemdQuote(githubrelease.ProxyEnvironment+"="+spec.GitHubProxy, false)
+	if spec.GitHubProxy != nil {
+		proxyLine = "\nEnvironment=" + systemdQuote(githubrelease.ProxyEnvironment+"="+*spec.GitHubProxy, false)
 	}
 	return "[Unit]\nDescription=" + m.name + "\n\n[Service]\nType=simple\nEnvironment=" + systemdQuote("PATH="+spec.EnvironmentPATH, false) + "\nEnvironment=" + systemdQuote("XDG_CONFIG_HOME="+m.configHome, false) + proxyLine + "\nExecStart=" + strings.Join(argv, " ") + "\nUMask=0077\nRestart=always\nRestartSec=5\nTimeoutStopSec=30\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n"
 }
@@ -556,8 +558,8 @@ func (m *Manager) launchd(spec Spec, launcher string) string {
 		args += "<string>" + xmlQuote(arg) + "</string>"
 	}
 	proxyEnv := ""
-	if spec.GitHubProxy != "" {
-		proxyEnv = `<key>` + githubrelease.ProxyEnvironment + `</key><string>` + xmlQuote(spec.GitHubProxy) + `</string>`
+	if spec.GitHubProxy != nil {
+		proxyEnv = `<key>` + githubrelease.ProxyEnvironment + `</key><string>` + xmlQuote(*spec.GitHubProxy) + `</string>`
 	}
 	return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>` + m.target + `</string><key>ProgramArguments</key><array>` + args + `</array><key>EnvironmentVariables</key><dict><key>PATH</key><string>` + xmlQuote(spec.EnvironmentPATH) + `</string>` + proxyEnv + `</dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>5</integer><key>StandardOutPath</key><string>` + xmlQuote(filepath.Join(m.root, "service-launch.log")) + `</string><key>StandardErrorPath</key><string>` + xmlQuote(filepath.Join(m.root, "service-launch.log")) + `</string></dict></plist>`
 }
@@ -613,8 +615,8 @@ func (m *Manager) windowsScript(spec Spec) string {
 	// Daemon startup diagnostics use stderr, so keep only native execution in
 	// Continue mode. A failed launch must retain a nonzero exit code.
 	proxyLine := ""
-	if spec.GitHubProxy != "" {
-		proxyLine = "$env:" + githubrelease.ProxyEnvironment + " = " + psQuote(spec.GitHubProxy) + "\r\n"
+	if spec.GitHubProxy != nil {
+		proxyLine = "$env:" + githubrelease.ProxyEnvironment + " = " + psQuote(*spec.GitHubProxy) + "\r\n"
 	}
 	return "\ufeff$ErrorActionPreference = 'Stop'\r\n[Console]::OutputEncoding = [Text.UTF8Encoding]::new()\r\n$OutputEncoding = [Console]::OutputEncoding\r\n$env:PATH = " + psQuote(spec.EnvironmentPATH) + "\r\n" + proxyLine + "$LASTEXITCODE = 1\r\n$ErrorActionPreference = 'Continue'\r\n& " + psQuote(spec.Executable) + " " + strings.Join(args, " ") + " >> " + psQuote(filepath.Join(m.root, "service-launch.log")) + " 2>&1\r\nexit $LASTEXITCODE\r\n"
 }

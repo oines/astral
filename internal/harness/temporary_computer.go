@@ -60,7 +60,10 @@ func (s *Service) CleanupTemporaryComputer(ctx context.Context, id string) error
 			return err
 		}
 	}
-	clearedSessions := s.clearTemporaryComputerSelections(ctx, ownerSessionID, id)
+	clearedSessions, err := s.clearTemporaryComputerSelections(ctx, ownerSessionID, id)
+	if err != nil {
+		return err
+	}
 	var current domain.Computer
 	if err := s.Store.Get(ctx, "computers", id, &current); err == nil {
 		if err := s.DeleteComputer(ctx, id, current.Revision); err != nil && !domain.IsMissing(err) {
@@ -82,9 +85,9 @@ func (s *Service) CleanupTemporaryComputer(ctx context.Context, id string) error
 	return nil
 }
 
-func (s *Service) clearTemporaryComputerSelections(ctx context.Context, ownerSessionID, computerID string) []string {
+func (s *Service) clearTemporaryComputerSelections(ctx context.Context, ownerSessionID, computerID string) ([]string, error) {
 	var cleared []string
-	_ = s.Store.Update(ctx, func(tx *persistence.Tx) error {
+	err := s.Store.Update(ctx, func(tx *persistence.Tx) error {
 		items, err := tx.List(ctx, "sessions")
 		if err != nil {
 			return err
@@ -109,7 +112,7 @@ func (s *Service) clearTemporaryComputerSelections(ctx context.Context, ownerSes
 		}
 		return nil
 	})
-	return cleared
+	return cleared, err
 }
 
 func (s *Service) refreshSessionTreeEnvironment(ctx context.Context, rootSessionID string) {
@@ -126,13 +129,21 @@ func (s *Service) refreshSessionTreeEnvironment(ctx context.Context, rootSession
 		}
 	}
 	for _, sid := range targets {
-		r, err := s.open(ctx, sid)
+		// Archive seals the tree and releases its runtimes under subagentMu.
+		// Serialize opening with that boundary, then release it before discovery.
+		if err := lockSubagentContext(ctx, &s.subagentMu); err != nil {
+			return
+		}
+		r, err := s.openRunnable(ctx, sid)
+		s.subagentMu.Unlock()
 		if err != nil {
 			continue
 		}
-		r.mu.Lock()
+		if err := lockSubagentContext(ctx, &r.mu); err != nil {
+			return
+		}
 		snap, snapErr := r.snapshot()
-		if snapErr == nil && !snap.Running && !snap.Maintenance {
+		if snapErr == nil && !snap.Running && !snap.Maintenance && r.requireRunnable(ctx) == nil {
 			_ = r.refreshEnvironment(ctx)
 		}
 		r.mu.Unlock()
@@ -140,21 +151,31 @@ func (s *Service) refreshSessionTreeEnvironment(ctx context.Context, rootSession
 }
 
 // CleanupSessionTemporaryComputers removes every temporary Computer owned by
-// the given root Session (called after deleting a Session).
-func (s *Service) CleanupSessionTemporaryComputers(ctx context.Context, rootSessionID string) {
+// the given root Session.
+func (s *Service) CleanupSessionTemporaryComputers(ctx context.Context, rootSessionID string) error {
 	if rootSessionID == "" {
-		return
+		return nil
 	}
+	return s.cleanupTemporaryComputers(ctx, func(c domain.Computer) bool { return c.OwnerSessionID == rootSessionID })
+}
+
+func (s *Service) cleanupTemporaryComputers(ctx context.Context, owned func(domain.Computer) bool) error {
 	items, err := s.Store.List(ctx, "computers")
 	if err != nil {
-		return
+		return err
 	}
 	for _, item := range items {
 		var c domain.Computer
-		if json.Unmarshal(item.Data, &c) == nil && c.Temporary && c.OwnerSessionID == rootSessionID {
-			_ = s.CleanupTemporaryComputer(ctx, c.ID)
+		if err := json.Unmarshal(item.Data, &c); err != nil {
+			return err
+		}
+		if c.Temporary && owned(c) {
+			if err := s.CleanupTemporaryComputer(ctx, c.ID); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // RecoverTemporaryComputers runs on Server startup to clean up expired or

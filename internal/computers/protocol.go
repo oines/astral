@@ -20,6 +20,9 @@ const ProcessStreamCapability = "process.start_stream"
 // the authenticated Computer tunnel.
 const DaemonUpdateCapability = "management.update"
 
+// Both the running Daemon and its update supervisor can accept standalone assets.
+const StandaloneUpdateCapability = "management.update.standalone"
+
 // DaemonLeaveMethod notifies the Hub that a temporary Daemon is exiting cleanly
 // so the Server can immediately revoke and clean up its registration.
 const DaemonLeaveMethod = "daemon.leave"

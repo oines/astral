@@ -135,12 +135,11 @@ describe('adding a Computer configures Astral API before connecting', () => {
     setup.chooseMode('remote')
     setup.serverAddress = 'https://astral.example'
     await setup.remote()
-    expect(setup.displayedCommand).toBe(rawShell)
+    expect(setup.displayedCommand).toBe(`(export ASTRAL_GITHUB_PROXY=''; ${rawShell})`)
 
     const source = useDownloadSource()
     source.preset.value = 'edgeone'
-    expect(setup.displayedCommand).toContain('https://edgeone.gh-proxy.org/https://github.com/oines/astral/releases/latest/download/install-computer.sh')
-    expect(setup.displayedCommand).toContain("ASTRAL_GITHUB_PROXY='https://edgeone.gh-proxy.org/' sh -s --")
+    expect(setup.displayedCommand).toBe(`(export ASTRAL_GITHUB_PROXY='https://edgeone.gh-proxy.org/'; ${rawShell})`)
     expect(fixture.enrollComputer).toHaveBeenCalledOnce()
   })
 })

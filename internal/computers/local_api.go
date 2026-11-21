@@ -35,9 +35,6 @@ func validLocalAPIURL(raw string) bool {
 func (d *Daemon) ensureLocalAPI() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.Temporary {
-		return nil
-	}
 	return d.startLocalAPILocked()
 }
 
@@ -45,7 +42,7 @@ func (d *Daemon) startLocalAPILocked() error {
 	if d.closed {
 		return domain.Offline("daemon is closed")
 	}
-	if d.localAPI != nil {
+	if d.Temporary || d.localAPI != nil {
 		return nil
 	}
 	path := filepath.Join(d.Root, "local-api.json")

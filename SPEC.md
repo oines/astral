@@ -336,7 +336,7 @@ Linux Server 的 Local Computer 是 Linux 服务所在机器。访问网页的�
 
 ### 跨平台、后台运行与更新
 
-macOS、Windows、Linux 发行统一可执行程序 `astral-*`（包含 Server、嵌入 Web UI、CLI 与 Daemon）以及通过 `-tags daemon` 裁剪构建的轻量独立 `astral-daemon-*`（去除 SQLite、Web UI、HTTP API、Harness 与 IM 渠道依赖，约 9.9 MB）。电脑安装脚本与 Daemon 更新优先下载校验 `astral-daemon-*`，旧发行版自动回退 `astral-*`。Windows 的桌面、Server 与裸机 Daemon 原生运行，不要求 WSL。Windows 接入提供 PowerShell 命令，使用现代 Windows 内置 `curl.exe` 从官方 HTTPS 下载 bootstrap 并检查成功后才执行；macOS/Linux 提供 shell 命令，选择依据目标电脑的平台。
+macOS、Windows、Linux 发行统一可执行程序 `astral-*`（包含 Server、嵌入 Web UI、CLI 与 Daemon）以及通过 `-tags daemon` 裁剪构建的轻量独立 `astral-daemon-*`（去除 SQLite、Web UI、HTTP API、Harness 与 IM 渠道依赖，约 9.9 MB）。新接入的电脑优先下载并校验 `astral-daemon-*`，旧发行版回退到 `astral-*`。手动更新已安装的完整 CLI 时仍选择统一程序，保留管理命令。Server 按 Daemon 声明的更新能力选择兼容的发行物。Windows 的桌面、Server 与裸机 Daemon 原生运行，不要求 WSL。Windows 接入提供 PowerShell 命令，使用现代 Windows 内置 `curl.exe` 从官方 HTTPS 下载 bootstrap 并检查成功后才执行；macOS/Linux 提供 shell 命令，选择依据目标电脑的平台。
 
 远程接入、临时连接和 Daemon 维护界面均提供“下载源”选择（默认 GitHub 官方，可选验证过的第三方 HTTPS 镜像或自定义 HTTPS 前缀），切换下载源即时改写命令而无需重新生成配对凭据；永久 Daemon 的安装与在线更新会将规范化后的 `ASTRAL_GITHUB_PROXY` 持久化到用户服务配置（systemd / launchd / Windows 任务计划启动脚本），选择“GitHub 官方”显式传空值即恢复直连。镜像仅路由固定官方 GitHub release API 与资产，始终执行 SHA-256 校验，不路由电脑与 Server 的日常通信。
 

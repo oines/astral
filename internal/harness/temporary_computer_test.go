@@ -2,6 +2,8 @@ package harness
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,8 +75,6 @@ func connectTemporaryDaemon(t *testing.T, f *fixture, sessionID, agentID string,
 
 func TestTemporaryComputerScopeSecurityContextAndCleanup(t *testing.T) {
 	f := newFixture(t, 1, func(context.Context, int, map[string]any) any { return textReply("ok") })
-	f.hub.DisconnectGrace = 120 * time.Millisecond
-
 	originalComputer := f.session.ComputerID
 	otherSession, err := f.service.CreateSession(f.ctx, f.agent.ID, "Other Session")
 	if err != nil {
@@ -139,8 +139,15 @@ func TestTemporaryComputerScopeSecurityContextAndCleanup(t *testing.T) {
 	if !domain.ComputerAllowedForSession(agent, sub, comp) {
 		t.Fatal("subagent of owning root Session was denied access to temporary Computer")
 	}
-	if _, err := f.hub.Bind(f.ctx, f.agent.ID, f.session.ID, comp.ID, ""); err != nil {
+	binding, err := f.hub.Bind(f.ctx, f.agent.ID, f.session.ID, comp.ID, "")
+	if err != nil {
 		t.Fatalf("owning Session could not bind temporary Computer: %v", err)
+	}
+	if binding.APIURL != "" {
+		t.Errorf("temporary execution binding exposed a local API listener: %s", binding.APIURL)
+	}
+	if _, err := os.Stat(filepath.Join(tempDaemon.Root, "local-api.json")); !os.IsNotExist(err) {
+		t.Errorf("binding a temporary Computer created local-api.json: %v", err)
 	}
 
 	// 4. Fork does not inherit temporary Computer selection.
@@ -159,7 +166,11 @@ func TestTemporaryComputerScopeSecurityContextAndCleanup(t *testing.T) {
 	// 5. Graceful exit (Ctrl+C -> daemon.leave) immediately removes the temporary Computer and clears Session selection.
 	stopDaemon()
 	<-daemonDone
-	eventually(t, f.ctx, func() bool {
+	// The default disconnect grace is two minutes. A clean exit must complete
+	// well before an unexpected disconnect would expire.
+	leaveCtx, cancel := context.WithTimeout(f.ctx, 5*time.Second)
+	defer cancel()
+	eventually(t, leaveCtx, func() bool {
 		var check domain.Computer
 		return domain.IsMissing(f.store.Get(f.ctx, "computers", comp.ID, &check))
 	})
@@ -201,6 +212,12 @@ func TestTemporaryComputerSessionLifecycleCleanup(t *testing.T) {
 		var check domain.Computer
 		return domain.IsMissing(f.store.Get(f.ctx, "computers", compArch.ID, &check))
 	})
+	f.service.mu.Lock()
+	reopened := f.service.runtimes[archSession.ID] != nil
+	f.service.mu.Unlock()
+	if reopened {
+		t.Error("temporary Computer cleanup reopened the archived Session runtime")
+	}
 
 	// B. Deleting an owning Session cleans up any temporary Computer belonging to it.
 	delSession, err := f.service.CreateSession(f.ctx, f.agent.ID, "Delete Session")
@@ -260,4 +277,22 @@ func TestTemporaryComputerSessionLifecycleCleanup(t *testing.T) {
 		var check domain.Computer
 		return domain.IsMissing(f.store.Get(f.ctx, "computers", creds.ComputerID, &check))
 	})
+}
+
+func TestDeleteBotRemovesTemporaryComputerOfUnarchivedSession(t *testing.T) {
+	f := newFixture(t, 1, func(context.Context, int, map[string]any) any { return textReply("ok") })
+	comp, _, _, _ := connectTemporaryDaemon(t, f, f.session.ID, f.agent.ID, time.Hour)
+	if err := f.service.DeleteAgent(f.ctx, f.agent.ID, f.agent.Revision); err != nil {
+		t.Fatal(err)
+	}
+	var check domain.Computer
+	if err := f.store.Get(f.ctx, "computers", comp.ID, &check); !domain.IsMissing(err) {
+		t.Fatalf("temporary Computer survived Bot deletion: %v", err)
+	}
+	if _, err := f.store.Secret(f.ctx, comp.TokenID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("temporary Computer credential survived Bot deletion: %v", err)
+	}
+	if f.hub.Status(comp).Online {
+		t.Fatal("temporary Computer is still connected")
+	}
 }

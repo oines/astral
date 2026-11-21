@@ -83,16 +83,8 @@ func DaemonAssetName(platform, arch string) (string, error) {
 	return name, nil
 }
 
-func client() *http.Client {
-	return clientWithProxy(githubrelease.ProxyOverride{})
-}
-
 func clientWithProxy(override githubrelease.ProxyOverride) *http.Client {
 	return &http.Client{Timeout: 5 * time.Minute, CheckRedirect: githubrelease.CheckRedirectWithProxy(override)}
-}
-
-func get(ctx context.Context, c *http.Client, url string) (io.ReadCloser, error) {
-	return getWithProxy(ctx, c, url, githubrelease.ProxyOverride{})
 }
 
 func getWithProxy(ctx context.Context, c *http.Client, url string, override githubrelease.ProxyOverride) (io.ReadCloser, error) {
@@ -120,24 +112,15 @@ func base(version string) string {
 	return "https://github.com/oines/astral/releases/download/v" + version
 }
 
-// Latest pins both the immutable release tag and that release's checksum.
-// It prefers the standalone astral-daemon executable when published and falls
-// back to the full astral binary for older releases.
-func Latest(ctx context.Context, platform, arch string) (Binary, error) {
-	return LatestWithProxy(ctx, platform, arch, githubrelease.ProxyOverride{})
-}
-
-func LatestWithProxy(ctx context.Context, platform, arch string, override githubrelease.ProxyOverride) (Binary, error) {
+// LatestWithProxy pins the release tag and checksum. Legacy Daemons require
+// the unified executable, including when the release also has standalone assets.
+func LatestWithProxy(ctx context.Context, platform, arch string, override githubrelease.ProxyOverride, standalone bool) (Binary, error) {
 	c := clientWithProxy(override)
 	defer c.CloseIdleConnections()
-	return latestWithProxy(ctx, platform, arch, c, override)
+	return latestWithProxy(ctx, platform, arch, c, override, standalone)
 }
 
-func latest(ctx context.Context, platform, arch string, c *http.Client) (Binary, error) {
-	return latestWithProxy(ctx, platform, arch, c, githubrelease.ProxyOverride{})
-}
-
-func latestWithProxy(ctx context.Context, platform, arch string, c *http.Client, override githubrelease.ProxyOverride) (Binary, error) {
+func latestWithProxy(ctx context.Context, platform, arch string, c *http.Client, override githubrelease.ProxyOverride, standalone bool) (Binary, error) {
 	daemonName, err := DaemonAssetName(platform, arch)
 	if err != nil {
 		return Binary{}, err
@@ -194,7 +177,7 @@ func latestWithProxy(ctx context.Context, platform, arch string, c *http.Client,
 		}
 	}
 	value := Binary{Version: version, Name: daemonName, SHA256: daemonSHA}
-	if value.SHA256 == "" {
+	if !standalone || value.SHA256 == "" {
 		value.Name, value.SHA256 = fullName, fullSHA
 	}
 	if err = value.Validate(platform, arch); err != nil {
@@ -204,16 +187,12 @@ func latestWithProxy(ctx context.Context, platform, arch string, c *http.Client,
 }
 
 // Verify rechecks a staged descriptor against its immutable official release.
-// A local handoff file is not an authority to choose executable bytes.
-func (b Binary) Verify(ctx context.Context) error {
-	override := b.ProxyOverride()
+// override must come from trusted configuration or an authenticated Server.
+// Neither the bytes nor the verification source may be chosen by a local handoff.
+func (b Binary) Verify(ctx context.Context, override githubrelease.ProxyOverride) error {
 	c := clientWithProxy(override)
 	defer c.CloseIdleConnections()
 	return b.verifyWithProxy(ctx, c, override)
-}
-
-func (b Binary) verify(ctx context.Context, c *http.Client) error {
-	return b.verifyWithProxy(ctx, c, b.ProxyOverride())
 }
 
 func (b Binary) verifyWithProxy(ctx context.Context, c *http.Client, override githubrelease.ProxyOverride) error {
@@ -277,10 +256,6 @@ func (b Binary) DownloadWithProxy(ctx context.Context, target string, override g
 	c := clientWithProxy(override)
 	defer c.CloseIdleConnections()
 	return b.downloadWithProxy(ctx, target, c, override)
-}
-
-func (b Binary) download(ctx context.Context, target string, c *http.Client) error {
-	return b.downloadWithProxy(ctx, target, c, b.ProxyOverride())
 }
 
 func (b Binary) downloadWithProxy(ctx context.Context, target string, c *http.Client, override githubrelease.ProxyOverride) error {

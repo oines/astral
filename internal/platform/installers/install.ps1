@@ -168,26 +168,35 @@ if (-not $Temporary) {
     if (-not $commandPath) { $commandPath = Join-Path $installBase 'astral.cmd'; $addCommandDirectory = $true }
     if ((Test-Path -LiteralPath $commandPath) -and -not (Test-ManagedCommand $commandPath)) { throw "Refusing to replace an unrelated command: $commandPath" }
   }
-  $temporary = Join-Path $installBase ([Guid]::NewGuid().ToString('N'))
+  $stagingDirectory = Join-Path $installBase ([Guid]::NewGuid().ToString('N'))
 } else {
-  $temporary = Join-Path ([IO.Path]::GetTempPath()) ('astral-temp-' + [Guid]::NewGuid().ToString('N'))
+  $stagingDirectory = Join-Path ([IO.Path]::GetTempPath()) ('astral-temp-' + [Guid]::NewGuid().ToString('N'))
 }
-[IO.Directory]::CreateDirectory($temporary) | Out-Null
+[IO.Directory]::CreateDirectory($stagingDirectory) | Out-Null
 try {
   $daemonName = "astral-daemon-windows-$arch.exe"
   $fullName = "astral-windows-$arch.exe"
-  $manifestPath = Join-Path $temporary 'checksums.txt'
+  $manifestPath = Join-Path $stagingDirectory 'checksums.txt'
   Get-OfficialAsset 'checksums.txt' $manifestPath
   $manifest = [IO.File]::ReadAllText($manifestPath)
   $name = $daemonName
-  $matches = @($manifest -split "`n" | Where-Object { $_ -match ('^([a-fA-F0-9]{64})\s+' + [Regex]::Escape($name) + '\s*$') })
-  if ($matches.Count -eq 0) {
-    $name = $fullName
-    $matches = @($manifest -split "`n" | Where-Object { $_ -match ('^([a-fA-F0-9]{64})\s+' + [Regex]::Escape($name) + '\s*$') })
+  $checksumLines = @($manifest -split "`n" | Where-Object { $_ -match ('^([a-fA-F0-9]{64})\s+' + [Regex]::Escape($name) + '\s*$') })
+  $hasStandalone = $checksumLines.Count -gt 0
+  $keepFullCLI = $false
+  $currentProgram = Join-Path $current 'astral.exe'
+  if (-not $Temporary -and $hasStandalone -and (Test-Path -LiteralPath $currentProgram -PathType Leaf)) {
+    # Only the unified CLI reports Host/Core data formats in version metadata.
+    $metadata = (& $currentProgram version --json | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not identify the installed Astral command.' }
+    $keepFullCLI = $metadata -match '"data_formats"\s*:'
   }
-  if ($matches.Count -ne 1) { throw 'Astral distribution has no unique checksum.' }
-  $expected = ($matches[0] -split '\s+')[0].ToLowerInvariant()
-  $download = Join-Path $temporary 'astral.exe'
+  if (-not $hasStandalone -or $keepFullCLI) {
+    $name = $fullName
+    $checksumLines = @($manifest -split "`n" | Where-Object { $_ -match ('^([a-fA-F0-9]{64})\s+' + [Regex]::Escape($name) + '\s*$') })
+  }
+  if ($checksumLines.Count -ne 1) { throw 'Astral distribution has no unique checksum.' }
+  $expected = ($checksumLines[0] -split '\s+')[0].ToLowerInvariant()
+  $download = Join-Path $stagingDirectory 'astral.exe'
   Get-OfficialAsset $name $download
   $actual = Get-FileSHA256 $download
   if ($actual -ne $expected) { throw 'Astral checksum did not match; the installed version is unchanged.' }
@@ -203,7 +212,11 @@ try {
   if ((Test-Path -LiteralPath $executable) -and (Get-FileSHA256 $executable) -ne $actual) { throw 'An installed release is damaged. Remove that version directory and rerun this command.' }
   if (-not (Test-Path -LiteralPath $executable)) { Move-Item -LiteralPath $download -Destination $executable }
   $arguments = @('computer')
-  if ($Update) { $arguments += @('update', '--update') }
+  if ($Update) {
+    $arguments += @('update', '--update')
+    # Windows PowerShell removes an environment variable assigned an empty string.
+    if ($hasStandalone) { $arguments += ('--github-proxy=' + $GitHubProxy) }
+  }
   else { $arguments += @('connect', '--server', $Server, '--server-pin', $ServerPin, '--enrollment', $Enrollment, '--token', $Token) }
   if ($Root) { $arguments += @('--root', $Root) }
   if ($Foreground) { $arguments += '--foreground' }
@@ -268,5 +281,5 @@ try {
     if (Test-Path -LiteralPath $pendingCurrent) { [IO.Directory]::Delete($pendingCurrent) }
   }
 } finally {
-  Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $stagingDirectory -Recurse -Force -ErrorAction SilentlyContinue
 }

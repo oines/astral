@@ -26,7 +26,7 @@ const fixture = vi.hoisted(() => ({
   closeComputerMenu: vi.fn(),
   computerMenu: [] as VNode[],
   send: undefined as undefined | (() => Promise<void>),
-  handlers: undefined as undefined | { keyboard: (event: KeyboardEvent) => void; composerText: string; sendLabel: string; error: string; toggleQueue: () => Promise<void> },
+  handlers: undefined as undefined | { keyboard: (event: KeyboardEvent) => void; composerText: string; sendLabel: string; error: string; toggleQueue: () => Promise<void>; ensureSessionForTemporary: () => Promise<string> },
 }))
 vi.mock('../stores/app', () => ({ useAppStore: () => reactive(fixture.app) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, locale: { value: 'en' } }) }))
@@ -328,6 +328,32 @@ describe('Composer Computer management entry', () => {
     const html = await renderToString(createSSRApp(Composer, { live: true, view: { ...view(false), id: 'sub-session', subagent_parent_id: 'root-session', agent_id: 'current-bot', status: 'idle' } }))
     expect(html).toContain('Lab PC')
     expect(html).not.toContain('temporaryComputer.action')
+  })
+
+  it('selects the paired Computer for the first message and restores the Bot default for the next new chat', async () => {
+    computersFor('current-bot')
+    fixture.app.models = [{ id: 'model', available: true }]
+    const home = { ...view(false), id: '', agent_id: 'current-bot', status: 'idle', profile_id: 'model', model_available: true, computer_id: 'computer-1' }
+    const renderHome = () => renderToString(createSSRApp(Composer, { live: true, view: home }))
+    fixture.createSession.mockResolvedValueOnce({ data: { ...home, id: 'first' } })
+    await renderHome()
+    expect(await fixture.handlers!.ensureSessionForTemporary()).toBe('first')
+
+    fixture.app.computers.push({ id: 'lab', name: 'Lab PC', temporary: true, online: true, revoked: false, owner_session_id: 'first', owner_agent_id: 'current-bot' })
+    await renderHome()
+    computerMenuButtons()[1]!.props!.onClick()
+    fixture.handlers!.composerText = 'Use the lab PC'
+    await fixture.send!()
+    expect(fixture.selectComputer).toHaveBeenCalledExactlyOnceWith({ path: { id: 'first' }, body: { computer_id: 'lab' } })
+
+    fixture.createSession.mockResolvedValueOnce({ data: { ...home, id: 'second' } })
+    const html = await renderHome()
+    expect(html).not.toContain('Lab PC')
+    expect(html).toMatch(/class="composer-picker computer-picker"[^>]*>[\s\S]*?<span>Current Computer<\/span>/)
+    fixture.handlers!.composerText = 'Start another task'
+    await fixture.send!()
+    expect(fixture.selectComputer).toHaveBeenCalledOnce()
+    expect(fixture.submitInput).toHaveBeenLastCalledWith({ path: { id: 'second' }, body: expect.objectContaining({ text: 'Start another task' }) })
   })
 
   it('offers Bot Computer permissions when no Computers are currently authorized', async () => {
