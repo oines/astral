@@ -168,6 +168,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
 - Copy a regular file between authorized Computers with \`POST /v1/computers/files/copy\`. Either Computer ID defaults to the caller. The Server streams the bytes to the destination Daemon, which replaces the file when the transfer completes. Update the receiving Daemon before using this endpoint.
 - In an Assistant reply, a Markdown link to \`astral-file://<computer_id>?path=<URL-encoded-path>\` opens the file in the Web preview pane. Markdown images can display inline. Uploaded attachments and historical file-ID links remain usable.
 - Settings → Data & storage now lists chats and unbound conversations together. Search or filter by Bot, clear a chat's local archive, adjust retention, or reset its current session. Cache and old backup cleanup reports the bytes removed and preserves recovery backups and newer Desktop installers.
+- A delayed failure notification for a model request now preserves its scheduled retry time across a Server restart.
 - Installer-managed Linux Servers can use one-click updates with custom systemd drop-ins and additional service arguments. Astral still checks the installation owner, the release executable and the active service's main process.
 
 ### Updating Computer API clients
