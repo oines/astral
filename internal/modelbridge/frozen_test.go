@@ -16,25 +16,6 @@ import (
 	"github.com/oines/astral/internal/persistence"
 )
 
-func TestEffortUsageTargetAllowsOnlyAstralVersionChange(t *testing.T) {
-	model := &boundModel{}
-	original := json.RawMessage(`{"target":{"model":"old"},"provider_id":"p","user_agent":"Astral/0.1.45"}`)
-	upgraded := json.RawMessage(`{"target":{"model":"old"},"provider_id":"p","user_agent":"Astral/0.1.48"}`)
-	if !model.CompatibleReasoningEffortTargets(original, upgraded) {
-		t.Fatal("software version invalidated an otherwise identical target")
-	}
-	for _, different := range []string{
-		`{"target":{"model":"new"},"provider_id":"p","user_agent":"Astral/0.1.48"}`,
-		`{"target":{"model":"old"},"provider_id":"other","user_agent":"Astral/0.1.48"}`,
-		`{"target":{"model":"old"},"provider_id":"p","user_agent":"Astral/0.1.48","future_field":1}`,
-		`{"target":{"model":"old"},"provider_id":"p","user_agent":"other-client"}`,
-	} {
-		if model.CompatibleReasoningEffortTargets(original, json.RawMessage(different)) {
-			t.Fatalf("accepted changed target %s", different)
-		}
-	}
-}
-
 func frozenSelection(t *testing.T, b *Bridge, profileID string) (core.ResolvedModel, core.ModelSnapshot) {
 	t.Helper()
 	resolved, err := b.ResolveSelection(context.Background(), core.ModelSelection{ID: profileID})

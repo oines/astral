@@ -164,7 +164,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   const hostMigration = formats.host_schema >= 4 ? 'The Host 3 → 4 migration restores visibility of Sessions archived while still bound to IM. It appends an unarchived current revision while preserving every earlier revision, IM event and Core history entry; ordinary archived Sessions stay archived. Desktop keeps its existing schema-3-core-11/ data directory.' : 'The supported public data baseline is Host 3 / Core 11.'
   const capabilities = `Each group chat and topic now has a Use group context switch, on by default. Turn it off to archive ordinary group messages without adding them to the Bot's session. Messages addressed directly to the Bot appear in the Astral conversation, including when you reopen an existing session.
 
-On compatible models, switching between active reasoning levels can reuse the provider's reported token usage for the same conversation history. New messages are counted from that baseline.
+Changing reasoning or sampling settings can reuse the provider's reported token count when the model and the earlier input match. Older sessions may use an estimate until their next response with reported usage.
 
 Control Astral API access when adding a Computer or in its details. New remote Computers start with API access off. Turning it off revokes command API credentials and blocks new event deliveries from that Computer. Bots can still run commands and work with files on it. Existing compatible Daemons work with this setting after updating the Server.
 
