@@ -174,7 +174,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
 
 Use \`GET .../content\` to stream attachments, message parts, stickers, essence media and avatars. It replaces the corresponding \`POST .../download\` routes. The bundled Python client accepts \`--output FILE --force\` to replace an existing download after the response completes. Use direct Computer path links in Web replies in place of \`POST /v1/files/reference\`.
 
-Send a file and caption as ordered \`parts\` in \`POST /v1/im/messages\` in place of \`POST /v1/im/files\`. Discover and call Telegram operations through \`/v1/accounts/{id}/operations\` and \`/v1/accounts/{id}/operations/{operation\`. The Telegram-specific operation aliases have been removed.
+Send a file and caption as ordered \`parts\` in \`POST /v1/im/messages\` in place of \`POST /v1/im/files\`. Discover and call Telegram operations through \`/v1/accounts/{id}/operations\` and \`/v1/accounts/{id}/operations/{operation}\`. The Telegram-specific operation aliases have been removed.
 
 ## Additional features and upgrade information
 
