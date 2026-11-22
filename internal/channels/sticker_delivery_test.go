@@ -19,12 +19,24 @@ import (
 	"github.com/oines/astral/internal/testkit"
 )
 
-type stickerImageAdapter struct {
-	Adapter
+type stickerImageSource struct {
 	data      []byte
 	expected  string
-	fail      bool
+	fail      atomic.Bool
 	downloads atomic.Int64
+}
+
+type stickerImageAdapter struct {
+	Adapter
+	*stickerImageSource
+}
+
+func (s *stickerImageSource) adapter(c domain.Connection, token string, client *http.Client) (Adapter, error) {
+	base, err := NewTelegram(c, token, client)
+	if err != nil {
+		return nil, err
+	}
+	return &stickerImageAdapter{base, s}, nil
 }
 
 func (a *stickerImageAdapter) Download(_ context.Context, attachment domain.Attachment) (Download, error) {
@@ -32,7 +44,7 @@ func (a *stickerImageAdapter) Download(_ context.Context, attachment domain.Atta
 	if attachment.ExternalID != a.expected {
 		return Download{}, errors.New("downloaded a sticker original instead of its thumbnail")
 	}
-	if a.fail {
+	if a.fail.Load() {
 		return Download{}, errors.New("preview is unavailable")
 	}
 	return Download{Body: io.NopCloser(bytes.NewReader(a.data)), Size: int64(len(a.data)), Name: attachment.Name}, nil
@@ -66,15 +78,12 @@ func TestStickerDeliveryUsesImagesWithoutSavingOriginalFiles(t *testing.T) {
 				return testkit.Text("received sticker")
 			})
 			s := New(p.Store, p.Harness)
-			source := &stickerImageAdapter{data: webp, expected: test.expected, fail: test.fail}
+			source := &stickerImageSource{data: webp, expected: test.expected}
+			source.fail.Store(test.fail)
 			if test.corrupt {
 				source.data = []byte("invalid image")
 			}
-			s.Registry["telegram.bot"] = func(c domain.Connection, token string, client *http.Client) (Adapter, error) {
-				base, err := NewTelegram(c, token, client)
-				source.Adapter = base
-				return source, err
-			}
+			s.Registry["telegram.bot"] = source.adapter
 			account := bot.connection(t, s, p.Agent.ID)
 			binding := createBinding(t, p, s, account, "-100", "")
 			metadata := &domain.StickerMetadata{Type: "regular", Format: test.format, Emoji: "🙂", SetName: "test_stickers", Width: 2, Height: 2}
@@ -149,12 +158,12 @@ func TestStickerDeliveryUsesImagesWithoutSavingOriginalFiles(t *testing.T) {
 			// A committed delivery must replay its saved pixels and metadata;
 			// repeating routing after Telegram becomes unavailable cannot refetch.
 			before := source.downloads.Load()
-			source.fail = true
+			source.fail.Store(true)
 			if err := s.deliver(p.Context, binding, event); err != nil || source.downloads.Load() != before {
 				t.Fatal("committed delivery fetched its source again:", err)
 			}
 			if test.name == "static-original" {
-				source.fail = false
+				source.fail.Store(false)
 				caller, err := p.Hub.Bind(p.Context, p.Agent.ID, binding.SessionID, p.Daemons[0].Credentials.ComputerID, "")
 				if err != nil {
 					t.Fatal(err)

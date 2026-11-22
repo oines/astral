@@ -13,7 +13,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
-	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -361,12 +360,8 @@ func TestIMPreviewIsFrozenBeforeMainAndProbeWithoutChangingOriginalDownload(t *t
 		return testkit.Text("received image preview")
 	})
 	s := New(p.Store, p.Harness)
-	source := &stickerImageAdapter{data: data, expected: "original"}
-	s.Registry["telegram.bot"] = func(c domain.Connection, token string, client *http.Client) (Adapter, error) {
-		base, err := NewTelegram(c, token, client)
-		source.Adapter = base
-		return source, err
-	}
+	source := &stickerImageSource{data: data, expected: "original"}
+	s.Registry["telegram.bot"] = source.adapter
 	account := bot.connection(t, s, p.Agent.ID)
 	b := createBinding(t, p, s, account, "-100", "")
 	attachment := domain.Attachment{Ref: "10:0", ExternalID: "original", Kind: "image", MediaType: "image/png", Name: "original.png", Size: int64(len(data))}
@@ -443,7 +438,7 @@ func TestIMPreviewIsFrozenBeforeMainAndProbeWithoutChangingOriginalDownload(t *t
 		t.Fatalf("ordinary image processing inherited IM preview limits: %v", bounds)
 	}
 	before := source.downloads.Load()
-	source.fail = true
+	source.fail.Store(true)
 	if err := s.deliver(p.Context, b, event); err != nil || source.downloads.Load() != before {
 		t.Fatal("replayed admission tried to regenerate committed preview:", err)
 	}
