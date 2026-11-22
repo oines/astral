@@ -101,7 +101,7 @@ IM 复用同一套 IMStore、Conversation、Session 绑定、持续上下文、P
 | D16 | Daemon 用一个持久 loopback 端口提供 Computer API；`/v1` 按每条命令的临时 Bearer 凭据恢复执行身份，独立 `/hooks/{id}` 仅在所属电脑匿名接收事件。Server 按来源电脑执行 Astral API 开关。 |
 | D17 | 调用身份由 Daemon 与平台绑定和验证；每个 Agent 得到自己的数据与能力视图。 |
 | D18 | 工作文件与 Web 附件留在 Computer；IM 接收不创建 Computer 文件，图片在内存处理并冻结到 Core，原附件通过 API 按需流式下载。 |
-| D19 | Web FileRef 可预览下载；绑定聊天使用 send_message 发送文字及文件，跨聊天发送通过 Computer API 明确指定。 |
+| D19 | Web 可按来源电脑和路径预览、下载助手给出的文件，并可打开已保存的附件引用；绑定聊天使用 send_message 发送文字及文件，跨聊天发送通过 Computer API 明确指定。 |
 | D20 | 模型与搜索凭据按全局资源配置；一个 Agent 同一时间仅选用一个搜索 Provider。 |
 | D21 | Transcript 是产品中心；普通工具过程折叠为 Activity Line，详情按需展开。 |
 | D22 | 持久事实、临时流式事件和平台业务状态分别管理，再由 Presenter 合成界面。 |
@@ -992,9 +992,9 @@ Server 在派发每条 `exec_command` 前生成独立的高熵随机凭据，仅
 
 平台具名操作统一通过账号的 `/v1/accounts/{id}/operations` 发现并调用，目录声明参数、上传 `file_fields` 和官方文档。Telegram 覆盖群管理、指定成员/管理员/人数查询与用户资料读取；Bot API 不支持完整群成员枚举。用户资料限于当前授权私聊对方或经平台证明的群成员，Topic 权限不扩大为父群授权。NapCat 覆盖成员和资料卡、群管理、公告、群文件及精华；原生群号由当前授权聊天确定。公告、文件及目录等不透明 ID 由当前群实时列表证明后才操作。文件、头像和公告图片上传使用来源 Computer 路径或 FileRef 流式读取，不解释为适配器宿主机路径或任意 URL。平台不提供的公告编辑、文件夹改名等能力不通过删建模拟。
 
-NapCat 头像通过聊天下的 `/avatar/content` 读取群头像或私聊对方头像，通过 `/members/{user_id}/avatar/content` 读取指定个人头像；个人目标只限私聊对方或 NapCat 已核实的当前群成员。对应 `/download` 接受明确的 `path`，保存到调用命令的来源电脑并返回 FileRef 与 URI。每次沿当前账号、聊天及私密 Session 授权校验，头像源由 Server 固定为 QQ 头像服务，不接受任意 URL；不创建入站事件或修改历史。QQ 官方 Bot 不复用这组 NapCat 资源接口。
+NapCat 头像通过聊天下的 `/avatar/content` 读取群头像或私聊对方头像，通过 `/members/{user_id}/avatar/content` 读取指定个人头像；个人目标只限私聊对方或 NapCat 已核实的当前群成员。客户端可将 GET 响应流式写入指定文件。每次沿当前账号、聊天及私密 Session 授权校验，头像源由 Server 固定为 QQ 头像服务，不接受任意 URL；不创建入站事件或修改历史。QQ 官方 Bot 不复用这组 NapCat 资源接口。
 
-NapCat 精华保留有序文字、图片及实际提供的其他媒体，不压平成文字。设置精华按原消息的平台群归属校验；取消精华从当前授权群列表取得可信序号和随机标识，支持未被 Astral 归档的历史精华，只移除标记而不删原消息。独立精华 parts/content/download 资源每次核对当前群精华来源，提供安全的按需读取和来源电脑下载；成对的 `msg_seq`/`msg_random` 查询参数在平台短消息 ID 变化时维持同条精华的身份；媒体链接附带必需的 `media_digest` 来源指纹，片段顺序变化时拒绝把旧链接解释为另一张图，要求重新读取 parts。图片流保留有效的真实媒体类型。查询不批量下载、不创建会话、不补写入站归档或 Core 历史。具名操作只尝试一次，明确拒绝与效果未知分别反馈，不套用普通消息发送的幂等规则。
+NapCat 精华保留有序文字、图片及实际提供的其他媒体，不压平成文字。设置精华按原消息的平台群归属校验；取消精华从当前授权群列表取得可信序号和随机标识，支持未被 Astral 归档的历史精华，只移除标记而不删原消息。独立精华 parts/content 资源每次核对当前群精华来源，客户端可按需读取或保存响应；成对的 `msg_seq`/`msg_random` 查询参数在平台短消息 ID 变化时维持同条精华的身份；媒体链接附带必需的 `media_digest` 来源指纹，片段顺序变化时拒绝把旧链接解释为另一张图，要求重新读取 parts。图片流保留有效的真实媒体类型。查询不批量下载、不创建会话、不补写入站归档或 Core 历史。具名操作只尝试一次，明确拒绝与效果未知分别反馈，不套用普通消息发送的幂等规则。
 
 ```text
 Agent 的 Bash / 脚本
@@ -1013,11 +1013,11 @@ Agent 的 Bash / 脚本
 
 ### 能力面
 
-Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用、格式、emoji、贴纸包名称和尺寸。IMStore 只归档元数据及平台引用，不在 Server 或 Computer 创建独立的附件文件，不创建 FileRef；需要文件时由 Agent 主动调用现有下载 API，并提供目标路径。静态 WebP 沿用 IM 图片以 30,000 字节 base64 为压缩阈值、默认保留原始尺寸的单次内存预览处理，TGS/WebM 只使用关联的独立缩略图作为模型图片输入并遵循同一限制，明确区分预览与原件。预览缺失或不可用不阻止贴纸消息交付；预览 payload 按现有 Core 历史机制持久化和重放，小静态图片的预览可能保留原始字节，但不额外保存独立附件文件。发送使用账号的具名 `sendSticker` API，可复用同一 Telegram Bot 账号内的原件 `file_id` 或显式上传文件；本功能不更改 `send_message` 工具的 schema 或行为。
+Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用、格式、emoji、贴纸包名称和尺寸。IMStore 只归档元数据及平台引用，不在 Server 或 Computer 创建独立的附件文件，不创建 FileRef；需要文件时由客户端 GET 原件内容并将响应写入选定路径。静态 WebP 沿用 IM 图片以 30,000 字节 base64 为压缩阈值、默认保留原始尺寸的单次内存预览处理，TGS/WebM 只使用关联的独立缩略图作为模型图片输入并遵循同一限制，明确区分预览与原件。预览缺失或不可用不阻止贴纸消息交付；预览 payload 按现有 Core 历史机制持久化和重放，小静态图片的预览可能保留原始字节，但不额外保存独立附件文件。发送使用账号的具名 `sendSticker` API，可复用同一 Telegram Bot 账号内的原件 `file_id` 或显式上传文件；本功能不更改 `send_message` 工具的 schema 或行为。
 
 `getStickerSet` 与 `getCustomEmojiStickers` 是目录中明确标记 `account_scoped: true` 的 Telegram 账号资源只读操作；查询指定贴纸包的完整列表或最多 200 个已知自定义 emoji 的贴纸元数据，不要求 Session 绑定聊天，也不扩大其他操作的聊天或 Topic 权限。账号必须属于当前 Bot 且处于启用状态；显式传入聊天时仍校验其账号与访问权限。查询返回原始平台 JSON，不创建 IM Observation、Session、Computer 文件或 FileRef，不自动下载整包。Agent 从 `t.me/addstickers/<name>` 或 `t.me/addemoji/<name>` 提取名称查询，再按需读取图片。
 
-资源内容接口以 `file_id` 和恰好一个 `set_name | custom_emoji_id` 定位，每次重新查询官方资源，确认文件是该资源中的原件、单张缩略图或整包缩略图后才调用内部 `getFile` 流式读取；不接受任意文件代理，不向 Agent 返回包含 Bot 凭据的下载 URL。GET 只传输字节且禁用缓存，POST 下载必须明确目标路径，沿当前命令原 Computer 写入，写入成功后才创建 FileRef；切换电脑不改变该来源。预览与原件在使用上仍明确区分，发送原件可直接复用同账号的原件 `file_id`。
+资源内容接口以 `file_id` 和恰好一个 `set_name | custom_emoji_id` 定位，每次重新查询官方资源，确认文件是该资源中的原件、单张缩略图或整包缩略图后才调用内部 `getFile` 流式读取；不接受任意文件代理，不向 Agent 返回包含 Bot 凭据的下载 URL。GET 流式返回原件字节且禁用缓存。需要本地文件时由客户端指定输出路径。预览与原件在使用上仍明确区分，发送原件可直接复用同账号的原件 `file_id`。
 
 以下为 v1 接口形态草案，正式字段由 OpenAPI 固定：
 
@@ -1039,18 +1039,12 @@ Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用�
 | Computer 文件直传 | `POST /v1/computers/files/copy` | 在两台有权访问的电脑间流式复制普通文件，目标 Daemon 收到完整内容后原子替换目标文件 |
 | Computer 文件内容 | `GET /v1/computers/{id}/files/content?path=…` | 从明确指定的授权 Computer 流式读取普通文件；路径由目标 Daemon 解析，支持源端 seek 的单段 Range |
 | 可用模型 | `GET /v1/models` | 仅列出当前 `available` 的 Profile，提供选择 ID、有效限制、推理默认值与完整推理 controls；不返回连接凭据 |
-| 主动发文本 | `POST /v1/im/messages` | 向指定的可用 Conversation 发送文本 |
-| 发文件 | `POST /v1/im/files` | 从来源 Computer 读取并上传文件，可带说明文字 |
+| IM 发送 | `POST /v1/im/messages` | 向授权 Conversation 发送文字，或通过有序 parts 发送图片、文件和说明文字 |
 | 消息 ID | `GET /v1/conversations/{id}/messages/{message_id}` | 最新归档版本 |
 | 原始附件 | `GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content` | 文件字节响应，沿现有 Daemon 分块通道流式传输 |
 | 平台操作目录 | `GET /v1/accounts/{id}/operations` | 按账号发现已实现的具名操作，不暴露凭据或任意路径代理 |
 | 平台操作 | `POST /v1/accounts/{id}/operations/{operation}` | 按目录区分账号资源读取与聊天操作；验证账号及适用的聊天/消息权限，不创建 Session |
-| Telegram 目录 | `GET /v1/accounts/{id}/telegram/operations` | 具名操作、账号资源/聊天作用域及官方参数说明 |
-| Telegram 操作 | `POST /v1/accounts/{id}/telegram/{operation}` | 分别验证目标、来源和嵌套聊天引用；不提供任意 HTTP 代理 |
 | 贴纸资源内容 | `GET /v1/accounts/{id}/telegram/stickers/content` | 验证所选贴纸包或自定义 emoji 内的原件/缩略图，流式返回字节，不保存文件 |
-| 贴纸资源下载 | `POST /v1/accounts/{id}/telegram/stickers/download` | 验证同一资源来源，显式写到调用方原 Computer 路径并返回 FileRef |
-| 附件下载 | `POST /v1/attachments/download` | 将平台附件下载到调用方明确指定的 Computer 路径 |
-| 文件引用 | `POST /v1/files/reference` | 将当前 Computer 路径转为来源固定的 FileRef/可引用链接 |
 | API 说明 | `GET /v1/capabilities` | 当前视图支持的能力与文档入口 |
 | 能力文档 | `GET /v1/capabilities/{id}` | 按需读取用途、规则、示例和实际接口 schema |
 
@@ -1163,25 +1157,18 @@ FileRef 的必要语义为：
 
 路径必须在产生引用时归属明确。普通文件链接指向来源路径；需要重放相同媒体内容时，源 Computer 保留可校验的版本，并在引用中记录版本或指纹。源文件已删除、版本改变或 Computer 离线时显示真实不可用状态，不用 Server 副本掩盖。
 
-### Web 文件引用
+### Web 文件链接
 
-模型在直接输出的文字中使用文件链接，Renderer 解析为文件预览、下载或 Contextual Surface 入口。链接必须能解析到完整 FileRef；具体 URI 编码由统一的引用协议确定，不能只在点击时用“当前 Computer + 路径”临时拼接。
+助手在网页会话的回复中直接写 Markdown 链接或图片。URI 为 `astral-file://<computer_id>?path=<编码后的路径>`，包含实际来源电脑 ID 和按 URL 查询参数编码的文件路径。例如：
 
-模型可以通过 Gateway 获得可直接引用的链接；文件工具结果也可提供同一格式的引用。UI 的 Markstream 链接处理器识别文件引用，交给平台文件打开器，普通互联网链接则按普通链接处理。
-
-```mermaid
-sequenceDiagram
-    participant M as Model
-    participant H as Server
-    participant D as Source Computer Daemon
-    participant W as Web UI
-    M->>H: 模型直接输出的文字包含 FileRef 链接
-    H->>W: 持久消息与文件引用
-    W->>H: 请求预览或下载 FileRef
-    H->>D: 按来源 Computer 与路径读取
-    D-->>H: 文件字节流
-    H-->>W: 流式透传
+```markdown
+[下载报告](astral-file://computer_linux?path=%2Fhome%2Fastral%2Freports%2Frelease.pdf)
+![趋势图](astral-file://computer_linux?path=%2Fhome%2Fastral%2Freports%2Ftrend.png)
 ```
+
+Web 在这条助手消息的会话中请求预览或下载。图片显示在正文中，普通文件在文件侧栏打开。打开时重新校验授权，读取来源电脑上该路径的当前内容。发链接、预览目录文件和下载均无需注册 FileRef。IM 归档、工具输出与用户消息里的路径文本不作为助手授权的文件入口。
+
+网页上传和历史 `astral-file://<computer_id>/<file_id>` 继续通过已有 FileRef 读取；引用含版本时仍校验原版本。上述两类链接都保留原电脑身份，会话切换电脑不会把链接改指新电脑。
 
 ### 工具图片结果
 
@@ -1311,7 +1298,7 @@ Sidebar 可以完全折叠，不保留固定 icon rail。主界面没有额外�
 
 Contextual Surface 正常与聊天并排占独立空间，两者之间的分隔线可拖动调整宽度；可用宽度减小时先收窄右栏，只有实际空间不足以同时容纳两栏时才覆盖聊天。它按主会话管理文件、子代理与子代理列表标签，保留查看位置和目录展开状态；收起面板不删除标签，关闭标签不修改执行。文件管理器置于预览右侧，两者之间的分隔线也可拖动调整宽度，顶部固定“文件”开关，窄右栏使用临时覆盖预览的目录抽屉。“文件”可直接浏览当前根会话电脑的工作目录，无需先取得 FileRef；打开文件后以文件标签的来源电脑和路径定位。切换会话电脑保留原文件标签；尚无打开文件的目录浏览跟随会话电脑。切换与浏览均不修改会话执行电脑、CWD 或模型。异步打开结果只能写回其来源工作区，不能因用户切会话或关闭面板而抢占当前界面。子代理过程保持只读，隐藏时停止观察订阅，执行任务不受影响。
 
-Owner 文件浏览复用 FileRef 的 Bot、来源电脑、路径与版本身份。`GET /api/v1/files/{id}?session_id=…` 提供已授权归属的文件元数据，来源电脑离线时仍可读取；实际内容与目录访问继续执行电脑授权。`GET /api/v1/computers/{id}/files/directory` 按 `session_id`、`path`、不透明 `cursor` 与 `limit` 浏览单层目录，路径为普通文件时定位父目录，默认 200 项、最多 500 项；`POST /api/v1/computers/{id}/files/reference?session_id=…&path=…` 为目录中选定文件建立普通引用，复用已有内容接口。Daemon 提供独立 `file.list` 能力，旧电脑端明确返回不支持。目录中任意路径按目标电脑既有路径解析与 Bot 授权处理，不启动模型任务；历史快照的路径仍指向实际副本，不补造原始位置。
+Owner 使用当前会话的 Bot 和来源电脑授权浏览文件。`GET /api/v1/files/{id}?session_id=…` 提供已授权归属的文件元数据，来源电脑离线时仍可读取；实际内容与目录访问继续执行电脑授权。`GET /api/v1/computers/{id}/files/directory` 按 `session_id`、`path`、不透明 `cursor` 与 `limit` 浏览单层目录，路径为普通文件时定位父目录，默认 200 项、最多 500 项；`GET /api/v1/sessions/{id}/computers/{computer}/files/content?path=…` 按路径流式读取文件，支持单段 Range 与 `download=1`。常见光栅图、PDF 和可预览音视频可内联显示，HTML、SVG 等作为附件下载。Daemon 提供独立 `file.list` 能力，旧电脑端明确返回不支持。目录中任意路径按目标电脑既有路径解析与 Bot 授权处理，不启动模型任务；历史快照的路径仍指向实际副本，不补造原始位置。
 
 预览格式在 Web 的独立注册表与渲染器中扩展，工作区只处理文件身份和标签。Desktop 的系统文件定位经薄桥接层核实托管本机身份、Session/Bot 权限和服务端解析的实际路径后执行，远程与容器路径不能直接交给本机系统。此工作区与浏览能力均由 Astral Host、电脑执行端及界面层实现，不增加 Core 原语。
 
@@ -1574,7 +1561,7 @@ Provider 配置、Model Profile 和 Agent 选择的更新应具有可追溯版�
 
 send_message 与文本/文件 API 固定目的地、来源和幂等身份，按平台限制拆分文本并保持顺序。只有明确发送的内容建立出站意图。已接受的发送以平台消息身份写入 IMStore，自身回显去重后只补一份观察，不触发 Probe。
 
-最终没有显式发送时，IM 保持沉默；直接触发的漏调用按第 9 节至多补一次提醒。绑定停用或更换后，未完成意图继续保留原账号、聊天和绑定；失效的原绑定阻止发送，不重定向新目标。文件仍从被接受时固定的 Computer/FileRef 流式读取，普通路径发送不自动复制文件；需要保留版本时由调用方显式创建快照。
+最终没有显式发送时，IM 保持沉默；直接触发的漏调用按第 9 节至多补一次提醒。绑定停用或更换后，未完成意图继续保留原账号、聊天和绑定；失效的原绑定阻止发送，不重定向新目标。文件仍从被接受时固定的 Computer/FileRef 流式读取，普通路径发送读取原文件。需要保留当时版本时，先在来源电脑上另存一份文件。
 
 ### 接口身份边界
 

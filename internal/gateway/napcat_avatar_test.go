@@ -10,8 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -28,7 +26,7 @@ func (transport napcatAvatarGatewayTransport) RoundTrip(r *http.Request) (*http.
 	return transport(r)
 }
 
-func TestNapCatAvatarGatewayReadsAndDownloadsScopedImages(t *testing.T) {
+func TestNapCatAvatarGatewayReadsScopedImages(t *testing.T) {
 	p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	var picture bytes.Buffer
 	if err := png.Encode(&picture, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
@@ -116,7 +114,7 @@ func TestNapCatAvatarGatewayReadsAndDownloadsScopedImages(t *testing.T) {
 		}
 		return response.Header, data
 	}
-	for index, root := range []string{
+	for _, root := range []string{
 		"/v1/conversations/avatar-group/avatar",
 		"/v1/conversations/avatar-private/avatar",
 		"/v1/conversations/avatar-group/members/123/avatar",
@@ -126,29 +124,12 @@ func TestNapCatAvatarGatewayReadsAndDownloadsScopedImages(t *testing.T) {
 		if !bytes.Equal(data, picture.Bytes()) || headers.Get("Content-Type") != "image/png" || headers.Get("Content-Length") != strconv.Itoa(picture.Len()) || !strings.Contains(headers.Get("Content-Disposition"), ".png") || headers.Get("Cache-Control") != "private, no-store" || headers.Get("X-Content-Type-Options") != "nosniff" {
 			t.Fatalf("avatar stream lost verified bytes or media metadata: %v body=%x", headers, data)
 		}
-		// An explicit destination is preserved, while type follows actual bytes.
-		destination := filepath.Join(p.Directory, fmt.Sprintf("avatar-%d.jpg", index))
-		_, data = call("POST", root+"/download", NapCatAvatarDownloadRequest{Path: destination}, 200)
-		var saved ReferenceResponse
-		if err := json.Unmarshal(data, &saved); err != nil || saved.File.ComputerID != b.ComputerID || saved.File.Path != destination || saved.File.MediaType != "image/png" || !strings.HasPrefix(saved.URI, "astral-file://") {
-			t.Fatalf("download lost calling Computer or actual media type: %s %v", data, err)
-		}
-		if data, err := os.ReadFile(destination); err != nil || !bytes.Equal(data, picture.Bytes()) {
-			t.Fatalf("avatar was not saved on the calling Computer: %x %v", data, err)
-		}
-		var persisted domain.FileRef
-		if err := p.Store.Get(p.Context, "files", saved.File.ID, &persisted); err != nil || persisted.MediaType != "image/png" {
-			t.Fatalf("saved avatar reference lost actual type: %+v %v", persisted, err)
-		}
 	}
-	if images.Load() != 8 || membership.Load() < 2 {
+	if images.Load() != 4 || membership.Load() != 1 {
 		t.Fatalf("missing image reads or fresh membership checks: images=%d members=%d", images.Load(), membership.Load())
 	}
 	const groupRoot = "/v1/conversations/avatar-group/avatar"
 	call("GET", groupRoot+"/content?url=https://example.com/avatar", nil, 400)
-	call("POST", groupRoot+"/download?size=640", map[string]any{"path": filepath.Join(p.Directory, "bad-query.png")}, 400)
-	call("POST", groupRoot+"/download", map[string]any{"path": filepath.Join(p.Directory, "bad-body.png"), "url": "https://example.com/avatar"}, 400)
-	call("POST", groupRoot+"/download", map[string]any{}, 400)
 	call("GET", "/v1/conversations/avatar-private/members/888/avatar/content", nil, 403)
 	call("GET", "/v1/conversations/avatar-group/members/888/avatar/content", nil, 403)
 	account.AccessMode = "specified"
@@ -156,12 +137,7 @@ func TestNapCatAvatarGatewayReadsAndDownloadsScopedImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	call("GET", groupRoot+"/content", nil, 403)
-	rejectedDestination := filepath.Join(p.Directory, "not-authorized.png")
-	call("POST", groupRoot+"/download", NapCatAvatarDownloadRequest{Path: rejectedDestination}, 403)
-	if _, err := os.Stat(rejectedDestination); !os.IsNotExist(err) {
-		t.Fatalf("unauthorized download created a target file: %v", err)
-	}
-	if images.Load() != 8 || p.Requests.Load() != 0 {
+	if images.Load() != 4 || p.Requests.Load() != 0 {
 		t.Fatal("rejected requests downloaded an avatar or activated the model")
 	}
 	for _, chat := range []domain.Conversation{group, private} {
@@ -175,32 +151,25 @@ func TestNapCatAvatarGatewayReadsAndDownloadsScopedImages(t *testing.T) {
 func TestNapCatAvatarGatewayContractsAreDiscoverable(t *testing.T) {
 	g := New(nil, nil)
 	recorder := httptest.NewRecorder()
-	g.mux.ServeHTTP(recorder, httptest.NewRequest("GET", "/v1/capabilities/chats", nil))
+	g.mux.ServeHTTP(recorder, httptest.NewRequest("GET", "/v1/capabilities/files", nil))
 	var discovery CapabilityDocument
 	if err := json.Unmarshal(recorder.Body.Bytes(), &discovery); err != nil || recorder.Code != http.StatusOK {
-		t.Fatalf("chat capability discovery failed: %s %v", recorder.Body.Bytes(), err)
+		t.Fatalf("files capability discovery failed: %s %v", recorder.Body.Bytes(), err)
 	}
 	paths := discovery.OpenAPI["paths"].(map[string]any)
 	for _, root := range []string{"/v1/conversations/{id}/avatar", "/v1/conversations/{id}/members/{user_id}/avatar"} {
-		for suffix, method := range map[string]string{"/content": "get", "/download": "post"} {
-			path := root + suffix
-			if g.Contract.Paths[path] == nil || paths[path] == nil {
-				t.Fatalf("registered avatar endpoint missing from discovery: %s %s", method, path)
-			}
-			operation := paths[path].(map[string]any)[method].(map[string]any)
-			security, _ := json.Marshal(operation["security"])
-			if string(security) != `[{"command":[]}]` {
-				t.Fatalf("avatar resource omitted command authorization: %s %s", path, security)
-			}
-			if method == "get" {
-				response := operation["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)
-				if response["application/octet-stream"] == nil {
-					t.Fatalf("avatar read does not describe binary content: %s", path)
-				}
-			}
+		path := root + "/content"
+		if g.Contract.Paths[path] == nil || paths[path] == nil {
+			t.Fatalf("registered avatar endpoint missing from discovery: %s", path)
 		}
-	}
-	if notes := strings.Join(discovery.Notes, " "); !strings.Contains(notes, "/members/{user_id}/avatar/content") || !strings.Contains(notes, "calling Computer") {
-		t.Fatal("avatar discovery omitted selection or destination instructions")
+		operation := paths[path].(map[string]any)["get"].(map[string]any)
+		security, _ := json.Marshal(operation["security"])
+		if string(security) != `[{"command":[]}]` {
+			t.Fatalf("avatar resource omitted command authorization: %s %s", path, security)
+		}
+		response := operation["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)
+		if response["application/octet-stream"] == nil {
+			t.Fatalf("avatar read does not describe binary content: %s", path)
+		}
 	}
 }

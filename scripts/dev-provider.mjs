@@ -49,7 +49,7 @@ http.createServer(async(req,res)=>{
  const contentText=m=>typeof m.content==='string'?m.content:(m.content||[]).filter(p=>p.type==='text').map(p=>p.text).join('')
  const isTitle=messages.length===1&&contentText(messages[0]).startsWith('Generate a short title for this conversation,')
  const environment=messages.map(contentText).filter(text=>text.startsWith('Current Astral environment snapshot:\n')).at(-1)
- const apiURL=environment?JSON.parse(environment.slice(environment.indexOf('\n')+1)).local_api?.base_url:undefined
+ const computerID=environment?JSON.parse(environment.slice(environment.indexOf('\n')+1)).current_computer?.id:undefined
  const users=messages.filter(m=>m.role==='user'&&!contentText(m).startsWith('Current Astral environment snapshot:\n'))
  const user=users.at(-1)||{}
  const text=typeof user.content==='string'?user.content:JSON.stringify(user.content||'')
@@ -74,10 +74,11 @@ http.createServer(async(req,res)=>{
  else if(last.role==='tool' && text.includes('本周工作笔记')) message={role:'assistant',content:layoutReply}
  else if(text.includes('本周工作笔记')) message=tools('exec_command',{cmd:'printf \'notes.md\\n工作笔记已整理。\\n\'',yield_time_ms:1000,max_output_tokens:1000})
  else if(last.role==='tool'){
-  const native=typeof last.content==='string'?last.content:JSON.stringify(last.content)
-  const uri=/astral-file:\/\/[^\s"\\]+/.exec(native)?.[0]
+  const native=contentText(last)
+  const path=/ASTRAL_FIXTURE_FILE=([^\r\n]+?\/validation\.md)/.exec(native)?.[1]
+  const uri=path && computerID ? `astral-file://${computerID}?path=${encodeURIComponent(path)}` : ''
   message={role:'assistant',content:uri?`Created the file on your Computer.\n\n[Open the validation note](${uri})\n\nThe command output and source are available in the activity details.`:`The tool completed.\n\n${native.slice(0,200)}`}
- }else if(text.includes('[file]')) message=tools('exec_command',{cmd:'fixture_dir=$(mktemp -d)\nprintf \'# Astral validation\\n\\nThis file was written by the real Computer daemon.\\n\' > "$fixture_dir/validation.md"\ncurl -fsS -X POST "'+apiURL+'/v1/files/reference" -H \'Content-Type: application/json\' --data "{\\"path\\":\\"$fixture_dir/validation.md\\"}"',yield_time_ms:1000,max_output_tokens:1000})
+ }else if(text.includes('[file]')) message=tools('exec_command',{cmd:'fixture_dir=$(mktemp -d) && printf \'# Astral validation\\n\\nThis file was written by the real Computer daemon.\\n\' > "$fixture_dir/validation.md" && printf \'ASTRAL_FIXTURE_FILE=%s\\n\' "$fixture_dir/validation.md"',yield_time_ms:1000,max_output_tokens:1000})
  else message={role:'assistant',content:images.length?`Received **${images.length} native image block(s)** in the model request. The original attachment is on your Computer, and its model payload is preserved in this conversation.`:'The local model connection is working.\n\nThis reply came through the **real Server, model adapter and persistent Core session**.\n\n```js\nconst ready = true\n```'}
  const finish=message.tool_calls?'tool_calls':'stop'
  if(!body.stream){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:`reply_${count}`,choices:[{index:0,finish_reason:finish,message}],usage:{prompt_tokens:180,completion_tokens:65}}))}

@@ -198,6 +198,7 @@ function externalTime(entry: Entry) { return formatTimestamp.value(externalMessa
               <Markdown
                 v-else-if="block.kind === 'text'"
                 class="message message-assistant"
+                assistant-reply
                 :content="block.text"
                 :streaming="block.streaming"
                 :session-i-d="sessionID"

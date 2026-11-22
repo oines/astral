@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -148,33 +147,6 @@ func TestContentShortSourceAbortsHTTPResponse(t *testing.T) {
 	body, err := io.ReadAll(response.Body)
 	if response.StatusCode != 200 || err == nil || len(body) != len(payload) {
 		t.Fatalf("short stream appeared complete: status=%d bytes=%d err=%v", response.StatusCode, len(body), err)
-	}
-}
-
-type finalContentError struct{ io.Reader }
-
-func (b finalContentError) Read(p []byte) (int, error) {
-	n, err := b.Reader.Read(p)
-	if err == io.EOF {
-		err = fmt.Errorf("source finalization failed")
-	}
-	return n, err
-}
-
-func TestDownloadAttachmentFailureKeepsNonSuccessHTTPStatus(t *testing.T) {
-	payload := bytes.Repeat([]byte("x"), 512<<10)
-	f := newContentFixture(t, int64(2*len(payload)), func() io.ReadCloser {
-		return io.NopCloser(finalContentError{Reader: bytes.NewReader(payload)})
-	})
-	request := testkit.JSON(DownloadRequest{ConversationID: f.conversationID, EventID: f.eventID, AttachmentRef: "original:0", Path: f.p.Daemons[0].Hello.Home + "/failed-download.bin"})
-	response, err := f.client.Post(f.binding.APIURL+"/v1/attachments/download", "application/json", bytes.NewReader(request))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	var problem httpcontract.Error
-	if err := json.NewDecoder(response.Body).Decode(&problem); err != nil || response.StatusCode < 400 || problem.Code == "" {
-		t.Fatalf("failed download reported HTTP success: status=%d problem=%+v decode=%v", response.StatusCode, problem, err)
 	}
 }
 

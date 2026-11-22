@@ -159,18 +159,18 @@ func TestStickerDeliveryUsesImagesWithoutSavingOriginalFiles(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				destination := filepath.Join(caller.CWD, "explicitly-downloaded-sticker.webp")
-				ref, err := s.DownloadAttachment(p.Context, caller, binding.ConversationID, event.ID, "10:0", destination)
-				if err != nil || ref.ComputerID != caller.ComputerID || ref.Path != destination {
-					t.Fatalf("explicit attachment API download failed: %+v %v", ref, err)
+				download, _, err := s.AttachmentContent(p.Context, caller, binding.ConversationID, event.MessageID, "10:0")
+				if err != nil {
+					t.Fatal(err)
 				}
-				data, err := os.ReadFile(destination)
+				data, err := io.ReadAll(download.Body)
+				_ = download.Body.Close()
 				if err != nil || !bytes.Equal(data, webp) {
 					t.Fatal("explicit download did not preserve the original sticker bytes:", err)
 				}
 				files, err := list[domain.FileRef](p.Context, p.Store, "files")
-				if err != nil || len(files) != 1 {
-					t.Fatal("explicit download did not register exactly one Computer file")
+				if err != nil || len(files) != 0 {
+					t.Fatal("reading original bytes created a file reference")
 				}
 			}
 			// A replay must not re-register the direct trigger or schedule another

@@ -3,22 +3,21 @@ import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button, Menu, MenuItem, useDelayedPending } from '@astral/ui'
 import { ArrowUp, ChevronRight, Copy, Download, Ellipsis, ExternalLink, File, FolderOpen, RefreshCw } from '@astral/icons'
-import type { FileRef } from '../../lib/types'
+import type { ComputerFile } from '../../lib/computer-file'
 import { useClipboard } from '../../composables/useClipboard'
 import { useFileExplorer, type FileExplorerSource, type FileTreeRow } from '../../composables/useFileExplorer'
 import { filePathName, type DirectoryEntry } from '../../composables/useFileService'
 import { useFileReveal } from '../../composables/useFileReveal'
 import { revealOverflowLabel } from '../../lib/overflow-label'
 import { errorText } from '../../lib/api'
-import { downloadFileReference } from '../../lib/file-download'
+import { downloadComputerFile } from '../../lib/file-download'
 
 const props = withDefaults(defineProps<{ source: FileExplorerSource; sessionID: string; computerName?: string }>(), { computerName: '' })
-const emit = defineEmits<{ openFile: [file: FileRef] }>()
+const emit = defineEmits<{ openFile: [file: ComputerFile] }>()
 const { t } = useI18n()
 const tree = useFileExplorer(() => props.source, () => props.sessionID)
-const { root, rootPath, rows, locating, refreshing, error, openingPath } = tree
+const { root, rootPath, rows, locating, refreshing, error } = tree
 const waiting = useDelayedPending(() => locating.value ? `${props.sessionID}:${props.source.computer_id}:${props.source.path}` : false)
-const opening = useDelayedPending(() => openingPath.value)
 const host = ref<HTMLElement>()
 const animateRows = ref(false)
 watch([locating, refreshing], ([locating, refreshing]) => { if (locating || refreshing) animateRows.value = false }, { flush: 'sync' })
@@ -36,10 +35,9 @@ watch(menuOpen, async open => {
 })
 watch([() => props.source.computer_id, () => props.sessionID], () => { menuOpen.value = false; focusPath.value = '' })
 
-async function open(entry: DirectoryEntry) {
-  if (entry.is_dir) animateRows.value = true
-  const file = await tree.open(entry)
-  if (file) emit('openFile', file)
+function open(entry: DirectoryEntry) {
+  if (entry.is_dir) return toggle(entry.path)
+  emit('openFile', { computer_id: props.source.computer_id, path: entry.path })
 }
 function toggle(path: string) { animateRows.value = true; return tree.toggle(path) }
 function beforeRowLeave(element: Element) {
@@ -56,12 +54,9 @@ function restoreRow(element: Element) {
   row.inert = false
   row.removeAttribute('aria-hidden')
 }
-async function download(entry: DirectoryEntry) {
+function download(entry: DirectoryEntry) {
   if (entry.is_dir) return
-  const sessionID = props.sessionID
-  const file = await tree.open(entry)
-  if (!file) return
-  try { downloadFileReference(file, sessionID) }
+  try { downloadComputerFile({ computer_id: props.source.computer_id, path: entry.path }, props.sessionID, entry.name) }
   catch (cause) { error.value = errorText(cause) }
 }
 function actions(event: MouseEvent | KeyboardEvent, entry: DirectoryEntry) {
@@ -195,7 +190,7 @@ async function navigate(event: KeyboardEvent, row: Extract<FileTreeRow, { kind: 
               :aria-level="row.depth + 1"
               :aria-expanded="row.entry.is_dir ? row.directory.expanded : undefined"
               :aria-selected="row.entry.path === source.path"
-              :aria-busy="row.directory.busy || openingPath === row.entry.path || undefined"
+              :aria-busy="row.directory.busy || undefined"
               @focus="focusPath = row.entry.path; revealOverflowLabel($event, '.file-explorer-name')"
               @pointerenter="revealOverflowLabel($event, '.file-explorer-name')"
               @click="open(row.entry)"
@@ -207,7 +202,7 @@ async function navigate(event: KeyboardEvent, row: Extract<FileTreeRow, { kind: 
                 aria-hidden="true"
               >
                 <span
-                  v-if="row.directory.waiting || opening && openingPath === row.entry.path"
+                  v-if="row.directory.waiting"
                   class="spinner"
                 />
                 <ChevronRight

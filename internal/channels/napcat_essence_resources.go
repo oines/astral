@@ -5,16 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"io"
 	"mime"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/persistence"
 )
 
 // NapCatEssenceSource uses the original group message coordinates when supplied.
@@ -234,40 +230,4 @@ func (s *Service) NapCatEssenceContent(ctx context.Context, b domain.ExecutionBi
 		}
 	}
 	return download, nil
-}
-
-func (s *Service) DownloadNapCatEssencePart(ctx context.Context, b domain.ExecutionBinding, conversationID string, source NapCatEssenceSource, ref, destination string) (domain.FileRef, error) {
-	if strings.TrimSpace(destination) == "" {
-		return domain.FileRef{}, domain.Invalid("an explicit destination path is required")
-	}
-	download, err := s.NapCatEssenceContent(ctx, b, conversationID, source, ref)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	defer download.Body.Close()
-	if err := s.AuthorizeConversation(ctx, b.AgentID, conversationID); err != nil {
-		return domain.FileRef{}, err
-	}
-	_, body, err := s.Harness.Hub.Call(ctx, "file.write", computers.Call{Binding: b, Path: destination}, download.Body)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	_, copyErr := io.Copy(io.Discard, body)
-	if err = errors.Join(copyErr, body.Close()); err != nil {
-		return domain.FileRef{}, err
-	}
-	if err := s.AuthorizeConversation(ctx, b.AgentID, conversationID); err != nil {
-		return domain.FileRef{}, err
-	}
-	file, err := s.Harness.Files.Reference(ctx, b, destination, false)
-	if err == nil && download.MediaType != "" && file.MediaType != download.MediaType {
-		file.MediaType = download.MediaType
-		err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
-			if err := tx.RequireActiveAgent(ctx, b.AgentID); err != nil {
-				return err
-			}
-			return tx.Save(ctx, "files", &file.Meta, &file)
-		})
-	}
-	return file, err
 }

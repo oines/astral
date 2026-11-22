@@ -3,8 +3,8 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onErrorCaptured,
 import { useI18n } from 'vue-i18n'
 import { Button, useDelayedPending } from '@astral/ui'
 import { Check, Copy, Download, ExternalLink, RefreshCw } from '@astral/icons'
-import type { FileRef } from '../../lib/types'
-import { errorText, fileURL } from '../../lib/api'
+import { previewFileURL, type PreviewFile } from '../../lib/computer-file'
+import { errorText } from '../../lib/api'
 import { useFilePreview } from '../../composables/useFilePreview'
 import { useFileReveal } from '../../composables/useFileReveal'
 import { useClipboard } from '../../composables/useClipboard'
@@ -12,7 +12,7 @@ import { selectFilePreview } from './preview-registry'
 import { createPreviewScrollState } from './preview-scroll'
 import DownloadFilePreview from './renderers/DownloadFilePreview.vue'
 
-const props = withDefaults(defineProps<{ file: FileRef; sessionID: string; computerName?: string }>(), { computerName: '' })
+const props = withDefaults(defineProps<{ file: PreviewFile; sessionID: string; computerName?: string }>(), { computerName: '' })
 const { t } = useI18n()
 const scrollHost = ref<HTMLElement>()
 const scroll = createPreviewScrollState(() => scrollHost.value)
@@ -88,7 +88,7 @@ const format = computed(() => {
   if (!preview.value || !renderer.value) return ''
   return renderer.value.format?.(preview.value) || t(renderer.value.labelKey)
 })
-const native = useFileReveal(() => ({ computerID: props.file.computer_id, sessionID: props.sessionID, fileID: props.file.id }))
+const native = useFileReveal(() => ({ computerID: props.file.computer_id, sessionID: props.sessionID, ...(props.file.id ? { fileID: props.file.id } : { path: props.file.path, directory: false }) }))
 </script>
 <template>
   <section
@@ -132,7 +132,7 @@ const native = useFileReveal(() => ({ computerID: props.file.computer_id, sessio
           <ExternalLink />
         </Button>
         <a
-          :href="fileURL(file.id, sessionID, true)"
+          :href="previewFileURL(file, sessionID, true)"
           class="button button-ghost button-icon"
           :aria-label="t('download')"
         ><Download /></a>

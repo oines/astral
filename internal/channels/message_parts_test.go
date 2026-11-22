@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -136,17 +134,6 @@ func TestMessagePartsInlinePaginationAndNestedOriginalAreReadOnDemand(t *testing
 	_ = content.Body.Close()
 	if readErr != nil || string(data) != "original" {
 		t.Fatalf("wrong original source: %q %v", data, readErr)
-	}
-	if _, err := f.s.DownloadMessagePart(f.p.Context, f.caller, f.chat.ID, "42", "p0.m1.p1", ""); err == nil || f.getMedia.Load() != 1 {
-		t.Fatal("missing destination started an implicit file download")
-	}
-	destination := filepath.Join(f.p.Directory, "selected-original.png")
-	file, err := f.s.DownloadMessagePart(f.p.Context, f.caller, f.chat.ID, "42", "p0.m1.p1", destination)
-	if err != nil || file.ComputerID != f.caller.ComputerID {
-		t.Fatalf("explicit download lost command Computer: %+v %v", file, err)
-	}
-	if data, err := os.ReadFile(destination); err != nil || string(data) != "original" {
-		t.Fatalf("explicit download did not write source bytes: %q %v", data, err)
 	}
 	stored, err := f.p.Store.Observation(f.p.Context, event.ID)
 	if err != nil || string(encoded(stored.Parts)) != string(encoded(event.Parts)) || f.getForward.Load() != 0 || f.getMessage.Load() != 0 || f.p.Requests.Load() != 0 {

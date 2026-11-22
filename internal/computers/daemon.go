@@ -570,18 +570,10 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 			return err
 		}
 		return out.JSON(struct{}{})
-	case "file.stat", "file.read", "file.snapshot":
+	case "file.stat", "file.read":
 		path, err := fs.ResolvePath(ctx, call.Path, true)
 		if err != nil {
 			return err
-		}
-		if request.Method == "file.snapshot" {
-			source, err := os.Open(path.Path)
-			if err != nil {
-				return err
-			}
-			defer source.Close()
-			return d.storeMedia(ctx, call.Binding.AgentID, filepath.Base(path.Path), source, out)
 		}
 		// Opening a FIFO must not wait for a writer before the regular-file check.
 		file, err := os.OpenFile(path.Path, os.O_RDONLY|syscall.O_NONBLOCK, 0)

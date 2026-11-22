@@ -7,11 +7,6 @@ import (
 	"github.com/oines/astral/internal/httpcontract"
 )
 
-type TelegramStickerDownloadRequest struct {
-	channels.TelegramStickerSource
-	Path string `json:"path"`
-}
-
 func (s *Service) telegramStickerRoutes() {
 	const contentPath = "/v1/accounts/{id}/telegram/stickers/content"
 	s.describeContent(httpcontract.Operation{
@@ -33,9 +28,5 @@ func (s *Service) telegramStickerRoutes() {
 			return
 		}
 		serveContent(w, r, download)
-	})
-	register[TelegramStickerDownloadRequest, ReferenceResponse](s, "POST", "/v1/accounts/{id}/telegram/stickers/download", "agentDownloadTelegramSticker", func(r *http.Request, request TelegramStickerDownloadRequest) (ReferenceResponse, error) {
-		ref, err := s.Channels.DownloadTelegramSticker(r.Context(), binding(r), r.PathValue("id"), request.TelegramStickerSource, request.Path)
-		return ReferenceResponse{File: ref, URI: fileURI(ref)}, err
 	})
 }

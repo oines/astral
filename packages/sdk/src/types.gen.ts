@@ -630,13 +630,6 @@ export type AstralInternalChannelsStorageRequest = {
     revision?: number;
 };
 
-export type AstralInternalChannelsTelegramOperation = {
-    account_scoped?: boolean;
-    documentation: string;
-    name: string;
-    parameters: Array<string>;
-};
-
 export type AstralInternalChannelsTelegramRequest = {
     conversation_id?: string;
     files?: {
@@ -646,10 +639,6 @@ export type AstralInternalChannelsTelegramRequest = {
         [key: string]: unknown;
     };
     source_conversation_id?: string;
-};
-
-export type AstralInternalChannelsTelegramResult = {
-    result: unknown;
 };
 
 export type AstralInternalChannelsWeixinLoginInput = {
@@ -983,7 +972,7 @@ export type AstralInternalDomainModelVerification = {
 
 export type AstralInternalDomainOutboundPart = {
     /**
-     * For image/file only. An astral-file:// reference; mutually exclusive with path.
+     * For image/file/attachment. An astral-file:// reference; mutually exclusive with path.
      */
     file_uri?: string;
     /**
@@ -991,7 +980,7 @@ export type AstralInternalDomainOutboundPart = {
      */
     name?: string;
     /**
-     * For image/file only. Source path on the authenticated calling Computer; mutually exclusive with file_uri.
+     * For image/file/attachment. Source path on the authenticated calling Computer; mutually exclusive with file_uri.
      */
     path?: string;
     /**
@@ -999,9 +988,9 @@ export type AstralInternalDomainOutboundPart = {
      */
     text?: string;
     /**
-     * Ordered content kind. Mention support depends on the selected platform.
+     * Ordered content kind. attachment selects native media when available. file sends a document.
      */
-    type: 'text' | 'mention' | 'image' | 'file';
+    type: 'text' | 'mention' | 'image' | 'file' | 'attachment';
     /**
      * For mention only. Native platform user ID: Telegram numeric ID, NapCat QQ number, or Feishu application open_id.
      */
@@ -1038,7 +1027,15 @@ export type AstralInternalDomainOutbox = {
     updated_at: string;
 };
 
+export type AstralInternalDomainOutboxFile = {
+    media_type: string;
+    name: string;
+    size: number;
+    uri: string;
+};
+
 export type AstralInternalDomainOutboxPart = {
+    file?: AstralInternalDomainOutboxFile;
     file_ref_id?: string;
     media_kind?: 'video' | 'audio';
     name?: string;
@@ -1327,13 +1324,6 @@ export type AstralInternalGatewayCopyComputerFileResponse = {
     size: number;
 };
 
-export type AstralInternalGatewayDownloadRequest = {
-    attachment_ref: string;
-    conversation_id: string;
-    event_id: string;
-    path: string;
-};
-
 export type AstralInternalGatewayForwardedMessageView = {
     parts: Array<AstralInternalGatewayMessagePartView>;
     sender: AstralInternalDomainSender;
@@ -1412,10 +1402,6 @@ export type AstralInternalGatewayMessagePage = {
     next_sequence: number;
 };
 
-export type AstralInternalGatewayMessagePartDownloadRequest = {
-    path: string;
-};
-
 export type AstralInternalGatewayMessagePartResponse = {
     next_offset?: number;
     offset: number;
@@ -1426,7 +1412,6 @@ export type AstralInternalGatewayMessagePartView = {
     attachment?: AstralInternalGatewayMessageAttachmentView;
     card?: AstralInternalGatewayMessageCardView;
     content_url?: string;
-    download_url?: string;
     forward?: AstralInternalGatewayMessageForwardView;
     raw_url?: string;
     read_url: string;
@@ -1437,20 +1422,6 @@ export type AstralInternalGatewayMessagePartView = {
 
 export type AstralInternalGatewayMessagePartsResponse = {
     parts: Array<AstralInternalGatewayMessagePartView>;
-};
-
-export type AstralInternalGatewayNapCatAvatarDownloadRequest = {
-    path: string;
-};
-
-export type AstralInternalGatewayReferenceRequest = {
-    path: string;
-    snapshot?: boolean;
-};
-
-export type AstralInternalGatewayReferenceResponse = {
-    file: AstralInternalDomainFileRef;
-    uri: string;
 };
 
 export type AstralInternalGatewayResolveConversation = {
@@ -1466,19 +1437,6 @@ export type AstralInternalGatewayScheduleUpdate = {
     session_mode?: 'existing' | 'new';
     timing: AstralInternalDomainScheduleTiming;
     title: string;
-};
-
-export type AstralInternalGatewaySendFile = {
-    as_document?: boolean;
-    conversation_id?: string;
-    disable_notification?: boolean;
-    file_uri?: string;
-    format?: string;
-    markdown_template?: AstralInternalDomainMarkdownTemplate;
-    path?: string;
-    reply_to?: string;
-    text?: string;
-    title?: string;
 };
 
 export type AstralInternalGatewaySendText = {
@@ -1501,13 +1459,6 @@ export type AstralInternalGatewaySessionPresentation = {
 export type AstralInternalGatewayStoredMessageObservationView = {
     observation: AstralInternalGatewayMessageObservationView;
     sequence: number;
-};
-
-export type AstralInternalGatewayTelegramStickerDownloadRequest = {
-    custom_emoji_id?: string;
-    file_id: string;
-    path: string;
-    set_name?: string;
 };
 
 export type AstralInternalHarnessContextUsage = {
@@ -1951,6 +1902,11 @@ export type AstralInternalHttpapiStorageInfo = {
     file_storage: string;
     media_storage: string;
     rollout_bytes: number;
+};
+
+export type AstralInternalHttpapiUploadedAttachment = {
+    file: AstralInternalDomainFileRef;
+    uri: string;
 };
 
 export type AstralInternalHttpapiUsage = {
@@ -3306,42 +3262,6 @@ export type ListComputerDirectoryResponses = {
 };
 
 export type ListComputerDirectoryResponse = ListComputerDirectoryResponses[keyof ListComputerDirectoryResponses];
-
-export type ReferenceComputerFileData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query: {
-        /**
-         * Session whose Bot owns or is allowed to access this file.
-         */
-        session_id: string;
-        /**
-         * Ordinary file path on the selected Computer. Creates a live reference, without a snapshot or Server copy.
-         */
-        path: string;
-    };
-    url: '/api/v1/computers/{id}/files/reference';
-};
-
-export type ReferenceComputerFileErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type ReferenceComputerFileError = ReferenceComputerFileErrors[keyof ReferenceComputerFileErrors];
-
-export type ReferenceComputerFileResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalGatewayReferenceResponse;
-};
-
-export type ReferenceComputerFileResponse = ReferenceComputerFileResponses[keyof ReferenceComputerFileResponses];
 
 export type RevokeComputerData = {
     body?: never;
@@ -4737,7 +4657,7 @@ export type UploadAttachmentResponses = {
     /**
      * OK
      */
-    200: AstralInternalGatewayReferenceResponse;
+    200: AstralInternalHttpapiUploadedAttachment;
 };
 
 export type UploadAttachmentResponse = UploadAttachmentResponses[keyof UploadAttachmentResponses];
@@ -4882,6 +4802,57 @@ export type SelectComputerResponses = {
 };
 
 export type SelectComputerResponse = SelectComputerResponses[keyof SelectComputerResponses];
+
+export type SessionComputerFileContentData = {
+    body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
+    path: {
+        id: string;
+        computer: string;
+    };
+    query: {
+        /**
+         * Path on the source Computer.
+         */
+        path: string;
+        /**
+         * Set to true or 1 to download the file.
+         */
+        download?: boolean;
+    };
+    url: '/api/v1/sessions/{id}/computers/{computer}/files/content';
+};
+
+export type SessionComputerFileContentErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SessionComputerFileContentError = SessionComputerFileContentErrors[keyof SessionComputerFileContentErrors];
+
+export type SessionComputerFileContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
+};
+
+export type SessionComputerFileContentResponse = SessionComputerFileContentResponses[keyof SessionComputerFileContentResponses];
 
 export type SessionContextData = {
     body?: never;
@@ -6344,33 +6315,6 @@ export type AgentAccountOperationResponses = {
 
 export type AgentAccountOperationResponse = AgentAccountOperationResponses[keyof AgentAccountOperationResponses];
 
-export type AgentTelegramOperationsData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/v1/accounts/{id}/telegram/operations';
-};
-
-export type AgentTelegramOperationsErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentTelegramOperationsError = AgentTelegramOperationsErrors[keyof AgentTelegramOperationsErrors];
-
-export type AgentTelegramOperationsResponses = {
-    /**
-     * OK
-     */
-    200: Array<AstralInternalChannelsTelegramOperation>;
-};
-
-export type AgentTelegramOperationsResponse = AgentTelegramOperationsResponses[keyof AgentTelegramOperationsResponses];
-
 export type AgentTelegramStickerContentData = {
     body?: never;
     headers?: {
@@ -6415,86 +6359,6 @@ export type AgentTelegramStickerContentResponses = {
 };
 
 export type AgentTelegramStickerContentResponse = AgentTelegramStickerContentResponses[keyof AgentTelegramStickerContentResponses];
-
-export type AgentDownloadTelegramStickerData = {
-    body: AstralInternalGatewayTelegramStickerDownloadRequest;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/v1/accounts/{id}/telegram/stickers/download';
-};
-
-export type AgentDownloadTelegramStickerErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentDownloadTelegramStickerError = AgentDownloadTelegramStickerErrors[keyof AgentDownloadTelegramStickerErrors];
-
-export type AgentDownloadTelegramStickerResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalGatewayReferenceResponse;
-};
-
-export type AgentDownloadTelegramStickerResponse = AgentDownloadTelegramStickerResponses[keyof AgentDownloadTelegramStickerResponses];
-
-export type AgentTelegramOperationData = {
-    body: AstralInternalChannelsTelegramRequest;
-    path: {
-        id: string;
-        operation: string;
-    };
-    query?: never;
-    url: '/v1/accounts/{id}/telegram/{operation}';
-};
-
-export type AgentTelegramOperationErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentTelegramOperationError = AgentTelegramOperationErrors[keyof AgentTelegramOperationErrors];
-
-export type AgentTelegramOperationResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalChannelsTelegramResult;
-};
-
-export type AgentTelegramOperationResponse = AgentTelegramOperationResponses[keyof AgentTelegramOperationResponses];
-
-export type AgentDownloadAttachmentData = {
-    body: AstralInternalGatewayDownloadRequest;
-    path?: never;
-    query?: never;
-    url: '/v1/attachments/download';
-};
-
-export type AgentDownloadAttachmentErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentDownloadAttachmentError = AgentDownloadAttachmentErrors[keyof AgentDownloadAttachmentErrors];
-
-export type AgentDownloadAttachmentResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalGatewayReferenceResponse;
-};
-
-export type AgentDownloadAttachmentResponse = AgentDownloadAttachmentResponses[keyof AgentDownloadAttachmentResponses];
 
 export type AgentCapabilitiesData = {
     body?: never;
@@ -6735,33 +6599,6 @@ export type AgentNapCatAvatarContentResponses = {
 
 export type AgentNapCatAvatarContentResponse = AgentNapCatAvatarContentResponses[keyof AgentNapCatAvatarContentResponses];
 
-export type AgentDownloadNapCatAvatarData = {
-    body: AstralInternalGatewayNapCatAvatarDownloadRequest;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/v1/conversations/{id}/avatar/download';
-};
-
-export type AgentDownloadNapCatAvatarErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentDownloadNapCatAvatarError = AgentDownloadNapCatAvatarErrors[keyof AgentDownloadNapCatAvatarErrors];
-
-export type AgentDownloadNapCatAvatarResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalGatewayReferenceResponse;
-};
-
-export type AgentDownloadNapCatAvatarResponse = AgentDownloadNapCatAvatarResponses[keyof AgentDownloadNapCatAvatarResponses];
-
 export type AgentNapCatEssencePartsData = {
     body?: never;
     path: {
@@ -6893,48 +6730,6 @@ export type AgentNapCatEssenceContentResponses = {
 
 export type AgentNapCatEssenceContentResponse = AgentNapCatEssenceContentResponses[keyof AgentNapCatEssenceContentResponses];
 
-export type AgentDownloadNapCatEssencePartData = {
-    body: AstralInternalGatewayMessagePartDownloadRequest;
-    path: {
-        id: string;
-        message_id: string;
-        ref: string;
-    };
-    query: {
-        /**
-         * Original message sequence from the essence list; supply together with msg_random to survive synthetic/native ID changes.
-         */
-        msg_seq?: string;
-        /**
-         * Original message random value from the essence list; supply together with msg_seq.
-         */
-        msg_random?: string;
-        /**
-         * Opaque media locator fingerprint from the returned part link; not a file checksum. Refresh parts if it conflicts.
-         */
-        media_digest: string;
-    };
-    url: '/v1/conversations/{id}/essence/{message_id}/parts/{ref}/download';
-};
-
-export type AgentDownloadNapCatEssencePartErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentDownloadNapCatEssencePartError = AgentDownloadNapCatEssencePartErrors[keyof AgentDownloadNapCatEssencePartErrors];
-
-export type AgentDownloadNapCatEssencePartResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalGatewayReferenceResponse;
-};
-
-export type AgentDownloadNapCatEssencePartResponse = AgentDownloadNapCatEssencePartResponses[keyof AgentDownloadNapCatEssencePartResponses];
-
 export type AgentNapCatMemberAvatarContentData = {
     body?: never;
     headers?: {
@@ -6976,34 +6771,6 @@ export type AgentNapCatMemberAvatarContentResponses = {
 };
 
 export type AgentNapCatMemberAvatarContentResponse = AgentNapCatMemberAvatarContentResponses[keyof AgentNapCatMemberAvatarContentResponses];
-
-export type AgentDownloadNapCatMemberAvatarData = {
-    body: AstralInternalGatewayNapCatAvatarDownloadRequest;
-    path: {
-        id: string;
-        user_id: string;
-    };
-    query?: never;
-    url: '/v1/conversations/{id}/members/{user_id}/avatar/download';
-};
-
-export type AgentDownloadNapCatMemberAvatarErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentDownloadNapCatMemberAvatarError = AgentDownloadNapCatMemberAvatarErrors[keyof AgentDownloadNapCatMemberAvatarErrors];
-
-export type AgentDownloadNapCatMemberAvatarResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalGatewayReferenceResponse;
-};
-
-export type AgentDownloadNapCatMemberAvatarResponse = AgentDownloadNapCatMemberAvatarResponses[keyof AgentDownloadNapCatMemberAvatarResponses];
 
 export type AgentMessageToolData = {
     body?: never;
@@ -7243,35 +7010,6 @@ export type AgentMessagePartContentResponses = {
 
 export type AgentMessagePartContentResponse = AgentMessagePartContentResponses[keyof AgentMessagePartContentResponses];
 
-export type AgentDownloadMessagePartData = {
-    body: AstralInternalGatewayMessagePartDownloadRequest;
-    path: {
-        id: string;
-        message_id: string;
-        ref: string;
-    };
-    query?: never;
-    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}/download';
-};
-
-export type AgentDownloadMessagePartErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentDownloadMessagePartError = AgentDownloadMessagePartErrors[keyof AgentDownloadMessagePartErrors];
-
-export type AgentDownloadMessagePartResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalGatewayReferenceResponse;
-};
-
-export type AgentDownloadMessagePartResponse = AgentDownloadMessagePartResponses[keyof AgentDownloadMessagePartResponses];
-
 export type AgentMessagePartRawData = {
     body?: never;
     path: {
@@ -7299,67 +7037,11 @@ export type AgentMessagePartRawResponses = {
     200: unknown;
 };
 
-export type AgentFileReferenceData = {
-    body: AstralInternalGatewayReferenceRequest;
-    path?: never;
-    query?: never;
-    url: '/v1/files/reference';
-};
-
-export type AgentFileReferenceErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentFileReferenceError = AgentFileReferenceErrors[keyof AgentFileReferenceErrors];
-
-export type AgentFileReferenceResponses = {
-    /**
-     * OK
-     */
-    200: AstralInternalGatewayReferenceResponse;
-};
-
-export type AgentFileReferenceResponse = AgentFileReferenceResponses[keyof AgentFileReferenceResponses];
-
-export type AgentSendFileData = {
-    body: AstralInternalGatewaySendFile;
-    headers: {
-        /**
-         * Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.
-         */
-        'Idempotency-Key': string;
-    };
-    path?: never;
-    query?: never;
-    url: '/v1/im/files';
-};
-
-export type AgentSendFileErrors = {
-    /**
-     * Operation error
-     */
-    default: AstralInternalHttpcontractError;
-};
-
-export type AgentSendFileError = AgentSendFileErrors[keyof AgentSendFileErrors];
-
-export type AgentSendFileResponses = {
-    /**
-     * OK
-     */
-    200: Array<AstralInternalDomainOutbox>;
-};
-
-export type AgentSendFileResponse = AgentSendFileResponses[keyof AgentSendFileResponses];
-
 export type AgentSendTextData = {
     body: AstralInternalGatewaySendText;
     headers: {
         /**
-         * Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.
+         * Stable identity of this operation. Reuse only for the same request.
          */
         'Idempotency-Key': string;
     };
@@ -7798,7 +7480,7 @@ export type AgentDeleteSharedSkillData = {
     body?: never;
     headers: {
         /**
-         * Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.
+         * Stable identity of this operation. Reuse only for the same request.
          */
         'Idempotency-Key': string;
     };
@@ -7831,7 +7513,7 @@ export type AgentPublishSharedSkillData = {
     body?: never;
     headers: {
         /**
-         * Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.
+         * Stable identity of this operation. Reuse only for the same request.
          */
         'Idempotency-Key': string;
     };

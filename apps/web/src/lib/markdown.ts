@@ -1,4 +1,7 @@
+import type { ComputedRef, InjectionKey } from 'vue'
 import type { MarkdownIt } from 'markstream-vue'
+
+export const markdownSource: InjectionKey<ComputedRef<{ sessionID: string; assistantReply: boolean }>> = Symbol('markdown-source')
 
 function closingDelimiter(source: string, delimiter: string, start: number) {
   for (let index = source.indexOf(delimiter, start); index >= 0; index = source.indexOf(delimiter, index + delimiter.length)) {

@@ -57,11 +57,9 @@ func TestSubagentComputerAPIKeepsReadsAndRejectsExternalSends(t *testing.T) {
 			t.Fatalf("child API read %s: status=%d body=%s error=%v", path, response.StatusCode, raw, readErr)
 		}
 	}
-	for _, path := range []string{"/v1/im/messages", "/v1/im/files"} {
-		body := map[string]any{"conversation_id": chat.ID, "text": "must not reach IM"}
-		if path == "/v1/im/files" {
-			body["path"] = "/tmp/child-report.txt"
-		}
+	for _, parts := range [][]domain.OutboundPart{{{Type: "text", Text: "must not reach IM"}}, {{Type: "file", Path: "/tmp/child-report.txt"}}} {
+		const path = "/v1/im/messages"
+		body := SendText{ConversationID: chat.ID, Parts: parts}
 		request, err := http.NewRequestWithContext(p.Context, http.MethodPost, binding.APIURL+path, strings.NewReader(string(testkit.JSON(body))))
 		if err != nil {
 			t.Fatal(err)

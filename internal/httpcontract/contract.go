@@ -69,7 +69,7 @@ type Operation struct {
 	Auth                  bool
 	CommandAuth           bool
 	ContentType           string
-	Query                 []Parameter
+	Query, Headers        []Parameter
 }
 type Parameter struct {
 	Name        string
@@ -116,16 +116,22 @@ func (c *Contract) Describe(o Operation) {
 	for _, match := range pathParameter.FindAllStringSubmatch(o.Path, -1) {
 		parameters = append(parameters, map[string]any{"name": match[1], "in": "path", "required": true, "schema": map[string]any{"type": "string"}})
 	}
-	for _, p := range o.Query {
+	addParameter := func(in string, p Parameter) {
 		kind := p.Type
 		if kind == "" {
 			kind = "string"
 		}
-		parameter := map[string]any{"name": p.Name, "in": "query", "required": p.Required, "schema": map[string]any{"type": kind}}
+		parameter := map[string]any{"name": p.Name, "in": in, "required": p.Required, "schema": map[string]any{"type": kind}}
 		if p.Description != "" {
 			parameter["description"] = p.Description
 		}
 		parameters = append(parameters, parameter)
+	}
+	for _, p := range o.Query {
+		addParameter("query", p)
+	}
+	for _, p := range o.Headers {
+		addParameter("header", p)
 	}
 	if len(parameters) > 0 {
 		operation["parameters"] = parameters

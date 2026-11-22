@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,8 +14,18 @@ import (
 	"github.com/oines/astral/internal/testkit"
 )
 
+// Historical live references registered metadata for a path but no snapshot.
+func historicalLiveFile(t *testing.T, p *testkit.Platform, b domain.ExecutionBinding, path string) domain.FileRef {
+	t.Helper()
+	ref := domain.FileRef{Meta: domain.Meta{ID: domain.ID("file")}, AgentID: b.AgentID, ComputerID: b.ComputerID, Path: path, DisplayName: filepath.Base(path)}
+	if err := p.Store.Save(p.Context, "files", &ref.Meta, &ref); err != nil {
+		t.Fatal(err)
+	}
+	return ref
+}
+
 func TestDirectFileSendUsesSourceWithoutSnapshot(t *testing.T) {
-	for _, route := range []string{"send-message-attachment", "ordered-path", "file-reference"} {
+	for _, route := range []string{"send-message-attachment", "ordered-path", "path-uri", "file-reference"} {
 		t.Run(route, func(t *testing.T) {
 			bot := newBot(t)
 			p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
@@ -25,7 +36,7 @@ func TestDirectFileSendUsesSourceWithoutSnapshot(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(source.CWD, "report.txt")
+			path := filepath.Join(source.CWD, "报告 a+b %2F #.txt")
 			content := "direct file contents"
 			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 				t.Fatal(err)
@@ -38,11 +49,11 @@ func TestDirectFileSendUsesSourceWithoutSnapshot(t *testing.T) {
 				}, harness.MessageArgs{Attachments: []string{path}})
 			} else {
 				part := domain.OutboundPart{Type: "file", Path: path}
+				if route == "path-uri" {
+					part.Path, part.FileURI = "", filestream.PathURL(source.ComputerID, path)
+				}
 				if route == "file-reference" {
-					ref, referenceErr := p.Harness.Files.Reference(p.Context, source, path, false)
-					if referenceErr != nil {
-						t.Fatal(referenceErr)
-					}
+					ref := historicalLiveFile(t, p, source, path)
 					part.Path, part.FileURI = "", filestream.URL(ref)
 					// Existing live references must resolve the current size before
 					// platform upload preparation, without making a file copy.
@@ -61,24 +72,40 @@ func TestDirectFileSendUsesSourceWithoutSnapshot(t *testing.T) {
 			if err != nil || len(receipts) != 1 || len(receipts[0].Parts) != 1 {
 				t.Fatalf("send failed: %#v, %v", receipts, err)
 			}
-			var ref domain.FileRef
-			if err := p.Store.Get(p.Context, "files", receipts[0].Parts[0].FileRefID, &ref); err != nil {
-				t.Fatal(err)
-			}
-			if ref.ComputerID != source.ComputerID || ref.Path != path || ref.Version != "" || ref.Size != int64(len(content)) {
-				t.Fatalf("send replaced the original source with a snapshot: %#v", ref)
+			part := receipts[0].Parts[0]
+			if part.FileRefID != "" || part.File == nil || part.File.URI != filestream.PathURL(source.ComputerID, path) || part.File.Size != int64(len(content)) {
+				t.Fatalf("missing live source: %+v", part)
 			}
 			files, err := list[domain.FileRef](p.Context, p.Store, "files")
-			wantReferences := 1
+			wantReferences := 0
 			if route == "file-reference" {
-				wantReferences = 2 // Original metadata plus the refreshed send metadata.
+				wantReferences = 1
 			}
 			if err != nil || len(files) != wantReferences {
-				t.Fatalf("unexpected file references: %d, %v", len(files), err)
+				t.Fatalf("send registered extra file references: %d, %v", len(files), err)
 			}
-			for _, file := range files {
-				if file.Path != path || file.Version != "" {
-					t.Fatalf("source metadata created a file snapshot: %#v", file)
+			var sent domain.Outbox
+			if err := p.Store.Get(p.Context, "outbox", receipts[0].ID, &sent); err != nil || len(sent.PlatformMessageIDs) != 1 {
+				t.Fatalf("missing accepted message: %+v %v", sent, err)
+			}
+			ref := "outbox:" + sent.ID + ":0"
+			msgID := sent.PlatformMessageIDs[0]
+			download, _, err := s.AttachmentContent(p.Context, source, binding.ConversationID, msgID, ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bytes, err := io.ReadAll(download.Body)
+			_ = download.Body.Close()
+			if err != nil || string(bytes) != content {
+				t.Fatalf("archived attachment lost its source: %q %v", bytes, err)
+			}
+			if route == "path-uri" {
+				attachment := domain.Attachment{Ref: ref, FileURI: part.File.URI}
+				for _, bad := range []struct{ uri, message string }{{filestream.PathURL(source.ComputerID, filepath.Join(source.CWD, "secrets")), msgID}, {part.File.URI, "unrelated-message"}} {
+					attachment.FileURI = bad.uri
+					if _, err := s.downloadSource(p.Context, source, binding.ConversationID, bad.message, attachment, account); err == nil {
+						t.Fatal("unverified incoming Computer path was opened")
+					}
 				}
 			}
 			assertNoSendAttachmentCopies(t, source.AgentHome)
@@ -139,10 +166,7 @@ func TestDirectFileSendRejectsRevokedReferenceBeforeAnyFragment(t *testing.T) {
 	if err := os.WriteFile(path, []byte("restricted file"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	ref, err := p.Harness.Files.Reference(p.Context, source, path, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	ref := historicalLiveFile(t, p, source, path)
 	p.Agent.AllowedComputers = []string{p.Daemons[1].Credentials.ComputerID}
 	p.Agent.DefaultComputerID = p.Daemons[1].Credentials.ComputerID
 	if err := p.Harness.SaveAgent(p.Context, &p.Agent); err != nil {

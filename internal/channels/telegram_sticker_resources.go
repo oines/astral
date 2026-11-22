@@ -3,12 +3,9 @@ package channels
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"io"
 	"strconv"
 	"strings"
 
-	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 )
 
@@ -196,32 +193,4 @@ func (s *Service) TelegramStickerContent(ctx context.Context, b domain.Execution
 		return Download{}, err
 	}
 	return download, nil
-}
-
-// DownloadTelegramSticker writes only on an explicit request, to the original
-// command's Computer and path, using the same file service as other attachments.
-func (s *Service) DownloadTelegramSticker(ctx context.Context, b domain.ExecutionBinding, accountID string, source TelegramStickerSource, destination string) (domain.FileRef, error) {
-	if strings.TrimSpace(destination) == "" {
-		return domain.FileRef{}, domain.Invalid("an explicit destination path is required")
-	}
-	download, err := s.TelegramStickerContent(ctx, b, accountID, source)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	defer download.Body.Close()
-	if _, _, err = s.telegramAccount(ctx, b.AgentID, accountID); err != nil {
-		return domain.FileRef{}, err
-	}
-	_, body, err := s.Harness.Hub.Call(ctx, "file.write", computers.Call{Binding: b, Path: destination}, download.Body)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	_, copyErr := io.Copy(io.Discard, body)
-	if err = errors.Join(copyErr, body.Close()); err != nil {
-		return domain.FileRef{}, err
-	}
-	if _, _, err = s.telegramAccount(ctx, b.AgentID, accountID); err != nil {
-		return domain.FileRef{}, err
-	}
-	return s.Harness.Files.Reference(ctx, b, destination, false)
 }

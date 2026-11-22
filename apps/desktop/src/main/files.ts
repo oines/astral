@@ -1,5 +1,5 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { DesktopFileTarget } from '../shared/files'
 
@@ -7,7 +7,7 @@ interface NativeFileDependencies {
   localDirectory: string
   serverURL: string
   alive: () => boolean
-  request: (path: string, method?: 'GET' | 'POST') => Promise<unknown>
+  request: (path: string) => Promise<unknown>
   shell: { showItemInFolder: (path: string) => void; openPath: (path: string) => Promise<string> }
 }
 interface LocalComputer { id: string; bootID: string }
@@ -50,44 +50,33 @@ export class DesktopFiles {
     return { id: credential.computer_id, bootID: computer.boot_id }
   }
 
-  private async source(target: DesktopFileTarget, action: boolean): Promise<{ path: string; directory: boolean }> {
+  private async source(target: DesktopFileTarget): Promise<{ path: string; directory: boolean }> {
     const d = this.dependencies
     const query = new URLSearchParams({ session_id: target.sessionID })
-    const computerPath = `/api/v1/computers/${encodeURIComponent(target.computerID)}/files`
+    let path = target.path
     if (target.fileID) {
       const ref = object(await d.request(`/api/v1/files/${encodeURIComponent(target.fileID)}?${query}`))
       if (ref.computer_id !== target.computerID) throw new Error('The file belongs to another Computer.')
-      const path = localPath(ref.path)
-      // Historical metadata deliberately survives revoked Computer access.
-      // A native location requires a fresh Hub-authorized source operation too.
-      query.set('path', path)
-      query.set('limit', '1')
-      const directory = object(await d.request(`${computerPath}/directory?${query}`))
-      if (directory.computer_id !== target.computerID) throw new Error('The directory belongs to another Computer.')
-      return { path, directory: false }
+      path = localPath(ref.path)
     }
-    if (target.directory || !action) {
-      query.set('path', target.directory ? target.path! : dirname(target.path!))
-      query.set('limit', '1')
-      const directory = object(await d.request(`${computerPath}/directory?${query}`))
-      if (directory.computer_id !== target.computerID) throw new Error('The directory belongs to another Computer.')
-      const canonical = localPath(directory.path)
-      // Capability checks do not create a FileRef merely to open a menu. The
-      // action resolves a regular file through the authoritative reference API.
-      return { path: target.directory ? canonical : join(canonical, basename(target.path!)), directory: !!target.directory }
-    }
-    query.set('path', target.path!)
-    const result = object(await d.request(`${computerPath}/reference?${query}`, 'POST'))
-    const ref = object(result.file)
-    if (ref.computer_id !== target.computerID) throw new Error('The file belongs to another Computer.')
-    return { path: localPath(ref.path), directory: false }
+    const requested = localPath(path)
+    // Listing a regular file checks that exact source and returns its parent.
+    // The same live authorization applies to path links and historical uploads.
+    query.set('path', requested)
+    query.set('limit', '1')
+    const directory = object(await d.request(`/api/v1/computers/${encodeURIComponent(target.computerID)}/files/directory?${query}`))
+    if (directory.computer_id !== target.computerID) throw new Error('The directory belongs to another Computer.')
+    const canonical = localPath(directory.path)
+    if (target.directory) return { path: canonical, directory: true }
+    if (await realpath(canonical) !== await realpath(dirname(requested))) throw new Error('The source directory does not match this Desktop.')
+    return { path: requested, directory: false }
   }
 
-  private async checked(value: unknown, action: boolean) {
+  private async checked(value: unknown) {
     const target = desktopFileTarget(value)
     const identity = await this.localComputer()
     if (target.computerID !== identity.id) throw new Error('Remote and container files cannot be opened on this Desktop.')
-    const source = await this.source(target, action)
+    const source = await this.source(target)
     const path = await realpath(source.path)
     if (!isAbsolute(path) || resolve(path) !== path) throw new Error('Invalid local file path.')
     const info = await stat(path)
@@ -98,11 +87,11 @@ export class DesktopFiles {
   }
 
   async canReveal(value: unknown): Promise<boolean> {
-    try { await this.checked(value, false); return true } catch { return false }
+    try { await this.checked(value); return true } catch { return false }
   }
 
   async reveal(value: unknown): Promise<void> {
-    const source = await this.checked(value, true)
+    const source = await this.checked(value)
     if (source.directory) {
       const error = await this.dependencies.shell.openPath(source.path)
       if (error) throw new Error(error)

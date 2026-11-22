@@ -33,6 +33,8 @@ For example, if you open Astral on your laptop while the session targets “Offi
 Switching the session to another computer later does not move existing files or break older links. Download or back up anything you want to keep long term.
 :::
 
+The Bot can link a file directly from its Web reply, for example `[Weekly report](astral-file://computer_office?path=%2Fwork%2Freport.pdf)` or `![Chart](astral-file://computer_office?path=%2Fwork%2Fchart.png)`. The link identifies the source computer and the encoded file path. Opening it reads the current file with this session’s computer permissions. Previously uploaded attachments and links saved in older conversations still open from their original computer.
+
 ### If a file won't open
 
 1. Check **Settings → Computers** to confirm the source computer is online.

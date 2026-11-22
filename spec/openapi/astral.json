@@ -1937,31 +1937,6 @@
         ],
         "type": "object"
       },
-      "astral_internal_channels_TelegramOperation": {
-        "properties": {
-          "account_scoped": {
-            "type": "boolean"
-          },
-          "documentation": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "parameters": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "name",
-          "parameters",
-          "documentation"
-        ],
-        "type": "object"
-      },
       "astral_internal_channels_TelegramRequest": {
         "properties": {
           "conversation_id": {
@@ -1983,15 +1958,6 @@
         },
         "required": [
           "parameters"
-        ],
-        "type": "object"
-      },
-      "astral_internal_channels_TelegramResult": {
-        "properties": {
-          "result": {}
-        },
-        "required": [
-          "result"
         ],
         "type": "object"
       },
@@ -3126,7 +3092,7 @@
       "astral_internal_domain_OutboundPart": {
         "properties": {
           "file_uri": {
-            "description": "For image/file only. An astral-file:// reference; mutually exclusive with path.",
+            "description": "For image/file/attachment. An astral-file:// reference; mutually exclusive with path.",
             "type": "string"
           },
           "name": {
@@ -3134,7 +3100,7 @@
             "type": "string"
           },
           "path": {
-            "description": "For image/file only. Source path on the authenticated calling Computer; mutually exclusive with file_uri.",
+            "description": "For image/file/attachment. Source path on the authenticated calling Computer; mutually exclusive with file_uri.",
             "type": "string"
           },
           "text": {
@@ -3142,12 +3108,13 @@
             "type": "string"
           },
           "type": {
-            "description": "Ordered content kind. Mention support depends on the selected platform.",
+            "description": "Ordered content kind. attachment selects native media when available. file sends a document.",
             "enum": [
               "text",
               "mention",
               "image",
-              "file"
+              "file",
+              "attachment"
             ],
             "type": "string"
           },
@@ -3272,8 +3239,34 @@
         ],
         "type": "object"
       },
+      "astral_internal_domain_OutboxFile": {
+        "properties": {
+          "media_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri",
+          "name",
+          "media_type",
+          "size"
+        ],
+        "type": "object"
+      },
       "astral_internal_domain_OutboxPart": {
         "properties": {
+          "file": {
+            "$ref": "#/components/schemas/astral_internal_domain_OutboxFile"
+          },
           "file_ref_id": {
             "type": "string"
           },
@@ -4260,29 +4253,6 @@
         ],
         "type": "object"
       },
-      "astral_internal_gateway_DownloadRequest": {
-        "properties": {
-          "attachment_ref": {
-            "type": "string"
-          },
-          "conversation_id": {
-            "type": "string"
-          },
-          "event_id": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "conversation_id",
-          "event_id",
-          "attachment_ref",
-          "path"
-        ],
-        "type": "object"
-      },
       "astral_internal_gateway_ForwardedMessageView": {
         "properties": {
           "parts": {
@@ -4563,17 +4533,6 @@
         ],
         "type": "object"
       },
-      "astral_internal_gateway_MessagePartDownloadRequest": {
-        "properties": {
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
       "astral_internal_gateway_MessagePartResponse": {
         "properties": {
           "next_offset": {
@@ -4601,9 +4560,6 @@
             "$ref": "#/components/schemas/astral_internal_gateway_MessageCardView"
           },
           "content_url": {
-            "type": "string"
-          },
-          "download_url": {
             "type": "string"
           },
           "forward": {
@@ -4650,46 +4606,6 @@
         },
         "required": [
           "parts"
-        ],
-        "type": "object"
-      },
-      "astral_internal_gateway_NapCatAvatarDownloadRequest": {
-        "properties": {
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
-      "astral_internal_gateway_ReferenceRequest": {
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "snapshot": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
-      "astral_internal_gateway_ReferenceResponse": {
-        "properties": {
-          "file": {
-            "$ref": "#/components/schemas/astral_internal_domain_FileRef"
-          },
-          "uri": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "file",
-          "uri"
         ],
         "type": "object"
       },
@@ -4742,41 +4658,6 @@
           "enabled",
           "timing"
         ],
-        "type": "object"
-      },
-      "astral_internal_gateway_SendFile": {
-        "properties": {
-          "as_document": {
-            "type": "boolean"
-          },
-          "conversation_id": {
-            "type": "string"
-          },
-          "disable_notification": {
-            "type": "boolean"
-          },
-          "file_uri": {
-            "type": "string"
-          },
-          "format": {
-            "type": "string"
-          },
-          "markdown_template": {
-            "$ref": "#/components/schemas/astral_internal_domain_MarkdownTemplate"
-          },
-          "path": {
-            "type": "string"
-          },
-          "reply_to": {
-            "type": "string"
-          },
-          "text": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
         "type": "object"
       },
       "astral_internal_gateway_SendText": {
@@ -4837,27 +4718,6 @@
         "required": [
           "sequence",
           "observation"
-        ],
-        "type": "object"
-      },
-      "astral_internal_gateway_TelegramStickerDownloadRequest": {
-        "properties": {
-          "custom_emoji_id": {
-            "type": "string"
-          },
-          "file_id": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "set_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "file_id",
-          "path"
         ],
         "type": "object"
       },
@@ -6387,6 +6247,21 @@
           "rollout_bytes",
           "file_storage",
           "media_storage"
+        ],
+        "type": "object"
+      },
+      "astral_internal_httpapi_UploadedAttachment": {
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/astral_internal_domain_FileRef"
+          },
+          "uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "uri"
         ],
         "type": "object"
       },
@@ -9541,75 +9416,6 @@
         ]
       }
     },
-    "/api/v1/computers/{id}/files/reference": {
-      "post": {
-        "operationId": "referenceComputerFile",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Session whose Bot owns or is allowed to access this file.",
-            "in": "query",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Ordinary file path on the selected Computer. Creates a live reference, without a snapshot or Server copy.",
-            "in": "query",
-            "name": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "desktop": []
-          },
-          {
-            "webSessionHTTP": []
-          },
-          {
-            "webSessionHTTPS": []
-          }
-        ],
-        "tags": [
-          "Files"
-        ]
-      }
-    },
     "/api/v1/computers/{id}/revoke": {
       "post": {
         "operationId": "revokeComputer",
@@ -12358,7 +12164,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
+                  "$ref": "#/components/schemas/astral_internal_httpapi_UploadedAttachment"
                 }
               }
             },
@@ -12703,6 +12509,141 @@
         ],
         "tags": [
           "Sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{id}/computers/{computer}/files/content": {
+      "get": {
+        "description": "Read a regular file on a Computer allowed for this Session. Relative paths use the Bot home on that Computer.",
+        "operationId": "sessionComputerFileContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "computer",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Path on the source Computer.",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Set to true or 1 to download the file.",
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.",
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "bytes",
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Range Not Satisfiable",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Files"
         ]
       }
     },
@@ -15388,7 +15329,6 @@
     },
     "/v1/accounts": {
       "get": {
-        "description": "List this Bot's accounts, with access scopes and without credentials.",
         "operationId": "agentAccounts",
         "responses": {
           "200": {
@@ -15427,7 +15367,6 @@
     },
     "/v1/accounts/{id}/conversations/resolve": {
       "post": {
-        "description": "Resolve an authorized platform chat ID and optional Topic without creating a Session.",
         "operationId": "agentResolveConversation",
         "parameters": [
           {
@@ -15483,7 +15422,6 @@
     },
     "/v1/accounts/{id}/operations": {
       "get": {
-        "description": "Discover supported operations, request parameters and documentation for this account.",
         "operationId": "agentAccountOperations",
         "parameters": [
           {
@@ -15532,7 +15470,6 @@
     },
     "/v1/accounts/{id}/operations/{operation}": {
       "post": {
-        "description": "Invoke a discovered operation with its account-resource or authorized chat scope. Makes one attempt.",
         "operationId": "agentAccountOperation",
         "parameters": [
           {
@@ -15594,58 +15531,8 @@
         ]
       }
     },
-    "/v1/accounts/{id}/telegram/operations": {
-      "get": {
-        "description": "Discover named Telegram operations and whether each reads account resources or requires an authorized chat.",
-        "operationId": "agentTelegramOperations",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/astral_internal_channels_TelegramOperation"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
     "/v1/accounts/{id}/telegram/stickers/content": {
       "get": {
-        "description": "Stream a verified sticker resource's original or thumbnail; supply file_id and exactly one of set_name or custom_emoji_id.",
         "operationId": "agentTelegramStickerContent",
         "parameters": [
           {
@@ -15770,172 +15657,6 @@
         ]
       }
     },
-    "/v1/accounts/{id}/telegram/stickers/download": {
-      "post": {
-        "description": "Download a verified sticker resource to an explicit calling-Computer path and return a file reference.",
-        "operationId": "agentDownloadTelegramSticker",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_gateway_TelegramStickerDownloadRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
-    "/v1/accounts/{id}/telegram/{operation}": {
-      "post": {
-        "description": "Invoke a named Telegram operation. Destination and credential identity are supplied by the Host.",
-        "operationId": "agentTelegramOperation",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "operation",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_channels_TelegramRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_channels_TelegramResult"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
-    "/v1/attachments/download": {
-      "post": {
-        "description": "Write an original attachment to an explicit path on the calling Computer and return a file reference.",
-        "operationId": "agentDownloadAttachment",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_gateway_DownloadRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
     "/v1/capabilities": {
       "get": {
         "operationId": "agentCapabilities",
@@ -16018,7 +15739,6 @@
     },
     "/v1/computers": {
       "get": {
-        "description": "List this Bot's allowed Computers and current connection status.",
         "operationId": "agentComputers",
         "responses": {
           "200": {
@@ -16057,7 +15777,6 @@
     },
     "/v1/computers/files/copy": {
       "post": {
-        "description": "Copy a regular file between two allowed Computers. Either omitted Computer ID defaults to the caller. The target directory must exist. A complete transfer atomically replaces the destination file.",
         "operationId": "agentCopyComputerFile",
         "requestBody": {
           "content": {
@@ -16215,7 +15934,6 @@
     },
     "/v1/context": {
       "get": {
-        "description": "Inspect this listener's bound Bot, Session, source Computer, working directory and AgentHome.",
         "operationId": "agentContext",
         "responses": {
           "200": {
@@ -16251,7 +15969,6 @@
     },
     "/v1/conversations": {
       "get": {
-        "description": "List known authorized chats.",
         "operationId": "agentConversations",
         "responses": {
           "200": {
@@ -16391,65 +16108,8 @@
         ]
       }
     },
-    "/v1/conversations/{id}/avatar/download": {
-      "post": {
-        "description": "Save the authorized NapCat chat's avatar to an explicit path on the calling Computer.",
-        "operationId": "agentDownloadNapCatAvatar",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_gateway_NapCatAvatarDownloadRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
     "/v1/conversations/{id}/essence/{message_id}/parts": {
       "get": {
-        "description": "Read ordered text and media references from a currently authorized NapCat essence entry, including entries absent from the IM archive.",
         "operationId": "agentNapCatEssenceParts",
         "parameters": [
           {
@@ -16521,7 +16181,6 @@
     },
     "/v1/conversations/{id}/essence/{message_id}/parts/{ref}": {
       "get": {
-        "description": "Read one essence part, preserving its source identity and safe resource links.",
         "operationId": "agentNapCatEssencePart",
         "parameters": [
           {
@@ -16601,7 +16260,6 @@
     },
     "/v1/conversations/{id}/essence/{message_id}/parts/{ref}/content": {
       "get": {
-        "description": "Stream one verified essence media item without importing the message.",
         "operationId": "agentNapCatEssenceContent",
         "parameters": [
           {
@@ -16745,105 +16403,6 @@
         ]
       }
     },
-    "/v1/conversations/{id}/essence/{message_id}/parts/{ref}/download": {
-      "post": {
-        "description": "Save a verified essence media item to an explicit path on the calling Computer.",
-        "operationId": "agentDownloadNapCatEssencePart",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "message_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "ref",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Original message sequence from the essence list; supply together with msg_random to survive synthetic/native ID changes.",
-            "in": "query",
-            "name": "msg_seq",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Original message random value from the essence list; supply together with msg_seq.",
-            "in": "query",
-            "name": "msg_random",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Opaque media locator fingerprint from the returned part link; not a file checksum. Refresh parts if it conflicts.",
-            "in": "query",
-            "name": "media_digest",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_gateway_MessagePartDownloadRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
     "/v1/conversations/{id}/members/{user_id}/avatar/content": {
       "get": {
         "description": "Read a QQ user's current avatar through an authorized NapCat chat. The user must be the private peer or a verified current group member.",
@@ -16955,73 +16514,8 @@
         ]
       }
     },
-    "/v1/conversations/{id}/members/{user_id}/avatar/download": {
-      "post": {
-        "description": "Save the verified QQ user's avatar to an explicit path on the calling Computer.",
-        "operationId": "agentDownloadNapCatMemberAvatar",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_gateway_NapCatAvatarDownloadRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
     "/v1/conversations/{id}/message-tool": {
       "get": {
-        "description": "Get this chat's send_message description and platform-specific argument schema.",
         "operationId": "agentMessageTool",
         "parameters": [
           {
@@ -17067,7 +16561,6 @@
     },
     "/v1/conversations/{id}/messages": {
       "get": {
-        "description": "Read archived messages. Filter q before pagination; continue with after=next_sequence.",
         "operationId": "agentMessages",
         "parameters": [
           {
@@ -17137,7 +16630,6 @@
     },
     "/v1/conversations/{id}/messages/{message_id}": {
       "get": {
-        "description": "Read the latest archived version of a platform message.",
         "operationId": "agentMessage",
         "parameters": [
           {
@@ -17191,7 +16683,6 @@
     },
     "/v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content": {
       "get": {
-        "description": "Stream original attachment bytes; this does not save them on a Computer.",
         "operationId": "agentAttachmentContent",
         "parameters": [
           {
@@ -17310,7 +16801,6 @@
     },
     "/v1/conversations/{id}/messages/{message_id}/parts": {
       "get": {
-        "description": "Discover ordered cards, attachments and merged-forward parts within an archived authorized message.",
         "operationId": "agentMessageParts",
         "parameters": [
           {
@@ -17364,7 +16854,6 @@
     },
     "/v1/conversations/{id}/messages/{message_id}/parts/{ref}": {
       "get": {
-        "description": "Read one normalized part; page forwarded messages with offset and limit.",
         "operationId": "agentMessagePart",
         "parameters": [
           {
@@ -17444,7 +16933,6 @@
     },
     "/v1/conversations/{id}/messages/{message_id}/parts/{ref}/content": {
       "get": {
-        "description": "Stream the selected part's original attachment bytes, including nested forward media.",
         "operationId": "agentMessagePartContent",
         "parameters": [
           {
@@ -17561,81 +17049,8 @@
         ]
       }
     },
-    "/v1/conversations/{id}/messages/{message_id}/parts/{ref}/download": {
-      "post": {
-        "description": "Write one selected part's original to an explicit calling-Computer path and return its file reference.",
-        "operationId": "agentDownloadMessagePart",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "message_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "ref",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_gateway_MessagePartDownloadRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
     "/v1/conversations/{id}/messages/{message_id}/parts/{ref}/raw": {
       "get": {
-        "description": "Explicitly read a selected card's original JSON or XML payload.",
         "operationId": "agentMessagePartRaw",
         "parameters": [
           {
@@ -17693,119 +17108,12 @@
         ]
       }
     },
-    "/v1/files/reference": {
-      "post": {
-        "description": "Reference an existing Computer file for Web delivery; snapshot=true fixes its version.",
-        "operationId": "agentFileReference",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_gateway_ReferenceRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_gateway_ReferenceResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
-    "/v1/im/files": {
-      "post": {
-        "description": "Send a Computer path or astral-file reference with a stable Idempotency-Key; wait for platform acceptance or a send error.",
-        "operationId": "agentSendFile",
-        "parameters": [
-          {
-            "description": "Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/astral_internal_gateway_SendFile"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/astral_internal_domain_Outbox"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
-                }
-              }
-            },
-            "description": "Operation error"
-          }
-        },
-        "security": [
-          {
-            "command": []
-          }
-        ],
-        "tags": [
-          "Agent Gateway"
-        ]
-      }
-    },
     "/v1/im/messages": {
       "post": {
-        "description": "Send text with a stable Idempotency-Key and wait for platform acceptance or an error containing its receipt ID.",
         "operationId": "agentSendText",
         "parameters": [
           {
-            "description": "Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.",
+            "description": "Stable identity of this operation. Reuse only for the same request.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -17861,7 +17169,6 @@
     },
     "/v1/im/receipts/{id}": {
       "get": {
-        "description": "Read this Bot's persisted send outcome. Unknown outcomes are not automatically retried.",
         "operationId": "agentSendReceipt",
         "parameters": [
           {
@@ -17907,7 +17214,6 @@
     },
     "/v1/models": {
       "get": {
-        "description": "List currently available model profiles without contacting a provider.",
         "operationId": "agentModels",
         "responses": {
           "200": {
@@ -17946,7 +17252,6 @@
     },
     "/v1/schedules": {
       "get": {
-        "description": "List this Bot's schedules.",
         "operationId": "agentSchedules",
         "responses": {
           "200": {
@@ -17983,7 +17288,6 @@
         ]
       },
       "post": {
-        "description": "Create a visible one-time or recurring prompt schedule.",
         "operationId": "agentCreateSchedule",
         "requestBody": {
           "content": {
@@ -18029,7 +17333,6 @@
     },
     "/v1/schedules/{id}": {
       "delete": {
-        "description": "Delete a schedule using its current revision.",
         "operationId": "agentDeleteSchedule",
         "parameters": [
           {
@@ -18081,7 +17384,6 @@
         ]
       },
       "get": {
-        "description": "Read a schedule and its current revision.",
         "operationId": "agentGetSchedule",
         "parameters": [
           {
@@ -18125,7 +17427,6 @@
         ]
       },
       "patch": {
-        "description": "Replace the editable configuration with its expected revision.",
         "operationId": "agentUpdateSchedule",
         "parameters": [
           {
@@ -18319,7 +17620,6 @@
     },
     "/v1/sessions/{id}": {
       "patch": {
-        "description": "Rename, archive or restore one unbound Session belonging to this Bot.",
         "operationId": "agentUpdateSession",
         "parameters": [
           {
@@ -18557,7 +17857,6 @@
     },
     "/v1/skills": {
       "get": {
-        "description": "List local managed Skills and the Server's current Shared Skills.",
         "operationId": "agentManagedSkills",
         "responses": {
           "200": {
@@ -18593,7 +17892,6 @@
     },
     "/v1/skills/shared/{name}": {
       "delete": {
-        "description": "Stop distributing a Shared Skill and remove its installed copies on sync.",
         "operationId": "agentDeleteSharedSkill",
         "parameters": [
           {
@@ -18605,7 +17903,7 @@
             }
           },
           {
-            "description": "Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.",
+            "description": "Stable identity of this operation. Reuse only for the same request.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -18648,7 +17946,6 @@
     },
     "/v1/skills/shared/{name}/publish": {
       "post": {
-        "description": "Publish a single Shared Skill from the authenticated source Computer.",
         "operationId": "agentPublishSharedSkill",
         "parameters": [
           {
@@ -18660,7 +17957,7 @@
             }
           },
           {
-            "description": "Stable identity of this operation. Reuse only for the same request to retrieve its existing outcome.",
+            "description": "Stable identity of this operation. Reuse only for the same request.",
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
@@ -18703,7 +18000,6 @@
     },
     "/v1/wake-endpoints": {
       "get": {
-        "description": "List visible endpoints.",
         "operationId": "agentWakeEndpoints",
         "responses": {
           "200": {
@@ -18740,7 +18036,6 @@
         ]
       },
       "post": {
-        "description": "Create a local event endpoint for this command's Computer and a root Session.",
         "operationId": "agentCreateWakeEndpoint",
         "requestBody": {
           "content": {
@@ -18786,7 +18081,6 @@
     },
     "/v1/wake-endpoints/{id}": {
       "delete": {
-        "description": "Delete an endpoint using its current revision.",
         "operationId": "agentDeleteWakeEndpoint",
         "parameters": [
           {
@@ -18838,7 +18132,6 @@
         ]
       },
       "get": {
-        "description": "Read one endpoint.",
         "operationId": "agentWakeEndpoint",
         "parameters": [
           {
@@ -18882,7 +18175,6 @@
         ]
       },
       "patch": {
-        "description": "Edit an endpoint using its current revision.",
         "operationId": "agentUpdateWakeEndpoint",
         "parameters": [
           {

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/filestream"
 )
 
 // Every public sending shape reaches this one preparation path before any
@@ -60,7 +61,7 @@ func (s *Service) resolveOutboundParts(ctx context.Context, agentID, sessionID s
 			default:
 				return nil, domain.Invalid(c.Name + " does not support native mentions")
 			}
-		case "image", "file":
+		case "image", "file", "attachment":
 			if !c.FileSending {
 				return nil, domain.Invalid("this adapter cannot send files")
 			}
@@ -79,38 +80,28 @@ func (s *Service) resolveOutboundParts(ctx context.Context, agentID, sessionID s
 			p.Text = presentText(p.Text)
 			continue
 		}
-		if p.Type != "image" && p.Type != "file" {
+		if p.Type != "image" && p.Type != "file" && p.Type != "attachment" {
 			continue
 		}
-		var f domain.FileRef
-		var err error
+		caller := domain.ExecutionBinding{AgentID: agentID, SessionID: sessionID}
 		if input.Path != "" {
-			source := r.SourceBinding
-			if source == nil || source.AgentID != agentID || source.SessionID != sessionID || source.ComputerID != r.SourceComputerID {
+			b := r.SourceBinding
+			if b == nil || b.AgentID != agentID || b.SessionID != sessionID || b.ComputerID != r.SourceComputerID {
 				return nil, domain.Forbidden("file path needs the authenticated source Computer")
 			}
-			f, err = s.Harness.Files.Reference(ctx, *source, input.Path, false)
-		} else {
-			f, err = s.Harness.Files.Get(ctx, agentID, input.FileURI)
+			caller = *b
 		}
+		f, err := s.Harness.Files.StatSource(ctx, caller, input.Path, input.FileURI)
 		if err != nil {
 			return nil, err
 		}
-		if input.FileURI != "" && f.Version == "" {
-			source, bindErr := s.Harness.Hub.Bind(ctx, agentID, sessionID, f.ComputerID, "")
-			if bindErr != nil {
-				return nil, bindErr
-			}
-			// Live references may predate edits to the source. Resolve current
-			// metadata for the upload without copying any file content.
-			f, err = s.Harness.Files.Reference(ctx, source, f.Path, false)
-			if err != nil {
-				return nil, err
-			}
+		inferMedia := p.Type == "attachment" || r.autoMediaTypes || len(r.Parts) == 0
+		if p.Type == "attachment" {
+			p.Type = "file"
 		}
 		// The text/attachments conveniences retain their automatic image
 		// presentation. An explicit parts.file always remains a document.
-		if p.Type == "file" && (r.autoMediaTypes || len(r.Parts) == 0) && strings.HasPrefix(f.MediaType, "image/") {
+		if p.Type == "file" && inferMedia && strings.HasPrefix(f.MediaType, "image/") {
 			switch c.Adapter {
 			case "telegram.bot":
 				if f.MediaType == "image/png" || f.MediaType == "image/jpeg" || f.MediaType == "image/webp" {
@@ -121,7 +112,7 @@ func (s *Service) resolveOutboundParts(ctx context.Context, agentID, sessionID s
 				p.Type = "image"
 			}
 		}
-		if p.Type == "file" && (r.autoMediaTypes || len(r.Parts) == 0) {
+		if p.Type == "file" && inferMedia {
 			if (c.Adapter == "qq.bot" || c.Adapter == "weixin.ilink") && strings.HasPrefix(f.MediaType, "video/") {
 				p.MediaKind = "video"
 			}
@@ -138,7 +129,11 @@ func (s *Service) resolveOutboundParts(ctx context.Context, agentID, sessionID s
 		if c.UploadLimit > 0 && f.Size > c.UploadLimit {
 			return nil, domain.Invalid("file exceeds the platform upload limit")
 		}
-		p.FileRefID = f.ID
+		if f.Version != "" {
+			p.FileRefID = f.ID
+		} else {
+			p.File = &domain.OutboxFile{URI: filestream.PathURL(f.ComputerID, f.Path), Name: f.DisplayName, MediaType: f.MediaType, Size: f.Size}
+		}
 	}
 	return parts, nil
 }
@@ -169,7 +164,7 @@ func prepareOutboundParts(a Adapter, parts []domain.OutboxPart, options domain.M
 		}
 		count, mediaCount := 0, 0
 		for _, p := range group {
-			if p.FileRefID != "" {
+			if p.Type == "image" || p.Type == "file" {
 				mediaCount++
 			}
 			count += utf8.RuneCountInString(p.Text)
@@ -200,7 +195,7 @@ func prepareOutboundParts(a Adapter, parts []domain.OutboxPart, options domain.M
 		// acknowledgement remain a separate durable Outbox fragment.
 		start, files := 0, 0
 		for i, p := range parts {
-			if p.FileRefID != "" {
+			if p.Type == "image" || p.Type == "file" {
 				files++
 				if files > 1 {
 					if err := appendGroup(parts[start:i]); err != nil {

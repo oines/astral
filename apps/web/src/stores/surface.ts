@@ -1,11 +1,12 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { computerFileURI, type ComputerFile, type PreviewFile } from '../lib/computer-file'
 import type { FileRef } from '../lib/types'
 import type { SubagentReference } from '../lib/subagents'
 
 export interface SurfaceSession { id: string; title: string }
 export type Surface =
-  | { kind: 'file'; id: string; sessionID: string; ref?: FileRef }
+  | { kind: 'file'; id: string; sessionID: string; ref?: PreviewFile }
   | { kind: 'subagent'; id: string; title: string; path: SurfaceSession[] }
   | { kind: 'subagents'; id: string }
 export type SurfaceTab = Surface & { key: string }
@@ -49,7 +50,14 @@ export const useSurfaceStore = defineStore('surface', () => {
     const target = ownerID ? workspaces.value[owner] : ensure(owner)
     if (!target) return
     const key = tabKey(value)
-    const index = target.tabs.findIndex(tab => tab.key === key || (tab.kind === 'file' && value.kind === 'file' && (tab.id === value.id || (tab.ref && value.ref && tab.ref.computer_id === value.ref.computer_id && tab.ref.path === value.ref.path && (tab.ref.version || '') === (value.ref.version || '')))))
+    const index = target.tabs.findIndex(tab => {
+      if (tab.key === key) return true
+      if (tab.kind !== 'file' || value.kind !== 'file') return false
+      // A path reads through its own Session. Legacy reference IDs already
+      // identify a single persisted source across entries in this workspace.
+      if (tab.sessionID !== value.sessionID && ((tab.ref && !tab.ref.id) || (value.ref && !value.ref.id))) return false
+      return tab.id === value.id || Boolean(tab.ref && value.ref && tab.ref.computer_id === value.ref.computer_id && tab.ref.path === value.ref.path && (tab.ref.version || '') === (value.ref.version || ''))
+    })
     const activeKey = index >= 0 ? target.tabs[index]!.key : key
     if (index >= 0) {
       const previous = target.tabs[index]!
@@ -58,6 +66,9 @@ export const useSurfaceStore = defineStore('surface', () => {
     else target.tabs.push({ ...value, key })
     target.activeKey = activeKey
     if (!ownerID) target.visible = true
+  }
+  function openPath(file: ComputerFile, sessionID: string, ownerID?: string) {
+    open({ kind: 'file', id: computerFileURI(file), sessionID, ref: file }, ownerID)
   }
   function select(key: string) {
     if (!workspace.value || !tabs.value.some(tab => tab.key === key)) return
@@ -69,7 +80,7 @@ export const useSurfaceStore = defineStore('surface', () => {
     const tab = value?.tabs.find(tab => tab.key === key)
     if (!value || tab?.kind !== 'file' || tab.id !== file.id) return
     tab.ref = file
-    const duplicate = value.tabs.find(other => other.key !== key && other.kind === 'file' && other.ref?.computer_id === file.computer_id && other.ref.path === file.path && (other.ref.version || '') === (file.version || ''))
+    const duplicate = value.tabs.find(other => other.key !== key && other.kind === 'file' && (other.sessionID === tab.sessionID || other.ref?.id) && other.ref?.computer_id === file.computer_id && other.ref.path === file.path && (other.ref.version || '') === (file.version || ''))
     if (!duplicate) return
     value.tabs = value.tabs.filter(other => other.key !== key)
     if (value.activeKey === key) value.activeKey = duplicate.key
@@ -112,5 +123,5 @@ export const useSurfaceStore = defineStore('surface', () => {
   }
   function clear() { workspaces.value = {}; contextID.value = ''; inferredID.value = ''; epoch.value++ }
   function workspaceFor(id: string) { return workspaces.value[id] }
-  return { rootID, tabs, selected, current, width, directoryWidth, directoryOpen, epoch, workspaceFor, setSession, open, select, updateFile, openSubagent, backToSession, closeTab, close, reopen, forgetSessions, clear }
+  return { rootID, tabs, selected, current, width, directoryWidth, directoryOpen, epoch, workspaceFor, setSession, open, openPath, select, updateFile, openSubagent, backToSession, closeTab, close, reopen, forgetSessions, clear }
 })

@@ -33,16 +33,65 @@ func Parse(raw string) (computerID, id string, err error) {
 	return u.Host, id, nil
 }
 
-func (s *Service) Reference(ctx context.Context, b domain.ExecutionBinding, source string, snapshot bool) (domain.FileRef, error) {
-	method := "file.stat"
-	if snapshot {
-		method = "file.snapshot"
+// PathURL names a live file on its Computer without registering server state.
+func PathURL(computerID, path string) string {
+	locator := url.URL{Scheme: "astral-file", Host: computerID, RawQuery: url.Values{"path": {path}}.Encode()}
+	return locator.String()
+}
+
+// source resolves a command path on its original binding, or a URI on the
+// explicitly named Computer under the caller's current session permissions.
+func (s *Service) source(ctx context.Context, b domain.ExecutionBinding, path, uri string) (domain.ExecutionBinding, domain.FileRef, error) {
+	ref := domain.FileRef{AgentID: b.AgentID, ComputerID: b.ComputerID, Path: path}
+	if uri == "" {
+		if b.GrantID == "" || path == "" {
+			return b, ref, domain.Invalid("a Computer path requires the original command binding")
+		}
+		return b, ref, nil
+	}
+	u, err := url.Parse(uri)
+	if err != nil {
+		return b, ref, domain.Invalid("invalid Computer file URI")
+	}
+	if u.RawQuery != "" {
+		query, err := url.ParseQuery(u.RawQuery)
+		if err != nil || u.Scheme != "astral-file" || u.Host == "" || u.User != nil || u.Path != "" || u.Fragment != "" || len(query) != 1 || len(query["path"]) != 1 || query.Get("path") == "" || strings.ContainsRune(query.Get("path"), 0) {
+			return b, ref, domain.Invalid("invalid Computer file path URI")
+		}
+		ref.ComputerID, ref.Path = u.Host, query.Get("path")
+	} else {
+		ref, err = s.Get(ctx, b.AgentID, uri)
+		if err != nil {
+			return b, ref, err
+		}
+	}
+	b, err = s.Hub.Bind(ctx, b.AgentID, b.SessionID, ref.ComputerID, "")
+	return b, ref, err
+}
+
+func (s *Service) StatSource(ctx context.Context, b domain.ExecutionBinding, path, uri string) (domain.FileRef, error) {
+	b, ref, err := s.source(ctx, b, path, uri)
+	if err != nil || ref.Version != "" {
+		return ref, err
 	}
 	var info computers.FileInfo
-	if err := s.Hub.JSON(ctx, method, computers.Call{Binding: b, Path: source}, &info); err != nil {
-		return domain.FileRef{}, err
+	err = s.Hub.JSON(ctx, "file.stat", computers.Call{Binding: b, Path: ref.Path}, &info)
+	ref.Path, ref.DisplayName, ref.MediaType, ref.Size = info.Path, info.Name, info.MediaType, info.Size
+	return ref, err
+}
+
+func (s *Service) OpenSource(ctx context.Context, b domain.ExecutionBinding, path, uri string) (computers.FileInfo, io.ReadCloser, error) {
+	b, ref, err := s.source(ctx, b, path, uri)
+	if err != nil {
+		return computers.FileInfo{}, nil, err
 	}
-	return s.save(ctx, b, info)
+	info, body, err := s.open(ctx, computers.Call{Binding: b, Path: ref.Path, Version: ref.Version})
+	if ref.ID != "" {
+		// A stored attachment may have a verified media type that differs from
+		// its on-disk extension. The daemon supplies the current byte length.
+		info.Name, info.MediaType = ref.DisplayName, ref.MediaType
+	}
+	return info, body, err
 }
 func (s *Service) Upload(ctx context.Context, b domain.ExecutionBinding, name string, body io.Reader) (domain.FileRef, error) {
 	_, stream, err := s.Hub.Call(ctx, "file.upload", computers.Call{Binding: b, Path: name}, body)
@@ -58,12 +107,9 @@ func (s *Service) Upload(ctx context.Context, b domain.ExecutionBinding, name st
 	if err = json.Unmarshal(raw, &info); err != nil {
 		return domain.FileRef{}, err
 	}
-	return s.save(ctx, b, info)
-}
-func (s *Service) save(ctx context.Context, b domain.ExecutionBinding, info computers.FileInfo) (domain.FileRef, error) {
 	ref := domain.FileRef{Meta: domain.Meta{ID: domain.ID("file")}, AgentID: b.AgentID, ComputerID: b.ComputerID, Path: info.Path,
 		DisplayName: info.Name, MediaType: info.MediaType, Size: info.Size, Version: info.Version}
-	err := s.Store.Update(ctx, func(tx *persistence.Tx) error {
+	err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
 		if err := tx.RequireActiveAgent(ctx, b.AgentID); err != nil {
 			return err
 		}
@@ -94,16 +140,21 @@ func (s *Service) Read(ctx context.Context, agentID, sessionID, raw string, offs
 	if err != nil {
 		return ref, computers.FileInfo{}, nil, err
 	}
-	meta, stream, err := s.Hub.Call(ctx, "file.read", computers.Call{Binding: b, Path: ref.Path, Version: ref.Version, Offset: offset, Length: length}, nil)
+	info, stream, err := s.open(ctx, computers.Call{Binding: b, Path: ref.Path, Version: ref.Version, Offset: offset, Length: length})
+	return ref, info, stream, err
+}
+
+func (s *Service) open(ctx context.Context, call computers.Call) (computers.FileInfo, io.ReadCloser, error) {
+	meta, stream, err := s.Hub.Call(ctx, "file.read", call, nil)
 	if err != nil {
-		return ref, computers.FileInfo{}, nil, err
+		return computers.FileInfo{}, nil, err
 	}
 	var info computers.FileInfo
-	if err = json.Unmarshal(meta, &info); err != nil {
+	if err := json.Unmarshal(meta, &info); err != nil {
 		_ = stream.Close()
-		return ref, info, nil, err
+		return info, nil, err
 	}
-	return ref, info, stream, nil
+	return info, stream, nil
 }
 
 // FreezeImages copies the exact native image payload into the Core message.

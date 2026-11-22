@@ -17,9 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/channels"
-	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/testkit"
 )
@@ -258,39 +256,6 @@ func TestTelegramStickerResourceQueriesAndStreamsHaveNoReceptionSideEffects(t *t
 	}
 }
 
-func TestTelegramStickerResourceDownloadRetainsCallingComputerAfterSwitch(t *testing.T) {
-	f := newStickerResourceGateway(t, 2)
-	if err := f.p.Harness.SelectComputer(f.p.Context, f.p.Session.ID, f.p.Daemons[1].Credentials.ComputerID, ""); err != nil {
-		t.Fatal(err)
-	}
-	_, data := f.request(t, "POST", "/v1/accounts/"+f.account.ID+"/telegram/stickers/download", map[string]any{"set_name": "AstralGatewayStickers", "file_id": "set-original", "path": "chosen-sticker.tgs"}, http.StatusOK)
-	var saved ReferenceResponse
-	if err := json.Unmarshal(data, &saved); err != nil || saved.File.ComputerID != f.binding.ComputerID || saved.URI == "" || filepath.Clean(saved.File.Path) != filepath.Join(f.binding.CWD, "chosen-sticker.tgs") {
-		t.Fatalf("download moved to the newly selected Computer: %s %v", data, err)
-	}
-	_, _, stream, err := f.p.Harness.Files.Read(f.p.Context, f.p.Agent.ID, f.p.Session.ID, saved.URI, 0, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(stream)
-	closeErr := stream.Close()
-	if err != nil || closeErr != nil || !bytes.Equal(body, f.original) {
-		t.Fatalf("saved Computer file changed: bytes=%d read=%v close=%v", len(body), err, closeErr)
-	}
-	other, err := f.p.Hub.Bind(f.p.Context, f.p.Agent.ID, f.p.Session.ID, f.p.Daemons[1].Credentials.ComputerID, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fs, err := (&computers.Backend{Hub: f.p.Hub}).FileSystem(f.p.Context, core.Invocation{SessionID: other.SessionID, Binding: computers.BindingJSON(other)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fs.ReadFile(f.p.Context, "chosen-sticker.tgs"); err == nil {
-		t.Fatal("explicit download also wrote to the newly selected Computer")
-	}
-	f.assertNoReceptionSideEffects(t, 1)
-}
-
 func TestTelegramStickerResourceErrorsDoNotExposeCredentialsOrFetchArbitraryFiles(t *testing.T) {
 	f := newStickerResourceGateway(t, 1)
 	base := "/v1/accounts/" + f.account.ID
@@ -307,7 +272,6 @@ func TestTelegramStickerResourceErrorsDoNotExposeCredentialsOrFetchArbitraryFile
 			t.Fatal("resource error exposed credentials or returned an invalid error document")
 		}
 	}
-	f.request(t, "POST", base+"/telegram/stickers/download", map[string]any{"set_name": "AstralGatewayStickers", "file_id": "set-original"}, http.StatusBadRequest)
 	f.request(t, "POST", base+"/operations/sendSticker", map[string]any{"parameters": map[string]any{"sticker": "set-original"}}, http.StatusBadRequest)
 	_, body := f.request(t, "GET", base+"/telegram/stickers/content?set_name=broken&file_id=set-original", nil, 0)
 	if !json.Valid(body) || bytes.Contains(body, []byte(gatewayStickerToken)) {
@@ -325,7 +289,7 @@ func TestTelegramStickerResourceErrorsDoNotExposeCredentialsOrFetchArbitraryFile
 	f.assertNoReceptionSideEffects(t, 0)
 }
 
-func TestTelegramStickerResourceDownloadPathsAreDiscoverableAndAuthenticated(t *testing.T) {
+func TestTelegramStickerContentIsDiscoverableAndAuthenticated(t *testing.T) {
 	f := newStickerResourceGateway(t, 1)
 	_, body := f.request(t, "GET", "/v1/capabilities/files", nil, http.StatusOK)
 	var document CapabilityDocument
@@ -333,23 +297,6 @@ func TestTelegramStickerResourceDownloadPathsAreDiscoverableAndAuthenticated(t *
 		t.Fatal(err)
 	}
 	paths := document.OpenAPI["paths"].(map[string]any)
-	for _, path := range []string{"/v1/accounts/{id}/telegram/stickers/content", "/v1/accounts/{id}/telegram/stickers/download"} {
-		if paths[path] == nil {
-			t.Fatalf("sticker resource API has no discoverable contract: %s", path)
-		}
-	}
-	content, download := false, false
-	for _, example := range document.Examples {
-		parsed, err := url.Parse(example.Path)
-		if err != nil || parsed.IsAbs() || !strings.HasPrefix(example.Path, "/") {
-			t.Fatalf("file API example is not relative to local_api.base_url: %+v", example)
-		}
-		content = content || strings.Contains(parsed.Path, "/telegram/stickers/content") && example.Method == http.MethodGet
-		download = download || strings.Contains(parsed.Path, "/telegram/stickers/download") && example.Method == http.MethodPost && example.Body != nil
-	}
-	if !content || !download {
-		t.Fatal("file discovery omitted an explicit sticker read/download example")
-	}
 	get := paths["/v1/accounts/{id}/telegram/stickers/content"].(map[string]any)["get"].(map[string]any)
 	requiredFile := false
 	for _, raw := range get["parameters"].([]any) {
@@ -378,10 +325,6 @@ func TestTelegramStickerResourceDownloadPathsAreDiscoverableAndAuthenticated(t *
 			}
 		}
 		return false
-	}
-	downloadSchema := requestSchema("/v1/accounts/{id}/telegram/stickers/download")
-	if !required(downloadSchema, "file_id") || !required(downloadSchema, "path") {
-		t.Fatal("download contract omitted mandatory file_id or explicit path")
 	}
 	if required(requestSchema("/v1/accounts/{id}/operations/{operation}"), "conversation_id") {
 		t.Fatal("named operation contract still requires a chat for resource reads")

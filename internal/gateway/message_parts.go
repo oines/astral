@@ -14,16 +14,15 @@ import (
 // These views deliberately exclude adapter handles, inline wire payloads and
 // credential-bearing media URLs. Every resource link retains its parent chat.
 type MessagePartView struct {
-	Ref         string                 `json:"ref"`
-	Type        string                 `json:"type" enum:"text,card,attachment,forward,unsupported"`
-	Text        string                 `json:"text,omitempty"`
-	Card        *MessageCardView       `json:"card,omitempty"`
-	Attachment  *MessageAttachmentView `json:"attachment,omitempty"`
-	Forward     *MessageForwardView    `json:"forward,omitempty"`
-	ReadURL     string                 `json:"read_url"`
-	RawURL      string                 `json:"raw_url,omitempty"`
-	ContentURL  string                 `json:"content_url,omitempty"`
-	DownloadURL string                 `json:"download_url,omitempty"`
+	Ref        string                 `json:"ref"`
+	Type       string                 `json:"type" enum:"text,card,attachment,forward,unsupported"`
+	Text       string                 `json:"text,omitempty"`
+	Card       *MessageCardView       `json:"card,omitempty"`
+	Attachment *MessageAttachmentView `json:"attachment,omitempty"`
+	Forward    *MessageForwardView    `json:"forward,omitempty"`
+	ReadURL    string                 `json:"read_url"`
+	RawURL     string                 `json:"raw_url,omitempty"`
+	ContentURL string                 `json:"content_url,omitempty"`
 }
 
 type MessageCardView struct {
@@ -65,10 +64,6 @@ type MessagePartResponse struct {
 	NextOffset *int            `json:"next_offset,omitempty"`
 }
 
-type MessagePartDownloadRequest struct {
-	Path string `json:"path"`
-}
-
 // MessageObservationView preserves existing message metadata while projecting
 // quoted trees through the same safe views as the dedicated part resources.
 type MessageObservationView struct {
@@ -105,7 +100,7 @@ func messagePartViews(conversationID, messageID string, parts []domain.MessagePa
 		}
 		if attachment := part.Attachment; attachment != nil {
 			view.Attachment = &MessageAttachmentView{Ref: attachment.Ref, Kind: attachment.Kind, Name: attachment.Name, MediaType: attachment.MediaType, Size: attachment.Size, Sticker: attachment.Sticker}
-			view.ContentURL, view.DownloadURL = view.ReadURL+"/content", view.ReadURL+"/download"
+			view.ContentURL = view.ReadURL + "/content"
 		}
 		if forward := part.Forward; forward != nil {
 			view.Forward = &MessageForwardView{Status: forward.Status, Total: forward.Total}
@@ -168,9 +163,5 @@ func (s *Service) messagePartRoutes() {
 			return
 		}
 		serveContent(w, r, download)
-	})
-	register[MessagePartDownloadRequest, ReferenceResponse](s, "POST", selected+"/download", "agentDownloadMessagePart", func(r *http.Request, request MessagePartDownloadRequest) (ReferenceResponse, error) {
-		ref, err := s.Channels.DownloadMessagePart(r.Context(), binding(r), r.PathValue("id"), r.PathValue("message_id"), r.PathValue("ref"), request.Path)
-		return ReferenceResponse{File: ref, URI: fileURI(ref)}, err
 	})
 }

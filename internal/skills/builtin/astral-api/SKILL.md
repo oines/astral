@@ -41,7 +41,7 @@ In PowerShell, pass `@{ Authorization = "Bearer $env:ASTRAL_API_TOKEN" }` to `In
 | Find earlier decisions, task results, or messages in Astral sessions | `history`. Use the `session-history` skill when available. |
 | Rename, archive, or restore an existing session | `sessions`. Resolve the exact ID from the history catalog. The endpoint applies to this Bot's unbound root sessions. Use `agent_control` for supported actions on direct subagents. |
 | Find the managed skill directory, publish a shared skill, or delete a shared skill | `skills`. Read [Shared skills](references/shared-skills.md). |
-| Inspect or act on authorized chats, send a file, or retrieve a file | `chats` or `files`. Read [Chats and files](references/chats-and-files.md). |
+| Inspect authorized chats, send or retrieve a file, or link a Computer file in a Web reply | `chats` or `files`. Read [Chats and files](references/chats-and-files.md). |
 | Check the calling session, its source Computer, available Computers, or configured timezone | `environment`. Read `/v1/context` or `/v1/computers` as appropriate. |
 | Choose a configured model and reasoning level for a subagent | `models`. Use the returned Profile ID and reasoning value for the subagent tool; treat availability as saved configuration. |
 

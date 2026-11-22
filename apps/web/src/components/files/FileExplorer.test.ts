@@ -8,10 +8,10 @@ import type { FileRef } from '../../lib/types'
 import type { FileService } from '../../composables/useFileService'
 import FileExplorer from './FileExplorer.vue'
 
-const fixture = vi.hoisted(() => ({ list: vi.fn<FileService['listDirectory']>(), reference: vi.fn<FileService['referencePath']>(), download: vi.fn(), opened: vi.fn(), transitions: [] as Array<{ readonly css: boolean }> }))
+const fixture = vi.hoisted(() => ({ list: vi.fn<FileService['listDirectory']>(), download: vi.fn(), opened: vi.fn(), transitions: [] as Array<{ readonly css: boolean }> }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
-vi.mock('../../composables/useFileService', async importOriginal => ({ ...await importOriginal<object>(), fileService: { listDirectory: fixture.list, referencePath: fixture.reference } }))
-vi.mock('../../lib/file-download', () => ({ downloadFileReference: fixture.download }))
+vi.mock('../../composables/useFileService', async importOriginal => ({ ...await importOriginal<object>(), fileService: { listDirectory: fixture.list } }))
+vi.mock('../../lib/file-download', () => ({ downloadComputerFile: fixture.download }))
 vi.mock('../../composables/useFileReveal', async () => {
   const { ref } = await import('vue')
   return { useFileReveal: () => ({ available: ref(false), error: ref(''), labelKey: ref('reveal'), reveal: vi.fn() }) }
@@ -82,7 +82,6 @@ async function mount() {
 beforeEach(() => {
   vi.stubGlobal('HTMLElement', class {})
   fixture.list.mockReset().mockImplementation(async source => ({ computer_id: source.computer_id, path: '/work', parent: '/', entries: [{ name: 'report.md', path: '/work/report.md', is_dir: false, size: file.size, modified_at: '' }, { name: 'folder', path: '/work/folder', is_dir: true, size: 0, modified_at: '' }] }))
-  fixture.reference.mockReset().mockResolvedValue(file)
   fixture.download.mockReset()
   fixture.opened.mockReset()
   fixture.transitions = []
@@ -90,14 +89,13 @@ beforeEach(() => {
 afterEach(() => { unmount?.(); unmount = undefined; vi.unstubAllGlobals() })
 
 describe('file explorer context-menu downloads', () => {
-  it('obtains a source-bound reference and downloads without opening a preview tab', async () => {
+  it('downloads the listed source path without opening a preview tab', async () => {
     const view = await mount()
     await view.context('/work/report.md')
     const labels = all(view.root).filter(value => value.props['data-menu-item']).map(text)
     expect(labels).toEqual(['download', 'filesCopyPath'])
     ;(view.download()!.props.onClick as () => void)()
-    await vi.waitFor(() => expect(fixture.download).toHaveBeenCalledExactlyOnceWith(file, 'source-session'))
-    expect(fixture.reference).toHaveBeenCalledWith(expect.objectContaining({ computer_id: 'office' }), 'source-session', '/work/report.md', expect.any(AbortSignal))
+    await vi.waitFor(() => expect(fixture.download).toHaveBeenCalledExactlyOnceWith({ computer_id: 'office', path: '/work/report.md' }, 'source-session', 'report.md'))
     expect(fixture.opened).not.toHaveBeenCalled()
   })
 
@@ -106,7 +104,6 @@ describe('file explorer context-menu downloads', () => {
     await view.context('/work/folder')
     expect(view.download()).toBeUndefined()
     expect(all(view.root).filter(value => value.props['data-menu-item']).map(text)).toEqual(['filesCopyPath'])
-    expect(fixture.reference).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -123,7 +120,6 @@ describe('file explorer context-menu downloads', () => {
     ;(menu.props.onPointerupCapture as (event: Event) => void)(event)
     expect(event.defaultPrevented).toBe(prevented)
     expect(view.download()).toBeDefined()
-    expect(fixture.reference).not.toHaveBeenCalled()
     expect(fixture.download).not.toHaveBeenCalled()
   })
 
@@ -136,31 +132,14 @@ describe('file explorer context-menu downloads', () => {
     expect(event.defaultPrevented).toBe(true)
   })
 
-  it.each(['source change', 'unmount'])('cancels a pending download reference on %s and ignores its late response', async action => {
-    let finish!: (value: FileRef) => void
-    fixture.reference.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+  it('opens a listed file using its source Computer and path', async () => {
     const view = await mount()
-    await view.context('/work/report.md')
-    ;(view.download()!.props.onClick as () => void)()
-    const signal = fixture.reference.mock.calls[0]![3]!
-    if (action === 'source change') { view.source.value = { computer_id: 'other', path: '/other/file' }; await nextTick() }
-    else { unmount?.(); unmount = undefined }
-    expect(signal.aborted).toBe(true)
-    finish(file)
-    await Promise.resolve(); await nextTick()
-    expect(fixture.download).not.toHaveBeenCalled()
-    expect(fixture.opened).not.toHaveBeenCalled()
+    const row = all(view.root).find(node => node.props['data-path'] === '/work/report.md')!
+    ;(row.props.onClick as () => void)()
+    expect(fixture.opened).toHaveBeenCalledWith({ computer_id: 'office', path: '/work/report.md' })
   })
 
-  it('shows reference failures locally without downloading or changing the preview', async () => {
-    fixture.reference.mockRejectedValueOnce(new Error('Computer is offline'))
-    const view = await mount()
-    await view.context('/work/report.md')
-    ;(view.download()!.props.onClick as () => void)()
-    await vi.waitFor(() => expect(text(view.root)).toContain('Computer is offline'))
-    expect(fixture.download).not.toHaveBeenCalled()
-    expect(fixture.opened).not.toHaveBeenCalled()
-  })
+
 })
 
 describe('file explorer folder disclosure', () => {

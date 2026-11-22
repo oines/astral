@@ -68,53 +68,51 @@ func TestTelegramOperationHTTPReturnsSafeRejectionAndFailureDetails(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{"operations", "telegram"} {
-		for _, test := range []struct {
-			name, method, code string
-			upstream           int64
-			private            bool
-		}{
-			{"explicit rejection", "setChatTitle", "platform_rejected", 400, false},
-			{"redacted token", "setChatTitle", "platform_rejected", 403, true},
-			{"mutation upstream failure", "setChatTitle", "outcome_unknown", 500, false},
-			{"read upstream failure", "getChatMember", "platform_failed", 500, false},
-		} {
-			t.Run(route+"/"+test.name, func(t *testing.T) {
-				responseCode.Store(test.upstream)
-				privateReason.Store(test.private)
-				before := calls.Load()
-				parameters := map[string]any{"title": "New title"}
-				if test.method == "getChatMember" {
-					parameters = map[string]any{"user_id": "42"}
-				}
-				body := testkit.JSON(channels.ChatOperationRequest{ConversationID: chat.ID, Parameters: parameters})
-				path := "/v1/accounts/" + account.ID + "/" + route + "/" + test.method
-				reply, err := api.Handle(p.Context, computers.GatewayRequest{Binding: source, Method: "POST", Path: path, Body: body})
-				if err != nil {
-					t.Fatal(err)
-				}
-				want := fmt.Sprintf("Telegram %s failed (%d): missing administrator rights", test.method, test.upstream)
-				if test.private {
-					want += " [redacted]"
-				}
-				var problem httpcontract.Error
-				if reply.Status != http.StatusBadGateway || json.Unmarshal(reply.Body, &problem) != nil || problem.Code != test.code || problem.Message != want {
-					t.Fatalf("Gateway lost Telegram rejection details: HTTP %d %s", reply.Status, reply.Body)
-				}
-				if strings.Contains(string(reply.Body), token) {
-					t.Fatalf("Gateway exposed Telegram credentials: %s", reply.Body)
-				}
-				if calls.Load()-before != 1 {
-					t.Fatalf("operation automatically retried: %d attempts", calls.Load()-before)
-				}
-			})
-		}
-		before := calls.Load()
-		bad := testkit.JSON(channels.ChatOperationRequest{ConversationID: chat.ID, Parameters: map[string]any{"title": "Title", "group_id": "-200"}})
-		reply, err := api.Handle(p.Context, computers.GatewayRequest{Binding: source, Method: "POST", Path: "/v1/accounts/" + account.ID + "/" + route + "/setChatTitle", Body: bad})
-		var problem httpcontract.Error
-		if err != nil || reply.Status != http.StatusBadRequest || json.Unmarshal(reply.Body, &problem) != nil || problem.Code != "invalid" || !strings.Contains(problem.Message, "group_id") || calls.Load() != before {
-			t.Fatalf("Telegram mapping swallowed validation: HTTP %d %s %v", reply.Status, reply.Body, err)
-		}
+	for _, test := range []struct {
+		name, method, code string
+		upstream           int64
+		private            bool
+	}{
+		{"explicit rejection", "setChatTitle", "platform_rejected", 400, false},
+		{"redacted token", "setChatTitle", "platform_rejected", 403, true},
+		{"mutation upstream failure", "setChatTitle", "outcome_unknown", 500, false},
+		{"read upstream failure", "getChatMember", "platform_failed", 500, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			responseCode.Store(test.upstream)
+			privateReason.Store(test.private)
+			before := calls.Load()
+			parameters := map[string]any{"title": "New title"}
+			if test.method == "getChatMember" {
+				parameters = map[string]any{"user_id": "42"}
+			}
+			body := testkit.JSON(channels.ChatOperationRequest{ConversationID: chat.ID, Parameters: parameters})
+			path := "/v1/accounts/" + account.ID + "/operations/" + test.method
+			reply, err := api.Handle(p.Context, computers.GatewayRequest{Binding: source, Method: "POST", Path: path, Body: body})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := fmt.Sprintf("Telegram %s failed (%d): missing administrator rights", test.method, test.upstream)
+			if test.private {
+				want += " [redacted]"
+			}
+			var problem httpcontract.Error
+			if reply.Status != http.StatusBadGateway || json.Unmarshal(reply.Body, &problem) != nil || problem.Code != test.code || problem.Message != want {
+				t.Fatalf("Gateway lost Telegram rejection details: HTTP %d %s", reply.Status, reply.Body)
+			}
+			if strings.Contains(string(reply.Body), token) {
+				t.Fatalf("Gateway exposed Telegram credentials: %s", reply.Body)
+			}
+			if calls.Load()-before != 1 {
+				t.Fatalf("operation automatically retried: %d attempts", calls.Load()-before)
+			}
+		})
+	}
+	before := calls.Load()
+	bad := testkit.JSON(channels.ChatOperationRequest{ConversationID: chat.ID, Parameters: map[string]any{"title": "Title", "group_id": "-200"}})
+	reply, err := api.Handle(p.Context, computers.GatewayRequest{Binding: source, Method: "POST", Path: "/v1/accounts/" + account.ID + "/operations/setChatTitle", Body: bad})
+	var problem httpcontract.Error
+	if err != nil || reply.Status != http.StatusBadRequest || json.Unmarshal(reply.Body, &problem) != nil || problem.Code != "invalid" || !strings.Contains(problem.Message, "group_id") || calls.Load() != before {
+		t.Fatalf("Telegram mapping swallowed validation: HTTP %d %s %v", reply.Status, reply.Body, err)
 	}
 }
