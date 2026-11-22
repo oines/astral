@@ -8,7 +8,7 @@ interface CacheConfig {
 }
 
 export class UpdateCacheConflict extends Error {}
-const artifactPattern = /^Astral-((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))-(?:mac-(?:x64|arm64)\.zip|win-(?:x64|arm64)\.exe|linux-(?:x64|arm64)\.AppImage)$/
+const artifactPattern = /^Astral-((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))-(?:mac-(?:x64|arm64)\.zip|win-(?:x64|arm64)\.exe|linux-(?:x86_64|arm64)\.AppImage)$/
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT'
 
 export class DesktopUpdateCache {

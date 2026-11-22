@@ -23,10 +23,11 @@ describe('Desktop update packages', () => {
   it('measures and removes all old and current packages while retaining newer packages and unrelated files', async () => {
     const { cache, pending } = await fixture()
     const packageName = (version: string) => `Astral-${version}-mac-arm64.zip`
-    const retained = [packageName('0.10.3'), 'Astral-0.1.0-linux-arm64.zip', 'update-info.json', 'unknown.zip']
-    for (const name of [...retained, 'Astral-0.1.0-mac-x64.zip', packageName('0.9.10'), packageName('0.10.2')]) await writeFile(path.join(pending, name), 'data')
-    expect(await cache.inventory()).toEqual({ total_bytes: 16, cleanable_bytes: 12 })
-    expect(await cache.clean()).toEqual({ removed_bytes: 12 })
+    const retained = [packageName('0.10.3'), 'Astral-0.10.3-linux-x86_64.AppImage', 'Astral-0.1.0-linux-x64.AppImage', 'Astral-0.1.0-linux-arm64.zip', 'update-info.json', 'unknown.zip']
+    const old = ['Astral-0.1.0-mac-x64.zip', packageName('0.9.10'), packageName('0.10.2'), 'Astral-0.1.48-linux-x86_64.AppImage', 'Astral-0.1.48-linux-arm64.AppImage']
+    for (const name of [...retained, ...old]) await writeFile(path.join(pending, name), 'data')
+    expect(await cache.inventory()).toEqual({ total_bytes: 28, cleanable_bytes: 20 })
+    expect(await cache.clean()).toEqual({ removed_bytes: 20 })
     expect(await cache.clean()).toEqual({ removed_bytes: 0 })
     for (const name of retained) expect(await readFile(path.join(pending, name), 'utf8')).toBe('data')
   })
