@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -21,13 +19,6 @@ func ownedFile(path string, uid int) bool {
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	return ok && int(stat.Uid) == uid
-}
-func processArguments(pid int) ([]string, error) {
-	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cmdline")
-	if err != nil {
-		return nil, err
-	}
-	return strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00"), nil
 }
 func installCommand(ctx context.Context, name string, args []string, out, stderr io.Writer) error {
 	if err := ctx.Err(); err != nil {

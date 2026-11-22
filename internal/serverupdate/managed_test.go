@@ -33,6 +33,8 @@ type fixture struct {
 	install      func(context.Context, string, []string, io.Writer, io.Writer) error
 	fetchErr     error
 	launchErr    bool
+	serviceState string
+	fragment     string
 }
 
 func managedFixture(t *testing.T) *fixture {
@@ -65,8 +67,8 @@ func managedFixture(t *testing.T) *fixture {
 			info, e := os.Lstat(path)
 			return e == nil && uid == 42 && info.Mode()&os.ModeSymlink == 0 && info.Mode().Perm()&0022 == 0
 		},
-		args: func(int) ([]string, error) { return installationArguments(root), nil },
 	}
+	f.serviceState, f.fragment = "active", m.deps.unitPath
 	m.deps.command = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -83,7 +85,7 @@ func managedFixture(t *testing.T) *fixture {
 		if len(args) > 2 && strings.HasPrefix(args[2], "astral-server-update-") {
 			return []byte(fmt.Sprintf("LoadState=%s\nActiveState=%s\nMainPID=%s\n", f.jobLoad, f.job, f.jobPID)), f.jobErr
 		}
-		return []byte(fmt.Sprintf("Id=%s\nLoadState=loaded\nActiveState=active\nMainPID=123\nFragmentPath=%s\nDropInPaths=\nExecStart={ path=%s/current/bin/astral ; argv[]=%s ; }\n", serviceName, m.deps.unitPath, root, strings.Join(installationArguments(root), " "))), nil
+		return []byte(fmt.Sprintf("LoadState=loaded\nActiveState=%s\nMainPID=123\nFragmentPath=%s\n", f.serviceState, f.fragment)), nil
 	}
 	m.deps.latest = func(ctx context.Context) (releaseTarget, error) {
 		f.latestCalls.Add(1)
@@ -113,7 +115,7 @@ func managedFixture(t *testing.T) *fixture {
 		}
 		return nil
 	}
-	if err := os.WriteFile(m.deps.unitPath, []byte(unitDefinition(root)), 0600); err != nil {
+	if err := os.WriteFile(m.deps.unitPath, []byte("# Astral Server installer root: "+root+"\n[Service]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeJSON(filepath.Join(root, "installation.json"), installation{Schema: 1, Root: root, DataDirectory: m.data, UID: 42, Service: serviceName, UnitPath: m.deps.unitPath}); err != nil {
@@ -151,30 +153,75 @@ func TestUnknownInstallationNeverRunsCommands(t *testing.T) {
 		t.Fatalf("unmanaged installation adopted: %+v %v", state, err)
 	}
 }
-func TestCapabilityRejectsForeignIdentityAndModifiedUnit(t *testing.T) {
-	for _, change := range []func(*fixture){
-		func(f *fixture) { f.m.deps.platform = "windows" },
-		func(f *fixture) { f.m.deps.uid = 43 },
-		func(f *fixture) { f.m.data = filepath.Join(f.m.root, "other-data") },
-		func(f *fixture) { f.m.deps.pid = 124 },
-		func(f *fixture) { f.m.executable = filepath.Join(f.m.root, "unmanaged") },
-		func(f *fixture) {
-			f.m.deps.args = func(int) ([]string, error) { return []string{"astral", "serve", "--data", "/other"}, nil }
+func TestCapabilityAcceptsCustomizedService(t *testing.T) {
+	f := managedFixture(t)
+	execStart := fmt.Sprintf(`ExecStart=:"%s" serve --listen 127.0.0.1:8081 --data "%s"`, strings.ReplaceAll(f.m.executable, "%", "%%"), strings.ReplaceAll(f.m.data, "%", "%%"))
+	unit := "# Astral Server installer root: " + f.m.root + "\n[Service]\n" + execStart + "\n"
+	if err := os.WriteFile(f.m.deps.unitPath, []byte(unit), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dropIn := f.m.deps.unitPath + ".d/listener.conf"
+	if err := os.MkdirAll(filepath.Dir(dropIn), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dropIn, []byte("[Service]\nEnvironment=\"ASTRAL_INSTALLATION_ROOT="+strings.ReplaceAll(f.m.root, "%", "%%")+"\"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	command := f.m.deps.command
+	f.m.deps.command = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		raw, err := command(ctx, name, args...)
+		if name == "systemctl" && len(args) > 2 && args[2] == serviceName {
+			raw = append(raw, []byte("DropInPaths="+dropIn+"\n"+execStart+"\n")...)
+		}
+		return raw, err
+	}
+	state := pending(t, f)
+	if state.Manager != "systemd-user" || state.OperationState != "running" || f.latestCalls.Load() != 1 {
+		t.Fatalf("customized official service could not start update: %+v", state)
+	}
+}
+
+func TestCapabilityRejectsForeignIdentity(t *testing.T) {
+	for name, change := range map[string]func(*testing.T, *fixture){
+		"platform":           func(t *testing.T, f *fixture) { f.m.deps.platform = "windows" },
+		"wrong user":         func(t *testing.T, f *fixture) { f.m.deps.uid = 43 },
+		"wrong data":         func(t *testing.T, f *fixture) { f.m.data = filepath.Join(f.m.root, "other-data") },
+		"foreign main PID":   func(t *testing.T, f *fixture) { f.m.deps.pid = 124 },
+		"foreign executable": func(t *testing.T, f *fixture) { f.m.executable = f.m.deps.unitPath },
+		"missing marker": func(t *testing.T, f *fixture) {
+			if err := os.Remove(filepath.Join(f.m.root, "installation.json")); err != nil {
+				t.Fatal(err)
+			}
 		},
-		func(f *fixture) {
-			_ = os.WriteFile(f.m.deps.unitPath, []byte(unitDefinition(f.m.root)+"# changed\n"), 0600)
+		"foreign unit ownership": func(t *testing.T, f *fixture) {
+			if err := os.Chmod(f.m.deps.unitPath, 0666); err != nil {
+				t.Fatal(err)
+			}
 		},
-		func(f *fixture) { _ = os.Remove(filepath.Join(f.m.root, "installation.json")) },
+		"inactive service":      func(t *testing.T, f *fixture) { f.serviceState = "inactive" },
+		"different loaded unit": func(t *testing.T, f *fixture) { f.fragment = "/etc/systemd/user/" + serviceName },
+		"current escapes releases": func(t *testing.T, f *fixture) {
+			releases := filepath.Join(f.m.root, "releases")
+			other := filepath.Join(f.m.root, "releases-backup")
+			if err := os.Rename(releases, other); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(other, releases); err != nil {
+				t.Fatal(err)
+			}
+		},
 	} {
-		f := managedFixture(t)
-		change(f)
-		state, err := f.m.Apply(context.Background())
-		if err != nil || state.Phase != "unavailable" || state.Manager != "manual" {
-			t.Fatalf("foreign installation adopted: %+v %v", state, err)
-		}
-		if f.latestCalls.Load() != 0 || f.fetchCalls.Load() != 0 || f.installCalls.Load() != 0 {
-			t.Fatal("untrusted installation contacted the updater")
-		}
+		t.Run(name, func(t *testing.T) {
+			f := managedFixture(t)
+			change(t, f)
+			state, err := f.m.Apply(context.Background())
+			if err != nil || state.Phase != "unavailable" || state.Manager != "manual" {
+				t.Fatalf("foreign installation adopted: %+v %v", state, err)
+			}
+			if f.latestCalls.Load() != 0 || f.fetchCalls.Load() != 0 || f.installCalls.Load() != 0 {
+				t.Fatal("untrusted installation contacted the updater")
+			}
+		})
 	}
 }
 func TestChecksOnlyResolveMetadataAndCanCheckAgain(t *testing.T) {

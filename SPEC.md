@@ -392,7 +392,7 @@ Web 管理维护一个管理员账户，用户名和密码可修改，不增加�
 
 无人值守首次启动可使用 `ASTRAL_ADMIN_USERNAME` 配合 `ASTRAL_ADMIN_PASSWORD` 或 `ASTRAL_ADMIN_PASSWORD_FILE`，后两者不能同时设置；CLI 对应 `--initial-admin-username` 和 `--initial-admin-password-file`。仅在账户不存在时初始化，重启不得重置已有密码、2FA 或会话。数据等运行参数对应 `ASTRAL_SERVER_DATA_DIR`、`ASTRAL_COMPUTER_DATA_DIR`、`ASTRAL_WEB_DIR`、`ASTRAL_DISTRIBUTION_DIR`、`ASTRAL_NO_LOCAL`，显式 CLI 参数优先。浏览器会话期限可通过 `--web-session-ttl` / `ASTRAL_WEB_SESSION_TTL` 配置正 Go duration，默认 `720h`。
 
-Linux 官方安装根对应 `--installation-root` / `ASTRAL_INSTALLATION_ROOT`，显式 CLI 优先，安装器自动传入该参数。它只标识既有安装根，不绕过更新前的当前 UID、目录归属、官方用户服务定义、运行 PID、启动参数和数据目录验证；仅设置环境变量不能为手动或自定义部署开启网页更新。
+Linux 官方安装根对应 `--installation-root` / `ASTRAL_INSTALLATION_ROOT`，显式 CLI 优先，安装器自动传入该参数。网页更新核对安装标记、当前 UID、安装根、数据目录及所属用户服务文件。服务必须处于 active，MainPID 对应当前 Server 进程，其实际可执行文件须与安装根 current/bin/astral 指向的 releases/ 内程序一致。满足这些条件的服务允许使用 systemd drop-in 和额外启动参数。
 
 登录成功签发每个浏览器独立的随机会话 Token，Server 持久化摘要、登录时间、最近活动和过期时间。Cookie 使用 HttpOnly、SameSite Strict，HTTPS 下加 Secure；过期由 Server 强制执行。默认有效期 30 天，重启不延长或清除已持久的有效会话。退出撤销当前会话，设备列表删除立即撤销指定凭据并结束其绑定的 SSE 等请求，离线客户端下次请求拒绝。改密码、重置账户和退出所有设备撤销 Web 会话，不影响 Desktop 或 Daemon。设备列表包含未过期浏览器/CLI 会话并标记当前设备，不是在线连接列表或物理硬件指纹；Desktop 不进入该存储，也不提供网页撤销入口。删除登录会话不删除 Passkey。
 

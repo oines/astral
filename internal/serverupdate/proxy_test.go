@@ -2,13 +2,11 @@ package serverupdate
 
 import (
 	"context"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func TestManagedProxyUnitAndDetachedJobPreserveExplicitSelection(t *testing.T) {
+func TestManagedProxyDetachedJobPreservesExplicitSelection(t *testing.T) {
 	for _, proxy := range []string{"", "https://proxy.example/prefix%20/$()/"} {
 		t.Run("proxy="+proxy, func(t *testing.T) {
 			t.Setenv("ASTRAL_GITHUB_PROXY", proxy)
@@ -20,14 +18,6 @@ func TestManagedProxyUnitAndDetachedJobPreserveExplicitSelection(t *testing.T) {
 			}
 			marker.GitHubProxy = &proxy
 			if err := writeJSON(markerPath, marker); err != nil {
-				t.Fatal(err)
-			}
-			unit := unitDefinition(f.m.root, proxy)
-			wantEnvironment := `Environment="ASTRAL_GITHUB_PROXY=` + strings.ReplaceAll(proxy, "%", "%%") + "\"\nExecStart=:"
-			if !strings.Contains(unit, wantEnvironment) {
-				t.Fatalf("unit does not match installer's quoted Environment format: %s", unit)
-			}
-			if err := os.WriteFile(f.m.deps.unitPath, []byte(unit), 0600); err != nil {
 				t.Fatal(err)
 			}
 			pending(t, f)
@@ -51,8 +41,8 @@ func TestManagedProxyUnitAndDetachedJobPreserveExplicitSelection(t *testing.T) {
 	}
 }
 
-func TestManagedProxyMarkerCannotAdoptUnexpectedUnitOrInvalidPrefix(t *testing.T) {
-	for _, proxy := range []string{"https://proxy.example/", "https://proxy.example", "http://proxy.example/", "https://user:secret@proxy.example/"} {
+func TestManagedProxyMarkerRejectsInvalidPrefix(t *testing.T) {
+	for _, proxy := range []string{"https://proxy.example", "http://proxy.example/", "https://user:secret@proxy.example/"} {
 		t.Run(proxy, func(t *testing.T) {
 			f := managedFixture(t)
 			var marker installation
@@ -64,10 +54,9 @@ func TestManagedProxyMarkerCannotAdoptUnexpectedUnitOrInvalidPrefix(t *testing.T
 			if err := writeJSON(markerPath, marker); err != nil {
 				t.Fatal(err)
 			}
-			// The legacy unit lacks the marker's new explicit Environment line.
 			state, err := f.m.Apply(context.Background())
 			if err != nil || state.Manager != "manual" || f.latestCalls.Load() != 0 {
-				t.Fatalf("invalid marker or mismatched unit was adopted: %+v %v", state, err)
+				t.Fatalf("invalid marker was adopted: %+v %v", state, err)
 			}
 		})
 	}

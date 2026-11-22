@@ -47,7 +47,6 @@ type dependencies struct {
 	latest   func(context.Context) (releaseTarget, error)
 	fetch    func(context.Context, releaseTarget, string) error
 	owned    func(string, int) bool
-	args     func(int) ([]string, error)
 	platform string
 	uid, pid int
 	unitPath string
@@ -68,7 +67,7 @@ func NewManaged(root, data, executable, version string) Controller {
 		config = filepath.Join(home, ".config")
 	}
 	m := &managed{root: root, data: data, executable: executable, version: version}
-	m.deps = dependencies{command: command, install: installCommand, latest: officialLatest, fetch: fetchInstaller, owned: ownedFile, args: processArguments, platform: runtime.GOOS, uid: os.Getuid(), pid: os.Getpid(), unitPath: filepath.Join(config, "systemd/user", serviceName)}
+	m.deps = dependencies{command: command, install: installCommand, latest: officialLatest, fetch: fetchInstaller, owned: ownedFile, platform: runtime.GOOS, uid: os.Getuid(), pid: os.Getpid(), unitPath: filepath.Join(config, "systemd/user", serviceName)}
 	return m
 }
 
@@ -103,10 +102,8 @@ func (m *managed) validate(ctx context.Context, running bool) error {
 			return errors.New("the official installation marker has an invalid GitHub proxy")
 		}
 	}
-	expectedUnit := unitDefinitionWithEnvironment(m.root, marker.GitHubProxy, marker.AllowRemoteManagement)
-	unit, err := os.ReadFile(marker.UnitPath)
-	if err != nil || !m.deps.owned(marker.UnitPath, m.deps.uid) || string(unit) != expectedUnit {
-		return errors.New("the user service definition is not the matching official installer definition")
+	if !m.deps.owned(marker.UnitPath, m.deps.uid) {
+		return errors.New("user service file ownership is invalid")
 	}
 	expected, err := filepath.EvalSymlinks(filepath.Join(m.root, "current/bin/astral"))
 	if err != nil || !strings.HasPrefix(expected, filepath.Join(m.root, "releases")+string(os.PathSeparator)) {
@@ -118,7 +115,7 @@ func (m *managed) validate(ctx context.Context, running bool) error {
 			return errors.New("the running executable is not this installation's current program")
 		}
 	}
-	raw, err := m.deps.command(ctx, "systemctl", "--user", "show", serviceName, "--property=Id,LoadState,ActiveState,MainPID,FragmentPath,DropInPaths,ExecStart", "--no-pager")
+	raw, err := m.deps.command(ctx, "systemctl", "--user", "show", serviceName, "--property=LoadState,ActiveState,MainPID,FragmentPath", "--no-pager")
 	if err != nil {
 		return errors.New("the systemd user manager could not verify this installation")
 	}
@@ -129,61 +126,15 @@ func (m *managed) validate(ctx context.Context, running bool) error {
 			values[key] = value
 		}
 	}
-	if values["Id"] != serviceName || values["LoadState"] != "loaded" || values["FragmentPath"] != marker.UnitPath || values["DropInPaths"] != "" || !strings.Contains(values["ExecStart"], "--installation-root") {
+	// The installer replaces this particular base unit. A same-named unit
+	// loaded from another location is a different deployment.
+	if values["LoadState"] != "loaded" || values["FragmentPath"] != marker.UnitPath {
 		return errors.New("the loaded user service does not match the installer")
 	}
-	if running {
-		if values["ActiveState"] != "active" || values["MainPID"] != strconv.Itoa(m.deps.pid) {
-			return errors.New("this Server is not the current systemd user-service process")
-		}
-		args, e := m.deps.args(m.deps.pid)
-		if e != nil || !sameArguments(args, installationArguments(m.root)) {
-			return errors.New("the service process arguments do not match its installation and data directory")
-		}
+	if running && (values["ActiveState"] != "active" || values["MainPID"] != strconv.Itoa(m.deps.pid)) {
+		return errors.New("this Server is not the current systemd user-service process")
 	}
 	return nil
-}
-func sameArguments(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-func installationArguments(root string) []string {
-	return []string{root + "/current/bin/astral", "serve", "--installation-root", root, "--data", root + "/data/server", "--computers-dir", root + "/data/computers", "--distribution-dir", root + "/current/distribution", "--ready-file", root + "/run/ready.json"}
-}
-func unitDefinition(root string, githubProxy ...string) string {
-	var proxy *string
-	if len(githubProxy) > 0 {
-		proxy = &githubProxy[0]
-	}
-	return unitDefinitionWithEnvironment(root, proxy, nil)
-}
-
-func unitDefinitionWithEnvironment(root string, githubProxy *string, allowRemote *bool) string {
-	quote := func(s string) string {
-		s = strings.ReplaceAll(s, "\\", "\\\\")
-		s = strings.ReplaceAll(s, "\"", "\\\"")
-		s = strings.ReplaceAll(s, "%", "%%")
-		return "\"" + s + "\""
-	}
-	args := installationArguments(root)
-	for i := range args {
-		args[i] = quote(args[i])
-	}
-	environment := ""
-	if githubProxy != nil {
-		environment = "Environment=" + quote(githubrelease.ProxyEnvironment+"="+*githubProxy) + "\n"
-	}
-	if allowRemote != nil {
-		environment += "Environment=" + quote("ASTRAL_ALLOW_REMOTE_MANAGEMENT="+strconv.FormatBool(*allowRemote)) + "\n"
-	}
-	return "# Astral Server installer root: " + root + "\n[Unit]\nDescription=Astral Server\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=/\n" + environment + "ExecStart=:" + strings.Join(args, " ") + "\nRestart=on-failure\nRestartSec=3\nTimeoutStopSec=30\nUMask=0077\n\n[Install]\nWantedBy=default.target\n"
 }
 func (m *managed) unavailable() State {
 	return State{Phase: "unavailable", CurrentVersion: m.version, Manager: "manual", Unavailable: "unmanaged"}

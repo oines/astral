@@ -15,6 +15,8 @@ For Linux DEB, Windows ZIP, or a custom build, get the new version from [Downloa
 
 Official Linux installations can update through **Settings → About & diagnostics**. Alternatively, rerun the [installer](/docs/hosting/server/#update) as the original OS account. Keep the original `--root` for a custom directory.
 
+If you customize the service, use `systemctl --user edit astral-server.service` to put your settings in a drop-in. The installer replaces the base unit during upgrades. Extra startup options and drop-ins support Web updates while systemd runs the current Astral Server binary from that installation.
+
 Wait for the service to restart and reconnect, then check the version and task history. Retry download errors as directed. If activation fails, the installer attempts to restore the previous program and that update's data backup. An older installation offering only manual updates can first be updated with the current installer.
 
 For manual `serve`, a custom service, or a custom container, stop it using your deployment method, replace the program, and restart with the **same data directory and startup configuration**.
