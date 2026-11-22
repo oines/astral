@@ -243,12 +243,16 @@ func TestDeleteComputerEventsSerializeAdmissionWithoutCancellingOrdinaryRun(t *t
 	case <-f.ctx.Done():
 		t.Fatal(f.ctx.Err())
 	}
+	tryStale := func() (bool, error) {
+		result, err := f.service.deliverWake(f.ctx, *original.Inflight)
+		if result.Accepted {
+			return false, errors.New("Core accepted a stale Computer event batch")
+		}
+		return result.Handled, err
+	}
 	stale := make(chan error, 1)
 	go func() {
-		result, err := f.service.deliverWake(f.ctx, *original.Inflight)
-		if err == nil && !result.Handled {
-			err = errors.New("stale worker retained delivery ownership")
-		}
+		_, err := tryStale()
 		stale <- err
 	}()
 	close(lookupRelease)
@@ -268,6 +272,15 @@ func TestDeleteComputerEventsSerializeAdmissionWithoutCancellingOrdinaryRun(t *t
 	case <-f.ctx.Done():
 		t.Fatal(f.ctx.Err())
 	}
+	// Busy admission defers the callback. Once admission is available, the
+	// worker must recognize the deleted generation and discard its batch.
+	eventually(t, f.ctx, func() bool {
+		handled, err := tryStale()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return handled
+	})
 	select {
 	case <-cancelled:
 		t.Fatal("Computer event cleanup cancelled an ordinary model request")
