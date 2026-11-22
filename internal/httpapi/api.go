@@ -154,6 +154,10 @@ type ProactiveInput struct {
 	Revision int64 `json:"revision"`
 	Enabled  bool  `json:"enabled"`
 }
+type ObservationContextInput struct {
+	Revision int64 `json:"revision"`
+	Enabled  *bool `json:"enabled"`
+}
 type SearchQuery = search.Request
 type Usage struct {
 	Agents   []domain.Agent        `json:"agents"`
@@ -622,6 +626,12 @@ func (a *API) resources() {
 	})
 	route[ProactiveInput, domain.Conversation](a, "PATCH", "/conversations/{id}/proactive", "setConversationProactive", "Channels", func(r *http.Request, input ProactiveInput) (domain.Conversation, error) {
 		return c.SetProactive(r.Context(), r.PathValue("id"), input.Revision, input.Enabled)
+	})
+	route[ObservationContextInput, domain.Conversation](a, "PATCH", "/conversations/{id}/observation-context", "setConversationObservationContext", "Channels", func(r *http.Request, input ObservationContextInput) (domain.Conversation, error) {
+		if input.Enabled == nil {
+			return domain.Conversation{}, domain.Invalid("enabled is required")
+		}
+		return c.SetObservationContext(r.Context(), r.PathValue("id"), input.Revision, *input.Enabled)
 	})
 	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/bindings/{id}", "unbindConversation", "Channels", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, c.Unbind(r.Context(), r.PathValue("id"), revision(r))

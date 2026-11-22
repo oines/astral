@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useIntervalFn } from '@vueuse/core'
 import { useQuery } from '@pinia/colada'
 import { listBindingsQuery, listConnectionsQuery, listConnectionsQueryKey, listConversationsQuery, listConversationsQueryKey } from '@astral/sdk/colada'
-import { startWeixinLogin, pollWeixinLogin, deleteConnection, listConnections, listConversations, saveConnection, unbindConversation, setConversationProactive, type AstralInternalHttpapiConnectionInput, type AstralInternalHttpapiConnectionView, type AstralInternalDomainConversation, type AstralInternalDomainConnection } from '@astral/sdk'
+import { startWeixinLogin, pollWeixinLogin, deleteConnection, listConnections, listConversations, saveConnection, unbindConversation, setConversationProactive, setConversationObservationContext, type AstralInternalHttpapiConnectionInput, type AstralInternalHttpapiConnectionView, type AstralInternalDomainConversation, type AstralInternalDomainConnection } from '@astral/sdk'
 import { Button, ConfirmPopover, Modal, Select, Switch, SettingsRow, SettingsSection } from '@astral/ui'
 import { ArrowLeft, ChevronRight, MessageCircle, Plus, Search, Trash2, User } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
@@ -245,23 +245,35 @@ async function removeChat() {
     await app.refresh()
   })
 }
-async function setProactive(conversation: Conversation, value: string) {
+type ChatPreference = 'reply' | 'observation'
+function chatPreference(conversation: Conversation, field: ChatPreference) {
+  return field === 'observation' ? !conversation.observation_context_disabled : conversation.proactive_enabled
+}
+function displayedPreference(conversation: Conversation, field: ChatPreference) {
+  return saves.value(`conversation:${conversation.id}/${field}`, chatPreference(conversation, field))
+}
+async function setChatPreference(conversation: Conversation, field: ChatPreference, enabled: boolean) {
   const id = conversation.id
-  const enabled = value === 'proactive'
-  await saves.run(`conversation:${id}`, 'reply', {
+  const update = field === 'observation' ? setConversationObservationContext : setConversationProactive
+  const latestChat = async () => (await request(listConversations())).find(c => c.id === id)
+  const confirm = (current: Conversation) => saves.confirm(listConversationsQueryKey(), {
+    ...current, observation_context_disabled: !!current.observation_context_disabled,
+  })
+  await saves.run(`conversation:${id}`, field, {
     write: async () => {
-      const current = (await request(listConversations())).find(c => c.id === id)
+      const current = await latestChat()
       if (!current) throw { code: 'not_found', message: t('noMatchingChats') }
-      if (current.proactive_enabled !== enabled) saves.confirm(listConversationsQueryKey(), await request(setConversationProactive({ path: { id }, body: { revision: current.revision, enabled } })))
+      if (chatPreference(current, field) !== enabled) confirm(await request(update({ path: { id }, body: { revision: current.revision, enabled } })))
+      else confirm(current)
       await conversations.refetch().catch(() => undefined)
     },
     reconcile: async () => {
-      const current = (await request(listConversations())).find(c => c.id === id)
-      if (current) saves.confirm(listConversationsQueryKey(), current)
+      const current = await latestChat()
+      if (current) confirm(current)
       await conversations.refetch().catch(() => undefined)
-      return current?.proactive_enabled === enabled ? 'applied' : 'not-applied'
+      return current && chatPreference(current, field) === enabled ? 'applied' : 'not-applied'
     },
-  }, value)
+  }, enabled)
 }
 async function removeConnection() {
   const target = account.value
@@ -476,18 +488,31 @@ async function removeConnection() {
             <ChevronRight aria-hidden="true" />
           </RouterLink>
           <div class="account-chat-controls">
-            <Select
+            <label
               v-if="conversation.kind !== 'private'"
+              class="account-chat-context"
+              :title="t('useGroupContextHint')"
+            >
+              {{ t('useGroupContext') }}
+              <Switch
+                :label="t('chatGroupContext', { name: conversation.title })"
+                :aria-description="t('useGroupContextHint')"
+                :model-value="displayedPreference(conversation, 'observation')"
+                @update:model-value="setChatPreference(conversation, 'observation', $event)"
+              />
+            </label>
+            <Select
+              v-if="conversation.kind !== 'private' && displayedPreference(conversation, 'observation')"
               class="account-chat-reply"
-              :model-value="saves.value(`conversation:${conversation.id}/reply`, conversation.proactive_enabled ? 'proactive' : 'mentions')"
+              :model-value="displayedPreference(conversation, 'reply') ? 'proactive' : 'mentions'"
               :label="t('chatReplyMode', { name: conversation.title })"
               :options="[{ value: 'mentions', label: t('replyWhenMentioned'), description: t('replyWhenMentionedHint') }, { value: 'proactive', label: t('joinDiscussion'), description: t('joinDiscussionHint') }]"
-              @update:model-value="setProactive(conversation, $event)"
+              @update:model-value="setChatPreference(conversation, 'reply', $event === 'proactive')"
             />
             <span
               v-else
               class="account-chat-reply chat-direct-reply"
-            >{{ t('directReply') }}</span>
+            >{{ t(conversation.kind === 'private' ? 'directReply' : 'replyWhenMentioned') }}</span>
             <div class="account-chat-actions">
               <Button
                 variant="ghost"
@@ -523,6 +548,7 @@ async function removeConnection() {
               </ConfirmPopover>
             </div>
           </div>
+          <SettingsFeedback :scope="[`conversation:${conversation.id}/reply`, `conversation:${conversation.id}/observation`]" />
         </div>
         <p
           v-if="ownConversations.length && !visibleConversations.length"
@@ -536,10 +562,6 @@ async function removeConnection() {
         >
           <strong>{{ t('noAccessibleChats') }}</strong><p>{{ t(account.access_mode === 'all' ? 'firstAutomaticChatHint' : 'firstSpecifiedChatHint') }}</p>
         </div>
-        <SettingsFeedback
-          v-if="ownConversations.length"
-          :scope="ownConversations.map(c => `conversation:${c.id}/reply`)"
-        />
       </SettingsSection>
       <SettingsSection v-if="!hasHistory">
         <SettingsRow

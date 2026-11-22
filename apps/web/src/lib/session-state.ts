@@ -189,7 +189,10 @@ export function messageText(entry: Entry): string {
   const m = entry.message
   if (!m || m.is_error || (m.role === 'assistant' && ['error', 'cancelled'].includes(m.finish_reason ?? ''))) return ''
   const metadata = object(m.metadata)
-  if (m.role === 'user' && typeof metadata.display_text === 'string') return metadata.display_text
+  if (m.role === 'user') {
+    if (typeof metadata.display_text === 'string') return metadata.display_text
+    if (m.context_kind === 'im.observation') return ''
+  }
   return (m.content ?? []).filter(p => p.type === 'text').map(p => p.text ?? '').join('\n')
 }
 export function scheduledMessage(entry: Entry) {
@@ -211,9 +214,11 @@ export function externalMessage(entry: Entry) {
 function conversationMessage(entry: Entry) {
   const message = entry.message
   if (entry.kind === 'context' && message?.context_kind === 'external.events' && externalMessage(entry)) return message
-  // Role describes model input, not UI visibility. Passive context and internal
-  // activation prompts stay in history without becoming conversation bubbles.
-  if (entry.kind !== 'message' || !message || message.context_kind && message.context_kind !== 'astral.subagent_instruction' || object(message.metadata).source === 'im.trigger') return
+  if (!message) return
+  const metadata = object(message.metadata)
+  if (entry.kind === 'context' && message.context_kind === 'im.observation' && message.role === 'user' && metadata.source === 'im' && metadata.im_trigger === true) return message
+  if (entry.kind !== 'message' || message.context_kind && message.context_kind !== 'astral.subagent_instruction') return
+  if (metadata.source === 'im.trigger' || metadata.source === 'im.wakeup' || metadata.source === 'im.reply_reminder') return
   return message
 }
 export function visibleEntry(entry: Entry) {

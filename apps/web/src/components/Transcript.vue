@@ -121,10 +121,10 @@ function openImage(entry: Entry, index: number) {
 function senderInfo(entry: Entry) {
   const meta = object(entry.message?.metadata)
   if (meta.source !== 'im') return undefined
-  const name = String(object(meta.sender).name ?? '').trim()
-  if (!name) return undefined
+  const sender = object(meta.sender)
+  const name = [sender.name, sender.username, sender.id].find(value => typeof value === 'string' && value.trim())
   const platform = typeof meta.platform === 'string' && meta.platform.trim() ? platformLabel(meta.platform.trim(), locale.value) : ''
-  return { name, platform }
+  return [name, platform].filter(Boolean).join(' · ')
 }
 function imageDimensions(image: Content) {
   const metadata = object(image.metadata)
@@ -251,9 +251,7 @@ function externalTime(entry: Entry) { return formatTimestamp.value(externalMessa
               v-else-if="senderInfo(entry)"
               class="message-sender"
             >
-              {{ senderInfo(entry)?.name }}<template v-if="senderInfo(entry)?.platform">
-                · {{ senderInfo(entry)?.platform }}
-              </template>
+              {{ senderInfo(entry) }}
             </div>
             <div
               v-if="attachments(entry).images.length"

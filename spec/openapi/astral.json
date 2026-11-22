@@ -2543,6 +2543,10 @@
           "kind": {
             "type": "string"
           },
+          "observation_context_disabled": {
+            "description": "Omitted or false when ordinary group messages are included in session context.",
+            "type": "boolean"
+          },
           "proactive_enabled": {
             "type": "boolean"
           },
@@ -4393,6 +4397,9 @@
           "connection_id": {
             "type": "string"
           },
+          "context_excluded": {
+            "type": "boolean"
+          },
           "conversation_id": {
             "type": "string"
           },
@@ -5917,6 +5924,21 @@
           "saved_value",
           "source",
           "editable"
+        ],
+        "type": "object"
+      },
+      "astral_internal_httpapi_ObservationContextInput": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "enabled"
         ],
         "type": "object"
       },
@@ -9887,6 +9909,67 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/astral_internal_gateway_MessagePage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "desktop": []
+          },
+          {
+            "webSessionHTTP": []
+          },
+          {
+            "webSessionHTTPS": []
+          }
+        ],
+        "tags": [
+          "Channels"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}/observation-context": {
+      "patch": {
+        "operationId": "setConversationObservationContext",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_httpapi_ObservationContextInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_domain_Conversation"
                 }
               }
             },

@@ -177,6 +177,29 @@ describe('transcript facts', () => {
     expect(Object.values(state.trace)).toEqual(context)
   })
 
+  it('shows the original IM input once across delivery, reconnect, and older pages', () => {
+    const original = entry('im-input', 8, { kind: 'context', message: {
+      role: 'user', context_kind: 'im.observation',
+      metadata: { source: 'im', im_trigger: true, display_text: 'Read <this> & reply' },
+      content: [{ type: 'text', text: '<message>model envelope</message>' }],
+    } })
+    const wake = entry('driver', 9, { message: { role: 'user', metadata: { source: 'im.trigger' }, content: [{ type: 'text', text: 'Internal activation' }] } })
+    const state = fromSnapshot(snapshot([], [wake]))
+    applyEvent(state, { ...event(1, { type: 'context_applied' }), entry: original })
+    const restored = reconcileSnapshot(state, snapshot([original, wake], [original]))
+    const older = entry('old-image', 3, { kind: 'context', message: {
+      role: 'user', context_kind: 'im.observation', metadata: { source: 'im', im_trigger: true },
+      content: [{ type: 'text', text: '<message>internal image description</message>' }, { type: 'image', media_type: 'image/png' }],
+    } })
+    addEntry(restored, older, true)
+    expect(transcriptGroups(restored).filter(group => group.role === 'user').map(group => group.entries)).toEqual([[older], [original]])
+    expect(messageText(original)).toBe('Read <this> & reply')
+    expect(messageText(older)).toBe('')
+    for (const source of ['im.wakeup', 'im.reply_reminder']) {
+      expect(visibleEntry(entry(source, 10, { message: { role: 'user', metadata: { source }, content: [{ type: 'text', text: 'Internal driver' }] } }))).toBe(false)
+    }
+  })
+
   it('filters live and paginated context without splitting replies or matching user text', () => {
     const question = entry('question', 3, { message: { role: 'user', content: [{ type: 'text', text: 'Current Astral environment snapshot: explain this label' }] } })
     const commentary = entry('commentary', 4, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'Checking now.' }] } })

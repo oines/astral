@@ -246,6 +246,23 @@ func (m sessionModel) EstimateTokens(ctx context.Context, request core.Request) 
 	return modelbridge.EstimateTokens(ctx, m.Model, request)
 }
 
+func (m sessionModel) CompatibleReasoningEfforts(previous, current string) bool {
+	capability, ok := m.Model.(core.ReasoningEffortUsageModel)
+	return ok && capability.CompatibleReasoningEfforts(previous, current)
+}
+
+func (m sessionModel) CompatibleReasoningEffortTargets(previous, current json.RawMessage) bool {
+	capability, ok := m.Model.(core.ReasoningEffortUsageTargetModel)
+	return ok && capability.CompatibleReasoningEffortTargets(previous, current)
+}
+
+func (m sessionModel) ReasoningEffortTargetPolicyID() string {
+	if capability, ok := m.Model.(core.ReasoningEffortUsageTargetModel); ok {
+		return capability.ReasoningEffortTargetPolicyID()
+	}
+	return ""
+}
+
 func (m sessionModel) ValidateRequest(ctx context.Context, request core.Request) error {
 	if validator, ok := m.Model.(core.RequestValidator); ok {
 		if err := validator.ValidateRequest(ctx, request); err != nil {

@@ -156,7 +156,7 @@ func TestProactiveModeUsesLLMOnlyAndDoesNotRepeatCoveredInputs(t *testing.T) {
 }
 
 func TestStaleProbeCannotWakeAfterMentionOffOrRebind(t *testing.T) {
-	for _, change := range []string{"mention", "off", "rebind"} {
+	for _, change := range []string{"mention", "off", "context off and on", "rebind"} {
 		t.Run(change, func(t *testing.T) {
 			bot := newBot(t)
 			p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return testkit.Text("unexpected") })
@@ -181,6 +181,11 @@ func TestStaleProbeCannotWakeAfterMentionOffOrRebind(t *testing.T) {
 				err = s.coverProbe(p.Context, b, through)
 			case "off":
 				_, err = s.SetProactive(p.Context, chat.ID, chat.Revision, false)
+			case "context off and on":
+				chat, err = s.SetObservationContext(p.Context, chat.ID, chat.Revision, false)
+				if err == nil {
+					_, err = s.SetObservationContext(p.Context, chat.ID, chat.Revision, true)
+				}
 			case "rebind":
 				_, err = s.Bind(p.Context, chat.ID, "")
 			}
