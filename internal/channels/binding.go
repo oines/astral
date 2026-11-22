@@ -23,16 +23,12 @@ func (s *Service) activeBinding(ctx context.Context, conversationID string) (dom
 // Bind selects an existing unbound Session or creates one for this account's
 // Agent. A manual binding starts at the current archive head, without replay.
 func (s *Service) Bind(ctx context.Context, conversationID, sessionID string) (domain.ConversationBinding, error) {
-	return s.changeBinding(ctx, conversationID, sessionID, nil)
+	return s.changeBinding(ctx, conversationID, sessionID, nil, nil)
 }
 
-func (s *Service) changeBinding(ctx context.Context, conversationID, sessionID string, reset *ResetStorageRequest) (domain.ConversationBinding, error) {
+func (s *Service) changeBinding(ctx context.Context, conversationID, sessionID string, first *domain.Observation, reset *ResetStorageRequest) (domain.ConversationBinding, error) {
 	s.bindings.Lock()
 	defer s.bindings.Unlock()
-	return s.changeBindingLocked(ctx, conversationID, sessionID, nil, reset)
-}
-
-func (s *Service) changeBindingLocked(ctx context.Context, conversationID, sessionID string, firstSequence *int64, reset *ResetStorageRequest) (domain.ConversationBinding, error) {
 	var conversation domain.Conversation
 	if err := s.Store.Get(ctx, "conversations", conversationID, &conversation); err != nil {
 		return domain.ConversationBinding{}, err
@@ -53,7 +49,11 @@ func (s *Service) changeBindingLocked(ctx context.Context, conversationID, sessi
 	if reset != nil && (old.ID == "" || old.SessionID != reset.SessionID || old.Revision != reset.Revision) {
 		return old, domain.Conflict("聊天绑定已改变，请刷新后重试。")
 	}
-	if old.ID != "" && (firstSequence != nil || sessionID == old.SessionID) {
+	if old.ID != "" && first != nil {
+		_, err = s.archiveEvent(ctx, *first)
+		return old, err
+	}
+	if old.ID != "" && sessionID == old.SessionID {
 		return old, nil
 	}
 	var agent domain.Agent
@@ -86,9 +86,12 @@ func (s *Service) changeBindingLocked(ctx context.Context, conversationID, sessi
 		}
 		stop = append(stop, sessionID)
 	} else {
-		_, selectionErr := s.Harness.FirstAvailableAgentModel(ctx, agent)
-		if selectionErr != nil {
-			return domain.ConversationBinding{}, selectionErr
+		// A received trigger needs a durable inbox even when the model is
+		// temporarily unavailable. Session initialization follows the commit.
+		if first == nil {
+			if _, err := s.Harness.FirstAvailableAgentModel(ctx, agent); err != nil {
+				return domain.ConversationBinding{}, err
+			}
 		}
 		record = domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: agent.ID, Source: "im", ComputerID: agent.DefaultComputerID}
 	}
@@ -100,20 +103,30 @@ func (s *Service) changeBindingLocked(ctx context.Context, conversationID, sessi
 		if err := s.Store.Get(ctx, "connections", connection.ID, &current); err != nil {
 			return err
 		}
-		if firstSequence != nil && (!current.Enabled || current.AccessMode != "all") {
+		if first != nil && (!current.Enabled || current.AccessMode != "all") {
 			return domain.Conflict("automatic chat access is no longer enabled")
-		}
-		head, err := s.Store.ObservationHead(ctx, conversationID)
-		if err != nil {
-			return err
-		}
-		binding.StartSequence = head
-		if firstSequence != nil {
-			binding.StartSequence = *firstSequence - 1
 		}
 		return s.Store.Update(ctx, func(tx *persistence.Tx) error {
 			if err := tx.RequireActiveAgent(ctx, agent.ID); err != nil {
 				return err
+			}
+			if first != nil {
+				// Both records commit together, so pruning and restart see the
+				// trigger protected by this binding's first unread sequence.
+				if _, err := archiveEventTx(ctx, tx, *first); err != nil {
+					return err
+				}
+				sequence, err := tx.ObservationSequence(ctx, first.ID)
+				if err != nil {
+					return err
+				}
+				binding.StartSequence = sequence - 1
+			} else {
+				head, err := tx.ObservationHead(ctx, conversationID)
+				if err != nil {
+					return err
+				}
+				binding.StartSequence = head
 			}
 			if old.ID != "" {
 				old.Enabled = false
