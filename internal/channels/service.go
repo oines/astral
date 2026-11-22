@@ -345,11 +345,10 @@ func (s *Service) Close(ctx context.Context) error {
 func (s *Service) run() {
 	defer close(s.done)
 	reconcile := func() time.Time {
-		next, err := s.reconcile()
-		if err != nil {
+		if err := s.reconcile(); err != nil {
 			return time.Now().Add(300 * time.Millisecond)
 		}
-		return next
+		return time.Time{}
 	}
 	dispatch := func() time.Time {
 		if s.dispatchPending() {
@@ -415,11 +414,10 @@ func (s *Service) wakeReconcile() {
 	}
 }
 
-func (s *Service) reconcile() (time.Time, error) {
-	var next time.Time
+func (s *Service) reconcile() error {
 	connections, err := list[domain.Connection](s.ctx, s.Store, "connections")
 	if err != nil {
-		return next, err
+		return err
 	}
 	s.mu.Lock()
 	for id, worker := range s.pollers {
@@ -456,7 +454,7 @@ func (s *Service) reconcile() (time.Time, error) {
 	s.mu.Unlock()
 	bindings, err := list[domain.ConversationBinding](s.ctx, s.Store, "bindings")
 	if err != nil {
-		return next, err
+		return err
 	}
 	s.mu.Lock()
 	for _, binding := range bindings {
@@ -480,7 +478,7 @@ func (s *Service) reconcile() (time.Time, error) {
 		}
 	}
 	s.mu.Unlock()
-	return next, nil
+	return nil
 }
 func (s *Service) setStatus(status Status) {
 	s.mu.Lock()
@@ -497,27 +495,21 @@ func (s *Service) Status(id string) Status {
 }
 func (s *Service) receiveObservation(ctx context.Context, account domain.Connection, event domain.Observation) error {
 	direct := !event.Self && event.Trigger != ""
-	autoBind := direct && account.AccessMode == "all"
-	if autoBind {
-		// Archive cleanup takes the same lock to choose its delivery watermark.
-		// It must see either no event yet, or a binding that protects this one.
-		s.bindings.Lock()
-		defer s.bindings.Unlock()
+	var binding domain.ConversationBinding
+	var err error
+	if direct && account.AccessMode == "all" {
+		binding, err = s.changeBinding(ctx, event.ConversationID, "", &event, nil)
+	} else {
+		if _, err := s.archiveEvent(ctx, event); err != nil || !direct {
+			return err
+		}
+		binding, err = s.activeBinding(ctx, event.ConversationID)
 	}
-	if _, err := s.archiveEvent(ctx, event); err != nil || !direct {
+	if err != nil || binding.ID == "" {
 		return err
 	}
 	sequence, err := s.Store.ObservationSequence(ctx, event.ID)
 	if err != nil {
-		return err
-	}
-	var binding domain.ConversationBinding
-	if autoBind {
-		binding, err = s.changeBindingLocked(ctx, event.ConversationID, "", &sequence, nil)
-	} else {
-		binding, err = s.activeBinding(ctx, event.ConversationID)
-	}
-	if err != nil || binding.ID == "" {
 		return err
 	}
 	return s.coverProbe(ctx, binding, sequence)

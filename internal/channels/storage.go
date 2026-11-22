@@ -29,7 +29,7 @@ func (s *Service) ResetStorageChat(ctx context.Context, conversation string, req
 	// Rebinding creates the replacement and archives the previous root in one
 	// Host transaction. An interrupted cleanup leaves the old root accessible
 	// from Storage, and a stale retry cannot reset the new binding.
-	binding, err := s.changeBinding(ctx, conversation, "", &request)
+	binding, err := s.changeBinding(ctx, conversation, "", nil, &request)
 	if err != nil {
 		return binding, err
 	}

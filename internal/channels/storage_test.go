@@ -2,7 +2,9 @@ package channels
 
 import (
 	"context"
-	"sync"
+	"database/sql"
+	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -117,81 +119,110 @@ func TestStorageArchiveProtectsPendingWatermarksAndKeepsRollout(t *testing.T) {
 	}
 }
 
-// Pause the receiving poller at the next database access after its archive
-// commit. The independent cleanup can now run in the old archive-to-bind gap.
-type afterArchiveContext struct {
-	context.Context
-	archived       <-chan struct{}
-	paused, resume chan struct{}
-	once           sync.Once
-}
-
-func (c *afterArchiveContext) Done() <-chan struct{} {
-	select {
-	case <-c.archived:
-		c.once.Do(func() { close(c.paused); <-c.resume })
-	default:
-	}
-	return c.Context.Done()
-}
-
-func TestStorageClearDuringFirstAutoBindingPreservesTrigger(t *testing.T) {
-	p, s, b := storageChat(t)
-	if err := s.Unbind(p.Context, b.ID, b.Revision); err != nil {
+func TestStorageFirstTriggerSurvivesFailedInitializationAndRetry(t *testing.T) {
+	p, s, old := storageChat(t)
+	ctx := p.Context
+	if err := s.Unbind(ctx, old.ID, old.Revision); err != nil {
 		t.Fatal(err)
 	}
 	var chat domain.Conversation
-	if err := p.Store.Get(p.Context, "conversations", b.ConversationID, &chat); err != nil {
+	if err := p.Store.Get(ctx, "conversations", old.ConversationID, &chat); err != nil {
 		t.Fatal(err)
 	}
 	var account domain.Connection
-	if err := p.Store.Get(p.Context, "connections", chat.ConnectionID, &account); err != nil {
+	if err := p.Store.Get(ctx, "connections", chat.ConnectionID, &account); err != nil {
 		t.Fatal(err)
 	}
 	account.AccessMode = "all"
-	if err := p.Store.Save(p.Context, "connections", &account.Meta, &account); err != nil {
+	if err := p.Store.Save(ctx, "connections", &account.Meta, &account); err != nil {
 		t.Fatal(err)
 	}
-	watch := p.Store.Watch(persistence.ChangeKey{Kind: "observations", ID: chat.ID})
-	defer watch.Close()
-	ctx := &afterArchiveContext{Context: p.Context, archived: watch.Changes(), paused: make(chan struct{}), resume: make(chan struct{})}
-	resume := sync.OnceFunc(func() { close(ctx.resume) })
-	defer resume()
 	event := domain.Observation{ID: "first-trigger", ConnectionID: account.ID, ConversationID: chat.ID, MessageID: "1", ExternalEventID: "1", Kind: "message.created", Trigger: "mention", Text: "first direct question", ReceivedAt: time.Now().UTC()}
-	received := make(chan error, 1)
-	go func() { received <- s.receiveObservation(ctx, account, event) }()
-	select {
-	case <-ctx.paused:
-	case err := <-received:
-		t.Fatalf("poller did not reach its archive-to-bind boundary: %v", err)
-	case <-p.Context.Done():
-		t.Fatal(p.Context.Err())
-	}
-	// While this trigger is visible but not yet bound, cleanup must be
-	// unable to enter the section that reads the binding and trims its history.
-	protected := !s.bindings.TryLock()
-	if !protected {
-		s.bindings.Unlock()
-	}
-	cleared := make(chan error, 1)
-	go func() { _, err := s.ClearChatArchive(p.Context, chat.ID); cleared <- err }()
-	resume()
-	if err := <-received; err != nil {
-		t.Fatal(err)
-	}
-	if err := <-cleared; err != nil {
-		t.Fatal(err)
-	}
-	next, err := s.activeBinding(p.Context, chat.ID)
+
+	sessions, err := p.Store.List(ctx, "sessions")
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending, err := p.Store.SearchObservations(p.Context, chat.ID, next.StartSequence, 1, "")
-	if !protected {
-		t.Fatal("archive cleanup could enter before the first trigger acquired its binding")
+
+	bad := event
+	bad.ReceivedAt = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := s.receiveObservation(ctx, account, bad); err == nil {
+		t.Fatal("an unencodable platform event was acknowledged")
 	}
-	if err != nil || next.ID == "" || len(pending) != 1 || pending[0].Observation.Text != event.Text {
-		t.Fatalf("first trigger lost from new binding: %+v %v", pending, err)
+
+	// Simulate an SQLite failure after archiving the trigger but before
+	// inserting the binding. Delivery can retry this same platform event.
+	db, err := sql.Open("sqlite", filepath.Join(p.Store.Directory, "astral.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err = db.Exec(`CREATE TRIGGER fail_binding BEFORE INSERT ON documents WHEN NEW.kind='bindings' BEGIN SELECT RAISE(ABORT,'fixture binding failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.receiveObservation(ctx, account, event); err == nil {
+		t.Fatal("binding write failure was acknowledged")
+	}
+	if _, err = p.Store.Observation(ctx, event.ID); !domain.IsMissing(err) {
+		t.Fatalf("unbound trigger survived transaction rollback: %v", err)
+	}
+	if _, err = db.Exec("DROP TRIGGER fail_binding"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.Store.Get(ctx, "models", p.Profile.ID, &p.Profile); err != nil {
+		t.Fatal(err)
+	}
+	enabled := false
+	p.Profile.Enabled = &enabled
+	if err = p.Harness.Models.SaveProfile(ctx, &p.Profile); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.receiveObservation(ctx, account, event); err == nil {
+		t.Fatal("disabled model initialized a new Session")
+	}
+	bound, err := s.activeBinding(ctx, chat.ID)
+	if err != nil || bound.ID == "" {
+		t.Fatalf("failed initialization lost the inbox: %+v %v", bound, err)
+	}
+
+	// A fresh service reads the same SQLite rows, with no in-memory work
+	// from the failed poller. Cleanup may run before the platform retries.
+	store, err := persistence.Open(p.Store.Directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	restarted := New(store, p.Harness)
+	if removed, err := restarted.ClearChatArchive(ctx, chat.ID); err != nil || removed != 0 {
+		t.Fatalf("pending trigger pruned: %d %v", removed, err)
+	}
+	if _, err = store.Delivery(ctx, event.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("trigger already marked delivered: %v", err)
+	}
+	enabled = true
+	if err = p.Harness.Models.SaveProfile(ctx, &p.Profile); err != nil {
+		t.Fatal(err)
+	}
+	if err = restarted.receiveObservation(ctx, account, event); err != nil {
+		t.Fatal(err)
+	}
+	again, err := restarted.activeBinding(ctx, chat.ID)
+	if err != nil || again.ID != bound.ID || again.SessionID != bound.SessionID {
+		t.Fatalf("retry replaced the binding: %+v %v", again, err)
+	}
+	pending, err := store.Observations(ctx, chat.ID, again.StartSequence, 10)
+	if err != nil || len(pending) != 1 || pending[0].Observation.Text != event.Text || pending[0].Sequence != bound.StartSequence+1 {
+		t.Fatalf("first trigger no longer pending exactly once: %+v %v", pending, err)
+	}
+	if after, err := store.List(ctx, "sessions"); err != nil || len(after) != len(sessions)+1 {
+		t.Fatalf("first trigger created extra sessions: before=%d after=%d err=%v", len(sessions), len(after), err)
+	}
+	if _, err := p.Harness.Core(ctx, again.SessionID); err != nil {
+		t.Fatalf("restored model cannot open the durable inbox: %v", err)
+	}
+	if p.Requests.Load() != 0 {
+		t.Fatal("receiving or pruning a trigger invoked the model")
 	}
 }
 

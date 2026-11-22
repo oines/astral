@@ -100,26 +100,30 @@ func (s *Service) CheckAgentDeletion(ctx context.Context, id string) error {
 func (s *Service) archiveEvent(ctx context.Context, event domain.Observation) (bool, error) {
 	inserted := false
 	err := s.Store.Update(ctx, func(tx *persistence.Tx) error {
-		var connection domain.Connection
-		if err := tx.Get(ctx, "connections", event.ConnectionID, &connection); err != nil {
-			return err
-		}
-		if err := tx.RequireActiveAgent(ctx, connection.AgentID); err != nil {
-			return err
-		}
-		var conversation domain.Conversation
-		if err := tx.Get(ctx, "conversations", event.ConversationID, &conversation); err != nil {
-			return err
-		}
-		if conversation.ConnectionID != event.ConnectionID {
-			return domain.Forbidden("the event belongs to a different channel account")
-		}
-		// Freeze the decision with the archive entry. A paused or restarted inbox
-		// may process this message after the chat settings have changed again.
-		event.ContextExcluded = conversation.ObservationContextDisabled && conversation.Kind != "private" && !event.Self && event.Trigger == ""
 		var err error
-		inserted, err = tx.Archive(ctx, event)
+		inserted, err = archiveEventTx(ctx, tx, event)
 		return err
 	})
 	return inserted, err
+}
+
+func archiveEventTx(ctx context.Context, tx *persistence.Tx, event domain.Observation) (bool, error) {
+	var connection domain.Connection
+	if err := tx.Get(ctx, "connections", event.ConnectionID, &connection); err != nil {
+		return false, err
+	}
+	if err := tx.RequireActiveAgent(ctx, connection.AgentID); err != nil {
+		return false, err
+	}
+	var conversation domain.Conversation
+	if err := tx.Get(ctx, "conversations", event.ConversationID, &conversation); err != nil {
+		return false, err
+	}
+	if conversation.ConnectionID != event.ConnectionID {
+		return false, domain.Forbidden("the event belongs to a different channel account")
+	}
+	// Freeze the decision with the archive entry. A paused or restarted inbox
+	// may process this message after the chat settings have changed again.
+	event.ContextExcluded = conversation.ObservationContextDisabled && conversation.Kind != "private" && !event.Self && event.Trigger == ""
+	return tx.Archive(ctx, event)
 }

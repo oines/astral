@@ -499,8 +499,14 @@ func observationHead(ctx context.Context, db reader, conversation string) (int64
 }
 
 func (s *Store) ObservationSequence(ctx context.Context, id string) (int64, error) {
+	return observationSequence(ctx, s.db, id)
+}
+func (tx *Tx) ObservationSequence(ctx context.Context, id string) (int64, error) {
+	return observationSequence(ctx, tx.tx, id)
+}
+func observationSequence(ctx context.Context, db reader, id string) (int64, error) {
 	var sequence int64
-	err := s.db.QueryRowContext(ctx, "SELECT sequence FROM observations WHERE id=?", id).Scan(&sequence)
+	err := db.QueryRowContext(ctx, "SELECT sequence FROM observations WHERE id=?", id).Scan(&sequence)
 	return sequence, err
 }
 
