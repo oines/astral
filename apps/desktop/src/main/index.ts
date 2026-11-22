@@ -115,9 +115,8 @@ async function configureUpdates() {
   const cache = app.isPackaged ? new DesktopUpdateCache({
     // electron-updater's exported adapter supplies the actual platform cache
     // base. Its bundled config and pending metadata prove the selected files.
-    directory: join(getAppCacheDir(), 'astral-updater'), configuration: resourcePath('app-update.yml'),
-    journalDirectory: join(app.getPath('userData'), 'update-cache-cleanup'), platform: process.platform, architecture: process.arch,
-    state: () => updateControl!.state(), recoveryBlocked: () => updateControl!.cacheRecoveryBlocked(),
+    directory: join(getAppCacheDir(), 'astral-updater'),
+    state: () => updateControl!.state(),
   }) : undefined
   updateControl = new DesktopUpdateControl(updates, join(app.getPath('userData'), 'update-operation.json'), cache)
   await updateControl.initialize()

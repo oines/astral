@@ -1,67 +1,25 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanStorageChat, resetStorageChat, storageShare, StorageHttpError, storageRequestRejected } from './storage'
-import { readStorageTasks, storageTaskRequest, writeStorageTasks } from './storage-tasks'
+import { describe, expect, it } from 'vitest'
+import { retentionNeedsConfirmation, storageShare, storageSize, storageSources, type StorageBot } from './storage'
 
-const http = vi.hoisted(() => ({ post: vi.fn(async () => ({ data: { id: 'operation', state: 'queued' } })), get: vi.fn() }))
-vi.mock('@astral/sdk/client', () => ({ client: http }))
-vi.mock('./api', () => ({ errorText: (error: unknown) => error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Request failed', request: async (pending: Promise<{ data: unknown }>) => (await pending).data }))
-beforeEach(() => vi.clearAllMocks())
+describe('storage data sources', () => {
+  const bots = [
+    { agent_id: 'a', chats: [{ title: 'Team', logical_bytes: 12 }], sessions: [{ title: 'Draft', logical_bytes: 0 }] },
+    { agent_id: 'b', chats: [], sessions: [{ title: 'Team notes', logical_bytes: 34 }] },
+  ] as StorageBot[]
 
-describe('storage cleanup requests', () => {
-  it('sends a date boundary without changing the retention policy', async () => {
-    await cleanStorageChat('chat/a', 'stable-id', '2026-10-01T00:00:00Z')
-    expect(http.post).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/v1/storage/conversations/chat%2Fa/cleanup', body: { operation_id: 'stable-id', before: '2026-10-01T00:00:00Z' } }))
+  it('lists chats and unbound sessions together by descending size, including empty sessions', () => {
+    expect(storageSources(bots, '', '').map(row => row.value.title)).toEqual(['Team notes', 'Team', 'Draft'])
+    expect(storageSources(bots, 'a', 'TEAm').map(row => row.kind)).toEqual(['chat'])
+    expect(storageSources(bots, 'a', 'other')).toEqual([])
   })
-  it('preserves zero retention as an explicit policy and omits the date boundary', async () => {
-    await cleanStorageChat('chat', 'stable-id', undefined, 0)
-    expect(http.post).toHaveBeenCalledWith(expect.objectContaining({ body: { operation_id: 'stable-id', retention_days: 0 } }))
+  it('distinguishes a completed zero from a missing estimate', () => {
+    expect(storageSize(0, 'complete', () => 'estimate')).toBe('0 B')
+    expect(storageSize(0, 'failed', () => 'estimate')).toBe('—')
+    expect(storageShare(15, 10)).toBe('100%')
+    expect(storageShare(0, 0)).toBe('0%')
   })
-  it('checks the confirmed binding revision when replacing the session', async () => {
-    await resetStorageChat('chat', 'stable-id', 42)
-    expect(http.post).toHaveBeenCalledWith(expect.objectContaining({ body: { operation_id: 'stable-id', revision: 42 } }))
-  })
-  it('distinguishes explicit rejection from an unconfirmed network or server result', () => {
-    expect(storageRequestRejected(new StorageHttpError(409, { message: 'stale revision' }))).toBe(true)
-    expect(storageRequestRejected(new StorageHttpError(400, { message: 'invalid date' }))).toBe(true)
-    for (const status of [0, 408, 429, 500, 503]) expect(storageRequestRejected(new StorageHttpError(status, {}))).toBe(false)
-  })
-  it('keeps display proportions bounded without inventing capacity', () => {
-    expect(storageShare(20, 0)).toBe('0%')
-    expect(storageShare(200, 100)).toBe('100%')
-    expect(storageShare(-20, 100)).toBe('0%')
-  })
-})
-
-describe('destructive task recovery', () => {
-  it('reuses the exact confirmed request after an interrupted response', () => {
-    const requests = {}
-    const first = storageTaskRequest(requests, 'reset:chat', { kind: 'reset', conversation_id: 'chat', revision: 42 })
-    const retry = storageTaskRequest(requests, 'reset:chat', { kind: 'reset', conversation_id: 'chat', revision: 43 })
-    expect(retry).toBe(first)
-    expect(retry.revision).toBe(42)
-    expect(retry.operation_id).toBeTruthy()
-  })
-  it('restores acknowledged and unconfirmed tasks after a reload', () => {
-    let stored = ''
-    const storage = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value } }
-    const memory = { requests: { cleanup: { operation_id: 'cleanup-id', kind: 'application' as const, tokens: ['log-token'] } }, conversations: { chat: { id: 'reset-id', kind: 'reset', conversation_id: 'chat', state: 'running' as const } } }
-    writeStorageTasks(storage, memory)
-    expect(readStorageTasks(storage)).toEqual(memory)
-  })
-  it('keeps the page usable if browser storage is unavailable or corrupt', () => {
-    expect(readStorageTasks({ getItem: () => '{' })).toEqual({ requests: {}, conversations: {} })
-    expect(() => writeStorageTasks({ setItem: () => { throw new Error('denied') } }, { requests: {}, conversations: {} })).not.toThrow()
-  })
-  it('does not restore old success notices, while retaining failures and unconfirmed requests', () => {
-    const complete = { id: 'done', conversation_id: 'done-chat', kind: 'archive', state: 'complete' as const }
-    const failed = { id: 'failed', conversation_id: 'failed-chat', kind: 'reset', state: 'failed' as const, error: 'offline' }
-    const pending = { cleanup: { operation_id: 'unconfirmed', kind: 'application' as const, tokens: ['backup'] } }
-    const memory = { requests: pending, conversations: { done: complete, failed }, application: { operation_id: 'old-cleanup', state: 'complete' as const, removed_bytes: 10, removed_tokens: ['cache'] } }
-    let stored = JSON.stringify(memory)
-    const storage = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value } }
-    const expected = { requests: pending, conversations: { failed } }
-    expect(readStorageTasks(storage)).toEqual(expected)
-    writeStorageTasks(storage, memory)
-    expect(JSON.parse(stored)).toEqual(expected)
+  it('confirms only retention changes that can expire more messages', () => {
+    for (const [from, to] of [[0, 30], [180, 90], [90, 30]] as const) expect(retentionNeedsConfirmation(from, to)).toBe(true)
+    for (const [from, to] of [[30, 90], [90, 0], [30, 30]] as const) expect(retentionNeedsConfirmation(from, to)).toBe(false)
   })
 })

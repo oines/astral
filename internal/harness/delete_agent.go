@@ -113,7 +113,7 @@ func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) er
 	if err = s.Recall.DeleteAgent(ctx, id); err != nil {
 		return err
 	}
-	return s.Store.Update(ctx, func(tx *persistence.Tx) error {
+	err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
 		var current domain.Agent
 		if err := tx.Get(ctx, "agents", id, &current); err != nil {
 			return err
@@ -130,9 +130,6 @@ func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) er
 		if err := tx.Purge(ctx, "agents", id, current.Revision); err != nil {
 			return err
 		}
-		if err := tx.MarkStorageReclaim(ctx); err != nil {
-			return err
-		}
 		var setup Onboarding
 		if err := tx.Get(ctx, "onboarding", "owner", &setup); err != nil && !domain.IsMissing(err) {
 			return err
@@ -143,6 +140,10 @@ func (s *Service) DeleteAgent(ctx context.Context, id string, revision int64) er
 		}
 		return nil
 	})
+	if err == nil && s.StorageChanged != nil {
+		s.StorageChanged()
+	}
+	return err
 }
 
 func (s *Service) checkAgentDeletion(ctx context.Context, id string, revision int64) error {

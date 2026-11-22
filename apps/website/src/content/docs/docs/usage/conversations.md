@@ -50,7 +50,7 @@ For long or parallel work, the Bot can hand subtasks to **subagents**—or you c
 
 Start a new session for unrelated tasks. Organize existing ones with:
 
-- **Archive:** seals an ordinary session and removes it from the sidebar, stopping the session and its subagents and disabling schedules/event endpoints targeting it (changed files and sent messages stay). Old links remain readable, exportable, and forkable; click **Restore session** on the page or go to **Settings → Data & storage → your Bot → Other sessions** to reopen (resume work or re-enable schedules manually afterward).
+- **Archive:** seals an ordinary session and removes it from the sidebar, stopping the session and its subagents and disabling schedules/event endpoints targeting it (changed files and sent messages stay). Old links remain readable, exportable, and forkable; click **Restore session** on the page or go to **Settings → Data & storage** to reopen (resume work or re-enable schedules manually afterward).
 - **Fork from here:** creates an independent copy from any message to try another direction (messages don't sync, and schedules aren't copied).
 - **Chat-bound sessions:** use the chat name and cannot be renamed or archived; use [Change conversation](/docs/chat/overview/) to start fresh.
 
@@ -68,14 +68,14 @@ If one Bot handles both personal work and group chats, select **Make private** f
 
 ## Manage session and chat storage
 
-Open **Settings → Data & storage** to check disk use and clean up per Bot (“about” sizes are estimates for comparison):
+Open **Settings → Data & storage**. Search the list by name or filter by Bot. Chats and sessions are sorted by estimated size.
 
 - **Permanently delete an ordinary session:** archive and unbind it from any chat first. Deletion removes history, model logs, pending messages, recall data, schedules, and all subagents—leaving forks, computer files, and external chat messages untouched.
 - **Clean up a connected chat:**
 
 | Goal | Action | Effect |
 | --- | --- | --- |
-| Remove older platform chat archives | **Clear IM archive** / **Archive retention** (30/90/180 days) | Removes IM archives before the cutoff while keeping session history and platform messages. |
-| Clear the chat's task history | **Clear session** | Stops work, deletes the old session, subagents, and schedules, and starts a fresh session with the same private setting; IM archive and platform messages remain. |
+| Remove local chat archives | **Clear archive** or change **Retention** | Clear processed local messages, or keep the last 30, 90 or 180 days. Session history, platform messages and messages awaiting processing are retained. |
+| Clear the chat's task history | **Reset session** | Stops work, deletes the old session, subagents, and schedules, and starts a fresh session with the same private setting; IM archive and platform messages remain. |
 
 See [Updates and backups](/docs/hosting/maintenance/#review-and-clean-storage) for backups and application file cleanup.

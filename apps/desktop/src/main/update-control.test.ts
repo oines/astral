@@ -122,34 +122,34 @@ describe('private Desktop update control', () => {
 
   it('relays only bounded token-based cleanup requests over the authenticated private bridge', async () => {
     const f = await fixture()
-    const cache = { inventory: vi.fn(async () => []), clean: vi.fn(async () => 42) } as unknown as DesktopUpdateCache
+    const cache = { inventory: vi.fn(async () => ({ total_bytes: 42, cleanable_bytes: 42 })), clean: vi.fn(async () => ({ removed_bytes: 42 })) } as unknown as DesktopUpdateCache
     const control = new DesktopUpdateControl(f.updates, f.journal, cache)
     const bridge = await startDesktopUpdateBridge(control)
     cleanups.push(bridge.close)
     const headers = { Authorization: `Bearer ${bridge.token}`, 'Content-Type': 'application/json' }
-    expect(await (await fetch(`${bridge.url}/storage/cache`, { headers })).json()).toEqual({ items: [] })
+    expect(await (await fetch(`${bridge.url}/storage/cache`, { headers })).json()).toEqual({ total_bytes: 42, cleanable_bytes: 42 })
     for (const input of [{ path: '/private/secret', token: 'opaque', operation_id: 'op' }, { token: 'x'.repeat(5000), operation_id: 'op' }]) {
       expect((await fetch(`${bridge.url}/storage/cache/clean`, { method: 'POST', headers, body: JSON.stringify(input) })).status).toBe(400)
     }
     expect(cache.clean).not.toHaveBeenCalled()
     expect((await fetch(`${bridge.url}/storage/cache/clean`, { method: 'POST', body: JSON.stringify({ operation_id: 'op', token: 'opaque' }) })).status).toBe(403)
-    expect(await (await fetch(`${bridge.url}/storage/cache/clean`, { method: 'POST', headers, body: JSON.stringify({ operation_id: 'op', token: 'opaque' }) })).json()).toEqual({ removed_bytes: 42 })
-    expect(cache.clean).toHaveBeenCalledExactlyOnceWith('op', 'opaque')
+    expect(await (await fetch(`${bridge.url}/storage/cache/clean`, { method: 'POST', headers })).json()).toEqual({ removed_bytes: 42 })
+    expect(cache.clean).toHaveBeenCalledExactlyOnceWith()
   })
 
-  it('waits for durable cache cleanup before starting an update and rejects cleanup admitted after update', async () => {
+  it('waits for cache cleanup before starting an update and rejects cleanup admitted after update', async () => {
     const f = await fixture()
     let finish!: () => void
-    const cache = { inventory: vi.fn(async () => []), clean: vi.fn(() => new Promise<number>(resolve => { finish = () => resolve(42) })) } as unknown as DesktopUpdateCache
+    const cache = { clean: vi.fn(() => new Promise<{ removed_bytes: number }>(resolve => { finish = () => resolve({ removed_bytes: 42 }) })) } as unknown as DesktopUpdateCache
     const control = new DesktopUpdateControl(f.updates, f.journal, cache)
 	 f.stop.mockImplementationOnce(async () => { await control.beforeInstall() })
-    const cleaning = control.cleanCache('operation', 'token')
+    const cleaning = control.cleanCache()
     await vi.waitFor(() => expect(cache.clean).toHaveBeenCalledOnce())
     const updating = control.update()
     expect(f.engine.checkForUpdates).not.toHaveBeenCalled()
-    await expect(control.cleanCache('another', 'token')).rejects.toThrow('during an update')
+    await expect(control.cleanCache()).rejects.toThrow('during an update')
     finish()
-    expect(await cleaning).toBe(42)
+    expect(await cleaning).toEqual({ removed_bytes: 42 })
     await updating
     expect(f.engine.downloadUpdate).toHaveBeenCalledOnce()
   })

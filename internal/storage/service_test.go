@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -138,9 +137,9 @@ func TestLogicalEstimatePagesAllRecordsAndAttemptsAndKeepsOldUnboundSession(t *t
 	save(t, store, "sessions", "current", domain.Session{AgentID: "bot", Title: "Current", BindingID: "binding"})
 	save(t, store, "sessions", "old", domain.Session{AgentID: "bot", Title: "Old", ConversationID: "chat", Source: "im", Archived: true})
 	save(t, store, "bindings", "binding", domain.ConversationBinding{AgentID: "bot", ConversationID: "chat", SessionID: "current", Enabled: true})
-	s.Refresh(false)
+	s.Refresh(context.Background())
 	await(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.estimate.State == "complete" })
-	out, err := s.Snapshot(context.Background(), "")
+	out, err := s.Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +154,7 @@ func TestLogicalEstimatePagesAllRecordsAndAttemptsAndKeepsOldUnboundSession(t *t
 		t.Fatalf("wrong aggregate: %+v", agent)
 	}
 	before := calls.Load()
-	s.Refresh(false)
+	s.Refresh(context.Background())
 	await(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.estimate.State == "complete" })
 	if calls.Load() != before {
 		t.Fatal("unchanged immutable version was scanned again")
@@ -183,154 +182,102 @@ func TestOversizedBudgetAndCancellationStayExplicit(t *testing.T) {
 	}
 }
 
-func TestInventoryProtectsRecoveryAndRefusesUnknownFilesAndChangedTokens(t *testing.T) {
+func TestCleanupRemovesOnlyOwnedUnprotectedFiles(t *testing.T) {
 	s, _ := fixture(t, &historyStore{})
-	old := backup(t, s, "server-old")
-	latest := backup(t, s, "server-latest")
+	old, latest := backup(t, s, "old"), backup(t, s, "latest")
 	raw, _ := json.Marshal(map[string]any{"schema": 1, "backup": latest})
-	write(t, filepath.Join(s.config.Directory, "last-upgrade.json"), raw)
-	write(t, filepath.Join(s.config.Directory, "project.txt"), []byte("user work"))
-	write(t, filepath.Join(s.config.Directory, "cache", "models.dev.json"), []byte("catalog"))
-	write(t, filepath.Join(s.config.Directory, "cache", "unknown-user-file"), []byte("preserve"))
-	inventory := s.Inventory(context.Background())
-	if inventory.Error != "" {
-		t.Fatal(inventory.Error)
+	data := s.config.Directory
+	write(t, filepath.Join(data, "last-upgrade.json"), raw)
+	model := filepath.Join(data, "cache", "models.dev.json")
+	log := filepath.Join(data, "logs", "server.log.1")
+	write(t, model, []byte("model"))
+	write(t, log, []byte("log"))
+	kept := []string{latest, filepath.Join(data, "cache", "project.txt"), filepath.Join(data, "logs", "server.log"), filepath.Join(data, "logs", "project.log.1")}
+	for _, p := range kept[1:] {
+		write(t, p, []byte("keep"))
 	}
-	var oldToken, latestToken, modelToken string
-	for _, item := range inventory.Items {
-		switch item.Name {
-		case filepath.Base(old):
-			oldToken = item.Token
-			if item.Protected {
-				t.Fatal("old backup is protected")
-			}
-		case filepath.Base(latest):
-			latestToken = item.Token
-			if !item.Protected {
-				t.Fatal("last recovery backup is deletable")
-			}
-		case filepath.Join("cache", "models.dev.json"):
-			modelToken = item.Token
-		default:
-			t.Fatalf("unknown cleanup candidate: %+v", item)
-		}
-	}
-	if oldToken == "" || modelToken == "" || latestToken == "" {
-		t.Fatalf("incomplete inventory: %+v", inventory)
-	}
-	if _, err := s.Cleanup(context.Background(), CleanupRequest{OperationID: "protected", Tokens: []string{latestToken}}); err == nil {
-		t.Fatal("protected backup accepted")
-	}
-	write(t, filepath.Join(s.config.Directory, "cache", "models.dev.json"), []byte("changed catalog"))
-	if _, err := s.Cleanup(context.Background(), CleanupRequest{OperationID: "stale", Tokens: []string{modelToken}}); err == nil {
-		t.Fatal("stale token accepted")
-	}
-	op, err := s.Cleanup(context.Background(), CleanupRequest{OperationID: "clear-old", Tokens: []string{oldToken}})
+	oldSize, err := inspectTree(t.Context(), old)
 	if err != nil {
 		t.Fatal(err)
 	}
-	await(t, func() bool {
-		op, err = s.CleanupOperation(context.Background(), op.OperationID)
-		return err == nil && op.State != "running"
-	})
-	if op.State != "complete" || op.RemovedBytes == 0 {
-		t.Fatalf("cleanup failed: %+v %v", op, err)
+	want := oldSize + 8
+	if physical := s.physical(t.Context()); physical.CleanableBytes != want || physical.LogBytes != 7 {
+		t.Fatalf("incorrect cleanable bytes: %+v", physical)
 	}
-	for _, path := range []string{latest, filepath.Join(s.config.Directory, "project.txt"), filepath.Join(s.config.Directory, "cache", "unknown-user-file")} {
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("unselected file removed: %s: %v", path, err)
-		}
+	result := s.Cleanup(t.Context())
+	if result.Error != "" || result.RemovedBytes != want {
+		t.Fatalf("cleanup: %+v want %d", result, want)
 	}
-	replay, err := s.Cleanup(context.Background(), CleanupRequest{OperationID: op.OperationID, Tokens: []string{oldToken}})
-	if err != nil || replay.RemovedBytes != op.RemovedBytes || replay.State != "complete" {
-		t.Fatalf("bad replay: %+v %v", replay, err)
-	}
-	if _, err := s.Cleanup(context.Background(), CleanupRequest{OperationID: op.OperationID, Tokens: []string{latestToken}}); err == nil {
-		t.Fatal("operation identity reused with new payload")
-	}
-}
-
-func TestBackupSelectionTracksFilesAndDirectoryMembershipInsteadOfDirectoryTimestamps(t *testing.T) {
-	s, _ := fixture(t, &historyStore{})
-	path := backup(t, s, "server-stable")
-	selected, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	stamp := time.Now().Add(-48 * time.Hour)
-	for _, directory := range []string{path, filepath.Join(path, "files")} {
-		if err = os.Chtimes(directory, stamp, stamp); err != nil {
+	for _, p := range kept {
+		if _, err := os.Stat(p); err != nil {
 			t.Fatal(err)
 		}
 	}
-	unchanged, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
-	if err != nil {
-		t.Fatal(err)
+	for _, p := range []string{old, model, log} {
+		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s still exists: %v", p, err)
+		}
 	}
-	if unchanged.Token != selected.Token || unchanged.Bytes != selected.Bytes {
-		t.Fatal("unchanged backup files were invalidated by directory timestamps")
-	}
-	if err = os.Mkdir(filepath.Join(path, "new-empty-directory"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	addedDirectory, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if addedDirectory.Token == unchanged.Token {
-		t.Fatal("new directory was not included in selection identity")
-	}
-	file := filepath.Join(path, "files", "astral.db")
-	if err = os.Chtimes(file, stamp, stamp); err != nil {
-		t.Fatal(err)
-	}
-	changedFile, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if changedFile.Token == addedDirectory.Token {
-		t.Fatal("changed file metadata was not rejected")
-	}
-	write(t, filepath.Join(path, "files", "new.db"), []byte("new file"))
-	addedFile, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if addedFile.Token == changedFile.Token {
-		t.Fatal("new file was not included in selection identity")
+	if result := s.Cleanup(t.Context()); result.RemovedBytes != 0 || result.Error != "" {
+		t.Fatal(result)
 	}
 }
 
-func TestMigrationAndSymlinksProtectApplicationFiles(t *testing.T) {
+func TestCleanupProtectsMigrationAndUnknownFiles(t *testing.T) {
 	s, _ := fixture(t, &historyStore{})
-	backup(t, s, "old")
-	write(t, filepath.Join(s.config.Directory, "migration-state.json"), []byte("invalid recovery journal"))
-	outside := filepath.Join(t.TempDir(), "outside")
-	write(t, outside, []byte("outside"))
-	if err := os.MkdirAll(filepath.Join(s.config.Directory, "cache"), 0700); err != nil {
+	path := backup(t, s, "old")
+	write(t, filepath.Join(s.config.Directory, "migration-state.json"), []byte("bad recovery journal"))
+	outside := filepath.Join(t.TempDir(), "work")
+	write(t, outside, []byte("keep"))
+	cache := filepath.Join(s.config.Directory, "cache")
+	if err := os.MkdirAll(cache, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(s.config.Directory, "cache", "models.dev.json")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(cache, "models.dev.json")); err != nil {
 		t.Skip(err)
 	}
-	inventory := s.Inventory(context.Background())
-	if inventory.Error == "" {
-		t.Fatal("malformed recovery journal was not reported")
+	result := s.Cleanup(t.Context())
+	if result.Error == "" || result.RemovedBytes != 0 {
+		t.Fatal(result)
 	}
-	for _, item := range inventory.Items {
-		if item.Kind == "upgrade_backup" && !item.Protected {
-			t.Fatal("backup not protected during unknown migration")
-		}
-		if item.Kind == "model_cache" {
-			t.Fatal("symlink cache adopted")
-		}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
 	}
-	physical := s.physical(context.Background())
-	if len(physical.Errors) == 0 {
-		t.Fatal("incomplete physical measurement was hidden")
+	if raw, err := os.ReadFile(outside); err != nil || string(raw) != "keep" {
+		t.Fatalf("unowned file: %q %v", raw, err)
 	}
-	if raw, err := os.ReadFile(outside); err != nil || string(raw) != "outside" {
-		t.Fatal("external file changed")
+	if len(s.physical(t.Context()).Errors) == 0 {
+		t.Fatal("missing diagnostics")
+	}
+}
+
+// A file can change between discovery and removal. A partial cleanup must
+// report only removed files and leave the backup discoverable without a journal.
+func TestInterruptedBackupRetainsManifestForFreshCleanup(t *testing.T) {
+	s, _ := fixture(t, &historyStore{})
+	path := backup(t, s, "interrupted")
+	outside := filepath.Join(t.TempDir(), "untouched")
+	write(t, outside, []byte("untouched"))
+	link := filepath.Join(path, "x-link")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skip(err)
+	}
+	n, err := removeBackup(t.Context(), path)
+	if err == nil || n != int64(len("backup bytes")) || !s.ownsBackup(path) {
+		t.Fatalf("partial backup removal: %d %v", n, err)
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	result := s.Cleanup(t.Context())
+	if result.Error != "" || result.RemovedBytes == 0 {
+		t.Fatalf("fresh cleanup failed: %+v", result)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if raw, err := os.ReadFile(outside); err != nil || string(raw) != "untouched" {
+		t.Fatalf("symbolic link target changed: %q, %v", raw, err)
 	}
 }
 
@@ -347,7 +294,7 @@ func TestReclaimWaitsForIdleRetainsFailureAndRetries(t *testing.T) {
 		}
 		return nil
 	}}
-	s, store := fixture(t, h)
+	s, _ := fixture(t, h)
 	s.config.Busy = busy.Load
 	s.RequestReclaim()
 	await(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.reclaim.State == "waiting" })
@@ -355,17 +302,11 @@ func TestReclaimWaitsForIdleRetainsFailureAndRetries(t *testing.T) {
 		t.Fatal("reclaim ran while Bot was active")
 	}
 	busy.Store(false)
-	var persisted Reclaim
 	await(t, func() bool {
-		persisted = Reclaim{}
-		if err := store.Maintenance(context.Background(), "storage_reclaim", "owner", &persisted); err != nil {
-			t.Fatal(err)
-		}
-		return persisted.State == "failed"
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.reclaim.State == "failed" && s.reclaim.Error == "vacuum failed"
 	})
-	if persisted.Error != "vacuum failed" {
-		t.Fatalf("failure was not durable: %+v", persisted)
-	}
 	fail.Store(false)
 	s.RequestReclaim()
 	await(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.reclaim.State == "complete" })
@@ -392,63 +333,50 @@ func TestPhysicalIncludesRecallAndSQLiteSidecars(t *testing.T) {
 	}
 }
 
-func TestRefreshCancelDoesNotKeepWorkerRunning(t *testing.T) {
-	started := make(chan struct{})
-	var once sync.Once
-	h := &historyStore{load: func(ctx context.Context, _ string) (core.RuntimeState, error) {
-		once.Do(func() { close(started) })
-		<-ctx.Done()
-		return core.RuntimeState{}, ctx.Err()
+func TestCanceledRefreshReleasesFollowingMeasurement(t *testing.T) {
+	entered := make(chan struct{})
+	var calls atomic.Int64
+	h := &historyStore{load: func(ctx context.Context, id string) (core.RuntimeState, error) {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-ctx.Done()
+			return core.RuntimeState{}, ctx.Err()
+		}
+		return core.RuntimeState{SessionID: id, RolloutID: "fresh", Version: 2}, nil
 	}}
 	s, store := fixture(t, h)
-	save(t, store, "sessions", "s", domain.Session{AgentID: "a"})
-	s.cache["s"] = sessionEstimate{State: "complete", Entries: 42}
-	s.Refresh(false)
-	<-started
-	s.Refresh(true)
-	await(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.estimate.State == "canceled" })
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.estimate.Error != "" || s.cache["s"].State != "complete" || s.cache["s"].Entries != 42 {
-		t.Fatalf("stopping an estimate discarded its last result or reported a failure: %+v %+v", s.estimate, s.cache["s"])
+	save(t, store, "sessions", "root", domain.Session{AgentID: "a"})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	first, second := make(chan error, 1), make(chan error, 1)
+	go func() { first <- s.Refresh(ctx) }()
+	<-entered
+	go func() { second <- s.Refresh(t.Context()) }()
+	cancel()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
+	}
+	if s.cache["root"].State != "complete" || s.cache["root"].Version != 2 {
+		t.Fatalf("second caller received stale estimate: %+v", s.cache["root"])
 	}
 }
 
-func TestExternalCleanupIsCountedAndUsesDurableOperationIdentity(t *testing.T) {
+func TestExternalCleanupReturnsPartialProgress(t *testing.T) {
 	s, _ := fixture(t, &historyStore{})
-	var calls atomic.Int64
-	s.config.ExternalCleanup = func(context.Context) ([]CleanupItem, error) {
-		return []CleanupItem{{Token: "desktop:old-installer", Kind: "update_cache", Name: "Astral-old.zip", Bytes: 654}}, nil
+	s.config.ExternalCache = func(context.Context) (int64, int64, error) { return 150, 50, nil }
+	s.config.CleanExternal = func(context.Context) (int64, error) { return 20, errors.New("Desktop file is locked") }
+	physical := s.physical(t.Context())
+	if physical.CacheBytes != 150 || physical.CleanableBytes != 50 {
+		t.Fatal(physical)
 	}
-	s.config.CleanExternal = func(_ context.Context, id, token string) (int64, error) {
-		calls.Add(1)
-		if id != "external-op" || token != "desktop:old-installer" {
-			t.Errorf("lost identity: %q %q", id, token)
-		}
-		return 654, nil
-	}
-	if physical := s.physical(context.Background()); physical.CacheBytes != 654 {
-		t.Fatalf("external cache omitted: %+v", physical)
-	}
-	op, err := s.Cleanup(context.Background(), CleanupRequest{OperationID: "external-op", Tokens: []string{"desktop:old-installer"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	await(t, func() bool {
-		op, err = s.CleanupOperation(context.Background(), op.OperationID)
-		return err == nil && op.State == "complete"
-	})
-	if op.RemovedBytes != 654 {
-		t.Fatalf("external outcome lost: %+v", op)
-	}
-	if _, err = s.Cleanup(context.Background(), CleanupRequest{OperationID: "external-op", Tokens: []string{"desktop:old-installer"}}); err != nil {
-		t.Fatal(err)
-	}
-	if calls.Load() != 1 {
-		t.Fatal("replay repeated external deletion")
+	result := s.Cleanup(t.Context())
+	if result.RemovedBytes != 20 || result.Error != "Desktop file is locked" {
+		t.Fatal(result)
 	}
 }
-
 func TestReclaimRequestDuringRunningMaintenanceIsNotLost(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int64
@@ -480,69 +408,55 @@ func TestReclaimRequestDuringRunningMaintenanceIsNotLost(t *testing.T) {
 	})
 }
 
-func TestInterruptedBackupCleanupResumesWithoutDeletedManifest(t *testing.T) {
-	s, store := fixture(t, &historyStore{})
-	path := backup(t, s, "server-interrupted")
-	item, err := s.candidate(context.Background(), path, "upgrade_backup", filepath.Base(path))
-	if err != nil {
-		t.Fatal(err)
-	}
-	item.Started = true
-	record := cleanupRecord{Meta: domain.Meta{ID: "interrupted"}, CleanupOperation: CleanupOperation{OperationID: "interrupted", State: "failed", RemovedTokens: []string{}}, Tokens: []string{item.Token}, Candidates: []candidate{item}}
-	if err = s.saveCleanup(context.Background(), &record); err != nil {
-		t.Fatal(err)
-	}
-	if err = os.Remove(filepath.Join(path, "manifest.json")); err != nil {
-		t.Fatal(err)
-	}
-	if err = s.Close(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	restarted := New(context.Background(), Config{Directory: s.config.Directory, Store: store, Core: &historyStore{}})
-	defer restarted.Close(context.Background())
-	if physical := restarted.physical(context.Background()); physical.BackupBytes == 0 {
-		t.Fatal("partially deleted backup disappeared from physical accounting")
-	}
-	op, err := restarted.RetryCleanup(context.Background(), "interrupted")
-	if err != nil {
-		t.Fatal(err)
-	}
-	await(t, func() bool {
-		op, err = restarted.CleanupOperation(context.Background(), op.OperationID)
-		return err == nil && op.State != "running"
-	})
-	if op.State != "complete" || op.RemovedBytes == 0 {
-		t.Fatalf("interrupted backup did not resume: %+v %v", op, err)
-	}
-	if _, err = os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("partial backup remains")
-	}
-}
-
-func TestBusyLaterDatabaseDoesNotRepeatCompletedCoreVacuum(t *testing.T) {
-	var calls atomic.Int64
-	var busy atomic.Bool
-	busy.Store(true)
-	s, _ := fixture(t, &historyStore{reclaim: func(context.Context) error { calls.Add(1); return nil }})
-	s.config.Reclaimers = []func(context.Context) error{func(context.Context) error {
-		if busy.Load() {
-			return core.ErrBusy
+func TestWaitForReclaimJoinsConcurrentRequestsAndCanCancel(t *testing.T) {
+	entered, release := make(chan struct{}, 2), make(chan struct{})
+	var passes atomic.Int64
+	s, _ := fixture(t, &historyStore{reclaim: func(ctx context.Context) error {
+		pass := passes.Add(1)
+		entered <- struct{}{}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-release:
+		}
+		if pass == 2 {
+			return errors.New("disk failure")
 		}
 		return nil
-	}}
+	}})
+	if err := s.WaitForReclaim(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	s.RequestReclaim()
-	await(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.reclaim.State == "waiting" })
-	busy.Store(false)
-	await(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.reclaim.State == "complete" })
-	if calls.Load() != 1 {
-		t.Fatalf("completed Core vacuum was repeated %d times", calls.Load())
+	<-entered
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := s.WaitForReclaim(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.WaitForReclaim(t.Context()) }()
+	s.RequestReclaim()
+	release <- struct{}{}
+	<-entered
+	select {
+	case <-done:
+		t.Fatal("waiter returned before the pending second pass")
+	default:
+	}
+	release <- struct{}{}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	out, err := s.Snapshot(t.Context())
+	if err != nil || out.Reclaim.State != "failed" || out.Reclaim.Error != "disk failure" {
+		t.Fatalf("terminal state: %+v %v", out.Reclaim, err)
 	}
 }
-
 func TestManagementStatusDoesNotQueueBehindHostMaintenanceConnection(t *testing.T) {
 	s, store := fixture(t, &historyStore{})
 	save(t, store, "agents", "bot", domain.Agent{Name: "Cached Bot"})
-	if _, err := s.Snapshot(context.Background(), ""); err != nil {
+	if _, err := s.Snapshot(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	s.mu.Lock()
@@ -561,7 +475,7 @@ func TestManagementStatusDoesNotQueueBehindHostMaintenanceConnection(t *testing.
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	out, err := s.Snapshot(ctx, "")
+	out, err := s.Snapshot(ctx)
 	if err != nil || out.Reclaim.State != "running" || len(out.Agents) != 1 || out.Agents[0].Name != "Cached Bot" {
 		t.Fatalf("management status waited on Host database: %+v %v", out, err)
 	}

@@ -166,10 +166,7 @@ func (s *Service) deleteOneSession(ctx context.Context, id string, revision int6
 		if err := tx.DeleteMaintenance(ctx, imReplyWatchKind, id); err != nil {
 			return err
 		}
-		if err := tx.Purge(ctx, "sessions", id, current.Revision); err != nil {
-			return err
-		}
-		return tx.MarkStorageReclaim(ctx)
+		return tx.Purge(ctx, "sessions", id, current.Revision)
 	}); err != nil {
 		return err
 	}

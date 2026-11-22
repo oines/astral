@@ -49,11 +49,17 @@ func TestDeleteAgentErasesAllSessionsAndKeepsOtherBots(t *testing.T) {
 	if err = f.store.Get(f.ctx, "agents", f.agent.ID, &unchanged); err != nil || unchanged.Deletion {
 		t.Fatalf("stale confirmation changed deletion intent: %+v %v", unchanged, err)
 	}
+	requestedReclaim := false
+	f.service.StorageChanged = func() {
+		var agent domain.Agent
+		requestedReclaim = domain.IsMissing(f.store.Get(f.ctx, "agents", f.agent.ID, &agent))
+	}
 	if err = f.service.DeleteAgent(f.ctx, f.agent.ID, f.agent.Revision); err != nil {
 		t.Fatal(err)
 	}
-	if token, err := f.store.StorageReclaimDirty(f.ctx); err != nil || token == "" {
-		t.Fatal("Bot deletion committed without a durable space reclamation trigger", err)
+
+	if !requestedReclaim {
+		t.Fatal("committed Bot deletion did not request reclamation")
 	}
 	if err = f.service.DeleteAgent(f.ctx, f.agent.ID, f.agent.Revision); err != nil {
 		t.Fatal("retry:", err)

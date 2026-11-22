@@ -2,7 +2,6 @@ package persistence_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -26,14 +25,7 @@ func TestArchivePruneKeepsDedupeSequenceAndHidesBodyAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n, _, err := s.PruneObservations(ctx, "chat", 0, head, time.Now(), func(*persistence.Tx, int, int64) error { return errors.New("fail transaction") })
-	if err == nil || n != 1 {
-		t.Fatal("rollback fixture", n, err)
-	}
-	if _, err = s.Observation(ctx, event.ID); err != nil {
-		t.Fatal("rollback removed body", err)
-	}
-	n, _, err = s.PruneObservations(ctx, "chat", 0, head, time.Now(), nil)
+	n, _, err := s.PruneObservations(ctx, "chat", 0, head, time.Now())
 	if err != nil || n != 1 {
 		t.Fatal(n, err)
 	}
@@ -67,7 +59,7 @@ func TestArchivePruneKeepsDedupeSequenceAndHidesBodyAcrossReopen(t *testing.T) {
 	}
 }
 
-func TestArchivePruneResumesBatchesFromDurableCursorAndKeepsPendingMessages(t *testing.T) {
+func TestArchivePrunePagesEligibleBodiesAndPreservesPendingMessages(t *testing.T) {
 	ctx := context.Background()
 	directory := t.TempDir()
 	store, err := persistence.Open(directory)
@@ -113,64 +105,18 @@ func TestArchivePruneResumesBatchesFromDurableCursorAndKeepsPendingMessages(t *t
 	if _, err = store.Archive(ctx, other); err != nil {
 		t.Fatal(err)
 	}
-	type progress struct {
-		domain.Meta
-		After   int64 `json:"after"`
-		Removed int   `json:"removed"`
-	}
-	current := progress{Meta: domain.Meta{ID: "cleanup"}}
-	apply := func(tx *persistence.Tx, count int, next int64) error {
-		current.After, current.Removed = next, current.Removed+count
-		return tx.Save(ctx, "prune_progress", &current.Meta, &current)
-	}
-	count, next, err := store.PruneObservations(ctx, "chat", 0, through, before, apply)
-	wantFirst, lookupErr := store.ObservationSequence(ctx, expired[255])
-	if err != nil || lookupErr != nil || count != 256 || next != wantFirst {
-		t.Fatalf("first batch: count=%d next=%d want=%d err=%v lookup=%v", count, next, wantFirst, err, lookupErr)
-	}
-	if err = store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	store, err = persistence.Open(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = store.Get(ctx, "prune_progress", "cleanup", &current); err != nil || current.After != next || current.Removed != 256 {
-		t.Fatalf("durable progress: %+v %v", current, err)
-	}
-
-	// A callback failure must roll back the bodies and its progress together.
-	attempt := current
-	_, failedCursor, err := store.PruneObservations(ctx, "chat", current.After, through, before, func(tx *persistence.Tx, count int, next int64) error {
-		attempt.After, attempt.Removed = next, attempt.Removed+count
-		if err := tx.Save(ctx, "prune_progress", &attempt.Meta, &attempt); err != nil {
-			return err
+	var after int64
+	removed := 0
+	for _, want := range []int{256, 256, 8, 0} {
+		count, next, err := store.PruneObservations(ctx, "chat", after, through, before)
+		if err != nil || count != want || next < after || next > through {
+			t.Fatalf("batch after %d: %d, next %d, %v", after, count, next, err)
 		}
-		return errors.New("interrupt before commit")
-	})
-	if err == nil || failedCursor <= current.After {
-		t.Fatalf("rollback fixture: next=%d err=%v", failedCursor, err)
+		after = next
+		removed += count
 	}
-	var persisted progress
-	if err = store.Get(ctx, "prune_progress", "cleanup", &persisted); err != nil || persisted.After != current.After || persisted.Removed != 256 {
-		t.Fatalf("rollback advanced progress: %+v %v", persisted, err)
-	}
-	if _, err = store.Observation(ctx, expired[256]); err != nil {
-		t.Fatalf("rollback pruned an uncommitted message: %v", err)
-	}
-
-	count, next, err = store.PruneObservations(ctx, "chat", current.After, through, before, apply)
-	wantSecond, lookupErr := store.ObservationSequence(ctx, expired[511])
-	if err != nil || lookupErr != nil || count != 256 || next != wantSecond || current.Removed != 512 {
-		t.Fatalf("second batch: count=%d next=%d want=%d total=%d err=%v lookup=%v", count, next, wantSecond, current.Removed, err, lookupErr)
-	}
-	count, next, err = store.PruneObservations(ctx, "chat", current.After, through, before, apply)
-	if err != nil || count != 8 || current.Removed != 520 || next > through {
-		t.Fatalf("last batch: count=%d next=%d total=%d err=%v", count, next, current.Removed, err)
-	}
-	count, unchanged, err := store.PruneObservations(ctx, "chat", next, through, before, nil)
-	if err != nil || count != 0 || unchanged != next {
-		t.Fatalf("empty batch changed cursor: %d %d %v", count, unchanged, err)
+	if removed != len(expired) {
+		t.Fatalf("removed %d of %d", removed, len(expired))
 	}
 	for _, id := range append(recent, pending.ID, other.ID) {
 		if _, err = store.Observation(ctx, id); err != nil {

@@ -2,34 +2,30 @@ package storage
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type candidate struct {
-	CleanupItem
-	Path        string `json:"path"`
-	Fingerprint string `json:"fingerprint"`
-	External    bool   `json:"external,omitempty"`
-	Started     bool   `json:"started,omitempty"`
+	Path      string
+	Kind      string
+	Bytes     int64
+	Protected bool
 }
 
-// inspectTree never follows a symlink and fingerprints every entry. A token
-// therefore stops matching when files change after the user selected them.
-func inspectTree(ctx context.Context, path string) (bytes int64, fingerprint string, err error) {
-	h := sha256.New()
+// Only regular files under application-owned paths count toward cleanup.
+func inspectTree(ctx context.Context, path string) (size int64, err error) {
 	count := 0
-	err = filepath.WalkDir(path, func(name string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	err = filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -38,40 +34,28 @@ func inspectTree(ctx context.Context, path string) (bytes int64, fingerprint str
 		if count > 100000 {
 			return errors.New("file inventory exceeded 100000 entries")
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing symlink %s", name)
+		if entry.IsDir() {
+			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && !info.Mode().IsRegular() {
-			return fmt.Errorf("refusing special file %s", name)
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing symlink or special file %s", entry.Name())
 		}
-		rel, err := filepath.Rel(path, name)
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			// Directory size/timestamps describe filesystem bookkeeping and can
-			// settle after child handles close on Windows. Relative paths retain
-			// membership identity; only regular files contribute content metadata.
-			fmt.Fprintf(h, "%s\x00directory\n", rel)
-			return nil
-		}
-		fmt.Fprintf(h, "%s\x00%d\x00%d\x00%d\n", rel, info.Size(), info.ModTime().UnixNano(), info.Mode())
-		bytes += info.Size()
+		size += info.Size()
 		return nil
 	})
-	return bytes, hex.EncodeToString(h.Sum(nil)), err
+	return size, err
 }
-func (s *Service) candidate(ctx context.Context, path, kind, name string) (candidate, error) {
-	n, fingerprint, err := inspectTree(ctx, path)
-	if err != nil {
-		return candidate{}, err
+func rotatedLog(name string) bool {
+	base, n, ok := strings.Cut(name, ".log.")
+	if !ok || base != "astral-server" && base != "server" {
+		return false
 	}
-	sum := sha256.Sum256([]byte(path + "\x00" + fingerprint))
-	return candidate{CleanupItem: CleanupItem{Token: hex.EncodeToString(sum[:]), Kind: kind, Name: name, Bytes: n}, Path: path, Fingerprint: fingerprint}, nil
+	index, err := strconv.ParseUint(n, 10, 32)
+	return err == nil && index > 0 && strconv.FormatUint(index, 10) == n
 }
 func safeDirectory(path string) bool {
 	actual, err := filepath.EvalSymlinks(path)
@@ -79,273 +63,115 @@ func safeDirectory(path string) bool {
 	return err == nil && absErr == nil && actual == abs
 }
 
-// An interrupted RemoveAll may already have removed the manifest. A durable
-// started item still proves ownership, but current recovery/update protection
-// always wins over that earlier cleanup authorization.
-func (s *Service) resumableBackup(ctx context.Context, item candidate) error {
-	if item.Kind != "upgrade_backup" || filepath.Dir(item.Path) != filepath.Join(filepath.Dir(s.config.Directory), "upgrade-backups") || !safeDirectory(filepath.Dir(item.Path)) {
-		return errors.New("cleanup backup ownership changed")
-	}
-	if s.config.Updating != nil && s.config.Updating(ctx) {
-		return errors.New("application update is running")
-	}
-	if _, err := os.Stat(filepath.Join(s.config.Directory, "migration-state.json")); err == nil {
-		return errors.New("migration recovery protects upgrade backups")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	raw, err := os.ReadFile(filepath.Join(s.config.Directory, "last-upgrade.json"))
-	if err == nil {
+// A recovery record with an unknown shape protects all backups. Multiple servers
+// may share the backup parent; each manifest must identify this data directory.
+func (s *Service) backupsProtected() (all bool, latest string, err error) {
+	for _, name := range []string{"migration-state.json", "last-upgrade.json"} {
+		raw, readErr := os.ReadFile(filepath.Join(s.config.Directory, name))
+		if errors.Is(readErr, os.ErrNotExist) {
+			continue
+		}
+		if name == "migration-state.json" {
+			all = true
+		}
 		var record struct {
-			Schema int    `json:"schema"`
-			Backup string `json:"backup"`
+			Schema int
+			Backup string
 		}
-		if json.Unmarshal(raw, &record) != nil || record.Schema != 1 || !filepath.IsAbs(record.Backup) {
-			return errors.New("cannot validate the latest upgrade recovery point")
+		if readErr != nil || json.Unmarshal(raw, &record) != nil || record.Schema != 1 || !filepath.IsAbs(record.Backup) {
+			return true, "", fmt.Errorf("cannot validate %s; upgrade backups are protected", name)
 		}
-		if filepath.Clean(record.Backup) == item.Path {
-			return errors.New("latest upgrade recovery backup is protected")
+		if name == "last-upgrade.json" {
+			latest = filepath.Clean(record.Backup)
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
 	}
-	info, err := os.Lstat(item.Path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return errors.New("cleanup backup was replaced")
-	}
-	return nil
+	return
 }
 
-func (s *Service) validateCandidate(ctx context.Context, item candidate) (bool, error) {
-	if _, err := os.Lstat(item.Path); errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	} else if err != nil {
-		return false, err
+func (s *Service) ownsBackup(path string) bool {
+	if !safeDirectory(path) {
+		return false
 	}
-	if s.config.Updating != nil && s.config.Updating(ctx) {
-		return true, errors.New("application update is running")
+	name := filepath.Join(path, "manifest.json")
+	info, err := os.Lstat(name)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
 	}
-	switch item.Kind {
-	case "upgrade_backup":
-		if err := s.resumableBackup(ctx, item); err != nil {
-			return true, err
-		}
-		raw, err := os.ReadFile(filepath.Join(item.Path, "manifest.json"))
-		if err != nil {
-			return true, err
-		}
-		var manifest struct {
-			Schema int    `json:"schema"`
-			Data   string `json:"data"`
-		}
-		if json.Unmarshal(raw, &manifest) != nil || manifest.Schema != 1 || filepath.Clean(manifest.Data) != s.config.Directory {
-			return true, errors.New("backup ownership changed")
-		}
-	case "model_cache":
-		if item.Path != filepath.Join(s.config.Directory, "cache", "models.dev.json") || !safeDirectory(filepath.Dir(item.Path)) {
-			return true, errors.New("model cache ownership changed")
-		}
-	case "temporary":
-		parent, base := filepath.Dir(item.Path), filepath.Base(item.Path)
-		if !safeDirectory(parent) {
-			return true, errors.New("temporary directory ownership changed")
-		}
-		if parent == s.config.Directory && strings.HasPrefix(base, ".migration-") {
-			if _, err := os.Stat(filepath.Join(parent, "migration-state.json")); err == nil {
-				return true, errors.New("migration is running")
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return true, err
-			}
-		} else if parent != filepath.Join(s.config.Directory, "cache") || !strings.HasPrefix(base, ".models-dev-") {
-			return true, errors.New("temporary file ownership changed")
-		}
-		info, err := os.Lstat(item.Path)
-		if err != nil {
-			return true, err
-		}
-		if time.Since(info.ModTime()) <= 24*time.Hour {
-			return true, errors.New("temporary file is no longer stale")
-		}
-	default:
-		return true, errors.New("unknown application cleanup category")
+	raw, err := os.ReadFile(name)
+	var manifest struct {
+		Schema int
+		Data   string
 	}
-	current, err := s.candidate(ctx, item.Path, item.Kind, item.Name)
-	if err != nil {
-		return true, err
-	}
-	if current.Token != item.Token {
-		return true, errors.New("cleanup item changed; refresh the inventory")
-	}
-	return true, nil
+	return err == nil && json.Unmarshal(raw, &manifest) == nil && manifest.Schema == 1 && filepath.Clean(manifest.Data) == s.config.Directory
 }
-func (s *Service) candidates(ctx context.Context) ([]candidate, error) {
+
+func (s *Service) candidates(ctx context.Context, updating bool) (items []candidate, result error) {
 	data := s.config.Directory
 	if !safeDirectory(data) {
 		return nil, errors.New("data directory contains a symlink or is unavailable")
 	}
-	items := []candidate{}
-	var problems []error
-	protected := map[string]bool{}
-	migrationPending := false
-	for _, name := range []string{"migration-state.json", "last-upgrade.json"} {
-		raw, err := os.ReadFile(filepath.Join(data, name))
+	migrationPending, latest, result := s.backupsProtected()
+	add := func(path, kind string, protected bool) {
+		size, err := inspectTree(ctx, path)
+		if err != nil {
+			result = errors.Join(result, err)
+			return
+		}
+		items = append(items, candidate{Path: path, Kind: kind, Bytes: size, Protected: protected || updating})
+	}
+	entriesIn := func(path string) []os.DirEntry {
+		info, err := os.Lstat(path)
 		if errors.Is(err, os.ErrNotExist) {
-			continue
+			return nil
 		}
-		if name == "migration-state.json" {
-			migrationPending = true
+		if err != nil {
+			result = errors.Join(result, err)
+			return nil
 		}
-		var record struct {
-			Schema int    `json:"schema"`
-			Backup string `json:"backup"`
+		if !info.IsDir() || !safeDirectory(path) {
+			result = errors.Join(result, fmt.Errorf("not a regular application directory: %s", path))
+			return nil
 		}
-		if err != nil || json.Unmarshal(raw, &record) != nil || record.Schema != 1 || !filepath.IsAbs(record.Backup) {
-			migrationPending = true
-			problems = append(problems, fmt.Errorf("cannot validate %s; upgrade backups are protected", name))
-			continue
-		}
-		protected[filepath.Clean(record.Backup)] = true
+		entries, err := os.ReadDir(path)
+		result = errors.Join(result, err)
+		return entries
 	}
-	updating := s.config.Updating != nil && s.config.Updating(ctx)
 	parent := filepath.Join(filepath.Dir(data), "upgrade-backups")
-	entries, err := os.ReadDir(parent)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		problems = append(problems, err)
-	}
-	if err == nil && !safeDirectory(parent) {
-		problems = append(problems, errors.New("upgrade backup directory contains a symlink"))
-		entries = nil
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
+	for _, entry := range entriesIn(parent) {
 		path := filepath.Join(parent, entry.Name())
-		if !safeDirectory(path) {
-			continue
+		if entry.IsDir() && s.ownsBackup(path) {
+			add(path, "upgrade_backup", migrationPending || path == latest)
 		}
-		raw, err := os.ReadFile(filepath.Join(path, "manifest.json"))
-		var manifest struct {
-			Schema int    `json:"schema"`
-			Data   string `json:"data"`
-		}
-		if err != nil || json.Unmarshal(raw, &manifest) != nil || manifest.Schema != 1 || filepath.Clean(manifest.Data) != data {
-			// Backups for another Server may share this parent. Never adopt them.
-			continue
-		}
-		item, err := s.candidate(ctx, path, "upgrade_backup", entry.Name())
-		if err != nil {
-			problems = append(problems, err)
-			continue
-		}
-		if protected[path] || migrationPending || updating {
-			item.Protected = true
-			item.Reason = "upgrade_recovery"
-		}
-		items = append(items, item)
 	}
-	cache := filepath.Join(data, "cache")
-	if info, err := os.Lstat(cache); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 {
-			problems = append(problems, errors.New("cache directory is a symlink"))
-		} else {
-			entries, err := os.ReadDir(cache)
-			if err != nil {
-				problems = append(problems, err)
+	for _, dir := range []string{data, filepath.Join(data, "cache"), filepath.Join(data, "logs")} {
+		for _, entry := range entriesIn(dir) {
+			if !entry.Type().IsRegular() {
+				continue
 			}
-			for _, entry := range entries {
-				kind := ""
-				if entry.Name() == "models.dev.json" {
-					kind = "model_cache"
-				} else if strings.HasPrefix(entry.Name(), ".models-dev-") {
-					info, err := entry.Info()
-					if err == nil && time.Since(info.ModTime()) > 24*time.Hour {
-						kind = "temporary"
-					}
-				}
-				if kind == "" || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-					continue
-				}
-				item, err := s.candidate(ctx, filepath.Join(cache, entry.Name()), kind, filepath.Join("cache", entry.Name()))
+			name := entry.Name()
+			path := filepath.Join(dir, name)
+			switch {
+			case dir == filepath.Join(data, "logs") && (name == "server.log" || name == "astral-server.log"):
+				add(path, "log", true)
+			case dir == filepath.Join(data, "logs") && rotatedLog(name):
+				add(path, "log", false)
+			case dir == filepath.Join(data, "cache") && name == "models.dev.json":
+				add(path, "model_cache", false)
+			case dir == data && strings.HasPrefix(name, ".migration-") || dir == filepath.Join(data, "cache") && strings.HasPrefix(name, ".models-dev-"):
+				info, err := entry.Info()
 				if err != nil {
-					problems = append(problems, err)
+					result = errors.Join(result, err)
 					continue
 				}
-				if updating {
-					item.Protected = true
-					item.Reason = "update_running"
+				if time.Since(info.ModTime()) > 24*time.Hour {
+					add(path, "temporary", dir == data && migrationPending)
 				}
-				items = append(items, item)
-			}
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		problems = append(problems, err)
-	}
-	entries, err = os.ReadDir(data)
-	if err != nil {
-		problems = append(problems, err)
-	}
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), ".migration-") || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil || time.Since(info.ModTime()) <= 24*time.Hour {
-			continue
-		}
-		item, err := s.candidate(ctx, filepath.Join(data, entry.Name()), "temporary", entry.Name())
-		if err != nil {
-			problems = append(problems, err)
-			continue
-		}
-		if migrationPending || updating {
-			item.Protected = true
-			item.Reason = "upgrade_recovery"
-		}
-		items = append(items, item)
-	}
-	if s.config.ExternalCleanup != nil {
-		external, err := s.config.ExternalCleanup(ctx)
-		if err != nil {
-			problems = append(problems, err)
-		} else {
-			seen := map[string]bool{}
-			for _, item := range external {
-				if !strings.HasPrefix(item.Token, "desktop:") || item.Kind != "update_cache" || item.Bytes < 0 || seen[item.Token] {
-					problems = append(problems, errors.New("invalid Desktop cleanup inventory"))
-					continue
-				}
-				seen[item.Token] = true
-				if updating {
-					item.Protected = true
-					item.Reason = "update_running"
-				}
-				items = append(items, candidate{CleanupItem: item, External: true})
 			}
 		}
 	}
-	return items, errors.Join(problems...)
+	return
 }
-func (s *Service) Inventory(ctx context.Context) CleanupInventory {
-	items, err := s.candidates(ctx)
-	out := CleanupInventory{Items: []CleanupItem{}}
-	for _, item := range items {
-		out.Items = append(out.Items, item.CleanupItem)
-		if !item.Protected {
-			out.TotalBytes += item.Bytes
-		}
-	}
-	if err != nil {
-		out.Error = err.Error()
-	}
-	return out
-}
+
 func (s *Service) physical(ctx context.Context) Physical {
 	out := Physical{Items: []PhysicalItem{}, Errors: []string{}}
 	add := func(id string, n int64) {
@@ -372,50 +198,40 @@ func (s *Service) physical(ctx context.Context) Physical {
 		add(database, bytes)
 		out.DatabaseBytes += bytes
 	}
-	items, err := s.candidates(ctx)
+	updating := s.config.Updating != nil && s.config.Updating(ctx)
+	items, err := s.candidates(ctx, updating)
 	if err != nil {
 		out.Errors = append(out.Errors, err.Error())
 	}
-	countedBackups := map[string]bool{}
 	for _, item := range items {
-		if item.Kind == "upgrade_backup" {
+		if !item.Protected {
+			out.CleanableBytes += item.Bytes
+		}
+		switch item.Kind {
+		case "upgrade_backup":
 			out.BackupBytes += item.Bytes
-			countedBackups[item.Path] = true
-		} else if item.External {
-			out.CacheBytes += item.Bytes
-		} else if item.Kind == "temporary" && filepath.Dir(item.Path) == s.config.Directory {
-			out.TemporaryBytes += item.Bytes
+		case "log":
+			out.LogBytes += item.Bytes
+		case "temporary":
+			if filepath.Dir(item.Path) == s.config.Directory {
+				out.TemporaryBytes += item.Bytes
+			}
 		}
 	}
-	s.mu.Lock()
-	partial := make([]string, 0, len(s.partialBackups))
-	for path := range s.partialBackups {
-		partial = append(partial, path)
-	}
-	s.mu.Unlock()
-	for _, path := range partial {
-		if countedBackups[path] {
-			continue
-		}
-		if filepath.Dir(path) != filepath.Join(filepath.Dir(s.config.Directory), "upgrade-backups") {
-			out.Errors = append(out.Errors, "unfinished backup cleanup has invalid ownership")
-			continue
-		}
-		n, _, err := inspectTree(ctx, path)
-		if errors.Is(err, os.ErrNotExist) {
-			s.mu.Lock()
-			delete(s.partialBackups, path)
-			s.mu.Unlock()
-			continue
-		}
+	if s.config.ExternalCache != nil {
+		total, cleanable, err := s.config.ExternalCache(ctx)
 		if err != nil {
 			out.Errors = append(out.Errors, err.Error())
+		} else {
+			out.CacheBytes += total
+			if !updating {
+				out.CleanableBytes += cleanable
+			}
 		}
-		out.BackupBytes += n
 	}
 	cachePath := filepath.Join(s.config.Directory, "cache")
 	if _, err := os.Lstat(cachePath); err == nil {
-		n, _, err := inspectTree(ctx, cachePath)
+		n, err := inspectTree(ctx, cachePath)
 		if err != nil {
 			out.Errors = append(out.Errors, err.Error())
 		}
@@ -426,6 +242,7 @@ func (s *Service) physical(ctx context.Context) Physical {
 	add("upgrade_backups", out.BackupBytes)
 	add("cache", out.CacheBytes)
 	add("temporary", out.TemporaryBytes)
+	add("logs", out.LogBytes)
 	out.DiskTotalBytes, out.DiskUsedBytes, out.AvailableBytes, err = diskUsage(s.config.Directory)
 	if err != nil {
 		out.Errors = append(out.Errors, err.Error())

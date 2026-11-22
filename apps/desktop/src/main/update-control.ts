@@ -69,11 +69,11 @@ export class DesktopUpdateControl {
     return { ...state, ...details }
   }
 
-  cacheRecoveryBlocked(): boolean { return !!this.recoveryError }
-  async cacheInventory() { return this.cache ? this.cache.inventory() : [] }
-  cleanCache(operation: string, token: string): Promise<number> {
-    if (!this.cache || this.active || this.recoveryError) return Promise.reject(new UpdateCacheConflict('Desktop update cache cleanup is unavailable during an update.'))
-    const work = this.cacheWork.then(() => this.cache!.clean(operation, token))
+  async cacheInventory() { return this.cache ? this.cache.inventory() : { total_bytes: 0, cleanable_bytes: 0 } }
+  cleanCache() {
+    if (!this.cache) return Promise.resolve({ removed_bytes: 0 })
+    if (this.active) return Promise.reject(new UpdateCacheConflict('Desktop update cache cleanup is unavailable during an update.'))
+    const work = this.cacheWork.then(() => this.cache!.clean())
     this.cacheWork = work.then(() => {}, () => {})
     return work
   }
@@ -111,8 +111,7 @@ export class DesktopUpdateControl {
     const cacheWork = this.cacheWork
     this.active = Promise.resolve().then(async () => {
       try {
-        // Cache cleanup owns its selected files until its durable outcome is
-        // written. The updater cannot start a download halfway through unlink.
+        // Finish any admitted cleanup before the updater touches pending packages.
         await cacheWork
         await this.save()
         await this.updates.update()
@@ -170,26 +169,15 @@ export async function startDesktopUpdateBridge(control: Pick<DesktopUpdateContro
     const expected = Buffer.from(`Bearer ${token}`)
     if (!['127.0.0.1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress || '') || request.headers.host !== expectedHost ||
       request.headers.origin !== undefined || authorization.length !== expected.length || !timingSafeEqual(authorization, expected)) return reject(403)
-    const cleaning = request.method === 'POST' && request.url === '/storage/cache/clean'
     const length = Number(request.headers['content-length'] || 0)
-    if (request.headers['transfer-encoding'] !== undefined || !Number.isSafeInteger(length) || length < 0 || length > 4096 || !cleaning && length !== 0) return reject(400)
+    if (request.headers['transfer-encoding'] !== undefined || !Number.isSafeInteger(length) || length !== 0) return reject(400)
     try {
       if (request.method === 'GET' && request.url === '/storage/cache' && control.cacheInventory) {
-        response.end(JSON.stringify({ items: await control.cacheInventory() }))
+        response.end(JSON.stringify(await control.cacheInventory()))
         return
       }
-      if (cleaning && control.cleanCache) {
-        const chunks: Buffer[] = []
-        let size = 0
-        for await (const chunk of request) {
-          size += chunk.length
-          if (size > 4096) return reject(400)
-          chunks.push(Buffer.from(chunk))
-        }
-        let input: { operation_id?: unknown; token?: unknown }
-        try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { return reject(400) }
-        if (!input || Object.keys(input).some(key => key !== 'operation_id' && key !== 'token') || typeof input.operation_id !== 'string' || typeof input.token !== 'string') return reject(400)
-        response.end(JSON.stringify({ removed_bytes: await control.cleanCache(input.operation_id, input.token) }))
+      if (request.method === 'POST' && request.url === '/storage/cache/clean' && control.cleanCache) {
+        response.end(JSON.stringify(await control.cleanCache()))
         return
       }
       let state: DesktopUpdateState

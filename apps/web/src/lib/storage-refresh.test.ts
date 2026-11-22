@@ -16,7 +16,7 @@ describe('storage refresh coordination', () => {
     expect(read.mock.calls).toEqual([[false], [true]])
   })
 
-  it('coalesces polling and allows another read after an error', async () => {
+  it('coalesces snapshot requests and allows another read after an error', async () => {
     let finishRead!: () => void
     const first = new Promise<void>(resolve => { finishRead = resolve })
     const read = vi.fn(async (_refresh: boolean) => { if (read.mock.calls.length === 1) { await first; throw new Error('offline') } })

@@ -1,15 +1,5 @@
 package harness
 
-import (
-	"context"
-	"github.com/oines/astral/internal/domain"
-)
-
-// CreateStorageReplacement gives one durable cleanup operation a stable target.
-func (s *Service) CreateStorageReplacement(ctx context.Context, old domain.Session, id string) (domain.Session, error) {
-	return s.createSession(ctx, old.AgentID, old.Title, id, "im", true, old.Private)
-}
-
 // StorageBusy checks already-open runtimes without opening any Session.
 func (s *Service) StorageBusy() bool {
 	s.mu.Lock()

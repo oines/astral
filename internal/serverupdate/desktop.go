@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/oines/astral/internal/domain"
@@ -56,53 +55,36 @@ func (d *desktop) call(ctx context.Context, method, path string) (State, error) 
 	return state, nil
 }
 
-func (d *desktop) CacheInventory(ctx context.Context) ([]CacheItem, error) {
+func (d *desktop) CacheInventory(ctx context.Context) (int64, int64, error) {
 	var result struct {
-		Items []CacheItem `json:"items"`
+		Total     *int64 `json:"total_bytes"`
+		Cleanable *int64 `json:"cleanable_bytes"`
 	}
 	if err := d.exchange(ctx, "GET", "/storage/cache", nil, &result); err != nil {
-		return nil, err
+		return 0, 0, err
 	}
-	seen := map[string]bool{}
-	if result.Items == nil || len(result.Items) > 512 {
-		return nil, domain.Offline("Desktop cleanup inventory is invalid.")
+	if result.Total == nil || result.Cleanable == nil || *result.Cleanable < 0 || *result.Total < *result.Cleanable {
+		return 0, 0, domain.Offline("Desktop cache measurement is invalid.")
 	}
-	for _, item := range result.Items {
-		if !validCacheToken(item.Token) || seen[item.Token] || item.Kind != "update_cache" || item.Bytes < 0 || item.Name == "" || len(item.Name) > 255 || strings.ContainsAny(item.Name, "/\\\x00") {
-			return nil, domain.Offline("Desktop cleanup inventory is invalid.")
-		}
-		seen[item.Token] = true
-	}
-	return result.Items, nil
+	return *result.Total, *result.Cleanable, nil
 }
 
-func validCacheToken(token string) bool {
-	if !strings.HasPrefix(token, "desktop:") || len(token) != len("desktop:")+64 {
-		return false
-	}
-	_, err := hex.DecodeString(strings.TrimPrefix(token, "desktop:"))
-	return err == nil && token == strings.ToLower(token)
-}
-
-func (d *desktop) CleanCache(ctx context.Context, operationID, token string) (int64, error) {
-	if strings.TrimSpace(operationID) == "" || len(operationID) > 128 || !validCacheToken(token) {
-		return 0, domain.Invalid("A stable cleanup operation and Desktop cache token are required.")
-	}
+func (d *desktop) CleanCache(ctx context.Context) (int64, error) {
 	var result struct {
 		RemovedBytes *int64 `json:"removed_bytes"`
+		Error        string `json:"error"`
 	}
-	if err := d.exchange(ctx, "POST", "/storage/cache/clean", struct {
-		OperationID string `json:"operation_id"`
-		Token       string `json:"token"`
-	}{operationID, token}, &result); err != nil {
+	if err := d.exchange(ctx, "POST", "/storage/cache/clean", nil, &result); err != nil {
 		return 0, err
 	}
 	if result.RemovedBytes == nil || *result.RemovedBytes < 0 {
-		return 0, domain.Offline("Desktop cleanup did not return a valid outcome.")
+		return 0, domain.Offline("Desktop cache cleanup returned an invalid size.")
+	}
+	if result.Error != "" {
+		return *result.RemovedBytes, domain.Offline(result.Error)
 	}
 	return *result.RemovedBytes, nil
 }
-
 func (d *desktop) exchange(ctx context.Context, method, path string, input, output any) error {
 	var body io.Reader
 	if input != nil {

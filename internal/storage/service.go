@@ -23,8 +23,8 @@ type Config struct {
 	Busy            func() bool
 	Reclaimers      []func(context.Context) error
 	Updating        func(context.Context) bool
-	ExternalCleanup func(context.Context) ([]CleanupItem, error)
-	CleanExternal   func(context.Context, string, string) (int64, error)
+	ExternalCache   func(context.Context) (total, cleanable int64, err error)
+	CleanExternal   func(context.Context) (int64, error)
 	reclaimInterval time.Duration
 }
 type sessionEstimate struct {
@@ -34,26 +34,21 @@ type sessionEstimate struct {
 	State, Error   string
 }
 type Service struct {
-	config            Config
-	ctx               context.Context
-	cancel            context.CancelFunc
-	mu                sync.Mutex
-	estimate          Estimate
-	cache             map[string]sessionEstimate
-	archives          map[string]persistence.ArchiveInfo
-	estimateCancel    context.CancelFunc
-	reclaim           Reclaim
-	reclaimGeneration uint64
-	reclaimPersistMu  sync.Mutex
-	reclaimDirty      bool
-	reclaimStep       int
-	reclaimObserved   string
-	wake              chan struct{}
-	workers           sync.WaitGroup
-	cleanupMu         sync.Mutex
-	activeCleanup     map[string]bool
-	lastSnapshot      *Snapshot
-	partialBackups    map[string]bool
+	config         Config
+	ctx            context.Context
+	cancel         context.CancelFunc
+	mu             sync.Mutex
+	estimate       Estimate
+	cache          map[string]sessionEstimate
+	archives       map[string]persistence.ArchiveInfo
+	estimateSlot   chan struct{}
+	reclaim        Reclaim
+	reclaimPending bool
+	reclaimDone    chan struct{}
+	wake           chan struct{}
+	workers        sync.WaitGroup
+	cleanupMu      sync.Mutex
+	lastSnapshot   *Snapshot
 }
 
 func New(parent context.Context, config Config) *Service {
@@ -61,32 +56,7 @@ func New(parent context.Context, config Config) *Service {
 		config.Directory = canonical
 	}
 	ctx, cancel := context.WithCancel(parent)
-	s := &Service{config: config, ctx: ctx, cancel: cancel, estimate: Estimate{State: "idle"}, cache: map[string]sessionEstimate{}, archives: map[string]persistence.ArchiveInfo{}, reclaim: Reclaim{State: "idle"}, wake: make(chan struct{}, 1), activeCleanup: map[string]bool{}, partialBackups: map[string]bool{}}
-	if pending, err := config.Store.PendingMaintenance(ctx, cleanupKind); err == nil {
-		for _, raw := range pending {
-			var record cleanupRecord
-			if json.Unmarshal(raw, &record) == nil {
-				for _, item := range record.Candidates {
-					if item.Started && item.Kind == "upgrade_backup" {
-						s.partialBackups[item.Path] = true
-					}
-				}
-			}
-		}
-	}
-	var retained reclaimRecord
-	if err := config.Store.Maintenance(ctx, "storage_reclaim", "owner", &retained); err == nil {
-		s.reclaim, s.reclaimStep, s.reclaimObserved = retained.Reclaim, retained.Next, retained.ObservedDirtyToken
-		if s.reclaim.State == "running" {
-			s.reclaim.State = "queued"
-			s.reclaimDirty = true
-		}
-	} else if !domain.IsMissing(err) {
-		s.reclaim.State, s.reclaim.Error = "failed", err.Error()
-	}
-	if err := s.observeReclaimDirty(ctx); err != nil {
-		s.reclaim.Error = "Could not inspect pending database reclamation: " + err.Error()
-	}
+	s := &Service{config: config, ctx: ctx, cancel: cancel, estimate: Estimate{State: "idle"}, cache: map[string]sessionEstimate{}, archives: map[string]persistence.ArchiveInfo{}, reclaim: Reclaim{State: "idle"}, wake: make(chan struct{}, 1), estimateSlot: make(chan struct{}, 1)}
 	s.workers.Add(1)
 	go s.reclaimWorker()
 	return s
@@ -96,14 +66,16 @@ func (s *Service) Close(ctx context.Context) error {
 	s.cancel()
 	s.mu.Unlock()
 	done := make(chan struct{})
-	go func() { s.workers.Wait(); close(done) }()
+	go func() {
+		// Wait for active file cleanup to release its files before shutdown.
+		s.cleanupMu.Lock()
+		defer s.cleanupMu.Unlock()
+		s.workers.Wait()
+		close(done)
+	}()
 	select {
 	case <-done:
-		// The service context is canceled first to release a running VACUUM or
-		// blocked reader. Flush its last state with the shutdown owner's still
-		// live context, so an already observed failure cannot remain "running"
-		// on disk and turn into an automatic retry after a normal restart.
-		return s.persistReclaimContext(ctx)
+		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -123,22 +95,12 @@ func records[T any](ctx context.Context, store *persistence.Store, kind string) 
 	}
 	return out, nil
 }
-func (s *Service) Snapshot(ctx context.Context, agentID string) (Snapshot, error) {
+func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
 	s.mu.Lock()
 	if s.reclaim.State == "running" && s.lastSnapshot != nil {
 		out := *s.lastSnapshot
 		out.Estimate, out.Reclaim = s.estimate, s.reclaim
-		out.Agents = append([]Agent{}, out.Agents...)
 		s.mu.Unlock()
-		if agentID != "" {
-			filtered := out.Agents[:0]
-			for _, agent := range out.Agents {
-				if agent.AgentID == agentID {
-					filtered = append(filtered, agent)
-				}
-			}
-			out.Agents = filtered
-		}
 		out.Physical = s.physical(ctx)
 		return out, nil
 	}
@@ -222,7 +184,7 @@ func (s *Service) Snapshot(ctx context.Context, agentID string) (Snapshot, error
 		}
 	}
 	for _, agent := range agents {
-		if agent.Deletion || agentID != "" && agent.ID != agentID {
+		if agent.Deletion {
 			continue
 		}
 		row := Agent{AgentID: agent.ID, Name: agent.Name, Chats: []Chat{}, Sessions: []Session{}}
@@ -276,18 +238,9 @@ func (s *Service) Snapshot(ctx context.Context, agentID string) (Snapshot, error
 	}
 	sort.Slice(out.Agents, func(i, j int) bool { return out.Agents[i].LogicalBytes > out.Agents[j].LogicalBytes })
 	out.Physical = s.physical(ctx)
-	if out.Estimate.State == "idle" {
-		s.Refresh(false)
-		s.mu.Lock()
-		out.Estimate = s.estimate
-		s.mu.Unlock()
-	}
-	if agentID == "" {
-		s.mu.Lock()
-		cached := out
-		s.lastSnapshot = &cached
-		s.mu.Unlock()
-	}
+	s.mu.Lock()
+	s.lastSnapshot = &out
+	s.mu.Unlock()
 	return out, nil
 }
 
@@ -334,26 +287,32 @@ func estimateSessionGroup(ids []string, cache map[string]sessionEstimate) sessio
 	return result
 }
 
-func (s *Service) Refresh(cancel bool) {
+// Each explicit refresh measures after the preceding one. In particular, a
+// refresh following deletion cannot join a scan that started before deletion.
+func (s *Service) Refresh(ctx context.Context) error {
+	select {
+	case s.estimateSlot <- struct{}{}:
+		defer func() { <-s.estimateSlot }()
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if cancel {
-		if s.estimateCancel != nil {
-			s.estimateCancel()
-		} else {
-			now := time.Now().UTC()
-			s.estimate = Estimate{State: "canceled", UpdatedAt: &now}
-		}
-		return
+	if err := s.ctx.Err(); err != nil {
+		s.mu.Unlock()
+		return err
 	}
-	if s.estimate.State == "running" || s.ctx.Err() != nil {
-		return
-	}
-	ctx, stop := context.WithTimeout(s.ctx, 2*time.Minute)
-	s.estimateCancel = stop
-	s.estimate = Estimate{State: "running", UpdatedAt: s.estimate.UpdatedAt}
 	s.workers.Add(1)
-	go func() { defer s.workers.Done(); defer stop(); s.estimateAll(ctx) }()
+	s.estimate = Estimate{State: "running", UpdatedAt: s.estimate.UpdatedAt}
+	s.mu.Unlock()
+	defer s.workers.Done()
+	bounded, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	stop := context.AfterFunc(s.ctx, cancel)
+	defer stop()
+	s.estimateAll(bounded)
+	return ctx.Err()
 }
 func (s *Service) estimateAll(ctx context.Context) {
 	items, err := records[domain.Session](ctx, s.config.Store, "sessions")
@@ -420,7 +379,6 @@ func (s *Service) estimateAll(ctx context.Context) {
 	now := time.Now().UTC()
 	s.mu.Lock()
 	s.estimate = Estimate{State: state, UpdatedAt: &now, Error: message}
-	s.estimateCancel = nil
 	s.mu.Unlock()
 }
 func jsonBytes(v any) (int64, error) { raw, err := json.Marshal(v); return int64(len(raw)), err }

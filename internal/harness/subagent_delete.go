@@ -248,19 +248,16 @@ func (s *Service) deleteSubagentTree(ctx context.Context, id string, revision in
 			if err := tx.DeleteMaintenance(ctx, imReplyWatchKind, target); err != nil {
 				return err
 			}
-			if err := tx.Purge(ctx, "sessions", target, current.Revision); err != nil {
-				return err
-			}
-			return tx.MarkStorageReclaim(ctx)
+			return tx.Purge(ctx, "sessions", target, current.Revision)
 		})
 		if err != nil {
 			return err
 		}
 		s.removeDeletedRuntime(target)
 		s.notify(target)
-	}
-	if s.StorageChanged != nil {
-		s.StorageChanged()
+		if s.StorageChanged != nil {
+			s.StorageChanged()
+		}
 	}
 	return nil
 }

@@ -111,7 +111,7 @@ If space runs out, free space on the data and backup disks before retrying. Larg
 
 ## Review and clean storage
 
-Use **Settings → Data & storage** to review usage and follow the page's cleanup actions. Deleting a backup permanently removes that recovery copy. Keep independent backups you still need.
+Open **Settings → Data & storage** to see disk use and the data directory. **Cache and old backups** shows the amount currently eligible for cleanup. Astral keeps backups needed for recovery and newer Desktop installers awaiting installation. Keep a separate copy of any backup you want to retain long term.
 
 Conversation cleanup and backup cleanup have different effects; see [Conversations and history](/docs/usage/conversations/). Astral reclaims free database space in the background, so disk usage can fall later.
 

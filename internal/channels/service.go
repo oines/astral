@@ -41,8 +41,6 @@ type Service struct {
 	deletingAgents map[string]bool
 	StorageChanged func()
 	storageMu      sync.Mutex
-	storageWorkMu  sync.Mutex
-	storageRunning map[string]bool
 }
 type poller struct {
 	revision int64
@@ -324,6 +322,8 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.done = make(chan struct{})
+	s.workers.Add(1)
+	go func() { defer s.workers.Done(); s.maintainRetention() }()
 	go s.run()
 	return nil
 }
@@ -361,8 +361,6 @@ func (s *Service) run() {
 		persistence.ChangeKey{Kind: "connections"},
 		persistence.ChangeKey{Kind: "bindings"},
 		persistence.ChangeKey{Kind: "agents"},
-		persistence.ChangeKey{Kind: storageOperations},
-		persistence.ChangeKey{Kind: "storage_retention"},
 	)
 	defer watch.Close()
 	changed := watch.Changes()
@@ -418,7 +416,7 @@ func (s *Service) wakeReconcile() {
 }
 
 func (s *Service) reconcile() (time.Time, error) {
-	next, storageErr := s.reconcileStorage()
+	var next time.Time
 	connections, err := list[domain.Connection](s.ctx, s.Store, "connections")
 	if err != nil {
 		return next, err
@@ -482,7 +480,7 @@ func (s *Service) reconcile() (time.Time, error) {
 		}
 	}
 	s.mu.Unlock()
-	return next, storageErr
+	return next, nil
 }
 func (s *Service) setStatus(status Status) {
 	s.mu.Lock()
@@ -497,6 +495,34 @@ func (s *Service) Status(id string) Status {
 	}
 	return Status{ConnectionID: id, State: "stopped"}
 }
+func (s *Service) receiveObservation(ctx context.Context, account domain.Connection, event domain.Observation) error {
+	direct := !event.Self && event.Trigger != ""
+	autoBind := direct && account.AccessMode == "all"
+	if autoBind {
+		// Archive cleanup takes the same lock to choose its delivery watermark.
+		// It must see either no event yet, or a binding that protects this one.
+		s.bindings.Lock()
+		defer s.bindings.Unlock()
+	}
+	if _, err := s.archiveEvent(ctx, event); err != nil || !direct {
+		return err
+	}
+	sequence, err := s.Store.ObservationSequence(ctx, event.ID)
+	if err != nil {
+		return err
+	}
+	var binding domain.ConversationBinding
+	if autoBind {
+		binding, err = s.changeBindingLocked(ctx, event.ConversationID, "", &sequence, nil)
+	} else {
+		binding, err = s.activeBinding(ctx, event.ConversationID)
+	}
+	if err != nil || binding.ID == "" {
+		return err
+	}
+	return s.coverProbe(ctx, binding, sequence)
+}
+
 func (s *Service) poll(ctx context.Context, c domain.Connection) {
 	adapter, err := s.adapter(ctx, c)
 	if err != nil {
@@ -532,31 +558,8 @@ func (s *Service) poll(ctx context.Context, c domain.Connection) {
 					}
 					continue
 				}
-				event.Observation = normalizeSelf(event.Observation)
-				if _, pollErr = s.archiveEvent(ctx, event.Observation); pollErr != nil {
+				if pollErr = s.receiveObservation(ctx, c, normalizeSelf(event.Observation)); pollErr != nil {
 					break
-				}
-				if !event.Observation.Self && event.Observation.Trigger != "" {
-					sequence, seqErr := s.Store.ObservationSequence(ctx, event.Observation.ID)
-					if seqErr != nil {
-						pollErr = seqErr
-						break
-					}
-					var binding domain.ConversationBinding
-					if c.AccessMode == "all" {
-						binding, pollErr = s.bind(ctx, event.Conversation.ID, "", &sequence)
-					} else {
-						binding, pollErr = s.activeBinding(ctx, event.Conversation.ID)
-					}
-					if pollErr != nil {
-						break
-					}
-					if binding.ID != "" {
-						pollErr = s.coverProbe(ctx, binding, sequence)
-					}
-					if pollErr != nil {
-						break
-					}
 				}
 			}
 			if pollErr == nil && batch.NextCursor != offset.Value {
