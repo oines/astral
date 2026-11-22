@@ -162,9 +162,23 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   const label = macSigned ? 'Mac signed candidate' : 'unsigned candidate'
   const macStatus = macSigned ? (notarized ? 'verified signed and notarized' : 'verified signed; Apple notarization is pending') + '; final-byte evidence is in mac-signing-report.json' : 'not performed'
   const hostMigration = formats.host_schema >= 4 ? 'The Host 3 → 4 migration restores visibility of Sessions archived while still bound to IM. It appends an unarchived current revision while preserving every earlier revision, IM event and Core history entry; ordinary archived Sessions stay archived. Desktop keeps its existing schema-3-core-11/ data directory.' : 'The supported public data baseline is Host 3 / Core 11.'
-  const capabilities = `Each group chat and topic now has a Use group context switch, on by default. Turn it off to archive ordinary group messages without adding them to the Bot's session. Messages addressed directly to the Bot appear in the Astral conversation, including when you reopen an existing session.
+  const capabilities = `## What's new
 
-On compatible models, switching between active reasoning levels can reuse the provider's reported token usage for the same conversation history. New messages are counted from that baseline.
+- Changing reasoning or sampling settings can reuse the provider's reported token count when the model and earlier input match. Older sessions may use an estimate until their next successful response with complete usage. Manual compaction and context-overflow recovery skip a redundant scan of the history they are about to summarize.
+- Copy a regular file between authorized Computers with \`POST /v1/computers/files/copy\`. Either Computer ID defaults to the caller. The Server streams the bytes to the destination Daemon, which replaces the file when the transfer completes. Update the receiving Daemon before using this endpoint.
+- In an Assistant reply, a Markdown link to \`astral-file://<computer_id>?path=<URL-encoded-path>\` opens the file in the Web preview pane. Markdown images can display inline. Uploaded attachments and historical file-ID links remain usable.
+- Settings → Data & storage now lists chats and unbound conversations together. Search or filter by Bot, clear a chat's local archive, adjust retention, or reset its current session. Cache and old backup cleanup reports the bytes removed and preserves recovery backups and newer Desktop installers.
+- Installer-managed Linux Servers can use one-click updates with custom systemd drop-ins and additional service arguments. Astral still checks the installation owner, the release executable and the active service's main process.
+
+### Updating Computer API clients
+
+Use \`GET .../content\` to stream attachments, message parts, stickers, essence media and avatars. It replaces the corresponding \`POST .../download\` routes. The bundled Python client accepts \`--output FILE --force\` to replace an existing download after the response completes. Use direct Computer path links in Web replies in place of \`POST /v1/files/reference\`.
+
+Send a file and caption as ordered \`parts\` in \`POST /v1/im/messages\` in place of \`POST /v1/im/files\`. Discover and call Telegram operations through \`/v1/accounts/{id}/operations\` and \`/v1/accounts/{id}/operations/{operation\`. The Telegram-specific operation aliases have been removed.
+
+## Additional features and upgrade information
+
+Each group chat and topic has a Use group context switch, on by default. Turn it off to archive ordinary group messages without adding them to the Bot's session. Messages addressed directly to the Bot appear in the Astral conversation, including when you reopen an existing session.
 
 Control Astral API access when adding a Computer or in its details. New remote Computers start with API access off. Turning it off revokes command API credentials and blocks new event deliveries from that Computer. Bots can still run commands and work with files on it. Existing compatible Daemons work with this setting after updating the Server.
 
