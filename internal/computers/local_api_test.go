@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/transport"
@@ -96,7 +95,7 @@ func TestDaemonLocalAPIPortPersistsAndOccupiedPortFails(t *testing.T) {
 	}
 }
 
-func TestDaemonWakeSingleRPCAndFixedLocalCooldown(t *testing.T) {
+func TestDaemonWakeForwardsServerCooldown(t *testing.T) {
 	var calls atomic.Int32
 	d, _ := securityDaemon(t, func(_ context.Context, request transport.Request, out *transport.Responder) error {
 		calls.Add(1)
@@ -113,32 +112,13 @@ func TestDaemonWakeSingleRPCAndFixedLocalCooldown(t *testing.T) {
 	if err := d.ensureLocalAPI(); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest("POST", d.Hello.LocalAPIURL+"/hooks/endpoint", strings.NewReader(`{"event_id":"one","text":"hello"}`))
-	response := httptest.NewRecorder()
-	d.localAPI.Handler.ServeHTTP(response, request)
-	if response.Code != 429 || calls.Load() != 1 {
-		t.Fatalf("one event did not use one RPC: %d %d", response.Code, calls.Load())
-	}
-	d.mu.Lock()
-	until := d.wakeBlocked["endpoint"]
-	d.mu.Unlock()
-	body := &forbiddenBody{}
-	request = httptest.NewRequest("POST", d.Hello.LocalAPIURL+"/hooks/endpoint", body)
-	response = httptest.NewRecorder()
-	d.localAPI.Handler.ServeHTTP(response, request)
-	d.mu.Lock()
-	after := d.wakeBlocked["endpoint"]
-	d.mu.Unlock()
-	if response.Code != 429 || response.Header().Get("Retry-After") == "" || response.Header().Get("Connection") != "close" || body.reads != 0 || calls.Load() != 1 || !after.Equal(until) {
-		t.Fatal("local cooldown read a body, added an RPC, or extended its deadline")
-	}
-	d.mu.Lock()
-	d.wakeBlocked["endpoint"] = time.Now().Add(-time.Second)
-	d.mu.Unlock()
-	request = httptest.NewRequest("POST", d.Hello.LocalAPIURL+"/hooks/endpoint", strings.NewReader(`{"event_id":"one","text":"hello"}`))
-	d.localAPI.Handler.ServeHTTP(httptest.NewRecorder(), request)
-	if calls.Load() != 2 {
-		t.Fatal("expired cooldown did not allow another request")
+	for want := int32(1); want <= 2; want++ {
+		request := httptest.NewRequest("POST", d.Hello.LocalAPIURL+"/hooks/endpoint", strings.NewReader(`{"event_id":"one","text":"hello"}`))
+		response := httptest.NewRecorder()
+		d.localAPI.Handler.ServeHTTP(response, request)
+		if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "60" || calls.Load() != want {
+			t.Fatalf("wake request %d: status %d, Retry-After %q, RPC calls %d", want, response.Code, response.Header().Get("Retry-After"), calls.Load())
+		}
 	}
 }
 

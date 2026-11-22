@@ -9,7 +9,7 @@ One session can work across several authorized computers—for example, crunchin
 
 First [connect the computers and authorize the same Bot](/docs/computers/connect/). Give them clear names (like “Data server” and “Office computer”), then state who does what:
 
-> Analyze `/home/mei/data/sales.csv` on the data server to build this month's sales summary, then transfer the summary to the office computer's report folder and create charts there. Verify the transfer method first—don't assume matching paths.
+> On the data server, summarize this month’s sales from `/home/mei/data/sales.csv` into `summary.csv`. Copy it to the existing `reports` directory on the office computer and use it there to make the charts.
 
 Pick a computer from the input bar while idle, or let the Bot switch between authorized machines during a task. Ask it to report the machine name and full path—or expand the execution records—whenever you want to verify.
 

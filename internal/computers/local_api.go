@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,7 +20,6 @@ import (
 
 const localWakeBodyLimit = 64 << 10
 const localWakeReadTimeout = 10 * time.Second
-const localWakeBlockLimit = 256
 
 func validLocalAPIURL(raw string) bool {
 	u, err := url.Parse(raw)
@@ -87,7 +85,6 @@ func (d *Daemon) startLocalAPILocked() error {
 	}
 	d.Hello.LocalAPIURL = "http://" + listener.Addr().String()
 	d.wakeSlots = make(chan struct{}, 8)
-	d.wakeBlocked = map[string]time.Time{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /hooks/{id}", d.receiveWake)
 	mux.HandleFunc("/v1/", d.receiveCommandAPI)
@@ -123,7 +120,7 @@ func (d *Daemon) receiveCommandAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gateway expects a small JSON body", http.StatusBadRequest)
 		return
 	}
-	d.forwardLocal(w, r, peer, "gateway", GatewayRequest{Binding: binding, APIToken: apiToken, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Range: r.Header.Get("Range"), Body: raw, Intent: r.Header.Get("Idempotency-Key")}, "")
+	d.forwardLocal(w, r, peer, "gateway", GatewayRequest{Binding: binding, APIToken: apiToken, Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Range: r.Header.Get("Range"), Body: raw, Intent: r.Header.Get("Idempotency-Key")})
 }
 
 func localWakeFailure(w http.ResponseWriter, status int, code, message string) {
@@ -149,27 +146,16 @@ func (d *Daemon) receiveWake(w http.ResponseWriter, r *http.Request) {
 		}
 		localWakeFailure(w, status, code, message)
 	}
-	id := r.PathValue("id")
 	if r.URL.RawQuery != "" {
 		reject(http.StatusBadRequest, "invalid", "Event endpoints do not accept query parameters.")
 		return
 	}
-	now := time.Now()
 	d.mu.Lock()
-	until := d.wakeBlocked[id]
-	if !until.After(now) {
-		delete(d.wakeBlocked, id)
-	}
 	var peer *transport.Peer
 	if d.connectedLocked(d.connection) {
 		peer = d.connection.peer
 	}
 	d.mu.Unlock()
-	if until.After(now) {
-		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(until.Sub(now).Seconds())))))
-		reject(http.StatusTooManyRequests, "rate_limited", "This endpoint is temporarily paused after too many events.")
-		return
-	}
 	if peer == nil {
 		reject(http.StatusServiceUnavailable, "offline", "The Daemon is not connected to its Server.")
 		return
@@ -208,43 +194,10 @@ func (d *Daemon) receiveWake(w http.ResponseWriter, r *http.Request) {
 		reject(http.StatusBadRequest, "invalid", "Event endpoints expect a JSON object.")
 		return
 	}
-	d.forwardLocal(w, r, peer, "wake", WakeRequest{EndpointID: id, Body: raw}, id)
+	d.forwardLocal(w, r, peer, "wake", WakeRequest{EndpointID: r.PathValue("id"), Body: raw})
 }
 
-func (d *Daemon) cacheWakeLimit(id string, response GatewayResponse) {
-	if id == "" || response.Status != http.StatusTooManyRequests {
-		return
-	}
-	seconds, err := strconv.Atoi(response.Headers.Get("Retry-After"))
-	if err != nil || seconds <= 0 {
-		return
-	}
-	now := time.Now()
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	for key, until := range d.wakeBlocked {
-		if !until.After(now) {
-			delete(d.wakeBlocked, key)
-		}
-	}
-	if previous := d.wakeBlocked[id]; !previous.IsZero() && previous.After(now) {
-		return
-	}
-	if len(d.wakeBlocked) >= localWakeBlockLimit {
-		var oldestID string
-		var oldest time.Time
-		for key, until := range d.wakeBlocked {
-			if oldestID == "" || until.Before(oldest) {
-				oldestID, oldest = key, until
-			}
-		}
-		delete(d.wakeBlocked, oldestID)
-	}
-	until := now.Add(time.Duration(min(seconds, 60)) * time.Second)
-	d.wakeBlocked[id] = until
-}
-
-func (d *Daemon) forwardLocal(w http.ResponseWriter, r *http.Request, peer *transport.Peer, method string, call any, wakeID string) {
+func (d *Daemon) forwardLocal(w http.ResponseWriter, r *http.Request, peer *transport.Peer, method string, call any) {
 	var response GatewayResponse
 	meta, body, err := peer.Call(r.Context(), method, call, nil)
 	if err == nil {
@@ -266,7 +219,6 @@ func (d *Daemon) forwardLocal(w http.ResponseWriter, r *http.Request, peer *tran
 		localWakeFailure(w, status, code, err.Error())
 		return
 	}
-	d.cacheWakeLimit(wakeID, response)
 	for key, values := range response.Headers {
 		w.Header()[key] = values
 	}

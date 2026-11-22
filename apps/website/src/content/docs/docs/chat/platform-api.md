@@ -64,6 +64,16 @@ The response contains the original bytes. Here, `/tmp/report.zip` is on the comp
 
 There is no file-size or total-transfer-time limit. A canceled request or disconnected connection stops the transfer. A single `Range` request reads from the selected offset on the source Daemon, without transferring the preceding bytes to the Server.
 
+## Copy a file to another computer
+
+Call `POST /v1/computers/files/copy` to send a regular file to a path on another authorized computer. For example, this body copies a report from the calling computer to an office computer. Replace the target ID with one from `GET /v1/computers`.
+
+```json
+{"source_path":"reports/summary.csv","target_computer_id":"<office-computer-id>","target_path":"summary.csv"}
+```
+
+To pull from another computer, set `source_computer_id`. Either ID defaults to the calling computer when omitted. Each relative path starts at the Bot's AgentHome on its own computer. Both computers must be online. The destination directory must already exist. A successful copy atomically replaces an existing regular file and returns its computer ID, full path, size and media type. A failed transfer before replacement leaves the original intact. When using the Python helper for a long copy, increase `--timeout` to allow time for the response.
+
 ## Read original file byte ranges
 
 The `.../content` endpoints stream original bytes without saving a file. They accept one `Range` header when the source has a known positive size, for example `bytes=1048576-2097151`, `bytes=1048576-`, or `bytes=-65536`. A valid range returns **206**, `Accept-Ranges: bytes`, and the matching `Content-Range` and `Content-Length`. An invalid, multiple, or unsatisfiable range returns **416** with `Content-Range: bytes */<size>`.

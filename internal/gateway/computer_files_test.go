@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/oines/astral/internal/channels"
+	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/httpcontract"
 	"github.com/oines/astral/internal/testkit"
@@ -94,6 +96,133 @@ func readComputerFileResponse(t *testing.T, response *http.Response) []byte {
 		t.Fatal(err)
 	}
 	return body
+}
+
+func (f computerFileFixture) copyFile(t *testing.T, req CopyComputerFileRequest, wantStatus int) CopyComputerFileResponse {
+	t.Helper()
+	response, err := f.client.Post(f.source.APIURL+"/v1/computers/files/copy", "application/json", bytes.NewReader(testkit.JSON(req)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readComputerFileResponse(t, response)
+	if response.StatusCode != wantStatus {
+		t.Fatalf("copy returned HTTP %d, want %d: %s", response.StatusCode, wantStatus, body)
+	}
+	var result CopyComputerFileResponse
+	if wantStatus == http.StatusOK {
+		if err := json.Unmarshal(body, &result); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return result
+}
+
+func TestComputerFileCopyBetweenAuthorizedComputers(t *testing.T) {
+	f := newComputerFileFixture(t)
+	// The calling command's CWD is outside AgentHome. Each relative path
+	// belongs to the AgentHome of the Computer selected for that endpoint.
+	for _, b := range []domain.ExecutionBinding{f.source, f.target} {
+		if err := os.WriteFile(filepath.Join(b.AgentHome, "source.bin"), []byte(b.ComputerID), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, test := range []struct {
+		name, sourceID, targetID string
+		from, to                 domain.ExecutionBinding
+	}{
+		{"push", "", f.target.ComputerID, f.source, f.target},
+		{"pull", f.target.ComputerID, "", f.target, f.source},
+		{"both omitted", "", "", f.source, f.source},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := CopyComputerFileRequest{SourceComputerID: test.sourceID, SourcePath: "source.bin", TargetComputerID: test.targetID, TargetPath: "copied.bin"}
+			result := f.copyFile(t, req, http.StatusOK)
+			expectedPath := filepath.Join(test.to.AgentHome, req.TargetPath)
+			if result.ComputerID != test.to.ComputerID || result.Path != expectedPath || result.Size != int64(len(test.from.ComputerID)) || result.MediaType != "application/octet-stream" {
+				t.Fatalf("wrong copy metadata: %+v", result)
+			}
+			got, err := os.ReadFile(expectedPath)
+			if err != nil || string(got) != test.from.ComputerID {
+				t.Fatalf("destination %q contains %q: %v", expectedPath, got, err)
+			}
+		})
+	}
+	for _, req := range []CopyComputerFileRequest{{SourcePath: "source.bin"}, {TargetPath: "copied.bin"}, {SourcePath: "x\x00y", TargetPath: "copied.bin"}} {
+		f.copyFile(t, req, http.StatusBadRequest)
+	}
+	f.p.Agent.AllowedComputers = []string{f.source.ComputerID}
+	if err := f.p.Harness.SaveAgent(f.p.Context, &f.p.Agent); err != nil {
+		t.Fatal(err)
+	}
+	// A missing source path must not hide the target's authorization failure.
+	f.copyFile(t, CopyComputerFileRequest{SourcePath: "missing.bin", TargetComputerID: f.target.ComputerID, TargetPath: "forbidden.bin"}, http.StatusForbidden)
+	f.copyFile(t, CopyComputerFileRequest{SourceComputerID: f.target.ComputerID, SourcePath: "source.bin", TargetPath: "forbidden.bin"}, http.StatusForbidden)
+}
+
+func TestComputerFileCopyTemporaryComputerScope(t *testing.T) {
+	f := newComputerFileFixture(t)
+	p, ctx := f.p, f.p.Context
+	url := p.Daemons[0].Credentials.ServerURL
+	enrollment, err := p.Hub.Enroll(ctx, url, computers.EnrollmentOptions{Temporary: true, OwnerSessionID: p.Session.ID, OwnerAgentID: p.Agent.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemon, err := computers.NewDaemon(t.TempDir(), computers.Credentials{ServerURL: url, Temporary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemon.Hello.InitialCWD = t.TempDir()
+	daemon.Credentials, err = p.Hub.Register(ctx, enrollment.Enrollment.ID, computers.EnrollmentRequest{Token: enrollment.Token, Hello: daemon.Hello})
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemon.Credentials.ServerURL = url
+	p.Daemons = append(p.Daemons, daemon)
+	go func() { _ = daemon.Connect(ctx) }()
+	id := daemon.Credentials.ComputerID
+	testkit.Await(t, ctx, func() bool { return p.Hub.Status(domain.Computer{Meta: domain.Meta{ID: id}}).Online })
+	if err := os.WriteFile(filepath.Join(f.target.AgentHome, "empty.bin"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	copied := f.copyFile(t, CopyComputerFileRequest{SourceComputerID: f.target.ComputerID, SourcePath: "empty.bin", TargetComputerID: id, TargetPath: "received.bin"}, http.StatusOK)
+	path := filepath.Join(daemon.Hello.InitialCWD, "received.bin")
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) != 0 || copied.ComputerID != id || copied.Path != path || copied.Size != 0 {
+		t.Fatalf("remote-to-remote empty copy: result=%+v bytes=%d err=%v", copied, len(data), err)
+	}
+	if err := os.WriteFile(filepath.Join(f.source.AgentHome, "local.bin"), []byte("temporary copy"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	push := CopyComputerFileRequest{SourcePath: "local.bin", TargetComputerID: id, TargetPath: "remote.bin"}
+	pull := CopyComputerFileRequest{SourceComputerID: id, SourcePath: "remote.bin", TargetPath: "returned.bin"}
+	f.copyFile(t, push, http.StatusOK)
+	for _, child := range []bool{true, false} {
+		session, err := p.Harness.CreateSession(ctx, p.Agent.ID, "Another Session")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if child {
+			session.SubagentParentID = p.Session.ID
+			if err := p.Store.Save(ctx, "sessions", &session.Meta, &session); err != nil {
+				t.Fatal(err)
+			}
+		}
+		caller := f
+		caller.source, err = p.Hub.Bind(ctx, p.Agent.ID, session.ID, f.source.ComputerID, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		caller.client = testkit.ComputerAPI(t, p, caller.source)
+		if child {
+			caller.copyFile(t, pull, http.StatusOK)
+		} else {
+			caller.copyFile(t, push, http.StatusForbidden)
+			caller.copyFile(t, pull, http.StatusForbidden)
+		}
+	}
+	if p.Hub.ComputerAPIEnabled(id) {
+		t.Fatal("file transfer enabled Astral API on a temporary Computer")
+	}
 }
 
 func TestComputerFileContentBinaryRangesAndEmptyFile(t *testing.T) {
@@ -288,7 +417,7 @@ func TestComputerFileContentRechecksTargetPermissionsAndConnection(t *testing.T)
 	}
 }
 
-func TestComputerFileContentStreamsPastToolReadLimit(t *testing.T) {
+func TestComputerFileContentAndCopyStreamPastToolLimit(t *testing.T) {
 	f := newComputerFileFixture(t)
 	path := filepath.Join(t.TempDir(), "over-32-MiB.bin")
 	file, err := os.Create(path)
@@ -321,6 +450,17 @@ func TestComputerFileContentStreamsPastToolReadLimit(t *testing.T) {
 	}
 	if response.Header.Get("Content-Length") != strconv.FormatInt(size, 10) {
 		t.Fatalf("large stream lost its exact length: %v", response.Header)
+	}
+	copied := f.copyFile(t, CopyComputerFileRequest{SourceComputerID: f.target.ComputerID, SourcePath: path, TargetPath: "large-copy.bin"}, http.StatusOK)
+	targetFile, err := os.Open(filepath.Join(f.source.AgentHome, "large-copy.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer targetFile.Close()
+	actual.Reset()
+	n, err = io.Copy(actual, targetFile)
+	if err != nil || n != size || copied.Size != size || !bytes.Equal(actual.Sum(nil), want.Sum(nil)) {
+		t.Fatalf("large copy changed: read %d bytes, returned %+v, err %v", n, copied, err)
 	}
 }
 
@@ -370,5 +510,58 @@ func TestComputerFileContentRequestCancellationDoesNotPoisonNextRead(t *testing.
 	response = f.get(t, f.target.ComputerID, path, "bytes=0-3")
 	if body := readComputerFileResponse(t, response); response.StatusCode != 206 || !bytes.Equal(body, make([]byte, 4)) {
 		t.Fatalf("cancelled transfer poisoned the next read: status=%d body=%q", response.StatusCode, body)
+	}
+}
+
+func TestComputerFileCopyCancelledBeforeCommit(t *testing.T) {
+	f := newComputerFileFixture(t)
+	path := filepath.Join(f.source.AgentHome, "large.bin")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(128 << 20); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "existing.bin")
+	if err := os.WriteFile(target, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(f.p.Context)
+	defer cancel()
+	copyRequest := CopyComputerFileRequest{SourcePath: path, TargetComputerID: f.target.ComputerID, TargetPath: target}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.source.APIURL+"/v1/computers/files/copy", bytes.NewReader(testkit.JSON(copyRequest)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	done := make(chan error, 1)
+	go func() {
+		res, err := f.client.Do(req)
+		if err == nil {
+			res.Body.Close()
+		}
+		done <- err
+	}()
+	countFiles := func() int {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(entries)
+	}
+	testkit.Await(t, f.p.Context, func() bool { return countFiles() == 2 })
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("interrupted copy returned %v", err)
+	}
+	testkit.Await(t, f.p.Context, func() bool { return countFiles() == 1 })
+	if data, err := os.ReadFile(target); err != nil || string(data) != "original" {
+		t.Fatalf("interrupted copy changed the original file: %q, %v", data, err)
 	}
 }

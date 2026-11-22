@@ -50,7 +50,6 @@ type Daemon struct {
 	gateways       map[string]*localGateway
 	localAPI       *http.Server
 	localListener  net.Listener
-	wakeBlocked    map[string]time.Time
 	wakeSlots      chan struct{}
 	processes      map[string]*daemonProcess
 	apiTokens      map[string]*daemonProcess
@@ -460,7 +459,7 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 	}()
 	d.mu.Lock()
 	connected := d.connectedLocked(generation)
-	if connected && (request.Method == "file.write" || request.Method == "file.mkdir") {
+	if connected && (request.Method == "file.write" || request.Method == "file.mkdir" || request.Method == FileCopyToMethod) {
 		generation.mutations.Add(1)
 		defer generation.mutations.Done()
 	}
@@ -592,10 +591,7 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 		if err != nil || !stat.Mode().IsRegular() {
 			return domain.Invalid("file must be a regular file")
 		}
-		info := FileInfo{Path: path.Path, Name: stat.Name(), Size: stat.Size(), ModTime: stat.ModTime(), MediaType: mime.TypeByExtension(filepath.Ext(path.Path))}
-		if info.MediaType == "" {
-			info.MediaType = "application/octet-stream"
-		}
+		info := FileInfo{Path: path.Path, Name: stat.Name(), Size: stat.Size(), ModTime: stat.ModTime(), MediaType: fileMediaType(path.Path)}
 		if call.Version != "" {
 			hash := sha256.New()
 			if _, err = copyContext(ctx, hash, file); err != nil {
@@ -633,6 +629,12 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 			return err
 		}
 		return out.JSON(struct{}{})
+	case FileCopyToMethod:
+		info, err := receiveCopiedFile(ctx, fs, call.Path, call.Length, request.Body)
+		if err != nil {
+			return err
+		}
+		return out.Headers(info)
 	case "file.upload":
 		return d.storeMedia(ctx, call.Binding.AgentID, call.Path, request.Body, out)
 	default:
@@ -672,12 +674,16 @@ func (d *Daemon) storeMedia(ctx context.Context, agentID, name string, input io.
 	if err = file.Close(); err != nil {
 		return err
 	}
-	info := FileInfo{Path: path, Name: name, Size: size, ModTime: time.Now().UTC(), Version: hex.EncodeToString(hash.Sum(nil)), MediaType: mime.TypeByExtension(filepath.Ext(name))}
-	if info.MediaType == "" {
-		info.MediaType = "application/octet-stream"
-	}
+	info := FileInfo{Path: path, Name: name, Size: size, ModTime: time.Now().UTC(), Version: hex.EncodeToString(hash.Sum(nil)), MediaType: fileMediaType(name)}
 	complete = true
 	return out.JSON(info)
+}
+
+func fileMediaType(path string) string {
+	if mediaType := mime.TypeByExtension(filepath.Ext(path)); mediaType != "" {
+		return mediaType
+	}
+	return "application/octet-stream"
 }
 
 func copyContext(ctx context.Context, out io.Writer, in io.Reader) (int64, error) {

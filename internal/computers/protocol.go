@@ -16,6 +16,9 @@ import (
 // Older peers continue to use process.start followed by process.output.
 const ProcessStreamCapability = "process.start_stream"
 
+// FileCopyToMethod receives a complete file stream at a caller-selected path.
+const FileCopyToMethod = "file.copyTo"
+
 // DaemonUpdateCapability triggers a Host-initiated managed Daemon update over
 // the authenticated Computer tunnel.
 const DaemonUpdateCapability = "management.update"

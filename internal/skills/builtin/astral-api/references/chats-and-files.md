@@ -16,6 +16,7 @@ Subagents can do authorized reads. Their results go to their parent, who handles
 
 Decide whether the user needs original bytes, a downloadable Web link, or delivery to a chat.
 
+- **Copy a file between Computers.** POST `/v1/computers/files/copy` with `source_path` and `target_path`. Set either `source_computer_id` or `target_computer_id` (or both) using IDs from `GET /v1/computers`. Omitted IDs use the calling Computer. Relative paths start at the Bot's AgentHome on each Computer. The destination directory must exist. The response gives the final Computer, path, size and media type. For a long copy, increase the helper's `--timeout` to allow time for the success response.
 - **Read a regular file from another allowed Computer.** Resolve the Computer ID, then GET `/v1/computers/{id}/files/content?path=…` with the source path URL-encoded. Relative source paths start at that Bot's AgentHome on the target Computer. Save the streamed response to a path on the calling Computer when a local copy is needed.
 - **Retrieve an IM original.** Follow the attachment's returned content URL to read bytes, or its download operation to save them to an explicit destination on the calling Computer. Attachment names and preview metadata alone do not provide the original file.
 - **Share a Web download link.** Create a file reference for the existing source file with `POST /v1/files/reference` and use the returned `astral-file://` URI. Set `snapshot` when the user needs the link to refer to the current version.

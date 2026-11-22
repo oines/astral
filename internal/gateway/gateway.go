@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -373,7 +372,7 @@ func History(ctx context.Context, h *harness.Service, id, cursor string, limit i
 	for i, record := range page.Records {
 		entries[i] = record.Entry
 		if !media {
-			RemoveImageData(reflect.ValueOf(&entries[i]))
+			RemoveImageData(&entries[i])
 		}
 	}
 	return HistoryPage{Entries: entries, NextCursor: page.Next, HeadID: head}, nil
@@ -381,35 +380,26 @@ func History(ctx context.Context, h *harness.Service, id, cursor string, limit i
 
 // RemoveImageData operates only on owned history/event copies. The payload
 // remains available through the authenticated history image and export APIs.
-func RemoveImageData(value reflect.Value) {
-	if !value.IsValid() {
-		return
-	}
-	if value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
-		if !value.IsNil() {
-			RemoveImageData(value.Elem())
-		}
-		return
-	}
-	if value.Kind() == reflect.Struct {
-		field := value.FieldByName("Type")
-		if field.IsValid() && field.Kind() == reflect.String && field.String() == "image" {
-			data := value.FieldByName("Data")
-			if data.IsValid() && data.CanSet() {
-				data.SetZero()
+func RemoveImageData(entry *sessions.Entry) {
+	strip := func(parts []sessions.Content) {
+		for i := range parts {
+			if parts[i].Type == "image" {
+				parts[i].Data = nil
 			}
 		}
-		for i := 0; i < value.NumField(); i++ {
-			if value.Type().Field(i).IsExported() {
-				RemoveImageData(value.Field(i))
-			}
+	}
+	if entry.Message != nil {
+		strip(entry.Message.Content)
+	}
+	if entry.Tool != nil && entry.Tool.Result != nil {
+		strip(entry.Tool.Result.Content)
+	}
+	if input := entry.Input; input != nil {
+		if input.Message != nil {
+			strip(input.Message.Content)
 		}
-	} else if value.Kind() == reflect.Slice || value.Kind() == reflect.Array {
-		if value.Type().Elem().Kind() == reflect.Uint8 {
-			return
-		}
-		for i := 0; i < value.Len(); i++ {
-			RemoveImageData(value.Index(i))
+		for _, context := range input.Contexts {
+			strip(context.Content)
 		}
 	}
 }

@@ -20,7 +20,7 @@ python3 '<absolute path to astral-api/scripts/astral_api.py>' --base-url '<local
 1. Use `capabilities` to read `GET /v1/capabilities`. Read the matching capability's notes, examples, and schema with `capabilities <id>` or follow its returned `read_url` with `request GET`.
 2. Resolve exact resource IDs and obtain the intended effect from the user's request. If the operation requires a revision, read the target's current revision first.
 3. Use `request METHOD PATH` with the live contract's method and path. Pass a JSON request body using `--body-file FILE` or `--body-file -` for stdin. Pass `--idempotency-key KEY` and `--range VALUE` when the operation requires them. The CLI reads the active command's `ASTRAL_API_TOKEN` from its environment.
-4. Keep large responses in a local file or filter them inside the command. Use `--output FILE` with a new file path for streamed bytes. An HTTP error exits nonzero. After an uncertain write, use the operation's read or receipt workflow to verify the outcome before retrying.
+4. Keep large responses in a local file or filter them inside the command. Use `--output FILE` to stream bytes to a new file. Add `--force` to replace an existing file after a successful download. An HTTP error exits nonzero. After an uncertain write, use the operation's read or receipt workflow to verify the outcome before retrying.
 
 Use the CLI for authenticated `/v1/` operations. For local programs delivering anonymous hook events, follow the hook's own `trigger_url` and the [event delivery instructions](references/schedules-and-hooks.md).
 

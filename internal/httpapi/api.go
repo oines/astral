@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -787,7 +786,7 @@ func (a *API) sessionRoutes() {
 			return core.Entry{}, err
 		}
 		entry, err := session.History().Get(r.Context(), r.PathValue("entry"))
-		gateway.RemoveImageData(reflect.ValueOf(&entry))
+		gateway.RemoveImageData(&entry)
 		return entry, err
 	})
 }

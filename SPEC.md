@@ -1036,6 +1036,7 @@ Telegram 贴纸的接收与 `sendSticker` 回执均保留原件的文件引用�
 | 历史读取 | `GET /v1/sessions/{id}/history` | 分页读取文本，或围绕搜索位置展开前后文与长文本范围 |
 | 原始运行记录 | `GET /v1/sessions/{id}/rollout` | 读取原始分支历史；`trace=true` 查看目标 Session 的操作记录，包含 Run 状态与错误 |
 | 可用 Computer | `GET /v1/computers` | 当前 Agent 的允许集合和状态 |
+| Computer 文件直传 | `POST /v1/computers/files/copy` | 在两台有权访问的电脑间流式复制普通文件，目标 Daemon 收到完整内容后原子替换目标文件 |
 | Computer 文件内容 | `GET /v1/computers/{id}/files/content?path=…` | 从明确指定的授权 Computer 流式读取普通文件；路径由目标 Daemon 解析，支持源端 seek 的单段 Range |
 | 可用模型 | `GET /v1/models` | 仅列出当前 `available` 的 Profile，提供选择 ID、有效限制、推理默认值与完整推理 controls；不返回连接凭据 |
 | 主动发文本 | `POST /v1/im/messages` | 向指定的可用 Conversation 发送文本 |
@@ -1143,6 +1144,8 @@ HTTP 接收成功、平台接收上传、最终送达是不同事实。send_mess
 工作文件、输入附件的本地副本、生成的图像或文档、需要历史一致性的文件版本保留在来源 Computer。Server 保存引用与元数据，按需以有界内存缓冲透传内容，不建立工作文件资产库，不将下载或 IM 上传的中间文件落到 Server 磁盘。
 
 Gateway 可直接读取当前 Bot 允许的其他 Computer 文件：从 `GET /v1/computers` 选择明确的目标 ID，再调用 `GET /v1/computers/{id}/files/content?path=…`。源路径由目标 Daemon 按其系统规则解析，相对路径以该 Bot 在目标 Computer 的 AgentHome 为基准；`~/` 与符号链接沿用既有文件系统语义，不增加目录白名单，实际访问服从目标 Daemon 的 OS 权限。仅支持普通文件，不自动打包目录。响应为原始字节，调用方可通过 `curl --output` 等流式保存；接口不创建 FileRef、源端快照或 Server 副本，也不切换 Session 的当前 Computer。身份来自原命令绑定，每次请求重新校验 Bot 的允许集合、目标未撤销且在线；不设置文件大小或整次传输时间上限，请求取消或连接断开时终止传输。单段 Range 在源 Daemon seek 后读取，不由 Server 下载并丢弃前缀。
+
+`POST /v1/computers/files/copy` 要求 `source_path` 与 `target_path`，可分别指定 `source_computer_id` 与 `target_computer_id`。各自省略时使用命令绑定的调用电脑。两端均通过 `Hub.Bind` 校验，允许 Bot 授权的电脑及本 Root Session 拥有的临时电脑；临时电脑作为文件端点时仍禁用本机 Astral API。相对路径各自以该 Bot 的 AgentHome 为基准。Server 将源 Daemon 的读取流直接交给目标。目标父目录须存在，目标可为新文件或已有普通文件。目标 Daemon 在同目录写临时文件，核对源端正常结束与声明大小后原子替换，返回目标 `computer_id`、解析后的 `path`、`size` 和 `media_type`。复制不创建 FileRef，也不切换会话电脑。
 
 平台配置、消息文本、工具输出和 Core Rollout 属于业务数据。Rollout 保存模型当时实际收到的多模态内容，例如图片 base64；经过缩放或裁剪时保存处理后实际输入的版本，同时保留来源 URI。内容一经提交不随原文件变化，历史展示、恢复和重放不依赖附件目录或来源 Computer 在线。这是执行记录，不作为 Server 工作文件资产库或原附件下载的替代来源。
 

@@ -191,6 +191,24 @@ func TestAgentRolloutReadsRawSharedBranchAndWriterTraceWithoutRuntime(t *testing
 	}
 }
 
+func TestRemoveImageDataFromQueuedInputsAndToolResults(t *testing.T) {
+	parts := func() []core.Content {
+		return []core.Content{
+			{Type: "image", URL: "astral-file://photo", Data: json.RawMessage(`"image-data"`), MediaType: "image/png"},
+			{Type: "custom", Data: json.RawMessage(`"other-data"`)},
+		}
+	}
+	input := core.InputRecord{Message: &core.Message{Content: parts()}, Contexts: []core.Message{{Content: parts()}, {Content: parts()}}}
+	result := core.ToolResult{Content: parts()}
+	RemoveImageData(&core.Entry{Input: &input})
+	RemoveImageData(&core.Entry{Tool: &core.ToolRecord{Result: &result}})
+	for _, content := range [][]core.Content{input.Message.Content, input.Contexts[0].Content, input.Contexts[1].Content, result.Content} {
+		if content[0].Data != nil || content[0].URL != "astral-file://photo" || content[0].MediaType != "image/png" || string(content[1].Data) != `"other-data"` {
+			t.Fatalf("unexpected filtered content: %+v", content)
+		}
+	}
+}
+
 func TestAgentRolloutPrivacyFreshChildrenAndBotScope(t *testing.T) {
 	f := newRolloutFixture(t)
 	p := f.p

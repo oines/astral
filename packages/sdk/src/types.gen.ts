@@ -1313,6 +1313,20 @@ export type AstralInternalGatewayContext = {
     timezone: AstralInternalTimezoneView;
 };
 
+export type AstralInternalGatewayCopyComputerFileRequest = {
+    source_computer_id?: string;
+    source_path: string;
+    target_computer_id?: string;
+    target_path: string;
+};
+
+export type AstralInternalGatewayCopyComputerFileResponse = {
+    computer_id: string;
+    media_type: string;
+    path: string;
+    size: number;
+};
+
 export type AstralInternalGatewayDownloadRequest = {
     attachment_ref: string;
     conversation_id: string;
@@ -6558,6 +6572,31 @@ export type AgentComputersResponses = {
 };
 
 export type AgentComputersResponse = AgentComputersResponses[keyof AgentComputersResponses];
+
+export type AgentCopyComputerFileData = {
+    body: AstralInternalGatewayCopyComputerFileRequest;
+    path?: never;
+    query?: never;
+    url: '/v1/computers/files/copy';
+};
+
+export type AgentCopyComputerFileErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type AgentCopyComputerFileError = AgentCopyComputerFileErrors[keyof AgentCopyComputerFileErrors];
+
+export type AgentCopyComputerFileResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayCopyComputerFileResponse;
+};
+
+export type AgentCopyComputerFileResponse = AgentCopyComputerFileResponses[keyof AgentCopyComputerFileResponses];
 
 export type AgentComputerFileContentData = {
     body?: never;

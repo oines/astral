@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	core "github.com/oines/astral-core"
@@ -111,7 +110,7 @@ func (s *Service) rolloutHistory(ctx context.Context, agentID, id, cursor string
 				continue
 			}
 			entry := record.Entry
-			RemoveImageData(reflect.ValueOf(&entry))
+			RemoveImageData(&entry)
 			result.Entries = append(result.Entries, entry)
 		}
 		if len(result.Entries) != 0 || page.Next == "" {

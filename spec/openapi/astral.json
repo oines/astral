@@ -4216,6 +4216,50 @@
         ],
         "type": "object"
       },
+      "astral_internal_gateway_CopyComputerFileRequest": {
+        "properties": {
+          "source_computer_id": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          },
+          "target_computer_id": {
+            "type": "string"
+          },
+          "target_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path",
+          "target_path"
+        ],
+        "type": "object"
+      },
+      "astral_internal_gateway_CopyComputerFileResponse": {
+        "properties": {
+          "computer_id": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "computer_id",
+          "path",
+          "size",
+          "media_type"
+        ],
+        "type": "object"
+      },
       "astral_internal_gateway_DownloadRequest": {
         "properties": {
           "attachment_ref": {
@@ -15985,6 +16029,52 @@
                     "$ref": "#/components/schemas/astral_internal_domain_ComputerStatus"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_httpcontract_Error"
+                }
+              }
+            },
+            "description": "Operation error"
+          }
+        },
+        "security": [
+          {
+            "command": []
+          }
+        ],
+        "tags": [
+          "Agent Gateway"
+        ]
+      }
+    },
+    "/v1/computers/files/copy": {
+      "post": {
+        "description": "Copy a regular file between two allowed Computers. Either omitted Computer ID defaults to the caller. The target directory must exist. A complete transfer atomically replaces the destination file.",
+        "operationId": "agentCopyComputerFile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/astral_internal_gateway_CopyComputerFileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/astral_internal_gateway_CopyComputerFileResponse"
                 }
               }
             },

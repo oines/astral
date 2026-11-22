@@ -64,6 +64,16 @@ EOF
 
 接口不设置文件大小或整次传输时间上限；请求取消或连接断开时，传输随之停止。单段 `Range` 请求直接由来源 Daemon 从指定偏移读取，不将范围之前的字节传到 Server。
 
+## 把文件复制到另一台电脑
+
+调用 `POST /v1/computers/files/copy` 可将普通文件直接复制到另一台已授权的电脑。例如下面的请求体会将调用电脑上的报表复制到办公室电脑。把目标 ID 换成 `GET /v1/computers` 返回的实际值。
+
+```json
+{"source_path":"reports/summary.csv","target_computer_id":"<office-computer-id>","target_path":"summary.csv"}
+```
+
+从另一台电脑取文件时，填写 `source_computer_id`。两个电脑 ID 都可以单独省略，各自默认使用发起调用的电脑。相对路径从 Bot 在对应电脑上的 AgentHome 算起。两台电脑都须在线，目标目录须已存在。复制成功后会原子替换目标位置已有的普通文件，并返回目标电脑 ID、完整路径、字节数和媒体类型。在替换前传输失败，原文件保留。用 Python 客户端复制大文件时，可调大 `--timeout` 等待完成。
+
 ## 按字节范围读取原件
 
 `.../content` 接口流式返回原件字节，不保存文件。来源大小已知且大于零时，支持一个 `Range` 请求头，例如 `bytes=1048576-2097151`、`bytes=1048576-` 或 `bytes=-65536`。有效范围返回 **206**、`Accept-Ranges: bytes`，以及对应的 `Content-Range` 和 `Content-Length`。格式错误、多段或无法满足的范围返回 **416**，并带 `Content-Range: bytes */<size>`。
