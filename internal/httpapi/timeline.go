@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -32,7 +33,15 @@ func timelineEntry(entry core.Entry) core.Entry {
 		var source string
 		_ = json.Unmarshal(metadata["source"], &source)
 		external := entry.Kind == core.EntryContext && message.ContextKind == "external.events" && source == "external"
-		if !external && (entry.Kind != core.EntryMessage || message.ContextKind != "" || source == "im.trigger" || source == "external.trigger") {
+		directIM := false
+		if entry.Kind == core.EntryContext && message.Role == core.RoleUser && message.ContextKind == "im.observation" && source == "im" {
+			// Direct IM inputs carry the original observation, including during an
+			// active run. This identity also exists on history predating XML trigger attributes.
+			var eventID string
+			_ = json.Unmarshal(metadata["event_id"], &eventID)
+			directIM = eventID != "" && entry.InputID == eventID+":trigger"
+		}
+		if !external && !directIM && (entry.Kind != core.EntryMessage || message.ContextKind != "" || source == "im.trigger" || source == "im.wakeup" || source == "external.trigger") {
 			entry.Message = nil
 		} else {
 			message.Content = timelineContent(message.Content)
@@ -42,11 +51,15 @@ func timelineEntry(entry core.Entry) core.Entry {
 					visibleMetadata[key] = value
 				}
 			}
+			if directIM {
+				visibleMetadata["im_trigger"] = json.RawMessage("true")
+				visibleMetadata["display_text"] = imTimelineDisplayText(metadata, message.Content)
+			}
 			message.Metadata = nil
 			if len(visibleMetadata) > 0 {
 				message.Metadata, _ = json.Marshal(visibleMetadata)
 			}
-			if _, ok := metadata["display_text"]; ok && message.Role == core.RoleUser {
+			if _, ok := visibleMetadata["display_text"]; ok && message.Role == core.RoleUser {
 				for i := range message.Content {
 					if message.Content[i].Type == "text" {
 						message.Content[i].Text = ""
@@ -70,6 +83,33 @@ func timelineEntry(entry core.Entry) core.Entry {
 		entry.Tool = &tool
 	}
 	return entry
+}
+
+// Historical IM documents can have a platform filename but no caption or
+// local FileRef. Show the name without exposing the internal model envelope.
+func imTimelineDisplayText(metadata map[string]json.RawMessage, content []core.Content) json.RawMessage {
+	var display string
+	if raw := metadata["display_text"]; json.Unmarshal(raw, &display) == nil && display != "" {
+		return raw
+	}
+	hasPreview := slices.ContainsFunc(content, func(part core.Content) bool { return part.Type == "image" })
+	var attachments []struct{ Name, Kind string }
+	_ = json.Unmarshal(metadata["attachments"], &attachments)
+	var names []string
+	for _, attachment := range attachments {
+		if hasPreview && attachment.Kind == "image" {
+			continue
+		}
+		name := attachment.Name
+		if name == "" {
+			name = attachment.Kind
+		}
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	text, _ := json.Marshal(strings.Join(names, "\n"))
+	return text
 }
 
 // Keep only explicit UI display identifiers from historical tool bindings.

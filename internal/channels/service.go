@@ -266,6 +266,7 @@ func (s *Service) saveConversation(ctx context.Context, c *domain.Conversation) 
 		if err == nil {
 			c.Meta = prior.Meta
 			c.ProactiveEnabled = prior.ProactiveEnabled
+			c.ObservationContextDisabled = prior.ObservationContextDisabled
 			if c.Title == prior.Title && c.Kind == prior.Kind {
 				return nil
 			}

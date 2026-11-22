@@ -813,6 +813,10 @@ export type AstralInternalDomainConversation = {
     external_id: string;
     id: string;
     kind: string;
+    /**
+     * Omitted or false when ordinary group messages are included in session context.
+     */
+    observation_context_disabled?: boolean;
     proactive_enabled: boolean;
     revision: number;
     title: string;
@@ -1362,6 +1366,7 @@ export type AstralInternalGatewayMessageForwardView = {
 export type AstralInternalGatewayMessageObservationView = {
     attachments?: Array<AstralInternalDomainAttachment>;
     connection_id: string;
+    context_excluded?: boolean;
     conversation_id: string;
     edited_at?: string;
     external_event_id: string;
@@ -1806,6 +1811,11 @@ export type AstralInternalHttpapiNetworkUrlsSetting = {
     saved_value: Array<string>;
     source: 'cli' | 'environment' | 'settings' | 'discovery' | 'default';
     value: Array<string>;
+};
+
+export type AstralInternalHttpapiObservationContextInput = {
+    enabled: boolean;
+    revision: number;
 };
 
 export type AstralInternalHttpapiPreferences = {
@@ -3506,6 +3516,33 @@ export type ConversationMessagesResponses = {
 };
 
 export type ConversationMessagesResponse = ConversationMessagesResponses[keyof ConversationMessagesResponses];
+
+export type SetConversationObservationContextData = {
+    body: AstralInternalHttpapiObservationContextInput;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/conversations/{id}/observation-context';
+};
+
+export type SetConversationObservationContextErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type SetConversationObservationContextError = SetConversationObservationContextErrors[keyof SetConversationObservationContextErrors];
+
+export type SetConversationObservationContextResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainConversation;
+};
+
+export type SetConversationObservationContextResponse = SetConversationObservationContextResponses[keyof SetConversationObservationContextResponses];
 
 export type SetConversationProactiveData = {
     body: AstralInternalHttpapiProactiveInput;

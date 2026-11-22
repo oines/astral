@@ -63,6 +63,43 @@ func TestTimelineExternalBatchKeepsDisplayAndSourceButHidesInternalDriver(t *tes
 	}
 }
 
+func TestTimelineDirectIMUsesFrozenInputIdentityAcrossHistoryPages(t *testing.T) {
+	store := &timelineFixtureStore{records: timelineRecords(100)}
+	at := func(index int, input, metadata string, kind core.EntryKind) {
+		entry := &store.records[index].Entry
+		entry.Kind, entry.InputID = kind, input
+		message := core.User("model-only envelope")
+		if kind == core.EntryContext {
+			message.ContextKind = "im.observation"
+		}
+		message.Metadata = json.RawMessage(metadata)
+		entry.Message = &message
+	}
+	at(0, "old:trigger", `{"source":"im.trigger","event_id":"old"}`, core.EntryMessage)
+	at(1, "quiet:trigger", `{"source":"im","event_id":"quiet:trigger","display_text":"@Bot is a quote"}`, core.EntryContext)
+	at(2, "old:trigger", `{"source":"im","platform":"telegram","event_id":"old","display_text":"<actual text>","sender":{"name":"Ada"}}`, core.EntryContext)
+	at(90, "upload:trigger", `{"source":"im","event_id":"upload","display_text":"","attachments":[{"kind":"file","name":"notes.pdf","external_id":"opaque"}]}`, core.EntryContext)
+	cursor := ""
+	for i, text := range []string{"<actual text>", "notes.pdf"} {
+		page, err := timelineHistory(context.Background(), store, "s", cursor, 1, false)
+		if err != nil || len(page.Entries) != 1 {
+			t.Fatalf("page %d: %+v, %v", i, page, err)
+		}
+		var meta struct {
+			DisplayText string `json:"display_text"`
+			Trigger     bool   `json:"im_trigger"`
+		}
+		message := page.Entries[0].Message
+		if message == nil || json.Unmarshal(message.Metadata, &meta) != nil || !meta.Trigger || meta.DisplayText != text || message.Content[0].Text != "" || strings.Contains(string(message.Metadata), "opaque") {
+			t.Fatalf("unexpected IM projection: %+v / %+v", message, meta)
+		}
+		if i == 0 && page.NextCursor != store.records[2].Entry.ParentID {
+			t.Fatalf("wrong continuation %q", page.NextCursor)
+		}
+		cursor = page.NextCursor
+	}
+}
+
 func TestTimelineProjectionRemovesOpaquePayloadWithoutMutatingSource(t *testing.T) {
 	opaque := json.RawMessage(`{"provider":"opaque"}`)
 	original := core.Entry{Kind: core.EntryToolResult, Tool: &core.ToolRecord{

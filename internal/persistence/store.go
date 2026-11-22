@@ -487,8 +487,14 @@ func (s *Store) Intent(ctx context.Context, key string) (string, error) {
 	return id, err
 }
 func (s *Store) ObservationHead(ctx context.Context, conversation string) (int64, error) {
+	return observationHead(ctx, s.db, conversation)
+}
+func (tx *Tx) ObservationHead(ctx context.Context, conversation string) (int64, error) {
+	return observationHead(ctx, tx.tx, conversation)
+}
+func observationHead(ctx context.Context, db reader, conversation string) (int64, error) {
 	var sequence int64
-	err := s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence),0) FROM observations WHERE conversation_id=?", conversation).Scan(&sequence)
+	err := db.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence),0) FROM observations WHERE conversation_id=?", conversation).Scan(&sequence)
 	return sequence, err
 }
 

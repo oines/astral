@@ -114,6 +114,9 @@ func (s *Service) archiveEvent(ctx context.Context, event domain.Observation) (b
 		if conversation.ConnectionID != event.ConnectionID {
 			return domain.Forbidden("the event belongs to a different channel account")
 		}
+		// Freeze the decision with the archive entry. A paused or restarted inbox
+		// may process this message after the chat settings have changed again.
+		event.ContextExcluded = conversation.ObservationContextDisabled && conversation.Kind != "private" && !event.Self && event.Trigger == ""
 		var err error
 		inserted, err = tx.Archive(ctx, event)
 		return err

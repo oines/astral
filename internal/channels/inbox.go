@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -298,6 +299,9 @@ func (s *Service) handoffDirectObservationsStatus(ctx context.Context, b domain.
 	return after < delivered, nil
 }
 func (s *Service) deliver(ctx context.Context, b domain.ConversationBinding, event domain.Observation) (err error) {
+	if event.ContextExcluded {
+		return nil
+	}
 	if paused, pauseErr := s.pausedInbox(ctx, b); pauseErr != nil {
 		return pauseErr
 	} else if paused {
@@ -508,6 +512,15 @@ type DeliveryView struct {
 func (s *Service) Delivery(ctx context.Context, eventID string) (DeliveryView, error) {
 	route, err := s.Store.Delivery(ctx, eventID)
 	delivery := DeliveryView{Delivery: route}
+	if errors.Is(err, sql.ErrNoRows) {
+		event, lookupErr := s.Store.Observation(ctx, eventID)
+		if lookupErr != nil {
+			return delivery, lookupErr
+		}
+		if event.ContextExcluded {
+			return DeliveryView{Delivery: persistence.Delivery{EventID: eventID, State: "excluded"}}, nil
+		}
+	}
 	if err != nil {
 		return delivery, err
 	}

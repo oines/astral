@@ -852,7 +852,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .settings-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
 .settings-group > .error-box { margin-bottom: 16px; }
 .account-chat-search { margin-block: 16px 4px; background: var(--surface); }
-.account-chat-row { display: flex; align-items: center; gap: 12px; min-height: var(--settings-list-row-min-height); padding: var(--settings-list-row-padding) 0; }
+.account-chat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: var(--settings-list-row-min-height); padding: var(--settings-list-row-padding) 0; }
 .account-chat-row ~ .account-chat-row { border-top: 1px solid var(--panel-line); }
 .channel-chat-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; color: var(--ink); }
 .channel-chat-name:hover { text-decoration: none; }
@@ -862,6 +862,8 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .channel-chat-copy small { color: var(--muted); font-size: 12px; line-height: 16px; }
 .channel-chat-name > svg { width: 14px; height: 14px; color: var(--subtle); }
 .account-chat-controls { flex-shrink: 0; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.account-chat-context { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; }
+.account-chat-row > .settings-feedback { flex-basis: 100%; }
 .account-chat-reply { width: 180px; min-width: 0; }
 .account-chat-actions { display: flex; align-items: center; gap: 4px; }
 .account-chat-actions .button { color: var(--muted); }
@@ -889,8 +891,7 @@ kbd { color: var(--subtle); font-family: inherit; font-size: 11px; margin-left: 
 .provider-model-row > .settings-feedback-error { grid-column: 1 / -1; }
 .settings-detail-heading:has(> .settings-feedback-error) { flex-wrap: wrap; }
 .settings-detail-heading > .settings-feedback-error { width: 100%; }
-@container settings (max-width: 600px) {
-  .account-chat-row { flex-wrap: wrap; }
+@container settings (max-width: 710px) {
   .channel-chat-name { flex-basis: 100%; }
   .account-chat-controls { width: 100%; flex-wrap: wrap; justify-content: flex-end; }
   .account-chat-reply { flex: 1 1 148px; max-width: 200px; margin-right: auto; }

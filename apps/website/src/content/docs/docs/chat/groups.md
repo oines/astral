@@ -17,20 +17,26 @@ All members share one session plus the Bot's authorized computers and chat-accou
 
 > @Bot Turn the meeting notes below into “Decisions” and “Action items” and post the result back here.
 
-- **Add context mid-run:** while the Bot is working, members can post updates (e.g., “Launch moved to next Wednesday”). The Bot reads incoming messages on subsequent steps—say “This adds to the current task” or “Separate task” when clarity helps.
+- **Add context mid-run:** while the Bot is working, members can post updates such as “Launch moved to next Wednesday.” With the default settings, the Bot can read these updates on its next step. If **Use group context** is off, mention the Bot or reply to its message to make sure it receives the update.
 
 :::tip[Test Telegram groups by replying first]
 Telegram's privacy mode can restrict ordinary group messages. Test by replying directly to a Bot message first—see [Telegram group setup](/docs/chat/telegram/#use-groups).
 :::
 
-## Control proactive replies
+<span id="control-proactive-replies"></span>
 
-| Mode | Behavior | Where to change |
-| --- | --- | --- |
-| **Mentions & replies only (default)** | Idle Bots stay quiet during ordinary chat, while delivered messages remain available as context. | Default setting |
-| **Join discussions (per group)** | Evaluates after 10 s of quiet—or 60 s from the first pending message—and may still stay quiet. Mentions, replies, and pokes trigger immediately. | Enable per group in **Connected chats** |
+## Choose which group messages the Bot uses
 
-Proactive mode does not bypass platform delivery limits or fetch pre-join history—resend source material when needed.
+In **Settings → Bots**, open the Bot’s platform account. Under **Connected chats**, each group and each connected Telegram group topic has its own **Use group context** switch.
+
+Leave it on (the default) if members want the Bot to follow their conversation. Ordinary messages delivered by the platform can then inform its work and later replies. Choose when an idle Bot may speak:
+
+- **When mentioned** (default) — the Bot waits for a mention, a reply to one of its messages, or a supported poke addressed to it.
+- **Join discussions** — the Bot also considers joining after 10 seconds of quiet or 60 seconds from the first pending message. It may choose to stay quiet.
+
+Turn **Use group context** off if members prefer to address the Bot explicitly. Astral still archives ordinary group messages and events, including reactions, but skips adding them to the session. Direct mentions, replies, supported pokes and the Bot’s own messages still reach the session. Earlier context stays in place. Turning the switch back on restores the saved reply mode for new messages and leaves the intervening chat in the archive.
+
+The Bot can use only what the platform delivers. If it needs something shared before the group was connected, resend it in a mention or reply.
 
 ## Multiple groups and private work
 

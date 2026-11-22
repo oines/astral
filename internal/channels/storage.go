@@ -401,7 +401,7 @@ func (s *Service) pruneStorageArchiveBatch(ctx context.Context, op *StorageOpera
 			return 0, err
 		}
 		through = min(position.Sequence, handoff)
-		if chat.ProactiveEnabled && chat.Kind != "private" {
+		if proactiveActive(chat) {
 			probe, err := s.probeCursor(ctx, binding)
 			if err != nil {
 				return 0, err

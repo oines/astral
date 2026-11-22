@@ -177,10 +177,25 @@ func (s *Service) coverProbe(ctx context.Context, b domain.ConversationBinding, 
 	return s.Store.Save(ctx, "probe_cursors", &position.Meta, &position)
 }
 
-// SetProactive changes only chat-owned configuration. Both transitions cover the
-// current archive head: turning on starts with future messages; turning off
-// invalidates a still-running decision without cancelling an accepted task.
 func (s *Service) SetProactive(ctx context.Context, id string, revision int64, enabled bool) (domain.Conversation, error) {
+	return s.updateGroupSettings(ctx, id, revision, func(chat *domain.Conversation) {
+		chat.ProactiveEnabled = enabled
+	})
+}
+
+func (s *Service) SetObservationContext(ctx context.Context, id string, revision int64, enabled bool) (domain.Conversation, error) {
+	return s.updateGroupSettings(ctx, id, revision, func(chat *domain.Conversation) {
+		chat.ObservationContextDisabled = !enabled
+	})
+}
+
+func proactiveActive(chat domain.Conversation) bool {
+	return chat.Kind != "private" && chat.ProactiveEnabled && !chat.ObservationContextDisabled
+}
+
+// Both switches start a new Probe window at the current archive head, so
+// re-enabling cannot wake an old decision or replay a disabled interval.
+func (s *Service) updateGroupSettings(ctx context.Context, id string, revision int64, change func(*domain.Conversation)) (domain.Conversation, error) {
 	s.gate.Lock()
 	defer s.gate.Unlock()
 	var conversation domain.Conversation
@@ -191,30 +206,31 @@ func (s *Service) SetProactive(ctx context.Context, id string, revision int64, e
 		return conversation, domain.Conflict("chat changed; reload its settings")
 	}
 	if conversation.Kind == "private" {
-		return conversation, domain.Invalid("private chats do not use proactive mode")
+		return conversation, domain.Invalid("this setting is only available for group chats")
 	}
-	if conversation.ProactiveEnabled == enabled {
+	prior := conversation
+	change(&conversation)
+	if conversation.ProactiveEnabled == prior.ProactiveEnabled && conversation.ObservationContextDisabled == prior.ObservationContextDisabled {
 		return conversation, nil
 	}
 	binding, err := s.activeBinding(ctx, id)
 	if err != nil {
 		return conversation, err
 	}
-	head, err := s.Store.ObservationHead(ctx, id)
-	if err != nil {
-		return conversation, err
-	}
-	position, err := s.probeCursor(ctx, binding)
-	if err != nil {
-		return conversation, err
-	}
-	conversation.ProactiveEnabled = enabled
 	err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
 		if err := tx.Save(ctx, "conversations", &conversation.Meta, &conversation); err != nil {
 			return err
 		}
 		if binding.ID == "" {
 			return nil
+		}
+		position := cursor{Meta: domain.Meta{ID: binding.ID}}
+		if err := tx.Get(ctx, "probe_cursors", binding.ID, &position); err != nil && !domain.IsMissing(err) {
+			return err
+		}
+		head, err := tx.ObservationHead(ctx, id)
+		if err != nil {
+			return err
 		}
 		position.Sequence = head
 		return tx.Save(ctx, "probe_cursors", &position.Meta, &position)
@@ -227,7 +243,7 @@ func (s *Service) pendingProbe(ctx context.Context, b domain.ConversationBinding
 	if err := s.Store.Get(ctx, "conversations", b.ConversationID, &conversation); err != nil {
 		return probeWindow{}, err
 	}
-	if !conversation.ProactiveEnabled || conversation.Kind == "private" {
+	if !proactiveActive(conversation) {
 		return probeWindow{}, nil
 	}
 	position, err := s.probeCursor(ctx, b)
@@ -274,11 +290,7 @@ func (s *Service) probeWindow(ctx context.Context, b domain.ConversationBinding,
 			}
 			after = item.Sequence
 			event := item.Observation
-			// An anonymous reaction can be an aggregate or an unidentifiable
-			// echo of our own action. Preserve it in context, but only a known
-			// external actor can make a reaction a new participation candidate.
-			unknownReactionActor := event.Reaction != nil && (event.Reaction.ActorType == "unknown" || event.Sender.ID == "")
-			if event.Self || event.Trigger != "" || unknownReactionActor {
+			if !probeCandidate(event) {
 				if window.Through == 0 {
 					covered = item.Sequence
 				}
@@ -511,7 +523,7 @@ func (s *Service) completeProbe(ctx context.Context, b domain.ConversationBindin
 		if err != nil {
 			return err
 		}
-		if current.ID != b.ID || !conversation.ProactiveEnabled {
+		if current.ID != b.ID || !proactiveActive(conversation) {
 			return nil
 		}
 		position, err := s.probeCursor(ctx, b)
@@ -602,10 +614,17 @@ func (s *Service) probeInputIDs(ctx context.Context, b domain.ConversationBindin
 				break
 			}
 			after = item.Sequence
-			if !item.Observation.Self && item.Observation.Trigger == "" {
+			if probeCandidate(item.Observation) {
 				inputs = append(inputs, item.Observation.ID)
 			}
 		}
 	}
 	return inputs, nil
+}
+
+func probeCandidate(event domain.Observation) bool {
+	// Anonymous reactions can be aggregates or unidentifiable echoes of
+	// the Bot's own actions. Only known external actors can prompt a Probe.
+	unknownReactionActor := event.Reaction != nil && (event.Reaction.ActorType == "unknown" || event.Sender.ID == "")
+	return !event.ContextExcluded && !event.Self && event.Trigger == "" && !unknownReactionActor
 }

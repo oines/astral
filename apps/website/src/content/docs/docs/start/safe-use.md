@@ -47,7 +47,7 @@ Sessions under the same Bot can look up context from each other and may share fo
 | --- | --- | --- |
 | Messages, files the Bot reads, images, command output | **Your connected model service** | Files stay stored on your computer, while content needed for a turn is sent to the model provider (including for private sessions). Check your provider's data policy before using sensitive material. |
 | Web search queries | **Your configured search service** | Sent only when the Bot runs a web search. |
-| Ordinary group messages | **That group's session context** | Messages visible to the Bot may inform later replies even when proactive participation is off. Let group members know before connecting a shared chat. |
+| Ordinary group messages | **Astral’s chat archive and, by default, the group’s session** | Turn off **Use group context** for the group to keep new ordinary messages out of its session. Astral still archives them under the chat’s retention settings. Let group members know before connecting a shared chat. |
 
 <span id="review-outside-content-and-skills"></span>
 

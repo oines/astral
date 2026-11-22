@@ -259,12 +259,13 @@ type Connection struct {
 
 type Conversation struct {
 	Meta
-	ConnectionID     string `json:"connection_id"`
-	ExternalID       string `json:"external_id"`
-	TopicID          string `json:"topic_id,omitempty"`
-	Kind             string `json:"kind"`
-	Title            string `json:"title"`
-	ProactiveEnabled bool   `json:"proactive_enabled"`
+	ConnectionID               string `json:"connection_id"`
+	ExternalID                 string `json:"external_id"`
+	TopicID                    string `json:"topic_id,omitempty"`
+	Kind                       string `json:"kind"`
+	Title                      string `json:"title"`
+	ProactiveEnabled           bool   `json:"proactive_enabled"`
+	ObservationContextDisabled bool   `json:"observation_context_disabled,omitempty" description:"Omitted or false when ordinary group messages are included in session context."`
 }
 
 type ConversationBinding struct {
@@ -361,6 +362,7 @@ type Observation struct {
 	ReplyParts         []MessagePart  `json:"reply_parts,omitempty"`
 	Attachments        []Attachment   `json:"attachments,omitempty"`
 	Trigger            string         `json:"trigger,omitempty"`
+	ContextExcluded    bool           `json:"context_excluded,omitempty"`
 	Self               bool           `json:"self"`
 	Reaction           *ReactionEvent `json:"reaction,omitempty"`
 }

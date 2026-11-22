@@ -40,7 +40,9 @@ Return to your chat app and send a **new message** (mention or reply to the Bot 
 
 > Please reply in this chat with “Connection successful” and tell me which computer you are using.
 
-Once you see activity inside Astral and receive the reply in your chat app, you're connected. Try sending an image or small file next and ask the Bot to send a summary back.
+Open the connected session in Astral to find your original message and follow the Bot’s work. Private messages, group mentions and replies to the Bot appear in the timeline, as do supported pokes addressed to it. Ordinary group conversations stay off the timeline, even when **Use group context** is on and the Bot joins a discussion.
+
+Once you receive the reply in your chat app, you're connected. Try sending an image or small file next and ask the Bot to send a summary back.
 
 :::note[Ask explicitly when you want files or replies sent back]
 Working text inside Astral stays in the web interface—chat participants only see messages delivered through the sending tool (`send_message`). Say “send it back to this chat” when you want a file or final answer delivered there.
