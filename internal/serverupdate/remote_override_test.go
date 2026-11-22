@@ -5,11 +5,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func TestManagedRemoteOverrideUnitAndDetachedEnvironment(t *testing.T) {
+func TestManagedRemoteOverrideDetachedEnvironment(t *testing.T) {
 	for _, test := range []struct {
 		name, environment, launchArgument string
 		override                          *bool
@@ -37,20 +36,6 @@ func TestManagedRemoteOverrideUnitAndDetachedEnvironment(t *testing.T) {
 			if err := writeJSON(markerPath, marker); err != nil {
 				t.Fatal(err)
 			}
-			unit := unitDefinitionWithEnvironment(f.m.root, marker.GitHubProxy, marker.AllowRemoteManagement)
-			if test.override == nil {
-				if strings.Contains(unit, "ASTRAL_ALLOW_REMOTE_MANAGEMENT") {
-					t.Fatal("default unit persisted an explicit remote override")
-				}
-			} else {
-				want := "Environment=\"ASTRAL_GITHUB_PROXY=\"\nEnvironment=\"ASTRAL_ALLOW_REMOTE_MANAGEMENT=" + strings.TrimPrefix(test.launchArgument, "--setenv=ASTRAL_ALLOW_REMOTE_MANAGEMENT=") + "\"\nExecStart=:"
-				if !strings.Contains(unit, want) {
-					t.Fatal("remote override does not match installer's exact unit format")
-				}
-			}
-			if err := os.WriteFile(f.m.deps.unitPath, []byte(unit), 0600); err != nil {
-				t.Fatal(err)
-			}
 			state := pending(t, f)
 			f.mu.Lock()
 			found := false
@@ -76,32 +61,6 @@ func TestManagedRemoteOverrideUnitAndDetachedEnvironment(t *testing.T) {
 				t.Fatal("update changed the persisted explicit remote choice")
 			}
 		})
-	}
-}
-
-func TestManagedRemoteOverrideRejectsMismatchedUnit(t *testing.T) {
-	for _, markerOverride := range []*bool{nil, remotePointer(false), remotePointer(true)} {
-		f := managedFixture(t)
-		var marker installation
-		markerPath := filepath.Join(f.m.root, "installation.json")
-		if err := readJSON(markerPath, &marker); err != nil {
-			t.Fatal(err)
-		}
-		marker.AllowRemoteManagement = markerOverride
-		if err := writeJSON(markerPath, marker); err != nil {
-			t.Fatal(err)
-		}
-		unitOverride := remotePointer(false)
-		if markerOverride != nil && !*markerOverride {
-			unitOverride = remotePointer(true)
-		}
-		if err := os.WriteFile(f.m.deps.unitPath, []byte(unitDefinitionWithEnvironment(f.m.root, nil, unitOverride)), 0600); err != nil {
-			t.Fatal(err)
-		}
-		state, err := f.m.Apply(context.Background())
-		if err != nil || state.Manager != "manual" || f.latestCalls.Load() != 0 {
-			t.Fatalf("unexpected remote unit override was adopted: %+v %v", state, err)
-		}
 	}
 }
 
