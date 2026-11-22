@@ -26,21 +26,6 @@ type stickerResourceBot struct {
 	files          map[string]telegramStickerTestFile
 }
 
-type stickerResourceTransport func(*http.Request) (*http.Response, error)
-
-func (f stickerResourceTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	return f(r)
-}
-
-type stickerResourceReader func([]byte) (int, error)
-
-func (f stickerResourceReader) Read(p []byte) (int, error) { return f(p) }
-
-type stickerResourceBody struct {
-	io.Reader
-	io.Closer
-}
-
 func stickerResourcePlatform(t *testing.T, computerCount int) (*testkit.Platform, *Service, *stickerResourceBot, domain.Connection) {
 	t.Helper()
 	p := testkit.New(t, computerCount, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
