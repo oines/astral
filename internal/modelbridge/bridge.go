@@ -609,6 +609,10 @@ func (m *boundModel) CompatibleReasoningEfforts(previous, current string) bool {
 // A Server upgrade changes its own User-Agent while the token-accounting
 // target can stay identical. Keep every other frozen field in the comparison,
 // including fields written by a newer version of the Host.
+func (m *boundModel) ReasoningEffortTargetPolicyID() string {
+	return "astral/host-product-version/v1"
+}
+
 func (m *boundModel) CompatibleReasoningEffortTargets(previous, current json.RawMessage) bool {
 	fields := func(snapshot json.RawMessage) map[string]json.RawMessage {
 		var target map[string]json.RawMessage

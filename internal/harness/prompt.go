@@ -256,6 +256,13 @@ func (m sessionModel) CompatibleReasoningEffortTargets(previous, current json.Ra
 	return ok && capability.CompatibleReasoningEffortTargets(previous, current)
 }
 
+func (m sessionModel) ReasoningEffortTargetPolicyID() string {
+	if capability, ok := m.Model.(core.ReasoningEffortUsageTargetModel); ok {
+		return capability.ReasoningEffortTargetPolicyID()
+	}
+	return ""
+}
+
 func (m sessionModel) ValidateRequest(ctx context.Context, request core.Request) error {
 	if validator, ok := m.Model.(core.RequestValidator); ok {
 		if err := validator.ValidateRequest(ctx, request); err != nil {
