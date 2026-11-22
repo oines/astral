@@ -82,6 +82,47 @@ func TestFallbackSchedulerKeepsFutureWaitingSessionColdAfterRestart(t *testing.T
 	eventually(t, f.ctx, func() bool { return probes.Load() == 1 })
 }
 
+func TestFallbackLateTerminalPreservesWaitingRun(t *testing.T) {
+	f, _ := schedulerWaitingFixture(t)
+	r, err := f.service.open(f.ctx, f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	deadline := time.Now().UTC().Add(time.Hour)
+	schedulerSetProbeAt(t, f, deadline)
+	var waiting modelFallbackState
+	if err := f.store.Maintenance(f.ctx, modelFallbackKind, r.id, &waiting); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := r.snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.State.LastRun == nil || waiting.Phase != "waiting" || waiting.FailedRunID != snapshot.State.LastRun.ID {
+		t.Fatalf("expected the recorded failure to be waiting: %+v", waiting)
+	}
+	// Replay the terminal notification after reconciliation has armed the
+	// next probe. Holding r.mu keeps the scheduler out of the assertion.
+	if err := r.saveModelFallbackFailure(f.ctx, waiting.Active, core.ErrBudget, waiting.FailedRunID, waiting.Epoch); err != nil {
+		t.Fatal(err)
+	}
+	var after modelFallbackState
+	if err := f.store.Maintenance(f.ctx, modelFallbackKind, r.id, &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.Phase != "waiting" || !after.NextProbeAt.Equal(deadline) || after.FailureKind != waiting.FailureKind {
+		t.Fatalf("late terminal notification changed an already handled failure: %+v", after)
+	}
+	if err := r.recordModelFallbackFailure(f.ctx, waiting.Active, core.ErrBudget); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.Maintenance(f.ctx, modelFallbackKind, r.id, &after); err != nil || after.Phase != "failed" {
+		t.Fatalf("a fresh model attempt did not record its failure: %+v, %v", after, err)
+	}
+}
+
 func TestFallbackSchedulerAcceptsPostponedAndAdvancedDeadline(t *testing.T) {
 	f, probes := schedulerWaitingFixture(t)
 	schedulerSetProbeAt(t, f, time.Now().Add(2*modelFallbackTick))

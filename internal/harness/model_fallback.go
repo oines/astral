@@ -440,6 +440,13 @@ func fallbackErrorKind(err error) string {
 // The call boundary still owns typed errors. Persist their classification now;
 // never infer retry/fallback policy by parsing a provider's display text later.
 func (r *runtime) recordModelFallbackFailure(ctx context.Context, selection core.ModelSelection, failure error) error {
+	return r.saveModelFallbackFailure(ctx, selection, failure, "", 0)
+}
+
+// A terminal observer can arrive after a provider callback already recorded
+// the failure and advanced recovery. Check its Run and task epoch under the
+// same lock as the durable write. Ordinary provider attempts remain independent.
+func (r *runtime) saveModelFallbackFailure(ctx context.Context, selection core.ModelSelection, failure error, terminalRunID string, epoch uint64) error {
 	if r == nil || r.service == nil || r.service.Store == nil {
 		return nil
 	}
@@ -466,6 +473,10 @@ func (r *runtime) recordModelFallbackFailure(ctx context.Context, selection core
 	// could deadlock with Close while it joins the executing model call.
 	snapshot, snapshotErr := r.snapshot()
 	if snapshotErr != nil || snapshot.Stopping {
+		return nil
+	}
+	if terminalRunID != "" && (state.Epoch != epoch || state.FailedRunID == terminalRunID ||
+		snapshot.Running || snapshot.State.LastRun == nil || snapshot.State.LastRun.ID != terminalRunID) {
 		return nil
 	}
 	runID := snapshot.RunID
@@ -618,29 +629,11 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 			r.mu.Unlock()
 			return
 		}
-		s.modelFallbackMu.Lock()
-		var state modelFallbackState
-		readErr = s.Store.Maintenance(s.ctx, modelFallbackKind, r.id, &state)
-		armed := readErr == nil && fallbackArmed(state) && state.Epoch == observedEpoch
-		s.modelFallbackMu.Unlock()
-		if !armed {
-			r.mu.Unlock()
-			return
-		}
-		snapshot, snapshotErr := r.snapshot()
-		if snapshotErr != nil {
-			r.mu.Unlock()
-			return
-		}
 		if err != nil {
-			if snapshot.Running || snapshot.State.LastRun == nil || snapshot.State.LastRun.ID != run.ID() {
-				r.mu.Unlock()
-				return
-			}
 			var classified *core.ModelError
 			var api *models.APIError
 			if errors.Is(err, core.ErrBudget) || errors.As(err, &classified) || errors.As(err, &api) {
-				_ = r.recordModelFallbackFailure(s.ctx, r.core.Load().Configuration().Selection, err)
+				_ = r.saveModelFallbackFailure(s.ctx, observed.Configuration().Selection, err, run.ID(), observedEpoch)
 			}
 			r.mu.Unlock()
 			return
@@ -665,13 +658,7 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 			case event := <-terminal:
 				if event.Type == core.EventRunEnd && event.Status != "completed" {
 					if failure := modelFallbackInternalBudgetError(event.Error); failure != nil {
-						s.modelFallbackMu.Lock()
-						var current modelFallbackState
-						valid := s.Store.Maintenance(s.ctx, modelFallbackKind, r.id, &current) == nil && current.Epoch == observedEpoch && fallbackArmed(current)
-						s.modelFallbackMu.Unlock()
-						if valid {
-							_ = r.recordModelFallbackFailure(s.ctx, current.Active, failure)
-						}
+						_ = r.saveModelFallbackFailure(s.ctx, core.ModelSelection{}, failure, event.RunID, observedEpoch)
 					}
 					return
 				}
