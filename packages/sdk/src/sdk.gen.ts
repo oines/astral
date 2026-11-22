@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentCapabilityData, AgentCapabilityErrors, AgentCapabilityResponses, AgentComputerFileContentData, AgentComputerFileContentErrors, AgentComputerFileContentResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentCreateScheduleData, AgentCreateScheduleErrors, AgentCreateScheduleResponses, AgentCreateWakeEndpointData, AgentCreateWakeEndpointErrors, AgentCreateWakeEndpointResponses, AgentDeleteScheduleData, AgentDeleteScheduleErrors, AgentDeleteScheduleResponses, AgentDeleteSharedSkillData, AgentDeleteSharedSkillErrors, AgentDeleteSharedSkillResponses, AgentDeleteWakeEndpointData, AgentDeleteWakeEndpointErrors, AgentDeleteWakeEndpointResponses, AgentDownloadAttachmentData, AgentDownloadAttachmentErrors, AgentDownloadAttachmentResponses, AgentDownloadMessagePartData, AgentDownloadMessagePartErrors, AgentDownloadMessagePartResponses, AgentDownloadNapCatAvatarData, AgentDownloadNapCatAvatarErrors, AgentDownloadNapCatAvatarResponses, AgentDownloadNapCatEssencePartData, AgentDownloadNapCatEssencePartErrors, AgentDownloadNapCatEssencePartResponses, AgentDownloadNapCatMemberAvatarData, AgentDownloadNapCatMemberAvatarErrors, AgentDownloadNapCatMemberAvatarResponses, AgentDownloadTelegramStickerData, AgentDownloadTelegramStickerErrors, AgentDownloadTelegramStickerResponses, AgentFileReferenceData, AgentFileReferenceErrors, AgentFileReferenceResponses, AgentGetScheduleData, AgentGetScheduleErrors, AgentGetScheduleResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentManagedSkillsData, AgentManagedSkillsErrors, AgentManagedSkillsResponses, AgentMessageData, AgentMessageErrors, AgentMessagePartContentData, AgentMessagePartContentErrors, AgentMessagePartContentResponses, AgentMessagePartData, AgentMessagePartErrors, AgentMessagePartRawData, AgentMessagePartRawErrors, AgentMessagePartRawResponses, AgentMessagePartResponses, AgentMessagePartsData, AgentMessagePartsErrors, AgentMessagePartsResponses, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentModelsData, AgentModelsErrors, AgentModelsResponses, AgentNapCatAvatarContentData, AgentNapCatAvatarContentErrors, AgentNapCatAvatarContentResponses, AgentNapCatEssenceContentData, AgentNapCatEssenceContentErrors, AgentNapCatEssenceContentResponses, AgentNapCatEssencePartData, AgentNapCatEssencePartErrors, AgentNapCatEssencePartResponses, AgentNapCatEssencePartsData, AgentNapCatEssencePartsErrors, AgentNapCatEssencePartsResponses, AgentNapCatMemberAvatarContentData, AgentNapCatMemberAvatarContentErrors, AgentNapCatMemberAvatarContentResponses, AgentPublishSharedSkillData, AgentPublishSharedSkillErrors, AgentPublishSharedSkillResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentRolloutData, AgentRolloutErrors, AgentRolloutResponses, AgentSchedulesData, AgentSchedulesErrors, AgentSchedulesResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendFileData, AgentSendFileErrors, AgentSendFileResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramOperationData, AgentTelegramOperationErrors, AgentTelegramOperationResponses, AgentTelegramOperationsData, AgentTelegramOperationsErrors, AgentTelegramOperationsResponses, AgentTelegramStickerContentData, AgentTelegramStickerContentErrors, AgentTelegramStickerContentResponses, AgentUpdateScheduleData, AgentUpdateScheduleErrors, AgentUpdateScheduleResponses, AgentUpdateSessionData, AgentUpdateSessionErrors, AgentUpdateSessionResponses, AgentUpdateWakeEndpointData, AgentUpdateWakeEndpointErrors, AgentUpdateWakeEndpointResponses, AgentWakeEndpointData, AgentWakeEndpointErrors, AgentWakeEndpointResponses, AgentWakeEndpointsData, AgentWakeEndpointsErrors, AgentWakeEndpointsResponses, ApplyAgentModelPriorityData, ApplyAgentModelPriorityErrors, ApplyAgentModelPriorityResponses, ApplyServerUpdateData, ApplyServerUpdateErrors, ApplyServerUpdateResponses, AuthAccountData, AuthAccountErrors, AuthAccountResponses, AuthEventsData, AuthEventsErrors, AuthEventsResponse, AuthEventsResponses, AuthLoginData, AuthLoginErrors, AuthLoginRecoveryData, AuthLoginRecoveryErrors, AuthLoginRecoveryResponses, AuthLoginResponses, AuthLoginTotpData, AuthLoginTotpErrors, AuthLoginTotpResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginErrors, AuthPasskeyLoginBeginResponses, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishErrors, AuthPasskeyLoginFinishResponses, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginErrors, AuthPasskeyRegisterBeginResponses, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishErrors, AuthPasskeyRegisterFinishResponses, AuthPasskeyRemoveData, AuthPasskeyRemoveErrors, AuthPasskeyRemoveResponses, AuthPasswordlessData, AuthPasswordlessErrors, AuthPasswordlessResponses, AuthReauthenticateData, AuthReauthenticateErrors, AuthReauthenticateResponses, AuthRecoveryCodesData, AuthRecoveryCodesErrors, AuthRecoveryCodesResponses, AuthSessionRevokeData, AuthSessionRevokeErrors, AuthSessionRevokeResponses, AuthSessionsRevokeData, AuthSessionsRevokeErrors, AuthSessionsRevokeResponses, AuthSettingsData, AuthSettingsErrors, AuthSettingsResponses, AuthStatusData, AuthStatusErrors, AuthStatusResponses, AuthTotpBeginData, AuthTotpBeginErrors, AuthTotpBeginResponses, AuthTotpConfirmData, AuthTotpConfirmErrors, AuthTotpConfirmResponses, AuthTotpRemoveData, AuthTotpRemoveErrors, AuthTotpRemoveResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, CheckServerUpdateData, CheckServerUpdateErrors, CheckServerUpdateResponses, CleanConversationArchiveData, CleanConversationArchiveErrors, CleanConversationArchiveResponses, CleanupStorageData, CleanupStorageErrors, CleanupStorageResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateScheduleData, CreateScheduleErrors, CreateScheduleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteComputerData, DeleteComputerErrors, DeleteComputerResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteScheduleData, DeleteScheduleErrors, DeleteScheduleResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteWakeEndpointData, DeleteWakeEndpointErrors, DeleteWakeEndpointResponses, DescribeModelData, DescribeModelErrors, DescribeModelResponses, DisconnectTemporaryComputerData, DisconnectTemporaryComputerErrors, DisconnectTemporaryComputerResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetFileReferenceData, GetFileReferenceErrors, GetFileReferenceResponses, GetNetworkSettingsData, GetNetworkSettingsErrors, GetNetworkSettingsResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetServerUpdateData, GetServerUpdateErrors, GetServerUpdateResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetWakeEndpointData, GetWakeEndpointErrors, GetWakeEndpointResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListComputerDirectoryData, ListComputerDirectoryErrors, ListComputerDirectoryResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSchedulesData, ListSchedulesErrors, ListSchedulesResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListWakeEndpointsData, ListWakeEndpointsErrors, ListWakeEndpointsResponses, ManageStorageData, ManageStorageErrors, ManageStorageResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, ReclaimStorageData, ReclaimStorageErrors, ReclaimStorageResponses, ReferenceComputerFileData, ReferenceComputerFileErrors, ReferenceComputerFileResponses, RefreshProviderModelsData, RefreshProviderModelsErrors, RefreshProviderModelsResponses, RefreshStorageData, RefreshStorageErrors, RefreshStorageResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResetStorageConversationData, ResetStorageConversationErrors, ResetStorageConversationResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RetryStorageCleanupData, RetryStorageCleanupErrors, RetryStorageCleanupResponses, RetryStorageOperationData, RetryStorageOperationErrors, RetryStorageOperationResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SaveNetworkSettingsData, SaveNetworkSettingsErrors, SaveNetworkSettingsResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, ScheduleEventsData, ScheduleEventsErrors, ScheduleEventsResponse, ScheduleEventsResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionAttemptData, SessionAttemptErrors, SessionAttemptRequestData, SessionAttemptRequestErrors, SessionAttemptRequestResponses, SessionAttemptResponses, SessionAttemptsData, SessionAttemptsErrors, SessionAttemptsResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionProcessOutputData, SessionProcessOutputErrors, SessionProcessOutputResponse, SessionProcessOutputResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SessionTimelineData, SessionTimelineErrors, SessionTimelineResponses, SetConversationObservationContextData, SetConversationObservationContextErrors, SetConversationObservationContextResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageCleanupInventoryData, StorageCleanupInventoryErrors, StorageCleanupInventoryResponses, StorageCleanupOperationData, StorageCleanupOperationErrors, StorageCleanupOperationResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, StorageOperationData, StorageOperationErrors, StorageOperationResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, TriggerWakeEndpointData, TriggerWakeEndpointErrors, TriggerWakeEndpointResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerDaemonData, UpdateComputerDaemonErrors, UpdateComputerDaemonResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateScheduleData, UpdateScheduleErrors, UpdateScheduleResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UpdateWakeEndpointData, UpdateWakeEndpointErrors, UpdateWakeEndpointResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses, WakeEndpointEventsData, WakeEndpointEventsErrors, WakeEndpointEventsResponse, WakeEndpointEventsResponses } from './types.gen';
+import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentCapabilityData, AgentCapabilityErrors, AgentCapabilityResponses, AgentComputerFileContentData, AgentComputerFileContentErrors, AgentComputerFileContentResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentCreateScheduleData, AgentCreateScheduleErrors, AgentCreateScheduleResponses, AgentCreateWakeEndpointData, AgentCreateWakeEndpointErrors, AgentCreateWakeEndpointResponses, AgentDeleteScheduleData, AgentDeleteScheduleErrors, AgentDeleteScheduleResponses, AgentDeleteSharedSkillData, AgentDeleteSharedSkillErrors, AgentDeleteSharedSkillResponses, AgentDeleteWakeEndpointData, AgentDeleteWakeEndpointErrors, AgentDeleteWakeEndpointResponses, AgentGetScheduleData, AgentGetScheduleErrors, AgentGetScheduleResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentManagedSkillsData, AgentManagedSkillsErrors, AgentManagedSkillsResponses, AgentMessageData, AgentMessageErrors, AgentMessagePartContentData, AgentMessagePartContentErrors, AgentMessagePartContentResponses, AgentMessagePartData, AgentMessagePartErrors, AgentMessagePartRawData, AgentMessagePartRawErrors, AgentMessagePartRawResponses, AgentMessagePartResponses, AgentMessagePartsData, AgentMessagePartsErrors, AgentMessagePartsResponses, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentModelsData, AgentModelsErrors, AgentModelsResponses, AgentNapCatAvatarContentData, AgentNapCatAvatarContentErrors, AgentNapCatAvatarContentResponses, AgentNapCatEssenceContentData, AgentNapCatEssenceContentErrors, AgentNapCatEssenceContentResponses, AgentNapCatEssencePartData, AgentNapCatEssencePartErrors, AgentNapCatEssencePartResponses, AgentNapCatEssencePartsData, AgentNapCatEssencePartsErrors, AgentNapCatEssencePartsResponses, AgentNapCatMemberAvatarContentData, AgentNapCatMemberAvatarContentErrors, AgentNapCatMemberAvatarContentResponses, AgentPublishSharedSkillData, AgentPublishSharedSkillErrors, AgentPublishSharedSkillResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentRolloutData, AgentRolloutErrors, AgentRolloutResponses, AgentSchedulesData, AgentSchedulesErrors, AgentSchedulesResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramStickerContentData, AgentTelegramStickerContentErrors, AgentTelegramStickerContentResponses, AgentUpdateScheduleData, AgentUpdateScheduleErrors, AgentUpdateScheduleResponses, AgentUpdateSessionData, AgentUpdateSessionErrors, AgentUpdateSessionResponses, AgentUpdateWakeEndpointData, AgentUpdateWakeEndpointErrors, AgentUpdateWakeEndpointResponses, AgentWakeEndpointData, AgentWakeEndpointErrors, AgentWakeEndpointResponses, AgentWakeEndpointsData, AgentWakeEndpointsErrors, AgentWakeEndpointsResponses, ApplyAgentModelPriorityData, ApplyAgentModelPriorityErrors, ApplyAgentModelPriorityResponses, ApplyServerUpdateData, ApplyServerUpdateErrors, ApplyServerUpdateResponses, AuthAccountData, AuthAccountErrors, AuthAccountResponses, AuthEventsData, AuthEventsErrors, AuthEventsResponse, AuthEventsResponses, AuthLoginData, AuthLoginErrors, AuthLoginRecoveryData, AuthLoginRecoveryErrors, AuthLoginRecoveryResponses, AuthLoginResponses, AuthLoginTotpData, AuthLoginTotpErrors, AuthLoginTotpResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginErrors, AuthPasskeyLoginBeginResponses, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishErrors, AuthPasskeyLoginFinishResponses, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginErrors, AuthPasskeyRegisterBeginResponses, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishErrors, AuthPasskeyRegisterFinishResponses, AuthPasskeyRemoveData, AuthPasskeyRemoveErrors, AuthPasskeyRemoveResponses, AuthPasswordlessData, AuthPasswordlessErrors, AuthPasswordlessResponses, AuthReauthenticateData, AuthReauthenticateErrors, AuthReauthenticateResponses, AuthRecoveryCodesData, AuthRecoveryCodesErrors, AuthRecoveryCodesResponses, AuthSessionRevokeData, AuthSessionRevokeErrors, AuthSessionRevokeResponses, AuthSessionsRevokeData, AuthSessionsRevokeErrors, AuthSessionsRevokeResponses, AuthSettingsData, AuthSettingsErrors, AuthSettingsResponses, AuthStatusData, AuthStatusErrors, AuthStatusResponses, AuthTotpBeginData, AuthTotpBeginErrors, AuthTotpBeginResponses, AuthTotpConfirmData, AuthTotpConfirmErrors, AuthTotpConfirmResponses, AuthTotpRemoveData, AuthTotpRemoveErrors, AuthTotpRemoveResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, CheckServerUpdateData, CheckServerUpdateErrors, CheckServerUpdateResponses, CleanConversationArchiveData, CleanConversationArchiveErrors, CleanConversationArchiveResponses, CleanupStorageData, CleanupStorageErrors, CleanupStorageResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateScheduleData, CreateScheduleErrors, CreateScheduleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteComputerData, DeleteComputerErrors, DeleteComputerResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteScheduleData, DeleteScheduleErrors, DeleteScheduleResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteWakeEndpointData, DeleteWakeEndpointErrors, DeleteWakeEndpointResponses, DescribeModelData, DescribeModelErrors, DescribeModelResponses, DisconnectTemporaryComputerData, DisconnectTemporaryComputerErrors, DisconnectTemporaryComputerResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetFileReferenceData, GetFileReferenceErrors, GetFileReferenceResponses, GetNetworkSettingsData, GetNetworkSettingsErrors, GetNetworkSettingsResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetServerUpdateData, GetServerUpdateErrors, GetServerUpdateResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetWakeEndpointData, GetWakeEndpointErrors, GetWakeEndpointResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListComputerDirectoryData, ListComputerDirectoryErrors, ListComputerDirectoryResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSchedulesData, ListSchedulesErrors, ListSchedulesResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListWakeEndpointsData, ListWakeEndpointsErrors, ListWakeEndpointsResponses, ManageStorageData, ManageStorageErrors, ManageStorageResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, ReclaimStorageData, ReclaimStorageErrors, ReclaimStorageResponses, RefreshProviderModelsData, RefreshProviderModelsErrors, RefreshProviderModelsResponses, RefreshStorageData, RefreshStorageErrors, RefreshStorageResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResetStorageConversationData, ResetStorageConversationErrors, ResetStorageConversationResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RetryStorageCleanupData, RetryStorageCleanupErrors, RetryStorageCleanupResponses, RetryStorageOperationData, RetryStorageOperationErrors, RetryStorageOperationResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SaveNetworkSettingsData, SaveNetworkSettingsErrors, SaveNetworkSettingsResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, ScheduleEventsData, ScheduleEventsErrors, ScheduleEventsResponse, ScheduleEventsResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionAttemptData, SessionAttemptErrors, SessionAttemptRequestData, SessionAttemptRequestErrors, SessionAttemptRequestResponses, SessionAttemptResponses, SessionAttemptsData, SessionAttemptsErrors, SessionAttemptsResponses, SessionComputerFileContentData, SessionComputerFileContentErrors, SessionComputerFileContentResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionProcessOutputData, SessionProcessOutputErrors, SessionProcessOutputResponse, SessionProcessOutputResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SessionTimelineData, SessionTimelineErrors, SessionTimelineResponses, SetConversationObservationContextData, SetConversationObservationContextErrors, SetConversationObservationContextResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageCleanupInventoryData, StorageCleanupInventoryErrors, StorageCleanupInventoryResponses, StorageCleanupOperationData, StorageCleanupOperationErrors, StorageCleanupOperationResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, StorageOperationData, StorageOperationErrors, StorageOperationResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, TriggerWakeEndpointData, TriggerWakeEndpointErrors, TriggerWakeEndpointResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerDaemonData, UpdateComputerDaemonErrors, UpdateComputerDaemonResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateScheduleData, UpdateScheduleErrors, UpdateScheduleResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UpdateWakeEndpointData, UpdateWakeEndpointErrors, UpdateWakeEndpointResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses, WakeEndpointEventsData, WakeEndpointEventsErrors, WakeEndpointEventsResponse, WakeEndpointEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -715,24 +715,6 @@ export const listComputerDirectory = <ThrowOnError extends boolean = false>(opti
         }
     ],
     url: '/api/v1/computers/{id}/files/directory',
-    ...options
-});
-
-export const referenceComputerFile = <ThrowOnError extends boolean = false>(options: Options<ReferenceComputerFileData, ThrowOnError>): RequestResult<ReferenceComputerFileResponses, ReferenceComputerFileErrors, ThrowOnError> => (options.client ?? client).post<ReferenceComputerFileResponses, ReferenceComputerFileErrors, ThrowOnError>({
-    security: [
-        { name: 'Authorization', type: 'apiKey' },
-        {
-            in: 'cookie',
-            name: 'astral_session',
-            type: 'apiKey'
-        },
-        {
-            in: 'cookie',
-            name: '__Host-astral_session',
-            type: 'apiKey'
-        }
-    ],
-    url: '/api/v1/computers/{id}/files/reference',
     ...options
 });
 
@@ -1839,6 +1821,27 @@ export const selectComputer = <ThrowOnError extends boolean = false>(options: Op
     }
 });
 
+/**
+ * Read a regular file on a Computer allowed for this Session. Relative paths use the Bot home on that Computer.
+ */
+export const sessionComputerFileContent = <ThrowOnError extends boolean = false>(options: Options<SessionComputerFileContentData, ThrowOnError>): RequestResult<SessionComputerFileContentResponses, SessionComputerFileContentErrors, ThrowOnError> => (options.client ?? client).get<SessionComputerFileContentResponses, SessionComputerFileContentErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/sessions/{id}/computers/{computer}/files/content',
+    ...options
+});
+
 export const sessionContext = <ThrowOnError extends boolean = false>(options: Options<SessionContextData, ThrowOnError>): RequestResult<SessionContextResponses, SessionContextErrors, ThrowOnError> => (options.client ?? client).get<SessionContextResponses, SessionContextErrors, ThrowOnError>({
     security: [
         { name: 'Authorization', type: 'apiKey' },
@@ -2708,9 +2711,6 @@ export const triggerWakeEndpoint = <ThrowOnError extends boolean = false>(option
     }
 });
 
-/**
- * List this Bot's accounts, with access scopes and without credentials.
- */
 export const agentAccounts = <ThrowOnError extends boolean = false>(options?: Options<AgentAccountsData, ThrowOnError>): RequestResult<AgentAccountsResponses, AgentAccountsErrors, ThrowOnError> => (options?.client ?? client).get<AgentAccountsResponses, AgentAccountsErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2721,9 +2721,6 @@ export const agentAccounts = <ThrowOnError extends boolean = false>(options?: Op
     ...options
 });
 
-/**
- * Resolve an authorized platform chat ID and optional Topic without creating a Session.
- */
 export const agentResolveConversation = <ThrowOnError extends boolean = false>(options: Options<AgentResolveConversationData, ThrowOnError>): RequestResult<AgentResolveConversationResponses, AgentResolveConversationErrors, ThrowOnError> => (options.client ?? client).post<AgentResolveConversationResponses, AgentResolveConversationErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2738,9 +2735,6 @@ export const agentResolveConversation = <ThrowOnError extends boolean = false>(o
     }
 });
 
-/**
- * Discover supported operations, request parameters and documentation for this account.
- */
 export const agentAccountOperations = <ThrowOnError extends boolean = false>(options: Options<AgentAccountOperationsData, ThrowOnError>): RequestResult<AgentAccountOperationsResponses, AgentAccountOperationsErrors, ThrowOnError> => (options.client ?? client).get<AgentAccountOperationsResponses, AgentAccountOperationsErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2751,9 +2745,6 @@ export const agentAccountOperations = <ThrowOnError extends boolean = false>(opt
     ...options
 });
 
-/**
- * Invoke a discovered operation with its account-resource or authorized chat scope. Makes one attempt.
- */
 export const agentAccountOperation = <ThrowOnError extends boolean = false>(options: Options<AgentAccountOperationData, ThrowOnError>): RequestResult<AgentAccountOperationResponses, AgentAccountOperationErrors, ThrowOnError> => (options.client ?? client).post<AgentAccountOperationResponses, AgentAccountOperationErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2768,22 +2759,6 @@ export const agentAccountOperation = <ThrowOnError extends boolean = false>(opti
     }
 });
 
-/**
- * Discover named Telegram operations and whether each reads account resources or requires an authorized chat.
- */
-export const agentTelegramOperations = <ThrowOnError extends boolean = false>(options: Options<AgentTelegramOperationsData, ThrowOnError>): RequestResult<AgentTelegramOperationsResponses, AgentTelegramOperationsErrors, ThrowOnError> => (options.client ?? client).get<AgentTelegramOperationsResponses, AgentTelegramOperationsErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/accounts/{id}/telegram/operations',
-    ...options
-});
-
-/**
- * Stream a verified sticker resource's original or thumbnail; supply file_id and exactly one of set_name or custom_emoji_id.
- */
 export const agentTelegramStickerContent = <ThrowOnError extends boolean = false>(options: Options<AgentTelegramStickerContentData, ThrowOnError>): RequestResult<AgentTelegramStickerContentResponses, AgentTelegramStickerContentErrors, ThrowOnError> => (options.client ?? client).get<AgentTelegramStickerContentResponses, AgentTelegramStickerContentErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2792,57 +2767,6 @@ export const agentTelegramStickerContent = <ThrowOnError extends boolean = false
         }],
     url: '/v1/accounts/{id}/telegram/stickers/content',
     ...options
-});
-
-/**
- * Download a verified sticker resource to an explicit calling-Computer path and return a file reference.
- */
-export const agentDownloadTelegramSticker = <ThrowOnError extends boolean = false>(options: Options<AgentDownloadTelegramStickerData, ThrowOnError>): RequestResult<AgentDownloadTelegramStickerResponses, AgentDownloadTelegramStickerErrors, ThrowOnError> => (options.client ?? client).post<AgentDownloadTelegramStickerResponses, AgentDownloadTelegramStickerErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/accounts/{id}/telegram/stickers/download',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Invoke a named Telegram operation. Destination and credential identity are supplied by the Host.
- */
-export const agentTelegramOperation = <ThrowOnError extends boolean = false>(options: Options<AgentTelegramOperationData, ThrowOnError>): RequestResult<AgentTelegramOperationResponses, AgentTelegramOperationErrors, ThrowOnError> => (options.client ?? client).post<AgentTelegramOperationResponses, AgentTelegramOperationErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/accounts/{id}/telegram/{operation}',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Write an original attachment to an explicit path on the calling Computer and return a file reference.
- */
-export const agentDownloadAttachment = <ThrowOnError extends boolean = false>(options: Options<AgentDownloadAttachmentData, ThrowOnError>): RequestResult<AgentDownloadAttachmentResponses, AgentDownloadAttachmentErrors, ThrowOnError> => (options.client ?? client).post<AgentDownloadAttachmentResponses, AgentDownloadAttachmentErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/attachments/download',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
 });
 
 export const agentCapabilities = <ThrowOnError extends boolean = false>(options?: Options<AgentCapabilitiesData, ThrowOnError>): RequestResult<AgentCapabilitiesResponses, AgentCapabilitiesErrors, ThrowOnError> => (options?.client ?? client).get<AgentCapabilitiesResponses, AgentCapabilitiesErrors, ThrowOnError>({
@@ -2865,9 +2789,6 @@ export const agentCapability = <ThrowOnError extends boolean = false>(options: O
     ...options
 });
 
-/**
- * List this Bot's allowed Computers and current connection status.
- */
 export const agentComputers = <ThrowOnError extends boolean = false>(options?: Options<AgentComputersData, ThrowOnError>): RequestResult<AgentComputersResponses, AgentComputersErrors, ThrowOnError> => (options?.client ?? client).get<AgentComputersResponses, AgentComputersErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2891,9 +2812,6 @@ export const agentComputerFileContent = <ThrowOnError extends boolean = false>(o
     ...options
 });
 
-/**
- * Inspect this listener's bound Bot, Session, source Computer, working directory and AgentHome.
- */
 export const agentContext = <ThrowOnError extends boolean = false>(options?: Options<AgentContextData, ThrowOnError>): RequestResult<AgentContextResponses, AgentContextErrors, ThrowOnError> => (options?.client ?? client).get<AgentContextResponses, AgentContextErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2904,9 +2822,6 @@ export const agentContext = <ThrowOnError extends boolean = false>(options?: Opt
     ...options
 });
 
-/**
- * List known authorized chats.
- */
 export const agentConversations = <ThrowOnError extends boolean = false>(options?: Options<AgentConversationsData, ThrowOnError>): RequestResult<AgentConversationsResponses, AgentConversationsErrors, ThrowOnError> => (options?.client ?? client).get<AgentConversationsResponses, AgentConversationsErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2930,26 +2845,6 @@ export const agentNapCatAvatarContent = <ThrowOnError extends boolean = false>(o
     ...options
 });
 
-/**
- * Save the authorized NapCat chat's avatar to an explicit path on the calling Computer.
- */
-export const agentDownloadNapCatAvatar = <ThrowOnError extends boolean = false>(options: Options<AgentDownloadNapCatAvatarData, ThrowOnError>): RequestResult<AgentDownloadNapCatAvatarResponses, AgentDownloadNapCatAvatarErrors, ThrowOnError> => (options.client ?? client).post<AgentDownloadNapCatAvatarResponses, AgentDownloadNapCatAvatarErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/conversations/{id}/avatar/download',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Read ordered text and media references from a currently authorized NapCat essence entry, including entries absent from the IM archive.
- */
 export const agentNapCatEssenceParts = <ThrowOnError extends boolean = false>(options: Options<AgentNapCatEssencePartsData, ThrowOnError>): RequestResult<AgentNapCatEssencePartsResponses, AgentNapCatEssencePartsErrors, ThrowOnError> => (options.client ?? client).get<AgentNapCatEssencePartsResponses, AgentNapCatEssencePartsErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2960,9 +2855,6 @@ export const agentNapCatEssenceParts = <ThrowOnError extends boolean = false>(op
     ...options
 });
 
-/**
- * Read one essence part, preserving its source identity and safe resource links.
- */
 export const agentNapCatEssencePart = <ThrowOnError extends boolean = false>(options: Options<AgentNapCatEssencePartData, ThrowOnError>): RequestResult<AgentNapCatEssencePartResponses, AgentNapCatEssencePartErrors, ThrowOnError> => (options.client ?? client).get<AgentNapCatEssencePartResponses, AgentNapCatEssencePartErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2973,9 +2865,6 @@ export const agentNapCatEssencePart = <ThrowOnError extends boolean = false>(opt
     ...options
 });
 
-/**
- * Stream one verified essence media item without importing the message.
- */
 export const agentNapCatEssenceContent = <ThrowOnError extends boolean = false>(options: Options<AgentNapCatEssenceContentData, ThrowOnError>): RequestResult<AgentNapCatEssenceContentResponses, AgentNapCatEssenceContentErrors, ThrowOnError> => (options.client ?? client).get<AgentNapCatEssenceContentResponses, AgentNapCatEssenceContentErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -2984,23 +2873,6 @@ export const agentNapCatEssenceContent = <ThrowOnError extends boolean = false>(
         }],
     url: '/v1/conversations/{id}/essence/{message_id}/parts/{ref}/content',
     ...options
-});
-
-/**
- * Save a verified essence media item to an explicit path on the calling Computer.
- */
-export const agentDownloadNapCatEssencePart = <ThrowOnError extends boolean = false>(options: Options<AgentDownloadNapCatEssencePartData, ThrowOnError>): RequestResult<AgentDownloadNapCatEssencePartResponses, AgentDownloadNapCatEssencePartErrors, ThrowOnError> => (options.client ?? client).post<AgentDownloadNapCatEssencePartResponses, AgentDownloadNapCatEssencePartErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/conversations/{id}/essence/{message_id}/parts/{ref}/download',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
 });
 
 /**
@@ -3016,26 +2888,6 @@ export const agentNapCatMemberAvatarContent = <ThrowOnError extends boolean = fa
     ...options
 });
 
-/**
- * Save the verified QQ user's avatar to an explicit path on the calling Computer.
- */
-export const agentDownloadNapCatMemberAvatar = <ThrowOnError extends boolean = false>(options: Options<AgentDownloadNapCatMemberAvatarData, ThrowOnError>): RequestResult<AgentDownloadNapCatMemberAvatarResponses, AgentDownloadNapCatMemberAvatarErrors, ThrowOnError> => (options.client ?? client).post<AgentDownloadNapCatMemberAvatarResponses, AgentDownloadNapCatMemberAvatarErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/conversations/{id}/members/{user_id}/avatar/download',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Get this chat's send_message description and platform-specific argument schema.
- */
 export const agentMessageTool = <ThrowOnError extends boolean = false>(options: Options<AgentMessageToolData, ThrowOnError>): RequestResult<AgentMessageToolResponses, AgentMessageToolErrors, ThrowOnError> => (options.client ?? client).get<AgentMessageToolResponses, AgentMessageToolErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3046,9 +2898,6 @@ export const agentMessageTool = <ThrowOnError extends boolean = false>(options: 
     ...options
 });
 
-/**
- * Read archived messages. Filter q before pagination; continue with after=next_sequence.
- */
 export const agentMessages = <ThrowOnError extends boolean = false>(options: Options<AgentMessagesData, ThrowOnError>): RequestResult<AgentMessagesResponses, AgentMessagesErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagesResponses, AgentMessagesErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3059,9 +2908,6 @@ export const agentMessages = <ThrowOnError extends boolean = false>(options: Opt
     ...options
 });
 
-/**
- * Read the latest archived version of a platform message.
- */
 export const agentMessage = <ThrowOnError extends boolean = false>(options: Options<AgentMessageData, ThrowOnError>): RequestResult<AgentMessageResponses, AgentMessageErrors, ThrowOnError> => (options.client ?? client).get<AgentMessageResponses, AgentMessageErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3072,9 +2918,6 @@ export const agentMessage = <ThrowOnError extends boolean = false>(options: Opti
     ...options
 });
 
-/**
- * Stream original attachment bytes; this does not save them on a Computer.
- */
 export const agentAttachmentContent = <ThrowOnError extends boolean = false>(options: Options<AgentAttachmentContentData, ThrowOnError>): RequestResult<AgentAttachmentContentResponses, AgentAttachmentContentErrors, ThrowOnError> => (options.client ?? client).get<AgentAttachmentContentResponses, AgentAttachmentContentErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3085,9 +2928,6 @@ export const agentAttachmentContent = <ThrowOnError extends boolean = false>(opt
     ...options
 });
 
-/**
- * Discover ordered cards, attachments and merged-forward parts within an archived authorized message.
- */
 export const agentMessageParts = <ThrowOnError extends boolean = false>(options: Options<AgentMessagePartsData, ThrowOnError>): RequestResult<AgentMessagePartsResponses, AgentMessagePartsErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagePartsResponses, AgentMessagePartsErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3098,9 +2938,6 @@ export const agentMessageParts = <ThrowOnError extends boolean = false>(options:
     ...options
 });
 
-/**
- * Read one normalized part; page forwarded messages with offset and limit.
- */
 export const agentMessagePart = <ThrowOnError extends boolean = false>(options: Options<AgentMessagePartData, ThrowOnError>): RequestResult<AgentMessagePartResponses, AgentMessagePartErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagePartResponses, AgentMessagePartErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3111,9 +2948,6 @@ export const agentMessagePart = <ThrowOnError extends boolean = false>(options: 
     ...options
 });
 
-/**
- * Stream the selected part's original attachment bytes, including nested forward media.
- */
 export const agentMessagePartContent = <ThrowOnError extends boolean = false>(options: Options<AgentMessagePartContentData, ThrowOnError>): RequestResult<AgentMessagePartContentResponses, AgentMessagePartContentErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagePartContentResponses, AgentMessagePartContentErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3124,26 +2958,6 @@ export const agentMessagePartContent = <ThrowOnError extends boolean = false>(op
     ...options
 });
 
-/**
- * Write one selected part's original to an explicit calling-Computer path and return its file reference.
- */
-export const agentDownloadMessagePart = <ThrowOnError extends boolean = false>(options: Options<AgentDownloadMessagePartData, ThrowOnError>): RequestResult<AgentDownloadMessagePartResponses, AgentDownloadMessagePartErrors, ThrowOnError> => (options.client ?? client).post<AgentDownloadMessagePartResponses, AgentDownloadMessagePartErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/conversations/{id}/messages/{message_id}/parts/{ref}/download',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Explicitly read a selected card's original JSON or XML payload.
- */
 export const agentMessagePartRaw = <ThrowOnError extends boolean = false>(options: Options<AgentMessagePartRawData, ThrowOnError>): RequestResult<AgentMessagePartRawResponses, AgentMessagePartRawErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagePartRawResponses, AgentMessagePartRawErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3154,43 +2968,6 @@ export const agentMessagePartRaw = <ThrowOnError extends boolean = false>(option
     ...options
 });
 
-/**
- * Reference an existing Computer file for Web delivery; snapshot=true fixes its version.
- */
-export const agentFileReference = <ThrowOnError extends boolean = false>(options: Options<AgentFileReferenceData, ThrowOnError>): RequestResult<AgentFileReferenceResponses, AgentFileReferenceErrors, ThrowOnError> => (options.client ?? client).post<AgentFileReferenceResponses, AgentFileReferenceErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/files/reference',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Send a Computer path or astral-file reference with a stable Idempotency-Key; wait for platform acceptance or a send error.
- */
-export const agentSendFile = <ThrowOnError extends boolean = false>(options: Options<AgentSendFileData, ThrowOnError>): RequestResult<AgentSendFileResponses, AgentSendFileErrors, ThrowOnError> => (options.client ?? client).post<AgentSendFileResponses, AgentSendFileErrors, ThrowOnError>({
-    security: [{
-            key: 'command',
-            scheme: 'bearer',
-            type: 'http'
-        }],
-    url: '/v1/im/files',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Send text with a stable Idempotency-Key and wait for platform acceptance or an error containing its receipt ID.
- */
 export const agentSendText = <ThrowOnError extends boolean = false>(options: Options<AgentSendTextData, ThrowOnError>): RequestResult<AgentSendTextResponses, AgentSendTextErrors, ThrowOnError> => (options.client ?? client).post<AgentSendTextResponses, AgentSendTextErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3205,9 +2982,6 @@ export const agentSendText = <ThrowOnError extends boolean = false>(options: Opt
     }
 });
 
-/**
- * Read this Bot's persisted send outcome. Unknown outcomes are not automatically retried.
- */
 export const agentSendReceipt = <ThrowOnError extends boolean = false>(options: Options<AgentSendReceiptData, ThrowOnError>): RequestResult<AgentSendReceiptResponses, AgentSendReceiptErrors, ThrowOnError> => (options.client ?? client).get<AgentSendReceiptResponses, AgentSendReceiptErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3218,9 +2992,6 @@ export const agentSendReceipt = <ThrowOnError extends boolean = false>(options: 
     ...options
 });
 
-/**
- * List currently available model profiles without contacting a provider.
- */
 export const agentModels = <ThrowOnError extends boolean = false>(options?: Options<AgentModelsData, ThrowOnError>): RequestResult<AgentModelsResponses, AgentModelsErrors, ThrowOnError> => (options?.client ?? client).get<AgentModelsResponses, AgentModelsErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3231,9 +3002,6 @@ export const agentModels = <ThrowOnError extends boolean = false>(options?: Opti
     ...options
 });
 
-/**
- * List this Bot's schedules.
- */
 export const agentSchedules = <ThrowOnError extends boolean = false>(options?: Options<AgentSchedulesData, ThrowOnError>): RequestResult<AgentSchedulesResponses, AgentSchedulesErrors, ThrowOnError> => (options?.client ?? client).get<AgentSchedulesResponses, AgentSchedulesErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3244,9 +3012,6 @@ export const agentSchedules = <ThrowOnError extends boolean = false>(options?: O
     ...options
 });
 
-/**
- * Create a visible one-time or recurring prompt schedule.
- */
 export const agentCreateSchedule = <ThrowOnError extends boolean = false>(options: Options<AgentCreateScheduleData, ThrowOnError>): RequestResult<AgentCreateScheduleResponses, AgentCreateScheduleErrors, ThrowOnError> => (options.client ?? client).post<AgentCreateScheduleResponses, AgentCreateScheduleErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3261,9 +3026,6 @@ export const agentCreateSchedule = <ThrowOnError extends boolean = false>(option
     }
 });
 
-/**
- * Delete a schedule using its current revision.
- */
 export const agentDeleteSchedule = <ThrowOnError extends boolean = false>(options: Options<AgentDeleteScheduleData, ThrowOnError>): RequestResult<AgentDeleteScheduleResponses, AgentDeleteScheduleErrors, ThrowOnError> => (options.client ?? client).delete<AgentDeleteScheduleResponses, AgentDeleteScheduleErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3274,9 +3036,6 @@ export const agentDeleteSchedule = <ThrowOnError extends boolean = false>(option
     ...options
 });
 
-/**
- * Read a schedule and its current revision.
- */
 export const agentGetSchedule = <ThrowOnError extends boolean = false>(options: Options<AgentGetScheduleData, ThrowOnError>): RequestResult<AgentGetScheduleResponses, AgentGetScheduleErrors, ThrowOnError> => (options.client ?? client).get<AgentGetScheduleResponses, AgentGetScheduleErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3287,9 +3046,6 @@ export const agentGetSchedule = <ThrowOnError extends boolean = false>(options: 
     ...options
 });
 
-/**
- * Replace the editable configuration with its expected revision.
- */
 export const agentUpdateSchedule = <ThrowOnError extends boolean = false>(options: Options<AgentUpdateScheduleData, ThrowOnError>): RequestResult<AgentUpdateScheduleResponses, AgentUpdateScheduleErrors, ThrowOnError> => (options.client ?? client).patch<AgentUpdateScheduleResponses, AgentUpdateScheduleErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3334,9 +3090,6 @@ export const agentSearchSessions = <ThrowOnError extends boolean = false>(option
     }
 });
 
-/**
- * Rename, archive or restore one unbound Session belonging to this Bot.
- */
 export const agentUpdateSession = <ThrowOnError extends boolean = false>(options: Options<AgentUpdateSessionData, ThrowOnError>): RequestResult<AgentUpdateSessionResponses, AgentUpdateSessionErrors, ThrowOnError> => (options.client ?? client).patch<AgentUpdateSessionResponses, AgentUpdateSessionErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3377,9 +3130,6 @@ export const agentRollout = <ThrowOnError extends boolean = false>(options: Opti
     ...options
 });
 
-/**
- * List local managed Skills and the Server's current Shared Skills.
- */
 export const agentManagedSkills = <ThrowOnError extends boolean = false>(options?: Options<AgentManagedSkillsData, ThrowOnError>): RequestResult<AgentManagedSkillsResponses, AgentManagedSkillsErrors, ThrowOnError> => (options?.client ?? client).get<AgentManagedSkillsResponses, AgentManagedSkillsErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3390,9 +3140,6 @@ export const agentManagedSkills = <ThrowOnError extends boolean = false>(options
     ...options
 });
 
-/**
- * Stop distributing a Shared Skill and remove its installed copies on sync.
- */
 export const agentDeleteSharedSkill = <ThrowOnError extends boolean = false>(options: Options<AgentDeleteSharedSkillData, ThrowOnError>): RequestResult<AgentDeleteSharedSkillResponses, AgentDeleteSharedSkillErrors, ThrowOnError> => (options.client ?? client).delete<AgentDeleteSharedSkillResponses, AgentDeleteSharedSkillErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3403,9 +3150,6 @@ export const agentDeleteSharedSkill = <ThrowOnError extends boolean = false>(opt
     ...options
 });
 
-/**
- * Publish a single Shared Skill from the authenticated source Computer.
- */
 export const agentPublishSharedSkill = <ThrowOnError extends boolean = false>(options: Options<AgentPublishSharedSkillData, ThrowOnError>): RequestResult<AgentPublishSharedSkillResponses, AgentPublishSharedSkillErrors, ThrowOnError> => (options.client ?? client).post<AgentPublishSharedSkillResponses, AgentPublishSharedSkillErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3416,9 +3160,6 @@ export const agentPublishSharedSkill = <ThrowOnError extends boolean = false>(op
     ...options
 });
 
-/**
- * List visible endpoints.
- */
 export const agentWakeEndpoints = <ThrowOnError extends boolean = false>(options?: Options<AgentWakeEndpointsData, ThrowOnError>): RequestResult<AgentWakeEndpointsResponses, AgentWakeEndpointsErrors, ThrowOnError> => (options?.client ?? client).get<AgentWakeEndpointsResponses, AgentWakeEndpointsErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3429,9 +3170,6 @@ export const agentWakeEndpoints = <ThrowOnError extends boolean = false>(options
     ...options
 });
 
-/**
- * Create a local event endpoint for this command's Computer and a root Session.
- */
 export const agentCreateWakeEndpoint = <ThrowOnError extends boolean = false>(options: Options<AgentCreateWakeEndpointData, ThrowOnError>): RequestResult<AgentCreateWakeEndpointResponses, AgentCreateWakeEndpointErrors, ThrowOnError> => (options.client ?? client).post<AgentCreateWakeEndpointResponses, AgentCreateWakeEndpointErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3446,9 +3184,6 @@ export const agentCreateWakeEndpoint = <ThrowOnError extends boolean = false>(op
     }
 });
 
-/**
- * Delete an endpoint using its current revision.
- */
 export const agentDeleteWakeEndpoint = <ThrowOnError extends boolean = false>(options: Options<AgentDeleteWakeEndpointData, ThrowOnError>): RequestResult<AgentDeleteWakeEndpointResponses, AgentDeleteWakeEndpointErrors, ThrowOnError> => (options.client ?? client).delete<AgentDeleteWakeEndpointResponses, AgentDeleteWakeEndpointErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3459,9 +3194,6 @@ export const agentDeleteWakeEndpoint = <ThrowOnError extends boolean = false>(op
     ...options
 });
 
-/**
- * Read one endpoint.
- */
 export const agentWakeEndpoint = <ThrowOnError extends boolean = false>(options: Options<AgentWakeEndpointData, ThrowOnError>): RequestResult<AgentWakeEndpointResponses, AgentWakeEndpointErrors, ThrowOnError> => (options.client ?? client).get<AgentWakeEndpointResponses, AgentWakeEndpointErrors, ThrowOnError>({
     security: [{
             key: 'command',
@@ -3472,9 +3204,6 @@ export const agentWakeEndpoint = <ThrowOnError extends boolean = false>(options:
     ...options
 });
 
-/**
- * Edit an endpoint using its current revision.
- */
 export const agentUpdateWakeEndpoint = <ThrowOnError extends boolean = false>(options: Options<AgentUpdateWakeEndpointData, ThrowOnError>): RequestResult<AgentUpdateWakeEndpointResponses, AgentUpdateWakeEndpointErrors, ThrowOnError> => (options.client ?? client).patch<AgentUpdateWakeEndpointResponses, AgentUpdateWakeEndpointErrors, ThrowOnError>({
     security: [{
             key: 'command',

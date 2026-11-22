@@ -12,9 +12,8 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -425,11 +424,12 @@ func TestIMPreviewIsFrozenBeforeMainAndProbeWithoutChangingOriginalDownload(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	destination := filepath.Join(caller.CWD, "explicit-original.png")
-	if _, err := s.DownloadAttachment(p.Context, caller, b.ConversationID, event.ID, attachment.Ref, destination); err != nil {
+	original, _, err := s.AttachmentContent(p.Context, caller, b.ConversationID, event.MessageID, attachment.Ref)
+	if err != nil {
 		t.Fatal(err)
 	}
-	downloaded, err := os.ReadFile(destination)
+	downloaded, err := io.ReadAll(original.Body)
+	_ = original.Body.Close()
 	if err != nil || !bytes.Equal(downloaded, data) {
 		t.Fatal("explicit download did not preserve original bytes:", err)
 	}

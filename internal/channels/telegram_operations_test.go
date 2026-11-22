@@ -22,7 +22,7 @@ func TestTelegramOperationsScopeEveryChatAndTopic(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := domain.ExecutionBinding{AgentID: p.Agent.ID, SessionID: first.SessionID}
-	catalog, err := s.TelegramOperations(p.Context, p.Agent.ID, c.ID)
+	catalog, err := s.AccountOperations(p.Context, p.Agent.ID, c.ID)
 	if err != nil || len(catalog) < 90 {
 		t.Fatalf("catalog is incomplete: %d %v", len(catalog), err)
 	}

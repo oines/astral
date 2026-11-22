@@ -3,13 +3,10 @@ package channels
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"io"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 )
 
@@ -328,7 +325,7 @@ func (s *Service) MessagePartContent(ctx context.Context, b domain.ExecutionBind
 		return Download{}, domain.Invalid("selected message part is not an attachment")
 	}
 	attachment := *part.Attachment
-	download, err := s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
+	download, err := s.downloadSource(ctx, b, conversationID, messageID, attachment, connection)
 	if err != nil {
 		return Download{}, err
 	}
@@ -340,31 +337,4 @@ func (s *Service) MessagePartContent(ctx context.Context, b domain.ExecutionBind
 		download.MediaType = attachment.MediaType
 	}
 	return download, nil
-}
-
-func (s *Service) DownloadMessagePart(ctx context.Context, b domain.ExecutionBinding, conversationID, messageID, ref, destination string) (domain.FileRef, error) {
-	if strings.TrimSpace(destination) == "" {
-		return domain.FileRef{}, domain.Invalid("an explicit destination path is required")
-	}
-	download, err := s.MessagePartContent(ctx, b, conversationID, messageID, ref)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	defer download.Body.Close()
-	_, body, err := s.Harness.Hub.Call(ctx, "file.write", computers.Call{Binding: b, Path: destination}, download.Body)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	_, copyErr := io.Copy(io.Discard, body)
-	if err = errors.Join(copyErr, body.Close()); err != nil {
-		return domain.FileRef{}, err
-	}
-	_, _, connection, err := s.target(ctx, b.AgentID, b.SessionID, conversationID)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	if err = s.authorizeMessagePart(ctx, b, conversationID, messageID, connection.ID); err != nil {
-		return domain.FileRef{}, err
-	}
-	return s.Harness.Files.Reference(ctx, b, destination, false)
 }

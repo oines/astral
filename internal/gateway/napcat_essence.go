@@ -16,7 +16,7 @@ func napcatEssenceSource(r *http.Request, media bool) (channels.NapCatEssenceSou
 		}
 	}
 	if media && r.URL.Query().Get("media_digest") == "" {
-		return channels.NapCatEssenceSource{}, domain.Invalid("follow the selected part's media_digest content or download link")
+		return channels.NapCatEssenceSource{}, domain.Invalid("follow the selected part's media_digest content link")
 	}
 	return channels.NapCatEssenceSource{MessageID: r.PathValue("message_id"), MsgSeq: r.URL.Query().Get("msg_seq"), MsgRandom: r.URL.Query().Get("msg_random"), MediaDigest: r.URL.Query().Get("media_digest")}, nil
 }
@@ -32,7 +32,7 @@ func napcatEssenceViews(conversationID string, source channels.NapCatEssenceSour
 			view.ReadURL, view.RawURL = base+"?"+query, ""
 			if view.Attachment != nil {
 				mediaQuery := query + "&media_digest=" + channels.NapCatEssenceMediaDigest(*originals[i].Attachment)
-				view.ContentURL, view.DownloadURL = base+"/content?"+mediaQuery, base+"/download?"+mediaQuery
+				view.ContentURL = base + "/content?" + mediaQuery
 			}
 			if view.Forward != nil {
 				for j := range view.Forward.Messages {
@@ -86,12 +86,4 @@ func (s *Service) napcatEssenceRoutes() {
 		}
 		serveContent(w, r, download)
 	})
-	register[MessagePartDownloadRequest, ReferenceResponse](s, "POST", selected+"/download", "agentDownloadNapCatEssencePart", func(r *http.Request, request MessagePartDownloadRequest) (ReferenceResponse, error) {
-		source, err := napcatEssenceSource(r, true)
-		if err != nil {
-			return ReferenceResponse{}, err
-		}
-		ref, err := s.Channels.DownloadNapCatEssencePart(r.Context(), binding(r), r.PathValue("id"), source, r.PathValue("ref"), request.Path)
-		return ReferenceResponse{File: ref, URI: fileURI(ref)}, err
-	}, mediaQuery...)
 }

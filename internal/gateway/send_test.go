@@ -59,7 +59,7 @@ func (a *sendAdapter) Send(_ context.Context, send channels.Send) (channels.Rece
 	return channels.Receipt{MessageIDs: []string{"accepted-1"}}, nil
 }
 
-func TestSendAPIsReturnPlatformFailureAndIndependentSuccess(t *testing.T) {
+func TestSendAPIReturnsPlatformFailureAndIndependentSuccess(t *testing.T) {
 	p := testkit.New(t, 1, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	channel := channels.New(p.Store, p.Harness)
 	adapter := &sendAdapter{}
@@ -93,48 +93,48 @@ func TestSendAPIsReturnPlatformFailureAndIndependentSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	call := func(path, intent, body string) computers.GatewayResponse {
+	call := func(intent, body string) computers.GatewayResponse {
 		t.Helper()
-		reply, err := api.Handle(p.Context, computers.GatewayRequest{Binding: source, Method: "POST", Path: path, Body: json.RawMessage(body), Intent: intent})
+		reply, err := api.Handle(p.Context, computers.GatewayRequest{Binding: source, Method: "POST", Path: "/v1/im/messages", Body: json.RawMessage(body), Intent: intent})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return reply
 	}
 	textBody, _ := json.Marshal(SendText{ConversationID: chat.ID, Text: "reject"})
-	fileBody, _ := json.Marshal(SendFile{ConversationID: chat.ID, FileURI: filestream.URL(file)})
-	for _, test := range []struct{ path, intent, body, message string }{
-		{"/v1/im/messages", "text", string(textBody), "platform rejected text"},
-		{"/v1/im/files", "file", string(fileBody), "platform rejected document"},
+	fileBody, _ := json.Marshal(SendText{ConversationID: chat.ID, Parts: []domain.OutboundPart{{Type: "text", Text: "attached report"}, {Type: "file", FileURI: filestream.URL(file)}}})
+	for _, test := range []struct{ intent, body, message string }{
+		{"text", string(textBody), "platform rejected text"},
+		{"file", string(fileBody), "platform rejected document"},
 	} {
-		failed := call(test.path, test.intent, test.body)
+		failed := call(test.intent, test.body)
 		if failed.Status != http.StatusBadRequest || !strings.Contains(string(failed.Body), test.message) || !strings.Contains(string(failed.Body), "outbox_") {
 			t.Fatalf("failure was not returned to the caller: %+v", failed)
 		}
 		before := adapter.calls.Load()
-		_ = call(test.path, test.intent, test.body)
+		_ = call(test.intent, test.body)
 		if adapter.calls.Load() != before {
 			t.Fatal("replaying a failed intent automatically sent it again")
 		}
 	}
 	successBody, _ := json.Marshal(SendText{ConversationID: chat.ID, Text: "independent"})
-	accepted := call("/v1/im/messages", "independent", string(successBody))
+	accepted := call("independent", string(successBody))
 	var receipts []domain.Outbox
 	if accepted.Status != http.StatusOK || json.Unmarshal(accepted.Body, &receipts) != nil || len(receipts) != 1 || receipts[0].Status != "accepted" {
 		t.Fatalf("independent send blocked or returned pending: %+v", accepted)
 	}
 	partsBody, _ := json.Marshal(SendText{ConversationID: chat.ID, Parts: []domain.OutboundPart{{Type: "text", Text: "ordered\n"}, {Type: "file", Path: file.Path}, {Type: "text", Text: "must not follow a failed file"}}})
-	partsReply := call("/v1/im/messages", "ordered-parts", string(partsBody))
+	partsReply := call("ordered-parts", string(partsBody))
 	if partsReply.Status != http.StatusBadRequest || !strings.Contains(string(partsReply.Body), "platform rejected document") {
 		t.Fatalf("parts did not use the authenticated Computer source and shared Outbox: %+v", partsReply)
 	}
 	before := adapter.calls.Load()
-	_ = call("/v1/im/messages", "ordered-parts", string(partsBody))
+	_ = call("ordered-parts", string(partsBody))
 	if adapter.calls.Load() != before {
 		t.Fatal("replaying ordered parts duplicated platform sends")
 	}
 	unsupported, _ := json.Marshal(SendText{ConversationID: chat.ID, Parts: []domain.OutboundPart{{Type: "text", Text: "must never send"}, {Type: "mention", UserID: "123"}}})
-	refused := call("/v1/im/messages", "unsupported-native-mention", string(unsupported))
+	refused := call("unsupported-native-mention", string(unsupported))
 	if refused.Status != http.StatusBadRequest || adapter.calls.Load() != before {
 		t.Fatalf("unsupported mention partially sent: %+v", refused)
 	}

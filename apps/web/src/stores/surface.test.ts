@@ -78,6 +78,16 @@ describe('the contextual workspace', () => {
     expect(surface.tabs.map(tab => tab.id)).toEqual(['first', 'snapshot-one', 'snapshot-two'])
   })
 
+  it('reuses an open path while keeping its reading permission tied to its Session', () => {
+    const surface = useSurfaceStore()
+    surface.setSession('root')
+    const path = { computer_id: 'PC_local', path: '/project/report.md' }
+    surface.openPath(path, 'child')
+    surface.openPath(path, 'child')
+    surface.openPath(path, 'root')
+    expect(surface.tabs.map(tab => tab.kind === 'file' && tab.sessionID)).toEqual(['child', 'root'])
+  })
+
   it('keeps same-name and same-path files on different Computers in different tabs', () => {
     const surface = useSurfaceStore()
     surface.setSession('root')

@@ -2,13 +2,13 @@
 import { computed, provide } from 'vue'
 import MarkdownRender, { setCustomComponents, enableKatex, enableMermaid } from 'markstream-vue'
 import 'katex/dist/katex.min.css'
-import { configureMarkdown } from '../lib/markdown'
+import { configureMarkdown, markdownSource } from '../lib/markdown'
 import { useAppStore } from '../stores/app'
 import MarkdownLink from './MarkdownLink.vue'
 import MarkdownImage from './MarkdownImage.vue'
-const props = defineProps<{ content: string; sessionID: string; streaming?: boolean }>()
+const props = defineProps<{ content: string; sessionID: string; streaming?: boolean; assistantReply?: boolean }>()
 const app = useAppStore()
-provide('markdownSession', computed(() => props.sessionID))
+provide(markdownSource, computed(() => ({ sessionID: props.sessionID, assistantReply: props.assistantReply === true })))
 setCustomComponents('astral', { link: MarkdownLink, image: MarkdownImage })
 enableKatex()
 enableMermaid()

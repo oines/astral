@@ -118,7 +118,7 @@ func TestDiscoveryEntryLeadsToSelfContainedLiveContracts(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/v1/im/messages", "/v1/im/files"} {
+	for _, path := range []string{"/v1/im/messages", "/v1/skills/shared/{name}/publish"} {
 		operation := full["paths"].(map[string]any)[path].(map[string]any)["post"].(map[string]any)
 		found := false
 		for _, raw := range operation["parameters"].([]any) {

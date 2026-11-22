@@ -69,28 +69,6 @@ type SendText struct {
 	Parts          []domain.OutboundPart `json:"parts,omitempty"`
 	ReplyTo        string                `json:"reply_to,omitempty"`
 }
-type SendFile struct {
-	domain.MessageOptions
-	ConversationID string `json:"conversation_id,omitempty"`
-	FileURI        string `json:"file_uri,omitempty"`
-	Path           string `json:"path,omitempty"`
-	Text           string `json:"text,omitempty"`
-	ReplyTo        string `json:"reply_to,omitempty"`
-}
-type ReferenceRequest struct {
-	Path     string `json:"path"`
-	Snapshot bool   `json:"snapshot,omitempty"`
-}
-type ReferenceResponse struct {
-	File domain.FileRef `json:"file"`
-	URI  string         `json:"uri"`
-}
-type DownloadRequest struct {
-	ConversationID string `json:"conversation_id"`
-	EventID        string `json:"event_id"`
-	AttachmentRef  string `json:"attachment_ref"`
-	Path           string `json:"path"`
-}
 
 func New(h *harness.Service, c *channels.Service) *Service {
 	s := &Service{Harness: h, Channels: c, Contract: httpcontract.New(), mux: http.NewServeMux()}
@@ -126,12 +104,6 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	})
 	register[channels.ChatOperationRequest, channels.ChatOperationResult](s, "POST", "/v1/accounts/{id}/operations/{operation}", "agentAccountOperation", func(r *http.Request, request channels.ChatOperationRequest) (channels.ChatOperationResult, error) {
 		return c.AccountOperation(r.Context(), binding(r), r.PathValue("id"), r.PathValue("operation"), request)
-	})
-	register[httpcontract.Empty, []channels.TelegramOperation](s, "GET", "/v1/accounts/{id}/telegram/operations", "agentTelegramOperations", func(r *http.Request, _ httpcontract.Empty) ([]channels.TelegramOperation, error) {
-		return c.TelegramOperations(r.Context(), binding(r).AgentID, r.PathValue("id"))
-	})
-	register[channels.TelegramRequest, channels.TelegramResult](s, "POST", "/v1/accounts/{id}/telegram/{operation}", "agentTelegramOperation", func(r *http.Request, request channels.TelegramRequest) (channels.TelegramResult, error) {
-		return c.TelegramOperation(r.Context(), binding(r), r.PathValue("id"), r.PathValue("operation"), request)
 	})
 	s.telegramStickerRoutes()
 	s.messagePartRoutes()
@@ -224,13 +196,6 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		b := binding(r)
 		return c.Send(r.Context(), b.AgentID, b.SessionID, channels.SendRequest{MessageOptions: request.MessageOptions, IntentID: r.Header.Get("Idempotency-Key"), ConversationID: request.ConversationID, Text: request.Text, Parts: request.Parts, ReplyTo: request.ReplyTo, SourceComputerID: b.ComputerID, SourceBinding: &b})
 	})
-	register[SendFile, []domain.Outbox](s, "POST", "/v1/im/files", "agentSendFile", func(r *http.Request, request SendFile) ([]domain.Outbox, error) {
-		b := binding(r)
-		if request.FileURI == "" && request.Path == "" {
-			return nil, domain.Invalid("provide a source file URI or Computer path")
-		}
-		return c.Send(r.Context(), b.AgentID, b.SessionID, channels.SendRequest{MessageOptions: request.MessageOptions, IntentID: r.Header.Get("Idempotency-Key"), ConversationID: request.ConversationID, Text: request.Text, ReplyTo: request.ReplyTo, FileURI: request.FileURI, Path: request.Path, SourceComputerID: b.ComputerID, SourceBinding: &b})
-	})
 	register[httpcontract.Empty, sessions.ToolDefinition](s, "GET", "/v1/conversations/{id}/message-tool", "agentMessageTool", func(r *http.Request, _ httpcontract.Empty) (sessions.ToolDefinition, error) {
 		if err := s.visibleConversation(r.Context(), binding(r).AgentID, r.PathValue("id")); err != nil {
 			return sessions.ToolDefinition{}, err
@@ -255,28 +220,21 @@ func New(h *harness.Service, c *channels.Service) *Service {
 		}
 		return value, err
 	})
-	register[DownloadRequest, ReferenceResponse](s, "POST", "/v1/attachments/download", "agentDownloadAttachment", func(r *http.Request, request DownloadRequest) (ReferenceResponse, error) {
-		ref, err := c.DownloadAttachment(r.Context(), binding(r), request.ConversationID, request.EventID, request.AttachmentRef, request.Path)
-		return ReferenceResponse{File: ref, URI: fileURI(ref)}, err
-	})
-	register[ReferenceRequest, ReferenceResponse](s, "POST", "/v1/files/reference", "agentFileReference", func(r *http.Request, request ReferenceRequest) (ReferenceResponse, error) {
-		if request.Path == "" {
-			return ReferenceResponse{}, domain.Invalid("source path is required")
-		}
-		ref, err := h.Files.Reference(r.Context(), binding(r), request.Path, request.Snapshot)
-		return ReferenceResponse{File: ref, URI: fileURI(ref)}, err
-	})
 	s.discoveryRoutes()
 
 	s.mux.HandleFunc("GET /v1/openapi.json", func(w http.ResponseWriter, r *http.Request) { httpcontract.JSON(w, 200, s.Contract.Document()) })
 	return s
 }
 func register[Request, Response any](s *Service, method, path, id string, handler func(*http.Request, Request) (Response, error), query ...httpcontract.Parameter) {
-	httpcontract.Register(s.Contract, s.mux, httpcontract.Operation{Method: method, Path: path, ID: id, Tag: "Agent Gateway", CommandAuth: true, Query: query}, func(w http.ResponseWriter, r *http.Request, request Request) (Response, error) {
+	op := httpcontract.Operation{Method: method, Path: path, ID: id, Tag: "Agent Gateway", CommandAuth: true, Query: query}
+	switch id {
+	case "agentSendText", "agentPublishSharedSkill", "agentDeleteSharedSkill":
+		op.Headers = []httpcontract.Parameter{{Name: "Idempotency-Key", Required: true, Description: "Stable identity of this operation. Reuse only for the same request."}}
+	}
+	httpcontract.Register(s.Contract, s.mux, op, func(w http.ResponseWriter, r *http.Request, request Request) (Response, error) {
 		return handler(r, request)
 	})
 }
-func fileURI(ref domain.FileRef) string { return "astral-file://" + ref.ComputerID + "/" + ref.ID }
 func queryLimit(r *http.Request, fallback int) int {
 	n, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if n < 1 {

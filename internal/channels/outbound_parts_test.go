@@ -244,6 +244,10 @@ func TestConvenienceFreezesNativeMediaIntentWithoutChangingExplicitFile(t *testi
 			if native[0].Type != wantType || native[0].MediaKind != wantKind {
 				t.Fatalf("%s convenience changed %s delivery: %#v", caps.Adapter, mime, native)
 			}
+			inferred, err := service.resolveOutboundParts(p.Context, p.Agent.ID, p.Session.ID, SendRequest{Parts: []domain.OutboundPart{{Type: "attachment", FileURI: filestream.URL(file)}}}, caps)
+			if err != nil || len(inferred) != 1 || inferred[0] != native[0] {
+				t.Fatalf("%s attachment part changed %s delivery: %#v %v", caps.Adapter, mime, inferred, err)
+			}
 			explicit, err := service.resolveOutboundParts(p.Context, p.Agent.ID, p.Session.ID, SendRequest{Parts: []domain.OutboundPart{{Type: "file", FileURI: filestream.URL(file)}}}, caps)
 			if err != nil || len(explicit) != 1 || explicit[0].Type != "file" || explicit[0].MediaKind != "" {
 				t.Fatalf("%s explicit file changed %s delivery: %#v %v", caps.Adapter, mime, explicit, err)

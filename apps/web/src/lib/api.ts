@@ -37,7 +37,10 @@ export function fileURL(id: string, sessionID: string, download = false) {
 }
 export function fileReferenceID(uri: string) {
   if (!uri.startsWith('astral-file:')) return undefined
-  try { return new URL(uri).pathname.replace(/^\/+/, '') || undefined }
+  try {
+    const url = new URL(uri)
+    return url.search || url.hash ? undefined : url.pathname.replace(/^\/+/, '') || undefined
+  }
   catch { return undefined } // A streamed Markdown destination may still be incomplete.
 }
 export function imageURL(sessionID: string, entryID: string, index: number) {

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { FileRef } from '../lib/types'
 import { useFileExplorer, type FileExplorerSource } from './useFileExplorer'
 import type { DirectoryEntry, DirectoryPage, FileService } from './useFileService'
-vi.mock('@astral/sdk', () => ({ fileContent: vi.fn(), getFileReference: vi.fn(), listComputerDirectory: vi.fn(), referenceComputerFile: vi.fn() }))
+vi.mock('@astral/sdk', () => ({ fileContent: vi.fn(), getFileReference: vi.fn(), listComputerDirectory: vi.fn(), sessionComputerFileContent: vi.fn() }))
 const file = (computer: string, path: string): FileRef => ({ id: `${computer}:${path}`, revision: 1, agent_id: 'bot', computer_id: computer, path, display_name: path.split(/[\\/]/).at(-1)!, media_type: 'text/plain', size: 5, created_at: '', updated_at: '' })
 const entry = (path: string, directory = false): DirectoryEntry => ({ name: path.split(/[\\/]/).at(-1)!, path, is_dir: directory, size: 5, modified_at: '' })
 const page = (computer_id: string, path: string, parent: string, entries: DirectoryEntry[], next_cursor?: string): DirectoryPage => ({ computer_id, path, parent, entries, next_cursor })
@@ -13,20 +13,15 @@ describe('source-bound directory browsing', () => {
   it.each([
     { name: 'the session working directory', path: '/work', canonicalPath: '/work' },
     { name: 'the server default for an empty path', path: '', canonicalPath: '/bot-home' },
-  ])('browses $name without a FileRef and opens a listed file through its authorized reference', async ({ path, canonicalPath }) => {
+  ])('lists $name on its source Computer in the authorized Session', async ({ path, canonicalPath }) => {
     const origin: FileExplorerSource = { computer_id: 'session-computer', path }
     const listed = entry(`${canonicalPath}/result.md`)
-    const authorized = file(origin.computer_id, listed.path)
     const listing = vi.fn<FileService['listDirectory']>(async () => page(origin.computer_id, canonicalPath, '/', [listed]))
-    const reference = vi.fn<FileService['referencePath']>(async () => authorized)
     const scope = effectScope()
-    const tree = scope.run(() => useFileExplorer(origin, 'authorized-session', { listDirectory: listing, referencePath: reference }))!
+    const tree = scope.run(() => useFileExplorer(origin, 'authorized-session', { listDirectory: listing }))!
     await vi.waitFor(() => expect(tree.rootPath.value).toBe(canonicalPath))
     expect(listing.mock.calls[0]!.slice(0, 3)).toEqual([origin, 'authorized-session', path])
     expect(tree.rows.value.filter(row => row.kind === 'entry').map(row => row.entry.path)).toEqual([listed.path])
-    expect(reference).not.toHaveBeenCalled()
-    expect(await tree.open(listed)).toEqual(authorized)
-    expect(reference.mock.calls[0]!.slice(0, 3)).toEqual([origin, 'authorized-session', listed.path])
     expect(origin).toEqual({ computer_id: 'session-computer', path })
     scope.stop()
   })
@@ -37,7 +32,7 @@ describe('source-bound directory browsing', () => {
       ? page('computer', '/work/docs', '/work', [entry('/work/docs/note.md')])
       : page('computer', '/work', '/', [entry('/work/docs', true), entry('/work/a.md')]))
     const scope = effectScope()
-    const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing, referencePath: vi.fn() }))!
+    const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing }))!
     await vi.waitFor(() => expect(tree.rootPath.value).toBe('/work'))
     source.value = { computer_id: 'computer', path: '/work/docs' }
     await vi.waitFor(() => expect(tree.rows.value.some(row => row.kind === 'entry' && row.entry.path === '/work/docs/note.md')).toBe(true))
@@ -52,9 +47,8 @@ describe('source-bound directory browsing', () => {
       if (path === origin.path) return page(source.computer_id, 'C:\\work', 'C:\\', [entry('C:\\work\\docs', true), entry(origin.path)])
       return page(source.computer_id, 'C:\\work\\docs', 'C:\\work', [entry('C:\\work\\docs\\notes.md')])
     })
-    const reference = vi.fn<FileService['referencePath']>(async (source, _session, path) => file(source.computer_id, path))
     const scope = effectScope()
-    const tree = scope.run(() => useFileExplorer(origin, 'authorized-session', { listDirectory: listing, referencePath: reference }))!
+    const tree = scope.run(() => useFileExplorer(origin, 'authorized-session', { listDirectory: listing }))!
     await vi.waitFor(() => expect(tree.rootPath.value).toBe('C:\\work'))
     expect(listing).toHaveBeenCalledTimes(1)
     expect(listing.mock.calls[0]!.slice(0, 3)).toEqual([origin, 'authorized-session', origin.path])
@@ -64,9 +58,6 @@ describe('source-bound directory browsing', () => {
     expect(tree.rows.value.some(row => row.kind === 'entry' && row.entry.path.endsWith('notes.md'))).toBe(false)
     await tree.toggle('C:\\work\\docs')
     expect(listing).toHaveBeenCalledTimes(2)
-    const selected = await tree.open(entry('C:\\work\\docs\\notes.md'))
-    expect(selected?.computer_id).toBe('windows-source')
-    expect(reference.mock.calls[0]!.slice(0, 3)).toEqual([origin, 'authorized-session', 'C:\\work\\docs\\notes.md'])
     expect(origin.path).toBe('C:\\work\\report.md')
     scope.stop()
   })
@@ -76,7 +67,7 @@ describe('source-bound directory browsing', () => {
     const source = shallowRef(file('remote-a', '/a/original.md'))
     const listing = vi.fn<FileService['listDirectory']>().mockImplementation(async value => value.computer_id === 'remote-a' ? old.promise : page('remote-b', '/b', '/', [entry('/b/new.md')]))
     const scope = effectScope()
-    const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing, referencePath: vi.fn() }))!
+    const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing }))!
     source.value = file('remote-b', '/b/new.md')
     await vi.waitFor(() => expect(tree.rootPath.value).toBe('/b'))
     old.resolve(page('remote-a', '/a', '/', [entry('/a/original.md')]))
@@ -90,7 +81,7 @@ describe('source-bound directory browsing', () => {
     const source = shallowRef(file('computer', '/work/a.md'))
     const listing = vi.fn<FileService['listDirectory']>().mockImplementation(async (_source, _session, path) => path === '/work/docs' ? page('computer', '/work/docs', '/work', [entry('/work/docs/b.md')]) : page('computer', '/work', '/', [entry('/work/docs', true), entry('/work/a.md')]))
     const scope = effectScope()
-    const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing, referencePath: vi.fn() }))!
+    const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing }))!
     await vi.waitFor(() => expect(tree.rootPath.value).toBe('/work'))
     await tree.toggle('/work/docs')
     source.value = file('computer', '/work/docs/b.md')
@@ -108,7 +99,7 @@ describe('source-bound directory browsing', () => {
       return page('computer', '/work', '/', [entry('/work/docs', true)], 'next')
     })
     const scope = effectScope()
-    const tree = scope.run(() => useFileExplorer(file('computer', '/work/a'), 'session', { listDirectory: listing, referencePath: vi.fn() }))!
+    const tree = scope.run(() => useFileExplorer(file('computer', '/work/a'), 'session', { listDirectory: listing }))!
     await vi.waitFor(() => expect(tree.rootPath.value).toBe('/work'))
     await tree.more('/work')
     expect(tree.root.value?.page?.entries.map(value => value.path)).toEqual(['/work/docs', '/work/last'])
@@ -118,22 +109,7 @@ describe('source-bound directory browsing', () => {
     scope.stop()
   })
 
-  it('ignores an old path-reference result after the browsing source changes', async () => {
-    const old = deferred<FileRef>()
-    const source = shallowRef(file('a', '/a/file'))
-    const listing = vi.fn<FileService['listDirectory']>().mockImplementation(async value => page(value.computer_id, `/${value.computer_id}`, '/', []))
-    const reference = vi.fn<FileService['referencePath']>(() => old.promise)
-    const scope = effectScope()
-    const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing, referencePath: reference }))!
-    await vi.waitFor(() => expect(tree.rootPath.value).toBe('/a'))
-    const opening = tree.open(entry('/a/file'))
-    const signal = reference.mock.calls[0]![3] as AbortSignal
-    source.value = file('b', '/b/file')
-    expect(signal.aborted).toBe(true)
-    old.resolve(file('a', '/a/file'))
-    expect(await opening).toBeUndefined()
-    scope.stop()
-  })
+
 })
 
 it('does not carry an old Computer refresh spinner into a newly selected source', async () => {
@@ -146,7 +122,7 @@ it('does not carry an old Computer refresh spinner into a newly selected source'
     return page(value.computer_id, `/${value.computer_id}`, '/', [entry(`/${value.computer_id}/file`)])
   })
   const scope = effectScope()
-  const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing, referencePath: vi.fn() }))!
+  const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing }))!
   await vi.waitFor(() => expect(tree.rootPath.value).toBe('/a'))
   const refreshing = tree.refresh()
   expect(tree.refreshing.value).toBe(true)
@@ -167,7 +143,7 @@ it('refreshes only the visible tree after navigating to another folder on the sa
     return page('computer', '/work', '/', [entry('/work/docs', true)])
   })
   const scope = effectScope()
-  const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing, referencePath: vi.fn() }))!
+  const tree = scope.run(() => useFileExplorer(source, 'session', { listDirectory: listing }))!
   await vi.waitFor(() => expect(tree.rootPath.value).toBe('/work'))
   await tree.toggle('/work/docs')
   source.value = file('computer', '/other/b')

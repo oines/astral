@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/filestream"
 	"github.com/oines/astral/internal/persistence"
 )
 
@@ -57,10 +56,6 @@ func (s *Service) telegramAccount(ctx context.Context, agentID, id string) (*tel
 		return nil, c, domain.Invalid("this account does not support Telegram operations")
 	}
 	return t, c, nil
-}
-func (s *Service) TelegramOperations(ctx context.Context, agentID, accountID string) ([]TelegramOperation, error) {
-	_, _, err := s.telegramAccount(ctx, agentID, accountID)
-	return telegramOperations, err
 }
 
 func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBinding, accountID, method string, request TelegramRequest) (response TelegramResult, err error) {
@@ -177,32 +172,19 @@ func (s *Service) TelegramOperation(ctx context.Context, b domain.ExecutionBindi
 	if err := s.telegramNestedScope(ctx, b.AgentID, connection, target, parameters, true); err != nil {
 		return TelegramResult{}, err
 	}
-	uploads := map[string]Download{}
-	defer func() {
-		for _, file := range uploads {
-			_ = file.Body.Close()
-		}
-	}()
-	for field, location := range request.Files {
+	for field := range request.Files {
 		if strings.ContainsAny(field, "\r\n\"/\\") || field == "" {
 			return TelegramResult{}, domain.Invalid("invalid upload field")
 		}
-		if !strings.HasPrefix(location, "astral-file://") {
-			ref, err := s.Harness.Files.Reference(ctx, b, location, false)
-			if err != nil {
-				return TelegramResult{}, err
-			}
-			location = filestream.URL(ref)
-		}
-		ref, _, body, err := s.Harness.Files.Read(ctx, b.AgentID, b.SessionID, location, 0, nil)
-		if err != nil {
-			return TelegramResult{}, err
-		}
-		uploads[field] = Download{Body: body, Size: ref.Size, Name: ref.DisplayName}
 		if slices.Contains(operation.Parameters, field) {
 			parameters[field] = "attach://" + field
 		}
 	}
+	uploads, err := s.operationFiles(ctx, b, request.Files)
+	if err != nil {
+		return TelegramResult{}, err
+	}
+	defer closeOperationFiles(uploads)
 	// Recheck all authorized resources after resolving/uploading local sources.
 	if err := s.AuthorizeConversation(ctx, b.AgentID, target.ID); err != nil {
 		return TelegramResult{}, err

@@ -1,9 +1,9 @@
 import { onScopeDispose, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { errorText } from '../lib/api'
-import type { FileRef } from '../lib/types'
+import type { PreviewFile } from '../lib/computer-file'
 import { fileService, type FilePreviewResource, type FileService } from './useFileService'
 
-export function useFilePreview(file: MaybeRefOrGetter<FileRef>, sessionID: MaybeRefOrGetter<string>, service: Pick<FileService, 'preview'> = fileService) {
+export function useFilePreview(file: MaybeRefOrGetter<PreviewFile>, sessionID: MaybeRefOrGetter<string>, service: Pick<FileService, 'preview'> = fileService) {
   const preview = shallowRef<FilePreviewResource>()
   const busy = ref(false)
   const error = ref('')
@@ -28,7 +28,7 @@ export function useFilePreview(file: MaybeRefOrGetter<FileRef>, sessionID: Maybe
   }
   watch(() => {
     const value = toValue(file)
-    return JSON.stringify([toValue(sessionID), value.id, value.revision, value.version, value.path])
+    return JSON.stringify([toValue(sessionID), value.computer_id, value.id, value.revision, value.version, value.path])
   }, () => load(), { immediate: true, flush: 'sync' })
   onScopeDispose(() => { generation++; controller?.abort() })
   return { preview, busy, error, reload: () => load(true) }

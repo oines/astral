@@ -6,6 +6,8 @@ import { Bot, FolderTree, X } from '@astral/icons'
 import { Button } from '@astral/ui'
 import { useSurfaceStore, type SurfaceTab } from '../stores/surface'
 import { useAppStore } from '../stores/app'
+import { filePathName } from '../composables/useFileService'
+import type { ComputerFile } from '../lib/computer-file'
 import type { FileRef } from '../lib/types'
 import type { SubagentActivity } from '../lib/subagents'
 import { revealOverflowLabel } from '../lib/overflow-label'
@@ -61,14 +63,15 @@ function toggleDirectory() {
   else if (state.value) state.value.directoryOpen = next
 }
 function resolved(key: string, file: FileRef) { surface.updateFile(key, file, props.rootID) }
-function openFile(file: FileRef) {
+function openFile(file: ComputerFile) {
   const sessionID = directoryTarget.value?.sessionID
-  if (sessionID && !app.deletedSessions.has(sessionID) && surface.workspaceFor(props.rootID)) surface.open({ kind: 'file', id: file.id, sessionID, ref: file }, props.rootID)
+  if (sessionID && !app.deletedSessions.has(sessionID) && surface.workspaceFor(props.rootID)) surface.openPath(file, sessionID, props.rootID)
 }
 function title(tab: SurfaceTab) {
   if (tab.kind !== 'file') return tab.kind === 'subagent' ? app.sessionViews[tab.id]?.title || tab.title : t('workspaceSubagents')
-  const name = tab.ref?.display_name || t('workspaceFile')
-  const ambiguous = tabs.value.some(other => other.key !== tab.key && other.kind === 'file' && other.ref?.display_name === name && other.ref.computer_id !== tab.ref?.computer_id)
+  const nameOf = (file?: typeof tab.ref) => file?.display_name || (file && filePathName(file.path)) || t('workspaceFile')
+  const name = nameOf(tab.ref)
+  const ambiguous = tabs.value.some(other => other.key !== tab.key && other.kind === 'file' && nameOf(other.ref) === name && other.ref?.computer_id !== tab.ref?.computer_id)
   return ambiguous && tab.ref ? `${name} · ${computerName(tab.ref.computer_id)}` : name
 }
 function computerName(id: string) { return app.computers.find(computer => computer.id === id)?.name || id }

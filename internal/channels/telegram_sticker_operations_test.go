@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -239,7 +240,7 @@ func TestTelegramSendStickerMultipartReadsTargetComputerPathAndFileRef(t *testin
 	if err := fs.WriteFile(p.Context, path.Path, payload); err != nil {
 		t.Fatal(err)
 	}
-	ref, err := p.Harness.Files.Reference(p.Context, binding, path.Path, true)
+	ref, err := p.Harness.Files.Upload(p.Context, binding, filepath.Base(path.Path), bytes.NewReader(payload))
 	if err != nil || ref.ComputerID != binding.ComputerID {
 		t.Fatalf("Computer FileRef was not created: %+v %v", ref, err)
 	}

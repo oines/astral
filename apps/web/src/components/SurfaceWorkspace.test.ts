@@ -21,7 +21,7 @@ interface AppFixture {
 }
 const fixture = vi.hoisted(() => ({
   app: undefined as unknown as AppFixture,
-  explorers: [] as Array<{ readonly source: Pick<FileRef, 'computer_id' | 'path'>; readonly sessionID: string; open: (file: FileRef) => void }>,
+  explorers: [] as Array<{ readonly source: Pick<FileRef, 'computer_id' | 'path'>; readonly sessionID: string; open: (file: Pick<FileRef, 'computer_id' | 'path'>) => void }>,
   contents: [] as Array<{ id: string; active: boolean; activations: number }>,
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
@@ -161,15 +161,15 @@ describe('directory browsing before a file tab exists', () => {
     const explorer = fixture.explorers[0]!
     expect(explorer.source).toEqual({ computer_id: 'other', path: '/other/project' })
     expect(workspace.surface.current?.kind).toBe('subagents')
-    const file: FileRef = { id: 'selected-file', revision: 1, created_at: '', updated_at: '', agent_id: 'bot', computer_id: 'other', path: '/other/project/report.md', display_name: 'report.md', media_type: 'text/markdown', size: 100 }
+    const file = { computer_id: 'other', path: '/other/project/report.md' }
     explorer.open(file)
     await nextTick()
     expect(workspace.surface.tabs.map(tab => tab.kind)).toEqual(['subagents', 'file'])
-    expect(workspace.surface.current).toMatchObject({ kind: 'file', id: file.id, sessionID: 'root', ref: file })
+    expect(workspace.surface.current).toMatchObject({ kind: 'file', id: 'astral-file://other?path=%2Fother%2Fproject%2Freport.md', sessionID: 'root', ref: file })
     expect(explorer.source).toEqual(file)
     fixture.app.sessionViews.root = { id: 'root', agent_id: 'bot', computer_id: 'office', cwd: '/new/task-directory' }
     await nextTick()
-    expect(workspace.surface.current).toMatchObject({ kind: 'file', id: file.id, ref: file })
+    expect(workspace.surface.current).toMatchObject({ kind: 'file', ref: file })
     expect(explorer.source).toEqual(file)
     expect(explorer.sessionID).toBe('root')
     expect(workspace.surface.tabs).toHaveLength(2)

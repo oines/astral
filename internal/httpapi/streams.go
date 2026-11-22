@@ -79,7 +79,7 @@ func (a *API) streamRoutes() {
 		return page, nil
 	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "activity_cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
 
-	a.Contract.Describe(httpcontract.Operation{Method: "POST", Path: "/api/v1/sessions/{id}/attachments", ID: "uploadAttachment", Tag: "Files", Auth: true, Response: reflect.TypeFor[gateway.ReferenceResponse](),
+	a.Contract.Describe(httpcontract.Operation{Method: "POST", Path: "/api/v1/sessions/{id}/attachments", ID: "uploadAttachment", Tag: "Files", Auth: true, Response: reflect.TypeFor[UploadedAttachment](),
 		Query: []httpcontract.Parameter{{Name: "name", Required: true}, {Name: "computer_id"}}})
 	upload := a.Contract.Paths["/api/v1/sessions/{id}/attachments"].(map[string]any)["post"].(map[string]any)
 	upload["requestBody"] = map[string]any{"required": true, "content": map[string]any{"application/octet-stream": map[string]any{"schema": map[string]any{"type": "string", "format": "binary"}}}}
@@ -507,6 +507,12 @@ func (a *API) exportRollout(w http.ResponseWriter, r *http.Request) {
 		cursor = page.Next
 	}
 }
+
+type UploadedAttachment struct {
+	File domain.FileRef `json:"file"`
+	URI  string         `json:"uri"`
+}
+
 func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 	if err := a.requireOwnerManagedSession(r); err != nil {
 		httpcontract.Failure(w, r, err)
@@ -537,7 +543,7 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		httpcontract.Failure(w, r, err)
 		return
 	}
-	httpcontract.JSON(w, 200, gateway.ReferenceResponse{File: ref, URI: filestream.URL(ref)})
+	httpcontract.JSON(w, 200, UploadedAttachment{File: ref, URI: filestream.URL(ref)})
 }
 func (a *API) fileContent(w http.ResponseWriter, r *http.Request) {
 	h := a.Config.Harness
@@ -556,84 +562,80 @@ func (a *API) fileContent(w http.ResponseWriter, r *http.Request) {
 		httpcontract.Failure(w, r, err)
 		return
 	}
-	var info computers.FileInfo
-	if err = h.Hub.JSON(r.Context(), "file.stat", computers.Call{Binding: b, Path: ref.Path, Version: ref.Version}, &info); err != nil {
-		httpcontract.Failure(w, r, err)
-		return
+	a.streamComputerFile(w, r, computers.Call{Binding: b, Path: ref.Path, Version: ref.Version}, ref.DisplayName)
+}
+
+func (a *API) streamComputerFile(w http.ResponseWriter, r *http.Request, call computers.Call, displayName string) {
+	hub := a.Config.Harness.Hub
+	var selected computers.FileInfo
+	if raw := strings.TrimSpace(r.Header.Get("Range")); raw != "" {
+		if err := hub.JSON(r.Context(), "file.stat", call, &selected); err != nil {
+			httpcontract.Failure(w, r, fileBrowserError(err))
+			return
+		}
+		offset, length, _, err := httpcontract.ParseRange(raw, selected.Size)
+		if err != nil {
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", selected.Size))
+			httpcontract.JSON(w, http.StatusRequestedRangeNotSatisfiable, httpcontract.Error{Code: "invalid_range", Message: err.Error()})
+			return
+		}
+		call.Offset, call.Length = offset, &length
 	}
-	offset, length, partial, err := parseRange(r.Header.Get("Range"), info.Size)
+	meta, body, err := hub.Call(r.Context(), "file.read", call, nil)
 	if err != nil {
-		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", info.Size))
-		httpcontract.JSON(w, 416, httpcontract.Error{Code: "invalid_range", Message: err.Error()})
-		return
-	}
-	_, _, body, err := h.Files.Read(r.Context(), ref.AgentID, sessionID, filestream.URL(ref), offset, &length)
-	if err != nil {
-		httpcontract.Failure(w, r, err)
+		httpcontract.Failure(w, r, fileBrowserError(err))
 		return
 	}
 	defer body.Close()
+	var info computers.FileInfo
+	if err := json.Unmarshal(meta, &info); err != nil {
+		httpcontract.Failure(w, r, err)
+		return
+	}
+	if call.Length != nil && (info.Size != selected.Size || !info.ModTime.Equal(selected.ModTime)) {
+		httpcontract.Failure(w, r, domain.Conflict("source file changed while selecting its byte range"))
+		return
+	}
+	length := info.Size
+	status := http.StatusOK
+	if call.Length != nil {
+		length, status = *call.Length, http.StatusPartialContent
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", call.Offset, call.Offset+length-1, info.Size))
+	}
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
 	w.Header().Set("Content-Type", info.MediaType)
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	w.Header().Set("Cache-Control", "no-store")
-	disposition := "inline"
-	if r.URL.Query().Get("download") == "true" {
-		disposition = "attachment"
+	disposition := "attachment"
+	download := r.URL.Query().Get("download")
+	if download != "1" && download != "true" && inlineFileType(info.MediaType) {
+		disposition = "inline"
 	}
-	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": ref.DisplayName}))
-	if partial {
-		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, offset+length-1, info.Size))
-		w.WriteHeader(206)
+	if displayName == "" {
+		displayName = info.Name
 	}
-	if _, err = io.CopyBuffer(w, body, make([]byte, 32<<10)); err != nil {
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": displayName}))
+	w.WriteHeader(status)
+	if _, err = io.Copy(w, body); err != nil {
 		panic(http.ErrAbortHandler)
 	}
 }
-func parseRange(raw string, size int64) (offset, length int64, partial bool, err error) {
-	length = size
-	if raw == "" {
-		return
+
+func inlineFileType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
 	}
-	partial = true
-	if !strings.HasPrefix(raw, "bytes=") || strings.Contains(raw, ",") {
-		err = domain.Invalid("only one bytes range is supported")
-		return
+	switch mediaType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "application/pdf",
+		"audio/aac", "audio/flac", "audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav", "audio/webm", "audio/x-wav",
+		"video/mp4", "video/ogg", "video/webm", "video/quicktime":
+		return true
 	}
-	parts := strings.Split(strings.TrimPrefix(raw, "bytes="), "-")
-	if len(parts) != 2 || size == 0 {
-		err = domain.Invalid("range is outside the file")
-		return
-	}
-	if parts[0] == "" {
-		var suffix int64
-		suffix, err = strconv.ParseInt(parts[1], 10, 64)
-		if err != nil || suffix <= 0 {
-			err = domain.Invalid("invalid byte suffix")
-			return
-		}
-		length = min(size, suffix)
-		offset = size - length
-		return
-	}
-	offset, err = strconv.ParseInt(parts[0], 10, 64)
-	if err != nil || offset < 0 || offset >= size {
-		err = domain.Invalid("range is outside the file")
-		return
-	}
-	end := size - 1
-	if parts[1] != "" {
-		end, err = strconv.ParseInt(parts[1], 10, 64)
-		if err != nil || end < offset {
-			err = domain.Invalid("invalid range end")
-			return
-		}
-		end = min(end, size-1)
-	}
-	length = end - offset + 1
-	return
+	return false
 }
 func images(value reflect.Value, out *[]core.Content) {
 	if !value.IsValid() {

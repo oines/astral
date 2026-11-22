@@ -20,14 +20,13 @@ export type FileTreeRow =
 
 // Paths are opaque paths belonging to the source Computer. Parent relationships
 // and canonical paths come from that Computer, never from the browser's OS.
-export function useFileExplorer(source: MaybeRefOrGetter<FileExplorerSource>, sessionID: MaybeRefOrGetter<string>, service: Pick<FileService, 'listDirectory' | 'referencePath'> = fileService) {
+export function useFileExplorer(source: MaybeRefOrGetter<FileExplorerSource>, sessionID: MaybeRefOrGetter<string>, service: Pick<FileService, 'listDirectory'> = fileService) {
   const directories = reactive(new Map<string, DirectoryState>())
   const roots = new Map<string, string>()
   const rootPath = ref('')
   const locating = ref(false)
   const refreshing = ref(false)
   const error = ref('')
-  const openingPath = ref('')
   const sourceKey = computed(() => `${toValue(sessionID)}\u0000${toValue(source).computer_id}`)
   const keyFor = (scope: string, path: string) => `${scope}\u0000${path}`
   const pending = new Map<string, { controller: AbortController; promise: Promise<DirectoryPage | undefined>; sequence: number }>()
@@ -35,8 +34,6 @@ export function useFileExplorer(source: MaybeRefOrGetter<FileExplorerSource>, se
   let sequence = 0
   let destination = 0
   let refreshSequence = 0
-  let openSequence = 0
-  let openController: AbortController | undefined
 
   function directory(path: string, scope = sourceKey.value): DirectoryState {
     const key = keyFor(scope, path)
@@ -97,7 +94,6 @@ export function useFileExplorer(source: MaybeRefOrGetter<FileExplorerSource>, se
   async function locate() {
     const current = ++destination
     refreshSequence++; refreshing.value = false
-    openSequence++; openController?.abort(); openingPath.value = ''
     const origin = toValue(source), session = toValue(sessionID), scope = sourceKey.value
     const savedRoot = roots.get(scope)
     rootPath.value = savedRoot || ''
@@ -149,23 +145,6 @@ export function useFileExplorer(source: MaybeRefOrGetter<FileExplorerSource>, se
     try { await Promise.all([...paths].map(path => load(path, { force: true }))) }
     finally { if (current === refreshSequence) refreshing.value = false }
   }
-  async function open(entry: DirectoryEntry) {
-    if (entry.is_dir) { await toggle(entry.path); return undefined }
-    const current = ++openSequence
-    const scope = sourceKey.value
-    openController?.abort()
-    const controller = new AbortController()
-    openController = controller
-    openingPath.value = entry.path; error.value = ''
-    try {
-      const file = await service.referencePath(toValue(source), toValue(sessionID), entry.path, controller.signal)
-      if (current === openSequence && scope === sourceKey.value) return file
-    } catch (cause) {
-      if (current === openSequence && !controller.signal.aborted) error.value = errorText(cause)
-    } finally {
-      if (current === openSequence) openingPath.value = ''
-    }
-  }
   const rows = computed(() => {
     const result: FileTreeRow[] = []
     const seen = new Set<string>()
@@ -187,9 +166,9 @@ export function useFileExplorer(source: MaybeRefOrGetter<FileExplorerSource>, se
     return result
   })
   onScopeDispose(() => {
-    destination++; openSequence++; openController?.abort()
+    destination++
     for (const request of pending.values()) request.controller.abort()
     for (const timer of timers.values()) clearTimeout(timer)
   })
-  return { root, rootPath, rows, locating, refreshing, error, openingPath, toggle, parent, refresh, open, retry: (path: string) => load(path, { force: true }), more: (path: string) => load(path, { append: true }) }
+  return { root, rootPath, rows, locating, refreshing, error, toggle, parent, refresh, retry: (path: string) => load(path, { force: true }), more: (path: string) => load(path, { append: true }) }
 }

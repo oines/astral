@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcMainInvokeEvent } from 'electron'
 import { DesktopFiles, desktopFileTarget, registerDesktopFileHandlers } from './files'
@@ -12,7 +12,7 @@ let snapshot = ''
 let computer: Record<string, unknown>
 let alive = true
 const shell = { showItemInFolder: vi.fn(), openPath: vi.fn(async () => '') }
-let request: ReturnType<typeof vi.fn<(path: string, method?: 'GET' | 'POST') => Promise<unknown>>>
+let request: ReturnType<typeof vi.fn<(path: string) => Promise<unknown>>>
 let files: DesktopFiles
 const target = { computerID: 'managed-local', sessionID: 'session', fileID: 'file-reference' }
 
@@ -29,11 +29,10 @@ beforeEach(async () => {
   await writeFile(snapshot, 'Preserved snapshot')
   await writeFile(join(localDirectory, 'credentials.json'), JSON.stringify({ computer_id: 'managed-local', server_url: 'http://127.0.0.1:4545', token: 'never-leave-main' }))
   computer = { id: 'managed-local', local: true, kind: 'local', revoked: false, online: true, boot_id: 'local-boot', root: localDirectory }
-  request = vi.fn(async (path, method = 'GET') => {
+  request = vi.fn(async path => {
     if (path === '/api/v1/computers') return [computer]
     if (path.startsWith('/api/v1/files/file-reference?')) return { computer_id: 'managed-local', path: snapshot }
-    if (path.startsWith('/api/v1/computers/managed-local/files/reference?') && method === 'POST') return { file: { computer_id: 'managed-local', path: report } }
-    if (path.startsWith('/api/v1/computers/managed-local/files/directory?')) return { computer_id: 'managed-local', path: root }
+    if (path.startsWith('/api/v1/computers/managed-local/files/directory?')) return { computer_id: 'managed-local', path: new URL(path, 'http://localhost').searchParams.get('path') === snapshot ? dirname(snapshot) : root }
     throw new Error('Unexpected source request')
   })
   files = new DesktopFiles({ localDirectory, serverURL: 'http://127.0.0.1:4545', alive: () => alive, request, shell })
@@ -59,9 +58,10 @@ describe('Desktop file locations', () => {
   it('keeps menu checks read-only and resolves a directory entry before selecting it', async () => {
     const entry = { computerID: 'managed-local', sessionID: 'session', path: report, directory: false }
     expect(await files.canReveal(entry)).toBe(true)
-    expect(request.mock.calls.every(([, method]) => method !== 'POST')).toBe(true)
     await files.reveal(entry)
-    expect(request.mock.calls.some(([path, method]) => path.includes('/files/reference?') && method === 'POST')).toBe(true)
+    const checks = request.mock.calls.filter(([path]) => path.includes('/files/directory?'))
+    expect(checks).toHaveLength(2)
+    for (const [path] of checks) expect(new URL(path, 'http://localhost').searchParams.get('path')).toBe(report)
     expect(shell.showItemInFolder).toHaveBeenCalledExactlyOnceWith(report)
   })
   it('rejects remote and container identities even with a matching OS or hostname', async () => {
@@ -80,7 +80,7 @@ describe('Desktop file locations', () => {
     expect(await files.canReveal(target)).toBe(false)
     const healthyRequest = request.getMockImplementation()!
     let identityChecks = 0
-    request.mockImplementation(async (path, method) => path === '/api/v1/computers' && ++identityChecks > 1 ? [{ ...computer, boot_id: 'replacement-boot' }] : healthyRequest(path, method))
+    request.mockImplementation(async path => path === '/api/v1/computers' && ++identityChecks > 1 ? [{ ...computer, boot_id: 'replacement-boot' }] : healthyRequest(path))
     await expect(files.reveal(target)).rejects.toThrow('changed')
     request.mockImplementation(healthyRequest)
     await writeFile(join(localDirectory, 'credentials.json'), JSON.stringify({ computer_id: 'old-local', server_url: 'http://127.0.0.1:4545' }))
@@ -97,7 +97,7 @@ describe('Desktop file locations', () => {
   it('rejects a historical file reference when current Bot access to its Computer is forbidden', async () => {
     const healthyRequest = request.getMockImplementation()!
     const denied = Object.assign(new Error('This Bot no longer has access to the Computer.'), { status: 403 })
-    request.mockImplementation(async (path, method) => {
+    request.mockImplementation(async path => {
       if (path.startsWith('/api/v1/computers/managed-local/files/directory?')) {
         const query = new URL(path, 'http://127.0.0.1:4545').searchParams
         expect(query.get('session_id')).toBe(target.sessionID)
@@ -105,7 +105,7 @@ describe('Desktop file locations', () => {
         expect(query.get('limit')).toBe('1')
         throw denied
       }
-      return healthyRequest(path, method)
+      return healthyRequest(path)
     })
     expect(await files.canReveal(target)).toBe(false)
     await expect(files.reveal(target)).rejects.toBe(denied)

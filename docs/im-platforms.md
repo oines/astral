@@ -209,7 +209,7 @@ iLink 成功响应允许省略 `ret` 和服务端消息 ID。有非零平台错�
 | `GET /v1/accounts/{id}/operations` | 该账号实际支持的操作、允许参数和协议文档 |
 | `POST /v1/accounts/{id}/operations/{operation}` | 对明确选定聊天调用目录中的操作 |
 | `POST /v1/accounts/{id}/conversations/resolve` | 用 `{external_id,topic_id?}` 解析已授权聊天，不创建 Session |
-| `POST /v1/im/messages`、`POST /v1/im/files` | 通过持久化 Outbox 显式发送，要求稳定的 `Idempotency-Key` |
+| `POST /v1/im/messages` | 通过有序 `parts` 发送文件及说明文字，由持久化 Outbox 交付，要求稳定的 `Idempotency-Key` |
 | `GET /v1/im/receipts/{id}` | 查询发送状态和平台接受凭据 |
 
 操作请求示例：
@@ -233,7 +233,7 @@ Content-Type: application/json
 
 ### 各平台操作目录
 
-**QQ 官方 Bot** 当前为空。发送文本、媒体和文件使用既有 `send_message` 或 `/v1/im/messages`、`/v1/im/files`。
+**QQ 官方 Bot** 当前为空。发送文本、媒体和文件使用既有 `send_message` 或 `/v1/im/messages` 的文字或 `parts`。
 
 **NapCat** 只开放以下 8 项，不开放 OneBot 任意 action：
 
@@ -267,12 +267,7 @@ NapCat 对自己发出的私聊消息可能不返回 `target_id`；此时仅在�
 
 飞书 `page_size` 为 1–50；时间边界使用 Unix 秒数字字符串；`sort_type` 为 `ByCreateTimeAsc` 或 `ByCreateTimeDesc`。`list_messages` 是对选定聊天的远端查询，不自动将返回历史导入 IMStore 或激活 Session；消息级操作仍需相应的已归档身份。`get_message` 保留平台原始消息对象，不把线程和反应等信息压成 Telegram 数据格式。
 
-**Telegram** 保留现有目录和路径，同时可从通用目录访问：
-
-- `GET /v1/accounts/{id}/telegram/operations`
-- `POST /v1/accounts/{id}/telegram/{operation}`
-
-其 copy/forward 来源、嵌套聊天引用、Topic、文件和命令 scope 规则继续遵守 [现有 Telegram 操作契约](im.md#named-telegram-operations)。新增通用入口没有扩大原有授权范围。
+**Telegram** 使用同一账号操作目录和调用入口。复制与转发还需授权来源聊天，嵌套聊天、Topic、上传文件与命令 scope 的规则见 [Telegram 操作契约](im.md#named-telegram-operations)。
 
 ## 常见接入问题
 

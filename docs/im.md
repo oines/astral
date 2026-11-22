@@ -112,7 +112,7 @@ Images selected from a forward preview use the existing in-memory image path: a 
 
 All nodes retain the enclosing authorized account, Conversation and root message. A Host path such as `p0.m1.p2` identifies a part of that root, not a platform message or chat ID. Forwarded sender names, chat IDs, mentions and reply IDs never create another Observation, grant chat access or activate the Agent. Only the enclosing live message follows normal trigger rules. Resource reads recheck current root-chat access and do not accept a caller-supplied bare resource ID.
 
-Discover the tree through `GET /v1/conversations/{id}/messages/{message_id}/parts`, then follow a part's `read_url`. Forward pages use `offset` and `limit` (default 20, maximum 50); a card's `raw_url` explicitly reads its original JSON. Attachment `content_url` streams original bytes, while its explicit download action takes a Computer destination path and returns a FileRef. The capability documents describe the current routes. These reads do not create Sessions or rewrite IMStore, earlier model context, summaries or frozen requests. An older archive that retained only a placeholder may be read from NapCat on explicit request when its original root-chat identity can still be proved; the old observation is not backfilled.
+Discover the tree through `GET /v1/conversations/{id}/messages/{message_id}/parts`, then follow a part's `read_url`. Forward pages use `offset` and `limit` (default 20, maximum 50); a card's `raw_url` explicitly reads its original JSON. An attachment’s `content_url` streams the original bytes. Pass that URL to the CLI with `--output` to save it on the calling Computer. The capability documents describe the current routes. These reads do not create Sessions or rewrite IMStore, earlier model context, summaries or frozen requests. An older archive that retained only a placeholder may be read from NapCat on explicit request when its original root-chat identity can still be proved; the old observation is not backfilled.
 
 ## Message reactions
 
@@ -162,13 +162,13 @@ Telegram's existing chat catalog includes member, administrator and count querie
 
 NapCat exposes group/member information, user profiles, moderation and group settings, notices, group files/folders and essence operations. A profile or poke targets the selected private peer or a verified group member. Notice deletion proves `notice_id` from the selected group's current list. File URL, deletion, rename and move prove the opaque file and folder identities from the authorized group's current directory; a file's `folder_id` is a Host scope parameter for URL/deletion, while rename/move use the native parent-directory parameters. Group identifiers cannot be overridden. Platform support does not imply an announcement-edit or folder-rename action exists.
 
-NapCat avatar resources use `GET /v1/conversations/{id}/avatar/content` for the selected group's portrait or private peer's avatar, and `GET /v1/conversations/{id}/members/{user_id}/avatar/content` for a specified person's avatar. The latter is limited to that private peer or a current group member established through NapCat. Replacing `/content` with `/download` and posting an explicit `path` saves the image through the calling execution binding and returns `file` plus `uri`. The Server selects QQ's fixed avatar service; no arbitrary URL or alternate group is accepted. Current account, chat and private-Session access apply to every read and download. These resources do not create observations or modify history, and apply only to `qq.napcat`, not QQ official Bot. QQ's upstream avatar cache can delay visible changes.
+NapCat avatar resources use `GET /v1/conversations/{id}/avatar/content` for the selected group's portrait or private peer's avatar, and `GET /v1/conversations/{id}/members/{user_id}/avatar/content` for a specified person's avatar. The latter is limited to that private peer or a current group member established through NapCat. To save the image, stream the GET response to a file on the calling Computer. The Server selects QQ's fixed avatar service; no arbitrary URL or alternate group is accepted. Current account, chat and private-Session access apply to every read and download. These resources do not create observations or modify history, and apply only to `qq.napcat`, not QQ official Bot. QQ's upstream avatar cache can delay visible changes.
 
 NapCat `upload_group_file` and `set_group_portrait` use `files.file`; `_send_group_notice` optionally uses `files.image`. Files are Computer paths or `astral-file://` references read through the calling execution binding, streamed as native uploads and closed on every outcome. Adapter-host paths or arbitrary URLs in parameters are rejected. `upload_group_file` also requires `parameters.name`; notice text uses `parameters.content`.
 
 `get_essence_msg_list` preserves native ordered content including text, images and other supplied media. `set_essence_msg` proves the original message's group through the platform without requiring a prior Astral archive. `delete_essence_msg` resolves the current group's list to trusted `msg_seq` and `msg_random`, then removes its marker using the fixed group ID; this supports older fallback message IDs without relying on an account-global short-ID mapping. It never deletes the original message.
 
-Essence media is independently readable through `/v1/conversations/{id}/essence/{message_id}/parts`, individual part reads, content streams and explicit Computer downloads. Paired `msg_seq` and `msg_random` query parameters preserve identity if a later platform lookup changes a fallback message ID. Returned content/download links require `media_digest`, a Server-derived attachment-source fingerprint rather than a checksum of image bytes. Each read verifies that the current selected part still has that source; changed part ordering cannot silently return another image, and a conflict requires rereading parts. Every resource lookup rechecks the current authorized group's essence list and selects the media source on the Server; callers cannot supply an arbitrary URL. The original message need not be archived. Reading parts does not automatically fetch every image, create an Observation or backfill IMStore/Core history. Removed entries and revoked access stop subsequent reads. Media streams preserve the platform's valid response Content-Type instead of always labeling URL-only images as JPEG.
+Essence media is independently readable through `/v1/conversations/{id}/essence/{message_id}/parts`, individual part reads and content streams. Paired `msg_seq` and `msg_random` query parameters preserve identity if a later platform lookup changes a fallback message ID. Returned content links require `media_digest`, a Server-derived attachment-source fingerprint rather than a checksum of image bytes. Each read verifies that the current selected part still has that source; changed part ordering cannot silently return another image, and a conflict requires rereading parts. Every resource lookup rechecks the current authorized group's essence list and selects the media source on the Server; callers cannot supply an arbitrary URL. The original message need not be archived. Reading parts does not automatically fetch every image, create an Observation or backfill IMStore/Core history. Removed entries and revoked access stop subsequent reads. Media streams preserve the platform's valid response Content-Type instead of always labeling URL-only images as JPEG.
 
 Named platform actions make one attempt. Confirmed rejection and uncertain mutation effects remain distinct; an `outcome_unknown` response requires inspecting actual platform state before retrying. They do not acquire the durable message-send endpoints' idempotency contract.
 
@@ -249,18 +249,12 @@ The Host prompt points to this discovery entry and explains the command credenti
 | `GET /v1/conversations/{id}/messages/{message_id}/parts/{ref}` | Read a selected part; page forwards with `offset` and `limit` |
 | `GET /v1/conversations/{id}/messages/{message_id}/parts/{ref}/raw` | Explicitly read the original payload of a selected card |
 | `GET /v1/conversations/{id}/messages/{message_id}/parts/{ref}/content` | Stream an original attachment, including nested forward media |
-| `POST /v1/conversations/{id}/messages/{message_id}/parts/{ref}/download` | `{path}` explicitly saves that original on the calling Computer |
 | `GET /v1/conversations/{id}/messages/{message_id}/attachments/{ref}/content` | Original file bytes, streamed over the Daemon transport |
-| `POST /v1/attachments/download` | `{conversation_id,event_id,attachment_ref,path}` writes to an explicit path on the calling Computer |
-| `POST /v1/im/messages` | `{conversation_id?,text,reply_to?,format?,…}` sends text and waits for the platform result |
-| `POST /v1/im/files` | `{conversation_id?,file_uri?|path?,text?,reply_to?,format?,…}` sends a file and waits for the platform result |
+| `POST /v1/im/messages` | Send text or ordered `parts` of text, mentions, images and files; wait for the platform result |
 | `GET /v1/im/receipts/{id}` | Inspect queued, accepted, failed, blocked or unknown sends |
 | `GET /v1/accounts/{id}/operations` | Named operations, account-resource/chat scope, parameters and official documentation |
 | `POST /v1/accounts/{id}/operations/{operation}` | Invoke a named operation within its declared account-resource or chat scope |
-| `GET /v1/accounts/{id}/telegram/operations` | Explicit Telegram operation names, scope, parameters and official method documentation |
-| `POST /v1/accounts/{id}/telegram/{operation}` | Invoke a named, scoped Telegram operation |
 | `GET /v1/accounts/{id}/telegram/stickers/content` | Stream a selected original or thumbnail using `file_id` and exactly one of `set_name` or `custom_emoji_id` |
-| `POST /v1/accounts/{id}/telegram/stickers/download` | The same resource source plus `path`; explicitly save to the calling Computer and return a FileRef |
 | `GET /v1/openapi.json` | Current request and response schemas |
 
 All platform chat and message IDs are strings. QQ uses `private:<user ID>` and `group:<group ID>` to preserve its distinct address spaces. Topic IDs are only accepted by adapters that support them.
@@ -281,7 +275,7 @@ Inline image preparation is optional on every adapter, including image documents
 
 Telegram stickers follow the same file lifecycle: reception archives metadata and platform file references, without creating a separate attachment file on Server or Computer disk or registering a FileRef. The original attachment has `kind: "sticker"`, its Telegram `file_id` in `external_id`, and `sticker` metadata containing type, format (`static`, `animated`, or `video`), emoji, set name, dimensions and stable identity. Static WebP originals use the same single-encode observation preview preparation. Animated TGS and video WebM originals remain downloadable files; only Telegram's separate thumbnail is prepared as an image under the same options. `sticker.thumbnail_ref` identifies that image attachment in the same message. The model sees `preview-only` and `preview-of`, so a thumbnail cannot be mistaken for the full animation. Missing or unusable sticker previews retain the metadata and original-download path rather than blocking delivery. Core history retains the prepared preview payload through the ordinary image path; a small static image may retain its original bytes as that payload. This does not create an independently saved attachment file.
 
-An Agent that needs a file must explicitly download its original through the existing attachment API to a chosen Computer path. Sticker thumbnails remain separately downloadable, without replacing the original. Receiving a sticker and archiving a `sendSticker` result use the same normalization, and outgoing results have `self: true` with no inbound trigger.
+To save an original, GET its content URL and stream the response to a local file with the CLI’s `--output`. Sticker thumbnails remain separately downloadable, without replacing the original. Receiving a sticker and archiving a `sendSticker` result use the same normalization, and outgoing results have `self: true` with no inbound trigger.
 
 ## Named Telegram operations
 
@@ -305,25 +299,19 @@ Named operations return Telegram's result directly and archive accepted messages
 
 ### Sticker packs and custom emoji resources
 
-[`getStickerSet`](https://core.telegram.org/bots/api#getstickerset) and [`getCustomEmojiStickers`](https://core.telegram.org/bots/api#getcustomemojistickers) have `account_scoped: true` in both operation catalogs. These are read-only resources of the selected, enabled Telegram account owned by the current Bot. They need no `conversation_id`, including in unbound Web Sessions and Topic-bound Sessions. If a conversation is explicitly supplied, it must still be accessible through that account. Chat access restrictions on all other operations are unchanged.
+[`getStickerSet`](https://core.telegram.org/bots/api#getstickerset) and [`getCustomEmojiStickers`](https://core.telegram.org/bots/api#getcustomemojistickers) have `account_scoped: true` in the account operations catalog. These are read-only resources of the selected, enabled Telegram account owned by the current Bot. They need no `conversation_id`, including in unbound Web Sessions and Topic-bound Sessions. If a conversation is explicitly supplied, it must still be accessible through that account. Chat access restrictions on all other operations are unchanged.
 
 For `https://t.me/addstickers/oines1`, use `getStickerSet` with `{"parameters":{"name":"oines1"}}`. The name is the final component of an `addstickers` or `addemoji` link, not the full URL. The result contains the complete set's metadata and sticker list, including original `file_id` values and available thumbnails. `getCustomEmojiStickers` accepts `{"parameters":{"custom_emoji_ids":["<custom-emoji-id>"]}}`, with at most 200 IDs. Results retain Telegram's JSON shape. Neither method downloads image bytes, creates messages, activates a Session, or registers FileRefs.
 
-Read a selected image on demand through the content endpoint, or explicitly save it with:
+To save a selected sticker, use the bundled CLI on the calling Computer. Substitute its installed script path, the account ID and the URL-encoded file ID from the result.
 
-```http
-POST /v1/accounts/<account-id>/telegram/stickers/download
-Content-Type: application/json
-Authorization: Bearer <calling-command-credential>
-
-{
-  "set_name": "oines1",
-  "file_id": "<original-or-thumbnail-file-id-from-result>",
-  "path": "/absolute/path/sticker.webp"
-}
+```sh
+python3 "$api_script" --base-url "$base_url" request GET \
+  '/v1/accounts/<account-id>/telegram/stickers/content?set_name=oines1&file_id=<encoded-file-id>' \
+  --output sticker.webp
 ```
 
-Supply exactly one source: `set_name`, or a single `custom_emoji_id`. The Server queries that resource again and accepts only a matching original or thumbnail file ID in its current result; a sticker set's own thumbnail is also readable. It never offers arbitrary `getFile` access or returns Telegram's credential-bearing file URLs. The content endpoint streams bytes with private, non-cacheable headers and creates no file. The download endpoint streams to the explicit path on the credential's original Computer and registers that file only after the write succeeds, even if the Session has switched Computers. There is no resource cache, automatic pack download, or synthetic IM observation.
+Supply exactly one source: `set_name`, or a single `custom_emoji_id`. The Server queries that resource again and accepts only a matching original or thumbnail file ID in its current result; a sticker set's own thumbnail is also readable. It never offers arbitrary `getFile` access or returns Telegram's credential-bearing file URLs. The content endpoint streams bytes with private, non-cacheable headers and creates no file. The CLI writes the response to the output path on the Computer running the command. There is no resource cache, automatic pack download, or synthetic IM observation.
 
 Metadata is not image pixels: use the thumbnail's `file_id` to inspect a small preview, or the sticker's original `file_id` to download the original. A preview is not the full animation. Reuse the original `file_id` with the account's named `sendSticker` operation to send a selected sticker directly; this does not require first saving it locally. Thumbnail IDs cannot be used as sticker originals, and `send_message` remains unchanged.
 

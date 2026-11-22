@@ -11,7 +11,6 @@ import (
 	"time"
 
 	core "github.com/oines/astral-core"
-	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/messages"
@@ -456,7 +455,7 @@ func (s *Service) observationImage(ctx context.Context, b domain.ConversationBin
 	var download Download
 	var err error
 	if attachment.FileURI != "" {
-		download, err = s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
+		download, err = s.downloadSource(ctx, domain.ExecutionBinding{AgentID: b.AgentID, SessionID: b.SessionID}, conversation.ID, event.MessageID, attachment, connection)
 		var sourceErr *domain.Error
 		var remoteErr *transport.Error
 		unavailableSource := errors.As(err, &sourceErr) && (sourceErr.Status == 404 || sourceErr.Status == 409 || sourceErr.Status == 503)
@@ -541,48 +540,4 @@ func (s *Service) Delivery(ctx context.Context, eventID string) (DeliveryView, e
 	}
 	delivery.State, delivery.InputID, delivery.EntryID, delivery.Error = receipt.State, receipt.InputID, receipt.EntryID, receipt.Error
 	return delivery, nil
-}
-
-// DownloadAttachment writes a platform attachment directly to the authenticated
-// caller's original Computer and explicit path, even if the Session switched.
-func (s *Service) DownloadAttachment(ctx context.Context, b domain.ExecutionBinding, conversationID, eventID, attachmentRef, destination string) (domain.FileRef, error) {
-	if destination == "" {
-		return domain.FileRef{}, domain.Invalid("an explicit destination path is required")
-	}
-	_, conversation, connection, err := s.target(ctx, b.AgentID, b.SessionID, conversationID)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	event, err := s.Store.Observation(ctx, eventID)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	if event.ConversationID != conversation.ID {
-		return domain.FileRef{}, domain.Forbidden("attachment is outside the selected Conversation")
-	}
-	var attachment domain.Attachment
-	for _, candidate := range event.Attachments {
-		if candidate.Ref == attachmentRef {
-			attachment = candidate
-			break
-		}
-	}
-	if attachment.Ref == "" {
-		return domain.FileRef{}, domain.Missing("attachment", attachmentRef)
-	}
-	download, err := s.downloadSource(ctx, b.AgentID, b.SessionID, attachment, connection)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	defer download.Body.Close()
-	_, body, err := s.Harness.Hub.Call(ctx, "file.write", computers.Call{Binding: b, Path: destination}, download.Body)
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	_, copyErr := io.Copy(io.Discard, body)
-	err = errors.Join(copyErr, body.Close())
-	if err != nil {
-		return domain.FileRef{}, err
-	}
-	return s.Harness.Files.Reference(ctx, b, destination, false)
 }

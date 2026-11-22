@@ -149,7 +149,7 @@ func TestWakeEndpointDiscoveryAndOwnerSubscription(t *testing.T) {
 	f := newScheduleGateway(t)
 	var doc gateway.CapabilityDocument
 	f.call(t, false, "GET", "/v1/capabilities/wake-endpoints", nil, &doc, 200)
-	for _, term := range []string{"notes", "local", "60-second", "20 events", "revision", "session_id", "Do not expose or forward hooks endpoints to the public internet", "reverse proxies", "webhook relay services"} {
+	for _, term := range []string{"local loopback", "event_id", "64 KiB", "Retry-After", "revision", "reverse proxy", "webhook relay"} {
 		if !strings.Contains(strings.Join(doc.Notes, " "), term) {
 			t.Fatalf("missing discovery rule %s", term)
 		}

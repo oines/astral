@@ -47,7 +47,7 @@ func (s *Service) computerFileContent(w http.ResponseWriter, r *http.Request) {
 			httpcontract.Failure(w, r, computerFileError(err))
 			return
 		}
-		offset, length, partial, err = contentRange(r.Header.Get("Range"), selected.Size)
+		offset, length, partial, err = httpcontract.ParseRange(r.Header.Get("Range"), selected.Size)
 		if err != nil {
 			w.Header().Set("Accept-Ranges", "bytes")
 			w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", selected.Size))

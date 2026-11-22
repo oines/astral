@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FileRef } from '../lib/types'
 import { createFileService, fileService, type FileServiceAdapter } from './useFileService'
-const sdk = vi.hoisted(() => ({ fileContent: vi.fn(), getFileReference: vi.fn(), listComputerDirectory: vi.fn(), referenceComputerFile: vi.fn() }))
+const sdk = vi.hoisted(() => ({ fileContent: vi.fn(), getFileReference: vi.fn(), listComputerDirectory: vi.fn(), sessionComputerFileContent: vi.fn() }))
 vi.mock('@astral/sdk', () => sdk)
 const file: FileRef = { id: 'file a', revision: 1, agent_id: 'bot', computer_id: 'source', path: '/work/source.md', display_name: 'source.md', media_type: 'text/plain', size: 1024, created_at: '', updated_at: '' }
 function adapter(data: Blob, headers = new Headers()): FileServiceAdapter {
-  return { resolveFile: vi.fn(), listDirectory: vi.fn(), referencePath: vi.fn(), content: vi.fn(async () => ({ data, headers })) }
+  return { resolveFile: vi.fn(), listDirectory: vi.fn(), content: vi.fn(async () => ({ data, headers })) }
 }
 
 describe('the shared file service boundary', () => {
@@ -15,6 +15,13 @@ describe('the shared file service boundary', () => {
     expect(sdk.fileContent).toHaveBeenCalledWith(expect.objectContaining({ path: { id: 'file a' }, query: { session_id: 'session b' }, headers: { Range: 'bytes=0-262143' }, parseAs: 'blob' }))
     expect(preview.content).toBe('hello')
     expect(preview.url).toBe('/api/v1/files/file%20a/content?session_id=session%20b&download=false')
+  })
+  it('reads a path directly on the named Computer in its originating Session', async () => {
+    sdk.sessionComputerFileContent.mockResolvedValueOnce({ data: new Blob(['report']), response: { headers: new Headers({ 'Content-Type': 'text/plain' }) } })
+    const file = { computer_id: 'PC_AaZ', path: '/work/100% #1.txt' }
+    const preview = await fileService.preview(file, 'child')
+    expect(sdk.sessionComputerFileContent).toHaveBeenCalledWith(expect.objectContaining({ path: { id: 'child', computer: 'PC_AaZ' }, query: { path: file.path }, headers: { Range: 'bytes=0-262143' } }))
+    expect(preview).toMatchObject({ name: '100% #1.txt', content: 'report', downloadURL: '/api/v1/sessions/child/computers/PC_AaZ/files/content?path=%2Fwork%2F100%25%20%231.txt&download=1' })
   })
   it('decodes the response filename and partial range while preserving valid empty text', async () => {
     const service = createFileService(adapter(new Blob(['']), new Headers({ 'Content-Type': 'text/markdown; charset=utf-8', 'Content-Disposition': "inline; filename*=UTF-8''%E6%8A%A5%E5%91%8A.md", 'Content-Range': 'bytes 0-262143/524288' })))

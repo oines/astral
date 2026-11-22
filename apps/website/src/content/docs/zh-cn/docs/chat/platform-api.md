@@ -39,7 +39,7 @@ Authorization: Bearer <当前命令的调用凭据>
 
 账号必须属于当前 Bot，聊天必须仍在授权范围内。仅获准一个 Telegram Topic，不能据此执行父群管理；私密会话对应聊天仍受私密访问限制。
 
-上传操作直接从指定的电脑路径或 `astral-file://` 引用流式读取文件，不为发送额外复制一份。操作完成前，请保留原文件并避免修改。
+上传操作直接从指定的电脑路径或已登记的附件引用流式读取文件，不为发送额外复制一份。操作完成前，请保留原文件并避免修改。
 
 ## 下载授权电脑上的文件
 
@@ -74,6 +74,12 @@ EOF
 
 Astral 不为这些请求缓存源文件。电脑文件请求在来源 Daemon seek；平台媒体则可能重新打开来源，读取并丢弃范围之前的字节。因此，Range 请求不保证平台 CDN 本身支持断点续传。
 
+要把消息附件、贴纸或头像存到本地，将返回的内容地址交给内置 Astral API 客户端。`api_script` 填电脑上实际安装的脚本路径，`base_url` 填当前命令的 API 地址，输出文件保存在运行命令的电脑上。
+
+```sh
+python3 "$api_script" --base-url "$base_url" request GET "$content_url" --output ./original.bin
+```
+
 ## Telegram
 
 从账号操作目录获取准确方法名与参数；字段含义见对应的 [Telegram Bot API](https://core.telegram.org/bots/api) 方法。
@@ -98,7 +104,7 @@ Telegram Bot API **不能列出完整群成员**。已知用户的成员查询�
 { "parameters": { "name": "oines1" } }
 ```
 
-返回的是贴纸资料和 `file_id`，还没有下载图片。按需通过 `GET /v1/accounts/{id}/telegram/stickers/content` 读取，或 `POST /v1/accounts/{id}/telegram/stickers/download` 保存到调用电脑。使用目录给出的请求结构，明确指定 `set_name` 或 `custom_emoji_id` 其中之一，以及该结果中的 `file_id`；保存还需 `path`。
+结果列出贴纸资料和文件 ID。读取原件或缩略图时，调用 `GET /v1/accounts/{id}/telegram/stickers/content`，传入该文件的 `file_id`，并指定 `set_name` 或 `custom_emoji_id` 其中之一。需要本地文件时使用 `--output`。
 
 发送已有贴纸可调用 `sendSticker`，使用同一账号下原贴纸的 `file_id`，或通过 `files.sticker` 上传。缩略图、`file_unique_id` 和 `custom_emoji_id` 不能替代原件 `file_id`。动图缩略图也不等于完整动画。
 
@@ -121,7 +127,7 @@ QQ 用户和消息标识使用字符串，`enable` 等开关使用 JSON 布尔�
 
 ### 上传文件、公告图片和群头像
 
-上传来源使用**调用命令所在电脑**的路径，或 `astral-file://` 文件引用。不要填 NapCat 宿主机路径或任意下载 URL。例如上传群文件：
+上传来源使用**调用命令所在电脑**的路径，或已登记的附件引用（`astral-file://<computer-id>/<file-id>`）。不要填 NapCat 宿主机路径或任意下载 URL。例如上传群文件：
 
 ```http
 POST /v1/accounts/<account-id>/operations/upload_group_file
@@ -144,19 +150,17 @@ Authorization: Bearer <当前命令的调用凭据>
 | 任务 | 接口 |
 | --- | --- |
 | 读取群头像或私聊对方头像 | `GET /v1/conversations/{id}/avatar/content` |
-| 保存该头像 | `POST /v1/conversations/{id}/avatar/download` |
 | 读取指定成员头像 | `GET /v1/conversations/{id}/members/{user_id}/avatar/content` |
-| 保存该成员头像 | `POST /v1/conversations/{id}/members/{user_id}/avatar/download` |
 
-`{id}` 是 Astral 聊天 ID，`{user_id}` 是 QQ 号，个人头像限私聊对方或已核实的当前群成员。读取接口返回图片字节；下载请求使用 `{"path":"/absolute/path/avatar.jpg"}`，文件保存到调用电脑，响应中的 `file` 是 FileRef，`uri` 是其文件引用地址。头像可能受 QQ 缓存影响。这些接口仅用于 NapCat，不接受任意图片 URL。
+`{id}` 是 Astral 聊天 ID，`{user_id}` 是 QQ 号。个人头像限于私聊对方或已核实的当前群成员。GET 表中的内容地址取得图片，用 `--output ./avatar.jpg` 保存。这些 NapCat 接口读取 QQ 的头像服务，头像更新可能受其缓存影响。
 
 ### 读取卡片、合并转发和精华中的图片
 
-普通消息先读取 `GET /v1/conversations/{id}/messages/{message_id}/parts`，再跟随返回的读取、展开或下载链接。卡片和嵌套转发按原顺序保留；读取来源信息不会授权其他聊天。引用原消息需在当前聊天已有归档，缺失时不能通过引用跨聊天取得内容。
+普通消息先读取 `GET /v1/conversations/{id}/messages/{message_id}/parts`，再跟随返回的读取、展开或原件内容链接。卡片和嵌套转发按原顺序保留；读取来源信息不会授权其他聊天。引用原消息需在当前聊天已有归档，缺失时不能通过引用跨聊天取得内容。
 
 精华消息使用 `GET /v1/conversations/{id}/essence/{message_id}/parts`，有 `msg_seq` 和 `msg_random` 时同时传入这两个查询参数。它可以读取当前群已有的历史精华，不要求原消息预先归档。
 
-响应提供有序内容及媒体的 `content_url`、`download_url`。`GET content_url` 读取原件；`POST download_url` 并提交 `{"path":"/absolute/path/image.png"}`，可保存到调用电脑并取得 FileRef。使用完整返回链接，不要自行拼接片段序号或省略 `media_digest`。来源变化时重新读取 parts；权限撤销或精华移除后，旧链接不能继续读取。
+按返回的 `content_url` 读取或保存选中的媒体，保留其中的 `media_digest` 和消息身份参数。来源变化时重新读取 parts；权限撤销或精华移除后，旧链接不能继续读取。
 
 取消精华只移除标记，不删除原消息；平台没有编辑精华正文的独立操作。
 
@@ -172,7 +176,7 @@ Authorization: Bearer <当前命令的调用凭据>
 
 ## 发送消息与检查错误
 
-给当前绑定聊天发送文字或附件时，Bot 优先使用 `send_message`。自定义脚本使用 `POST /v1/im/messages` 或 `/v1/im/files` 前，先读取目标聊天的 `message-tool` 能力说明；这两个 HTTP 发送接口要求稳定的 `Idempotency-Key`，并提供发送记录供查询。
+在已绑定聊天中使用 `send_message`。脚本先读目标聊天的 `message-tool` schema，再用 `POST /v1/im/messages` 发送。例如，文件加说明写作 `"parts":[{"type":"file","path":"report.pdf"},{"type":"text","text":"本周报告"}]`，文件路径属于运行命令的电脑。提交时使用稳定的 `Idempotency-Key`，结果不确定时查询发送回执。
 
 在 Telegram 聊天中，可以直接把原始 MP3 作为文档附件上传。如果希望 Telegram 使用音乐播放器展示，请使用具名操作 `sendAudio`。
 

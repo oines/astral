@@ -12,8 +12,6 @@ import (
 	"image/png"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -189,7 +187,7 @@ func TestNapCatAvatarsPreserveSupportedImageFormats(t *testing.T) {
 	}
 }
 
-func TestNapCatAvatarsRejectOutOfScopeAndRevokedSourcesBeforeWriting(t *testing.T) {
+func TestNapCatAvatarsRejectOutOfScopeAndRevokedSources(t *testing.T) {
 	for _, scenario := range []string{"unlisted", "private stranger", "nonmember", "membership revocation", "image revocation", "account revision", "wrong adapter", "invalid user", "invalid group"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newAvatarFixture(t)
@@ -225,12 +223,8 @@ func TestNapCatAvatarsRejectOutOfScopeAndRevokedSourcesBeforeWriting(t *testing.
 			if err := f.p.Store.Save(f.p.Context, "conversations", &f.chat.Meta, &f.chat); err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(f.p.Directory, "must-not-exist.png")
-			if _, err := f.s.DownloadNapCatAvatar(f.p.Context, f.b, f.chat.ID, user, path); err == nil {
+			if _, err := f.s.NapCatAvatarContent(f.p.Context, f.b, f.chat.ID, user); err == nil {
 				t.Fatal("out-of-scope avatar was downloaded")
-			}
-			if _, err := os.Stat(path); !os.IsNotExist(err) {
-				t.Fatal("rejected avatar wrote a Computer file")
 			}
 			if scenario != "image revocation" && scenario != "account revision" && f.media != 0 {
 				t.Fatal("unauthorized source contacted avatar service")
@@ -239,11 +233,10 @@ func TestNapCatAvatarsRejectOutOfScopeAndRevokedSourcesBeforeWriting(t *testing.
 	}
 }
 
-func TestNapCatAvatarsRejectUnusableImagesAndDownloadsUseCallingComputer(t *testing.T) {
-	for _, scenario := range []string{"redirect", "HTML", "interrupted", "oversized", "oversized unknown", "missing path", "revoked computer"} {
+func TestNapCatAvatarsRejectUnusableImages(t *testing.T) {
+	for _, scenario := range []string{"redirect", "HTML", "interrupted", "oversized", "oversized unknown"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newAvatarFixture(t)
-			path := filepath.Join(f.p.Directory, "avatar.png")
 			switch scenario {
 			case "redirect":
 				f.status = http.StatusFound
@@ -255,56 +248,10 @@ func TestNapCatAvatarsRejectUnusableImagesAndDownloadsUseCallingComputer(t *test
 				f.length = napcatAvatarLimit + 1
 			case "oversized unknown":
 				f.data, f.length = bytes.Repeat([]byte{'x'}, int(napcatAvatarLimit+1)), -1
-			case "missing path":
-				path = ""
-			case "revoked computer":
-				f.p.Agent.DefaultComputerID = f.p.Daemons[1].Credentials.ComputerID
-				f.p.Agent.AllowedComputers = []string{f.p.Agent.DefaultComputerID}
-				if err := f.p.Harness.SaveAgent(f.p.Context, &f.p.Agent); err != nil {
-					t.Fatal(err)
-				}
 			}
-			if _, err := f.s.DownloadNapCatAvatar(f.p.Context, f.b, f.chat.ID, "", path); err == nil {
+			if _, err := f.s.NapCatAvatarContent(f.p.Context, f.b, f.chat.ID, ""); err == nil {
 				t.Fatal("invalid avatar download succeeded")
 			}
-			if path != "" {
-				if _, err := os.Stat(path); !os.IsNotExist(err) {
-					t.Fatal("failed acquisition wrote a file")
-				}
-			}
 		})
-	}
-	f := newAvatarFixture(t)
-	var session domain.Session
-	if err := f.p.Store.Get(f.p.Context, "sessions", f.p.Session.ID, &session); err != nil {
-		t.Fatal(err)
-	}
-	session.ComputerID = f.p.Daemons[1].Credentials.ComputerID
-	if err := f.p.Store.Save(f.p.Context, "sessions", &session.Meta, &session); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(f.p.Directory, "avatar-wrong-extension.jpg")
-	ref, err := f.s.DownloadNapCatAvatar(f.p.Context, f.b, f.chat.ID, "", path)
-	if err != nil || ref.ComputerID != f.b.ComputerID || ref.Path != path || ref.MediaType != "image/png" {
-		t.Fatalf("download lost original Computer binding or actual MIME: %+v %v", ref, err)
-	}
-	if data, err := os.ReadFile(path); err != nil || !bytes.Equal(data, f.data) {
-		t.Fatalf("download changed image bytes: %v", err)
-	}
-}
-
-func TestNapCatAvatarAcquisitionFailurePreservesExistingDestination(t *testing.T) {
-	f := newAvatarFixture(t)
-	f.data, f.length = []byte("<html>avatar service failed</html>"), -1
-	path := filepath.Join(f.p.Directory, "keep.png")
-	const previous = "existing file contents"
-	if err := os.WriteFile(path, []byte(previous), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.s.DownloadNapCatAvatar(f.p.Context, f.b, f.chat.ID, "", path); err == nil {
-		t.Fatal("non-image service response was saved")
-	}
-	if data, err := os.ReadFile(path); err != nil || string(data) != previous {
-		t.Fatal("failed avatar acquisition replaced an existing Computer file:", err)
 	}
 }

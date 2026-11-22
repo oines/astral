@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -67,7 +68,7 @@ func TestNapCatOperationUploadsReadOriginalComputerAndRespectRevocation(t *testi
 	if err := fs.WriteFile(p.Context, path.Path, []byte(original)); err != nil {
 		t.Fatal(err)
 	}
-	ref, err := p.Harness.Files.Reference(p.Context, binding, path.Path, true)
+	ref, err := p.Harness.Files.Upload(p.Context, binding, filepath.Base(path.Path), strings.NewReader(original))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,24 +89,19 @@ func TestNapCatOperationUploadsReadOriginalComputerAndRespectRevocation(t *testi
 		{"set_group_portrait", "file", map[string]any{}},
 		{"_send_group_notice", "image", map[string]any{"content": "Picture announcement"}},
 	} {
-		for _, source := range []string{path.Path, filestream.URL(ref)} {
+		for _, source := range []string{path.Path, filestream.PathURL(binding.ComputerID, path.Path), filestream.URL(ref)} {
 			_, err := s.AccountOperation(p.Context, binding, account.ID, test.name, ChatOperationRequest{ConversationID: chat.ID, Parameters: test.params, Files: map[string]string{test.field: source}})
 			if err != nil {
 				t.Fatalf("%s failed for a Computer source: %v", test.name, err)
 			}
 		}
 	}
-	if calls.Load() != 6 {
+	if calls.Load() != 9 {
 		t.Fatalf("each upload should make one platform request: %d", calls.Load())
 	}
 	files, err := list[domain.FileRef](p.Context, p.Store, "files")
-	if err != nil || len(files) != 4 {
+	if err != nil || len(files) != 1 || files[0].ID != ref.ID {
 		t.Fatalf("unexpected upload references: %+v, %v", files, err)
-	}
-	for _, file := range files {
-		if file.ID != ref.ID && (file.Path != path.Path || file.Version != "") {
-			t.Fatalf("operation upload copied its source: %+v", file)
-		}
 	}
 	for _, files := range []map[string]string{
 		{"other": path.Path},
@@ -136,7 +132,7 @@ func TestNapCatOperationUploadsReadOriginalComputerAndRespectRevocation(t *testi
 	if _, err := s.AccountOperation(p.Context, binding, account.ID, "upload_group_file", request); err == nil {
 		t.Fatal("an existing FileRef bypassed revoked Computer access")
 	}
-	if calls.Load() != 6 || p.Requests.Load() != 0 {
+	if calls.Load() != 9 || p.Requests.Load() != 0 {
 		t.Fatal("a rejected upload reached the platform or an operation woke the model")
 	}
 	if observations, err := p.Store.Observations(p.Context, chat.ID, 0, 10); err != nil || len(observations) != 0 {

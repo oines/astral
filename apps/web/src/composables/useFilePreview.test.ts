@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { FileRef } from '../lib/types'
 import { useFilePreview } from './useFilePreview'
 import type { FilePreviewResource } from './useFileService'
-vi.mock('@astral/sdk', () => ({ fileContent: vi.fn(), getFileReference: vi.fn(), listComputerDirectory: vi.fn(), referenceComputerFile: vi.fn() }))
+vi.mock('@astral/sdk', () => ({ fileContent: vi.fn(), getFileReference: vi.fn(), listComputerDirectory: vi.fn(), sessionComputerFileContent: vi.fn() }))
 
 const file = (id: string): FileRef => ({ id, revision: 1, agent_id: 'bot', computer_id: 'source-computer', path: `/work/${id}`, display_name: id, media_type: 'text/plain', size: 5, created_at: '', updated_at: '' })
 const resource = (name: string): FilePreviewResource => ({ name, mediaType: 'text/plain', content: name, partial: false, url: `/files/${name}`, downloadURL: `/files/${name}?download=true` })

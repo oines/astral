@@ -39,7 +39,7 @@ A successful response contains the platform operation's data in `result`. It may
 
 The account must belong to the current Bot, and the chat must remain authorized. Access to one Telegram topic does not grant parent-group management. Chats bound to private conversations keep their private-access restrictions.
 
-Upload operations stream files directly from the specified computer path or `astral-file://` reference, without creating an extra copy for sending. Keep the source file available and unchanged until the operation finishes.
+Upload operations stream files directly from the specified computer path or an existing attachment reference, without creating an extra copy for sending. Keep the source file available and unchanged until the operation finishes.
 
 ## Download a file from an allowed computer
 
@@ -74,6 +74,12 @@ Without a usable known size, the endpoint ignores Range and returns the complete
 
 Astral does not cache the source file for these requests. Computer file requests seek on the source Daemon. For platform media, Astral may reopen the source and read and discard the preceding bytes, so a Range request does not guarantee that the platform CDN itself supports resume.
 
+To save a message attachment, sticker or avatar, pass its content URL to the bundled Astral API CLI. Set `api_script` to the installed script path and `base_url` to the current command’s API URL. The output path is on the computer running the command.
+
+```sh
+python3 "$api_script" --base-url "$base_url" request GET "$content_url" --output ./original.bin
+```
+
 ## Telegram
 
 Read exact method names and parameters from the account's catalog. Field definitions are in the corresponding [Telegram Bot API](https://core.telegram.org/bots/api) method.
@@ -98,7 +104,7 @@ Copy and forward operations use `source_conversation_id`; source and destination
 { "parameters": { "name": "oines1" } }
 ```
 
-The result contains sticker metadata and `file_id` values, not downloaded images. Read a selected file through `GET /v1/accounts/{id}/telegram/stickers/content`, or save it with `POST /v1/accounts/{id}/telegram/stickers/download`. Follow the advertised request schema: specify exactly one of `set_name` or `custom_emoji_id`, plus a `file_id` from that result. Saving also requires `path`.
+The result contains sticker metadata and file IDs. To retrieve an original or a thumbnail, call `GET /v1/accounts/{id}/telegram/stickers/content` with its `file_id` and exactly one of `set_name` or `custom_emoji_id`. Use `--output` when you want a local file.
 
 Send an existing sticker with `sendSticker` using the original sticker's `file_id` from the same account, or upload through `files.sticker`. A thumbnail, `file_unique_id`, or `custom_emoji_id` cannot replace the original `file_id`. An animation's thumbnail is not its full animation.
 
@@ -121,7 +127,7 @@ Message lookup, deletion, and reactions require an archived message in the selec
 
 ### Upload files, notice images, and group avatars
 
-Upload sources are paths on **the computer running the calling command**, or `astral-file://` references. Do not use paths on the NapCat host or arbitrary download URLs. For example:
+Upload sources are paths on **the computer running the calling command**, or existing attachment references (`astral-file://<computer-id>/<file-id>`). Do not use paths on the NapCat host or arbitrary download URLs. For example:
 
 ```http
 POST /v1/accounts/<account-id>/operations/upload_group_file
@@ -144,19 +150,17 @@ Query the current group's resources before using returned `notice_id`, `file_id`
 | Task | Endpoint |
 | --- | --- |
 | Read the group avatar or private peer's avatar | `GET /v1/conversations/{id}/avatar/content` |
-| Save that avatar | `POST /v1/conversations/{id}/avatar/download` |
 | Read a member's avatar | `GET /v1/conversations/{id}/members/{user_id}/avatar/content` |
-| Save that member's avatar | `POST /v1/conversations/{id}/members/{user_id}/avatar/download` |
 
-`{id}` is an Astral chat ID and `{user_id}` is a QQ number. Personal avatars are limited to the private peer or a verified current group member. Content endpoints return image bytes. Download requests use `{"path":"/absolute/path/avatar.jpg"}` and save on the calling computer; `file` in the response is a FileRef and `uri` is its reference address. QQ may cache avatars. These endpoints are NapCat-only and do not accept arbitrary image URLs.
+`{id}` is the Astral chat ID and `{user_id}` is a QQ number. The member avatar must belong to the private peer or a verified current group member. Get the avatar bytes from the listed content endpoint and use `--output ./avatar.jpg` to save them. These NapCat endpoints use QQ’s avatar service, whose cache can delay changes.
 
 ### Read images in cards, merged forwards, and essence messages
 
-For an ordinary message, start with `GET /v1/conversations/{id}/messages/{message_id}/parts`, then follow the returned read, expand, or download links. Cards and nested forwards keep their original order. Source metadata does not grant access to other chats. Quoted originals must already be archived in the current chat; a quote cannot retrieve missing content across chats.
+For an ordinary message, start with `GET /v1/conversations/{id}/messages/{message_id}/parts`, then follow the returned read, expand or content links. Cards and nested forwards keep their original order. Source metadata does not grant access to other chats. Quoted originals must already be archived in the current chat; a quote cannot retrieve missing content across chats.
 
 For an essence message, use `GET /v1/conversations/{id}/essence/{message_id}/parts`. Include both `msg_seq` and `msg_random` query parameters when available. This can read an existing historical essence entry without a previously archived original message.
 
-Results include ordered content and media `content_url` and `download_url` links. `GET content_url` reads the original. `POST download_url` with `{"path":"/absolute/path/image.png"}` saves it on the calling computer and returns a FileRef. Use the complete returned links; do not construct part indexes or omit `media_digest`. Refresh parts when the source changes. Old links stop working if permission is revoked or the essence entry is removed.
+Use the returned `content_url` to read or save a specific item. Keep its `media_digest` and any message identity parameters. If the source changes, refresh the parts list. Access ends when the essence entry is removed or the account loses permission.
 
 Removing an essence mark keeps the original message. There is no separate operation to edit the essence message's text.
 
@@ -172,7 +176,7 @@ Feishu message operations require an archived message in the authorized chat and
 
 ## Send messages and handle errors
 
-The Bot should use `send_message` for text or attachments in its currently bound chat. Before using `POST /v1/im/messages` or `/v1/im/files` from a script, read the target chat's `message-tool` capability. These HTTP send endpoints require a stable `Idempotency-Key` and provide send records for outcome checks.
+In the bound chat, use `send_message`. In scripts, read the target chat’s `message-tool` schema and send through `POST /v1/im/messages`. For a document and caption, include `"parts":[{"type":"file","path":"report.pdf"},{"type":"text","text":"Weekly report"}]`. The path is on the computer running the command. Supply a stable `Idempotency-Key` and use the send receipt to check the outcome.
 
 In Telegram chats, you can attach the original MP3 as a document. To display it in Telegram's music player, use the named `sendAudio` operation.
 

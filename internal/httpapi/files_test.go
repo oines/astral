@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"mime"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/gateway"
 	"github.com/oines/astral/internal/testkit"
 )
 
@@ -34,30 +36,27 @@ func TestOwnerFileReferenceKeepsSourceAndReturnsMetadataOffline(t *testing.T) {
 	if err = os.WriteFile(path, []byte("first"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	referencePath := "/api/v1/computers/" + b.ComputerID + "/files/reference" + fileQuery(p.Session.ID, path)
-	response := request(t, p.Context, server, "POST", referencePath, nil, true)
-	var result gateway.ReferenceResponse
-	err = json.NewDecoder(response.Body).Decode(&result)
-	response.Body.Close()
-	if err != nil || response.StatusCode != 200 || result.File.Path != path || result.File.ComputerID != b.ComputerID || result.File.Version != "" || result.URI == "" {
-		t.Fatalf("ordinary reference was not source-bound/non-snapshot: %+v, %d, %v", result, response.StatusCode, err)
+	// Historical sessions can already contain a live reference with no version.
+	ref := domain.FileRef{Meta: domain.Meta{ID: domain.ID("file")}, Path: path, AgentID: p.Agent.ID, ComputerID: b.ComputerID, DisplayName: filepath.Base(path)}
+	if err = p.Store.Save(p.Context, "files", &ref.Meta, &ref); err != nil {
+		t.Fatal(err)
 	}
 	if err = os.WriteFile(path, []byte("changed after reference"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	response = request(t, p.Context, server, "GET", "/api/v1/files/"+result.File.ID+"/content"+fileQuery(p.Session.ID, ""), nil, true)
+	response := request(t, p.Context, server, "GET", "/api/v1/files/"+ref.ID+"/content"+fileQuery(p.Session.ID, ""), nil, true)
 	raw, err := io.ReadAll(response.Body)
 	response.Body.Close()
 	if err != nil || response.StatusCode != 200 || string(raw) != "changed after reference" {
 		t.Fatalf("live reference did not reuse file content route: %d %q, %v", response.StatusCode, raw, err)
 	}
-	metadataPath := "/api/v1/files/" + result.File.ID + fileQuery(p.Session.ID, "")
+	metadataPath := "/api/v1/files/" + ref.ID + fileQuery(p.Session.ID, "")
 	response = request(t, p.Context, server, "GET", metadataPath, nil, false)
 	response.Body.Close()
 	if response.StatusCode != 401 {
 		t.Fatal("metadata accepted anonymous access")
 	}
-	response = request(t, p.Context, server, "GET", "/api/v1/files/"+result.File.ID, nil, true)
+	response = request(t, p.Context, server, "GET", "/api/v1/files/"+ref.ID, nil, true)
 	response.Body.Close()
 	if response.StatusCode != 400 {
 		t.Fatal("metadata accepted missing Session identity")
@@ -66,7 +65,7 @@ func TestOwnerFileReferenceKeepsSourceAndReturnsMetadataOffline(t *testing.T) {
 	if err = p.Store.Save(p.Context, "sessions", &other.Meta, &other); err != nil {
 		t.Fatal(err)
 	}
-	response = request(t, p.Context, server, "GET", "/api/v1/files/"+result.File.ID+fileQuery(other.ID, ""), nil, true)
+	response = request(t, p.Context, server, "GET", "/api/v1/files/"+ref.ID+fileQuery(other.ID, ""), nil, true)
 	response.Body.Close()
 	if response.StatusCode != 403 {
 		t.Fatal("metadata accepted another Bot's Session")
@@ -81,13 +80,13 @@ func TestOwnerFileReferenceKeepsSourceAndReturnsMetadataOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	response = request(t, p.Context, server, "GET", metadataPath, nil, true)
-	var ref domain.FileRef
-	err = json.NewDecoder(response.Body).Decode(&ref)
+	var retrieved domain.FileRef
+	err = json.NewDecoder(response.Body).Decode(&retrieved)
 	response.Body.Close()
-	if err != nil || response.StatusCode != 200 || ref.ID != result.File.ID || ref.Path != path || ref.AgentID != p.Agent.ID {
-		t.Fatalf("offline historical metadata was lost: %+v, %d, %v", ref, response.StatusCode, err)
+	if err != nil || response.StatusCode != 200 || retrieved.ID != ref.ID || retrieved.Path != path || retrieved.AgentID != p.Agent.ID {
+		t.Fatalf("offline historical metadata was lost: %+v, %d, %v", retrieved, response.StatusCode, err)
 	}
-	response = request(t, p.Context, server, "GET", "/api/v1/files/"+result.File.ID+"/content"+fileQuery(p.Session.ID, ""), nil, true)
+	response = request(t, p.Context, server, "GET", "/api/v1/files/"+ref.ID+"/content"+fileQuery(p.Session.ID, ""), nil, true)
 	response.Body.Close()
 	if response.StatusCode != 403 {
 		t.Fatal("metadata access bypassed permission checks for source bytes")
@@ -107,7 +106,7 @@ func TestOwnerFileReferenceKeepsSourceAndReturnsMetadataOffline(t *testing.T) {
 	}
 }
 
-func TestOwnerDirectoryAndFileReferenceRespectComputerPermissions(t *testing.T) {
+func TestOwnerDirectoryAndFileContentRespectComputerPermissions(t *testing.T) {
 	p := testkit.New(t, 2, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
 	_, server := apiFixture(t, p)
 	otherID := p.Daemons[1].Credentials.ComputerID
@@ -155,26 +154,23 @@ func TestOwnerDirectoryAndFileReferenceRespectComputerPermissions(t *testing.T) 
 	if response.StatusCode != 404 {
 		t.Fatalf("missing directory did not return 404: %d", response.StatusCode)
 	}
-	referencePath := "/api/v1/computers/" + otherID + "/files/reference"
-	response = request(t, p.Context, server, "POST", referencePath+fileQuery(p.Session.ID, root), nil, true)
-	response.Body.Close()
-	if response.StatusCode != 400 {
-		t.Fatalf("directory accepted as regular file reference: %d", response.StatusCode)
-	}
-	response = request(t, p.Context, server, "POST", referencePath+fileQuery(p.Session.ID, ""), nil, true)
-	response.Body.Close()
-	if response.StatusCode != 400 {
-		t.Fatal("file reference accepted missing path")
+	contentPath := "/api/v1/sessions/" + p.Session.ID + "/computers/" + otherID + "/files/content"
+	for _, query := range []string{"", "?path=bad%00path", "?path=" + url.QueryEscape(root)} {
+		response = request(t, p.Context, server, "GET", contentPath+query, nil, true)
+		response.Body.Close()
+		if response.StatusCode != 400 {
+			t.Fatalf("invalid file path accepted: %q: %d", query, response.StatusCode)
+		}
 	}
 	p.Agent.AllowedComputers = []string{p.Session.ComputerID}
 	if err = p.Store.Save(p.Context, "agents", &p.Agent.Meta, &p.Agent); err != nil {
 		t.Fatal(err)
 	}
-	for _, operation := range []struct{ method, path string }{{"GET", directoryPath + fileQuery(p.Session.ID, root)}, {"POST", referencePath + fileQuery(p.Session.ID, path)}} {
-		response = request(t, p.Context, server, operation.method, operation.path, nil, true)
+	for _, path := range []string{directoryPath + fileQuery(p.Session.ID, root), contentPath + "?path=" + url.QueryEscape(path)} {
+		response = request(t, p.Context, server, "GET", path, nil, true)
 		response.Body.Close()
 		if response.StatusCode != 403 {
-			t.Fatalf("%s ignored removed Computer permission: %d", operation.method, response.StatusCode)
+			t.Fatalf("%s ignored removed Computer permission: %d", path, response.StatusCode)
 		}
 	}
 	var stored domain.Session
@@ -218,14 +214,155 @@ func TestOwnerDirectoryDefaultDoesNotBindBrowsingToTaskCWD(t *testing.T) {
 	if err != nil || response.StatusCode != 200 || page.Path != b.AgentHome {
 		t.Fatalf("explicit browsing depended on removed task CWD: %+v, %d, %v", page, response.StatusCode, err)
 	}
-	response = request(t, p.Context, server, "POST", "/api/v1/computers/"+b.ComputerID+"/files/reference"+fileQuery(p.Session.ID, path), nil, true)
+	response = request(t, p.Context, server, "GET", "/api/v1/sessions/"+p.Session.ID+"/computers/"+b.ComputerID+"/files/content?path="+url.QueryEscape(path), nil, true)
 	response.Body.Close()
 	if response.StatusCode != 200 {
-		t.Fatalf("explicit file reference depended on removed task CWD: %d", response.StatusCode)
+		t.Fatalf("explicit file read depended on removed task CWD: %d", response.StatusCode)
 	}
 	response = request(t, p.Context, server, "GET", directoryPath+fileQuery(p.Session.ID, ""), nil, true)
 	response.Body.Close()
 	if response.StatusCode != 404 {
 		t.Fatalf("missing default directory silently changed to another path: %d", response.StatusCode)
 	}
+}
+
+func TestOwnerPathFilePreviewAndRange(t *testing.T) {
+	p := testkit.New(t, 2, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
+	_, server := apiFixture(t, p)
+	source := p.Daemons[1].Credentials.ComputerID
+	b, err := p.Hub.Bind(p.Context, p.Agent.ID, p.Session.ID, source, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const content = "file sample 012345"
+	base := "/api/v1/sessions/" + p.Session.ID + "/computers/" + source + "/files/content?path="
+	for _, file := range []struct{ name, disposition string }{
+		{"report.pdf", "inline"}, {"日 图.png", "inline"}, {"document.html", "attachment"}, {"drawing.svg", "attachment"},
+	} {
+		if err := os.WriteFile(filepath.Join(b.AgentHome, file.name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		path := base + url.QueryEscape(file.name)
+		for _, download := range []string{"", "&download=1"} {
+			response := request(t, p.Context, server, "GET", path+download, nil, true)
+			raw, err := io.ReadAll(response.Body)
+			response.Body.Close()
+			want := file.disposition
+			if download != "" {
+				want = "attachment"
+			}
+			disposition, params, parseErr := mime.ParseMediaType(response.Header.Get("Content-Disposition"))
+			if err != nil || response.StatusCode != 200 || string(raw) != content || parseErr != nil || disposition != want || params["filename"] != file.name ||
+				response.Header.Get("X-Content-Type-Options") != "nosniff" || response.Header.Get("Content-Security-Policy") != "sandbox; default-src 'none'" {
+				t.Fatalf("preview %s%s: %d %v, body %q, %v", file.name, download, response.StatusCode, response.Header, raw, err)
+			}
+		}
+	}
+	for _, test := range []struct {
+		header, contentRange, bytes string
+		status                      int
+	}{
+		{"bytes=0-3", "bytes 0-3/18", "file", 206}, {"bytes=-3", "bytes 15-17/18", "345", 206},
+		{"bytes=1-0", "bytes */18", "", 416}, {"bytes=1-2,4-5", "bytes */18", "", 416},
+	} {
+		req, err := http.NewRequestWithContext(p.Context, "GET", server.URL+base+"report.pdf", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Range", test.header)
+		req.Header.Set("Authorization", "Desktop desktop-test-key")
+		response, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil || response.StatusCode != test.status || response.Header.Get("Content-Range") != test.contentRange || (test.status == 206 && string(raw) != test.bytes) {
+			t.Fatalf("range %q: status=%d, range=%q, body=%q, err=%v", test.header, response.StatusCode, response.Header.Get("Content-Range"), raw, err)
+		}
+	}
+	response := request(t, p.Context, server, "GET", base+"report.pdf", nil, false)
+	response.Body.Close()
+	if response.StatusCode != 401 {
+		t.Fatalf("anonymous preview got %d", response.StatusCode)
+	}
+	if refs, err := p.Store.List(p.Context, "files"); err != nil || len(refs) != 0 {
+		t.Fatalf("path reads wrote FileRef records: %d, %v", len(refs), err)
+	}
+	large, err := os.Create(filepath.Join(b.AgentHome, "large.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := large.Truncate(64 << 20); err != nil {
+		large.Close()
+		t.Fatal(err)
+	}
+	if err := large.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(p.Context)
+	defer cancel()
+	response = request(t, ctx, server, "GET", base+"large.bin", nil, true)
+	defer response.Body.Close()
+	if _, err := io.ReadFull(response.Body, make([]byte, 512)); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if _, err := io.Copy(io.Discard, response.Body); err == nil {
+		t.Fatal("canceled path download appeared complete")
+	}
+	response = request(t, p.Context, server, "GET", base+"report.pdf", nil, true)
+	response.Body.Close()
+	if response.StatusCode != 200 {
+		t.Fatalf("subsequent preview failed after cancellation: %d", response.StatusCode)
+	}
+}
+
+func TestOwnerPathFilesRespectTemporaryComputerOwner(t *testing.T) {
+	p := testkit.New(t, 2, func(context.Context, int, map[string]any) any { return testkit.Text("unused") })
+	_, server := apiFixture(t, p)
+	id := p.Daemons[1].Credentials.ComputerID
+	var computer domain.Computer
+	if err := p.Store.Get(p.Context, "computers", id, &computer); err != nil {
+		t.Fatal(err)
+	}
+	computer.Temporary, computer.OwnerSessionID, computer.OwnerAgentID = true, p.Session.ID, p.Agent.ID
+	if err := p.Store.Save(p.Context, "computers", &computer.Meta, &computer); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "original.txt")
+	if err := os.WriteFile(path, []byte("owned"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	check := func(session string, want int) {
+		t.Helper()
+		url := "/api/v1/sessions/" + session + "/computers/" + id + "/files/content?path=" + url.QueryEscape(path)
+		response := request(t, p.Context, server, "GET", url, nil, true)
+		response.Body.Close()
+		if response.StatusCode != want {
+			t.Fatalf("session %s: got %d want %d", session, response.StatusCode, want)
+		}
+	}
+	check(p.Session.ID, 200)
+	other := domain.Session{Meta: domain.Meta{ID: domain.ID("session")}, AgentID: p.Agent.ID}
+	if err := p.Store.Save(p.Context, "sessions", &other.Meta, &other); err != nil {
+		t.Fatal(err)
+	}
+	check(other.ID, 403)
+	other.SubagentParentID = p.Session.ID
+	if err := p.Store.Save(p.Context, "sessions", &other.Meta, &other); err != nil {
+		t.Fatal(err)
+	}
+	check(other.ID, 200)
+	expired := time.Now().Add(-time.Hour)
+	computer.ExpiresAt = &expired
+	if err := p.Store.Save(p.Context, "computers", &computer.Meta, &computer); err != nil {
+		t.Fatal(err)
+	}
+	check(p.Session.ID, 403)
+	computer.ExpiresAt, computer.Revoked = nil, true
+	if err := p.Store.Save(p.Context, "computers", &computer.Meta, &computer); err != nil {
+		t.Fatal(err)
+	}
+	check(p.Session.ID, 403)
 }

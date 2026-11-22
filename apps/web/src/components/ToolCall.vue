@@ -3,14 +3,13 @@ import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 
 import { useResizeObserver } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronRight, Copy, File } from '@astral/icons'
-import { Collapse, useDelayedPending } from '@astral/ui'
+import { Collapse } from '@astral/ui'
 import type { Entry, ProcessStatus } from '../lib/types'
 import type { LiveTool } from '../lib/session-state'
-import { errorText, object } from '../lib/api'
+import { object } from '../lib/api'
 import { fileToolTarget, sourceHost, toolInteractionMode, toolPresentation, toolResultText } from '../lib/tool-presentation'
 import { useAppStore } from '../stores/app'
 import { useSurfaceStore } from '../stores/surface'
-import { fileService } from '../composables/useFileService'
 import { useClipboard } from '../composables/useClipboard'
 import { useProcessOutput } from '../composables/useProcessOutput'
 import Markdown from './Markdown.vue'
@@ -31,9 +30,6 @@ const surface = useSurfaceStore()
 const open = ref(false)
 const targetEl = ref<HTMLElement>()
 const targetTruncated = ref(false)
-const openingFile = ref(false)
-const waitingFile = useDelayedPending(openingFile)
-const fileError = ref('')
 const { copy: copyCmd, copied: copiedCmd } = useClipboard()
 const { copy: copyOut, copied: copiedOut } = useClipboard()
 
@@ -94,18 +90,9 @@ function toggle() {
   open.value = !open.value
 }
 
-async function openFile() {
-  if (!fileTarget.value || openingFile.value) return
-  fileError.value = ''
-  openingFile.value = true
-  try {
-    const refFile = await fileService.referencePath({ computer_id: fileTarget.value.computerID }, props.sessionID, fileTarget.value.path)
-    surface.open({ kind: 'file', id: refFile.id, sessionID: props.sessionID, ref: refFile })
-  } catch (err) {
-    fileError.value = errorText(err)
-  } finally {
-    openingFile.value = false
-  }
+function openFile() {
+  const target = fileTarget.value
+  if (target) surface.openPath({ computer_id: target.computerID, path: target.path }, props.sessionID)
 }
 
 function openExternal(event: MouseEvent, url: string) {
@@ -142,11 +129,6 @@ const showFallbackText = computed(() => {
       :title="t('openFilePreview')"
       @click="openFile"
     >
-      <span
-        v-if="waitingFile"
-        class="spinner"
-        aria-hidden="true"
-      />
       <span class="tool-name">{{ label }}</span><span
         v-if="presentation.target"
         ref="targetEl"
@@ -277,11 +259,7 @@ const showFallbackText = computed(() => {
                 class="tool-file-link"
                 @click="openFile"
               >
-                <span
-                  v-if="waitingFile"
-                  class="spinner"
-                  aria-hidden="true"
-                /><File v-else />
+                <File />
                 <span>{{ t('openFilePreview') }}</span>
               </button>
               <div
@@ -328,12 +306,5 @@ const showFallbackText = computed(() => {
         </div>
       </Collapse>
     </template>
-    <p
-      v-if="fileError"
-      class="copy-error text-danger"
-      role="status"
-    >
-      {{ fileError }}
-    </p>
   </div>
 </template>

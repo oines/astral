@@ -12,8 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -116,22 +114,19 @@ func TestNapCatEssenceResourcesKeepOrderedUnarchivedPicturesAndStableCoordinates
 	}
 	// The original message becomes available, replacing NapCat's synthetic ID.
 	f.entries[0]["message_id"] = -200
-	download, err := f.s.NapCatEssenceContent(f.p.Context, f.b, f.chat.ID, resource.Source, "p1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(download.Body)
-	_ = download.Body.Close()
-	if err != nil || !bytes.Equal(body, f.first) || download.MediaType != "image/png" || !strings.HasSuffix(download.Name, ".png") {
-		t.Fatalf("could not read selected URL-only old essence image: %q %v", body, err)
-	}
-	destination := filepath.Join(f.p.Directory, "selected.gif")
-	ref, err := f.s.DownloadNapCatEssencePart(f.p.Context, f.b, f.chat.ID, resource.Source, "p3", destination)
-	if err != nil || ref.ComputerID != f.b.ComputerID || ref.Path != destination || ref.MediaType != "image/gif" {
-		t.Fatalf("explicit download lost the original Computer: %+v %v", ref, err)
-	}
-	if data, err := os.ReadFile(destination); err != nil || !bytes.Equal(data, f.second) {
-		t.Fatalf("download did not save exactly the selected image: %q %v", data, err)
+	for _, item := range []struct {
+		ref, format string
+		want        []byte
+	}{{"p1", "png", f.first}, {"p3", "gif", f.second}} {
+		download, err := f.s.NapCatEssenceContent(f.p.Context, f.b, f.chat.ID, resource.Source, item.ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(download.Body)
+		_ = download.Body.Close()
+		if err != nil || !bytes.Equal(body, item.want) || download.MediaType != "image/"+item.format || !strings.HasSuffix(download.Name, "."+item.format) {
+			t.Fatalf("wrong original at %s: %q %v", item.ref, body, err)
+		}
 	}
 	for _, id := range []string{"100", "-200"} {
 		if _, err := f.p.Store.Message(f.p.Context, f.chat.ID, id); err == nil {
@@ -156,9 +151,6 @@ func TestNapCatEssenceRejectsInvalidAndAmbiguousSources(t *testing.T) {
 	}
 	if f.listed.Load() != 0 {
 		t.Fatal("invalid source reached the platform")
-	}
-	if _, err := f.s.DownloadNapCatEssencePart(f.p.Context, f.b, f.chat.ID, NapCatEssenceSource{MessageID: "100"}, "p1", ""); err == nil || f.listed.Load() != 0 {
-		t.Fatal("download accepted an implicit destination")
 	}
 	duplicate := map[string]any{"message_id": 100, "msg_seq": 11, "msg_random": 21, "content": []any{}}
 	f.entries = append(f.entries, duplicate)

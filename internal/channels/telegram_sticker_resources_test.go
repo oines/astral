@@ -7,14 +7,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
-	core "github.com/oines/astral-core"
-	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/testkit"
 )
@@ -372,144 +369,5 @@ func TestTelegramStickerResourcesRejectForeignDisabledOrRevokedAccounts(t *testi
 				t.Fatal("disabled resource account still started a file download")
 			}
 		})
-	}
-}
-
-func TestDownloadTelegramStickerUsesExplicitOriginalComputerWithoutIMArchive(t *testing.T) {
-	p, s, bot, account := stickerResourcePlatform(t, 2)
-	b, err := p.Hub.Bind(p.Context, p.Agent.ID, p.Session.ID, p.Daemons[0].Credentials.ComputerID, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Change the Session's current Computer after obtaining the command binding.
-	var session domain.Session
-	if err = p.Store.Get(p.Context, "sessions", p.Session.ID, &session); err != nil {
-		t.Fatal(err)
-	}
-	session.ComputerID = p.Daemons[1].Credentials.ComputerID
-	if err = p.Store.Save(p.Context, "sessions", &session.Meta, &session); err != nil {
-		t.Fatal(err)
-	}
-	fs, err := (&computers.Backend{Hub: p.Hub}).FileSystem(p.Context, core.Invocation{SessionID: b.SessionID, Binding: computers.BindingJSON(b)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := TelegramStickerSource{SetName: "oines1", FileID: "video-file"}
-	if _, err = s.DownloadTelegramSticker(p.Context, b, account.ID, source, ""); err == nil || bot.calls("getStickerSet") != 0 {
-		t.Fatal("implicit destination started a download")
-	}
-	location, err := fs.ResolvePath(p.Context, "chosen-sticker.webm", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref, err := s.DownloadTelegramSticker(p.Context, b, account.ID, source, location.Path)
-	if err != nil || ref.ComputerID != b.ComputerID || ref.DisplayName != filepath.Base(location.Path) {
-		t.Fatalf("download moved to the newly selected Computer: %#v, %v", ref, err)
-	}
-	data, err := fs.ReadFile(p.Context, location.Path)
-	if err != nil || string(data) != bot.files[source.FileID].body {
-		t.Fatalf("explicit destination did not receive source bytes: %q, %v", data, err)
-	}
-	files, err := p.Store.List(p.Context, "files")
-	if err != nil || len(files) != 1 {
-		t.Fatalf("explicit write did not produce exactly one FileRef: %d, %v", len(files), err)
-	}
-	if chats, err := p.Store.List(p.Context, "conversations"); err != nil || len(chats) != 0 {
-		t.Fatal("resource download invented an IM conversation:", err)
-	}
-	p.Agent.AllowedComputers = []string{p.Daemons[1].Credentials.ComputerID}
-	p.Agent.DefaultComputerID = p.Daemons[1].Credentials.ComputerID
-	if err = p.Harness.SaveAgent(p.Context, &p.Agent); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.DownloadTelegramSticker(p.Context, b, account.ID, source, location.Path+"-revoked"); err == nil {
-		t.Fatal("old Computer permission loss did not block the explicit write")
-	}
-	files, err = p.Store.List(p.Context, "files")
-	if err != nil || len(files) != 1 {
-		t.Fatal("rejected write created a FileRef:", err)
-	}
-}
-
-func TestDownloadTelegramStickerDoesNotRegisterFileAfterAccountDisabledDuringWrite(t *testing.T) {
-	p, s, bot, account := stickerResourcePlatform(t, 1)
-	b, err := p.Hub.Bind(p.Context, p.Agent.ID, p.Session.ID, p.Daemons[0].Credentials.ComputerID, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fs, err := (&computers.Backend{Hub: p.Hub}).FileSystem(p.Context, core.Invocation{SessionID: b.SessionID, Binding: computers.BindingJSON(b)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	location, err := fs.ResolvePath(p.Context, "account-disabled-during-stream.tgs", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeObserved, release := make(chan struct{}), make(chan struct{})
-	var releaseOnce sync.Once
-	defer releaseOnce.Do(func() { close(release) })
-	s.Client = &http.Client{Transport: stickerResourceTransport(func(r *http.Request) (*http.Response, error) {
-		response, err := http.DefaultTransport.RoundTrip(r)
-		if err != nil || r.URL.Path != "/file/botresource-test/stickers/animated.tgs" {
-			return response, err
-		}
-		body := response.Body
-		var observedOnce sync.Once
-		// The RPC input producer reads the next chunk only after delivering the
-		// first byte to file.write. Hold the rest of this real HTTP body, and
-		// therefore input_end, until the account has been disabled. Staging may
-		// legitimately leave the destination absent throughout this boundary.
-		response.Body = stickerResourceBody{Reader: io.MultiReader(io.LimitReader(body, 1), stickerResourceReader(func(p []byte) (int, error) {
-			observedOnce.Do(func() { close(writeObserved) })
-			select {
-			case <-release:
-				return body.Read(p)
-			case <-r.Context().Done():
-				return 0, r.Context().Err()
-			}
-		})), Closer: body}
-		return response, nil
-	})}
-	source := TelegramStickerSource{SetName: "oines1", FileID: "animated-file"}
-	type result struct {
-		ref domain.FileRef
-		err error
-	}
-	done := make(chan result, 1)
-	go func() {
-		ref, err := s.DownloadTelegramSticker(p.Context, b, account.ID, source, location.Path)
-		done <- result{ref: ref, err: err}
-	}()
-	select {
-	case <-writeObserved:
-	case value := <-done:
-		t.Fatalf("download finished before the upload boundary: %#v, %v", value.ref, value.err)
-	case <-p.Context.Done():
-		t.Fatal(p.Context.Err())
-	}
-	var disabled domain.Connection
-	if err := p.Store.Get(p.Context, "connections", account.ID, &disabled); err != nil {
-		t.Fatal(err)
-	}
-	disabled.Enabled = false
-	if err := p.Store.Save(p.Context, "connections", &disabled.Meta, &disabled); err != nil {
-		t.Fatal(err)
-	}
-	releaseOnce.Do(func() { close(release) })
-	select {
-	case value := <-done:
-		if value.err == nil || value.ref.ID != "" {
-			t.Fatalf("disabled account registered a new FileRef: %#v, %v", value.ref, value.err)
-		}
-	case <-p.Context.Done():
-		t.Fatal(p.Context.Err())
-	}
-	data, err := fs.ReadFile(p.Context, location.Path)
-	if err != nil || string(data) != bot.files[source.FileID].body {
-		t.Fatalf("completed write was unexpectedly removed or changed: %q, %v", data, err)
-	}
-	files, err := p.Store.List(p.Context, "files")
-	if err != nil || len(files) != 0 {
-		t.Fatal("account-disabled write left a registered FileRef:", err)
 	}
 }

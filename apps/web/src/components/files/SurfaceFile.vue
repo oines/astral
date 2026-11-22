@@ -2,6 +2,7 @@
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button, useDelayedPending } from '@astral/ui'
+import type { PreviewFile } from '../../lib/computer-file'
 import type { FileRef } from '../../lib/types'
 import type { SurfaceTab } from '../../stores/surface'
 import { resolveFile } from '../../composables/useFileService'
@@ -14,7 +15,7 @@ const emit = defineEmits<{ resolved: [key: string, file: FileRef] }>()
 const keys = inject(workspaceTabKeys, undefined)
 const valid = computed(() => !keys || keys.value.has(props.tab.key))
 const { t } = useI18n()
-const file = ref<FileRef>()
+const file = ref<PreviewFile>()
 const error = ref('')
 const busy = ref(false)
 const attempt = ref(0)

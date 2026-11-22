@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/filestream"
 )
 
 // Platform operations read explicit sources from the calling Computer, just as
@@ -17,20 +16,16 @@ func (s *Service) operationFiles(ctx context.Context, b domain.ExecutionBinding,
 			closeOperationFiles(uploads)
 			return nil, domain.Invalid("files must contain Computer paths or astral-file:// references")
 		}
-		if !strings.HasPrefix(location, "astral-file://") {
-			ref, err := s.Harness.Files.Reference(ctx, b, location, false)
-			if err != nil {
-				closeOperationFiles(uploads)
-				return nil, err
-			}
-			location = filestream.URL(ref)
+		path, uri := location, ""
+		if strings.HasPrefix(location, "astral-file://") {
+			path, uri = "", location
 		}
-		ref, _, body, err := s.Harness.Files.Read(ctx, b.AgentID, b.SessionID, location, 0, nil)
+		info, body, err := s.Harness.Files.OpenSource(ctx, b, path, uri)
 		if err != nil {
 			closeOperationFiles(uploads)
 			return nil, err
 		}
-		uploads[field] = Download{Body: body, Size: ref.Size, Name: ref.DisplayName, MediaType: ref.MediaType}
+		uploads[field] = Download{Body: body, Size: info.Size, Name: info.Name, MediaType: info.MediaType}
 	}
 	return uploads, nil
 }

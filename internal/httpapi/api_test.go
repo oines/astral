@@ -19,7 +19,6 @@ import (
 	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/domain"
-	"github.com/oines/astral/internal/gateway"
 	"github.com/oines/astral/internal/harness"
 	"github.com/oines/astral/internal/testkit"
 )
@@ -60,7 +59,7 @@ func TestOwnerAuthAndIndependentHistoricalImageAndOriginalDownload(t *testing.T)
 	response.Body.Close()
 	image, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK7kAAAAASUVORK5CYII=")
 	response = request(t, p.Context, server, "POST", "/api/v1/sessions/"+p.Session.ID+"/attachments?name=image.png", bytes.NewReader(image), true)
-	var file gateway.ReferenceResponse
+	var file UploadedAttachment
 	err := json.NewDecoder(response.Body).Decode(&file)
 	response.Body.Close()
 	if err != nil || response.StatusCode != 200 {
@@ -327,7 +326,7 @@ func TestEventSubscriptionPrecedesSnapshotAndReconcilesCommit(t *testing.T) {
 func TestContractHasRuntimeRoutesAndStreamSchemas(t *testing.T) {
 	doc := Contract().Document()
 	paths := doc["paths"].(map[string]any)
-	for _, path := range []string{"/api/v1/sessions/{id}/inputs", "/api/v1/sessions/{id}/events", "/v1/im/files", "/api/v1/computers/containers"} {
+	for _, path := range []string{"/api/v1/sessions/{id}/inputs", "/api/v1/sessions/{id}/events", "/v1/im/messages", "/api/v1/computers/containers"} {
 		if paths[path] == nil {
 			t.Fatalf("missing runtime contract %s", path)
 		}

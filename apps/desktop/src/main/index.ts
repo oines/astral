@@ -223,8 +223,8 @@ async function start() {
   registerDesktopFileHandlers(ipcMain, assertSender, new DesktopFiles({
     localDirectory: join(root, 'computers', 'local'), serverURL,
     alive: () => !!service.child?.pid && service.child.exitCode === null && service.child.signalCode === null && !quitting,
-    request: async (path, method = 'GET') => {
-      const response = await fetch(`${serverURL}${path}`, { method, headers: { Authorization: `Desktop ${token}`, Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(5000) })
+    request: async path => {
+      const response = await fetch(`${serverURL}${path}`, { headers: { Authorization: `Desktop ${token}`, Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(5000) })
       if (!response.ok) throw new Error('The source file or Computer access could not be verified.')
       return response.json()
     },

@@ -1,5 +1,6 @@
-import { fileContent, getFileReference, listComputerDirectory, referenceComputerFile } from '@astral/sdk'
-import { fileURL, request } from '../lib/api'
+import { fileContent, getFileReference, listComputerDirectory, sessionComputerFileContent } from '@astral/sdk'
+import { request } from '../lib/api'
+import { previewFileURL, type PreviewFile } from '../lib/computer-file'
 import type { FileRef } from '../lib/types'
 
 export interface DirectoryEntry {
@@ -28,8 +29,7 @@ export interface FilePreviewResource {
 export interface FileServiceAdapter {
   resolveFile(id: string, sessionID: string, signal?: AbortSignal): Promise<FileRef>
   listDirectory(computerID: string, sessionID: string, path: string | undefined, options: DirectoryOptions): Promise<DirectoryPage>
-  referencePath(computerID: string, sessionID: string, path: string, signal?: AbortSignal): Promise<FileRef>
-  content(id: string, sessionID: string, signal?: AbortSignal): Promise<{ data: Blob; headers: Headers }>
+  content(file: PreviewFile, sessionID: string, signal?: AbortSignal): Promise<{ data: Blob; headers: Headers }>
 }
 
 export function filePathName(path: string) { return path.split(/[\\/]/).filter(Boolean).at(-1) || path }
@@ -64,9 +64,11 @@ function decodeText(buffer: ArrayBuffer, contentType: string, partial: boolean):
 const adapter: FileServiceAdapter = {
   resolveFile: (id, sessionID, signal) => request(getFileReference({ path: { id }, query: { session_id: sessionID }, signal })),
   listDirectory: (id, sessionID, path, options) => request(listComputerDirectory({ path: { id }, query: { session_id: sessionID, path, cursor: options.cursor, limit: 200 }, signal: options.signal })),
-  referencePath: async (id, sessionID, path, signal) => (await request(referenceComputerFile({ path: { id }, query: { session_id: sessionID, path }, signal }))).file,
-  content: async (id, sessionID, signal) => {
-    const result = await fileContent({ path: { id }, query: { session_id: sessionID }, headers: { Range: 'bytes=0-262143' }, parseAs: 'blob', signal, throwOnError: true })
+  content: async (file, sessionID, signal) => {
+    const options = { headers: { Range: 'bytes=0-262143' }, parseAs: 'blob' as const, signal, throwOnError: true as const }
+    const result = file.id
+      ? await fileContent({ ...options, path: { id: file.id }, query: { session_id: sessionID } })
+      : await sessionComputerFileContent({ ...options, path: { id: sessionID, computer: file.computer_id }, query: { path: file.path } })
     if (!(result.data instanceof Blob)) throw new Error('The server returned no file content.')
     return { data: result.data, headers: result.response.headers }
   },
@@ -78,21 +80,18 @@ export function createFileService(api: FileServiceAdapter) {
     listDirectory(source: Pick<FileRef, 'computer_id'>, sessionID: string, path?: string, options: DirectoryOptions = {}) {
       return api.listDirectory(source.computer_id, sessionID, path, options)
     },
-    referencePath(source: Pick<FileRef, 'computer_id'>, sessionID: string, path: string, signal?: AbortSignal) {
-      return api.referencePath(source.computer_id, sessionID, path, signal)
-    },
-    async preview(file: FileRef, sessionID: string, signal?: AbortSignal): Promise<FilePreviewResource> {
-      const { data, headers } = await api.content(file.id, sessionID, signal)
+    async preview(file: PreviewFile, sessionID: string, signal?: AbortSignal): Promise<FilePreviewResource> {
+      const { data, headers } = await api.content(file, sessionID, signal)
       const contentType = headers.get('Content-Type') || file.media_type || ''
       const mediaType = contentType.split(';')[0]!.trim().toLowerCase()
-      const name = responseName(headers.get('Content-Disposition') || '', file.display_name || filePathName(file.path) || file.id)
+      const name = responseName(headers.get('Content-Disposition') || '', file.display_name || filePathName(file.path))
       const range = /bytes (\d+)-(\d+)\/(\d+)/.exec(headers.get('Content-Range') || '')
       const partial = Boolean(range && Number(range[2]) + 1 < Number(range[3]))
       let content: string | undefined
       if (!/^(image|audio|video)\//.test(mediaType) && mediaType !== 'application/pdf') {
         content = decodeText(await data.arrayBuffer(), contentType, partial)
       }
-      return { name, mediaType, content, partial, url: fileURL(file.id, sessionID), downloadURL: fileURL(file.id, sessionID, true) }
+      return { name, mediaType, content, partial, url: previewFileURL(file, sessionID), downloadURL: previewFileURL(file, sessionID, true) }
     },
   }
 }

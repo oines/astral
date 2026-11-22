@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -140,17 +138,6 @@ func TestMessagePartGatewayKeepsParentScopeAndHidesSourceHandles(t *testing.T) {
 	if string(content) != "original-bytes" || header.Get("Cache-Control") != "private, no-store" || !strings.Contains(header.Get("Content-Disposition"), "quoted.png") {
 		t.Fatalf("nested original stream lost bytes or cache restrictions: %s %v", content, header)
 	}
-	call("POST", base+"/p1.m0.p0/download", map[string]any{"path": ""}, 400)
-	destination := filepath.Join(p.Directory, "downloaded-quote.png")
-	call("POST", base+"/p1.m0.p0/download", map[string]any{"path": destination, "external_id": "arbitrary"}, 400)
-	_, saved := call("POST", base+"/p1.m0.p0/download", MessagePartDownloadRequest{Path: destination}, 200)
-	var reference ReferenceResponse
-	if err := json.Unmarshal(saved, &reference); err != nil || reference.URI == "" || reference.File.ComputerID != binding.ComputerID {
-		t.Fatalf("explicit nested download lost file reference: %s %v", saved, err)
-	}
-	if data, err := os.ReadFile(destination); err != nil || string(data) != "original-bytes" {
-		t.Fatalf("explicit nested download did not save original: %q %v", data, err)
-	}
 	account.AccessMode = "specified"
 	if err := p.Store.Save(p.Context, "connections", &account.Meta, &account); err != nil {
 		t.Fatal(err)
@@ -158,8 +145,7 @@ func TestMessagePartGatewayKeepsParentScopeAndHidesSourceHandles(t *testing.T) {
 	for _, suffix := range []string{"", "/p0/raw", "/p1", "/p1.m0.p0/content"} {
 		call("GET", base+suffix, nil, 403)
 	}
-	call("POST", base+"/p1.m0.p0/download", MessagePartDownloadRequest{Path: destination}, 403)
-	if mediaCalls.Load() != 2 || p.Requests.Load() != 0 {
+	if mediaCalls.Load() != 1 || p.Requests.Load() != 0 {
 		t.Fatal("invalid or revoked resource requests acquired media or invoked a model")
 	}
 }
@@ -168,10 +154,9 @@ func TestMessagePartContractsAreDiscoverableAndDoNotExposeWireFields(t *testing.
 	g := New(nil, nil)
 	paths := g.Contract.Paths
 	const root = "/v1/conversations/{id}/messages/{message_id}/parts"
-	for path, method := range map[string]string{root: "get", root + "/{ref}": "get", root + "/{ref}/raw": "get", root + "/{ref}/content": "get", root + "/{ref}/download": "post"} {
-		operation := paths[path].(map[string]any)[method].(map[string]any)
-		if operation["description"] == nil {
-			t.Errorf("part operation is missing discovery documentation: %s", path)
+	for path, method := range map[string]string{root: "get", root + "/{ref}": "get", root + "/{ref}/raw": "get", root + "/{ref}/content": "get"} {
+		if paths[path].(map[string]any)[method] == nil {
+			t.Errorf("missing part operation: %s", path)
 		}
 	}
 	if paths[root+"/{ref}/preview"] != nil {

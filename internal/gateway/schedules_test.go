@@ -359,7 +359,7 @@ func TestGatewayCapabilitiesDescribeScheduleAndSessionManagement(t *testing.T) {
 		}
 		if id == "schedules" {
 			notes := strings.Join(doc.Notes, " ")
-			for _, term := range []string{"Steer", "revision", "skipped", "WebUI", "send_message", "session_mode=new", "last_session_id"} {
+			for _, term := range []string{"Steer", "revision", "session_mode=new", "last_session_id"} {
 				if !strings.Contains(notes, term) {
 					t.Fatalf("schedule discovery omitted behavior %q", term)
 				}
