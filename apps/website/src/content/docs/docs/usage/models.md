@@ -38,7 +38,7 @@ Test credentials, quota, and tool calling together with a quick read-only prompt
 
 :::tip[Image support and reasoning levels]
 - Models marked as not supporting images replace images with text markers so text work continues; original images stay in history and work again if you switch to a vision-capable model.
-- Start with **Inherit model default** for reasoning, then tune per model or per session once basic tasks work (**API default** defers to the provider's own default).
+- Start with **Inherit model default** for reasoning, then tune per model or per session once basic tasks work (**API default** defers to the provider's own default). If you change only the reasoning effort for the same model, Astral can keep using the provider’s reported token count for the unchanged history when budgeting the next request.
 :::
 
 ## 3. Add web search (optional)

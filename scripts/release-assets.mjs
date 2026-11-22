@@ -162,7 +162,11 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   const label = macSigned ? 'Mac signed candidate' : 'unsigned candidate'
   const macStatus = macSigned ? (notarized ? 'verified signed and notarized' : 'verified signed; Apple notarization is pending') + '; final-byte evidence is in mac-signing-report.json' : 'not performed'
   const hostMigration = formats.host_schema >= 4 ? 'The Host 3 → 4 migration restores visibility of Sessions archived while still bound to IM. It appends an unarchived current revision while preserving every earlier revision, IM event and Core history entry; ordinary archived Sessions stay archived. Desktop keeps its existing schema-3-core-11/ data directory.' : 'The supported public data baseline is Host 3 / Core 11.'
-  const capabilities = `Control Astral API access when adding a Computer or in its details. New remote Computers start with API access off. Turning it off revokes command API credentials and blocks new event deliveries from that Computer. Bots can still run commands and work with files on it. Existing compatible Daemons work with this setting after updating the Server.
+  const capabilities = `Each group chat and topic now has a Use group context switch, on by default. Turn it off to archive ordinary group messages without adding them to the Bot's session. Messages addressed directly to the Bot appear in the Astral conversation, including when you reopen an existing session.
+
+On compatible models, switching between active reasoning levels can reuse the provider's reported token usage for the same conversation history. New messages are counted from that baseline.
+
+Control Astral API access when adding a Computer or in its details. New remote Computers start with API access off. Turning it off revokes command API credentials and blocks new event deliveries from that Computer. Bots can still run commands and work with files on it. Existing compatible Daemons work with this setting after updating the Server.
 
 Computer details show the IP of the current Daemon connection. For connections through a trusted reverse proxy, Astral uses the forwarded client IP when available, including with Cloudflare Tunnel, nginx, and Caddy.
 

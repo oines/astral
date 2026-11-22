@@ -3,9 +3,11 @@
 package modelbridge
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -597,6 +599,32 @@ func (m *boundModel) ValidateRequestReadOnly(ctx context.Context, req core.Reque
 }
 func (m *boundModel) EstimateTokens(ctx context.Context, req core.Request) (int, error) {
 	return m.adapter.EstimateTokens(ctx, req)
+}
+
+func (m *boundModel) CompatibleReasoningEfforts(previous, current string) bool {
+	capability, ok := m.adapter.(core.ReasoningEffortUsageModel)
+	return ok && capability.CompatibleReasoningEfforts(previous, current)
+}
+
+// A Server upgrade changes its own User-Agent while the token-accounting
+// target can stay identical. Keep every other frozen field in the comparison,
+// including fields written by a newer version of the Host.
+func (m *boundModel) CompatibleReasoningEffortTargets(previous, current json.RawMessage) bool {
+	fields := func(snapshot json.RawMessage) map[string]json.RawMessage {
+		var target map[string]json.RawMessage
+		var agent string
+		if json.Unmarshal(snapshot, &target) != nil || len(target["target"]) == 0 || json.Unmarshal(target["user_agent"], &agent) != nil {
+			return nil
+		}
+		version, ok := strings.CutPrefix(agent, "Astral/")
+		if !ok || version == "" || strings.ContainsAny(version, " \t\r\n") {
+			return nil
+		}
+		delete(target, "user_agent")
+		return target
+	}
+	old, next := fields(previous), fields(current)
+	return old != nil && next != nil && maps.EqualFunc(old, next, func(a, b json.RawMessage) bool { return bytes.Equal(a, b) })
 }
 
 func EstimateTokens(ctx context.Context, model core.Model, req core.Request) (int, error) {
