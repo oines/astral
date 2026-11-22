@@ -262,17 +262,7 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 		},
 	}
 	if cleanup, ok := s.updates.(serverupdate.CacheCleanup); ok {
-		storageConfig.ExternalCleanup = func(ctx context.Context) ([]storage.CleanupItem, error) {
-			items, err := cleanup.CacheInventory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			result := make([]storage.CleanupItem, 0, len(items))
-			for _, item := range items {
-				result = append(result, storage.CleanupItem{Token: item.Token, Kind: item.Kind, Name: item.Name, Bytes: item.Bytes, Protected: item.Protected, Reason: item.Reason})
-			}
-			return result, nil
-		}
+		storageConfig.ExternalCache = cleanup.CacheInventory
 		storageConfig.CleanExternal = cleanup.CleanCache
 	}
 	s.Storage = storage.New(s.ctx, storageConfig)

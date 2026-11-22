@@ -23,16 +23,16 @@ func (s *Service) activeBinding(ctx context.Context, conversationID string) (dom
 // Bind selects an existing unbound Session or creates one for this account's
 // Agent. A manual binding starts at the current archive head, without replay.
 func (s *Service) Bind(ctx context.Context, conversationID, sessionID string) (domain.ConversationBinding, error) {
-	return s.bind(ctx, conversationID, sessionID, nil)
+	return s.changeBinding(ctx, conversationID, sessionID, nil)
 }
 
-func (s *Service) bind(ctx context.Context, conversationID, sessionID string, firstSequence *int64) (domain.ConversationBinding, error) {
-	return s.bindExpected(ctx, conversationID, sessionID, firstSequence, "")
-}
-
-func (s *Service) bindExpected(ctx context.Context, conversationID, sessionID string, firstSequence *int64, expected string) (domain.ConversationBinding, error) {
+func (s *Service) changeBinding(ctx context.Context, conversationID, sessionID string, reset *ResetStorageRequest) (domain.ConversationBinding, error) {
 	s.bindings.Lock()
 	defer s.bindings.Unlock()
+	return s.changeBindingLocked(ctx, conversationID, sessionID, nil, reset)
+}
+
+func (s *Service) changeBindingLocked(ctx context.Context, conversationID, sessionID string, firstSequence *int64, reset *ResetStorageRequest) (domain.ConversationBinding, error) {
 	var conversation domain.Conversation
 	if err := s.Store.Get(ctx, "conversations", conversationID, &conversation); err != nil {
 		return domain.ConversationBinding{}, err
@@ -50,7 +50,7 @@ func (s *Service) bindExpected(ctx context.Context, conversationID, sessionID st
 	if err != nil {
 		return old, err
 	}
-	if expected != "" && old.ID != expected {
+	if reset != nil && (old.ID == "" || old.SessionID != reset.SessionID || old.Revision != reset.Revision) {
 		return old, domain.Conflict("聊天绑定已改变，请刷新后重试。")
 	}
 	if old.ID != "" && (firstSequence != nil || sessionID == old.SessionID) {
@@ -125,6 +125,10 @@ func (s *Service) bindExpected(ctx context.Context, conversationID, sessionID st
 					return err
 				}
 				clearSessionBinding(&previous)
+				if reset != nil {
+					record.Private = previous.Private
+					previous.Archived = true
+				}
 				if err := tx.Save(ctx, "sessions", &previous.Meta, &previous); err != nil {
 					return err
 				}

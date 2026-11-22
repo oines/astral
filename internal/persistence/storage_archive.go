@@ -59,11 +59,17 @@ func (s *Store) ConversationArchiveInfo(ctx context.Context, id string) (Archive
 // The caller persists the returned sequence with its progress in apply. Records
 // after the processed watermark cannot be pruned. On error the transaction is
 // rolled back, so neither the returned count nor cursor may be committed.
-func (s *Store) PruneObservations(ctx context.Context, conversation string, after, through int64, before time.Time, apply func(*Tx, int, int64) error) (int, int64, error) {
+func (s *Store) PruneObservations(ctx context.Context, conversation string, after, through int64, before time.Time) (int, int64, error) {
 	count := 0
 	next := after
 	err := s.Update(ctx, func(tx *Tx) error {
-		rows, err := tx.tx.QueryContext(ctx, `SELECT sequence,payload FROM observations WHERE conversation_id=? AND sequence>? AND sequence<=? AND COALESCE(json_extract(payload,'$.kind'),'')<>? AND julianday(COALESCE(json_extract(payload,'$.received_at'),json_extract(payload,'$.sent_at'))) < julianday(?) ORDER BY sequence LIMIT 256`, conversation, after, through, PrunedObservation, before.UTC().Format(time.RFC3339Nano))
+		query := `SELECT sequence,payload FROM observations WHERE conversation_id=? AND sequence>? AND sequence<=? AND COALESCE(json_extract(payload,'$.kind'),'')<>?`
+		args := []any{conversation, after, through, PrunedObservation}
+		if !before.IsZero() {
+			query += ` AND julianday(COALESCE(json_extract(payload,'$.received_at'),json_extract(payload,'$.sent_at'))) < julianday(?)`
+			args = append(args, before.UTC().Format(time.RFC3339Nano))
+		}
+		rows, err := tx.tx.QueryContext(ctx, query+" ORDER BY sequence LIMIT 256", args...)
 		if err != nil {
 			return err
 		}
@@ -109,9 +115,6 @@ func (s *Store) PruneObservations(ctx context.Context, conversation string, afte
 			}
 			count++
 			next = it.seq
-		}
-		if apply != nil {
-			return apply(tx, count, next)
 		}
 		return nil
 	})

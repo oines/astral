@@ -19,44 +19,33 @@ func (a *API) storageRoutes() {
 		if err := ready(); err != nil {
 			return storage.Snapshot{}, err
 		}
-		return a.Config.Storage.Snapshot(r.Context(), r.URL.Query().Get("agent_id"))
-	}, httpcontract.Parameter{Name: "agent_id", Type: "string"})
-	route[storage.RefreshRequest, storage.Snapshot](a, "POST", "/storage/refresh", "refreshStorage", "Storage", func(r *http.Request, input storage.RefreshRequest) (storage.Snapshot, error) {
+		if r.URL.Query().Get("wait_for_reclaim") == "true" {
+			if err := a.Config.Storage.WaitForReclaim(r.Context()); err != nil {
+				return storage.Snapshot{}, err
+			}
+		}
+		return a.Config.Storage.Snapshot(r.Context())
+	}, httpcontract.Parameter{Name: "wait_for_reclaim", Type: "boolean", Description: "Wait for the current database reclamation batch to complete or fail before reading the snapshot."})
+	route[httpcontract.Empty, storage.Snapshot](a, "POST", "/storage/refresh", "refreshStorage", "Storage", func(r *http.Request, _ httpcontract.Empty) (storage.Snapshot, error) {
 		if err := ready(); err != nil {
 			return storage.Snapshot{}, err
 		}
-		a.Config.Storage.Refresh(input.Cancel)
-		return a.Config.Storage.Snapshot(r.Context(), "")
+		if err := a.Config.Storage.Refresh(r.Context()); err != nil {
+			return storage.Snapshot{}, err
+		}
+		return a.Config.Storage.Snapshot(r.Context())
 	})
 	route[httpcontract.Empty, storage.Snapshot](a, "POST", "/storage/reclaim", "reclaimStorage", "Storage", func(r *http.Request, _ httpcontract.Empty) (storage.Snapshot, error) {
 		if err := ready(); err != nil {
 			return storage.Snapshot{}, err
 		}
 		a.Config.Storage.RequestReclaim()
-		return a.Config.Storage.Snapshot(r.Context(), "")
+		return a.Config.Storage.Snapshot(r.Context())
 	})
-	route[httpcontract.Empty, storage.CleanupInventory](a, "GET", "/storage/cleanup", "storageCleanupInventory", "Storage", func(r *http.Request, _ httpcontract.Empty) (storage.CleanupInventory, error) {
+	route[httpcontract.Empty, storage.CleanupResult](a, "POST", "/storage/cleanup/all", "cleanupStorage", "Storage", func(r *http.Request, _ httpcontract.Empty) (storage.CleanupResult, error) {
 		if err := ready(); err != nil {
-			return storage.CleanupInventory{}, err
+			return storage.CleanupResult{}, err
 		}
-		return a.Config.Storage.Inventory(r.Context()), nil
-	})
-	route[storage.CleanupRequest, storage.CleanupOperation](a, "POST", "/storage/cleanup", "cleanupStorage", "Storage", func(r *http.Request, input storage.CleanupRequest) (storage.CleanupOperation, error) {
-		if err := ready(); err != nil {
-			return storage.CleanupOperation{}, err
-		}
-		return a.Config.Storage.Cleanup(r.Context(), input)
-	})
-	route[httpcontract.Empty, storage.CleanupOperation](a, "GET", "/storage/cleanup/{id}", "storageCleanupOperation", "Storage", func(r *http.Request, _ httpcontract.Empty) (storage.CleanupOperation, error) {
-		if err := ready(); err != nil {
-			return storage.CleanupOperation{}, err
-		}
-		return a.Config.Storage.CleanupOperation(r.Context(), r.PathValue("id"))
-	})
-	route[httpcontract.Empty, storage.CleanupOperation](a, "POST", "/storage/cleanup/{id}/retry", "retryStorageCleanup", "Storage", func(r *http.Request, _ httpcontract.Empty) (storage.CleanupOperation, error) {
-		if err := ready(); err != nil {
-			return storage.CleanupOperation{}, err
-		}
-		return a.Config.Storage.RetryCleanup(r.Context(), r.PathValue("id"))
+		return a.Config.Storage.Cleanup(r.Context()), nil
 	})
 }

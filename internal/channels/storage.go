@@ -2,43 +2,16 @@ package channels
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"math"
-	"strings"
-	"sync"
+	"fmt"
 	"time"
 
 	"github.com/oines/astral/internal/domain"
 	"github.com/oines/astral/internal/persistence"
 )
 
-const storageOperations = "storage_operations"
-
-type StorageRequest struct {
-	OperationID   string     `json:"operation_id"`
-	Before        *time.Time `json:"before,omitempty"`
-	RetentionDays *int       `json:"retention_days,omitempty"`
-	Revision      int64      `json:"revision,omitempty"`
-}
-
-type StorageOperation struct {
-	domain.Meta
-	AgentID        string     `json:"agent_id"`
-	Kind           string     `json:"kind"`
-	State          string     `json:"state"`
-	ConversationID string     `json:"conversation_id"`
-	OldSessionID   string     `json:"old_session_id,omitempty"`
-	NewSessionID   string     `json:"new_session_id,omitempty"`
-	BindingID      string     `json:"binding_id,omitempty"`
-	Phase          string     `json:"phase,omitempty"`
-	Before         *time.Time `json:"before,omitempty"`
-	RetentionDays  *int       `json:"retention_days,omitempty"`
-	RemovedCount   int        `json:"removed_count"`
-	ArchiveAfter   int64      `json:"archive_after,omitempty"`
-	Error          string     `json:"error,omitempty"`
-	Fingerprint    string     `json:"fingerprint"`
+type ResetStorageRequest struct {
+	SessionID string `json:"session_id"`
+	Revision  int64  `json:"revision"`
 }
 
 type archiveRetention struct {
@@ -47,419 +20,198 @@ type archiveRetention struct {
 	ConversationID string    `json:"conversation_id"`
 	RetentionDays  int       `json:"retention_days"`
 	LastRun        time.Time `json:"last_run,omitempty"`
-	OperationID    string    `json:"operation_id,omitempty"`
-	RequestedAt    time.Time `json:"requested_at,omitempty"`
 }
 
-func lockStorage(ctx context.Context, lock *sync.Mutex) error {
-	tick := time.NewTicker(20 * time.Millisecond)
-	defer tick.Stop()
-	for !lock.TryLock() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-tick.C:
-		}
+func (s *Service) ResetStorageChat(ctx context.Context, conversation string, request ResetStorageRequest) (domain.ConversationBinding, error) {
+	if request.SessionID == "" || request.Revision < 1 {
+		return domain.ConversationBinding{}, domain.Invalid("current session_id and binding revision are required")
 	}
-	if err := ctx.Err(); err != nil {
-		lock.Unlock()
-		return err
-	}
-	return nil
-}
-
-func (s *Service) StorageOperation(ctx context.Context, id string) (StorageOperation, error) {
-	var op StorageOperation
-	err := s.Store.Get(ctx, storageOperations, id, &op)
-	return op, err
-}
-
-func (s *Service) checkStorageQueue(ctx context.Context, conversationID, kind, except string) error {
-	active, err := list[StorageOperation](ctx, s.Store, storageOperations)
+	// Rebinding creates the replacement and archives the previous root in one
+	// Host transaction. An interrupted cleanup leaves the old root accessible
+	// from Storage, and a stale retry cannot reset the new binding.
+	binding, err := s.changeBinding(ctx, conversation, "", &request)
 	if err != nil {
-		return err
+		return binding, err
 	}
-	for _, pending := range active {
-		if pending.ID != except && pending.ConversationID == conversationID && pending.Kind == kind && (pending.State == "queued" || pending.State == "running") {
-			return domain.Conflict("此聊天已有同类清理任务，请先核对该任务的结果。")
-		}
+	var old domain.Session
+	if err := s.Store.Get(ctx, "sessions", request.SessionID, &old); domain.IsMissing(err) {
+		return binding, nil
+	} else if err != nil {
+		return binding, err
 	}
-	return nil
+	if err := s.Harness.DeleteSession(ctx, old.ID, old.Revision); err != nil {
+		return binding, fmt.Errorf("聊天已切换到新会话，清理旧会话失败：%w", err)
+	}
+	return binding, nil
 }
 
-func (s *Service) StartStorageOperation(ctx context.Context, conversationID, kind string, request StorageRequest) (StorageOperation, error) {
-	if len(request.OperationID) < 8 || len(request.OperationID) > 128 || strings.ContainsAny(request.OperationID, "/\\\x00") {
-		return StorageOperation{}, domain.Invalid("operation_id must be a stable 8–128 character identifier")
-	}
-	if kind != "reset" && kind != "archive" {
-		return StorageOperation{}, domain.Invalid("unknown cleanup operation")
-	}
-	if kind == "archive" {
-		if (request.Before == nil) == (request.RetentionDays == nil) {
-			return StorageOperation{}, domain.Invalid("choose a cutoff date or retention policy")
-		}
-		if request.RetentionDays != nil && *request.RetentionDays != 0 && *request.RetentionDays != 30 && *request.RetentionDays != 90 && *request.RetentionDays != 180 {
-			return StorageOperation{}, domain.Invalid("retention must be 0, 30, 90 or 180 days")
-		}
-		if request.Before != nil && request.Before.IsZero() {
-			return StorageOperation{}, domain.Invalid("invalid cutoff date")
-		}
-	}
-	raw, _ := json.Marshal(struct {
-		Conversation string
-		Kind         string
-		Request      StorageRequest
-	}{conversationID, kind, request})
-	sum := sha256.Sum256(raw)
-	fingerprint := hex.EncodeToString(sum[:])
-	if err := lockStorage(ctx, &s.storageMu); err != nil {
-		return StorageOperation{}, err
-	}
-	defer s.storageMu.Unlock()
-	if prior, err := s.StorageOperation(ctx, request.OperationID); err == nil {
-		if prior.Fingerprint != fingerprint {
-			return prior, domain.Conflict("operation_id was already used for another request")
-		}
-		return prior, nil
-	} else if !domain.IsMissing(err) {
-		return prior, err
-	}
-	if err := s.checkStorageQueue(ctx, conversationID, kind, ""); err != nil {
-		return StorageOperation{}, err
-	}
+func (s *Service) storageChatOwner(ctx context.Context, conversation string) (string, error) {
 	var chat domain.Conversation
-	if err := s.Store.Get(ctx, "conversations", conversationID, &chat); err != nil {
-		return StorageOperation{}, err
+	if err := s.Store.Get(ctx, "conversations", conversation, &chat); err != nil {
+		return "", err
 	}
 	var account domain.Connection
 	if err := s.Store.Get(ctx, "connections", chat.ConnectionID, &account); err != nil {
-		return StorageOperation{}, err
+		return "", err
 	}
-	if err := s.activeAgent(ctx, account.AgentID); err != nil {
-		return StorageOperation{}, err
-	}
-	op := StorageOperation{Meta: domain.Meta{ID: request.OperationID}, AgentID: account.AgentID, Kind: kind, State: "queued", ConversationID: conversationID, Before: request.Before, RetentionDays: request.RetentionDays, Fingerprint: fingerprint}
-	if kind == "reset" {
-		binding, err := s.activeBinding(ctx, conversationID)
-		if err != nil {
-			return op, err
-		}
-		if binding.ID == "" || binding.Revision != request.Revision {
-			return op, domain.Conflict("聊天绑定已改变，请刷新后重试。")
-		}
-		op.BindingID, op.OldSessionID = binding.ID, binding.SessionID
-		op.NewSessionID = "session_cleanup_" + hex.EncodeToString(sum[:16])
-	}
-	if err := s.saveStorageIntent(ctx, &op); err != nil {
-		return op, err
-	}
-	return op, nil
+	return account.AgentID, s.activeAgent(ctx, account.AgentID)
 }
 
-func (s *Service) RetryStorageOperation(ctx context.Context, id string) (StorageOperation, error) {
-	if err := lockStorage(ctx, &s.storageMu); err != nil {
-		return StorageOperation{}, err
+func (s *Service) ClearChatArchive(ctx context.Context, conversation string) (int, error) {
+	if _, err := s.storageChatOwner(ctx, conversation); err != nil {
+		return 0, err
 	}
+	s.storageMu.Lock()
 	defer s.storageMu.Unlock()
-	op, err := s.StorageOperation(ctx, id)
-	if err != nil {
-		return op, err
-	}
-	if op.State != "failed" {
-		return op, nil
-	}
-	if err = s.activeAgent(ctx, op.AgentID); err != nil {
-		return op, err
-	}
-	if err = s.checkStorageQueue(ctx, op.ConversationID, op.Kind, op.ID); err != nil {
-		return op, err
-	}
-	op.State, op.Error = "queued", ""
-	err = s.saveStorageIntent(ctx, &op)
-	return op, err
+	return s.pruneChatArchive(ctx, conversation, time.Time{})
 }
 
-func (s *Service) saveStorageIntent(ctx context.Context, op *StorageOperation) error {
+func (s *Service) SetChatRetention(ctx context.Context, conversation string, days int) (int, error) {
+	if days != 0 && days != 30 && days != 90 && days != 180 {
+		return 0, domain.Invalid("retention must be 0, 30, 90 or 180 days")
+	}
+	agentID, err := s.storageChatOwner(ctx, conversation)
+	if err != nil {
+		return 0, err
+	}
+	s.storageMu.Lock()
+	defer s.storageMu.Unlock()
+	var policy archiveRetention
+	if err := s.Store.Get(ctx, "storage_retention", conversation, &policy); err != nil && !domain.IsMissing(err) {
+		return 0, err
+	}
+	if policy.RetentionDays == days && (days == 0 || !policy.LastRun.IsZero()) {
+		return 0, nil
+	}
+	policy.ID, policy.AgentID, policy.ConversationID = conversation, agentID, conversation
+	policy.RetentionDays, policy.LastRun = days, time.Time{}
+	if err := s.saveRetention(ctx, &policy); err != nil {
+		return 0, err
+	}
+	return s.applyRetention(ctx, &policy)
+}
+
+func (s *Service) saveRetention(ctx context.Context, policy *archiveRetention) error {
 	return s.Store.Update(ctx, func(tx *persistence.Tx) error {
-		if err := tx.RequireActiveAgent(ctx, op.AgentID); err != nil {
+		if err := tx.RequireActiveAgent(ctx, policy.AgentID); err != nil {
 			return err
 		}
-		return tx.Save(ctx, storageOperations, &op.Meta, op)
+		return tx.Save(ctx, "storage_retention", &policy.Meta, policy)
 	})
 }
 
-// Storage jobs run in the existing service lifecycle and resume queued/running
-// intents after restart. Worker admission is synchronized with Bot deletion.
-func (s *Service) reconcileStorage() (time.Time, error) {
-	records, err := list[StorageOperation](s.ctx, s.Store, storageOperations)
+func (s *Service) applyRetention(ctx context.Context, policy *archiveRetention) (int, error) {
+	if policy.RetentionDays == 0 {
+		return 0, nil
+	}
+	now := time.Now().UTC()
+	removed, err := s.pruneChatArchive(ctx, policy.ConversationID, now.AddDate(0, 0, -policy.RetentionDays))
 	if err != nil {
-		return time.Time{}, err
+		return removed, err
 	}
-	for _, op := range records {
-		if op.State != "queued" && op.State != "running" {
-			continue
-		}
-		s.mu.Lock()
-		if s.storageRunning == nil {
-			s.storageRunning = map[string]bool{}
-		}
-		if s.ctx.Err() != nil || s.deletingAgents[op.AgentID] || s.storageRunning[op.ID] {
-			s.mu.Unlock()
-			continue
-		}
-		s.storageRunning[op.ID] = true
-		group := s.agentWorkersLocked(op.AgentID)
-		group.workers.Add(1)
-		s.workers.Add(1)
-		s.mu.Unlock()
-		go func(op StorageOperation) {
-			defer s.workers.Done()
-			defer group.workers.Done()
-			defer func() {
-				s.mu.Lock()
-				delete(s.storageRunning, op.ID)
-				s.mu.Unlock()
-				s.wakeReconcile()
-			}()
-			s.executeStorageOperation(group.ctx, op.ID)
-		}(op)
-	}
-	return s.reconcileRetention()
+	policy.LastRun = now
+	return removed, s.saveRetention(ctx, policy)
 }
 
-func (s *Service) executeStorageOperation(ctx context.Context, id string) {
-	// Long-running execution is separate from queue admission, so another
-	// chat can enqueue work and channel reconciliation keeps making progress.
-	if lockStorage(ctx, &s.storageWorkMu) != nil {
-		return
-	}
-	defer s.storageWorkMu.Unlock()
-	op, err := s.StorageOperation(ctx, id)
-	if err != nil || op.State == "complete" {
-		return
-	}
-	op.State, op.Error = "running", ""
-	if err = s.Store.Save(ctx, storageOperations, &op.Meta, &op); err != nil {
-		return
-	}
-	if op.Kind == "reset" {
-		err = s.resetStorageChat(ctx, &op)
-	} else {
-		err = s.cleanStorageArchive(ctx, &op)
-	}
-	if ctx.Err() != nil {
-		return
-	}
+func (s *Service) pruneChatArchive(ctx context.Context, conversation string, before time.Time) (int, error) {
+	head, err := s.Store.ObservationHead(ctx, conversation)
 	if err != nil {
-		op.State, op.Error = "failed", err.Error()
-	} else {
-		op.State, op.Error = "complete", ""
+		return 0, err
 	}
-	if s.activeAgent(ctx, op.AgentID) == nil {
-		_ = s.Store.Save(ctx, storageOperations, &op.Meta, &op)
-	}
-	if err == nil && s.StorageChanged != nil {
-		s.StorageChanged()
-	}
-}
-
-func (s *Service) resetStorageChat(ctx context.Context, op *StorageOperation) error {
-	if op.Phase == "" {
-		current, err := s.activeBinding(ctx, op.ConversationID)
+	removed := 0
+	defer func() {
+		if removed > 0 && s.StorageChanged != nil {
+			s.StorageChanged()
+		}
+	}()
+	// Fix the upper bound at admission. A message arriving while an older
+	// batch is deleted belongs to the next cleanup.
+	for after := int64(0); after < head; {
+		count, next, err := s.pruneArchiveBatch(ctx, conversation, after, head, before)
 		if err != nil {
-			return err
+			return removed, err
 		}
-		if current.ID != op.BindingID || current.SessionID != op.OldSessionID {
-			return domain.Conflict("聊天绑定已改变，已停止清理。")
+		removed += count
+		if count < 256 {
+			break
 		}
-		var old domain.Session
-		if err := s.Store.Get(ctx, "sessions", op.OldSessionID, &old); err != nil {
-			return err
-		}
-		if old.AgentID != op.AgentID {
-			return domain.Forbidden("session owner changed")
-		}
-		if _, err := s.Harness.CreateStorageReplacement(ctx, old, op.NewSessionID); err != nil {
-			return err
-		}
-		op.Phase = "prepared"
-		if err := s.Store.Save(ctx, storageOperations, &op.Meta, op); err != nil {
-			return err
-		}
+		after = next
 	}
-	binding, err := s.activeBinding(ctx, op.ConversationID)
-	if err != nil {
-		return err
-	}
-	if binding.SessionID != op.NewSessionID {
-		if op.Phase != "prepared" || binding.ID != op.BindingID || binding.SessionID != op.OldSessionID {
-			return domain.Conflict("聊天绑定在清理期间发生改变，旧会话尚未删除。")
-		}
-		if _, err = s.bindExpected(ctx, op.ConversationID, op.NewSessionID, nil, op.BindingID); err != nil {
-			return err
-		}
-	}
-	if err = s.Harness.InitializeSession(ctx, op.NewSessionID); err != nil {
-		return err
-	}
-	op.Phase = "bound"
-	if err = s.Store.Save(ctx, storageOperations, &op.Meta, op); err != nil {
-		return err
-	}
-	var old domain.Session
-	err = s.Store.Get(ctx, "sessions", op.OldSessionID, &old)
-	if domain.IsMissing(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if old.BindingID != "" {
-		return domain.Conflict("旧会话重新绑定了聊天，已停止删除。")
-	}
-	if old.Deletion == nil && !old.Archived {
-		old.Archived = true
-		if err = s.Store.Save(ctx, "sessions", &old.Meta, &old); err != nil {
-			return err
-		}
-	}
-	return s.Harness.DeleteSession(ctx, old.ID, old.Revision)
+	return removed, nil
 }
 
-func (s *Service) cleanStorageArchive(ctx context.Context, op *StorageOperation) error {
-	before := op.Before
-	if op.RetentionDays != nil {
-		var policy archiveRetention
-		err := s.Store.Get(ctx, "storage_retention", op.ConversationID, &policy)
-		if err != nil && !domain.IsMissing(err) {
-			return err
-		}
-		if policy.OperationID != op.ID && policy.RequestedAt.After(op.CreatedAt) {
-			return domain.Conflict("归档保留期限已被较新的操作更改，请刷新后重新选择。")
-		}
-		policy.ID, policy.AgentID, policy.ConversationID = op.ConversationID, op.AgentID, op.ConversationID
-		policy.RetentionDays = *op.RetentionDays
-		policy.OperationID, policy.RequestedAt = op.ID, op.CreatedAt
-		policy.LastRun = time.Now().UTC()
-		if *op.RetentionDays > 0 && op.Before == nil {
-			cutoff := time.Now().UTC().AddDate(0, 0, -*op.RetentionDays)
-			op.Before = &cutoff
-		}
-		if err = s.Store.Update(ctx, func(tx *persistence.Tx) error {
-			if err := tx.RequireActiveAgent(ctx, op.AgentID); err != nil {
-				return err
-			}
-			if err := tx.Save(ctx, "storage_retention", &policy.Meta, &policy); err != nil {
-				return err
-			}
-			return tx.Save(ctx, storageOperations, &op.Meta, op)
-		}); err != nil {
-			return err
-		}
-		if *op.RetentionDays == 0 {
-			return nil
-		}
-		before = op.Before
-	}
-	if before == nil {
-		return domain.Invalid("cleanup cutoff is missing")
-	}
-	for {
-		n, err := s.pruneStorageArchiveBatch(ctx, op, *before)
-		if err != nil {
-			return err
-		}
-		if n < 256 {
-			return nil
-		}
-	}
-}
-
-// Each batch rechecks the current binding and processed watermarks. Releasing
-// admission between batches lets other chats progress during a large cleanup.
-func (s *Service) pruneStorageArchiveBatch(ctx context.Context, op *StorageOperation, before time.Time) (int, error) {
+func (s *Service) pruneArchiveBatch(ctx context.Context, conversation string, after, through int64, before time.Time) (int, int64, error) {
 	s.bindings.Lock()
 	defer s.bindings.Unlock()
 	s.gate.Lock()
 	defer s.gate.Unlock()
-	through := int64(math.MaxInt64)
-	binding, err := s.activeBinding(ctx, op.ConversationID)
+	binding, err := s.activeBinding(ctx, conversation)
 	if err != nil {
-		return 0, err
+		return 0, after, err
 	}
 	if binding.ID != "" {
 		var chat domain.Conversation
-		if err = s.Store.Get(ctx, "conversations", op.ConversationID, &chat); err != nil {
-			return 0, err
+		if err := s.Store.Get(ctx, "conversations", conversation, &chat); err != nil {
+			return 0, after, err
 		}
 		position := cursor{Meta: domain.Meta{ID: binding.ID}, Sequence: binding.StartSequence}
-		if err = s.Store.Get(ctx, "inbox_cursors", binding.ID, &position); err != nil && !domain.IsMissing(err) {
-			return 0, err
+		if err := s.Store.Get(ctx, "inbox_cursors", binding.ID, &position); err != nil && !domain.IsMissing(err) {
+			return 0, after, err
 		}
 		handoff, err := s.handoffPosition(ctx, binding)
 		if err != nil {
-			return 0, err
+			return 0, after, err
 		}
-		through = min(position.Sequence, handoff)
+		through = min(through, position.Sequence, handoff)
 		if proactiveActive(chat) {
 			probe, err := s.probeCursor(ctx, binding)
 			if err != nil {
-				return 0, err
+				return 0, after, err
 			}
 			through = min(through, probe.Sequence)
 		}
 	}
-	next := *op
-	n, _, err := s.Store.PruneObservations(ctx, op.ConversationID, op.ArchiveAfter, through, before, func(tx *persistence.Tx, count int, after int64) error {
-		next.RemovedCount += count
-		next.ArchiveAfter = after
-		if err := tx.Save(ctx, storageOperations, &next.Meta, &next); err != nil {
-			return err
-		}
-		if count > 0 {
-			return tx.MarkStorageReclaim(ctx)
-		}
-		return nil
-	})
-	if err == nil {
-		*op = next
-	}
-	return n, err
+	return s.Store.PruneObservations(ctx, conversation, after, through, before)
 }
 
-func (s *Service) reconcileRetention() (time.Time, error) {
-	policies, err := list[archiveRetention](s.ctx, s.Store, "storage_retention")
-	if err != nil {
-		return time.Time{}, err
-	}
-	now := time.Now().UTC()
-	var next time.Time
-	var retryErr error
-	schedule := func(at time.Time) {
-		if next.IsZero() || at.Before(next) {
-			next = at
-		}
-	}
-	for _, policy := range policies {
-		if policy.RetentionDays <= 0 {
-			continue
-		}
-		if at := policy.LastRun.Add(24 * time.Hour); at.After(now) {
-			schedule(at)
-			continue
-		}
-		days := policy.RetentionDays
-		id := "retention_" + policy.ID + "_" + now.Format("20060102")
-		op, err := s.StartStorageOperation(s.ctx, policy.ConversationID, "archive", StorageRequest{OperationID: id, RetentionDays: &days})
+// Retention runs independently of IM polling and outbox delivery.
+func (s *Service) maintainRetention() {
+	watch := s.Store.Watch(persistence.ChangeKey{Kind: "storage_retention"})
+	defer watch.Close()
+	for s.ctx.Err() == nil {
+		changed := watch.Changes()
+		next, err := s.pruneDueArchives(s.ctx)
 		if err != nil {
-			retryErr = err
+			next = min(next, time.Minute)
+		}
+		timer := time.NewTimer(next)
+		select {
+		case <-s.ctx.Done():
+		case <-changed:
+		case <-timer.C:
+		}
+		timer.Stop()
+	}
+}
+
+func (s *Service) pruneDueArchives(ctx context.Context) (time.Duration, error) {
+	s.storageMu.Lock()
+	defer s.storageMu.Unlock()
+	next := 24 * time.Hour
+	policies, err := list[archiveRetention](ctx, s.Store, "storage_retention")
+	if err != nil {
+		return next, err
+	}
+	var failed error
+	for _, policy := range policies {
+		if policy.RetentionDays == 0 {
 			continue
 		}
-		// Active jobs publish their progress. An existing terminal daily job
-		// cannot advance by being looked up again; the next day gives it a new ID.
-		if op.State != "queued" && op.State != "running" {
-			schedule(now.Truncate(24 * time.Hour).Add(24 * time.Hour))
+		if delay := time.Until(policy.LastRun.Add(24 * time.Hour)); delay > 0 {
+			next = min(next, delay)
+		} else if _, err := s.applyRetention(ctx, &policy); err != nil {
+			failed = err
 		}
 	}
-	return next, retryErr
+	return next, failed
 }

@@ -8,25 +8,40 @@ import (
 	"github.com/oines/astral/internal/httpcontract"
 )
 
+type ArchiveCleanupResult struct {
+	RemovedCount int `json:"removed_count"`
+}
+type ChatRetentionRequest struct {
+	RetentionDays *int `json:"retention_days"`
+}
+type ResetChatResult struct {
+	SessionID string `json:"session_id"`
+}
+
 func (a *API) storageConversationRoutes() {
-	for _, spec := range []struct{ path, kind, id string }{{"cleanup", "archive", "cleanConversationArchive"}, {"reset", "reset", "resetStorageConversation"}} {
-		route[channels.StorageRequest, channels.StorageOperation](a, "POST", "/storage/conversations/{id}/"+spec.path, spec.id, "Storage", func(r *http.Request, input channels.StorageRequest) (channels.StorageOperation, error) {
-			if a.Config.Channels == nil {
-				return channels.StorageOperation{}, domain.Conflict("chat service unavailable")
-			}
-			return a.Config.Channels.StartStorageOperation(r.Context(), r.PathValue("id"), spec.kind, input)
-		})
-	}
-	route[httpcontract.Empty, channels.StorageOperation](a, "GET", "/storage/operations/{id}", "storageOperation", "Storage", func(r *http.Request, _ httpcontract.Empty) (channels.StorageOperation, error) {
+	const path = "/storage/conversations/{id}"
+	route[httpcontract.Empty, ArchiveCleanupResult](a, "DELETE", path+"/archive", "cleanConversationArchive", "Storage", func(r *http.Request, _ httpcontract.Empty) (ArchiveCleanupResult, error) {
 		if a.Config.Channels == nil {
-			return channels.StorageOperation{}, domain.Conflict("chat service unavailable")
+			return ArchiveCleanupResult{}, domain.Offline("chat service unavailable")
 		}
-		return a.Config.Channels.StorageOperation(r.Context(), r.PathValue("id"))
+		n, err := a.Config.Channels.ClearChatArchive(r.Context(), r.PathValue("id"))
+		return ArchiveCleanupResult{RemovedCount: n}, err
 	})
-	route[httpcontract.Empty, channels.StorageOperation](a, "POST", "/storage/operations/{id}/retry", "retryStorageOperation", "Storage", func(r *http.Request, _ httpcontract.Empty) (channels.StorageOperation, error) {
+	route[ChatRetentionRequest, ArchiveCleanupResult](a, "PATCH", path+"/retention", "setConversationRetention", "Storage", func(r *http.Request, in ChatRetentionRequest) (ArchiveCleanupResult, error) {
 		if a.Config.Channels == nil {
-			return channels.StorageOperation{}, domain.Conflict("chat service unavailable")
+			return ArchiveCleanupResult{}, domain.Offline("chat service unavailable")
 		}
-		return a.Config.Channels.RetryStorageOperation(r.Context(), r.PathValue("id"))
+		if in.RetentionDays == nil {
+			return ArchiveCleanupResult{}, domain.Invalid("retention_days is required")
+		}
+		n, err := a.Config.Channels.SetChatRetention(r.Context(), r.PathValue("id"), *in.RetentionDays)
+		return ArchiveCleanupResult{RemovedCount: n}, err
+	})
+	route[channels.ResetStorageRequest, ResetChatResult](a, "POST", path+"/reset", "resetStorageConversation", "Storage", func(r *http.Request, in channels.ResetStorageRequest) (ResetChatResult, error) {
+		if a.Config.Channels == nil {
+			return ResetChatResult{}, domain.Offline("chat service unavailable")
+		}
+		b, err := a.Config.Channels.ResetStorageChat(r.Context(), r.PathValue("id"), in)
+		return ResetChatResult{SessionID: b.SessionID}, err
 	})
 }

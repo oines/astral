@@ -9,6 +9,7 @@ type PhysicalItem struct {
 	Bytes int64  `json:"bytes"`
 }
 type Physical struct {
+	CleanableBytes int64          `json:"cleanable_bytes"`
 	TotalBytes     int64          `json:"total_bytes"`
 	DatabaseBytes  int64          `json:"database_bytes"`
 	BackupBytes    int64          `json:"backup_bytes"`
@@ -75,30 +76,7 @@ type Snapshot struct {
 	Agents    []Agent  `json:"agents"`
 	Reclaim   Reclaim  `json:"reclaim"`
 }
-type RefreshRequest struct {
-	Cancel bool `json:"cancel,omitempty"`
-}
-type CleanupItem struct {
-	Token     string `json:"token"`
-	Kind      string `json:"kind"`
-	Name      string `json:"name"`
-	Bytes     int64  `json:"bytes"`
-	Protected bool   `json:"protected"`
-	Reason    string `json:"reason,omitempty"`
-}
-type CleanupInventory struct {
-	Items      []CleanupItem `json:"items"`
-	TotalBytes int64         `json:"total_bytes"`
-	Error      string        `json:"error,omitempty"`
-}
-type CleanupRequest struct {
-	OperationID string   `json:"operation_id"`
-	Tokens      []string `json:"tokens"`
-}
-type CleanupOperation struct {
-	OperationID   string   `json:"operation_id"`
-	State         string   `json:"state"`
-	RemovedBytes  int64    `json:"removed_bytes"`
-	RemovedTokens []string `json:"removed_tokens"`
-	Error         string   `json:"error,omitempty"`
+type CleanupResult struct {
+	RemovedBytes int64  `json:"removed_bytes"`
+	Error        string `json:"error,omitempty"`
 }

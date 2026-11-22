@@ -37,7 +37,7 @@ func TestSubagentStorageBelongsToOrdinaryRootAndDeduplicatesRollouts(t *testing.
 		"deleted":       {Rollout: "deleted-rollout", Entries: 9000, Extra: 9000, State: "complete"},
 	}
 	s.mu.Unlock()
-	out, err := s.Snapshot(context.Background(), "bot")
+	out, err := s.Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestChatStorageIncludesAllSubagentRollouts(t *testing.T) {
 		"other":  {Rollout: "o", Entries: 200, Extra: 5, State: "complete"},
 	}
 	s.mu.Unlock()
-	out, err := s.Snapshot(context.Background(), "bot")
+	out, err := s.Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestRootStorageReflectsIncompleteDescendantEstimates(t *testing.T) {
 				s.cache["child"] = *test.child
 			}
 			s.mu.Unlock()
-			out, err := s.Snapshot(context.Background(), "bot")
+			out, err := s.Snapshot(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}

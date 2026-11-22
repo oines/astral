@@ -79,11 +79,17 @@ func TestPermanentSessionDeletionPreservesCopyAndInvalidatesRecall(t *testing.T)
 	}
 	beforeRequests := f.count()
 	record := archiveForDeletion(t, f, f.session.ID)
+	requestedReclaim := false
+	f.service.StorageChanged = func() {
+		var stored domain.Session
+		requestedReclaim = domain.IsMissing(f.store.Get(f.ctx, "sessions", record.ID, &stored))
+	}
 	if err = f.service.DeleteSession(f.ctx, record.ID, record.Revision); err != nil {
 		t.Fatal(err)
 	}
-	if token, err := f.store.StorageReclaimDirty(f.ctx); err != nil || token == "" {
-		t.Fatal("deletion committed without a durable space reclamation trigger", err)
+
+	if !requestedReclaim {
+		t.Fatal("committed Session deletion did not request reclamation")
 	}
 	if err = f.service.DeleteSession(f.ctx, record.ID, record.Revision); err != nil {
 		t.Fatal("retry:", err)

@@ -2,11 +2,13 @@ package channels
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/persistence"
 	"github.com/oines/astral/internal/testkit"
 )
 
@@ -38,18 +40,14 @@ func TestStorageResetKeepsChatCreatesFreshPrivateSessionAndDeletesOld(t *testing
 		t.Fatal(err)
 	}
 	oldState := old.State()
-	request := StorageRequest{OperationID: "cleanup_reset_1", Revision: b.Revision}
-	op, err := s.StartStorageOperation(p.Context, b.ConversationID, "reset", request)
+	request := ResetStorageRequest{SessionID: b.SessionID, Revision: b.Revision}
+	replacement, err := s.ResetStorageChat(p.Context, b.ConversationID, request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.executeStorageOperation(p.Context, op.ID)
-	op, err = s.StorageOperation(p.Context, op.ID)
-	if err != nil || op.State != "complete" {
-		t.Fatalf("reset: %+v %v", op, err)
-	}
+
 	current, err := s.activeBinding(p.Context, b.ConversationID)
-	if err != nil || current.SessionID != op.NewSessionID || current.SessionID == b.SessionID {
+	if err != nil || current.SessionID != replacement.SessionID || current.SessionID == b.SessionID {
 		t.Fatalf("binding: %+v %v", current, err)
 	}
 	var record domain.Session
@@ -66,73 +64,12 @@ func TestStorageResetKeepsChatCreatesFreshPrivateSessionAndDeletesOld(t *testing
 	if err = p.Store.Get(p.Context, "sessions", current.SessionID, &record); err != nil || !record.Private {
 		t.Fatal("replacement lost privacy", err)
 	}
-	again, err := s.StartStorageOperation(p.Context, b.ConversationID, "reset", request)
-	if err != nil || again.NewSessionID != op.NewSessionID || again.State != "complete" {
-		t.Fatalf("duplicate reset: %+v %v", again, err)
-	}
-	request.Revision++
-	if _, err = s.StartStorageOperation(p.Context, b.ConversationID, "reset", request); err == nil {
-		t.Fatal("changed reuse accepted")
+	if _, err := s.ResetStorageChat(p.Context, b.ConversationID, request); err == nil {
+		t.Fatal("stale reset of an already replaced session was accepted")
 	}
 	if p.Requests.Load() != 0 {
 		t.Fatal("reset called the model")
 	}
-}
-
-func TestStorageResetResumesAfterBindingCommitAndRejectsStaleBinding(t *testing.T) {
-	t.Run("resume", func(t *testing.T) {
-		p, s, b := storageChat(t)
-		op, err := s.StartStorageOperation(p.Context, b.ConversationID, "reset", StorageRequest{OperationID: "reset_recovery", Revision: b.Revision})
-		if err != nil {
-			t.Fatal(err)
-		}
-		var old domain.Session
-		if err = p.Store.Get(p.Context, "sessions", b.SessionID, &old); err != nil {
-			t.Fatal(err)
-		}
-		if _, err = p.Harness.CreateStorageReplacement(p.Context, old, op.NewSessionID); err != nil {
-			t.Fatal(err)
-		}
-		op.Phase = "prepared"
-		if err = p.Store.Save(p.Context, storageOperations, &op.Meta, &op); err != nil {
-			t.Fatal(err)
-		}
-		switched, err := s.bindExpected(p.Context, b.ConversationID, op.NewSessionID, nil, b.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s.executeStorageOperation(p.Context, op.ID)
-		result, _ := s.StorageOperation(p.Context, op.ID)
-		active, _ := s.activeBinding(p.Context, b.ConversationID)
-		if result.State != "complete" || active.ID != switched.ID {
-			t.Fatalf("did not resume committed binding %+v %+v", result, active)
-		}
-	})
-	t.Run("stale", func(t *testing.T) {
-		p, s, b := storageChat(t)
-		op, err := s.StartStorageOperation(p.Context, b.ConversationID, "reset", StorageRequest{OperationID: "reset_stale_1", Revision: b.Revision})
-		if err != nil {
-			t.Fatal(err)
-		}
-		other, err := p.Harness.CreateSession(p.Context, p.Agent.ID, "other")
-		if err != nil {
-			t.Fatal(err)
-		}
-		next, err := s.Bind(p.Context, b.ConversationID, other.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s.executeStorageOperation(p.Context, op.ID)
-		result, _ := s.StorageOperation(p.Context, op.ID)
-		active, _ := s.activeBinding(p.Context, b.ConversationID)
-		if result.State != "failed" || active.ID != next.ID {
-			t.Fatal("stale reset changed latest binding")
-		}
-		var old domain.Session
-		if err = p.Store.Get(p.Context, "sessions", b.SessionID, &old); err != nil {
-			t.Fatal("old Session deleted on conflict", err)
-		}
-	})
 }
 
 func TestStorageArchiveProtectsPendingWatermarksAndKeepsRollout(t *testing.T) {
@@ -163,18 +100,11 @@ func TestStorageArchiveProtectsPendingWatermarksAndKeepsRollout(t *testing.T) {
 	if err = s.saveHandoffPosition(p.Context, b, through); err != nil {
 		t.Fatal(err)
 	}
-	before := time.Now().UTC()
-	op, err := s.StartStorageOperation(p.Context, chat.ID, "archive", StorageRequest{OperationID: "archive_cleanup_1", Before: &before})
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.executeStorageOperation(p.Context, op.ID)
-	op, _ = s.StorageOperation(p.Context, op.ID)
-	if op.State != "complete" || op.RemovedCount != 1 {
-		t.Fatalf("cleanup %+v", op)
-	}
-	if token, err := p.Store.StorageReclaimDirty(p.Context); err != nil || token == "" {
-		t.Fatal("archive cleanup committed without a durable space reclamation trigger", err)
+	reclaimed := 0
+	s.StorageChanged = func() { reclaimed++ }
+	removed, err := s.ClearChatArchive(p.Context, chat.ID)
+	if err != nil || removed != 1 || reclaimed != 1 {
+		t.Fatalf("cleanup: removed %d, reclaim requests %d: %v", removed, reclaimed, err)
 	}
 	if _, err = p.Store.Observation(p.Context, "processed"); !domain.IsMissing(err) {
 		t.Fatal("processed body readable", err)
@@ -187,71 +117,113 @@ func TestStorageArchiveProtectsPendingWatermarksAndKeepsRollout(t *testing.T) {
 	}
 }
 
-func TestStorageRetentionRejectsOverlappingAndSupersededOperations(t *testing.T) {
+// Pause the receiving poller at the next database access after its archive
+// commit. The independent cleanup can now run in the old archive-to-bind gap.
+type afterArchiveContext struct {
+	context.Context
+	archived       <-chan struct{}
+	paused, resume chan struct{}
+	once           sync.Once
+}
+
+func (c *afterArchiveContext) Done() <-chan struct{} {
+	select {
+	case <-c.archived:
+		c.once.Do(func() { close(c.paused); <-c.resume })
+	default:
+	}
+	return c.Context.Done()
+}
+
+func TestStorageClearDuringFirstAutoBindingPreservesTrigger(t *testing.T) {
 	p, s, b := storageChat(t)
-	days := 30
-	first, err := s.StartStorageOperation(p.Context, b.ConversationID, "archive", StorageRequest{OperationID: "retention_first", RetentionDays: &days})
+	if err := s.Unbind(p.Context, b.ID, b.Revision); err != nil {
+		t.Fatal(err)
+	}
+	var chat domain.Conversation
+	if err := p.Store.Get(p.Context, "conversations", b.ConversationID, &chat); err != nil {
+		t.Fatal(err)
+	}
+	var account domain.Connection
+	if err := p.Store.Get(p.Context, "connections", chat.ConnectionID, &account); err != nil {
+		t.Fatal(err)
+	}
+	account.AccessMode = "all"
+	if err := p.Store.Save(p.Context, "connections", &account.Meta, &account); err != nil {
+		t.Fatal(err)
+	}
+	watch := p.Store.Watch(persistence.ChangeKey{Kind: "observations", ID: chat.ID})
+	defer watch.Close()
+	ctx := &afterArchiveContext{Context: p.Context, archived: watch.Changes(), paused: make(chan struct{}), resume: make(chan struct{})}
+	resume := sync.OnceFunc(func() { close(ctx.resume) })
+	defer resume()
+	event := domain.Observation{ID: "first-trigger", ConnectionID: account.ID, ConversationID: chat.ID, MessageID: "1", ExternalEventID: "1", Kind: "message.created", Trigger: "mention", Text: "first direct question", ReceivedAt: time.Now().UTC()}
+	received := make(chan error, 1)
+	go func() { received <- s.receiveObservation(ctx, account, event) }()
+	select {
+	case <-ctx.paused:
+	case err := <-received:
+		t.Fatalf("poller did not reach its archive-to-bind boundary: %v", err)
+	case <-p.Context.Done():
+		t.Fatal(p.Context.Err())
+	}
+	// While this trigger is visible but not yet bound, cleanup must be
+	// unable to enter the section that reads the binding and trims its history.
+	protected := !s.bindings.TryLock()
+	if !protected {
+		s.bindings.Unlock()
+	}
+	cleared := make(chan error, 1)
+	go func() { _, err := s.ClearChatArchive(p.Context, chat.ID); cleared <- err }()
+	resume()
+	if err := <-received; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-cleared; err != nil {
+		t.Fatal(err)
+	}
+	next, err := s.activeBinding(p.Context, chat.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	forever := 0
-	if _, err = s.StartStorageOperation(p.Context, b.ConversationID, "archive", StorageRequest{OperationID: "retention_second", RetentionDays: &forever}); err == nil {
-		t.Fatal("overlapping archive task accepted")
+	pending, err := p.Store.SearchObservations(p.Context, chat.ID, next.StartSequence, 1, "")
+	if !protected {
+		t.Fatal("archive cleanup could enter before the first trigger acquired its binding")
 	}
-	s.executeStorageOperation(p.Context, first.ID)
-	first, err = s.StorageOperation(p.Context, first.ID)
-	if err != nil || first.State != "complete" {
-		t.Fatalf("first policy: %+v %v", first, err)
-	}
-	// A failed task may have already committed its policy before a later step
-	// failed. Retrying it must not overwrite a newer explicit policy change.
-	first.State, first.Error = "failed", "interrupted after applying policy"
-	if err = p.Store.Save(p.Context, storageOperations, &first.Meta, &first); err != nil {
-		t.Fatal(err)
-	}
-	second, err := s.StartStorageOperation(p.Context, b.ConversationID, "archive", StorageRequest{OperationID: "retention_second", RetentionDays: &forever})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.RetryStorageOperation(p.Context, first.ID); err == nil {
-		t.Fatal("stale retry joined a newer queued retention change")
-	}
-	s.executeStorageOperation(p.Context, second.ID)
-	if _, err = s.RetryStorageOperation(p.Context, first.ID); err != nil {
-		t.Fatal(err)
-	}
-	s.executeStorageOperation(p.Context, first.ID)
-	old, err := s.StorageOperation(p.Context, first.ID)
-	if err != nil || old.State != "failed" {
-		t.Fatalf("superseded task accepted: %+v %v", old, err)
-	}
-	info, err := p.Store.ConversationArchiveInfo(p.Context, b.ConversationID)
-	if err != nil || info.RetentionDays != 0 {
-		t.Fatalf("stale retry changed current retention: %+v %v", info, err)
+	if err != nil || next.ID == "" || len(pending) != 1 || pending[0].Observation.Text != event.Text {
+		t.Fatalf("first trigger lost from new binding: %+v %v", pending, err)
 	}
 }
 
-func TestStorageWorkerCancelsWhileAnotherBotOwnsCleanupLock(t *testing.T) {
+func TestStorageRetentionPersistsAndRunsDaily(t *testing.T) {
 	p, s, b := storageChat(t)
-	op, err := s.StartStorageOperation(p.Context, b.ConversationID, "reset", StorageRequest{OperationID: "reset_cancelled_waiter", Revision: b.Revision})
-	if err != nil {
+	if _, err := s.SetChatRetention(p.Context, b.ConversationID, 12); err == nil {
+		t.Fatal("invalid retention accepted")
+	}
+	if _, err := s.SetChatRetention(p.Context, b.ConversationID, 30); err != nil {
 		t.Fatal(err)
 	}
-	s.storageWorkMu.Lock()
-	defer s.storageWorkMu.Unlock()
-	ctx, cancel := context.WithCancel(p.Context)
-	defer cancel()
-	done := make(chan struct{})
-	go func() { s.executeStorageOperation(ctx, op.ID); close(done) }()
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("cancelled Bot worker cannot leave cleanup serialization wait")
+	var policy archiveRetention
+	if err := s.Store.Get(p.Context, "storage_retention", b.ConversationID, &policy); err != nil || policy.LastRun.IsZero() || policy.RetentionDays != 30 {
+		t.Fatalf("retention: %+v %v", policy, err)
 	}
-	active, err := s.activeBinding(p.Context, b.ConversationID)
-	if err != nil || active.ID != b.ID {
-		t.Fatal("cancelled waiter changed the chat binding", err)
+	policy.LastRun = policy.LastRun.Add(-25 * time.Hour)
+	if err := s.saveRetention(p.Context, &policy); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pruneDueArchives(p.Context); err != nil {
+		t.Fatal(err)
+	}
+	var after archiveRetention
+	if err := s.Store.Get(p.Context, "storage_retention", b.ConversationID, &after); err != nil || !after.LastRun.After(policy.LastRun) {
+		t.Fatal("daily retention was not applied", err)
+	}
+	if _, err := s.SetChatRetention(p.Context, b.ConversationID, 0); err != nil {
+		t.Fatal(err)
+	}
+	info, err := s.Store.ConversationArchiveInfo(p.Context, b.ConversationID)
+	if err != nil || info.RetentionDays != 0 {
+		t.Fatal("failed to restore unlimited retention", err)
 	}
 }
 
@@ -280,15 +252,9 @@ func TestStorageArchiveClearsProcessedPassiveMessagesWithoutProbe(t *testing.T) 
 	if err = s.saveHandoffPosition(p.Context, b, through); err != nil {
 		t.Fatal(err)
 	}
-	before := time.Now().UTC()
-	op, err := s.StartStorageOperation(p.Context, chat.ID, "archive", StorageRequest{OperationID: "cleanup_passive_archive", Before: &before})
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.executeStorageOperation(p.Context, op.ID)
-	op, err = s.StorageOperation(p.Context, op.ID)
-	if err != nil || op.State != "complete" || op.RemovedCount != 1 {
-		t.Fatalf("passive archive not cleaned: %+v %v", op, err)
+	removed, err := s.ClearChatArchive(p.Context, chat.ID)
+	if err != nil || removed != 1 {
+		t.Fatalf("passive archive: removed %d, error %v", removed, err)
 	}
 	if _, err = p.Store.Observation(p.Context, event.ID); !domain.IsMissing(err) {
 		t.Fatal("processed passive body retained", err)
