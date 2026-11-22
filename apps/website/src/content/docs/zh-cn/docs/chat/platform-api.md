@@ -72,7 +72,7 @@ EOF
 {"source_path":"reports/summary.csv","target_computer_id":"<office-computer-id>","target_path":"summary.csv"}
 ```
 
-从另一台电脑取文件时，填写 `source_computer_id`。两个电脑 ID 都可以单独省略，各自默认使用发起调用的电脑。相对路径从 Bot 在对应电脑上的 AgentHome 算起。两台电脑都须在线，目标目录须已存在。复制成功后会原子替换目标位置已有的普通文件，并返回目标电脑 ID、完整路径、字节数和媒体类型。在替换前传输失败，原文件保留。用 Python 客户端复制大文件时，可调大 `--timeout` 等待完成。
+从另一台电脑取文件时，填写 `source_computer_id`。两个电脑 ID 都可以单独省略，各自默认使用发起调用的电脑。相对路径从 Bot 在对应电脑上的 AgentHome 算起。两台电脑都须在线，目标电脑的 Daemon 须已更新到支持文件复制的版本，目标目录须已存在。复制成功后会原子替换目标位置已有的普通文件，并返回目标电脑 ID、完整路径、字节数和媒体类型。在替换前传输失败，原文件保留。用 Python 客户端复制大文件时，可调大 `--timeout` 等待完成。
 
 ## 按字节范围读取原件
 

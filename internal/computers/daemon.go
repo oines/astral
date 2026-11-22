@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	core "github.com/oines/astral-core"
@@ -582,7 +583,8 @@ func (d *Daemon) handle(ctx context.Context, generation *daemonConnection, reque
 			defer source.Close()
 			return d.storeMedia(ctx, call.Binding.AgentID, filepath.Base(path.Path), source, out)
 		}
-		file, err := os.Open(path.Path)
+		// Opening a FIFO must not wait for a writer before the regular-file check.
+		file, err := os.OpenFile(path.Path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return &transport.Error{Code: "file_unavailable", Message: err.Error(), Outcome: "not_executed"}
 		}

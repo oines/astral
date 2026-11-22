@@ -72,7 +72,7 @@ Call `POST /v1/computers/files/copy` to send a regular file to a path on another
 {"source_path":"reports/summary.csv","target_computer_id":"<office-computer-id>","target_path":"summary.csv"}
 ```
 
-To pull from another computer, set `source_computer_id`. Either ID defaults to the calling computer when omitted. Each relative path starts at the Bot's AgentHome on its own computer. Both computers must be online. The destination directory must already exist. A successful copy atomically replaces an existing regular file and returns its computer ID, full path, size and media type. A failed transfer before replacement leaves the original intact. When using the Python helper for a long copy, increase `--timeout` to allow time for the response.
+To pull from another computer, set `source_computer_id`. Either ID defaults to the calling computer when omitted. Each relative path starts at the Bot's AgentHome on its own computer. Both computers must be online. Update the target Daemon to a version that supports file copy. The destination directory must already exist. A successful copy atomically replaces an existing regular file and returns its computer ID, full path, size and media type. A failed transfer before replacement leaves the original intact. When using the Python helper for a long copy, increase `--timeout` to allow time for the response.
 
 ## Read original file byte ranges
 
