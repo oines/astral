@@ -91,6 +91,25 @@ func subagentTestRequest(t *testing.T, f *fixture, id string) core.Request {
 	return request
 }
 
+func TestSubagentSpawnBeyondFormerBotLimit(t *testing.T) {
+	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("Report ready.") })
+	parent := subagentTestSeed(t, f)
+	if err := f.store.Update(f.ctx, func(tx *persistence.Tx) error {
+		for i := range 64 {
+			id := fmt.Sprintf("archived-child-%d", i)
+			record := domain.Session{Meta: domain.Meta{ID: id}, AgentID: f.session.AgentID, Title: id, Source: "subagent", SubagentParentID: parent.id, Archived: true}
+			if err := tx.Save(f.ctx, "sessions", &record.Meta, &record); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	child := subagentTestSpawn(t, f, parent, "beyond-former-bot-limit", "Run the 65th delegated task.", false)
+	subagentTestFinished(t, f, child.SessionID)
+}
+
 func TestSubagentSpawnPreservesPrefixHistoryAndCurrentComputer(t *testing.T) {
 	f := newFixture(t, 2, func(context.Context, int, map[string]any) any { return textReply("Report ready.") })
 	parent := subagentTestSeed(t, f)

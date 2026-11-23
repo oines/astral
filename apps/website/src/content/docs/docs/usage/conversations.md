@@ -33,7 +33,7 @@ For long or parallel work, the Bot can hand subtasks to **subagents**—or you c
 <details class="astral-doc-details">
 <summary>Subagent naming, model switching, timelines, and compatibility details</summary>
 
-- **Hierarchy & naming:** Only the user-facing root Bot can create subagents (deeper subagents from earlier versions stay viewable and are included in model switches and cleanup). Ask the Bot to name subagents; unnamed ones receive a permanent short code.
+- **Hierarchy & naming:** Root sessions can create direct subagents with no fixed count limit. Deeper subagents from earlier versions stay viewable and are included in model switches and cleanup. Ask the Bot to name subagents. Unnamed ones receive a permanent short code.
 - **Panel & timeline:** The subagent list groups **Running** above **Ended** (most recent first). The timeline logs starts, completions, failures, and stops. Deleting a subagent keeps status entries but closes access to its transcript.
 - **Progress & control:** The Bot can finish its turn while waiting and wake when a subagent completes or errors; progress notes reach the parent without interrupting it. Manage or stop subagents through the original conversation (stopping the main session alone does not stop background subagents; permanently deleting the main session deletes its full subagent tree).
 - **Instructions & model changes:** Subagents share system instructions, tool descriptions, and Bot persona updates on new requests (in-flight requests keep original settings). Changing the model in the main session input bar updates all existing subagents; you can also ask the Bot to change one named subagent's model without affecting others or starting a new turn. Ordinary forks keep independent settings.

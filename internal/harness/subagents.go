@@ -18,7 +18,6 @@ import (
 const identityKind = "astral.identity"
 const subagentUpdateKind = "astral.subagent"
 const maxSubagentDepth = 1
-const maxSubagentsPerBot = 64
 
 type subagentSettings struct {
 	domain.Meta
@@ -205,25 +204,6 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 		}
 		ancestor = next
 	}
-	records, err := s.Store.List(ctx, "sessions")
-	if err != nil {
-		return SubagentView{}, err
-	}
-	count := 0
-	usedNames := map[string]bool{}
-	for _, row := range records {
-		var v domain.Session
-		if err = json.Unmarshal(row.Data, &v); err != nil {
-			return SubagentView{}, err
-		}
-		if v.AgentID == source.AgentID && v.SubagentParentID != "" {
-			count++
-			usedNames[v.Title] = true
-		}
-	}
-	if count >= maxSubagentsPerBot {
-		return SubagentView{}, domain.Conflict("subagent Session limit reached; delete unused subagents before creating more")
-	}
 	selected, err := s.selectionAtState(ctx, parent.id, parent.core.Load().State())
 	if err != nil {
 		return SubagentView{}, err
@@ -283,6 +263,20 @@ func (s *Service) spawnSubagent(ctx context.Context, parent *runtime, inv core.I
 		}
 	}
 	if title == "" {
+		records, err := s.Store.List(ctx, "sessions")
+		if err != nil {
+			return SubagentView{}, err
+		}
+		usedNames := map[string]bool{}
+		for _, row := range records {
+			var existing domain.Session
+			if err = json.Unmarshal(row.Data, &existing); err != nil {
+				return SubagentView{}, err
+			}
+			if existing.AgentID == source.AgentID && existing.SubagentParentID != "" {
+				usedNames[existing.Title] = true
+			}
+		}
 		codes := []string{"松塔", "海鸥", "北斗", "云杉", "青石", "远帆", "白鹭", "山雀"}
 		for {
 			token := domain.ID("agent")

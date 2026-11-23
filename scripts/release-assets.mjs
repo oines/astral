@@ -164,6 +164,7 @@ export async function collectCandidate({ input, output, sourceSHA, repository, r
   const hostMigration = formats.host_schema >= 4 ? 'The Host 3 → 4 migration restores visibility of Sessions archived while still bound to IM. It appends an unarchived current revision while preserving every earlier revision, IM event and Core history entry; ordinary archived Sessions stay archived. Desktop keeps its existing schema-3-core-11/ data directory.' : 'The supported public data baseline is Host 3 / Core 11.'
   const capabilities = `## What's new
 
+- Root sessions can create more than 64 subagents per Bot. New delegation still has one level.
 - Changing reasoning or sampling settings can reuse the provider's reported token count when the model and earlier input match. Older sessions may use an estimate until their next successful response with complete usage. Manual compaction and context-overflow recovery skip a redundant scan of the history they are about to summarize.
 - Copy a regular file between authorized Computers with \`POST /v1/computers/files/copy\`. Either Computer ID defaults to the caller. The Server streams the bytes to the destination Daemon, which replaces the file when the transfer completes. Update the receiving Daemon before using this endpoint.
 - In an Assistant reply, a Markdown link to \`astral-file://<computer_id>?path=<URL-encoded-path>\` opens the file in the Web preview pane. Markdown images can display inline. Uploaded attachments and historical file-ID links remain usable.
