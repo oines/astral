@@ -33,7 +33,7 @@ const overviewItems = [
   { num: '05', title: '一个会话，跨越所有电脑', hint: '跨设备单会话联动演示' },
   { num: '06', title: '就在你每天用的聊天里', hint: '聊天驱动远端电脑' },
   { num: '07', title: '耗时任务后台跑，聊天随时继续', hint: '异步并行子代理' },
-  { num: '08', title: '合上电脑，它仍在持续运转', hint: '定时与外部事件驱动' },
+  { num: '08', title: '不靠插件市场，靠本机 API 自我扩展', hint: '定时、唤醒端点与 Computer API 自举闭环' },
   { num: '09', title: '一个中心，连接你的所有设备', hint: '全局部署与连接拓扑' },
   { num: '10', title: '自研独立内核：Astral Core', hint: '三层架构与独立开源引擎' },
   { num: '11', title: '为长程可靠运行而设计', hint: '树状历史与可靠恢复' },
@@ -247,57 +247,72 @@ const overviewItems = [
           </footer>
         </section>
 
-        <!-- 08 · ALWAYS AVAILABLE, EVENT-DRIVEN -->
-        <section class="slide" data-slide="8" data-state="future" aria-label="持续运转">
-          <header class="s-head">
-            <h2 class="s-title">合上电脑，它仍在持续运转</h2>
-            <p class="s-sub">由定时计划与外部事件驱动，从被动问答走向全天候在线。</p>
+        <!-- 08 · SELF-BOOTSTRAPPING LOOP (Ultra-Clean 3-Block Diagram) -->
+        <section class="slide" data-slide="8" data-state="future" aria-label="定时任务、唤醒端点与 Computer API 自举闭环">
+          <header class="s-head s-head-center" style="margin-bottom:28px">
+            <h2 class="s-title">不靠插件市场，靠本机 API 自我扩展</h2>
+            <p class="s-sub">Agent 自己写代码、调本机接口，再反过来唤醒自己。</p>
           </header>
 
-          <div class="flow-stack">
-            <div class="flow-row-3">
-              <div class="flow-box">
-                <h3>定时计划</h3>
-                <p>每日整理、周期巡检与提醒</p>
-              </div>
-              <div class="flow-box">
-                <h3>外部事件</h3>
-                <p>Webhook 回调、构建与告警触发</p>
-              </div>
-              <div class="flow-box">
-                <h3>日常消息</h3>
-                <p>私聊、群聊与网页随时发起</p>
-              </div>
-            </div>
+          <div class="bootstrap-wrap">
+            <svg class="bootstrap-svg" viewBox="0 0 1320 490" fill="none" style="max-height:490px" aria-label="Astral、Computer API 与本机脚本的三节点自举闭环图">
+              <defs>
+                <marker id="arr-brand" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                  <path d="M1 1.5 L8.5 5 L1 8.5" fill="none" stroke="var(--k-brand)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </marker>
+                <marker id="arr-line" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                  <path d="M1 1.5 L8.5 5 L1 8.5" fill="none" stroke="var(--k-line-strong)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </marker>
+              </defs>
 
-            <div class="flow-arrows" aria-hidden="true">
-              <ArrowDown size={24} /><ArrowDown size={24} /><ArrowDown size={24} />
-            </div>
+              <!-- HERO RETURN ARC: Computer API -> back to Astral -->
+              <path
+                id="boot-return-path"
+                d="M368 380 H232 Q196 380 196 344 V134 Q196 98 232 98 H460"
+                stroke="var(--k-brand)"
+                stroke-width="2.6"
+                marker-end="url(#arr-brand)"
+              />
+              <circle r="5" fill="var(--k-brand)">
+                <animateMotion dur="6.5s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1">
+                  <mpath href="#boot-return-path" />
+                </animateMotion>
+              </circle>
+              <text x="170" y="236" text-anchor="end" fill="var(--k-brand)" font-size="22" font-weight="550">反过来</text>
+              <text x="170" y="268" text-anchor="end" fill="var(--k-brand)" font-size="22" font-weight="550">叫醒自己</text>
 
-            <div class="flow-hub">
-              <h3>Astral 运行引擎</h3>
-              <p>事件投递 · 会话唤醒 · 自主执行</p>
-            </div>
+              <!-- NODE 1 (TOP): Astral -->
+              <rect x="468" y="36" width="440" height="124" rx="18" fill="var(--k-brand-soft)" stroke="var(--k-brand-line)" stroke-width="1.8" />
+              <text x="688" y="88" text-anchor="middle" fill="var(--k-ink)" font-size="32" font-weight="550">Astral</text>
+              <text x="688" y="128" text-anchor="middle" fill="var(--k-muted)" font-size="19">极简基础工具 · 持久会话</text>
 
-            <div class="flow-arrows" aria-hidden="true">
-              <ArrowDown size={24} /><ArrowDown size={24} /><ArrowDown size={24} />
-            </div>
+              <!-- EDGE: Astral -> Computer API -->
+              <path d="M558 160 V310" stroke="var(--k-brand)" stroke-width="2.2" marker-end="url(#arr-brand)" />
+              <text x="536" y="244" text-anchor="end" fill="var(--k-ink)" font-size="19">调本机接口</text>
 
-            <div class="flow-row-3">
-              <div class="flow-box">
-                <h3>操作目标电脑</h3>
-                <p>读写文件、执行命令与脚本</p>
-              </div>
-              <div class="flow-box">
-                <h3>持久化状态</h3>
-                <p>完整保留每一步过程与上下文</p>
-              </div>
-              <div class="flow-box">
-                <h3>主动汇报结果</h3>
-                <p>完成后将结论与文件推回给你</p>
-              </div>
-            </div>
+              <!-- EDGE: Astral -> Local Script -->
+              <path d="M908 98 H1016 Q1048 98 1048 130 V310" stroke="var(--k-line-strong)" stroke-width="2.2" marker-end="url(#arr-line)" />
+              <text x="1074" y="244" fill="var(--k-muted)" font-size="19">自己写代码</text>
+
+              <!-- EDGE: Local Script -> Computer API -->
+              <path d="M876 380 H756" stroke="var(--k-brand)" stroke-width="2.2" marker-end="url(#arr-brand)" />
+              <text x="816" y="360" text-anchor="middle" fill="var(--k-brand)" font-size="18">事件触发</text>
+
+              <!-- NODE 2 (BOTTOM-LEFT): Computer API -->
+              <rect x="368" y="318" width="380" height="124" rx="18" fill="var(--k-surface)" stroke="var(--k-brand-line)" stroke-width="1.6" />
+              <text x="558" y="370" text-anchor="middle" fill="var(--k-ink)" font-size="28" font-weight="550">Computer API</text>
+              <text x="558" y="408" text-anchor="middle" fill="var(--k-muted)" font-size="18.5">定时 · 唤醒 · 聊天 · 文件</text>
+
+              <!-- NODE 3 (BOTTOM-RIGHT): Local Script -->
+              <rect x="876" y="318" width="344" height="124" rx="18" fill="var(--k-surface)" stroke="var(--k-line-strong)" stroke-width="1.5" />
+              <text x="1048" y="370" text-anchor="middle" fill="var(--k-ink)" font-size="28" font-weight="550">本机脚本</text>
+              <text x="1048" y="408" text-anchor="middle" fill="var(--k-muted)" font-size="18.5">监听任意外部服务</text>
+            </svg>
           </div>
+
+          <footer class="s-foot s-foot-center">
+            <span>平时只留极简基础工具，用时按需调用本机 API，让能力自己长出来。</span>
+          </footer>
         </section>
 
         <!-- 09 · DEPLOYMENT TOPOLOGY -->
