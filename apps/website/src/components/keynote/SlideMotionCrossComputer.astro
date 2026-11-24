@@ -1,0 +1,73 @@
+---
+import { Laptop, Server, Monitor, Check, Pause, Play, RotateCcw } from '@lucide/astro';
+---
+<div class="sync-split demo-cross" data-cinema="cross" data-phase="0">
+  <!-- Left: 0.5s Minimal 1-to-3 Structure Diagram (syncs with right live UI) -->
+  <div class="sync-diagram" aria-label="单个持久会话连接三台电脑">
+    <div class="node-box node-box-primary">
+      <div class="node-title">单一持久会话</div>
+      <div class="node-sub">同一条对话上下文 · 不随设备中断</div>
+    </div>
+
+    <svg width="420" height="78" viewBox="0 0 420 78" fill="none" aria-hidden="true">
+      <path d="M210 0 V36 M68 36 H352 M68 36 V78 M210 36 V78 M352 36 V78" stroke="var(--k-line-strong)" stroke-width="1.5" />
+    </svg>
+
+    <div class="node-row-3">
+      <div class="node-device nd-mac">
+        <Laptop size={22} stroke-width={1.6} />
+        <strong>MacBook</strong>
+        <span>macOS</span>
+      </div>
+      <div class="node-device nd-linux">
+        <Server size={22} stroke-width={1.6} />
+        <strong>linux-prod</strong>
+        <span>Linux</span>
+      </div>
+      <div class="node-device nd-win">
+        <Monitor size={22} stroke-width={1.6} />
+        <strong>Desktop</strong>
+        <span>Windows</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Calm Large-Type Focused Real Conversation -->
+  <div class="sync-stage">
+    <div class="demo-ctrl" aria-label="演示控制">
+      <span class="demo-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></span>
+      <button type="button" class="demo-icon-btn" data-cinema-toggle title="暂停/继续">
+        <Pause size={13} class="icon-pause" /><Play size={13} class="icon-play" style="display:none" />
+      </button>
+      <button type="button" class="demo-icon-btn" data-cinema-replay title="重播 (R)">
+        <RotateCcw size={13} />
+      </button>
+    </div>
+
+    <div class="chat-user live-item dc-u">
+      读一下我 Mac 上的发布清单，再去服务器跑完测试告诉我结果。
+    </div>
+
+    <div class="chat-step live-item dc-mac">
+      <div class="chat-step-left">
+        <Check size={16} style="color:var(--k-ok)" stroke-width={2.4} />
+        <span>读取项目清单</span>
+        <code>~/Notes/launch.md</code>
+      </div>
+      <span class="device-tag"><Laptop size={12} />MacBook</span>
+    </div>
+
+    <div class="chat-step live-item dc-linux">
+      <div class="chat-step-left">
+        <Check size={16} style="color:var(--k-ok)" stroke-width={2.4} />
+        <span>切换并运行测试</span>
+        <code>pnpm test &amp;&amp; build</code>
+      </div>
+      <span class="device-tag brand"><Server size={12} />linux-prod</span>
+    </div>
+
+    <p class="chat-answer live-item dc-ans">
+      已对照 Mac 上的发布清单完成验证：<code>linux-prod</code> 28 项测试全部通过，构建产物已就绪。
+    </p>
+  </div>
+</div>

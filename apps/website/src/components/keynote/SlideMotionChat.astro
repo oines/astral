@@ -1,0 +1,79 @@
+---
+import { MessageSquare, Server, Check, FileText, Pause, Play, RotateCcw } from '@lucide/astro';
+---
+<div class="demo-chat" data-cinema="chat" data-phase="0" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+  <div class="im-platforms">
+    <span class="im-chip">Telegram <small>私聊 · 群聊</small></span>
+    <span class="im-chip">QQ <small>私聊 · 群聊</small></span>
+    <span class="im-chip">飞书 <small>私聊 · 群聊</small></span>
+    <span class="im-chip">微信 <small>私聊</small></span>
+  </div>
+
+  <div class="chat-duo">
+    <!-- Left: Clean Chat Card -->
+    <div class="duo-card duo-left">
+      <div class="duo-head">
+        <span style="display:inline-flex;align-items:center;gap:9px"><MessageSquare size={16} style="color:var(--k-muted)" />项目群聊</span>
+        <span>平时静默 · 按需唤醒</span>
+      </div>
+
+      <div class="im-bubble live-item ch-ask">
+        <span class="im-mention">@Astral</span> 查一下家里 Mac mini 上最新的报错日志，整理后发群里。
+      </div>
+
+      <div class="im-bubble live-item ch-reply">
+        已定位 14:12 上游连接池超时，自动重试后已恢复正常。完整日志见附件：
+        <div class="im-file">
+          <span style="display:inline-flex;align-items:center;gap:9px"><FileText size={15} style="color:var(--k-brand)" />incident-1412.tar.gz</span>
+          <span class="s-mono" style="font-size:12.5px">142 KB</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center: Minimal Bidirectional Arrows -->
+    <div style="display:flex;justify-content:center;" aria-hidden="true">
+      <svg width="72" height="44" viewBox="0 0 72 44" fill="none">
+        <path d="M6 14 H64 M58 8 L66 14 L58 20" stroke="var(--k-brand)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M66 30 H8 M14 24 L6 30 L14 36" stroke="var(--k-line-strong)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </div>
+
+    <!-- Right: Clean Computer Execution Card -->
+    <div class="duo-card duo-right" style="position:relative;">
+      <div class="demo-ctrl" aria-label="演示控制">
+        <span class="demo-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></span>
+        <button type="button" class="demo-icon-btn" data-cinema-toggle title="暂停/继续">
+          <Pause size={13} class="icon-pause" /><Play size={13} class="icon-play" style="display:none" />
+        </button>
+        <button type="button" class="demo-icon-btn" data-cinema-replay title="重播 (R)">
+          <RotateCcw size={13} />
+        </button>
+      </div>
+
+      <div class="duo-head" style="padding-right:108px;">
+        <span style="display:inline-flex;align-items:center;gap:9px"><Server size={16} style="color:var(--k-brand)" />Mac mini</span>
+        <span>本机执行</span>
+      </div>
+
+      <div class="chat-step live-item ch-exec">
+        <div class="chat-step-left">
+          <Check size={16} style="color:var(--k-ok)" stroke-width={2.4} />
+          <span>检索日志并打包</span>
+        </div>
+        <code>~/logs/gateway.log</code>
+      </div>
+
+      <div class="chat-step live-item ch-send">
+        <div class="chat-step-left">
+          <Check size={16} style="color:var(--k-ok)" stroke-width={2.4} />
+          <span>回传文字与文件到聊天</span>
+        </div>
+        <code>send_message</code>
+      </div>
+
+      <p style="margin:auto 0 0;font-size:17.5px;color:var(--k-muted);line-height:1.55;">
+        原文件保存在 Mac mini 本机；群聊中默认静默旁观，也可按需开启主动参与。
+      </p>
+    </div>
+  </div>
+</div>

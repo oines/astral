@@ -1,0 +1,831 @@
+---
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowDown,
+  ArrowUpRight,
+  LayoutGrid,
+  Maximize2,
+  MessageSquare,
+  Sparkles,
+  Terminal,
+  Laptop,
+  Server,
+  Smartphone,
+  Monitor,
+  Box,
+  Check,
+} from '@lucide/astro';
+import '../styles/keynote.css';
+import { qrSvgData } from '../lib/qr';
+import SlideMotionCrossComputer from '../components/keynote/SlideMotionCrossComputer.astro';
+import SlideMotionChat from '../components/keynote/SlideMotionChat.astro';
+import SlideMotionParallel from '../components/keynote/SlideMotionParallel.astro';
+
+const siteQr = qrSvgData('https://astral.oines.dev');
+const repoQr = qrSvgData('https://github.com/oines/astral');
+
+const overviewItems = [
+  { num: '01', title: 'Astral', hint: '一个智能体，在你的所有电脑上工作' },
+  { num: '02', title: '从回答问题，走向动手完成任务', hint: '对话 → 辅助 → 自主智能体' },
+  { num: '03', title: '分散在每台设备里', hint: '设备与上下文割裂' },
+  { num: '04', title: '认识 Astral', hint: '个人跨设备智能体工作台' },
+  { num: '05', title: '一个会话，跨越所有电脑', hint: '跨设备单会话联动演示' },
+  { num: '06', title: '就在你每天用的聊天里', hint: '聊天驱动远端电脑' },
+  { num: '07', title: '耗时任务后台跑，聊天随时继续', hint: '异步并行子代理' },
+  { num: '08', title: '合上电脑，它仍在持续运转', hint: '定时与外部事件驱动' },
+  { num: '09', title: '一个中心，连接你的所有设备', hint: '全局部署与连接拓扑' },
+  { num: '10', title: '自研独立内核：Astral Core', hint: '三层架构与独立开源引擎' },
+  { num: '11', title: '为长程可靠运行而设计', hint: '树状历史与可靠恢复' },
+  { num: '12', title: '轻盈、开放、完全由你掌控', hint: 'Go · SQLite · BYOE · BYOM' },
+  { num: '13', title: '开源与开始使用', hint: 'astral.oines.dev' },
+];
+---
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Astral — 一个智能体，在你的所有电脑上工作</title>
+    <meta name="description" content="Astral 产品发布会演示：开源、自托管的跨设备个人智能体。" />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/svg+xml" href="/brand/astral-mark.svg" />
+    <link rel="preload" href="/fonts/inter-latin-variable.woff2" as="font" type="font/woff2" crossorigin />
+  </head>
+  <body data-pagefind-ignore>
+    <main class="deck-viewport" aria-label="Astral 产品演示">
+      <div class="deck-stage" id="deck-stage">
+
+        <!-- 01 · OPENING COVER -->
+        <section class="slide slide-cover" data-slide="1" data-state="active" aria-label="封面">
+          <img class="cover-lockup logo-dark" src="/brand/astral-lockup-inverse.svg" width="376" height="116" alt="Astral" />
+          <img class="cover-lockup logo-light" src="/brand/astral-lockup.svg" width="376" height="116" alt="Astral" />
+          <h1 class="cover-tagline">一个智能体，<span>在你的所有电脑上工作。</span></h1>
+          <p class="cover-sub">开源、自托管的跨设备个人智能体</p>
+          <p class="cover-keys">← → 翻页 · F 全屏 · G 总览 · R 重播</p>
+        </section>
+
+        <!-- 02 · FROM CHAT TO ACTION -->
+        <section class="slide" data-slide="2" data-state="future" aria-label="从回答问题走向动手完成任务">
+          <header class="s-head s-head-center">
+            <h2 class="s-title">从回答问题，走向动手完成任务</h2>
+            <p class="s-sub">人工智能正在走出对话框，成为能使用工具与环境的自主智能体。</p>
+          </header>
+
+          <div class="evo-grid">
+            <div class="evo-card">
+              <span class="evo-icon"><MessageSquare size={30} stroke-width={1.6} /></span>
+              <h3 class="evo-name">Chatbot</h3>
+              <p class="evo-desc">回答问题，提供信息</p>
+            </div>
+            <span class="evo-arrow" aria-hidden="true"><ArrowRight size={28} /></span>
+            <div class="evo-card">
+              <span class="evo-icon"><Sparkles size={30} stroke-width={1.6} /></span>
+              <h3 class="evo-name">Copilot</h3>
+              <p class="evo-desc">辅助输入，人机协同</p>
+            </div>
+            <span class="evo-arrow" aria-hidden="true"><ArrowRight size={28} /></span>
+            <div class="evo-card evo-card-active">
+              <span class="evo-icon"><Terminal size={30} stroke-width={1.6} /></span>
+              <h3 class="evo-name">Agent</h3>
+              <p class="evo-desc">使用工具，交付结果</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 03 · FRAGMENTED DEVICES -->
+        <section class="slide" data-slide="3" data-state="future" aria-label="设备分散的痛点">
+          <header class="s-head s-head-center">
+            <h2 class="s-title">你的数字生活，分散在每台设备里</h2>
+            <p class="s-sub">笔记本、服务器与手机各有文件与环境，但现有的 AI 被困在单个窗口中。</p>
+          </header>
+
+          <div class="frag-grid">
+            <div class="frag-col">
+              <div class="frag-card">
+                <Laptop size={48} stroke-width={1.4} />
+                <h3 class="frag-name">MacBook</h3>
+                <p class="frag-meta">本地笔记、文档与开发环境</p>
+              </div>
+              <span class="frag-break"><i></i>换设备就断片</span>
+            </div>
+
+            <div class="frag-col">
+              <div class="frag-card">
+                <Server size={48} stroke-width={1.4} />
+                <h3 class="frag-name">Linux 服务器</h3>
+                <p class="frag-meta">代码构建、后台服务与算力</p>
+              </div>
+              <span class="frag-break"><i></i>关窗口就停摆</span>
+            </div>
+
+            <div class="frag-col">
+              <div class="frag-card">
+                <Smartphone size={48} stroke-width={1.4} />
+                <h3 class="frag-name">日常手机</h3>
+                <p class="frag-meta">随时在聊天中沟通与下达任务</p>
+              </div>
+              <span class="frag-break"><i></i>碰不到电脑环境</span>
+            </div>
+          </div>
+
+          <footer class="s-foot s-foot-center">
+            <span>换台设备就得重新交代，关掉窗口任务就停了。</span>
+          </footer>
+        </section>
+
+        <!-- 04 · INTRODUCING ASTRAL -->
+        <section class="slide" data-slide="4" data-state="future" aria-label="认识 Astral">
+          <header class="s-head">
+            <h2 class="s-title">认识 Astral</h2>
+            <p class="s-sub">装在你自己设备上，跨越所有电脑的个人智能体。</p>
+          </header>
+
+          <div class="hero-window">
+            <div class="win-bar">
+              <span class="win-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="win-title">Astral · 桌面客户端与自托管网页端</span>
+              <span style="width:46px"></span>
+            </div>
+            <div class="hero-shell">
+              <aside class="hero-side" aria-hidden="true">
+                <div class="hs-bot">
+                  <img src="/brand/astral-mark.svg" width="22" height="22" alt="" />
+                  <span>Astral</span>
+                </div>
+                <div class="hs-label">会话</div>
+                <div class="hs-row active"><span>跨机发布检查</span></div>
+                <div class="hs-row"><span>每周改动整理</span></div>
+                <div class="hs-row"><span>飞书 · 项目讨论</span></div>
+                <div class="hs-devices">
+                  <div class="hs-label" style="padding-top:4px">已连接电脑 · 3 在线</div>
+                  <div class="hs-row"><span><i class="dot-brand" style="margin-right:8px"></i>MacBook Pro</span><span class="s-mono" style="font-size:13px">macOS</span></div>
+                  <div class="hs-row"><span><i class="dot-ok" style="margin-right:8px"></i>linux-prod</span><span class="s-mono" style="font-size:13px">Linux</span></div>
+                  <div class="hs-row"><span><i class="dot-ok" style="margin-right:8px"></i>Desktop</span><span class="s-mono" style="font-size:13px">Win</span></div>
+                </div>
+              </aside>
+              <div class="hero-chat">
+                <div class="chat-user">
+                  检查一下两台机器的构建状态，把结果整理给我。
+                </div>
+                <div class="chat-reply">
+                  <div class="chat-step">
+                    <div class="chat-step-left">
+                      <Check size={18} style="color:var(--k-ok)" stroke-width={2.4} />
+                      <span>读取本地发布清单</span>
+                      <code>~/Notes/launch.md</code>
+                    </div>
+                    <span class="device-tag"><Laptop size={14} />MacBook Pro</span>
+                  </div>
+                  <div class="chat-step">
+                    <div class="chat-step-left">
+                      <Check size={18} style="color:var(--k-ok)" stroke-width={2.4} />
+                      <span>在服务器执行测试与打包</span>
+                      <code>pnpm test &amp;&amp; build</code>
+                    </div>
+                    <span class="device-tag brand"><Server size={14} />linux-prod</span>
+                  </div>
+                  <p class="chat-answer">
+                    全部 28 项测试通过，构建产物已就绪。所有记录留在当前会话中，你可以随时从任意设备继续。
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <footer class="s-foot s-foot-center">
+            <div class="pillar-row">
+              <span>自主执行</span>
+              <span>跨设备协同</span>
+              <span>开源自托管</span>
+            </div>
+          </footer>
+        </section>
+
+        <!-- 05 · ONE SESSION, EVERY COMPUTER -->
+        <section class="slide" data-slide="5" data-state="future" aria-label="一个会话，跨越所有电脑">
+          <header class="s-head">
+            <h2 class="s-title">一个会话，跨越所有电脑</h2>
+            <p class="s-sub">在同一条对话中按任务自由切换设备，思路与上下文全程不断。</p>
+          </header>
+
+          <SlideMotionCrossComputer />
+
+          <footer class="s-foot">
+            <span>复用每台电脑已有的工具与环境，文件始终留在原设备。</span>
+            <span class="s-mono">switch_computer</span>
+          </footer>
+        </section>
+
+        <!-- 06 · CHAT WHERE YOU ALREADY ARE -->
+        <section class="slide" data-slide="6" data-state="future" aria-label="就在你每天用的聊天里">
+          <header class="s-head">
+            <h2 class="s-title">就在你每天用的聊天里</h2>
+            <p class="s-sub">在常用聊天软件里发一句话，远端的电脑立刻开工。</p>
+          </header>
+
+          <SlideMotionChat />
+
+          <footer class="s-foot">
+            <span>每个聊天独立对应一条持久会话，网页与桌面端随时可接续。</span>
+            <span class="s-mono">1 个聊天 = 1 条持久会话</span>
+          </footer>
+        </section>
+
+        <!-- 07 · PARALLEL BY DESIGN -->
+        <section class="slide" data-slide="7" data-state="future" aria-label="异步并行子代理">
+          <header class="s-head">
+            <h2 class="s-title">耗时任务后台跑，聊天随时继续</h2>
+            <p class="s-sub">主代理专注与你交流，独立子代理并行处理并异步回报。</p>
+          </header>
+
+          <SlideMotionParallel />
+
+          <footer class="s-foot">
+            <span>不用守着进度条干等，多件事同时推进。</span>
+            <span class="s-mono">异步子代理</span>
+          </footer>
+        </section>
+
+        <!-- 08 · ALWAYS AVAILABLE, EVENT-DRIVEN -->
+        <section class="slide" data-slide="8" data-state="future" aria-label="持续运转">
+          <header class="s-head">
+            <h2 class="s-title">合上电脑，它仍在持续运转</h2>
+            <p class="s-sub">由定时计划与外部事件驱动，从被动问答走向全天候在线。</p>
+          </header>
+
+          <div class="flow-stack">
+            <div class="flow-row-3">
+              <div class="flow-box">
+                <h3>定时计划</h3>
+                <p>每日整理、周期巡检与提醒</p>
+              </div>
+              <div class="flow-box">
+                <h3>外部事件</h3>
+                <p>Webhook 回调、构建与告警触发</p>
+              </div>
+              <div class="flow-box">
+                <h3>日常消息</h3>
+                <p>私聊、群聊与网页随时发起</p>
+              </div>
+            </div>
+
+            <div class="flow-arrows" aria-hidden="true">
+              <ArrowDown size={24} /><ArrowDown size={24} /><ArrowDown size={24} />
+            </div>
+
+            <div class="flow-hub">
+              <h3>Astral 运行引擎</h3>
+              <p>事件投递 · 会话唤醒 · 自主执行</p>
+            </div>
+
+            <div class="flow-arrows" aria-hidden="true">
+              <ArrowDown size={24} /><ArrowDown size={24} /><ArrowDown size={24} />
+            </div>
+
+            <div class="flow-row-3">
+              <div class="flow-box">
+                <h3>操作目标电脑</h3>
+                <p>读写文件、执行命令与脚本</p>
+              </div>
+              <div class="flow-box">
+                <h3>持久化状态</h3>
+                <p>完整保留每一步过程与上下文</p>
+              </div>
+              <div class="flow-box">
+                <h3>主动汇报结果</h3>
+                <p>完成后将结论与文件推回给你</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 09 · DEPLOYMENT TOPOLOGY -->
+        <section class="slide" data-slide="9" data-state="future" aria-label="全局部署与连接拓扑">
+          <header class="s-head">
+            <h2 class="s-title">一个中心，连接你的所有设备</h2>
+            <p class="s-sub">既可桌面客户端开箱即用，也可部署在个人主机或轻量服务器全天候运行。</p>
+          </header>
+
+          <div class="topo-grid">
+            <!-- Left: Access Surfaces -->
+            <div class="topo-col">
+              <div class="topo-col-label">从哪里使用</div>
+              <div class="topo-node">
+                <div class="topo-node-head"><Monitor size={22} /><span>桌面端与浏览器</span></div>
+                <p>macOS · Windows · Linux · 自托管网页</p>
+              </div>
+              <div class="topo-node">
+                <div class="topo-node-head"><MessageSquare size={22} /><span>日常聊天软件</span></div>
+                <p>Telegram · QQ · 飞书 · 微信</p>
+              </div>
+            </div>
+
+            <!-- Left -> Center connector -->
+            <div class="topo-link" aria-hidden="true">
+              <svg width="88" height="220" viewBox="0 0 88 220" fill="none">
+                <path d="M4 52 H40 V110 H82" stroke="var(--k-line-strong)" stroke-width="1.8" />
+                <path d="M4 168 H40 V110" stroke="var(--k-line-strong)" stroke-width="1.8" />
+                <path d="M75 104 L83 110 L75 116" stroke="var(--k-brand)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+
+            <!-- Center: Single Astral Server -->
+            <div class="topo-hub">
+              <img src="/brand/astral-mark.svg" width="44" height="44" alt="" />
+              <h3>Astral Server</h3>
+              <p class="topo-hub-sub">单程序 Go 服务 · 内置 SQLite<br />装在你的本机或一台轻量 Linux 上</p>
+              <span class="topo-hub-pill">自由接入任意模型服务</span>
+            </div>
+
+            <!-- Center -> Right connector -->
+            <div class="topo-link" aria-hidden="true">
+              <svg width="112" height="320" viewBox="0 0 112 320" fill="none">
+                <path d="M4 160 H54 M54 48 V272 M54 48 H106 M54 160 H106 M54 272 H106" stroke="var(--k-brand-line)" stroke-width="1.8" />
+                <path d="M99 42 L107 48 L99 54" stroke="var(--k-brand)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M99 154 L107 160 L99 166" stroke="var(--k-brand)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M99 266 L107 272 L99 278" stroke="var(--k-brand)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span class="topo-link-caption">一条命令<br />加密接入</span>
+            </div>
+
+            <!-- Right: Connected Computers -->
+            <div class="topo-col">
+              <div class="topo-col-label">你的所有执行环境</div>
+              <div class="topo-node">
+                <div class="topo-node-head"><Laptop size={22} /><span>本机电脑</span></div>
+                <p>MacBook / 台式机 · 零配置即连</p>
+              </div>
+              <div class="topo-node">
+                <div class="topo-node-head"><Server size={22} /><span>远程 Linux 服务器</span></div>
+                <p>复用已有代码目录、工具链与算力</p>
+              </div>
+              <div class="topo-node">
+                <div class="topo-node-head"><Box size={22} /><span>Docker 隔离容器</span></div>
+                <p>独立沙箱环境，适合群聊与高风险任务</p>
+              </div>
+            </div>
+          </div>
+
+          <footer class="s-foot">
+            <span>文件与运行环境始终留在各自电脑，不把本地数据搬上云。</span>
+            <span class="s-mono">桌面即用 · 7×24 自托管</span>
+          </footer>
+        </section>
+
+        <!-- 10 · POWERED BY ASTRAL CORE -->
+        <section class="slide" data-slide="10" data-state="future" aria-label="自研独立内核">
+          <header class="s-head" style="margin-bottom:24px">
+            <h2 class="s-title">自研独立内核：Astral Core</h2>
+            <p class="s-sub">核心运行时独立开发、可嵌入，模型服务与运行逻辑彻底解耦。</p>
+          </header>
+
+          <div class="arch-stack">
+            <div class="arch-box arch-box-center">
+              <h3>Astral Application</h3>
+              <p class="arch-role">桌面端 / 网页端 / 聊天入口</p>
+            </div>
+
+            <div class="arch-arrow" aria-hidden="true"><ArrowDown size={18} /></div>
+
+            <div class="arch-box">
+              <div class="arch-box-head">
+                <h3>Astral Host</h3>
+              </div>
+              <div class="arch-grid-3">
+                <div class="arch-cell">Agent Gateway</div>
+                <div class="arch-cell">电脑管理</div>
+                <div class="arch-cell">Scheduler</div>
+                <div class="arch-cell">Bot 管理</div>
+                <div class="arch-cell">权限控制</div>
+                <div class="arch-cell">模型配置</div>
+              </div>
+            </div>
+
+            <div class="arch-arrow" aria-hidden="true"><ArrowDown size={18} /></div>
+
+            <div class="arch-box arch-box-center arch-box-core">
+              <div class="arch-box-head">
+                <h3>Astral Core</h3>
+                <p class="arch-role">可嵌入的 Go 持久化智能体会话内核</p>
+              </div>
+              <div class="arch-grid-3">
+                <div class="arch-cell">Session</div>
+                <div class="arch-cell">Rollout</div>
+                <div class="arch-cell">Tool Loop</div>
+                <div class="arch-cell">Context</div>
+                <div class="arch-cell">Model Attempt</div>
+                <div class="arch-cell">Recovery</div>
+              </div>
+            </div>
+
+            <div class="arch-arrow" aria-hidden="true"><ArrowDown size={18} /></div>
+
+            <div class="arch-base">
+              <div class="arch-base-box">模型服务</div>
+              <div class="arch-base-box">持久化存储</div>
+            </div>
+          </div>
+
+          <footer class="s-foot" style="padding-top:16px">
+            <span>双仓库独立开源，核心引擎可直接嵌入其他项目。</span>
+            <span class="s-mono">github.com/oines/astral · github.com/oines/astral-core</span>
+          </footer>
+        </section>
+
+        <!-- 11 · BUILT FOR DURABLE EXECUTION -->
+        <section class="slide" data-slide="11" data-state="future" aria-label="为长程可靠运行而设计">
+          <header class="s-head">
+            <h2 class="s-title">为长程可靠运行而设计</h2>
+            <p class="s-sub">跑起来不难，难的是持久、可恢复、可分叉。</p>
+          </header>
+
+          <div class="tree-canvas">
+            <svg width="1220" height="256" viewBox="0 0 1220 256" fill="none" aria-label="树状会话历史与分叉示意图">
+              <line x1="100" y1="128" x2="940" y2="128" stroke="var(--k-line-strong)" stroke-width="2.6" />
+
+              <path d="M520 128 C570 128, 590 48, 660 48 H880" stroke="var(--k-brand)" stroke-width="2.4" fill="none" />
+              <circle cx="730" cy="48" r="11" fill="var(--k-brand)" />
+              <circle cx="880" cy="48" r="11" fill="var(--k-brand)" />
+              <text x="912" y="55" fill="var(--k-ink)" font-size="20" font-weight="500">分支 A · 子代理共享</text>
+
+              <path d="M520 128 C570 128, 590 208, 660 208 H880" stroke="var(--k-brand-line)" stroke-width="2.4" fill="none" />
+              <circle cx="730" cy="208" r="11" fill="var(--k-canvas)" stroke="var(--k-brand)" stroke-width="2.6" />
+              <circle cx="880" cy="208" r="11" fill="var(--k-canvas)" stroke="var(--k-brand)" stroke-width="2.6" />
+              <text x="912" y="215" fill="var(--k-muted)" font-size="20">分支 B · 独立探索</text>
+
+              <circle cx="100" cy="128" r="12" fill="var(--k-brand)" />
+              <circle cx="310" cy="128" r="12" fill="var(--k-brand)" />
+              <circle cx="520" cy="128" r="14" fill="var(--k-canvas)" stroke="var(--k-brand)" stroke-width="3.6" />
+              <circle cx="730" cy="128" r="12" fill="var(--k-brand)" />
+              <circle cx="940" cy="128" r="12" fill="var(--k-brand)" />
+            </svg>
+          </div>
+
+          <div class="durable-cols">
+            <div class="durable-item">
+              <h3>持久化会话</h3>
+              <p>关闭窗口、断网或服务重启后完整保留上下文与状态，长程任务不从头来过。</p>
+            </div>
+            <div class="durable-item">
+              <h3>树状历史分叉</h3>
+              <p>像 Git 一样从任意节点分支共享历史，后台子代理与新思路探索互不干扰。</p>
+            </div>
+            <div class="durable-item">
+              <h3>请求与工具可恢复</h3>
+              <p>完整记录每次模型调用与工具执行过程，异常中断后能够精准追踪并续跑。</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 12 · LIGHTWEIGHT, OPEN, EXTENSIBLE -->
+        <section class="slide" data-slide="12" data-state="future" aria-label="轻盈、开放、完全由你掌控">
+          <header class="s-head">
+            <h2 class="s-title">轻盈、开放、完全由你掌控</h2>
+            <p class="s-sub">单程序极简部署，模型、设备与数据全部留在你自己手里。</p>
+          </header>
+
+          <div class="quad-grid">
+            <div class="quad-card">
+              <div class="quad-big">Go</div>
+              <div class="quad-copy">
+                <h3>智能体运行时与服务端</h3>
+                <p>单二进制轻量常驻，桌面端与个人服务器都能低开销稳定运行。</p>
+              </div>
+            </div>
+
+            <div class="quad-card">
+              <div class="quad-big">SQLite</div>
+              <div class="quad-copy">
+                <h3>轻量单文件持久化</h3>
+                <p>零外部数据库依赖，备份与迁移只需带走数据目录。</p>
+              </div>
+            </div>
+
+            <div class="quad-card">
+              <div class="quad-big">BYOE</div>
+              <div class="quad-copy">
+                <h3>自带计算执行环境</h3>
+                <p>本机、远程服务器与 Docker 容器一条命令接入，文件留在原硬盘。</p>
+              </div>
+            </div>
+
+            <div class="quad-card">
+              <div class="quad-big">BYOM</div>
+              <div class="quad-copy">
+                <h3>自主选择模型服务</h3>
+                <p>自由接入任意主流或自建模型，按 Bot 独立授权电脑与聊天权限。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 13 · CLOSING -->
+        <section class="slide slide-closing" data-slide="13" data-state="future" aria-label="结束页">
+          <div class="closing-grid">
+            <div>
+              <img class="closing-lockup logo-dark" src="/brand/astral-lockup-inverse.svg" width="280" height="86" alt="Astral" />
+              <img class="closing-lockup logo-light" src="/brand/astral-lockup.svg" width="280" height="86" alt="Astral" />
+              <h2 class="closing-headline">一个智能体，<br /><span>在你的所有电脑上工作。</span></h2>
+              <p class="closing-sub">开源 · 自托管 · AGPL-3.0-only</p>
+              <div class="closing-links">
+                <a class="closing-link closing-link-primary" href="/zh-cn/">
+                  <span>访问官网</span>
+                  <ArrowUpRight size={18} />
+                </a>
+                <a class="closing-link" href="https://github.com/oines/astral" target="_blank" rel="noopener noreferrer">
+                  <span>github.com/oines/astral</span>
+                  <ArrowUpRight size={18} />
+                </a>
+              </div>
+            </div>
+
+            <div class="closing-qrs">
+              <div class="qr-card">
+                <div class="qr-box">
+                  <svg viewBox={`0 0 ${siteQr.size} ${siteQr.size}`} shape-rendering="crispEdges" role="img" aria-label="Astral 官网二维码">
+                    <path d={siteQr.path} fill="#1a1a18" />
+                  </svg>
+                </div>
+                <span class="qr-label">astral.oines.dev</span>
+              </div>
+              <div class="qr-card">
+                <div class="qr-box">
+                  <svg viewBox={`0 0 ${repoQr.size} ${repoQr.size}`} shape-rendering="crispEdges" role="img" aria-label="Astral GitHub 仓库二维码">
+                    <path d={repoQr.path} fill="#1a1a18" />
+                  </svg>
+                </div>
+                <span class="qr-label">oines/astral</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <button type="button" class="edge-nav edge-nav-prev" id="edge-prev" aria-label="上一页"></button>
+    <button type="button" class="edge-nav edge-nav-next" id="edge-next" aria-label="下一页"></button>
+
+    <div class="deck-hud" aria-label="演示控制栏">
+      <div class="hud-group">
+        <button type="button" class="hud-btn" id="btn-prev" aria-label="上一页"><ArrowLeft size={14} /></button>
+        <span class="hud-counter" id="hud-counter">01 / 13</span>
+        <button type="button" class="hud-btn" id="btn-next" aria-label="下一页"><ArrowRight size={14} /></button>
+      </div>
+      <div class="hud-group">
+        <button type="button" class="hud-btn" id="btn-grid" title="页面总览 (G)"><LayoutGrid size={14} /><span>总览</span></button>
+        <span class="hud-sep" aria-hidden="true"></span>
+        <button type="button" class="hud-btn" id="btn-full" title="全屏演示 (F)"><Maximize2 size={14} /></button>
+      </div>
+    </div>
+
+    <div class="deck-progress" aria-hidden="true">
+      <div class="deck-progress-bar" id="progress-bar"></div>
+    </div>
+
+    <div class="deck-overview" id="deck-overview" data-open="false" role="dialog" aria-modal="true" aria-label="页面总览">
+      <div class="overview-head">
+        <span>Astral 产品演示 · 选择页面跳转（Esc 关闭 · T 切换深浅色）</span>
+        <button type="button" class="hud-btn" id="btn-overview-close">关闭</button>
+      </div>
+      <div class="overview-grid">
+        {overviewItems.map((item, index) => (
+          <button type="button" class="overview-card" data-jump={index + 1} data-current={index === 0 ? 'true' : 'false'}>
+            <span class="overview-num">{item.num}</span>
+            <div>
+              <div class="overview-label">{item.title}</div>
+              <div class="overview-hint">{item.hint}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <script>
+      const stage = document.getElementById('deck-stage');
+      const slides = [...document.querySelectorAll<HTMLElement>('.slide')];
+      const total = slides.length;
+      const counter = document.getElementById('hud-counter');
+      const progressBar = document.getElementById('progress-bar');
+      const btnPrev = document.getElementById('btn-prev') as HTMLButtonElement | null;
+      const btnNext = document.getElementById('btn-next') as HTMLButtonElement | null;
+      const overview = document.getElementById('deck-overview');
+      const jumpButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-jump]')];
+
+      let current = 0;
+
+      function fitStage() {
+        if (!stage) return;
+        const vw = window.visualViewport?.width ?? window.innerWidth;
+        const vh = window.visualViewport?.height ?? window.innerHeight;
+        const scale = Math.min(vw / 1600, vh / 900);
+        stage.style.setProperty('--deck-scale', String(scale));
+      }
+      fitStage();
+      window.addEventListener('resize', fitStage);
+      window.addEventListener('orientationchange', fitStage);
+      window.visualViewport?.addEventListener('resize', fitStage);
+
+      const durations = [2600, 3200, 3400, 5200];
+
+      type CinemaController = {
+        start: () => void;
+        stop: () => void;
+        toggle: () => void;
+        replay: () => void;
+      };
+
+      const cinemas = new Map<HTMLElement, CinemaController>();
+
+      for (const el of document.querySelectorAll<HTMLElement>('[data-cinema]')) {
+        const dots = [...el.querySelectorAll<HTMLElement>('.demo-dots i')];
+        const iconPause = el.querySelector<HTMLElement>('.icon-pause');
+        const iconPlay = el.querySelector<HTMLElement>('.icon-play');
+        let phase = 0;
+        let paused = false;
+        let timer: number | undefined;
+
+        const sync = () => {
+          el.dataset.phase = String(phase);
+          dots.forEach((d, idx) => d.classList.toggle('on', idx === phase));
+          if (iconPause && iconPlay) {
+            iconPause.style.display = paused ? 'none' : '';
+            iconPlay.style.display = paused ? '' : 'none';
+          }
+        };
+
+        const stop = () => {
+          if (timer !== undefined) {
+            window.clearTimeout(timer);
+            timer = undefined;
+          }
+        };
+
+        const scheduleNext = () => {
+          stop();
+          if (paused) return;
+          timer = window.setTimeout(() => {
+            phase = (phase + 1) % durations.length;
+            sync();
+            scheduleNext();
+          }, durations[phase] ?? 2000);
+        };
+
+        const ctrl: CinemaController = {
+          start() {
+            stop();
+            paused = false;
+            phase = 0;
+            sync();
+            scheduleNext();
+          },
+          stop,
+          toggle() {
+            paused = !paused;
+            sync();
+            if (paused) stop();
+            else scheduleNext();
+          },
+          replay() {
+            this.start();
+          },
+        };
+
+        el.querySelector('[data-cinema-toggle]')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          ctrl.toggle();
+        });
+        el.querySelector('[data-cinema-replay]')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          ctrl.replay();
+        });
+
+        const hostSlide = el.closest<HTMLElement>('.slide');
+        if (hostSlide) cinemas.set(hostSlide, ctrl);
+      }
+
+      function goTo(index: number, updateHash = true) {
+        const next = Math.max(0, Math.min(total - 1, index));
+        const prevSlide = slides[current];
+        if (prevSlide && prevSlide !== slides[next]) {
+          cinemas.get(prevSlide)?.stop();
+        }
+        current = next;
+        slides.forEach((slide, i) => {
+          slide.dataset.state = i === current ? 'active' : i < current ? 'past' : 'future';
+        });
+        if (counter) {
+          counter.textContent = `${String(current + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`;
+        }
+        if (progressBar) {
+          progressBar.style.width = `${((current + 1) / total) * 100}%`;
+        }
+        if (btnPrev) btnPrev.disabled = current === 0;
+        if (btnNext) btnNext.disabled = current === total - 1;
+        jumpButtons.forEach((b, i) => {
+          b.dataset.current = String(i === current);
+        });
+        if (updateHash) {
+          history.replaceState(null, '', `#${current + 1}`);
+        }
+        cinemas.get(slides[current])?.start();
+      }
+
+      function syncFromHash() {
+        const hashNum = Number.parseInt(window.location.hash.replace('#', ''), 10);
+        goTo(Number.isFinite(hashNum) && hashNum >= 1 && hashNum <= total ? hashNum - 1 : 0, false);
+      }
+
+      function toggleOverview(force?: boolean) {
+        if (!overview) return;
+        overview.dataset.open = String(force ?? overview.dataset.open !== 'true');
+      }
+
+      syncFromHash();
+      window.addEventListener('hashchange', syncFromHash);
+
+      document.getElementById('btn-prev')?.addEventListener('click', () => goTo(current - 1));
+      document.getElementById('btn-next')?.addEventListener('click', () => goTo(current + 1));
+      document.getElementById('edge-prev')?.addEventListener('click', () => goTo(current - 1));
+      document.getElementById('edge-next')?.addEventListener('click', () => goTo(current + 1));
+      document.getElementById('btn-grid')?.addEventListener('click', () => toggleOverview());
+      document.getElementById('btn-overview-close')?.addEventListener('click', () => toggleOverview(false));
+      document.getElementById('btn-full')?.addEventListener('click', () => {
+        if (document.fullscreenElement) void document.exitFullscreen();
+        else void document.documentElement.requestFullscreen();
+      });
+
+      jumpButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const target = Number.parseInt(btn.dataset.jump || '1', 10) - 1;
+          toggleOverview(false);
+          goTo(target);
+        });
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        const overviewOpen = overview?.dataset.open === 'true';
+        if (e.key === 'Escape' && overviewOpen) {
+          e.preventDefault();
+          toggleOverview(false);
+          return;
+        }
+        if (e.key === 'g' || e.key === 'G') {
+          e.preventDefault();
+          toggleOverview();
+          return;
+        }
+        if (overviewOpen) return;
+
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') {
+          e.preventDefault();
+          goTo(current + 1);
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+          e.preventDefault();
+          goTo(current - 1);
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          goTo(0);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          goTo(total - 1);
+        } else if (e.key === 'f' || e.key === 'F') {
+          e.preventDefault();
+          if (document.fullscreenElement) void document.exitFullscreen();
+          else void document.documentElement.requestFullscreen();
+        } else if (e.key === 'r' || e.key === 'R') {
+          cinemas.get(slides[current])?.replay();
+        } else if (e.key === 't' || e.key === 'T') {
+          const root = document.documentElement;
+          root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
+        }
+      });
+
+      let touchStartX = 0;
+      let touchStartY = 0;
+      window.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0]?.clientX || 0;
+        touchStartY = e.changedTouches[0]?.clientY || 0;
+      }, { passive: true });
+      window.addEventListener('touchend', (e) => {
+        if (overview?.dataset.open === 'true') return;
+        const dx = (e.changedTouches[0]?.clientX || 0) - touchStartX;
+        const dy = (e.changedTouches[0]?.clientY || 0) - touchStartY;
+        if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+          goTo(dx < 0 ? current + 1 : current - 1);
+        }
+      }, { passive: true });
+
+      let idleTimer: number | undefined;
+      function wakeHud() {
+        document.body.classList.remove('hud-idle');
+        window.clearTimeout(idleTimer);
+        idleTimer = window.setTimeout(() => document.body.classList.add('hud-idle'), 2200);
+      }
+      window.addEventListener('mousemove', wakeHud, { passive: true });
+      wakeHud();
+    </script>
+  </body>
+</html>

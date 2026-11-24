@@ -1,0 +1,84 @@
+---
+import { Bot, Check, Clock3, Pause, Play, RotateCcw } from '@lucide/astro';
+---
+<div class="sync-split demo-parallel" data-cinema="parallel" data-phase="0">
+  <!-- Left: Original Clean 1 -> 3 -> 1 Parallel Structure Diagram -->
+  <div class="sync-diagram" aria-label="主代理派发并行子代理并异步汇报">
+    <div class="node-box node-box-primary">
+      <div class="node-title">主代理 · 主会话</div>
+      <div class="node-sub">始终保持响应，专注与你交流</div>
+    </div>
+
+    <svg width="420" height="58" viewBox="0 0 420 58" fill="none" aria-hidden="true">
+      <path d="M210 0 V28 M68 28 H352 M68 28 V58 M210 28 V58 M352 28 V58" stroke="var(--k-line-strong)" stroke-width="1.5" />
+    </svg>
+
+    <div class="node-row-3">
+      <div class="node-device np-sub">
+        <Bot size={20} stroke-width={1.6} />
+        <strong>子代理 A</strong>
+        <span>astral</span>
+      </div>
+      <div class="node-device np-sub">
+        <Bot size={20} stroke-width={1.6} />
+        <strong>子代理 B</strong>
+        <span>core</span>
+      </div>
+      <div class="node-device np-sub">
+        <Bot size={20} stroke-width={1.6} />
+        <strong>子代理 C</strong>
+        <span>docs</span>
+      </div>
+    </div>
+
+    <svg width="420" height="58" viewBox="0 0 420 58" fill="none" aria-hidden="true">
+      <path d="M68 0 V30 M210 0 V30 M352 0 V30 M68 30 H352 M210 30 V58" stroke="var(--k-line-strong)" stroke-width="1.5" />
+    </svg>
+
+    <div class="node-box np-report" style="width:100%;">
+      <div class="node-title">异步汇报结果</div>
+      <div class="node-sub">完成后自动汇回主会话，不打断当前对话</div>
+    </div>
+  </div>
+
+  <!-- Right: Calm Large-Type Main Thread Continuing While Subagents Run -->
+  <div class="sync-stage">
+    <div class="demo-ctrl" aria-label="演示控制">
+      <span class="demo-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></span>
+      <button type="button" class="demo-icon-btn" data-cinema-toggle title="暂停/继续">
+        <Pause size={13} class="icon-pause" /><Play size={13} class="icon-play" style="display:none" />
+      </button>
+      <button type="button" class="demo-icon-btn" data-cinema-replay title="重播 (R)">
+        <RotateCcw size={13} />
+      </button>
+    </div>
+
+    <div class="chat-user live-item dp-1">
+      帮我把这 3 个仓库过去一周的改动整理成一份周报。
+    </div>
+
+    <div class="chat-step live-item dp-spawn" style="border-color:var(--k-brand-line);background:var(--k-brand-soft);">
+      <div class="chat-step-left">
+        <Bot size={16} style="color:var(--k-brand)" />
+        <span>已派出后台子代理并行整理 3 个仓库</span>
+      </div>
+      <span class="device-tag brand">后台运行</span>
+    </div>
+
+    <div class="chat-user live-item dp-chat2">
+      顺便帮我定个明早 9 点的提醒：确认发布说明。
+    </div>
+
+    <div class="chat-step live-item dp-chat2">
+      <div class="chat-step-left">
+        <Clock3 size={16} style="color:var(--k-ok)" />
+        <span>已设好明天 09:00 计划提醒（主对话零等待）</span>
+      </div>
+    </div>
+
+    <p class="chat-answer live-item dp-done" style="padding-top:12px;border-top:1px solid var(--k-line);">
+      <Check size={16} style="color:var(--k-ok);vertical-align:-2px;margin-right:8px;" stroke-width={2.4} />
+      子代理已异步完成：汇总 14 项可见改动，生成 <code>weekly-digest.md</code>。
+    </p>
+  </div>
+</div>
