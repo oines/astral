@@ -8,7 +8,7 @@ import { Button, Modal, Select, Switch, SettingsRow, SettingsSection } from '@as
 import { ChevronRight, Plus, Search } from '@astral/icons'
 import { useI18n } from 'vue-i18n'
 import type { Agent } from '../../lib/types'
-import { newMeta, request } from '../../lib/api'
+import { jsonEqual, newMeta, request } from '../../lib/api'
 import { computerSummary } from '../../lib/computer-info'
 import ModelSelection from '../ModelSelection.vue'
 import type { ModelSelection as Selection } from '../../lib/model-reasoning'
@@ -19,6 +19,7 @@ import ChannelsSettings from './ChannelsSettings.vue'
 import SettingsFeedback from './SettingsFeedback.vue'
 import SettingsText from './SettingsText.vue'
 import BotModelPriority from './BotModelPriority.vue'
+import BotACPAccess from './BotACPAccess.vue'
 
 const { t } = useI18n()
 const app = useAppStore()
@@ -31,6 +32,12 @@ const searches = useQuery(listSearchProvidersQuery())
 const selected = computed(() => app.agents.find(a => a.id === route.query.agent))
 const resource = computed(() => `agent:${selected.value?.id || ''}`)
 const selectedSearch = computed(() => saves.value(`${resource.value}/search`, selected.value?.search_provider_id || ''))
+const activitySummaryScope = computed(() => `${resource.value}/activity-summary`)
+const activitySummary = computed(() => {
+  const bot = selected.value
+  const mode = bot?.activity_summary_mode || 'follow'
+  return saves.value(activitySummaryScope.value, { mode, profile_id: bot?.activity_summary_model_id || '', reasoning: bot?.activity_summary_reasoning })
+})
 const searchOptions = computed(() => {
   const options = [{ value: '', label: t('notEnabled') }, ...(searches.data.value || []).map(p => ({ value: p.id, label: p.name }))]
   return selectedSearch.value && searches.data.value && !options.some(option => option.value === selectedSearch.value)
@@ -93,6 +100,16 @@ function updateModel(kind: 'default' | 'probe', selection: Selection) {
   return update(selected.value.id, `${kind}-model`, kind === 'default'
     ? { default_model_id: selection.profile_id, default_reasoning: selection.reasoning }
     : { probe_model_id: selection.profile_id, probe_reasoning: selection.reasoning }, selection)
+}
+function updateActivitySummary(mode: 'follow' | 'disabled' | 'model', selection?: Selection) {
+  if (!selected.value) return
+  const profile_id = selection?.profile_id || ''
+  const reasoning = selection?.reasoning
+  return update(selected.value.id, 'activity-summary', {
+    activity_summary_mode: mode, activity_summary_model_id: profile_id, activity_summary_reasoning: reasoning,
+  }, { mode, profile_id, reasoning }, current => (current.activity_summary_mode || 'follow') === mode
+    && (current.activity_summary_model_id || '') === profile_id
+    && jsonEqual(current.activity_summary_reasoning, reasoning))
 }
 function applyPersona() {
   if (!selected.value) return
@@ -255,13 +272,30 @@ function preventDeleteDismiss(event: Event) { if (action.busy.value) event.preve
               @select="updateModel('probe', $event)"
             />
           </SettingsRow>
+          <SettingsRow
+            :label="t('activitySummaryModel')"
+            :description="activitySummary.mode === 'model' ? t('activitySummaryModelHint') : undefined"
+          >
+            <ModelSelection
+              :model-value="activitySummary.profile_id"
+              :reasoning="activitySummary.reasoning"
+              :label="t('activitySummaryModel')"
+              :empty-label="t('followSessionModel')"
+              :off-label="t('off')"
+              :off="activitySummary.mode === 'disabled'"
+              :reasoning-default-label="t('activitySummaryReasoningDefault')"
+              :busy="saves.state(activitySummaryScope).status === 'saving'"
+              @select="updateActivitySummary($event.profile_id ? 'model' : 'follow', $event)"
+              @off="updateActivitySummary('disabled')"
+            />
+          </SettingsRow>
           <div class="settings-group-footer">
             <RouterLink
               to="/settings/models"
               class="settings-inline-link"
             >
               {{ t('manageModels') }}<ChevronRight />
-            </RouterLink><SettingsFeedback :scope="`${resource}/probe-model`" />
+            </RouterLink><SettingsFeedback :scope="[activitySummaryScope, `${resource}/probe-model`]" />
           </div>
         </SettingsSection>
         <SettingsSection :title="t('botSearchSettings')">
@@ -284,6 +318,10 @@ function preventDeleteDismiss(event: Event) { if (action.busy.value) event.preve
             </RouterLink><SettingsFeedback :scope="`${resource}/search`" />
           </div>
         </SettingsSection>
+        <BotACPAccess
+          :key="selected.id"
+          :agent-id="selected.id"
+        />
         <SettingsSection>
           <SettingsRow
             :label="t('deleteAgent')"

@@ -89,7 +89,7 @@ func (r *runtime) hostTools() []core.Tool {
 				return resultJSON(response), nil
 			}},
 	)
-	return tools
+	return append(tools, r.mountedTools()...)
 }
 func resultJSON(value any) core.ToolExecution {
 	return core.ToolExecution{Result: &core.ToolResult{Content: core.Text(string(encode(value))), Details: encode(value), Outcome: core.OutcomeSucceeded}}

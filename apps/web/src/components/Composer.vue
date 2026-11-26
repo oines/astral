@@ -424,7 +424,7 @@ watch(() => props.view.agent_id, () => { homeSelection.value = {}; error.value =
             </template>
             <template #default="{ close }">
               <button
-                v-if="pending.metadata.source === 'web'"
+                v-if="pending.metadata.source === 'web' || pending.metadata.source === 'acp'"
                 type="button"
                 class="menu-item"
                 @click="editPending(pending); close()"

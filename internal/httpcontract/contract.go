@@ -45,6 +45,7 @@ func (c *Contract) Document() map[string]any {
 			"webSessionHTTPS": map[string]any{"type": "apiKey", "in": "cookie", "name": "__Host-astral_session", "description": "Secure host-only browser session for HTTPS requests only."},
 			"daemon":          map[string]any{"type": "http", "scheme": "bearer"},
 			"command":         CommandSecurityScheme(),
+			"acpToken":        map[string]any{"type": "http", "scheme": "bearer", "description": "Credential scoped to one Bot's ACP WebSocket endpoint."},
 		}}}
 }
 

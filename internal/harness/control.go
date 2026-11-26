@@ -132,6 +132,9 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 	if err := r.syncBindingConfig(ctx, record); err != nil {
 		return err
 	}
+	if err := r.syncMCPConfig(ctx, record); err != nil {
+		return err
+	}
 	configuration := r.core.Load().Configuration()
 	selection, err := r.service.modelFallbackSelection(ctx, r.id, configuration.Selection)
 	if err != nil {
@@ -143,12 +146,7 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 		}
 		configuration.Selection = selection
 	}
-	definitions := []core.ToolDefinition{}
-	for _, tool := range r.hostTools() {
-		if tool.Definition().Name != "send_message" || record.BindingID != "" {
-			definitions = append(definitions, tool.Definition())
-		}
-	}
+	definitions := r.configuredTools(record)
 	hostPrompt := systemPromptFor(record)
 	if configuration.SystemPrompt != hostPrompt || !jsonEqual(configuration.Tools, definitions) {
 		configuration.SystemPrompt = hostPrompt
@@ -158,6 +156,16 @@ func (r *runtime) syncBusinessConfig(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+func (r *runtime) configuredTools(record domain.Session) []core.ToolDefinition {
+	definitions := []core.ToolDefinition{}
+	for _, tool := range r.hostTools() {
+		definition := tool.Definition()
+		if definition.Name != "send_message" || record.BindingID != "" {
+			definitions = append(definitions, definition)
+		}
+	}
+	return definitions
 }
 func jsonEqual(a, b any) bool { return string(encode(a)) == string(encode(b)) }
 
@@ -263,10 +271,25 @@ func (r *runtime) continueLocked(ctx context.Context) error {
 	}
 	run, err := r.core.Load().Continue(ctx)
 	if err == nil {
+		if admission, ok := ctx.Value(acpPromptKey{}).(*acpPromptAdmission); ok {
+			admission.runID = run.ID()
+			r.acpRun.Store(run)
+		}
 		r.observeModelFallbackRun(run)
 	}
 	r.service.notify(r.id)
 	return err
+}
+
+func (s *Service) StopACPRun(ctx context.Context, id, runID string) error {
+	r, err := s.open(ctx, id)
+	if err != nil {
+		return err
+	}
+	if run := r.acpRun.Load(); run != nil && run.ID() == runID {
+		run.Cancel()
+	}
+	return nil
 }
 
 func (s *Service) Continue(ctx context.Context, id string) error {
@@ -291,6 +314,7 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	// can need this cancellation to release r.mu. Recheck after locking so a
 	// fallback successor admitted in that gap is stopped as well.
 	r.core.Load().Cancel()
+	r.stopActivity()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var wakeErr error
@@ -302,6 +326,7 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 		return errors.Join(wakeErr, err)
 	}
 	r.core.Load().Cancel()
+	r.stopActivity()
 	err = s.Store.DeleteMaintenance(ctx, imReplyWatchKind, id)
 	s.notify(id)
 	return errors.Join(wakeErr, err)

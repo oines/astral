@@ -74,3 +74,30 @@ func TestImageCarriesOriginalAttachmentURIAndNativeImage(t *testing.T) {
 		t.Fatal("native image did not retain the stable reference")
 	}
 }
+
+func TestACPOwnerMessageKeepsDisplayTextAndAttachments(t *testing.T) {
+	const client = `Editor "beta" <team> & QA`
+	const input = `show <tag> & reply`
+	at := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	files := []domain.FileRef{{Meta: domain.Meta{ID: "file_1"}, ComputerID: "computer_a", Path: "/workspace/photo.png", DisplayName: `a"&.png`, MediaType: "image/png"}}
+	web := Web("input", input, "Owner", at, files)
+	acp := ACP("input", input, "Owner", client, at, files)
+	if acp.Role != core.RoleUser || len(acp.Content) != 2 || acp.Content[1].URL != web.Content[1].URL {
+		t.Fatalf("ACP lost its native image or user role: %+v", acp)
+	}
+	want := strings.Replace(web.Content[0].Text, `source="web"`, `source="acp" client="Editor &#34;beta&#34; &lt;team&gt; &amp; QA"`, 1)
+	if acp.Content[0].Text != want {
+		t.Fatalf("ACP envelope = %q, want %q", acp.Content[0].Text, want)
+	}
+	var metadata Metadata
+	if err := json.Unmarshal(acp.Metadata, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Source != "acp" || metadata.Client != client || metadata.DeliveryID != "input" || metadata.DisplayText != input || metadata.Sender.ID != "owner" || metadata.Sender.Name != "Owner" || len(metadata.Files) != 1 || metadata.Files[0].ID != files[0].ID {
+		t.Fatalf("ACP display metadata = %+v", metadata)
+	}
+	unnamed := ACP("input", input, "Owner", "", at, files)
+	if unnamed.Content[0].Text != strings.Replace(web.Content[0].Text, `source="web"`, `source="acp"`, 1) {
+		t.Fatalf("unnamed client added an attribute: %q", unnamed.Content[0].Text)
+	}
+}

@@ -47,6 +47,14 @@ type capabilitySpec struct {
 
 var capabilitySpecs = []capabilitySpec{
 	{
+		id: "mcp", description: "List and call remote MCP tools mounted on this Session's delegation root.",
+		notes: []string{
+			"Calls use the current root Session's active ACP mount. The root and its delegated Sessions share the same tools and call limit.",
+			"Send only a discovered tool name and its JSON arguments. The Host owns the remote URL and headers. Calls stop when the ACP lease or the command credential ends.",
+		},
+		examples: []CapabilityExample{{Description: "List this Session's remote MCP tools and their input schema.", Method: "GET", Path: "/v1/mcp/tools"}},
+	},
+	{
 		id: "models", description: "List the currently available model profiles and their reasoning choices for delegated work.",
 		notes: []string{
 			"Use the profile id for spawn_agent or agent_control. Pass the full reasoning_controls option value when overriding the default. The list describes local configuration and does not test provider availability.",
@@ -203,7 +211,7 @@ func capabilityFor(method, path string) string {
 			return "sessions"
 		}
 		return "history"
-	case "models", "skills", "schedules", "wake-endpoints":
+	case "mcp", "models", "skills", "schedules", "wake-endpoints":
 		return family
 	}
 	if path == "/hooks/{id}" {

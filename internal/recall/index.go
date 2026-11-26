@@ -145,7 +145,7 @@ func extract(e core.Entry) []block {
 		if metadata.Source == "im.trigger" {
 			return nil
 		}
-		display := metadata.Source == "web" || metadata.Source == "im"
+		display := metadata.Source == "web" || metadata.Source == "acp" || metadata.Source == "im"
 		for i, part := range m.Content {
 			switch part.Type {
 			case "text":

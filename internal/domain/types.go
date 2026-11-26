@@ -30,19 +30,22 @@ type Meta struct {
 
 type Agent struct {
 	Meta
-	Name              string                 `json:"name"`
-	Avatar            string                 `json:"avatar,omitempty"`
-	Persona           string                 `json:"persona,omitempty"`
-	DefaultModelID    string                 `json:"default_model_id,omitempty"`
-	DefaultReasoning  *core.ReasoningOptions `json:"default_reasoning,omitempty"`
-	ModelPriority     []core.ModelSelection  `json:"model_priority,omitempty"`
-	ModelAutoRestore  bool                   `json:"model_auto_restore"`
-	ProbeModelID      string                 `json:"probe_model_id,omitempty"`
-	ProbeReasoning    *core.ReasoningOptions `json:"probe_reasoning,omitempty"`
-	SearchProviderID  string                 `json:"search_provider_id,omitempty"`
-	AllowedComputers  []string               `json:"allowed_computers"`
-	DefaultComputerID string                 `json:"default_computer_id,omitempty"`
-	Deletion          bool                   `json:"deletion,omitempty"`
+	Name                     string                 `json:"name"`
+	Avatar                   string                 `json:"avatar,omitempty"`
+	Persona                  string                 `json:"persona,omitempty"`
+	DefaultModelID           string                 `json:"default_model_id,omitempty"`
+	DefaultReasoning         *core.ReasoningOptions `json:"default_reasoning,omitempty"`
+	ModelPriority            []core.ModelSelection  `json:"model_priority,omitempty"`
+	ModelAutoRestore         bool                   `json:"model_auto_restore"`
+	ProbeModelID             string                 `json:"probe_model_id,omitempty"`
+	ProbeReasoning           *core.ReasoningOptions `json:"probe_reasoning,omitempty"`
+	ActivitySummaryMode      string                 `json:"activity_summary_mode,omitempty"`
+	ActivitySummaryModelID   string                 `json:"activity_summary_model_id,omitempty"`
+	ActivitySummaryReasoning *core.ReasoningOptions `json:"activity_summary_reasoning,omitempty"`
+	SearchProviderID         string                 `json:"search_provider_id,omitempty"`
+	AllowedComputers         []string               `json:"allowed_computers"`
+	DefaultComputerID        string                 `json:"default_computer_id,omitempty"`
+	Deletion                 bool                   `json:"deletion,omitempty"`
 }
 
 type Session struct {

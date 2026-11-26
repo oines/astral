@@ -15,6 +15,7 @@ import (
 	core "github.com/oines/astral-core"
 	models "github.com/oines/astral-core/models"
 
+	"github.com/oines/astral/internal/acp"
 	"github.com/oines/astral/internal/auth"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/computers"
@@ -32,6 +33,8 @@ import (
 
 type Config struct {
 	Harness             *harness.Service
+	ACP                 *acp.Service
+	RequestOrigin       func(*http.Request) string
 	Channels            *channels.Service
 	Auth                *auth.Service
 	PublicURL           string
@@ -184,8 +187,12 @@ type ConnectionView struct {
 }
 
 func New(config Config) *API {
+	if config.ACP == nil && config.Harness != nil {
+		config.ACP = acp.New(config.Harness)
+	}
 	a := &API{Config: config, Contract: httpcontract.New(), mux: http.NewServeMux()}
 	a.resources()
+	a.acpRoutes()
 	a.sessionRoutes()
 	a.scheduleRoutes()
 	a.wakeRoutes()
@@ -201,7 +208,13 @@ func New(config Config) *API {
 	a.handler = a.authenticate(a.mux)
 	return a
 }
-func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.handler.ServeHTTP(w, r) }
+func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/acp" {
+		a.ACPHandler().ServeHTTP(w, r)
+		return
+	}
+	a.handler.ServeHTTP(w, r)
+}
 func route[Request, Response any](a *API, method, path, id, tag string, handler func(*http.Request, Request) (Response, error), query ...httpcontract.Parameter) {
 	httpcontract.Register(a.Contract, a.mux, httpcontract.Operation{Method: method, Path: "/api/v1" + path, ID: id, Tag: tag, Auth: true, Query: query}, func(w http.ResponseWriter, r *http.Request, request Request) (Response, error) {
 		if method != http.MethodGet && strings.HasPrefix(path, "/sessions/{id}") {
@@ -465,8 +478,10 @@ func (a *API) usage(ctx context.Context, kind, id string) (Usage, error) {
 		}
 	}
 	for _, agent := range agents {
-		used := kind == "search" && agent.SearchProviderID == id || (kind == "models" || kind == "providers") && (modelIDs[agent.DefaultModelID] || modelIDs[agent.ProbeModelID])
+		used := kind == "search" && agent.SearchProviderID == id
 		if kind == "models" || kind == "providers" {
+			used = modelIDs[agent.DefaultModelID] || modelIDs[agent.ProbeModelID] ||
+				agent.ActivitySummaryMode == "model" && modelIDs[agent.ActivitySummaryModelID]
 			for _, selection := range harness.AgentModelPriority(agent) {
 				used = used || modelIDs[selection.ID]
 			}

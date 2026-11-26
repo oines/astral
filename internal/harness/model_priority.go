@@ -214,6 +214,23 @@ func (s *Service) validateAgentModels(ctx context.Context, agent *domain.Agent, 
 	if err := normalizeAgentModelPriority(agent, previous); err != nil {
 		return err
 	}
+	switch agent.ActivitySummaryMode {
+	case "", "follow", "disabled":
+		agent.ActivitySummaryModelID, agent.ActivitySummaryReasoning = "", nil
+	case "model":
+		if agent.ActivitySummaryModelID == "" {
+			return domain.Invalid("an activity summary model is required")
+		}
+		selection := core.ModelSelection{ID: agent.ActivitySummaryModelID, Reasoning: agent.ActivitySummaryReasoning}
+		old := core.ModelSelection{ID: previous.ActivitySummaryModelID, Reasoning: previous.ActivitySummaryReasoning}
+		if previous.ActivitySummaryMode != "model" || !jsonEqual(selection, old) {
+			if _, err := s.Models.ResolveSelection(ctx, selection); err != nil {
+				return err
+			}
+		}
+	default:
+		return domain.Invalid("activity summary mode must be follow, disabled or model")
+	}
 	priority := AgentModelPriority(*agent)
 	selections := append(priority, core.ModelSelection{ID: agent.ProbeModelID, Reasoning: agent.ProbeReasoning})
 	for i, selection := range selections {

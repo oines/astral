@@ -67,6 +67,10 @@ type Service struct {
 	modelFallbackWake       chan struct{}
 	processWatchMu          sync.Mutex
 	processWatchers         map[string]map[chan ProcessStatus]struct{}
+	activityBudget          activityBudget
+	mcpMu                   sync.Mutex
+	mcpMounts               map[string]*mcpMount
+	mcpActive               atomic.Bool
 }
 
 type runtime struct {
@@ -96,6 +100,15 @@ type runtime struct {
 	imInspector       *IMInspector
 	externalInspector *IMInspector
 	externalBatchID   string
+	activityMu        sync.Mutex
+	activity          atomic.Pointer[activityObserver]
+	eventsMu          sync.Mutex
+	events            *sessionEventFeed
+	eventOffset       uint64 // guarded by snapshotMu
+	mcpDefinitions    *mcpCatalog
+	mcpDirty          atomic.Bool
+	coreGeneration    atomic.Uint64
+	acpRun            atomic.Pointer[core.Run]
 }
 
 func New(store *persistence.Store, coreStore core.Store, models *modelbridge.Bridge, hub *computers.Hub) *Service {
@@ -215,6 +228,7 @@ func (r *runtime) initialize(ctx context.Context) (err error) {
 		}
 	}
 	r.prefixRootID = prefix.ID
+	r.mcpDefinitions = s.mcpCatalog(r.prefixRootID, false)
 	if record.SubagentParentID != "" {
 		var settings subagentSettings
 		if err = s.Store.Get(ctx, "subagent_settings", r.id, &settings); err != nil {
@@ -398,13 +412,17 @@ func (s *Service) Core(ctx context.Context, id string) (*core.Session, error) {
 	return r.readableCore()
 }
 func (s *Service) CreateSession(ctx context.Context, agentID, title string) (domain.Session, error) {
-	return s.createSession(ctx, agentID, title, domain.ID("session"), "web", false, false)
+	return s.createSession(ctx, agentID, title, domain.ID("session"), "web", false, false, "")
+}
+
+func (s *Service) CreateACPSession(ctx context.Context, agentID, cwd string) (domain.Session, error) {
+	return s.createSession(ctx, agentID, "", domain.ID("session"), "acp", false, false, cwd)
 }
 
 // createSession also serves scheduled new conversations. Their deterministic
 // occurrence ID permits reopening an already created Host record without
 // creating a second conversation or copying another Session's history.
-func (s *Service) createSession(ctx context.Context, agentID, title, id, source string, reuse, private bool) (domain.Session, error) {
+func (s *Service) createSession(ctx context.Context, agentID, title, id, source string, reuse, private bool, cwd string) (domain.Session, error) {
 	release, err := s.LockAgent(ctx, agentID)
 	if err != nil {
 		return domain.Session{}, err
@@ -431,6 +449,19 @@ func (s *Service) createSession(ctx context.Context, agentID, title, id, source 
 	}
 	record := domain.Session{Meta: domain.Meta{ID: id}, AgentID: agentID, Title: strings.TrimSpace(title), TitleSource: domain.TitleManual, Source: source,
 		ComputerID: agent.DefaultComputerID, Private: private}
+	if cwd != "" && record.ComputerID != "" {
+		var computer domain.Computer
+		if err := s.Store.Get(ctx, "computers", record.ComputerID, &computer); err != nil {
+			return domain.Session{}, err
+		}
+		if computer.Revoked || !domain.ComputerAllowedForSession(agent, record, computer) {
+			return domain.Session{}, domain.Forbidden("the Bot does not have access to its default Computer")
+		}
+		if !computers.AbsoluteTargetPath(computer.OS, cwd) {
+			return domain.Session{}, domain.Invalid("cwd must be an absolute path on the target Computer")
+		}
+		record.CWD = cwd
+	}
 	if defaultSessionTitle(record.Title) {
 		record.Title = "New session"
 		record.TitleSource = domain.TitleDefault
@@ -503,6 +534,7 @@ func (s *Service) Close(ctx context.Context) error {
 		all = append(all, r)
 	}
 	s.mu.Unlock()
+	s.closeMCPMounts()
 	// A reconciler can be waiting for admission held by Core maintenance.
 	// Cancel that work before joining reconcilers, so maintenance releases
 	// admission. Cancel leaves the execution window intact; retirement and

@@ -4,7 +4,7 @@ import "strings"
 
 // The Server validates the target's path syntax, never the Server OS's syntax.
 // Existence, normalization, symlinks and actual access are resolved by the Daemon.
-func absoluteTargetPath(system, path string) bool {
+func AbsoluteTargetPath(system, path string) bool {
 	if path == "" || strings.ContainsRune(path, 0) {
 		return false
 	}
@@ -20,7 +20,7 @@ func absoluteTargetPath(system, path string) bool {
 		normalized = `\\` + normalized[8:]
 	}
 	if strings.HasPrefix(normalized, `\\?\`) {
-		return absoluteTargetPath(system, normalized[4:])
+		return AbsoluteTargetPath(system, normalized[4:])
 	}
 	if !strings.HasPrefix(normalized, `\\`) {
 		return false

@@ -425,6 +425,15 @@ func TestDetachedCopiesRemainIndependentSearchResults(t *testing.T) {
 	}
 }
 
+func TestACPRecallIndexesVisibleTextAndAttachments(t *testing.T) {
+	file := domain.FileRef{DisplayName: "evidence.txt", MediaType: "text/plain", Path: "/workspace/evidence.txt"}
+	message := messages.ACP("prompt", "look at <tag>", "Owner", "editor label", time.Now(), []domain.FileRef{file})
+	blocks := extract(core.Entry{Kind: core.EntryMessage, Message: &message})
+	if len(blocks) != 2 || blocks[0].text != "look at <tag>" || blocks[1].kind != "attachment" || !strings.Contains(blocks[1].text, file.DisplayName) {
+		t.Fatalf("ACP recall projection = %+v", blocks)
+	}
+}
+
 func TestToolEvidenceAndContextAreIndexedOnce(t *testing.T) {
 	f := newFixture(t)
 	f.session(t, "one", "agent")

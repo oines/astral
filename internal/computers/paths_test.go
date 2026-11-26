@@ -13,7 +13,7 @@ func TestPathsUseReportedComputerOS(t *testing.T) {
 		{"windows", `\\.\pipe\docker_engine`, false}, {"windows", "C:\\bad\x00path", false},
 		{"linux", "/home/name", true}, {"darwin", "/Users/名字", true}, {"linux", `C:\Users\name`, false}, {"linux", "relative", false},
 	} {
-		if got := absoluteTargetPath(test.system, test.path); got != test.absolute {
+		if got := AbsoluteTargetPath(test.system, test.path); got != test.absolute {
 			t.Errorf("%s %q: got %v want %v", test.system, test.path, got, test.absolute)
 		}
 	}

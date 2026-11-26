@@ -227,7 +227,7 @@ The tool returns the outcome of one send attempt: `sent` is `true` for acceptanc
 
 ## Computer API
 
-Start at `local_api.capabilities_url` from the current environment. The index links to purpose-specific documentation at `/v1/capabilities/{id}` for history, chats, files and environment. Each document contains behavior rules, examples and a self-contained OpenAPI subset generated from the actual routes, including its command Bearer security definition. The index also links the complete OpenAPI. Resolve relative links against `local_api.base_url`; the API address stays in the environment context.
+Start at `local_api.capabilities_url` from the current environment. The index links to purpose-specific documentation at `/v1/capabilities/{id}` for history, chats, files, environment and attached MCP tools. Each document contains behavior rules, examples and a self-contained OpenAPI subset generated from the actual routes, including its command Bearer security definition. The index also links the complete OpenAPI. Resolve relative links against `local_api.base_url`; the API address stays in the environment context.
 
 Every Computer API request, including discovery and OpenAPI, requires `Authorization: Bearer …` using the calling `exec_command` process's `ASTRAL_API_TOKEN` environment variable. The Server issues a separate credential before dispatch, holds only its hash and execution binding in memory, and validates every forwarded request against that record, its original Daemon connection and current permissions. The Daemon injects the actual value only into the command environment. Read the value from the environment without printing, saving or expanding it into another process's arguments; it never belongs in a model-visible environment snapshot. Provider and account credentials are never returned.
 
@@ -239,6 +239,8 @@ The Host prompt points to this discovery entry and explains the command credenti
 | --- | --- |
 | `GET /v1/capabilities` | Unified capability index, scope and documentation links |
 | `GET /v1/capabilities/{id}` | Instructions, examples and actual request/response schemas for one capability |
+| `GET /v1/mcp/tools` | List the remote MCP tools attached to the calling session's ordinary root, including names and input schemas |
+| `POST /v1/mcp/tools/{name}/call` | Invoke one of those tools with the calling command's existing Computer API authorization |
 | `GET /v1/accounts` | Owned account identities and chat scope |
 | `POST /v1/accounts/{id}/conversations/resolve` | Resolve `{external_id,topic_id?}` without creating a Session |
 | `GET /v1/conversations` | Known authorized chats |

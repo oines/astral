@@ -13,7 +13,6 @@ export const channelsEn = {
 
   'probeModel': 'Participation model',
   'probeModelHint': 'For chats set to “Join discussions”, this model decides whether the Bot should participate in ordinary group discussions.',
-  'followSessionModel': 'Follow the Session’s current model',
   'chats': 'Chats',
   'openChat': 'Open chat',
   'groupChat': 'Group chat',
@@ -45,7 +44,6 @@ export const channelsZh = {
 
   'probeModel': '群聊判断模型',
   'probeModelHint': '群聊设为“主动参与讨论”时，用这个模型判断 Bot 是否需要参与讨论。',
-  'followSessionModel': '跟随 Session 当前模型',
   'chats': '聊天',
   'openChat': '打开聊天',
   'groupChat': '群聊',

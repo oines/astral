@@ -22,15 +22,15 @@ function selectionLabel(value: Reasoning, t: (key: string) => string) {
   return t('interfaceDefault')
 }
 
-export function modelReasoning(profile: Profile | undefined, reasoning: Reasoning | undefined, t: (key: string) => string, config: { inherit?: boolean } = {}) {
+export function modelReasoning(profile: Profile | undefined, reasoning: Reasoning | undefined, t: (key: string) => string, config: { inherit?: boolean; inheritLabel?: string } = {}) {
   const inherit = config.inherit !== false
   const controls = profile?.reasoning_controls
   const defaults = object(object(({ ...profile?.recommendations, ...profile?.overrides }).defaults).reasoning) as Reasoning
-  const defaultLabel = selectionLabel(defaults, t)
+  const defaultLabel = config.inheritLabel ?? selectionLabel(defaults, t)
   const hasDefaults = defaults.enabled !== undefined || !!defaults.effort || defaults.budget_tokens !== undefined
   const available = !!controls && (!inherit || controls.options.some(option => option.id !== 'interface-default') || !!controls.budget || reasoning !== undefined || hasDefaults)
   const options = available ? [
-    ...(inherit ? [{ value: 'inherit', label: `${t('default')} · ${defaultLabel}` }] : []),
+    ...(inherit ? [{ value: 'inherit', label: config.inheritLabel ?? `${t('default')} · ${defaultLabel}` }] : []),
     ...controls.options.map(option => ({ value: option.id, label: option.id.startsWith('effort:') ? option.id.slice(7) : option.id === 'interface-default' ? t('interfaceDefault') : t(option.id) })),
   ] : []
   const selected = reasoning ? controls?.options.find(option => sameSelection(option.value, reasoning)) : undefined

@@ -266,13 +266,13 @@ func validateHello(hello Hello) error {
 		return domain.Invalid("daemon reported an invalid local API address")
 	}
 	if hello.BootID == "" || len(hello.BootID) > 100 || hello.Hostname == "" || len(hello.Hostname) > 250 ||
-		(hello.OS != "darwin" && hello.OS != "linux" && hello.OS != "windows") || !absoluteTargetPath(hello.OS, hello.Home) || !absoluteTargetPath(hello.OS, hello.Shell) {
+		(hello.OS != "darwin" && hello.OS != "linux" && hello.OS != "windows") || !AbsoluteTargetPath(hello.OS, hello.Home) || !AbsoluteTargetPath(hello.OS, hello.Shell) {
 		return domain.Invalid("daemon reported an unsupported or incomplete environment")
 	}
-	if hello.Root != "" && (!absoluteTargetPath(hello.OS, hello.Root) || len(hello.Root) > 1024) {
+	if hello.Root != "" && (!AbsoluteTargetPath(hello.OS, hello.Root) || len(hello.Root) > 1024) {
 		return domain.Invalid("daemon reported an invalid data directory")
 	}
-	if hello.InitialCWD != "" && (!absoluteTargetPath(hello.OS, hello.InitialCWD) || len(hello.InitialCWD) > 1024) {
+	if hello.InitialCWD != "" && (!AbsoluteTargetPath(hello.OS, hello.InitialCWD) || len(hello.InitialCWD) > 1024) {
 		return domain.Invalid("daemon reported an invalid working directory")
 	}
 	if c := hello.Container; c != nil {
@@ -692,7 +692,7 @@ func (h *Hub) Bind(ctx context.Context, agentID, sessionID, computerID, cwd stri
 		return b, err
 	}
 	// The Daemon supplies its absolute paths and this binding's local API URL.
-	if !absoluteTargetPath(active.hello.OS, prepared.CWD) || !absoluteTargetPath(active.hello.OS, prepared.AgentHome) {
+	if !AbsoluteTargetPath(active.hello.OS, prepared.CWD) || !AbsoluteTargetPath(active.hello.OS, prepared.AgentHome) {
 		return b, domain.Invalid("daemon returned invalid directories")
 	}
 	b.CWD, b.AgentHome, b.APIURL = prepared.CWD, prepared.AgentHome, prepared.APIURL

@@ -42,6 +42,7 @@ type Event struct {
 	SubagentActivity       []domain.SubagentActivity `json:"subagent_activity,omitempty"`
 	SubagentActivityCursor string                    `json:"subagent_activity_cursor,omitempty"`
 	Process                *harness.ProcessStatus    `json:"process,omitempty"`
+	ActivityStatus         *harness.ActivityStatus   `json:"activity_status,omitempty"`
 }
 
 func (a *API) streamRoutes() {
@@ -171,14 +172,13 @@ func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 }
 func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	h := a.Config.Harness
-	session, err := h.Core(r.Context(), r.PathValue("id"))
+	subscription, err := h.SubscribeSession(r.Context(), r.PathValue("id"), 256)
 	if err != nil {
 		httpcontract.Failure(w, r, err)
 		return
 	}
 	// Subscribe first: a commit during snapshot reads is queued, then reconciled
 	// by its persistent Entry ID. A reconnect always receives a fresh snapshot.
-	subscription := session.Subscribe(256)
 	defer subscription.Close()
 	hostChanges := h.WatchSession(r.PathValue("id"))
 	defer hostChanges.Close()
@@ -228,6 +228,16 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	}
 	if !send("snapshot", h.RuntimeID, snapshot) {
 		return
+	}
+	sentCoreSequence := boundary.EventSequence
+	var pendingActivity harness.ActivityStatus
+	sendActivity := func() bool {
+		if pendingActivity.Seq == 0 || pendingActivity.CoreSequence > sentCoreSequence {
+			return true
+		}
+		ok := send("event", "", Event{Epoch: h.RuntimeID, ActivityStatus: &pendingActivity})
+		pendingActivity = harness.ActivityStatus{}
+		return ok
 	}
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
@@ -292,11 +302,19 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 			if !refresh() {
 				return
 			}
-		case event, ok := <-subscription.C:
+		case frame, ok := <-subscription.Events:
 			if !ok {
 				_ = send("resync", "", map[string]string{"reason": "event subscription ended; reconnect to reconcile durable history"})
 				return
 			}
+			if frame.Activity != nil {
+				pendingActivity = *frame.Activity
+				if !sendActivity() {
+					return
+				}
+				continue
+			}
+			event := *frame.Core
 			// Durable content is sent once in Entry. Model events only need their
 			// ordered text deltas; opaque provider payloads are not UI data.
 			event.Message = nil
@@ -313,13 +331,8 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 			}
 			envelope := Event{Epoch: h.RuntimeID, Core: &event}
 			refreshView := event.Type == core.EventRunStart || event.Type == core.EventRunEnd || event.Type == core.EventApproval || event.Type == core.EventContextApplied || event.Attempt != nil || event.Type == core.EventMaintenanceStart || event.Type == core.EventMaintenanceEnd
-			if event.Type == core.EventCommitted && event.EntryID != "" {
-				entry, readErr := session.History().Get(r.Context(), event.EntryID)
-				if readErr != nil {
-					_ = send("resync", "", map[string]string{"reason": "Session entry changed"})
-					return
-				}
-				entry = timelineEntry(entry)
+			if frame.Entry != nil {
+				entry := timelineEntry(*frame.Entry)
 				if timelineRelevant(entry) {
 					envelope.Entry = &entry
 				}
@@ -335,6 +348,10 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 				lastView, _ = json.Marshal(view)
 			}
 			if !send("event", fmt.Sprintf("%s:%d", h.RuntimeID, event.Sequence), envelope) {
+				return
+			}
+			sentCoreSequence = max(sentCoreSequence, event.Sequence)
+			if !sendActivity() {
 				return
 			}
 		case <-keepalive.C:

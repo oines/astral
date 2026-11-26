@@ -451,6 +451,21 @@ export type AstralCoreModelsIntegrationRecommendationTarget = {
     protocol: string;
 };
 
+export type AstralInternalAcpCreatedToken = {
+    created_at: string;
+    id: string;
+    last_used_at?: string;
+    name: string;
+    token: string;
+};
+
+export type AstralInternalAcpTokenInfo = {
+    created_at: string;
+    id: string;
+    last_used_at?: string;
+    name: string;
+};
+
 export type AstralInternalAuthAccountInput = {
     password: string;
     username: string;
@@ -676,6 +691,9 @@ export type AstralInternalComputersLocalSkillsStatus = {
 };
 
 export type AstralInternalDomainAgent = {
+    activity_summary_mode?: string;
+    activity_summary_model_id?: string;
+    activity_summary_reasoning?: AstralCoreReasoningOptions;
     allowed_computers: Array<string>;
     avatar?: string;
     created_at: string;
@@ -1316,6 +1334,10 @@ export type AstralInternalGatewayHistoryPage = {
     subagent_activity_next_cursor?: string;
 };
 
+export type AstralInternalGatewayMcpToolCall = {
+    arguments?: unknown;
+};
+
 export type AstralInternalGatewayManagedSkillsView = {
     local: AstralInternalComputersLocalSkillsStatus;
     manifest: AstralInternalSkillsManifest;
@@ -1436,6 +1458,16 @@ export type AstralInternalGatewaySessionPresentation = {
 export type AstralInternalGatewayStoredMessageObservationView = {
     observation: AstralInternalGatewayMessageObservationView;
     sequence: number;
+};
+
+export type AstralInternalHarnessActivityStatus = {
+    core_sequence: number;
+    run_id: string;
+    segment: number;
+    seq: number;
+    source?: string;
+    state: string;
+    text?: string;
 };
 
 export type AstralInternalHarnessContextUsage = {
@@ -1568,6 +1600,15 @@ export type AstralInternalHarnessView = {
     updated_at: string;
 };
 
+export type AstralInternalHttpapiAcpTokenInput = {
+    name: string;
+};
+
+export type AstralInternalHttpapiAcpTokens = {
+    endpoint: string;
+    tokens: Array<AstralInternalAcpTokenInfo>;
+};
+
 export type AstralInternalHttpapiAppliedModelPriority = {
     updated: number;
 };
@@ -1692,6 +1733,7 @@ export type AstralInternalHttpapiEnrollmentInput = {
 };
 
 export type AstralInternalHttpapiEvent = {
+    activity_status?: AstralInternalHarnessActivityStatus;
     core?: AstralCoreEvent;
     entry?: AstralCoreEntry;
     epoch: string;
@@ -1918,9 +1960,26 @@ export type AstralInternalHttpcontractOk = {
     ok: boolean;
 };
 
+export type AstralInternalMcpclientContent = {
+    data?: string;
+    mimeType?: string;
+    name?: string;
+    resource?: unknown;
+    text?: string;
+    type: string;
+    uri?: string;
+};
+
+export type AstralInternalMcpclientResult = {
+    content: Array<AstralInternalMcpclientContent>;
+    isError: boolean;
+    structuredContent?: unknown;
+};
+
 export type AstralInternalMessagesMetadata = {
     accepted_at?: string;
     attachments?: Array<AstralInternalDomainAttachment>;
+    client?: string;
     conversation_id?: string;
     delivery_id: string;
     display_text: string;
@@ -2270,6 +2329,28 @@ export type AstralInternalWakeReceipt = {
     truncated: boolean;
 };
 
+export type ConnectAcpData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/acp';
+};
+
+export type ConnectAcpErrors = {
+    /**
+     * Missing or invalid ACP token
+     */
+    401: unknown;
+    /**
+     * Bot is unavailable
+     */
+    403: unknown;
+    /**
+     * ACP connection limit reached
+     */
+    429: unknown;
+};
+
 export type ListAgentsData = {
     body?: never;
     path?: never;
@@ -2348,6 +2429,88 @@ export type DeleteAgentResponses = {
 };
 
 export type DeleteAgentResponse = DeleteAgentResponses[keyof DeleteAgentResponses];
+
+export type ListAcpTokensData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/agents/{id}/acp-tokens';
+};
+
+export type ListAcpTokensErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ListAcpTokensError = ListAcpTokensErrors[keyof ListAcpTokensErrors];
+
+export type ListAcpTokensResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiAcpTokens;
+};
+
+export type ListAcpTokensResponse = ListAcpTokensResponses[keyof ListAcpTokensResponses];
+
+export type CreateAcpTokenData = {
+    body: AstralInternalHttpapiAcpTokenInput;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/agents/{id}/acp-tokens';
+};
+
+export type CreateAcpTokenErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type CreateAcpTokenError = CreateAcpTokenErrors[keyof CreateAcpTokenErrors];
+
+export type CreateAcpTokenResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalAcpCreatedToken;
+};
+
+export type CreateAcpTokenResponse = CreateAcpTokenResponses[keyof CreateAcpTokenResponses];
+
+export type RevokeAcpTokenData = {
+    body?: never;
+    path: {
+        id: string;
+        token_id: string;
+    };
+    query?: never;
+    url: '/api/v1/agents/{id}/acp-tokens/{token_id}';
+};
+
+export type RevokeAcpTokenErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type RevokeAcpTokenError = RevokeAcpTokenErrors[keyof RevokeAcpTokenErrors];
+
+export type RevokeAcpTokenResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type RevokeAcpTokenResponse = RevokeAcpTokenResponses[keyof RevokeAcpTokenResponses];
 
 export type ApplyAgentModelPriorityData = {
     body?: never;
@@ -6954,6 +7117,58 @@ export type AgentSendReceiptResponses = {
 };
 
 export type AgentSendReceiptResponse = AgentSendReceiptResponses[keyof AgentSendReceiptResponses];
+
+export type ListMountedMcpToolsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/mcp/tools';
+};
+
+export type ListMountedMcpToolsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ListMountedMcpToolsError = ListMountedMcpToolsErrors[keyof ListMountedMcpToolsErrors];
+
+export type ListMountedMcpToolsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralCoreToolDefinition>;
+};
+
+export type ListMountedMcpToolsResponse = ListMountedMcpToolsResponses[keyof ListMountedMcpToolsResponses];
+
+export type CallMountedMcpToolData = {
+    body: AstralInternalGatewayMcpToolCall;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/v1/mcp/tools/{name}/call';
+};
+
+export type CallMountedMcpToolErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type CallMountedMcpToolError = CallMountedMcpToolErrors[keyof CallMountedMcpToolErrors];
+
+export type CallMountedMcpToolResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalMcpclientResult;
+};
+
+export type CallMountedMcpToolResponse = CallMountedMcpToolResponses[keyof CallMountedMcpToolResponses];
 
 export type AgentModelsData = {
     body?: never;
