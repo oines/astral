@@ -270,7 +270,7 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	s.Channels.StorageChanged = s.Storage.RequestReclaim
 	s.Owner = httpapi.New(httpapi.Config{Harness: s.Harness, Channels: s.Channels, Auth: s.Auth, Storage: s.Storage, PublicURL: s.PublicURL(), DataDirectory: config.DataDirectory, Version: config.Version,
 		HostInfo: s.HostInfo, UseLocal: s.UseLocal, CreateContainer: s.CreateContainer,
-		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings, Updates: s.updates})
+		NetworkSettings: s.NetworkSettings, SaveNetworkSettings: s.SaveNetworkSettings, Updates: s.updates, RequestOrigin: s.RequestOrigin})
 	mux := http.NewServeMux()
 	mux.Handle("/api/", s.Owner)
 	mux.Handle("/auth/", s.Owner.AuthHandler())
@@ -278,6 +278,7 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	mux.HandleFunc("/downloads/", http.NotFound)
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) { httpcontract.JSON(w, 200, httpapi.Contract().Document()) })
 	computerMux := http.NewServeMux()
+	computerMux.Handle("/acp", s.managementBoundary(s.Owner.ACPHandler()))
 	for _, routes := range []*http.ServeMux{mux, computerMux} {
 		routes.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 			httpcontract.JSON(w, 200, map[string]string{"status": "ok", "version": s.Config.Version})
@@ -354,6 +355,9 @@ func (s *Server) Close(ctx context.Context) error {
 	defer close(s.closeDone)
 	if s.cancel != nil {
 		s.cancel()
+	}
+	if s.Owner != nil && s.Owner.Config.ACP != nil {
+		s.Owner.Config.ACP.Close()
 	}
 	var all []error
 	if s.Storage != nil {

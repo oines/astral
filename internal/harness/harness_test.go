@@ -543,6 +543,31 @@ func TestInterruptedWorkWithoutQueueCanContinueAfterRestart(t *testing.T) {
 	}
 }
 
+func TestEditPendingACPInputKeepsItsSourceAndClient(t *testing.T) {
+	f := newFixture(t, 0, func(context.Context, int, map[string]any) any { return textReply("done") })
+	session, err := f.service.Core(f.ctx, f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const inputID = "queued-acp"
+	message := messages.ACP(inputID, "old text", "Owner", "Editor & QA", time.Now(), nil)
+	if _, err = session.FollowUp(f.ctx, sessions.Input{ID: inputID, Message: message}); err != nil {
+		t.Fatal(err)
+	}
+	edited := "new text"
+	if err = f.service.UpdatePending(f.ctx, f.session.ID, inputID, PendingEdit{Text: &edited}); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := session.LookupInput(f.ctx, inputID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata messages.Metadata
+	if updated.Message == nil || json.Unmarshal(updated.Message.Metadata, &metadata) != nil || metadata.Source != "acp" || metadata.Client != "Editor & QA" || metadata.DisplayText != edited || !strings.Contains(updated.Message.Content[0].Text, `source="acp" client="Editor &amp; QA"`) {
+		t.Fatalf("editing lost ACP input provenance: %+v", updated.Message)
+	}
+}
+
 func TestEditedQueueRetainsFrozenImageAcrossRestart(t *testing.T) {
 	entered := make(chan struct{})
 	f := newFixture(t, 1, func(ctx context.Context, n int, request map[string]any) any {

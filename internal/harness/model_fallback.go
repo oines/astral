@@ -598,6 +598,9 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 					}
 					s.wakeModelFallback(r.id)
 					s.wakeExternal(r.id)
+					if r.mcpDirty.Load() {
+						r.applyIdleMCP()
+					}
 					select {
 					case terminal <- event:
 					default:
@@ -615,6 +618,10 @@ func (r *runtime) observeModelFallbackRun(run *core.Run) {
 		}()
 		defer func() { close(stopEvents); <-eventsDone }()
 		_, err := run.Wait(s.ctx)
+		r.acpRun.CompareAndSwap(run, nil)
+		if r.mcpDirty.Load() {
+			r.applyIdleMCP()
+		}
 		if s.ctx.Err() != nil {
 			return
 		}

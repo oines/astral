@@ -18,7 +18,7 @@ When the Bot is busy, choose how to deliver follow-up input:
 | **Queue (default)** | Wait until the current turn finishes (e.g., “Put the results in a table next”). Editable and reorderable while waiting. | Normal send |
 | **Steer** | Course-correct as soon as the Bot can accept input (e.g., “Only include this year's data”). Already-started actions are not undone. | Pick **Steer** in input bar, or press `Cmd/Ctrl + Enter` |
 
-Expand any activity line to inspect commands, image thumbnails, subagent controls, and chat send results (viewing history never re-runs an action).
+While the Bot works, the activity line may show a short progress summary, such as “Checking the updated files.” When work ends, the line shows an overview of the actions taken. Expand any activity line to inspect commands, image thumbnails, subagent controls, and chat send results (viewing history never re-runs an action). You can change [the summary model in Bot settings](/docs/usage/bots/#choose-a-model-for-live-progress-summaries).
 
 ## Delegate background work
 

@@ -75,6 +75,7 @@ func New(h *harness.Service, c *channels.Service) *Service {
 	s.wakeRoutes()
 	s.skillRoutes()
 	s.modelRoutes()
+	s.mcpRoutes()
 	s.rolloutRoutes()
 	s.computerFileRoutes()
 	register[httpcontract.Empty, Context](s, "GET", "/v1/context", "agentContext", func(r *http.Request, _ httpcontract.Empty) (Context, error) {

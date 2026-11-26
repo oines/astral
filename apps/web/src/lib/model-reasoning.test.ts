@@ -21,6 +21,13 @@ describe('model reasoning selection', () => {
     expect(modelReasoning(profile, {}, t)).toMatchObject({ value: 'interface-default', label: 'interfaceDefault' })
     expect(modelReasoning(profile, { enabled: false }, t)).toMatchObject({ value: 'off', label: 'off' })
   })
+  it('lets the activity summary label its implicit reasoning policy', () => {
+    const policy = { inheritLabel: 'Lowest available' }
+    const automatic = modelReasoning(profile, undefined, t, policy)
+    expect(automatic).toMatchObject({ value: 'inherit', label: 'Lowest available' })
+    expect(automatic.options[0]).toEqual({ value: 'inherit', label: 'Lowest available' })
+    expect(modelReasoning(profile, {}, t, policy)).toMatchObject({ value: 'interface-default', label: 'interfaceDefault' })
+  })
   it('hides controls without executable backend choices instead of inferring them', () => {
     expect(modelReasoning(undefined, undefined, t).options).toEqual([])
     expect(modelReasoning({ ...profile, reasoning_controls: undefined }, undefined, t).options).toEqual([])

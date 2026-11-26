@@ -38,10 +38,16 @@ When Astral falls back to another model, the conversation and required context a
 
 - **Retry limit:** Transient connection errors retry up to 5 times per model (including the first attempt) before moving on. Disabled models or providers remain in the list and are skipped.
 - **Archived sessions & in-flight requests:** **Apply to unarchived sessions** leaves archived sessions untouched (even after restoration). Requests already sent finish on their original model, and manually stopped tasks stay stopped. Turning on automatic recovery later does not restart past failed tasks automatically—continue the session manually.
-- **Group participation model:** Defaults to **Follow the Session’s current model** (tracking automatic failovers and reasoning settings), or you can pin a fixed model and switch back anytime.
+- **Group participation model:** Defaults to **Follow the current conversation model** (tracking automatic failovers and reasoning settings), or you can pin a fixed model and switch back anytime.
 - **Keyboard sorting & deleting search:** Focus a drag handle and use Up/Down or `Home`/`End` to reorder. Deleting a global web search connection disables search for every Bot using it while preserving sessions.
 
 </details>
+
+## Choose a model for live progress summaries
+
+In **Basic settings → Activity summary model**, the default **Follow the current conversation model** uses whichever model is doing the work, including a backup after a switch. It uses the lowest available reasoning level for the summary. You can switch to **Off** to skip the extra requests or choose a specific model for this Bot.
+
+When you watch a session live, Astral may send a short version of the task and recent work to the summary model's provider. Choose a provider you trust with that information. The activity line and its details are available in all three modes.
 
 ## Computer access
 
@@ -54,11 +60,17 @@ Open **Computer access** (or pick **Manage Computers** from the session's comput
 
 Choose **Connect platform** in Bot settings and follow [Connect a chat](/docs/chat/overview/) for Telegram, QQ, WeChat, or Feishu. One Bot can hold multiple accounts (even on the same platform), each with isolated credentials, enabled state, and allowed chats.
 
+## Connect an app over ACP
+
+In **Basic settings → ACP access**, copy the WebSocket address and create a token named for the app or device that will use it. Copy the token before closing the dialog. Give a different token to each app so you can revoke its access separately. Revoking a token immediately disconnects any clients using it.
+
+The token grants access to this Bot's ordinary, unarchived, non-private sessions, including their history and the ability to start or stop work. Confirm the Bot's computer access before sharing a token. [Check client compatibility and connect](/docs/hosting/acp/).
+
 ## Disable or delete
 
 - **Pause incoming chats:** disable that platform account to keep history intact.
 - **Block a computer:** uncheck it under **Computer access**.
 
 :::caution[Deleting a Bot is permanent]
-Deleting a Bot permanently removes all its sessions, schedules, platform credentials, and chat data stored by Astral. Save anything important first. External chat messages and files on your computers remain untouched.
+Deleting a Bot permanently removes all its sessions, schedules, platform credentials, and chat data stored by Astral, and disconnects clients using its ACP tokens. Save anything important first. External chat messages and files on your computers remain untouched.
 :::

@@ -23,7 +23,9 @@ func (r *runtime) snapshot() (core.SessionSnapshot, error) {
 	if r.corePhase != runtimeCoreActive || session == nil {
 		return core.SessionSnapshot{}, core.ErrClosed
 	}
-	return session.Snapshot(), nil
+	snapshot := session.Snapshot()
+	snapshot.EventSequence += r.eventOffset
+	return snapshot, nil
 }
 
 func (r *runtime) readableCore() (*core.Session, error) {
@@ -89,11 +91,25 @@ func (r *runtime) reopenCore(ctx context.Context, config core.Config) error {
 }
 
 func (r *runtime) publishCore(ctx context.Context, session *core.Session) error {
+	return r.publishCoreGeneration(ctx, session, nil)
+}
+
+func (r *runtime) publishCoreGeneration(ctx context.Context, session *core.Session, offset *uint64) error {
 	r.snapshotMu.Lock()
 	if r.retired {
 		r.snapshotMu.Unlock()
 		_ = session.Close(ctx)
 		return core.ErrClosed
+	}
+	if offset == nil {
+		r.eventOffset = 0
+	} else {
+		r.eventOffset = *offset
+		r.eventsMu.Lock()
+		if feed := r.events; feed != nil {
+			feed.attach(session, r.eventOffset)
+		}
+		r.eventsMu.Unlock()
 	}
 	r.core.Store(session)
 	r.corePhase = runtimeCoreActive

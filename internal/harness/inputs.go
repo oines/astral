@@ -55,13 +55,18 @@ func (s *Service) UpdatePending(ctx context.Context, id, inputID string, edit Pe
 		if err = json.Unmarshal(receipt.Message.Metadata, &metadata); err != nil {
 			return err
 		}
-		if metadata.Source != "web" {
+		if metadata.Source != "web" && metadata.Source != "acp" {
 			return domain.Invalid("only owner messages can be edited")
 		}
 		if strings.TrimSpace(*edit.Text) == "" && len(metadata.Files) == 0 {
 			return domain.Invalid("message or attachment is required")
 		}
-		updated := messages.Web(inputID, *edit.Text, metadata.Sender.Name, receipt.AcceptedAt, metadata.Files)
+		var updated core.Message
+		if metadata.Source == "acp" {
+			updated = messages.ACP(inputID, *edit.Text, metadata.Sender.Name, metadata.Client, receipt.AcceptedAt, metadata.Files)
+		} else {
+			updated = messages.Web(inputID, *edit.Text, metadata.Sender.Name, receipt.AcceptedAt, metadata.Files)
+		}
 		updated.Content = append(updated.Content[:1], receipt.Message.Content[1:]...)
 		message = &updated
 	}
@@ -122,6 +127,7 @@ type InputReceipt struct {
 	EntryID    string    `json:"entry_id,omitempty"`
 	State      string    `json:"state"`
 	Error      string    `json:"error,omitempty"`
+	RunID      string    `json:"-"`
 }
 
 func digest(value any) string { sum := sha256.Sum256(encode(value)); return hex.EncodeToString(sum[:]) }
@@ -142,6 +148,23 @@ func (r *runtime) existingReceipt(ctx context.Context, id, hash string) (InputRe
 	return InputReceipt{}, false, err
 }
 func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (receipt InputReceipt, err error) {
+	return s.submit(ctx, id, input, nil)
+}
+
+type acpPromptKey struct{}
+type acpPromptAdmission struct {
+	clientName string
+	runID      string
+}
+
+func (s *Service) SubmitACP(ctx context.Context, id string, input InputRequest, clientName string) (InputReceipt, error) {
+	admission := &acpPromptAdmission{clientName: clientName}
+	receipt, err := s.submit(context.WithValue(ctx, acpPromptKey{}, admission), id, input, admission)
+	receipt.RunID = admission.runID
+	return receipt, err
+}
+
+func (s *Service) submit(ctx context.Context, id string, input InputRequest, acp *acpPromptAdmission) (receipt InputReceipt, err error) {
 	if input.ID == "" || len(input.ID) > 200 {
 		return InputReceipt{}, domain.Invalid("a stable input ID is required")
 	}
@@ -174,6 +197,21 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (re
 	if receipt, exists, err := r.existingReceipt(ctx, input.ID, hash); err != nil || exists {
 		return receipt, err
 	}
+	if acp != nil {
+		snapshot, err := r.snapshot()
+		if err != nil {
+			return InputReceipt{}, err
+		}
+		if snapshot.Running || snapshot.Maintenance || snapshot.State.PendingInputs[core.InputSteer]+snapshot.State.PendingInputs[core.InputFollowUp] != 0 {
+			return InputReceipt{}, domain.Conflict("the Session already has active or queued work")
+		}
+		if pending, err := s.ModelFallbackPending(ctx, id); err != nil || pending {
+			if err != nil {
+				return InputReceipt{}, err
+			}
+			return InputReceipt{}, domain.Conflict("the Session is recovering its model connection")
+		}
+	}
 	kind := core.InputKind(input.Mode)
 	files := make([]domain.FileRef, 0, len(input.Files))
 	for _, uri := range input.Files {
@@ -187,7 +225,13 @@ func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (re
 	if err != nil {
 		return InputReceipt{}, err
 	}
-	message := messages.Web(input.ID, input.Text, "Owner", time.Now().In(location), files)
+	at := time.Now().In(location)
+	var message core.Message
+	if acp != nil {
+		message = messages.ACP(input.ID, input.Text, "Owner", acp.clientName, at, files)
+	} else {
+		message = messages.Web(input.ID, input.Text, "Owner", at, files)
+	}
 	if err = s.Files.FreezeImages(ctx, r.agentID, id, &message); err != nil {
 		return InputReceipt{}, err
 	}

@@ -32,6 +32,7 @@ func Escape(value string) string {
 
 type Metadata struct {
 	Source             string                `json:"source"`
+	Client             string                `json:"client,omitempty"`
 	Platform           string                `json:"platform,omitempty"`
 	DeliveryID         string                `json:"delivery_id"`
 	EventID            string                `json:"event_id,omitempty"`
@@ -70,10 +71,22 @@ func AttachmentParts(files []domain.FileRef) (string, []core.Content) {
 }
 
 func Web(id, text, owner string, at time.Time, files []domain.FileRef) core.Message {
+	return ownerMessage(id, text, owner, "web", "", at, files)
+}
+
+func ACP(id, text, owner, clientName string, at time.Time, files []domain.FileRef) core.Message {
+	return ownerMessage(id, text, owner, "acp", clientName, at, files)
+}
+
+func ownerMessage(id, text, owner, source, clientName string, at time.Time, files []domain.FileRef) core.Message {
 	attachments, images := AttachmentParts(files)
-	body := fmt.Sprintf("<message id=\"%s\" source=\"web\" sender=\"%s\" sender-id=\"owner\" t=\"%s\">\n%s%s\n</message>",
-		Escape(id), Escape(owner), at.Format(time.RFC3339Nano), Escape(text), attachments)
-	metadata, _ := json.Marshal(Metadata{Source: "web", DeliveryID: id, DisplayText: text, Sender: domain.Sender{ID: "owner", Name: owner}, Files: files})
+	client := ""
+	if clientName != "" {
+		client = ` client="` + Escape(clientName) + `"`
+	}
+	body := fmt.Sprintf("<message id=\"%s\" source=\"%s\"%s sender=\"%s\" sender-id=\"owner\" t=\"%s\">\n%s%s\n</message>",
+		Escape(id), source, client, Escape(owner), at.Format(time.RFC3339Nano), Escape(text), attachments)
+	metadata, _ := json.Marshal(Metadata{Source: source, Client: clientName, DeliveryID: id, DisplayText: text, Sender: domain.Sender{ID: "owner", Name: owner}, Files: files})
 	return core.Message{Role: core.RoleUser, Content: append(core.Text(body), images...), Metadata: metadata}
 }
 

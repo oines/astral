@@ -37,6 +37,13 @@ const directSingleTool = computed(() => {
 
 const display = computed(() => {
   if (props.status) return { key: `status:${props.status}`, label: props.status, target: '' }
+  if (props.active) {
+    const summary = props.state.activityStatus
+    if (summary?.text) {
+      const label = summary.source === 'rule' ? t(`activityRule.${summary.text}`) : summary.text
+      return { key: `activity:${label}`, label, target: '' }
+    }
+  }
   const latest = props.active ? props.items.at(-1) : runningTools.value.at(-1)
   if ((props.active || runningTools.value.length) && latest?.kind === 'tool') {
     const info = toolPresentation(latest.entry, app.computers)

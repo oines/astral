@@ -43,7 +43,7 @@ func (h *Hub) ListDirectory(ctx context.Context, b domain.ExecutionBinding, path
 	if err = h.Validate(ctx, b); err != nil {
 		return DirectoryPage{}, err
 	}
-	if page.ComputerID != b.ComputerID || !absoluteTargetPath(system, page.Path) || len(page.Entries) > limit {
+	if page.ComputerID != b.ComputerID || !AbsoluteTargetPath(system, page.Path) || len(page.Entries) > limit {
 		return DirectoryPage{}, domain.Invalid("directory listing returned invalid source metadata")
 	}
 	return page, nil

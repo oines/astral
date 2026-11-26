@@ -2,6 +2,7 @@ export type {
   AstralCoreContent as Content,
   AstralCoreEntry as Entry,
   AstralCoreEvent as CoreEvent,
+  AstralInternalHarnessActivityStatus as ActivityStatus,
   AstralInternalHttpapiEvent as SessionEvent,
   AstralInternalHttpapiSnapshot as Snapshot,
   AstralInternalHarnessView as SessionView,

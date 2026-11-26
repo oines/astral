@@ -81,6 +81,8 @@ bash install-server.sh --allow-remote-management=false
 
 只想限制允许使用的域名或 IP 时，使用[主机名限制](/zh-cn/docs/hosting/security/#主机名限制)。
 
+[ACP 端点](/zh-cn/docs/hosting/acp/)使用 Bot 令牌。关闭远程管理后仍可连接 ACP，实际能否连接取决于服务器监听、反向代理和主机名限制。
+
 ## 代理位于另一台机器
 
 [HTTPS 示例](/zh-cn/docs/hosting/server/#通过-https-反向代理访问)假设代理与 Astral 在同一台机器。代理在另一台机器或容器中时，Astral 需要知道哪些来源可以报告外部的 HTTPS 连接。

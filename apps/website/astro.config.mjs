@@ -91,6 +91,7 @@ export default defineConfig({
           page('Server options', '定制服务器部署', 'hosting/server-options'),
           page('NapCat networking', 'NapCat 地址与网络', 'chat/napcat-network'),
           page('Command-line access', '使用命令行', 'hosting/command-line'),
+          page('Remote sessions with ACP', '通过 ACP 接入会话', 'hosting/acp'),
           page('Platform APIs', '平台 API', 'chat/platform-api'),
           page('Build from source', '从源码构建', 'hosting/build-from-source'),
         ]),

@@ -8,23 +8,32 @@ import { useAppStore } from '../stores/app'
 import { modelReasoning, reasoningSelection, type ModelSelection } from '../lib/model-reasoning'
 import { modelUnavailableLabel } from '../lib/model-availability'
 
-const props = withDefaults(defineProps<{ modelValue: string; reasoning?: Reasoning; label?: string; emptyLabel?: string; allowEmpty?: boolean; busy?: boolean; disabled?: boolean; composer?: boolean; unavailableReason?: string; exclude?: string[]; closeOnSelect?: boolean; showProvider?: boolean }>(), { allowEmpty: true, reasoning: undefined, label: undefined, emptyLabel: undefined, unavailableReason: undefined, exclude: undefined })
-const emit = defineEmits<{ select: [selection: ModelSelection] }>()
+const props = withDefaults(defineProps<{ modelValue: string; reasoning?: Reasoning; label?: string; emptyLabel?: string; offLabel?: string; off?: boolean; reasoningDefaultLabel?: string; allowEmpty?: boolean; busy?: boolean; disabled?: boolean; composer?: boolean; unavailableReason?: string; exclude?: string[]; closeOnSelect?: boolean; showProvider?: boolean }>(), { allowEmpty: true, reasoning: undefined, label: undefined, emptyLabel: undefined, offLabel: undefined, reasoningDefaultLabel: undefined, unavailableReason: undefined, exclude: undefined })
+const emit = defineEmits<{ select: [selection: ModelSelection]; off: [] }>()
 const app = useAppStore()
 const { t } = useI18n()
 const profile = computed(() => app.models.find(model => model.id === props.modelValue))
 const unavailableReason = computed(() => props.modelValue && (props.unavailableReason || !profile.value?.available) ? props.unavailableReason || profile.value?.unavailable_reason || 'model_missing' : '')
-const modelName = computed(() => profile.value?.name || (props.modelValue ? t('model') : props.emptyLabel || t('model')))
+const modelName = computed(() => props.off && props.offLabel ? props.offLabel : profile.value?.name || (props.modelValue ? t('model') : props.emptyLabel || t('model')))
 const modelLabel = computed(() => unavailableReason.value ? `${modelName.value} · ${modelUnavailableLabel(unavailableReason.value, t)}` : modelName.value)
-const reasoningState = computed(() => modelReasoning(unavailableReason.value ? undefined : profile.value, props.reasoning, t))
+const reasoningState = computed(() => modelReasoning(unavailableReason.value ? undefined : profile.value, props.reasoning, t, { inheritLabel: props.reasoningDefaultLabel }))
+const offValue = computed(() => {
+  let value = ':off'
+  while (value === props.modelValue || app.availableModels.some(model => model.id === value)) value += ':'
+  return value
+})
 const models = computed(() => {
-  const result = app.availableModels.filter(model => model.id === props.modelValue || !props.exclude?.includes(model.id)).map(model => ({ value: model.id, label: model.name, group: model.provider_id, groupLabel: model.provider_name || '', keywords: model.model_id, disabled: false }))
-  if (props.emptyLabel && props.allowEmpty !== false) result.unshift({ value: '', label: props.emptyLabel, group: '', groupLabel: '', keywords: '', disabled: false })
-  if (props.modelValue && !result.some(model => model.value === props.modelValue)) result.push({ value: props.modelValue, label: modelLabel.value, group: '', groupLabel: '', keywords: '', disabled: true })
+  const result = app.availableModels.filter(model => model.id === props.modelValue || !props.exclude?.includes(model.id)).map(model => ({ value: model.id, label: model.name, group: model.provider_id, groupLabel: model.provider_name || '', keywords: model.model_id, disabled: false, shortcut: false }))
+  if (props.offLabel) result.unshift({ value: offValue.value, label: props.offLabel, group: '', groupLabel: '', keywords: '', disabled: false, shortcut: true })
+  if (props.emptyLabel && props.allowEmpty !== false) result.unshift({ value: '', label: props.emptyLabel, group: '', groupLabel: '', keywords: '', disabled: false, shortcut: true })
+  if (props.modelValue && !result.some(model => model.value === props.modelValue)) result.push({ value: props.modelValue, label: modelLabel.value, group: '', groupLabel: '', keywords: '', disabled: true, shortcut: false })
   return result
 })
 function chooseModel(profile_id: string) {
-  if (!props.busy && profile_id !== props.modelValue) emit('select', { profile_id, reasoning: undefined })
+  if (props.busy) return
+  if (props.offLabel && profile_id === offValue.value) {
+    if (!props.off) emit('off')
+  } else if (props.off || profile_id !== props.modelValue) emit('select', { profile_id, reasoning: undefined })
 }
 function chooseReasoning(value: string) {
   if (!props.busy && value !== reasoningState.value.value) emit('select', { profile_id: props.modelValue, reasoning: reasoningSelection(value, profile.value) })
@@ -35,7 +44,7 @@ function chooseBudget(value: number) {
 </script>
 <template>
   <ModelPicker
-    :model-value="modelValue"
+    :model-value="off ? offValue : modelValue"
     :models="models"
     :reasoning-value="reasoningState.value"
     :reasoning-label="reasoningState.label"

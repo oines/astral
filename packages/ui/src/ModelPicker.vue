@@ -6,7 +6,7 @@ import { DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenu
 
 const props = defineProps<{
   modelValue: string
-  models: Array<{ value: string; label: string; group: string; groupLabel: string; keywords: string; disabled?: boolean }>
+  models: Array<{ value: string; label: string; group: string; groupLabel: string; keywords: string; disabled?: boolean; shortcut?: boolean }>
   reasoningValue: string
   reasoningLabel: string
   reasoningOptions: Array<{ value: string; label: string }>
@@ -33,7 +33,7 @@ function applyBudget() {
     emit('update:reasoningBudgetValue', value)
   }
 }
-const showSearch = computed(() => props.models.filter(model => model.value && !model.disabled).length >= 20)
+const showSearch = computed(() => props.models.filter(model => model.value && !model.disabled && !model.shortcut).length >= 20)
 const showGroups = computed(() => new Set(props.models.map(model => model.group)).size > 1)
 const groups = computed(() => {
   const query = search.value.trim().toLocaleLowerCase()

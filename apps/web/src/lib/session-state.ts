@@ -1,5 +1,5 @@
 import { markRaw } from 'vue'
-import type { Entry, ProcessStatus, SessionEvent, SessionView, Snapshot } from './types'
+import type { ActivityStatus, Entry, ProcessStatus, SessionEvent, SessionView, Snapshot } from './types'
 import type { TranscriptPosition } from './transcript-position'
 import { carryTranscriptIdentity, reconcileTranscriptGroups } from './transcript-identity'
 import { object } from './api'
@@ -14,6 +14,9 @@ export interface SessionState {
   sequence: number
   historyRevision: number
   view?: SessionView
+  activityStatus?: ActivityStatus
+  activityBoundary?: number
+  activitySequence?: number
   entries: Record<string, Entry>
   trace: Record<string, Entry>
   previews: Record<string, Preview>
@@ -94,6 +97,7 @@ export function fromSnapshot(snapshot: Snapshot): SessionState {
   return state
 }
 export function interruptPreviews(state: SessionState) {
+  state.activityStatus = undefined
   // Core subscriptions only carry future deltas. A reconnect cannot recover a
   // missing middle segment, so keep the last known prefix frozen until commit.
   for (const preview of Object.values(state.previews)) preview.interrupted = true
@@ -156,6 +160,7 @@ export function applyEvent(state: SessionState, envelope: SessionEvent): boolean
   if (e && e.sequence <= state.sequence) return true
   if (envelope.view && envelope.view.event_sequence >= (state.view?.event_sequence ?? 0)) state.view = envelope.view
   if (envelope.entry) addEntry(state, envelope.entry)
+  applyActivity(state, envelope)
   if (!e) return true
   state.sequence = e.sequence
   if (e.attempt && state.view && e.sequence >= state.view.event_sequence && !state.completedRuns.has(e.run_id ?? '')) {
@@ -184,6 +189,34 @@ export function applyEvent(state: SessionState, envelope: SessionEvent): boolean
     if (e.progress?.text) tool.text = (tool.text + e.progress.text).slice(-128_000)
   }
   return true
+}
+function applyActivity(state: SessionState, envelope: SessionEvent) {
+  const current = state.activityStatus
+  const activeRun = state.view?.run_id
+  const e = envelope.core
+  if (!activeRun || state.view?.status === 'stopping' || state.completedRuns.has(activeRun) || (e?.type === 'run_end' && e.run_id === activeRun)) {
+    if (current) state.activityStatus = undefined
+    return
+  }
+  if (current && current.run_id !== activeRun) state.activityStatus = undefined
+  if (e?.run_id === activeRun) {
+    const committed = envelope.entry?.message
+    const hasText = (e.model?.type === 'text_delta' && !!e.model.text)
+      || (committed?.role === 'assistant' && committed.content?.some(part => part.type === 'text' && part.text))
+    // A failed attempt may publish a new rule status at the same sequence. A
+    // text delta or a body-only commit closes the segment, leaving only a clear.
+    const boundary = hasText ? e.sequence : e.type === 'attempt_failed' ? e.sequence - 1 : undefined
+    if (boundary !== undefined) {
+      state.activityBoundary = boundary
+      if (current && current.core_sequence <= boundary) state.activityStatus = undefined
+    }
+  }
+  const next = envelope.activity_status
+  if (!next || next.run_id !== activeRun) return
+  if (state.activityBoundary !== undefined && (next.core_sequence < state.activityBoundary || (next.core_sequence === state.activityBoundary && next.text))) return
+  if (next.seq <= (state.activitySequence ?? 0) || (current?.run_id === activeRun && next.segment < current.segment)) return
+  state.activitySequence = next.seq
+  state.activityStatus = next.state === 'working' && next.text ? markRaw(next) : undefined
 }
 export function messageText(entry: Entry): string {
   const m = entry.message

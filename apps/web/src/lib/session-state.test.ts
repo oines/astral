@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addEntry, applyEvent, emptyState, fromSnapshot, reconcileSnapshot, durableTranscriptGroups, liveTranscriptGroups, messageText, scheduledMessage, transcriptGroups, transcriptRows, visibleEntry } from './session-state'
-import type { CoreEvent, Entry, SessionView, Snapshot } from './types'
+import type { ActivityStatus, CoreEvent, Entry, SessionEvent, SessionView, Snapshot } from './types'
 
 function entry(id: string, sequence: number, rest: Partial<Entry>): Entry {
   return { id, sequence, kind: 'message', session_id: 'session', version: 7, time: '2026-10-21T00:00:00Z', ...rest }
@@ -16,6 +16,57 @@ function snapshot(history: Entry[] = [], trace: Entry[] = []): Snapshot {
 function event(sequence: number, rest: Partial<CoreEvent>) {
   return { epoch: 'server-a', core: { sequence, session_id: 'session', run_id: 'run', type: 'message_update', attempt_id: 'attempt', ...rest } }
 }
+
+function activity(seq: number, core_sequence: number, rest: Partial<ActivityStatus> = {}): SessionEvent {
+  return { epoch: 'server-a', activity_status: { run_id: 'run', segment: 1, state: 'working', text: 'Checking files', source: 'summarizer', seq, core_sequence, ...rest } }
+}
+
+describe('live activity summaries', () => {
+  it('clears the previous segment when text starts and rejects a queued summary from that segment', () => {
+    const state = fromSnapshot(snapshot())
+    applyEvent(state, activity(1, 5))
+    expect(state.activityStatus?.text).toBe('Checking files')
+    applyEvent(state, event(7, { model: { type: 'text_delta', content_index: 0, text: 'A response' } }))
+    applyEvent(state, activity(2, 6))
+    expect(state.activityStatus).toBeUndefined()
+    applyEvent(state, activity(3, 7, { text: undefined, source: undefined }))
+    applyEvent(state, activity(5, 8, { segment: 2, text: 'Reading results' }))
+    applyEvent(state, activity(4, 8, { segment: 2, text: 'Out of order' }))
+    expect(state.activityStatus?.text).toBe('Reading results')
+    applyEvent(state, event(10, { type: 'run_end' }))
+    applyEvent(state, activity(6, 9, { segment: 2 }))
+    expect(state.activityStatus).toBeUndefined()
+  })
+
+  it('ignores activity for another run, clears it on Stop and refreshes it after a reconnect', () => {
+    let state = fromSnapshot(snapshot())
+    applyEvent(state, activity(1, 3, { run_id: 'previous' }))
+    expect(state.activityStatus).toBeUndefined()
+    applyEvent(state, activity(11, 4))
+    applyEvent(state, { epoch: 'server-a', view: { ...view, status: 'stopping', event_sequence: 5 } })
+    applyEvent(state, activity(12, 6))
+    expect(state.activityStatus).toBeUndefined()
+
+    state = reconcileSnapshot(state, snapshot())
+    applyEvent(state, activity(1, 6, { segment: 2 }))
+    expect(state.activityStatus).toMatchObject({ seq: 1, segment: 2 })
+    state = reconcileSnapshot(state, { ...snapshot(), epoch: 'server-b' })
+    expect(state.activityStatus).toBeUndefined()
+    expect(applyEvent(state, activity(13, 7))).toBe(false)
+  })
+
+  it('clears an old segment when an adapter commits a reply without streaming text', () => {
+    const state = fromSnapshot(snapshot())
+    applyEvent(state, activity(1, 3))
+    applyEvent(state, {
+      ...event(4, { type: 'entry_committed' }),
+      entry: entry('reply', 4, { run_id: 'run', message: { role: 'assistant', content: [{ type: 'text', text: 'Committed answer' }] } }),
+    })
+    expect(state.activityStatus).toBeUndefined()
+    applyEvent(state, activity(2, 3))
+    expect(state.activityStatus).toBeUndefined()
+  })
+})
 
 describe('reconciling live previews with durable history', () => {
   it('does not invent assistant turns for failed retries that produced no output', () => {
