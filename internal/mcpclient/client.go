@@ -313,7 +313,9 @@ func validToolName(name string) bool {
 		return false
 	}
 	for _, ch := range name {
-		if !(ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '_' || ch == '-' || ch == '.') {
+		switch {
+		case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z', ch >= '0' && ch <= '9', ch == '_', ch == '-', ch == '.':
+		default:
 			return false
 		}
 	}
