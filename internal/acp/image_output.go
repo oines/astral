@@ -88,7 +88,9 @@ func validImageBase64[T ~string | ~[]byte](data T) bool {
 	}
 	for i := 0; i < end; i++ {
 		c := data[i]
-		if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '+' || c == '/') {
+		switch {
+		case 'A' <= c && c <= 'Z', 'a' <= c && c <= 'z', '0' <= c && c <= '9', c == '+', c == '/':
+		default:
 			return false
 		}
 	}
