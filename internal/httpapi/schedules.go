@@ -24,20 +24,29 @@ type ScheduleUpdate struct {
 
 func (a *API) scheduleRoutes() {
 	h := a.Config.Harness
-	route[httpcontract.Empty, []domain.Schedule](a, "GET", "/schedules", "listSchedules", "Schedules", func(r *http.Request, _ httpcontract.Empty) ([]domain.Schedule, error) {
-		return h.Schedules.List(r.Context(), r.URL.Query().Get("agent_id"))
-	}, httpcontract.Parameter{Name: "agent_id", Description: "Omit to list schedules for all Bots."})
+	list := func(r *http.Request, _ httpcontract.Empty) ([]domain.Schedule, error) {
+		id, err := listedBotID(r)
+		if err != nil {
+			return nil, err
+		}
+		return h.Schedules.List(r.Context(), id)
+	}
+	route(a, "GET", "/schedules", "listSchedules", "Schedules", list, httpcontract.Parameter{Name: "agent_id", Description: "Omit to list schedules for all Bots."})
+	botRoute(a, "GET", "/schedules", "listSchedules", "Schedules", list)
 	route[ScheduleCreate, domain.Schedule](a, "POST", "/schedules", "createSchedule", "Schedules", func(r *http.Request, input ScheduleCreate) (domain.Schedule, error) {
 		return h.Schedules.Create(r.Context(), input.AgentID, input.Input)
 	})
-	route[httpcontract.Empty, domain.Schedule](a, "GET", "/schedules/{id}", "getSchedule", "Schedules", func(r *http.Request, _ httpcontract.Empty) (domain.Schedule, error) {
-		return h.Schedules.Get(r.Context(), "", r.PathValue("id"))
+	botRoute[schedule.Input, domain.Schedule](a, "POST", "/schedules", "createSchedule", "Schedules", func(r *http.Request, input schedule.Input) (domain.Schedule, error) {
+		return h.Schedules.Create(r.Context(), botID(r), input)
 	})
-	route[ScheduleUpdate, domain.Schedule](a, "PATCH", "/schedules/{id}", "updateSchedule", "Schedules", func(r *http.Request, input ScheduleUpdate) (domain.Schedule, error) {
-		return h.Schedules.Update(r.Context(), "", r.PathValue("id"), input.Input, input.Revision)
+	sharedBotRoute[httpcontract.Empty, domain.Schedule](a, "GET", "/schedules/{id}", "getSchedule", "Schedules", func(r *http.Request, _ httpcontract.Empty) (domain.Schedule, error) {
+		return h.Schedules.Get(r.Context(), botID(r), r.PathValue("id"))
 	})
-	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/schedules/{id}", "deleteSchedule", "Schedules", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
-		return httpcontract.OK{OK: true}, h.Schedules.Delete(r.Context(), "", r.PathValue("id"), revision(r))
+	sharedBotRoute[ScheduleUpdate, domain.Schedule](a, "PATCH", "/schedules/{id}", "updateSchedule", "Schedules", func(r *http.Request, input ScheduleUpdate) (domain.Schedule, error) {
+		return h.Schedules.Update(r.Context(), botID(r), r.PathValue("id"), input.Input, input.Revision)
+	})
+	sharedBotRoute[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/schedules/{id}", "deleteSchedule", "Schedules", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+		return httpcontract.OK{OK: true}, h.Schedules.Delete(r.Context(), botID(r), r.PathValue("id"), revision(r))
 	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
 	a.Contract.Describe(httpcontract.Operation{Method: "GET", Path: "/api/v1/schedules/events", ID: "scheduleEvents", Tag: "Schedules", Auth: true, ContentType: "text/event-stream", Query: []httpcontract.Parameter{{Name: "agent_id"}}})
 	a.mux.HandleFunc("GET /api/v1/schedules/events", a.scheduleEvents)

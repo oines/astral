@@ -279,6 +279,7 @@ func NewContext(ctx context.Context, config Config) (server *Server, err error) 
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) { httpcontract.JSON(w, 200, httpapi.Contract().Document()) })
 	computerMux := http.NewServeMux()
 	computerMux.Handle("/acp", s.managementBoundary(s.Owner.ACPHandler()))
+	computerMux.Handle(httpapi.BotAPIPrefix+"/", s.managementBoundary(s.Owner.BotHandler()))
 	for _, routes := range []*http.ServeMux{mux, computerMux} {
 		routes.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 			httpcontract.JSON(w, 200, map[string]string{"status": "ok", "version": s.Config.Version})

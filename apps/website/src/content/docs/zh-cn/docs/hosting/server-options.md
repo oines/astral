@@ -81,7 +81,7 @@ bash install-server.sh --allow-remote-management=false
 
 只想限制允许使用的域名或 IP 时，使用[主机名限制](/zh-cn/docs/hosting/security/#主机名限制)。
 
-[ACP 端点](/zh-cn/docs/hosting/acp/)使用 Bot 令牌。关闭远程管理后仍可连接 ACP，实际能否连接取决于服务器监听、反向代理和主机名限制。
+[Bot API](/zh-cn/docs/hosting/bot-api/) 和 [ACP 端点](/zh-cn/docs/hosting/acp/) 分别使用各自的 Bot 令牌。关闭远程管理后仍可接入，实际能否连接取决于服务器监听、反向代理和主机名限制。
 
 ## 代理位于另一台机器
 

@@ -10,6 +10,31 @@ import (
 	"github.com/oines/astral/internal/persistence"
 )
 
+func TestBotScopeFiltersNewSessionPlansWithoutSources(t *testing.T) {
+	s, now := fixture(t, nil)
+	owner := context.Background()
+	input := once(now.Add(time.Hour))
+	input.SessionMode, input.SessionID = "new", ""
+	foreign, err := s.Create(owner, "b", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bot := persistence.WithSessionScope(owner, "a", "")
+	own, err := s.Create(bot, "a", input)
+	if err != nil || own.SourceSessionID != "" {
+		t.Fatalf("own unbound plan: %+v, error %v", own, err)
+	}
+	if _, err := s.Create(bot, "b", input); !domain.IsMissing(err) {
+		t.Fatalf("Bot scope created a foreign plan: %v", err)
+	}
+	if _, err := s.Get(bot, "", foreign.ID); !domain.IsMissing(err) {
+		t.Fatalf("Bot scope got a foreign plan without an explicit filter: %v", err)
+	}
+	if plans, err := s.List(bot, ""); err != nil || len(plans) != 1 || plans[0].ID != own.ID {
+		t.Fatalf("Bot scope directory: %+v, error %v", plans, err)
+	}
+}
+
 func TestPrivateTargetPlansReauthorizeEveryOperation(t *testing.T) {
 	s, now := fixture(t, nil)
 	ctx := context.Background()

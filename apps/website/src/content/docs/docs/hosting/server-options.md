@@ -81,7 +81,7 @@ For manual operation, use `astral serve --allow-remote-management=false` or `AST
 
 To restrict the domains or IP addresses allowed for management access, use [hostname restriction](/docs/hosting/security/#hostname-restriction).
 
-The [ACP endpoint](/docs/hosting/acp/) uses Bot tokens and remains available with direct remote management off. Its reachability still depends on the listener, reverse proxy and hostname restriction.
+The [Bot API](/docs/hosting/bot-api/) and [ACP endpoint](/docs/hosting/acp/) remain available with direct remote management off. Each uses its own Bot credential. Reachability depends on the listener, reverse proxy and hostname restriction.
 
 ## A proxy on another machine
 

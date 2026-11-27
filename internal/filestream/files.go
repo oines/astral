@@ -186,16 +186,25 @@ func (s *Service) FreezeImages(ctx context.Context, agentID, sessionID string, m
 		if len(bytes) > 20<<20 {
 			return domain.Invalid("image exceeds the 20 MiB model input limit")
 		}
-		processed, err := core.ProcessImage(ctx, bytes, core.ImageOptions{})
+		image, err := PrepareImage(ctx, bytes, core.ImageOptions{})
 		if err != nil {
 			return err
 		}
-		if processed.IsError {
-			return domain.Invalid(processed.Content[0].Text)
-		}
-		image := processed.Content[1]
 		image.URL = part.URL
 		*part = image
 	}
 	return nil
+}
+
+// PrepareImage freezes bytes already available at admission, such as an
+// inline attachment, using the same representation as FreezeImages.
+func PrepareImage(ctx context.Context, data []byte, options core.ImageOptions) (core.Content, error) {
+	processed, err := core.ProcessImage(ctx, data, options)
+	if err != nil {
+		return core.Content{}, err
+	}
+	if processed.IsError {
+		return core.Content{}, domain.Invalid(processed.Content[0].Text)
+	}
+	return processed.Content[1], nil
 }

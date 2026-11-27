@@ -4,8 +4,8 @@ import { type _JSONValue, defineQueryOptions, type UseMutationOptions } from '@p
 
 import { serializeQueryKeyValue } from '../client';
 import { client } from '../client.gen';
-import { agentAccountOperation, agentAccountOperations, agentAccounts, agentAttachmentContent, agentCapabilities, agentCapability, agentComputerFileContent, agentComputers, agentContext, agentConversations, agentCopyComputerFile, agentCreateSchedule, agentCreateWakeEndpoint, agentDeleteSchedule, agentDeleteSharedSkill, agentDeleteWakeEndpoint, agentGetSchedule, agentHistory, agentManagedSkills, agentMessage, agentMessagePart, agentMessagePartContent, agentMessagePartRaw, agentMessageParts, agentMessages, agentMessageTool, agentModels, agentNapCatAvatarContent, agentNapCatEssenceContent, agentNapCatEssencePart, agentNapCatEssenceParts, agentNapCatMemberAvatarContent, agentPublishSharedSkill, agentResolveConversation, agentRollout, agentSchedules, agentSearchSessions, agentSendReceipt, agentSendText, agentSessions, agentTelegramStickerContent, agentUpdateSchedule, agentUpdateSession, agentUpdateWakeEndpoint, agentWakeEndpoint, agentWakeEndpoints, applyAgentModelPriority, applyServerUpdate, authAccount, authLogin, authLoginRecovery, authLoginTotp, authLogout, authorizeProvider, authPasskeyLoginBegin, authPasskeyLoginFinish, authPasskeyRegisterBegin, authPasskeyRegisterFinish, authPasskeyRemove, authPasswordless, authReauthenticate, authRecoveryCodes, authSessionRevoke, authSessionsRevoke, authSettings, authStatus, authTotpBegin, authTotpConfirm, authTotpRemove, bindConversation, bootstrap, callMountedMcpTool, checkServerUpdate, cleanConversationArchive, cleanupStorage, clearPending, compactSession, completeOnboarding, computerHost, computerMaintenance, connectAcp, continueSession, conversationMessages, createAcpToken, createLocalContainer, createSchedule, createSession, decideApproval, deleteAgent, deleteComputer, deleteConnection, deleteModel, deleteProvider, deleteSchedule, deleteSearchProvider, deleteSession, deleteWakeEndpoint, describeModel, disconnectTemporaryComputer, enrollComputer, eventSchema, exportRollout, fileContent, forkSession, getComputerOperation, getEnrollment, getFileReference, getNetworkSettings, getPreferences, getSchedule, getServerUpdate, getSession, getWakeEndpoint, historyImage, inputReceipt, listAcpTokens, listAgents, listBindings, listComputerDirectory, listComputers, listConnections, listConversations, listModels, listMountedMcpTools, listOutbox, listProviderPresets, listProviders, listSchedules, listSearchAdapters, listSearchProviders, listSessions, listWakeEndpoints, manageStorage, modelCatalog, modelRecommendation, movePending, observationDelivery, type Options, pollWeixinLogin, presetModels, providerAuthorization, reasoningFormats, reclaimStorage, refreshProviderModels, refreshStorage, removePending, resetStorageConversation, resolveConversation, resourceUsage, revokeAcpToken, revokeComputer, saveAgent, saveConnection, saveModel, saveNetworkSettings, savePreferences, saveProvider, saveSearchProvider, selectComputer, selectModel, sessionAttempt, sessionAttemptRequest, sessionAttempts, sessionComputerFileContent, sessionContext, sessionEntry, sessionHistory, sessionSnapshot, sessionTimeline, setConversationObservationContext, setConversationProactive, setConversationRetention, startWeixinLogin, stopSession, storageInfo, submitInput, testSearchProvider, triggerWakeEndpoint, unbindConversation, updateComputer, updateComputerDaemon, updatePending, updateSchedule, updateSession, updateWakeEndpoint, uploadAttachment, useLocalComputer, verifyModel } from '../sdk.gen';
-import type { AgentAccountOperationData, AgentAccountOperationError, AgentAccountOperationResponse, AgentAccountOperationsData, AgentAccountOperationsError, AgentAccountOperationsResponse, AgentAccountsData, AgentAccountsError, AgentAccountsResponse, AgentAttachmentContentData, AgentAttachmentContentError, AgentAttachmentContentResponse, AgentCapabilitiesData, AgentCapabilitiesError, AgentCapabilitiesResponse, AgentCapabilityData, AgentCapabilityError, AgentCapabilityResponse, AgentComputerFileContentData, AgentComputerFileContentError, AgentComputerFileContentResponse, AgentComputersData, AgentComputersError, AgentComputersResponse, AgentContextData, AgentContextError, AgentContextResponse, AgentConversationsData, AgentConversationsError, AgentConversationsResponse, AgentCopyComputerFileData, AgentCopyComputerFileError, AgentCopyComputerFileResponse, AgentCreateScheduleData, AgentCreateScheduleError, AgentCreateScheduleResponse, AgentCreateWakeEndpointData, AgentCreateWakeEndpointError, AgentCreateWakeEndpointResponse, AgentDeleteScheduleData, AgentDeleteScheduleError, AgentDeleteScheduleResponse, AgentDeleteSharedSkillData, AgentDeleteSharedSkillError, AgentDeleteSharedSkillResponse, AgentDeleteWakeEndpointData, AgentDeleteWakeEndpointError, AgentDeleteWakeEndpointResponse, AgentGetScheduleData, AgentGetScheduleError, AgentGetScheduleResponse, AgentHistoryData, AgentHistoryError, AgentHistoryResponse, AgentManagedSkillsData, AgentManagedSkillsError, AgentManagedSkillsResponse, AgentMessageData, AgentMessageError, AgentMessagePartContentData, AgentMessagePartContentError, AgentMessagePartContentResponse, AgentMessagePartData, AgentMessagePartError, AgentMessagePartRawData, AgentMessagePartRawError, AgentMessagePartResponse, AgentMessagePartsData, AgentMessagePartsError, AgentMessagePartsResponse, AgentMessageResponse, AgentMessagesData, AgentMessagesError, AgentMessagesResponse, AgentMessageToolData, AgentMessageToolError, AgentMessageToolResponse, AgentModelsData, AgentModelsError, AgentModelsResponse, AgentNapCatAvatarContentData, AgentNapCatAvatarContentError, AgentNapCatAvatarContentResponse, AgentNapCatEssenceContentData, AgentNapCatEssenceContentError, AgentNapCatEssenceContentResponse, AgentNapCatEssencePartData, AgentNapCatEssencePartError, AgentNapCatEssencePartResponse, AgentNapCatEssencePartsData, AgentNapCatEssencePartsError, AgentNapCatEssencePartsResponse, AgentNapCatMemberAvatarContentData, AgentNapCatMemberAvatarContentError, AgentNapCatMemberAvatarContentResponse, AgentPublishSharedSkillData, AgentPublishSharedSkillError, AgentPublishSharedSkillResponse, AgentResolveConversationData, AgentResolveConversationError, AgentResolveConversationResponse, AgentRolloutData, AgentRolloutError, AgentRolloutResponse, AgentSchedulesData, AgentSchedulesError, AgentSchedulesResponse, AgentSearchSessionsData, AgentSearchSessionsError, AgentSearchSessionsResponse, AgentSendReceiptData, AgentSendReceiptError, AgentSendReceiptResponse, AgentSendTextData, AgentSendTextError, AgentSendTextResponse, AgentSessionsData, AgentSessionsError, AgentSessionsResponse, AgentTelegramStickerContentData, AgentTelegramStickerContentError, AgentTelegramStickerContentResponse, AgentUpdateScheduleData, AgentUpdateScheduleError, AgentUpdateScheduleResponse, AgentUpdateSessionData, AgentUpdateSessionError, AgentUpdateSessionResponse, AgentUpdateWakeEndpointData, AgentUpdateWakeEndpointError, AgentUpdateWakeEndpointResponse, AgentWakeEndpointData, AgentWakeEndpointError, AgentWakeEndpointResponse, AgentWakeEndpointsData, AgentWakeEndpointsError, AgentWakeEndpointsResponse, ApplyAgentModelPriorityData, ApplyAgentModelPriorityError, ApplyAgentModelPriorityResponse, ApplyServerUpdateData, ApplyServerUpdateError, ApplyServerUpdateResponse, AuthAccountData, AuthAccountError, AuthAccountResponse, AuthLoginData, AuthLoginError, AuthLoginRecoveryData, AuthLoginRecoveryError, AuthLoginRecoveryResponse, AuthLoginResponse, AuthLoginTotpData, AuthLoginTotpError, AuthLoginTotpResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthorizeProviderData, AuthorizeProviderError, AuthorizeProviderResponse, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginError, AuthPasskeyLoginBeginResponse, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishError, AuthPasskeyLoginFinishResponse, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginError, AuthPasskeyRegisterBeginResponse, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishError, AuthPasskeyRegisterFinishResponse, AuthPasskeyRemoveData, AuthPasskeyRemoveError, AuthPasskeyRemoveResponse, AuthPasswordlessData, AuthPasswordlessError, AuthPasswordlessResponse, AuthReauthenticateData, AuthReauthenticateError, AuthReauthenticateResponse, AuthRecoveryCodesData, AuthRecoveryCodesError, AuthRecoveryCodesResponse, AuthSessionRevokeData, AuthSessionRevokeError, AuthSessionRevokeResponse, AuthSessionsRevokeData, AuthSessionsRevokeError, AuthSessionsRevokeResponse, AuthSettingsData, AuthSettingsError, AuthSettingsResponse, AuthStatusData, AuthStatusError, AuthStatusResponse, AuthTotpBeginData, AuthTotpBeginError, AuthTotpBeginResponse, AuthTotpConfirmData, AuthTotpConfirmError, AuthTotpConfirmResponse, AuthTotpRemoveData, AuthTotpRemoveError, AuthTotpRemoveResponse, BindConversationData, BindConversationError, BindConversationResponse, BootstrapData, BootstrapError, BootstrapResponse, CallMountedMcpToolData, CallMountedMcpToolError, CallMountedMcpToolResponse, CheckServerUpdateData, CheckServerUpdateError, CheckServerUpdateResponse, CleanConversationArchiveData, CleanConversationArchiveError, CleanConversationArchiveResponse, CleanupStorageData, CleanupStorageError, CleanupStorageResponse, ClearPendingData, ClearPendingError, ClearPendingResponse, CompactSessionData, CompactSessionError, CompactSessionResponse, CompleteOnboardingData, CompleteOnboardingError, CompleteOnboardingResponse, ComputerHostData, ComputerHostError, ComputerHostResponse, ComputerMaintenanceData, ComputerMaintenanceError, ComputerMaintenanceResponse, ConnectAcpData, ContinueSessionData, ContinueSessionError, ContinueSessionResponse, ConversationMessagesData, ConversationMessagesError, ConversationMessagesResponse, CreateAcpTokenData, CreateAcpTokenError, CreateAcpTokenResponse, CreateLocalContainerData, CreateLocalContainerError, CreateLocalContainerResponse, CreateScheduleData, CreateScheduleError, CreateScheduleResponse, CreateSessionData, CreateSessionError, CreateSessionResponse, DecideApprovalData, DecideApprovalError, DecideApprovalResponse, DeleteAgentData, DeleteAgentError, DeleteAgentResponse, DeleteComputerData, DeleteComputerError, DeleteComputerResponse, DeleteConnectionData, DeleteConnectionError, DeleteConnectionResponse, DeleteModelData, DeleteModelError, DeleteModelResponse, DeleteProviderData, DeleteProviderError, DeleteProviderResponse, DeleteScheduleData, DeleteScheduleError, DeleteScheduleResponse, DeleteSearchProviderData, DeleteSearchProviderError, DeleteSearchProviderResponse, DeleteSessionData, DeleteSessionError, DeleteSessionResponse, DeleteWakeEndpointData, DeleteWakeEndpointError, DeleteWakeEndpointResponse, DescribeModelData, DescribeModelError, DescribeModelResponse, DisconnectTemporaryComputerData, DisconnectTemporaryComputerError, DisconnectTemporaryComputerResponse, EnrollComputerData, EnrollComputerError, EnrollComputerResponse, EventSchemaData, EventSchemaError, EventSchemaResponse, ExportRolloutData, ExportRolloutError, ExportRolloutResponse, FileContentData, FileContentError, FileContentResponse, ForkSessionData, ForkSessionError, ForkSessionResponse, GetComputerOperationData, GetComputerOperationError, GetComputerOperationResponse, GetEnrollmentData, GetEnrollmentError, GetEnrollmentResponse, GetFileReferenceData, GetFileReferenceError, GetFileReferenceResponse, GetNetworkSettingsData, GetNetworkSettingsError, GetNetworkSettingsResponse, GetPreferencesData, GetPreferencesError, GetPreferencesResponse, GetScheduleData, GetScheduleError, GetScheduleResponse, GetServerUpdateData, GetServerUpdateError, GetServerUpdateResponse, GetSessionData, GetSessionError, GetSessionResponse, GetWakeEndpointData, GetWakeEndpointError, GetWakeEndpointResponse, HistoryImageData, HistoryImageError, HistoryImageResponse, InputReceiptData, InputReceiptError, InputReceiptResponse, ListAcpTokensData, ListAcpTokensError, ListAcpTokensResponse, ListAgentsData, ListAgentsError, ListAgentsResponse, ListBindingsData, ListBindingsError, ListBindingsResponse, ListComputerDirectoryData, ListComputerDirectoryError, ListComputerDirectoryResponse, ListComputersData, ListComputersError, ListComputersResponse, ListConnectionsData, ListConnectionsError, ListConnectionsResponse, ListConversationsData, ListConversationsError, ListConversationsResponse, ListModelsData, ListModelsError, ListModelsResponse, ListMountedMcpToolsData, ListMountedMcpToolsError, ListMountedMcpToolsResponse, ListOutboxData, ListOutboxError, ListOutboxResponse, ListProviderPresetsData, ListProviderPresetsError, ListProviderPresetsResponse, ListProvidersData, ListProvidersError, ListProvidersResponse, ListSchedulesData, ListSchedulesError, ListSchedulesResponse, ListSearchAdaptersData, ListSearchAdaptersError, ListSearchAdaptersResponse, ListSearchProvidersData, ListSearchProvidersError, ListSearchProvidersResponse, ListSessionsData, ListSessionsError, ListSessionsResponse, ListWakeEndpointsData, ListWakeEndpointsError, ListWakeEndpointsResponse, ManageStorageData, ManageStorageError, ManageStorageResponse, ModelCatalogData, ModelCatalogError, ModelCatalogResponse, ModelRecommendationData, ModelRecommendationError, ModelRecommendationResponse, MovePendingData, MovePendingError, MovePendingResponse, ObservationDeliveryData, ObservationDeliveryError, ObservationDeliveryResponse, PollWeixinLoginData, PollWeixinLoginError, PollWeixinLoginResponse, PresetModelsData, PresetModelsError, PresetModelsResponse, ProviderAuthorizationData, ProviderAuthorizationError, ProviderAuthorizationResponse, ReasoningFormatsData, ReasoningFormatsError, ReasoningFormatsResponse, ReclaimStorageData, ReclaimStorageError, ReclaimStorageResponse, RefreshProviderModelsData, RefreshProviderModelsError, RefreshProviderModelsResponse, RefreshStorageData, RefreshStorageError, RefreshStorageResponse, RemovePendingData, RemovePendingError, RemovePendingResponse, ResetStorageConversationData, ResetStorageConversationError, ResetStorageConversationResponse, ResolveConversationData, ResolveConversationError, ResolveConversationResponse, ResourceUsageData, ResourceUsageError, ResourceUsageResponse, RevokeAcpTokenData, RevokeAcpTokenError, RevokeAcpTokenResponse, RevokeComputerData, RevokeComputerError, RevokeComputerResponse, SaveAgentData, SaveAgentError, SaveAgentResponse, SaveConnectionData, SaveConnectionError, SaveConnectionResponse, SaveModelData, SaveModelError, SaveModelResponse, SaveNetworkSettingsData, SaveNetworkSettingsError, SaveNetworkSettingsResponse, SavePreferencesData, SavePreferencesError, SavePreferencesResponse, SaveProviderData, SaveProviderError, SaveProviderResponse, SaveSearchProviderData, SaveSearchProviderError, SaveSearchProviderResponse, SelectComputerData, SelectComputerError, SelectComputerResponse, SelectModelData, SelectModelError, SelectModelResponse, SessionAttemptData, SessionAttemptError, SessionAttemptRequestData, SessionAttemptRequestError, SessionAttemptRequestResponse, SessionAttemptResponse, SessionAttemptsData, SessionAttemptsError, SessionAttemptsResponse, SessionComputerFileContentData, SessionComputerFileContentError, SessionComputerFileContentResponse, SessionContextData, SessionContextError, SessionContextResponse, SessionEntryData, SessionEntryError, SessionEntryResponse, SessionHistoryData, SessionHistoryError, SessionHistoryResponse, SessionSnapshotData, SessionSnapshotError, SessionSnapshotResponse, SessionTimelineData, SessionTimelineError, SessionTimelineResponse, SetConversationObservationContextData, SetConversationObservationContextError, SetConversationObservationContextResponse, SetConversationProactiveData, SetConversationProactiveError, SetConversationProactiveResponse, SetConversationRetentionData, SetConversationRetentionError, SetConversationRetentionResponse, StartWeixinLoginData, StartWeixinLoginError, StartWeixinLoginResponse, StopSessionData, StopSessionError, StopSessionResponse, StorageInfoData, StorageInfoError, StorageInfoResponse, SubmitInputData, SubmitInputError, SubmitInputResponse, TestSearchProviderData, TestSearchProviderError, TestSearchProviderResponse, TriggerWakeEndpointData, TriggerWakeEndpointError, TriggerWakeEndpointResponse, UnbindConversationData, UnbindConversationError, UnbindConversationResponse, UpdateComputerDaemonData, UpdateComputerDaemonError, UpdateComputerDaemonResponse, UpdateComputerData, UpdateComputerError, UpdateComputerResponse, UpdatePendingData, UpdatePendingError, UpdatePendingResponse, UpdateScheduleData, UpdateScheduleError, UpdateScheduleResponse, UpdateSessionData, UpdateSessionError, UpdateSessionResponse, UpdateWakeEndpointData, UpdateWakeEndpointError, UpdateWakeEndpointResponse, UploadAttachmentData, UploadAttachmentError, UploadAttachmentResponse, UseLocalComputerData, UseLocalComputerError, UseLocalComputerResponse, VerifyModelData, VerifyModelError, VerifyModelResponse } from '../types.gen';
+import { agentAccountOperation, agentAccountOperations, agentAccounts, agentAttachmentContent, agentCapabilities, agentCapability, agentComputerFileContent, agentComputers, agentContext, agentConversations, agentCopyComputerFile, agentCreateSchedule, agentCreateWakeEndpoint, agentDeleteSchedule, agentDeleteSharedSkill, agentDeleteWakeEndpoint, agentGetSchedule, agentHistory, agentManagedSkills, agentMessage, agentMessagePart, agentMessagePartContent, agentMessagePartRaw, agentMessageParts, agentMessages, agentMessageTool, agentModels, agentNapCatAvatarContent, agentNapCatEssenceContent, agentNapCatEssencePart, agentNapCatEssenceParts, agentNapCatMemberAvatarContent, agentPublishSharedSkill, agentResolveConversation, agentRollout, agentSchedules, agentSearchSessions, agentSendReceipt, agentSendText, agentSessions, agentTelegramStickerContent, agentUpdateSchedule, agentUpdateSession, agentUpdateWakeEndpoint, agentWakeEndpoint, agentWakeEndpoints, applyAgentModelPriority, applyServerUpdate, authAccount, authLogin, authLoginRecovery, authLoginTotp, authLogout, authorizeProvider, authPasskeyLoginBegin, authPasskeyLoginFinish, authPasskeyRegisterBegin, authPasskeyRegisterFinish, authPasskeyRemove, authPasswordless, authReauthenticate, authRecoveryCodes, authSessionRevoke, authSessionsRevoke, authSettings, authStatus, authTotpBegin, authTotpConfirm, authTotpRemove, bindConversation, bootstrap, botClearPending, botCompactSession, botContinueSession, botCreateSchedule, botCreateSession, botDecideApproval, botDeleteSchedule, botDeleteWakeEndpoint, botEventSchema, botFileContent, botForkSession, botGetFileReference, botGetSchedule, botGetSelf, botGetSession, botGetWakeEndpoint, botHistoryImage, botInputReceipt, botListComputerDirectory, botListComputers, botListModels, botListSchedules, botListSessions, botListSubagents, botListWakeEndpoints, botMovePending, botRemovePending, botSelectComputer, botSelectModel, botSessionComputerFileContent, botSessionContext, botSessionEntry, botSessionHistory, botSessionSnapshot, botSessionTimeline, botStopSession, botSubmitInput, botUpdatePending, botUpdateSchedule, botUpdateSelf, botUpdateSession, botUpdateWakeEndpoint, botUploadAttachment, callMountedMcpTool, checkServerUpdate, cleanConversationArchive, cleanupStorage, clearPending, compactSession, completeOnboarding, computerHost, computerMaintenance, connectAcp, continueSession, conversationMessages, createAcpToken, createBotApiToken, createLocalContainer, createSchedule, createSession, decideApproval, deleteAgent, deleteComputer, deleteConnection, deleteModel, deleteProvider, deleteSchedule, deleteSearchProvider, deleteSession, deleteWakeEndpoint, describeModel, disconnectTemporaryComputer, enrollComputer, eventSchema, exportRollout, fileContent, forkSession, getComputerOperation, getEnrollment, getFileReference, getNetworkSettings, getPreferences, getSchedule, getServerUpdate, getSession, getWakeEndpoint, historyImage, inputReceipt, listAcpTokens, listAgents, listBindings, listBotApiTokens, listComputerDirectory, listComputers, listConnections, listConversations, listModels, listMountedMcpTools, listOutbox, listProviderPresets, listProviders, listSchedules, listSearchAdapters, listSearchProviders, listSessions, listWakeEndpoints, manageStorage, modelCatalog, modelRecommendation, movePending, observationDelivery, type Options, pollWeixinLogin, presetModels, providerAuthorization, reasoningFormats, reclaimStorage, refreshProviderModels, refreshStorage, removePending, resetStorageConversation, resolveConversation, resourceUsage, revokeAcpToken, revokeBotApiToken, revokeComputer, saveAgent, saveConnection, saveModel, saveNetworkSettings, savePreferences, saveProvider, saveSearchProvider, selectComputer, selectModel, sessionAttempt, sessionAttemptRequest, sessionAttempts, sessionComputerFileContent, sessionContext, sessionEntry, sessionHistory, sessionSnapshot, sessionTimeline, setConversationObservationContext, setConversationProactive, setConversationRetention, startWeixinLogin, stopSession, storageInfo, submitInput, testSearchProvider, triggerWakeEndpoint, unbindConversation, updateComputer, updateComputerDaemon, updatePending, updateSchedule, updateSession, updateWakeEndpoint, uploadAttachment, useLocalComputer, verifyModel } from '../sdk.gen';
+import type { AgentAccountOperationData, AgentAccountOperationError, AgentAccountOperationResponse, AgentAccountOperationsData, AgentAccountOperationsError, AgentAccountOperationsResponse, AgentAccountsData, AgentAccountsError, AgentAccountsResponse, AgentAttachmentContentData, AgentAttachmentContentError, AgentAttachmentContentResponse, AgentCapabilitiesData, AgentCapabilitiesError, AgentCapabilitiesResponse, AgentCapabilityData, AgentCapabilityError, AgentCapabilityResponse, AgentComputerFileContentData, AgentComputerFileContentError, AgentComputerFileContentResponse, AgentComputersData, AgentComputersError, AgentComputersResponse, AgentContextData, AgentContextError, AgentContextResponse, AgentConversationsData, AgentConversationsError, AgentConversationsResponse, AgentCopyComputerFileData, AgentCopyComputerFileError, AgentCopyComputerFileResponse, AgentCreateScheduleData, AgentCreateScheduleError, AgentCreateScheduleResponse, AgentCreateWakeEndpointData, AgentCreateWakeEndpointError, AgentCreateWakeEndpointResponse, AgentDeleteScheduleData, AgentDeleteScheduleError, AgentDeleteScheduleResponse, AgentDeleteSharedSkillData, AgentDeleteSharedSkillError, AgentDeleteSharedSkillResponse, AgentDeleteWakeEndpointData, AgentDeleteWakeEndpointError, AgentDeleteWakeEndpointResponse, AgentGetScheduleData, AgentGetScheduleError, AgentGetScheduleResponse, AgentHistoryData, AgentHistoryError, AgentHistoryResponse, AgentManagedSkillsData, AgentManagedSkillsError, AgentManagedSkillsResponse, AgentMessageData, AgentMessageError, AgentMessagePartContentData, AgentMessagePartContentError, AgentMessagePartContentResponse, AgentMessagePartData, AgentMessagePartError, AgentMessagePartRawData, AgentMessagePartRawError, AgentMessagePartResponse, AgentMessagePartsData, AgentMessagePartsError, AgentMessagePartsResponse, AgentMessageResponse, AgentMessagesData, AgentMessagesError, AgentMessagesResponse, AgentMessageToolData, AgentMessageToolError, AgentMessageToolResponse, AgentModelsData, AgentModelsError, AgentModelsResponse, AgentNapCatAvatarContentData, AgentNapCatAvatarContentError, AgentNapCatAvatarContentResponse, AgentNapCatEssenceContentData, AgentNapCatEssenceContentError, AgentNapCatEssenceContentResponse, AgentNapCatEssencePartData, AgentNapCatEssencePartError, AgentNapCatEssencePartResponse, AgentNapCatEssencePartsData, AgentNapCatEssencePartsError, AgentNapCatEssencePartsResponse, AgentNapCatMemberAvatarContentData, AgentNapCatMemberAvatarContentError, AgentNapCatMemberAvatarContentResponse, AgentPublishSharedSkillData, AgentPublishSharedSkillError, AgentPublishSharedSkillResponse, AgentResolveConversationData, AgentResolveConversationError, AgentResolveConversationResponse, AgentRolloutData, AgentRolloutError, AgentRolloutResponse, AgentSchedulesData, AgentSchedulesError, AgentSchedulesResponse, AgentSearchSessionsData, AgentSearchSessionsError, AgentSearchSessionsResponse, AgentSendReceiptData, AgentSendReceiptError, AgentSendReceiptResponse, AgentSendTextData, AgentSendTextError, AgentSendTextResponse, AgentSessionsData, AgentSessionsError, AgentSessionsResponse, AgentTelegramStickerContentData, AgentTelegramStickerContentError, AgentTelegramStickerContentResponse, AgentUpdateScheduleData, AgentUpdateScheduleError, AgentUpdateScheduleResponse, AgentUpdateSessionData, AgentUpdateSessionError, AgentUpdateSessionResponse, AgentUpdateWakeEndpointData, AgentUpdateWakeEndpointError, AgentUpdateWakeEndpointResponse, AgentWakeEndpointData, AgentWakeEndpointError, AgentWakeEndpointResponse, AgentWakeEndpointsData, AgentWakeEndpointsError, AgentWakeEndpointsResponse, ApplyAgentModelPriorityData, ApplyAgentModelPriorityError, ApplyAgentModelPriorityResponse, ApplyServerUpdateData, ApplyServerUpdateError, ApplyServerUpdateResponse, AuthAccountData, AuthAccountError, AuthAccountResponse, AuthLoginData, AuthLoginError, AuthLoginRecoveryData, AuthLoginRecoveryError, AuthLoginRecoveryResponse, AuthLoginResponse, AuthLoginTotpData, AuthLoginTotpError, AuthLoginTotpResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthorizeProviderData, AuthorizeProviderError, AuthorizeProviderResponse, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginError, AuthPasskeyLoginBeginResponse, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishError, AuthPasskeyLoginFinishResponse, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginError, AuthPasskeyRegisterBeginResponse, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishError, AuthPasskeyRegisterFinishResponse, AuthPasskeyRemoveData, AuthPasskeyRemoveError, AuthPasskeyRemoveResponse, AuthPasswordlessData, AuthPasswordlessError, AuthPasswordlessResponse, AuthReauthenticateData, AuthReauthenticateError, AuthReauthenticateResponse, AuthRecoveryCodesData, AuthRecoveryCodesError, AuthRecoveryCodesResponse, AuthSessionRevokeData, AuthSessionRevokeError, AuthSessionRevokeResponse, AuthSessionsRevokeData, AuthSessionsRevokeError, AuthSessionsRevokeResponse, AuthSettingsData, AuthSettingsError, AuthSettingsResponse, AuthStatusData, AuthStatusError, AuthStatusResponse, AuthTotpBeginData, AuthTotpBeginError, AuthTotpBeginResponse, AuthTotpConfirmData, AuthTotpConfirmError, AuthTotpConfirmResponse, AuthTotpRemoveData, AuthTotpRemoveError, AuthTotpRemoveResponse, BindConversationData, BindConversationError, BindConversationResponse, BootstrapData, BootstrapError, BootstrapResponse, BotClearPendingData, BotClearPendingError, BotClearPendingResponse, BotCompactSessionData, BotCompactSessionError, BotCompactSessionResponse, BotContinueSessionData, BotContinueSessionError, BotContinueSessionResponse, BotCreateScheduleData, BotCreateScheduleError, BotCreateScheduleResponse, BotCreateSessionData, BotCreateSessionError, BotCreateSessionResponse, BotDecideApprovalData, BotDecideApprovalError, BotDecideApprovalResponse, BotDeleteScheduleData, BotDeleteScheduleError, BotDeleteScheduleResponse, BotDeleteWakeEndpointData, BotDeleteWakeEndpointError, BotDeleteWakeEndpointResponse, BotEventSchemaData, BotEventSchemaError, BotEventSchemaResponse, BotFileContentData, BotFileContentError, BotFileContentResponse, BotForkSessionData, BotForkSessionError, BotForkSessionResponse, BotGetFileReferenceData, BotGetFileReferenceError, BotGetFileReferenceResponse, BotGetScheduleData, BotGetScheduleError, BotGetScheduleResponse, BotGetSelfData, BotGetSelfError, BotGetSelfResponse, BotGetSessionData, BotGetSessionError, BotGetSessionResponse, BotGetWakeEndpointData, BotGetWakeEndpointError, BotGetWakeEndpointResponse, BotHistoryImageData, BotHistoryImageError, BotHistoryImageResponse, BotInputReceiptData, BotInputReceiptError, BotInputReceiptResponse, BotListComputerDirectoryData, BotListComputerDirectoryError, BotListComputerDirectoryResponse, BotListComputersData, BotListComputersError, BotListComputersResponse, BotListModelsData, BotListModelsError, BotListModelsResponse, BotListSchedulesData, BotListSchedulesError, BotListSchedulesResponse, BotListSessionsData, BotListSessionsError, BotListSessionsResponse, BotListSubagentsData, BotListSubagentsError, BotListSubagentsResponse, BotListWakeEndpointsData, BotListWakeEndpointsError, BotListWakeEndpointsResponse, BotMovePendingData, BotMovePendingError, BotMovePendingResponse, BotRemovePendingData, BotRemovePendingError, BotRemovePendingResponse, BotSelectComputerData, BotSelectComputerError, BotSelectComputerResponse, BotSelectModelData, BotSelectModelError, BotSelectModelResponse, BotSessionComputerFileContentData, BotSessionComputerFileContentError, BotSessionComputerFileContentResponse, BotSessionContextData, BotSessionContextError, BotSessionContextResponse, BotSessionEntryData, BotSessionEntryError, BotSessionEntryResponse, BotSessionHistoryData, BotSessionHistoryError, BotSessionHistoryResponse, BotSessionSnapshotData, BotSessionSnapshotError, BotSessionSnapshotResponse, BotSessionTimelineData, BotSessionTimelineError, BotSessionTimelineResponse, BotStopSessionData, BotStopSessionError, BotStopSessionResponse, BotSubmitInputData, BotSubmitInputError, BotSubmitInputResponse, BotUpdatePendingData, BotUpdatePendingError, BotUpdatePendingResponse, BotUpdateScheduleData, BotUpdateScheduleError, BotUpdateScheduleResponse, BotUpdateSelfData, BotUpdateSelfError, BotUpdateSelfResponse, BotUpdateSessionData, BotUpdateSessionError, BotUpdateSessionResponse, BotUpdateWakeEndpointData, BotUpdateWakeEndpointError, BotUpdateWakeEndpointResponse, BotUploadAttachmentData, BotUploadAttachmentError, BotUploadAttachmentResponse, CallMountedMcpToolData, CallMountedMcpToolError, CallMountedMcpToolResponse, CheckServerUpdateData, CheckServerUpdateError, CheckServerUpdateResponse, CleanConversationArchiveData, CleanConversationArchiveError, CleanConversationArchiveResponse, CleanupStorageData, CleanupStorageError, CleanupStorageResponse, ClearPendingData, ClearPendingError, ClearPendingResponse, CompactSessionData, CompactSessionError, CompactSessionResponse, CompleteOnboardingData, CompleteOnboardingError, CompleteOnboardingResponse, ComputerHostData, ComputerHostError, ComputerHostResponse, ComputerMaintenanceData, ComputerMaintenanceError, ComputerMaintenanceResponse, ConnectAcpData, ContinueSessionData, ContinueSessionError, ContinueSessionResponse, ConversationMessagesData, ConversationMessagesError, ConversationMessagesResponse, CreateAcpTokenData, CreateAcpTokenError, CreateAcpTokenResponse, CreateBotApiTokenData, CreateBotApiTokenError, CreateBotApiTokenResponse, CreateLocalContainerData, CreateLocalContainerError, CreateLocalContainerResponse, CreateScheduleData, CreateScheduleError, CreateScheduleResponse, CreateSessionData, CreateSessionError, CreateSessionResponse, DecideApprovalData, DecideApprovalError, DecideApprovalResponse, DeleteAgentData, DeleteAgentError, DeleteAgentResponse, DeleteComputerData, DeleteComputerError, DeleteComputerResponse, DeleteConnectionData, DeleteConnectionError, DeleteConnectionResponse, DeleteModelData, DeleteModelError, DeleteModelResponse, DeleteProviderData, DeleteProviderError, DeleteProviderResponse, DeleteScheduleData, DeleteScheduleError, DeleteScheduleResponse, DeleteSearchProviderData, DeleteSearchProviderError, DeleteSearchProviderResponse, DeleteSessionData, DeleteSessionError, DeleteSessionResponse, DeleteWakeEndpointData, DeleteWakeEndpointError, DeleteWakeEndpointResponse, DescribeModelData, DescribeModelError, DescribeModelResponse, DisconnectTemporaryComputerData, DisconnectTemporaryComputerError, DisconnectTemporaryComputerResponse, EnrollComputerData, EnrollComputerError, EnrollComputerResponse, EventSchemaData, EventSchemaError, EventSchemaResponse, ExportRolloutData, ExportRolloutError, ExportRolloutResponse, FileContentData, FileContentError, FileContentResponse, ForkSessionData, ForkSessionError, ForkSessionResponse, GetComputerOperationData, GetComputerOperationError, GetComputerOperationResponse, GetEnrollmentData, GetEnrollmentError, GetEnrollmentResponse, GetFileReferenceData, GetFileReferenceError, GetFileReferenceResponse, GetNetworkSettingsData, GetNetworkSettingsError, GetNetworkSettingsResponse, GetPreferencesData, GetPreferencesError, GetPreferencesResponse, GetScheduleData, GetScheduleError, GetScheduleResponse, GetServerUpdateData, GetServerUpdateError, GetServerUpdateResponse, GetSessionData, GetSessionError, GetSessionResponse, GetWakeEndpointData, GetWakeEndpointError, GetWakeEndpointResponse, HistoryImageData, HistoryImageError, HistoryImageResponse, InputReceiptData, InputReceiptError, InputReceiptResponse, ListAcpTokensData, ListAcpTokensError, ListAcpTokensResponse, ListAgentsData, ListAgentsError, ListAgentsResponse, ListBindingsData, ListBindingsError, ListBindingsResponse, ListBotApiTokensData, ListBotApiTokensError, ListBotApiTokensResponse, ListComputerDirectoryData, ListComputerDirectoryError, ListComputerDirectoryResponse, ListComputersData, ListComputersError, ListComputersResponse, ListConnectionsData, ListConnectionsError, ListConnectionsResponse, ListConversationsData, ListConversationsError, ListConversationsResponse, ListModelsData, ListModelsError, ListModelsResponse, ListMountedMcpToolsData, ListMountedMcpToolsError, ListMountedMcpToolsResponse, ListOutboxData, ListOutboxError, ListOutboxResponse, ListProviderPresetsData, ListProviderPresetsError, ListProviderPresetsResponse, ListProvidersData, ListProvidersError, ListProvidersResponse, ListSchedulesData, ListSchedulesError, ListSchedulesResponse, ListSearchAdaptersData, ListSearchAdaptersError, ListSearchAdaptersResponse, ListSearchProvidersData, ListSearchProvidersError, ListSearchProvidersResponse, ListSessionsData, ListSessionsError, ListSessionsResponse, ListWakeEndpointsData, ListWakeEndpointsError, ListWakeEndpointsResponse, ManageStorageData, ManageStorageError, ManageStorageResponse, ModelCatalogData, ModelCatalogError, ModelCatalogResponse, ModelRecommendationData, ModelRecommendationError, ModelRecommendationResponse, MovePendingData, MovePendingError, MovePendingResponse, ObservationDeliveryData, ObservationDeliveryError, ObservationDeliveryResponse, PollWeixinLoginData, PollWeixinLoginError, PollWeixinLoginResponse, PresetModelsData, PresetModelsError, PresetModelsResponse, ProviderAuthorizationData, ProviderAuthorizationError, ProviderAuthorizationResponse, ReasoningFormatsData, ReasoningFormatsError, ReasoningFormatsResponse, ReclaimStorageData, ReclaimStorageError, ReclaimStorageResponse, RefreshProviderModelsData, RefreshProviderModelsError, RefreshProviderModelsResponse, RefreshStorageData, RefreshStorageError, RefreshStorageResponse, RemovePendingData, RemovePendingError, RemovePendingResponse, ResetStorageConversationData, ResetStorageConversationError, ResetStorageConversationResponse, ResolveConversationData, ResolveConversationError, ResolveConversationResponse, ResourceUsageData, ResourceUsageError, ResourceUsageResponse, RevokeAcpTokenData, RevokeAcpTokenError, RevokeAcpTokenResponse, RevokeBotApiTokenData, RevokeBotApiTokenError, RevokeBotApiTokenResponse, RevokeComputerData, RevokeComputerError, RevokeComputerResponse, SaveAgentData, SaveAgentError, SaveAgentResponse, SaveConnectionData, SaveConnectionError, SaveConnectionResponse, SaveModelData, SaveModelError, SaveModelResponse, SaveNetworkSettingsData, SaveNetworkSettingsError, SaveNetworkSettingsResponse, SavePreferencesData, SavePreferencesError, SavePreferencesResponse, SaveProviderData, SaveProviderError, SaveProviderResponse, SaveSearchProviderData, SaveSearchProviderError, SaveSearchProviderResponse, SelectComputerData, SelectComputerError, SelectComputerResponse, SelectModelData, SelectModelError, SelectModelResponse, SessionAttemptData, SessionAttemptError, SessionAttemptRequestData, SessionAttemptRequestError, SessionAttemptRequestResponse, SessionAttemptResponse, SessionAttemptsData, SessionAttemptsError, SessionAttemptsResponse, SessionComputerFileContentData, SessionComputerFileContentError, SessionComputerFileContentResponse, SessionContextData, SessionContextError, SessionContextResponse, SessionEntryData, SessionEntryError, SessionEntryResponse, SessionHistoryData, SessionHistoryError, SessionHistoryResponse, SessionSnapshotData, SessionSnapshotError, SessionSnapshotResponse, SessionTimelineData, SessionTimelineError, SessionTimelineResponse, SetConversationObservationContextData, SetConversationObservationContextError, SetConversationObservationContextResponse, SetConversationProactiveData, SetConversationProactiveError, SetConversationProactiveResponse, SetConversationRetentionData, SetConversationRetentionError, SetConversationRetentionResponse, StartWeixinLoginData, StartWeixinLoginError, StartWeixinLoginResponse, StopSessionData, StopSessionError, StopSessionResponse, StorageInfoData, StorageInfoError, StorageInfoResponse, SubmitInputData, SubmitInputError, SubmitInputResponse, TestSearchProviderData, TestSearchProviderError, TestSearchProviderResponse, TriggerWakeEndpointData, TriggerWakeEndpointError, TriggerWakeEndpointResponse, UnbindConversationData, UnbindConversationError, UnbindConversationResponse, UpdateComputerDaemonData, UpdateComputerDaemonError, UpdateComputerDaemonResponse, UpdateComputerData, UpdateComputerError, UpdateComputerResponse, UpdatePendingData, UpdatePendingError, UpdatePendingResponse, UpdateScheduleData, UpdateScheduleError, UpdateScheduleResponse, UpdateSessionData, UpdateSessionError, UpdateSessionResponse, UpdateWakeEndpointData, UpdateWakeEndpointError, UpdateWakeEndpointResponse, UploadAttachmentData, UploadAttachmentError, UploadAttachmentResponse, UseLocalComputerData, UseLocalComputerError, UseLocalComputerResponse, VerifyModelData, VerifyModelError, VerifyModelResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'path'> & {
@@ -134,6 +134,42 @@ export const revokeAcpTokenMutation = (options?: Partial<Options<RevokeAcpTokenD
 export const applyAgentModelPriorityMutation = (options?: Partial<Options<ApplyAgentModelPriorityData>>): UseMutationOptions<ApplyAgentModelPriorityResponse, Options<ApplyAgentModelPriorityData>, ApplyAgentModelPriorityError> => ({
     mutation: async (vars) => {
         const { data } = await applyAgentModelPriority({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const listBotApiTokensQueryKey = (options: Options<ListBotApiTokensData>) => createQueryKey('listBotApiTokens', options);
+
+export const listBotApiTokensQuery = defineQueryOptions<Options<ListBotApiTokensData>, ListBotApiTokensResponse, ListBotApiTokensError>((options: Options<ListBotApiTokensData>) => ({
+    key: listBotApiTokensQueryKey(options),
+    query: async (context) => {
+        const { data } = await listBotApiTokens({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const createBotApiTokenMutation = (options?: Partial<Options<CreateBotApiTokenData>>): UseMutationOptions<CreateBotApiTokenResponse, Options<CreateBotApiTokenData>, CreateBotApiTokenError> => ({
+    mutation: async (vars) => {
+        const { data } = await createBotApiToken({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const revokeBotApiTokenMutation = (options?: Partial<Options<RevokeBotApiTokenData>>): UseMutationOptions<RevokeBotApiTokenResponse, Options<RevokeBotApiTokenData>, RevokeBotApiTokenError> => ({
+    mutation: async (vars) => {
+        const { data } = await revokeBotApiToken({
             ...options,
             ...vars,
             throwOnError: true
@@ -348,6 +384,548 @@ export const bootstrapQuery = defineQueryOptions<Options<BootstrapData>, Bootstr
         return data;
     }
 }));
+
+export const botListComputersQueryKey = (options?: Options<BotListComputersData>) => createQueryKey('botListComputers', options);
+
+export const botListComputersQuery = defineQueryOptions<Options<BotListComputersData>, BotListComputersResponse, BotListComputersError>((options?: Options<BotListComputersData>) => ({
+    key: botListComputersQueryKey(options),
+    query: async (context) => {
+        const { data } = await botListComputers({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botListComputerDirectoryQueryKey = (options: Options<BotListComputerDirectoryData>) => createQueryKey('botListComputerDirectory', options);
+
+export const botListComputerDirectoryQuery = defineQueryOptions<Options<BotListComputerDirectoryData>, BotListComputerDirectoryResponse, BotListComputerDirectoryError>((options: Options<BotListComputerDirectoryData>) => ({
+    key: botListComputerDirectoryQueryKey(options),
+    query: async (context) => {
+        const { data } = await botListComputerDirectory({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botEventSchemaQueryKey = (options?: Options<BotEventSchemaData>) => createQueryKey('botEventSchema', options);
+
+export const botEventSchemaQuery = defineQueryOptions<Options<BotEventSchemaData>, BotEventSchemaResponse, BotEventSchemaError>((options?: Options<BotEventSchemaData>) => ({
+    key: botEventSchemaQueryKey(options),
+    query: async (context) => {
+        const { data } = await botEventSchema({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botGetFileReferenceQueryKey = (options: Options<BotGetFileReferenceData>) => createQueryKey('botGetFileReference', options);
+
+export const botGetFileReferenceQuery = defineQueryOptions<Options<BotGetFileReferenceData>, BotGetFileReferenceResponse, BotGetFileReferenceError>((options: Options<BotGetFileReferenceData>) => ({
+    key: botGetFileReferenceQueryKey(options),
+    query: async (context) => {
+        const { data } = await botGetFileReference({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botFileContentQueryKey = (options: Options<BotFileContentData>) => createQueryKey('botFileContent', options);
+
+export const botFileContentQuery = defineQueryOptions<Options<BotFileContentData>, BotFileContentResponse, BotFileContentError>((options: Options<BotFileContentData>) => ({
+    key: botFileContentQueryKey(options),
+    query: async (context) => {
+        const { data } = await botFileContent({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botListModelsQueryKey = (options?: Options<BotListModelsData>) => createQueryKey('botListModels', options);
+
+export const botListModelsQuery = defineQueryOptions<Options<BotListModelsData>, BotListModelsResponse, BotListModelsError>((options?: Options<BotListModelsData>) => ({
+    key: botListModelsQueryKey(options),
+    query: async (context) => {
+        const { data } = await botListModels({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botListSchedulesQueryKey = (options?: Options<BotListSchedulesData>) => createQueryKey('botListSchedules', options);
+
+export const botListSchedulesQuery = defineQueryOptions<Options<BotListSchedulesData>, BotListSchedulesResponse, BotListSchedulesError>((options?: Options<BotListSchedulesData>) => ({
+    key: botListSchedulesQueryKey(options),
+    query: async (context) => {
+        const { data } = await botListSchedules({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botCreateScheduleMutation = (options?: Partial<Options<BotCreateScheduleData>>): UseMutationOptions<BotCreateScheduleResponse, Options<BotCreateScheduleData>, BotCreateScheduleError> => ({
+    mutation: async (vars) => {
+        const { data } = await botCreateSchedule({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botDeleteScheduleMutation = (options?: Partial<Options<BotDeleteScheduleData>>): UseMutationOptions<BotDeleteScheduleResponse, Options<BotDeleteScheduleData>, BotDeleteScheduleError> => ({
+    mutation: async (vars) => {
+        const { data } = await botDeleteSchedule({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botGetScheduleQueryKey = (options: Options<BotGetScheduleData>) => createQueryKey('botGetSchedule', options);
+
+export const botGetScheduleQuery = defineQueryOptions<Options<BotGetScheduleData>, BotGetScheduleResponse, BotGetScheduleError>((options: Options<BotGetScheduleData>) => ({
+    key: botGetScheduleQueryKey(options),
+    query: async (context) => {
+        const { data } = await botGetSchedule({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botUpdateScheduleMutation = (options?: Partial<Options<BotUpdateScheduleData>>): UseMutationOptions<BotUpdateScheduleResponse, Options<BotUpdateScheduleData>, BotUpdateScheduleError> => ({
+    mutation: async (vars) => {
+        const { data } = await botUpdateSchedule({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botGetSelfQueryKey = (options?: Options<BotGetSelfData>) => createQueryKey('botGetSelf', options);
+
+export const botGetSelfQuery = defineQueryOptions<Options<BotGetSelfData>, BotGetSelfResponse, BotGetSelfError>((options?: Options<BotGetSelfData>) => ({
+    key: botGetSelfQueryKey(options),
+    query: async (context) => {
+        const { data } = await botGetSelf({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botUpdateSelfMutation = (options?: Partial<Options<BotUpdateSelfData>>): UseMutationOptions<BotUpdateSelfResponse, Options<BotUpdateSelfData>, BotUpdateSelfError> => ({
+    mutation: async (vars) => {
+        const { data } = await botUpdateSelf({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botListSessionsQueryKey = (options?: Options<BotListSessionsData>) => createQueryKey('botListSessions', options);
+
+export const botListSessionsQuery = defineQueryOptions<Options<BotListSessionsData>, BotListSessionsResponse, BotListSessionsError>((options?: Options<BotListSessionsData>) => ({
+    key: botListSessionsQueryKey(options),
+    query: async (context) => {
+        const { data } = await botListSessions({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botCreateSessionMutation = (options?: Partial<Options<BotCreateSessionData>>): UseMutationOptions<BotCreateSessionResponse, Options<BotCreateSessionData>, BotCreateSessionError> => ({
+    mutation: async (vars) => {
+        const { data } = await botCreateSession({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botGetSessionQueryKey = (options: Options<BotGetSessionData>) => createQueryKey('botGetSession', options);
+
+export const botGetSessionQuery = defineQueryOptions<Options<BotGetSessionData>, BotGetSessionResponse, BotGetSessionError>((options: Options<BotGetSessionData>) => ({
+    key: botGetSessionQueryKey(options),
+    query: async (context) => {
+        const { data } = await botGetSession({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botUpdateSessionMutation = (options?: Partial<Options<BotUpdateSessionData>>): UseMutationOptions<BotUpdateSessionResponse, Options<BotUpdateSessionData>, BotUpdateSessionError> => ({
+    mutation: async (vars) => {
+        const { data } = await botUpdateSession({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botDecideApprovalMutation = (options?: Partial<Options<BotDecideApprovalData>>): UseMutationOptions<BotDecideApprovalResponse, Options<BotDecideApprovalData>, BotDecideApprovalError> => ({
+    mutation: async (vars) => {
+        const { data } = await botDecideApproval({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botUploadAttachmentMutation = (options?: Partial<Options<BotUploadAttachmentData>>): UseMutationOptions<BotUploadAttachmentResponse, Options<BotUploadAttachmentData>, BotUploadAttachmentError> => ({
+    mutation: async (vars) => {
+        const { data } = await botUploadAttachment({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botCompactSessionMutation = (options?: Partial<Options<BotCompactSessionData>>): UseMutationOptions<BotCompactSessionResponse, Options<BotCompactSessionData>, BotCompactSessionError> => ({
+    mutation: async (vars) => {
+        const { data } = await botCompactSession({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botSelectComputerMutation = (options?: Partial<Options<BotSelectComputerData>>): UseMutationOptions<BotSelectComputerResponse, Options<BotSelectComputerData>, BotSelectComputerError> => ({
+    mutation: async (vars) => {
+        const { data } = await botSelectComputer({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botSessionComputerFileContentQueryKey = (options: Options<BotSessionComputerFileContentData>) => createQueryKey('botSessionComputerFileContent', options);
+
+/**
+ * Read a regular file on a Computer allowed for this Session. Relative paths use the Bot home on that Computer.
+ */
+export const botSessionComputerFileContentQuery = defineQueryOptions<Options<BotSessionComputerFileContentData>, BotSessionComputerFileContentResponse, BotSessionComputerFileContentError>((options: Options<BotSessionComputerFileContentData>) => ({
+    key: botSessionComputerFileContentQueryKey(options),
+    query: async (context) => {
+        const { data } = await botSessionComputerFileContent({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botSessionContextQueryKey = (options: Options<BotSessionContextData>) => createQueryKey('botSessionContext', options);
+
+export const botSessionContextQuery = defineQueryOptions<Options<BotSessionContextData>, BotSessionContextResponse, BotSessionContextError>((options: Options<BotSessionContextData>) => ({
+    key: botSessionContextQueryKey(options),
+    query: async (context) => {
+        const { data } = await botSessionContext({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botContinueSessionMutation = (options?: Partial<Options<BotContinueSessionData>>): UseMutationOptions<BotContinueSessionResponse, Options<BotContinueSessionData>, BotContinueSessionError> => ({
+    mutation: async (vars) => {
+        const { data } = await botContinueSession({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botSessionEntryQueryKey = (options: Options<BotSessionEntryData>) => createQueryKey('botSessionEntry', options);
+
+export const botSessionEntryQuery = defineQueryOptions<Options<BotSessionEntryData>, BotSessionEntryResponse, BotSessionEntryError>((options: Options<BotSessionEntryData>) => ({
+    key: botSessionEntryQueryKey(options),
+    query: async (context) => {
+        const { data } = await botSessionEntry({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botHistoryImageQueryKey = (options: Options<BotHistoryImageData>) => createQueryKey('botHistoryImage', options);
+
+export const botHistoryImageQuery = defineQueryOptions<Options<BotHistoryImageData>, BotHistoryImageResponse, BotHistoryImageError>((options: Options<BotHistoryImageData>) => ({
+    key: botHistoryImageQueryKey(options),
+    query: async (context) => {
+        const { data } = await botHistoryImage({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botForkSessionMutation = (options?: Partial<Options<BotForkSessionData>>): UseMutationOptions<BotForkSessionResponse, Options<BotForkSessionData>, BotForkSessionError> => ({
+    mutation: async (vars) => {
+        const { data } = await botForkSession({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botSessionHistoryQueryKey = (options: Options<BotSessionHistoryData>) => createQueryKey('botSessionHistory', options);
+
+export const botSessionHistoryQuery = defineQueryOptions<Options<BotSessionHistoryData>, BotSessionHistoryResponse, BotSessionHistoryError>((options: Options<BotSessionHistoryData>) => ({
+    key: botSessionHistoryQueryKey(options),
+    query: async (context) => {
+        const { data } = await botSessionHistory({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botSubmitInputMutation = (options?: Partial<Options<BotSubmitInputData>>): UseMutationOptions<BotSubmitInputResponse, Options<BotSubmitInputData>, BotSubmitInputError> => ({
+    mutation: async (vars) => {
+        const { data } = await botSubmitInput({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botInputReceiptQueryKey = (options: Options<BotInputReceiptData>) => createQueryKey('botInputReceipt', options);
+
+export const botInputReceiptQuery = defineQueryOptions<Options<BotInputReceiptData>, BotInputReceiptResponse, BotInputReceiptError>((options: Options<BotInputReceiptData>) => ({
+    key: botInputReceiptQueryKey(options),
+    query: async (context) => {
+        const { data } = await botInputReceipt({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botSelectModelMutation = (options?: Partial<Options<BotSelectModelData>>): UseMutationOptions<BotSelectModelResponse, Options<BotSelectModelData>, BotSelectModelError> => ({
+    mutation: async (vars) => {
+        const { data } = await botSelectModel({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botClearPendingMutation = (options?: Partial<Options<BotClearPendingData>>): UseMutationOptions<BotClearPendingResponse, Options<BotClearPendingData>, BotClearPendingError> => ({
+    mutation: async (vars) => {
+        const { data } = await botClearPending({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botRemovePendingMutation = (options?: Partial<Options<BotRemovePendingData>>): UseMutationOptions<BotRemovePendingResponse, Options<BotRemovePendingData>, BotRemovePendingError> => ({
+    mutation: async (vars) => {
+        const { data } = await botRemovePending({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botUpdatePendingMutation = (options?: Partial<Options<BotUpdatePendingData>>): UseMutationOptions<BotUpdatePendingResponse, Options<BotUpdatePendingData>, BotUpdatePendingError> => ({
+    mutation: async (vars) => {
+        const { data } = await botUpdatePending({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botMovePendingMutation = (options?: Partial<Options<BotMovePendingData>>): UseMutationOptions<BotMovePendingResponse, Options<BotMovePendingData>, BotMovePendingError> => ({
+    mutation: async (vars) => {
+        const { data } = await botMovePending({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botSessionSnapshotQueryKey = (options: Options<BotSessionSnapshotData>) => createQueryKey('botSessionSnapshot', options);
+
+export const botSessionSnapshotQuery = defineQueryOptions<Options<BotSessionSnapshotData>, BotSessionSnapshotResponse, BotSessionSnapshotError>((options: Options<BotSessionSnapshotData>) => ({
+    key: botSessionSnapshotQueryKey(options),
+    query: async (context) => {
+        const { data } = await botSessionSnapshot({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botStopSessionMutation = (options?: Partial<Options<BotStopSessionData>>): UseMutationOptions<BotStopSessionResponse, Options<BotStopSessionData>, BotStopSessionError> => ({
+    mutation: async (vars) => {
+        const { data } = await botStopSession({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botListSubagentsQueryKey = (options: Options<BotListSubagentsData>) => createQueryKey('botListSubagents', options);
+
+export const botListSubagentsQuery = defineQueryOptions<Options<BotListSubagentsData>, BotListSubagentsResponse, BotListSubagentsError>((options: Options<BotListSubagentsData>) => ({
+    key: botListSubagentsQueryKey(options),
+    query: async (context) => {
+        const { data } = await botListSubagents({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botSessionTimelineQueryKey = (options: Options<BotSessionTimelineData>) => createQueryKey('botSessionTimeline', options);
+
+export const botSessionTimelineQuery = defineQueryOptions<Options<BotSessionTimelineData>, BotSessionTimelineResponse, BotSessionTimelineError>((options: Options<BotSessionTimelineData>) => ({
+    key: botSessionTimelineQueryKey(options),
+    query: async (context) => {
+        const { data } = await botSessionTimeline({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botListWakeEndpointsQueryKey = (options?: Options<BotListWakeEndpointsData>) => createQueryKey('botListWakeEndpoints', options);
+
+export const botListWakeEndpointsQuery = defineQueryOptions<Options<BotListWakeEndpointsData>, BotListWakeEndpointsResponse, BotListWakeEndpointsError>((options?: Options<BotListWakeEndpointsData>) => ({
+    key: botListWakeEndpointsQueryKey(options),
+    query: async (context) => {
+        const { data } = await botListWakeEndpoints({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botDeleteWakeEndpointMutation = (options?: Partial<Options<BotDeleteWakeEndpointData>>): UseMutationOptions<BotDeleteWakeEndpointResponse, Options<BotDeleteWakeEndpointData>, BotDeleteWakeEndpointError> => ({
+    mutation: async (vars) => {
+        const { data } = await botDeleteWakeEndpoint({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const botGetWakeEndpointQueryKey = (options: Options<BotGetWakeEndpointData>) => createQueryKey('botGetWakeEndpoint', options);
+
+export const botGetWakeEndpointQuery = defineQueryOptions<Options<BotGetWakeEndpointData>, BotGetWakeEndpointResponse, BotGetWakeEndpointError>((options: Options<BotGetWakeEndpointData>) => ({
+    key: botGetWakeEndpointQueryKey(options),
+    query: async (context) => {
+        const { data } = await botGetWakeEndpoint({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const botUpdateWakeEndpointMutation = (options?: Partial<Options<BotUpdateWakeEndpointData>>): UseMutationOptions<BotUpdateWakeEndpointResponse, Options<BotUpdateWakeEndpointData>, BotUpdateWakeEndpointError> => ({
+    mutation: async (vars) => {
+        const { data } = await botUpdateWakeEndpoint({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
 
 export const listComputersQueryKey = (options?: Options<ListComputersData>) => createQueryKey('listComputers', options);
 

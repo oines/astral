@@ -319,35 +319,49 @@ func (s *Service) ReleaseACPMounts(connectionID string) {
 	s.mcpMu.Lock()
 	defer s.mcpMu.Unlock()
 	for id, mount := range s.mcpMounts {
-		if mount.owner != connectionID {
-			continue
+		if mount.owner == connectionID {
+			s.releaseACPMountLocked(id, mount)
 		}
-		serving := mount.serving()
-		closeMCPClients(mount.clients)
-		if mount.prior != nil {
-			closeMCPClients(mount.prior.clients)
-		}
-		if serving == nil {
-			s.setMCPMountLocked(id, nil)
-			continue
-		}
-		grace := &mcpMount{catalog: serving.catalog, permit: serving.permit, ready: true}
-		s.setMCPMountLocked(id, grace)
-		grace.timer = time.AfterFunc(mcpMountGrace, func() {
-			s.mcpMu.Lock()
-			if s.mcpMounts[id] != grace {
-				s.mcpMu.Unlock()
-				return
-			}
-			s.setMCPMountLocked(id, nil)
-			s.mcpMu.Unlock()
-			r, err := s.openRunnable(s.ctx, id)
-			if err == nil {
-				r.mcpDirty.Store(true)
-				r.applyIdleMCP()
-			}
-		})
 	}
+}
+
+func (s *Service) ReleaseACPMount(sessionID, connectionID string) {
+	if connectionID == "" || !s.mcpActive.Load() {
+		return
+	}
+	s.mcpMu.Lock()
+	defer s.mcpMu.Unlock()
+	if mount := s.mcpMounts[sessionID]; mount != nil && mount.owner == connectionID {
+		s.releaseACPMountLocked(sessionID, mount)
+	}
+}
+
+func (s *Service) releaseACPMountLocked(id string, mount *mcpMount) {
+	serving := mount.serving()
+	closeMCPClients(mount.clients)
+	if mount.prior != nil {
+		closeMCPClients(mount.prior.clients)
+	}
+	if serving == nil {
+		s.setMCPMountLocked(id, nil)
+		return
+	}
+	grace := &mcpMount{catalog: serving.catalog, permit: serving.permit, ready: true}
+	s.setMCPMountLocked(id, grace)
+	grace.timer = time.AfterFunc(mcpMountGrace, func() {
+		s.mcpMu.Lock()
+		if s.mcpMounts[id] != grace {
+			s.mcpMu.Unlock()
+			return
+		}
+		s.setMCPMountLocked(id, nil)
+		s.mcpMu.Unlock()
+		r, err := s.openRunnable(s.ctx, id)
+		if err == nil {
+			r.mcpDirty.Store(true)
+			r.applyIdleMCP()
+		}
+	})
 }
 
 func (s *Service) closeMCPMounts() {

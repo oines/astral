@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentCapabilityData, AgentCapabilityErrors, AgentCapabilityResponses, AgentComputerFileContentData, AgentComputerFileContentErrors, AgentComputerFileContentResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentCopyComputerFileData, AgentCopyComputerFileErrors, AgentCopyComputerFileResponses, AgentCreateScheduleData, AgentCreateScheduleErrors, AgentCreateScheduleResponses, AgentCreateWakeEndpointData, AgentCreateWakeEndpointErrors, AgentCreateWakeEndpointResponses, AgentDeleteScheduleData, AgentDeleteScheduleErrors, AgentDeleteScheduleResponses, AgentDeleteSharedSkillData, AgentDeleteSharedSkillErrors, AgentDeleteSharedSkillResponses, AgentDeleteWakeEndpointData, AgentDeleteWakeEndpointErrors, AgentDeleteWakeEndpointResponses, AgentGetScheduleData, AgentGetScheduleErrors, AgentGetScheduleResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentManagedSkillsData, AgentManagedSkillsErrors, AgentManagedSkillsResponses, AgentMessageData, AgentMessageErrors, AgentMessagePartContentData, AgentMessagePartContentErrors, AgentMessagePartContentResponses, AgentMessagePartData, AgentMessagePartErrors, AgentMessagePartRawData, AgentMessagePartRawErrors, AgentMessagePartRawResponses, AgentMessagePartResponses, AgentMessagePartsData, AgentMessagePartsErrors, AgentMessagePartsResponses, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentModelsData, AgentModelsErrors, AgentModelsResponses, AgentNapCatAvatarContentData, AgentNapCatAvatarContentErrors, AgentNapCatAvatarContentResponses, AgentNapCatEssenceContentData, AgentNapCatEssenceContentErrors, AgentNapCatEssenceContentResponses, AgentNapCatEssencePartData, AgentNapCatEssencePartErrors, AgentNapCatEssencePartResponses, AgentNapCatEssencePartsData, AgentNapCatEssencePartsErrors, AgentNapCatEssencePartsResponses, AgentNapCatMemberAvatarContentData, AgentNapCatMemberAvatarContentErrors, AgentNapCatMemberAvatarContentResponses, AgentPublishSharedSkillData, AgentPublishSharedSkillErrors, AgentPublishSharedSkillResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentRolloutData, AgentRolloutErrors, AgentRolloutResponses, AgentSchedulesData, AgentSchedulesErrors, AgentSchedulesResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramStickerContentData, AgentTelegramStickerContentErrors, AgentTelegramStickerContentResponses, AgentUpdateScheduleData, AgentUpdateScheduleErrors, AgentUpdateScheduleResponses, AgentUpdateSessionData, AgentUpdateSessionErrors, AgentUpdateSessionResponses, AgentUpdateWakeEndpointData, AgentUpdateWakeEndpointErrors, AgentUpdateWakeEndpointResponses, AgentWakeEndpointData, AgentWakeEndpointErrors, AgentWakeEndpointResponses, AgentWakeEndpointsData, AgentWakeEndpointsErrors, AgentWakeEndpointsResponses, ApplyAgentModelPriorityData, ApplyAgentModelPriorityErrors, ApplyAgentModelPriorityResponses, ApplyServerUpdateData, ApplyServerUpdateErrors, ApplyServerUpdateResponses, AuthAccountData, AuthAccountErrors, AuthAccountResponses, AuthEventsData, AuthEventsErrors, AuthEventsResponse, AuthEventsResponses, AuthLoginData, AuthLoginErrors, AuthLoginRecoveryData, AuthLoginRecoveryErrors, AuthLoginRecoveryResponses, AuthLoginResponses, AuthLoginTotpData, AuthLoginTotpErrors, AuthLoginTotpResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginErrors, AuthPasskeyLoginBeginResponses, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishErrors, AuthPasskeyLoginFinishResponses, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginErrors, AuthPasskeyRegisterBeginResponses, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishErrors, AuthPasskeyRegisterFinishResponses, AuthPasskeyRemoveData, AuthPasskeyRemoveErrors, AuthPasskeyRemoveResponses, AuthPasswordlessData, AuthPasswordlessErrors, AuthPasswordlessResponses, AuthReauthenticateData, AuthReauthenticateErrors, AuthReauthenticateResponses, AuthRecoveryCodesData, AuthRecoveryCodesErrors, AuthRecoveryCodesResponses, AuthSessionRevokeData, AuthSessionRevokeErrors, AuthSessionRevokeResponses, AuthSessionsRevokeData, AuthSessionsRevokeErrors, AuthSessionsRevokeResponses, AuthSettingsData, AuthSettingsErrors, AuthSettingsResponses, AuthStatusData, AuthStatusErrors, AuthStatusResponses, AuthTotpBeginData, AuthTotpBeginErrors, AuthTotpBeginResponses, AuthTotpConfirmData, AuthTotpConfirmErrors, AuthTotpConfirmResponses, AuthTotpRemoveData, AuthTotpRemoveErrors, AuthTotpRemoveResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, CallMountedMcpToolData, CallMountedMcpToolErrors, CallMountedMcpToolResponses, CheckServerUpdateData, CheckServerUpdateErrors, CheckServerUpdateResponses, CleanConversationArchiveData, CleanConversationArchiveErrors, CleanConversationArchiveResponses, CleanupStorageData, CleanupStorageErrors, CleanupStorageResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ConnectAcpData, ConnectAcpErrors, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateAcpTokenData, CreateAcpTokenErrors, CreateAcpTokenResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateScheduleData, CreateScheduleErrors, CreateScheduleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteComputerData, DeleteComputerErrors, DeleteComputerResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteScheduleData, DeleteScheduleErrors, DeleteScheduleResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteWakeEndpointData, DeleteWakeEndpointErrors, DeleteWakeEndpointResponses, DescribeModelData, DescribeModelErrors, DescribeModelResponses, DisconnectTemporaryComputerData, DisconnectTemporaryComputerErrors, DisconnectTemporaryComputerResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetFileReferenceData, GetFileReferenceErrors, GetFileReferenceResponses, GetNetworkSettingsData, GetNetworkSettingsErrors, GetNetworkSettingsResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetServerUpdateData, GetServerUpdateErrors, GetServerUpdateResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetWakeEndpointData, GetWakeEndpointErrors, GetWakeEndpointResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAcpTokensData, ListAcpTokensErrors, ListAcpTokensResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListComputerDirectoryData, ListComputerDirectoryErrors, ListComputerDirectoryResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListMountedMcpToolsData, ListMountedMcpToolsErrors, ListMountedMcpToolsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSchedulesData, ListSchedulesErrors, ListSchedulesResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListWakeEndpointsData, ListWakeEndpointsErrors, ListWakeEndpointsResponses, ManageStorageData, ManageStorageErrors, ManageStorageResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, ReclaimStorageData, ReclaimStorageErrors, ReclaimStorageResponses, RefreshProviderModelsData, RefreshProviderModelsErrors, RefreshProviderModelsResponses, RefreshStorageData, RefreshStorageErrors, RefreshStorageResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResetStorageConversationData, ResetStorageConversationErrors, ResetStorageConversationResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RevokeAcpTokenData, RevokeAcpTokenErrors, RevokeAcpTokenResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SaveNetworkSettingsData, SaveNetworkSettingsErrors, SaveNetworkSettingsResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, ScheduleEventsData, ScheduleEventsErrors, ScheduleEventsResponse, ScheduleEventsResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionAttemptData, SessionAttemptErrors, SessionAttemptRequestData, SessionAttemptRequestErrors, SessionAttemptRequestResponses, SessionAttemptResponses, SessionAttemptsData, SessionAttemptsErrors, SessionAttemptsResponses, SessionComputerFileContentData, SessionComputerFileContentErrors, SessionComputerFileContentResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionProcessOutputData, SessionProcessOutputErrors, SessionProcessOutputResponse, SessionProcessOutputResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SessionTimelineData, SessionTimelineErrors, SessionTimelineResponses, SetConversationObservationContextData, SetConversationObservationContextErrors, SetConversationObservationContextResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, SetConversationRetentionData, SetConversationRetentionErrors, SetConversationRetentionResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, TriggerWakeEndpointData, TriggerWakeEndpointErrors, TriggerWakeEndpointResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerDaemonData, UpdateComputerDaemonErrors, UpdateComputerDaemonResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateScheduleData, UpdateScheduleErrors, UpdateScheduleResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UpdateWakeEndpointData, UpdateWakeEndpointErrors, UpdateWakeEndpointResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses, WakeEndpointEventsData, WakeEndpointEventsErrors, WakeEndpointEventsResponse, WakeEndpointEventsResponses } from './types.gen';
+import type { AgentAccountOperationData, AgentAccountOperationErrors, AgentAccountOperationResponses, AgentAccountOperationsData, AgentAccountOperationsErrors, AgentAccountOperationsResponses, AgentAccountsData, AgentAccountsErrors, AgentAccountsResponses, AgentAttachmentContentData, AgentAttachmentContentErrors, AgentAttachmentContentResponses, AgentCapabilitiesData, AgentCapabilitiesErrors, AgentCapabilitiesResponses, AgentCapabilityData, AgentCapabilityErrors, AgentCapabilityResponses, AgentComputerFileContentData, AgentComputerFileContentErrors, AgentComputerFileContentResponses, AgentComputersData, AgentComputersErrors, AgentComputersResponses, AgentContextData, AgentContextErrors, AgentContextResponses, AgentConversationsData, AgentConversationsErrors, AgentConversationsResponses, AgentCopyComputerFileData, AgentCopyComputerFileErrors, AgentCopyComputerFileResponses, AgentCreateScheduleData, AgentCreateScheduleErrors, AgentCreateScheduleResponses, AgentCreateWakeEndpointData, AgentCreateWakeEndpointErrors, AgentCreateWakeEndpointResponses, AgentDeleteScheduleData, AgentDeleteScheduleErrors, AgentDeleteScheduleResponses, AgentDeleteSharedSkillData, AgentDeleteSharedSkillErrors, AgentDeleteSharedSkillResponses, AgentDeleteWakeEndpointData, AgentDeleteWakeEndpointErrors, AgentDeleteWakeEndpointResponses, AgentGetScheduleData, AgentGetScheduleErrors, AgentGetScheduleResponses, AgentHistoryData, AgentHistoryErrors, AgentHistoryResponses, AgentManagedSkillsData, AgentManagedSkillsErrors, AgentManagedSkillsResponses, AgentMessageData, AgentMessageErrors, AgentMessagePartContentData, AgentMessagePartContentErrors, AgentMessagePartContentResponses, AgentMessagePartData, AgentMessagePartErrors, AgentMessagePartRawData, AgentMessagePartRawErrors, AgentMessagePartRawResponses, AgentMessagePartResponses, AgentMessagePartsData, AgentMessagePartsErrors, AgentMessagePartsResponses, AgentMessageResponses, AgentMessagesData, AgentMessagesErrors, AgentMessagesResponses, AgentMessageToolData, AgentMessageToolErrors, AgentMessageToolResponses, AgentModelsData, AgentModelsErrors, AgentModelsResponses, AgentNapCatAvatarContentData, AgentNapCatAvatarContentErrors, AgentNapCatAvatarContentResponses, AgentNapCatEssenceContentData, AgentNapCatEssenceContentErrors, AgentNapCatEssenceContentResponses, AgentNapCatEssencePartData, AgentNapCatEssencePartErrors, AgentNapCatEssencePartResponses, AgentNapCatEssencePartsData, AgentNapCatEssencePartsErrors, AgentNapCatEssencePartsResponses, AgentNapCatMemberAvatarContentData, AgentNapCatMemberAvatarContentErrors, AgentNapCatMemberAvatarContentResponses, AgentPublishSharedSkillData, AgentPublishSharedSkillErrors, AgentPublishSharedSkillResponses, AgentResolveConversationData, AgentResolveConversationErrors, AgentResolveConversationResponses, AgentRolloutData, AgentRolloutErrors, AgentRolloutResponses, AgentSchedulesData, AgentSchedulesErrors, AgentSchedulesResponses, AgentSearchSessionsData, AgentSearchSessionsErrors, AgentSearchSessionsResponses, AgentSendReceiptData, AgentSendReceiptErrors, AgentSendReceiptResponses, AgentSendTextData, AgentSendTextErrors, AgentSendTextResponses, AgentSessionsData, AgentSessionsErrors, AgentSessionsResponses, AgentTelegramStickerContentData, AgentTelegramStickerContentErrors, AgentTelegramStickerContentResponses, AgentUpdateScheduleData, AgentUpdateScheduleErrors, AgentUpdateScheduleResponses, AgentUpdateSessionData, AgentUpdateSessionErrors, AgentUpdateSessionResponses, AgentUpdateWakeEndpointData, AgentUpdateWakeEndpointErrors, AgentUpdateWakeEndpointResponses, AgentWakeEndpointData, AgentWakeEndpointErrors, AgentWakeEndpointResponses, AgentWakeEndpointsData, AgentWakeEndpointsErrors, AgentWakeEndpointsResponses, ApplyAgentModelPriorityData, ApplyAgentModelPriorityErrors, ApplyAgentModelPriorityResponses, ApplyServerUpdateData, ApplyServerUpdateErrors, ApplyServerUpdateResponses, AuthAccountData, AuthAccountErrors, AuthAccountResponses, AuthEventsData, AuthEventsErrors, AuthEventsResponse, AuthEventsResponses, AuthLoginData, AuthLoginErrors, AuthLoginRecoveryData, AuthLoginRecoveryErrors, AuthLoginRecoveryResponses, AuthLoginResponses, AuthLoginTotpData, AuthLoginTotpErrors, AuthLoginTotpResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthorizeProviderData, AuthorizeProviderErrors, AuthorizeProviderResponses, AuthPasskeyLoginBeginData, AuthPasskeyLoginBeginErrors, AuthPasskeyLoginBeginResponses, AuthPasskeyLoginFinishData, AuthPasskeyLoginFinishErrors, AuthPasskeyLoginFinishResponses, AuthPasskeyRegisterBeginData, AuthPasskeyRegisterBeginErrors, AuthPasskeyRegisterBeginResponses, AuthPasskeyRegisterFinishData, AuthPasskeyRegisterFinishErrors, AuthPasskeyRegisterFinishResponses, AuthPasskeyRemoveData, AuthPasskeyRemoveErrors, AuthPasskeyRemoveResponses, AuthPasswordlessData, AuthPasswordlessErrors, AuthPasswordlessResponses, AuthReauthenticateData, AuthReauthenticateErrors, AuthReauthenticateResponses, AuthRecoveryCodesData, AuthRecoveryCodesErrors, AuthRecoveryCodesResponses, AuthSessionRevokeData, AuthSessionRevokeErrors, AuthSessionRevokeResponses, AuthSessionsRevokeData, AuthSessionsRevokeErrors, AuthSessionsRevokeResponses, AuthSettingsData, AuthSettingsErrors, AuthSettingsResponses, AuthStatusData, AuthStatusErrors, AuthStatusResponses, AuthTotpBeginData, AuthTotpBeginErrors, AuthTotpBeginResponses, AuthTotpConfirmData, AuthTotpConfirmErrors, AuthTotpConfirmResponses, AuthTotpRemoveData, AuthTotpRemoveErrors, AuthTotpRemoveResponses, BindConversationData, BindConversationErrors, BindConversationResponses, BootstrapData, BootstrapErrors, BootstrapResponses, BotClearPendingData, BotClearPendingErrors, BotClearPendingResponses, BotCompactSessionData, BotCompactSessionErrors, BotCompactSessionResponses, BotContinueSessionData, BotContinueSessionErrors, BotContinueSessionResponses, BotCreateScheduleData, BotCreateScheduleErrors, BotCreateScheduleResponses, BotCreateSessionData, BotCreateSessionErrors, BotCreateSessionResponses, BotDecideApprovalData, BotDecideApprovalErrors, BotDecideApprovalResponses, BotDeleteScheduleData, BotDeleteScheduleErrors, BotDeleteScheduleResponses, BotDeleteWakeEndpointData, BotDeleteWakeEndpointErrors, BotDeleteWakeEndpointResponses, BotEventSchemaData, BotEventSchemaErrors, BotEventSchemaResponses, BotFileContentData, BotFileContentErrors, BotFileContentResponses, BotForkSessionData, BotForkSessionErrors, BotForkSessionResponses, BotGetFileReferenceData, BotGetFileReferenceErrors, BotGetFileReferenceResponses, BotGetScheduleData, BotGetScheduleErrors, BotGetScheduleResponses, BotGetSelfData, BotGetSelfErrors, BotGetSelfResponses, BotGetSessionData, BotGetSessionErrors, BotGetSessionResponses, BotGetWakeEndpointData, BotGetWakeEndpointErrors, BotGetWakeEndpointResponses, BotHistoryImageData, BotHistoryImageErrors, BotHistoryImageResponses, BotInputReceiptData, BotInputReceiptErrors, BotInputReceiptResponses, BotListComputerDirectoryData, BotListComputerDirectoryErrors, BotListComputerDirectoryResponses, BotListComputersData, BotListComputersErrors, BotListComputersResponses, BotListModelsData, BotListModelsErrors, BotListModelsResponses, BotListSchedulesData, BotListSchedulesErrors, BotListSchedulesResponses, BotListSessionsData, BotListSessionsErrors, BotListSessionsResponses, BotListSubagentsData, BotListSubagentsErrors, BotListSubagentsResponses, BotListWakeEndpointsData, BotListWakeEndpointsErrors, BotListWakeEndpointsResponses, BotMovePendingData, BotMovePendingErrors, BotMovePendingResponses, BotRemovePendingData, BotRemovePendingErrors, BotRemovePendingResponses, BotSelectComputerData, BotSelectComputerErrors, BotSelectComputerResponses, BotSelectModelData, BotSelectModelErrors, BotSelectModelResponses, BotSessionComputerFileContentData, BotSessionComputerFileContentErrors, BotSessionComputerFileContentResponses, BotSessionContextData, BotSessionContextErrors, BotSessionContextResponses, BotSessionEntryData, BotSessionEntryErrors, BotSessionEntryResponses, BotSessionEventsData, BotSessionEventsErrors, BotSessionEventsResponse, BotSessionEventsResponses, BotSessionHistoryData, BotSessionHistoryErrors, BotSessionHistoryResponses, BotSessionProcessOutputData, BotSessionProcessOutputErrors, BotSessionProcessOutputResponse, BotSessionProcessOutputResponses, BotSessionSnapshotData, BotSessionSnapshotErrors, BotSessionSnapshotResponses, BotSessionTimelineData, BotSessionTimelineErrors, BotSessionTimelineResponses, BotStopSessionData, BotStopSessionErrors, BotStopSessionResponses, BotSubmitInputData, BotSubmitInputErrors, BotSubmitInputResponses, BotUpdatePendingData, BotUpdatePendingErrors, BotUpdatePendingResponses, BotUpdateScheduleData, BotUpdateScheduleErrors, BotUpdateScheduleResponses, BotUpdateSelfData, BotUpdateSelfErrors, BotUpdateSelfResponses, BotUpdateSessionData, BotUpdateSessionErrors, BotUpdateSessionResponses, BotUpdateWakeEndpointData, BotUpdateWakeEndpointErrors, BotUpdateWakeEndpointResponses, BotUploadAttachmentData, BotUploadAttachmentErrors, BotUploadAttachmentResponses, CallMountedMcpToolData, CallMountedMcpToolErrors, CallMountedMcpToolResponses, CheckServerUpdateData, CheckServerUpdateErrors, CheckServerUpdateResponses, CleanConversationArchiveData, CleanConversationArchiveErrors, CleanConversationArchiveResponses, CleanupStorageData, CleanupStorageErrors, CleanupStorageResponses, ClearPendingData, ClearPendingErrors, ClearPendingResponses, CompactSessionData, CompactSessionErrors, CompactSessionResponses, CompleteOnboardingData, CompleteOnboardingErrors, CompleteOnboardingResponses, ComputerHostData, ComputerHostErrors, ComputerHostResponses, ComputerMaintenanceData, ComputerMaintenanceErrors, ComputerMaintenanceResponses, ConnectAcpData, ConnectAcpErrors, ContinueSessionData, ContinueSessionErrors, ContinueSessionResponses, ConversationMessagesData, ConversationMessagesErrors, ConversationMessagesResponses, CreateAcpTokenData, CreateAcpTokenErrors, CreateAcpTokenResponses, CreateBotApiTokenData, CreateBotApiTokenErrors, CreateBotApiTokenResponses, CreateLocalContainerData, CreateLocalContainerErrors, CreateLocalContainerResponses, CreateScheduleData, CreateScheduleErrors, CreateScheduleResponses, CreateSessionData, CreateSessionErrors, CreateSessionResponses, DecideApprovalData, DecideApprovalErrors, DecideApprovalResponses, DeleteAgentData, DeleteAgentErrors, DeleteAgentResponses, DeleteComputerData, DeleteComputerErrors, DeleteComputerResponses, DeleteConnectionData, DeleteConnectionErrors, DeleteConnectionResponses, DeleteModelData, DeleteModelErrors, DeleteModelResponses, DeleteProviderData, DeleteProviderErrors, DeleteProviderResponses, DeleteScheduleData, DeleteScheduleErrors, DeleteScheduleResponses, DeleteSearchProviderData, DeleteSearchProviderErrors, DeleteSearchProviderResponses, DeleteSessionData, DeleteSessionErrors, DeleteSessionResponses, DeleteWakeEndpointData, DeleteWakeEndpointErrors, DeleteWakeEndpointResponses, DescribeModelData, DescribeModelErrors, DescribeModelResponses, DisconnectTemporaryComputerData, DisconnectTemporaryComputerErrors, DisconnectTemporaryComputerResponses, EnrollComputerData, EnrollComputerErrors, EnrollComputerResponses, EventSchemaData, EventSchemaErrors, EventSchemaResponses, ExportRolloutData, ExportRolloutErrors, ExportRolloutResponses, FileContentData, FileContentErrors, FileContentResponses, ForkSessionData, ForkSessionErrors, ForkSessionResponses, GetComputerOperationData, GetComputerOperationErrors, GetComputerOperationResponses, GetEnrollmentData, GetEnrollmentErrors, GetEnrollmentResponses, GetFileReferenceData, GetFileReferenceErrors, GetFileReferenceResponses, GetNetworkSettingsData, GetNetworkSettingsErrors, GetNetworkSettingsResponses, GetPreferencesData, GetPreferencesErrors, GetPreferencesResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetServerUpdateData, GetServerUpdateErrors, GetServerUpdateResponses, GetSessionData, GetSessionErrors, GetSessionResponses, GetWakeEndpointData, GetWakeEndpointErrors, GetWakeEndpointResponses, HistoryImageData, HistoryImageErrors, HistoryImageResponses, InputReceiptData, InputReceiptErrors, InputReceiptResponses, ListAcpTokensData, ListAcpTokensErrors, ListAcpTokensResponses, ListAgentsData, ListAgentsErrors, ListAgentsResponses, ListBindingsData, ListBindingsErrors, ListBindingsResponses, ListBotApiTokensData, ListBotApiTokensErrors, ListBotApiTokensResponses, ListComputerDirectoryData, ListComputerDirectoryErrors, ListComputerDirectoryResponses, ListComputersData, ListComputersErrors, ListComputersResponses, ListConnectionsData, ListConnectionsErrors, ListConnectionsResponses, ListConversationsData, ListConversationsErrors, ListConversationsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListMountedMcpToolsData, ListMountedMcpToolsErrors, ListMountedMcpToolsResponses, ListOutboxData, ListOutboxErrors, ListOutboxResponses, ListProviderPresetsData, ListProviderPresetsErrors, ListProviderPresetsResponses, ListProvidersData, ListProvidersErrors, ListProvidersResponses, ListSchedulesData, ListSchedulesErrors, ListSchedulesResponses, ListSearchAdaptersData, ListSearchAdaptersErrors, ListSearchAdaptersResponses, ListSearchProvidersData, ListSearchProvidersErrors, ListSearchProvidersResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListWakeEndpointsData, ListWakeEndpointsErrors, ListWakeEndpointsResponses, ManageStorageData, ManageStorageErrors, ManageStorageResponses, ModelCatalogData, ModelCatalogErrors, ModelCatalogResponses, ModelRecommendationData, ModelRecommendationErrors, ModelRecommendationResponses, MovePendingData, MovePendingErrors, MovePendingResponses, ObservationDeliveryData, ObservationDeliveryErrors, ObservationDeliveryResponses, PollWeixinLoginData, PollWeixinLoginErrors, PollWeixinLoginResponses, PresetModelsData, PresetModelsErrors, PresetModelsResponses, ProviderAuthorizationData, ProviderAuthorizationErrors, ProviderAuthorizationResponses, ReasoningFormatsData, ReasoningFormatsErrors, ReasoningFormatsResponses, ReclaimStorageData, ReclaimStorageErrors, ReclaimStorageResponses, RefreshProviderModelsData, RefreshProviderModelsErrors, RefreshProviderModelsResponses, RefreshStorageData, RefreshStorageErrors, RefreshStorageResponses, RemovePendingData, RemovePendingErrors, RemovePendingResponses, ResetStorageConversationData, ResetStorageConversationErrors, ResetStorageConversationResponses, ResolveConversationData, ResolveConversationErrors, ResolveConversationResponses, ResourceUsageData, ResourceUsageErrors, ResourceUsageResponses, RevokeAcpTokenData, RevokeAcpTokenErrors, RevokeAcpTokenResponses, RevokeBotApiTokenData, RevokeBotApiTokenErrors, RevokeBotApiTokenResponses, RevokeComputerData, RevokeComputerErrors, RevokeComputerResponses, SaveAgentData, SaveAgentErrors, SaveAgentResponses, SaveConnectionData, SaveConnectionErrors, SaveConnectionResponses, SaveModelData, SaveModelErrors, SaveModelResponses, SaveNetworkSettingsData, SaveNetworkSettingsErrors, SaveNetworkSettingsResponses, SavePreferencesData, SavePreferencesErrors, SavePreferencesResponses, SaveProviderData, SaveProviderErrors, SaveProviderResponses, SaveSearchProviderData, SaveSearchProviderErrors, SaveSearchProviderResponses, ScheduleEventsData, ScheduleEventsErrors, ScheduleEventsResponse, ScheduleEventsResponses, SelectComputerData, SelectComputerErrors, SelectComputerResponses, SelectModelData, SelectModelErrors, SelectModelResponses, SessionAttemptData, SessionAttemptErrors, SessionAttemptRequestData, SessionAttemptRequestErrors, SessionAttemptRequestResponses, SessionAttemptResponses, SessionAttemptsData, SessionAttemptsErrors, SessionAttemptsResponses, SessionComputerFileContentData, SessionComputerFileContentErrors, SessionComputerFileContentResponses, SessionContextData, SessionContextErrors, SessionContextResponses, SessionEntryData, SessionEntryErrors, SessionEntryResponses, SessionEventsData, SessionEventsErrors, SessionEventsResponse, SessionEventsResponses, SessionHistoryData, SessionHistoryErrors, SessionHistoryResponses, SessionProcessOutputData, SessionProcessOutputErrors, SessionProcessOutputResponse, SessionProcessOutputResponses, SessionSnapshotData, SessionSnapshotErrors, SessionSnapshotResponses, SessionTimelineData, SessionTimelineErrors, SessionTimelineResponses, SetConversationObservationContextData, SetConversationObservationContextErrors, SetConversationObservationContextResponses, SetConversationProactiveData, SetConversationProactiveErrors, SetConversationProactiveResponses, SetConversationRetentionData, SetConversationRetentionErrors, SetConversationRetentionResponses, StartWeixinLoginData, StartWeixinLoginErrors, StartWeixinLoginResponses, StopSessionData, StopSessionErrors, StopSessionResponses, StorageInfoData, StorageInfoErrors, StorageInfoResponses, SubmitInputData, SubmitInputErrors, SubmitInputResponses, TestSearchProviderData, TestSearchProviderErrors, TestSearchProviderResponses, TriggerWakeEndpointData, TriggerWakeEndpointErrors, TriggerWakeEndpointResponses, UnbindConversationData, UnbindConversationErrors, UnbindConversationResponses, UpdateComputerDaemonData, UpdateComputerDaemonErrors, UpdateComputerDaemonResponses, UpdateComputerData, UpdateComputerErrors, UpdateComputerResponses, UpdatePendingData, UpdatePendingErrors, UpdatePendingResponses, UpdateScheduleData, UpdateScheduleErrors, UpdateScheduleResponses, UpdateSessionData, UpdateSessionErrors, UpdateSessionResponses, UpdateWakeEndpointData, UpdateWakeEndpointErrors, UpdateWakeEndpointResponses, UploadAttachmentData, UploadAttachmentErrors, UploadAttachmentResponses, UseLocalComputerData, UseLocalComputerErrors, UseLocalComputerResponses, VerifyModelData, VerifyModelErrors, VerifyModelResponses, WakeEndpointEventsData, WakeEndpointEventsErrors, WakeEndpointEventsResponse, WakeEndpointEventsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -162,6 +162,64 @@ export const applyAgentModelPriority = <ThrowOnError extends boolean = false>(op
         }
     ],
     url: '/api/v1/agents/{id}/apply-model-priority',
+    ...options
+});
+
+export const listBotApiTokens = <ThrowOnError extends boolean = false>(options: Options<ListBotApiTokensData, ThrowOnError>): RequestResult<ListBotApiTokensResponses, ListBotApiTokensErrors, ThrowOnError> => (options.client ?? client).get<ListBotApiTokensResponses, ListBotApiTokensErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/agents/{id}/bot-api-tokens',
+    ...options
+});
+
+export const createBotApiToken = <ThrowOnError extends boolean = false>(options: Options<CreateBotApiTokenData, ThrowOnError>): RequestResult<CreateBotApiTokenResponses, CreateBotApiTokenErrors, ThrowOnError> => (options.client ?? client).post<CreateBotApiTokenResponses, CreateBotApiTokenErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/agents/{id}/bot-api-tokens',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const revokeBotApiToken = <ThrowOnError extends boolean = false>(options: Options<RevokeBotApiTokenData, ThrowOnError>): RequestResult<RevokeBotApiTokenResponses, RevokeBotApiTokenErrors, ThrowOnError> => (options.client ?? client).delete<RevokeBotApiTokenResponses, RevokeBotApiTokenErrors, ThrowOnError>({
+    security: [
+        { name: 'Authorization', type: 'apiKey' },
+        {
+            in: 'cookie',
+            name: 'astral_session',
+            type: 'apiKey'
+        },
+        {
+            in: 'cookie',
+            name: '__Host-astral_session',
+            type: 'apiKey'
+        }
+    ],
+    url: '/api/v1/agents/{id}/bot-api-tokens/{token_id}',
     ...options
 });
 
@@ -537,6 +595,524 @@ export const bootstrap = <ThrowOnError extends boolean = false>(options?: Option
     ],
     url: '/api/v1/bootstrap',
     ...options
+});
+
+export const botListComputers = <ThrowOnError extends boolean = false>(options?: Options<BotListComputersData, ThrowOnError>): RequestResult<BotListComputersResponses, BotListComputersErrors, ThrowOnError> => (options?.client ?? client).get<BotListComputersResponses, BotListComputersErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/computers',
+    ...options
+});
+
+export const botListComputerDirectory = <ThrowOnError extends boolean = false>(options: Options<BotListComputerDirectoryData, ThrowOnError>): RequestResult<BotListComputerDirectoryResponses, BotListComputerDirectoryErrors, ThrowOnError> => (options.client ?? client).get<BotListComputerDirectoryResponses, BotListComputerDirectoryErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/computers/{id}/files/directory',
+    ...options
+});
+
+export const botEventSchema = <ThrowOnError extends boolean = false>(options?: Options<BotEventSchemaData, ThrowOnError>): RequestResult<BotEventSchemaResponses, BotEventSchemaErrors, ThrowOnError> => (options?.client ?? client).get<BotEventSchemaResponses, BotEventSchemaErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/event-schema',
+    ...options
+});
+
+export const botGetFileReference = <ThrowOnError extends boolean = false>(options: Options<BotGetFileReferenceData, ThrowOnError>): RequestResult<BotGetFileReferenceResponses, BotGetFileReferenceErrors, ThrowOnError> => (options.client ?? client).get<BotGetFileReferenceResponses, BotGetFileReferenceErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/files/{id}',
+    ...options
+});
+
+export const botFileContent = <ThrowOnError extends boolean = false>(options: Options<BotFileContentData, ThrowOnError>): RequestResult<BotFileContentResponses, BotFileContentErrors, ThrowOnError> => (options.client ?? client).get<BotFileContentResponses, BotFileContentErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/files/{id}/content',
+    ...options
+});
+
+export const botListModels = <ThrowOnError extends boolean = false>(options?: Options<BotListModelsData, ThrowOnError>): RequestResult<BotListModelsResponses, BotListModelsErrors, ThrowOnError> => (options?.client ?? client).get<BotListModelsResponses, BotListModelsErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/models',
+    ...options
+});
+
+export const botListSchedules = <ThrowOnError extends boolean = false>(options?: Options<BotListSchedulesData, ThrowOnError>): RequestResult<BotListSchedulesResponses, BotListSchedulesErrors, ThrowOnError> => (options?.client ?? client).get<BotListSchedulesResponses, BotListSchedulesErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/schedules',
+    ...options
+});
+
+export const botCreateSchedule = <ThrowOnError extends boolean = false>(options: Options<BotCreateScheduleData, ThrowOnError>): RequestResult<BotCreateScheduleResponses, BotCreateScheduleErrors, ThrowOnError> => (options.client ?? client).post<BotCreateScheduleResponses, BotCreateScheduleErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/schedules',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botDeleteSchedule = <ThrowOnError extends boolean = false>(options: Options<BotDeleteScheduleData, ThrowOnError>): RequestResult<BotDeleteScheduleResponses, BotDeleteScheduleErrors, ThrowOnError> => (options.client ?? client).delete<BotDeleteScheduleResponses, BotDeleteScheduleErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/schedules/{id}',
+    ...options
+});
+
+export const botGetSchedule = <ThrowOnError extends boolean = false>(options: Options<BotGetScheduleData, ThrowOnError>): RequestResult<BotGetScheduleResponses, BotGetScheduleErrors, ThrowOnError> => (options.client ?? client).get<BotGetScheduleResponses, BotGetScheduleErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/schedules/{id}',
+    ...options
+});
+
+export const botUpdateSchedule = <ThrowOnError extends boolean = false>(options: Options<BotUpdateScheduleData, ThrowOnError>): RequestResult<BotUpdateScheduleResponses, BotUpdateScheduleErrors, ThrowOnError> => (options.client ?? client).patch<BotUpdateScheduleResponses, BotUpdateScheduleErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/schedules/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botGetSelf = <ThrowOnError extends boolean = false>(options?: Options<BotGetSelfData, ThrowOnError>): RequestResult<BotGetSelfResponses, BotGetSelfErrors, ThrowOnError> => (options?.client ?? client).get<BotGetSelfResponses, BotGetSelfErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/self',
+    ...options
+});
+
+export const botUpdateSelf = <ThrowOnError extends boolean = false>(options: Options<BotUpdateSelfData, ThrowOnError>): RequestResult<BotUpdateSelfResponses, BotUpdateSelfErrors, ThrowOnError> => (options.client ?? client).patch<BotUpdateSelfResponses, BotUpdateSelfErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/self',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botListSessions = <ThrowOnError extends boolean = false>(options?: Options<BotListSessionsData, ThrowOnError>): RequestResult<BotListSessionsResponses, BotListSessionsErrors, ThrowOnError> => (options?.client ?? client).get<BotListSessionsResponses, BotListSessionsErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions',
+    ...options
+});
+
+export const botCreateSession = <ThrowOnError extends boolean = false>(options: Options<BotCreateSessionData, ThrowOnError>): RequestResult<BotCreateSessionResponses, BotCreateSessionErrors, ThrowOnError> => (options.client ?? client).post<BotCreateSessionResponses, BotCreateSessionErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botGetSession = <ThrowOnError extends boolean = false>(options: Options<BotGetSessionData, ThrowOnError>): RequestResult<BotGetSessionResponses, BotGetSessionErrors, ThrowOnError> => (options.client ?? client).get<BotGetSessionResponses, BotGetSessionErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}',
+    ...options
+});
+
+export const botUpdateSession = <ThrowOnError extends boolean = false>(options: Options<BotUpdateSessionData, ThrowOnError>): RequestResult<BotUpdateSessionResponses, BotUpdateSessionErrors, ThrowOnError> => (options.client ?? client).patch<BotUpdateSessionResponses, BotUpdateSessionErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botDecideApproval = <ThrowOnError extends boolean = false>(options: Options<BotDecideApprovalData, ThrowOnError>): RequestResult<BotDecideApprovalResponses, BotDecideApprovalErrors, ThrowOnError> => (options.client ?? client).post<BotDecideApprovalResponses, BotDecideApprovalErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/approvals/{approval}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botUploadAttachment = <ThrowOnError extends boolean = false>(options: Options<BotUploadAttachmentData, ThrowOnError>): RequestResult<BotUploadAttachmentResponses, BotUploadAttachmentErrors, ThrowOnError> => (options.client ?? client).post<BotUploadAttachmentResponses, BotUploadAttachmentErrors, ThrowOnError>({
+    bodySerializer: null,
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/attachments',
+    ...options,
+    headers: {
+        'Content-Type': 'application/octet-stream',
+        ...options.headers
+    }
+});
+
+export const botCompactSession = <ThrowOnError extends boolean = false>(options: Options<BotCompactSessionData, ThrowOnError>): RequestResult<BotCompactSessionResponses, BotCompactSessionErrors, ThrowOnError> => (options.client ?? client).post<BotCompactSessionResponses, BotCompactSessionErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/compact',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botSelectComputer = <ThrowOnError extends boolean = false>(options: Options<BotSelectComputerData, ThrowOnError>): RequestResult<BotSelectComputerResponses, BotSelectComputerErrors, ThrowOnError> => (options.client ?? client).post<BotSelectComputerResponses, BotSelectComputerErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/computer',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read a regular file on a Computer allowed for this Session. Relative paths use the Bot home on that Computer.
+ */
+export const botSessionComputerFileContent = <ThrowOnError extends boolean = false>(options: Options<BotSessionComputerFileContentData, ThrowOnError>): RequestResult<BotSessionComputerFileContentResponses, BotSessionComputerFileContentErrors, ThrowOnError> => (options.client ?? client).get<BotSessionComputerFileContentResponses, BotSessionComputerFileContentErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/computers/{computer}/files/content',
+    ...options
+});
+
+export const botSessionContext = <ThrowOnError extends boolean = false>(options: Options<BotSessionContextData, ThrowOnError>): RequestResult<BotSessionContextResponses, BotSessionContextErrors, ThrowOnError> => (options.client ?? client).get<BotSessionContextResponses, BotSessionContextErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/context',
+    ...options
+});
+
+export const botContinueSession = <ThrowOnError extends boolean = false>(options: Options<BotContinueSessionData, ThrowOnError>): RequestResult<BotContinueSessionResponses, BotContinueSessionErrors, ThrowOnError> => (options.client ?? client).post<BotContinueSessionResponses, BotContinueSessionErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/continue',
+    ...options
+});
+
+export const botSessionEntry = <ThrowOnError extends boolean = false>(options: Options<BotSessionEntryData, ThrowOnError>): RequestResult<BotSessionEntryResponses, BotSessionEntryErrors, ThrowOnError> => (options.client ?? client).get<BotSessionEntryResponses, BotSessionEntryErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/entries/{entry}',
+    ...options
+});
+
+export const botHistoryImage = <ThrowOnError extends boolean = false>(options: Options<BotHistoryImageData, ThrowOnError>): RequestResult<BotHistoryImageResponses, BotHistoryImageErrors, ThrowOnError> => (options.client ?? client).get<BotHistoryImageResponses, BotHistoryImageErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/entries/{entry}/images/{index}',
+    ...options
+});
+
+export const botSessionEvents = <ThrowOnError extends boolean = false>(options: Options<BotSessionEventsData, ThrowOnError, BotSessionEventsResponse>): Promise<ServerSentEventsResult<BotSessionEventsResponses>> => (options.client ?? client).sse.get<BotSessionEventsResponses, BotSessionEventsErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/events',
+    ...options
+});
+
+export const botForkSession = <ThrowOnError extends boolean = false>(options: Options<BotForkSessionData, ThrowOnError>): RequestResult<BotForkSessionResponses, BotForkSessionErrors, ThrowOnError> => (options.client ?? client).post<BotForkSessionResponses, BotForkSessionErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/fork',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botSessionHistory = <ThrowOnError extends boolean = false>(options: Options<BotSessionHistoryData, ThrowOnError>): RequestResult<BotSessionHistoryResponses, BotSessionHistoryErrors, ThrowOnError> => (options.client ?? client).get<BotSessionHistoryResponses, BotSessionHistoryErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/history',
+    ...options
+});
+
+export const botSubmitInput = <ThrowOnError extends boolean = false>(options: Options<BotSubmitInputData, ThrowOnError>): RequestResult<BotSubmitInputResponses, BotSubmitInputErrors, ThrowOnError> => (options.client ?? client).post<BotSubmitInputResponses, BotSubmitInputErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/inputs',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botInputReceipt = <ThrowOnError extends boolean = false>(options: Options<BotInputReceiptData, ThrowOnError>): RequestResult<BotInputReceiptResponses, BotInputReceiptErrors, ThrowOnError> => (options.client ?? client).get<BotInputReceiptResponses, BotInputReceiptErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/inputs/{input}',
+    ...options
+});
+
+export const botSelectModel = <ThrowOnError extends boolean = false>(options: Options<BotSelectModelData, ThrowOnError>): RequestResult<BotSelectModelResponses, BotSelectModelErrors, ThrowOnError> => (options.client ?? client).post<BotSelectModelResponses, BotSelectModelErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/model',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botClearPending = <ThrowOnError extends boolean = false>(options: Options<BotClearPendingData, ThrowOnError>): RequestResult<BotClearPendingResponses, BotClearPendingErrors, ThrowOnError> => (options.client ?? client).post<BotClearPendingResponses, BotClearPendingErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/pending/clear',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botRemovePending = <ThrowOnError extends boolean = false>(options: Options<BotRemovePendingData, ThrowOnError>): RequestResult<BotRemovePendingResponses, BotRemovePendingErrors, ThrowOnError> => (options.client ?? client).delete<BotRemovePendingResponses, BotRemovePendingErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/pending/{input}',
+    ...options
+});
+
+export const botUpdatePending = <ThrowOnError extends boolean = false>(options: Options<BotUpdatePendingData, ThrowOnError>): RequestResult<BotUpdatePendingResponses, BotUpdatePendingErrors, ThrowOnError> => (options.client ?? client).patch<BotUpdatePendingResponses, BotUpdatePendingErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/pending/{input}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botMovePending = <ThrowOnError extends boolean = false>(options: Options<BotMovePendingData, ThrowOnError>): RequestResult<BotMovePendingResponses, BotMovePendingErrors, ThrowOnError> => (options.client ?? client).post<BotMovePendingResponses, BotMovePendingErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/pending/{input}/move',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const botSessionProcessOutput = <ThrowOnError extends boolean = false>(options: Options<BotSessionProcessOutputData, ThrowOnError, BotSessionProcessOutputResponse>): Promise<ServerSentEventsResult<BotSessionProcessOutputResponses>> => (options.client ?? client).sse.get<BotSessionProcessOutputResponses, BotSessionProcessOutputErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/processes/{execution}/output',
+    ...options
+});
+
+export const botSessionSnapshot = <ThrowOnError extends boolean = false>(options: Options<BotSessionSnapshotData, ThrowOnError>): RequestResult<BotSessionSnapshotResponses, BotSessionSnapshotErrors, ThrowOnError> => (options.client ?? client).get<BotSessionSnapshotResponses, BotSessionSnapshotErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/snapshot',
+    ...options
+});
+
+export const botStopSession = <ThrowOnError extends boolean = false>(options: Options<BotStopSessionData, ThrowOnError>): RequestResult<BotStopSessionResponses, BotStopSessionErrors, ThrowOnError> => (options.client ?? client).post<BotStopSessionResponses, BotStopSessionErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/stop',
+    ...options
+});
+
+export const botListSubagents = <ThrowOnError extends boolean = false>(options: Options<BotListSubagentsData, ThrowOnError>): RequestResult<BotListSubagentsResponses, BotListSubagentsErrors, ThrowOnError> => (options.client ?? client).get<BotListSubagentsResponses, BotListSubagentsErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/subagents',
+    ...options
+});
+
+export const botSessionTimeline = <ThrowOnError extends boolean = false>(options: Options<BotSessionTimelineData, ThrowOnError>): RequestResult<BotSessionTimelineResponses, BotSessionTimelineErrors, ThrowOnError> => (options.client ?? client).get<BotSessionTimelineResponses, BotSessionTimelineErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/sessions/{id}/timeline',
+    ...options
+});
+
+export const botListWakeEndpoints = <ThrowOnError extends boolean = false>(options?: Options<BotListWakeEndpointsData, ThrowOnError>): RequestResult<BotListWakeEndpointsResponses, BotListWakeEndpointsErrors, ThrowOnError> => (options?.client ?? client).get<BotListWakeEndpointsResponses, BotListWakeEndpointsErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/wake-endpoints',
+    ...options
+});
+
+export const botDeleteWakeEndpoint = <ThrowOnError extends boolean = false>(options: Options<BotDeleteWakeEndpointData, ThrowOnError>): RequestResult<BotDeleteWakeEndpointResponses, BotDeleteWakeEndpointErrors, ThrowOnError> => (options.client ?? client).delete<BotDeleteWakeEndpointResponses, BotDeleteWakeEndpointErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/wake-endpoints/{id}',
+    ...options
+});
+
+export const botGetWakeEndpoint = <ThrowOnError extends boolean = false>(options: Options<BotGetWakeEndpointData, ThrowOnError>): RequestResult<BotGetWakeEndpointResponses, BotGetWakeEndpointErrors, ThrowOnError> => (options.client ?? client).get<BotGetWakeEndpointResponses, BotGetWakeEndpointErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/wake-endpoints/{id}',
+    ...options
+});
+
+export const botUpdateWakeEndpoint = <ThrowOnError extends boolean = false>(options: Options<BotUpdateWakeEndpointData, ThrowOnError>): RequestResult<BotUpdateWakeEndpointResponses, BotUpdateWakeEndpointErrors, ThrowOnError> => (options.client ?? client).patch<BotUpdateWakeEndpointResponses, BotUpdateWakeEndpointErrors, ThrowOnError>({
+    security: [{
+            key: 'botToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/bot/wake-endpoints/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 export const listComputers = <ThrowOnError extends boolean = false>(options?: Options<ListComputersData, ThrowOnError>): RequestResult<ListComputersResponses, ListComputersErrors, ThrowOnError> => (options?.client ?? client).get<ListComputersResponses, ListComputersErrors, ThrowOnError>({

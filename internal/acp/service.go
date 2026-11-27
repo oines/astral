@@ -147,11 +147,16 @@ type connection struct {
 	operations         chan struct{}
 	cancellations      chan struct{}
 	workers            sync.WaitGroup
+	sessionCompaction  bool
+	clientSubagents    bool
 
-	mu          sync.Mutex
-	sessions    map[string]*loadedSession
-	creating    int
+	mu       sync.Mutex
+	sessions map[string]*loadedSession
+	creating int
+
+	outboxMu    sync.Mutex
 	queuedBytes int
+	outboxSpace chan struct{}
 }
 
 func (c *connection) serve() {
@@ -191,7 +196,7 @@ func (c *connection) serve() {
 		}
 		if !initialized {
 			if request.ID != nil {
-				c.fail(request.ID, &rpcError{Code: -32000, Message: "Initialize the ACP connection first."})
+				c.fail(request.ID, &rpcError{Code: -32600, Message: "Initialize the ACP connection first."})
 			}
 			continue
 		}
@@ -199,14 +204,14 @@ func (c *connection) serve() {
 			continue
 		}
 		permits := c.operations
-		if request.Method == "session/cancel" {
+		if request.Method == "session/cancel" || request.Method == "session/close" {
 			permits = c.cancellations
 		}
 		select {
 		case permits <- struct{}{}:
 		default:
 			if request.ID != nil {
-				c.fail(request.ID, &rpcError{Code: -32000, Message: "Too many pending requests."})
+				c.fail(request.ID, &rpcError{Code: rpcOverloaded, Message: "Too many pending requests."})
 			}
 			continue
 		}
@@ -214,16 +219,21 @@ func (c *connection) serve() {
 		if rpcErr != nil {
 			<-permits
 			if request.ID != nil {
-				c.fail(request.ID, rpcErr)
+				c.failRequest(request, rpcErr)
 			}
 			continue
+		}
+		if request.Method == "session/prompt" {
+			// Admission has parsed the prompt. Do not retain its JSON and
+			// Base64 payload for the lifetime of the model turn.
+			request.Params = nil
 		}
 		c.workers.Add(1)
 		go func() {
 			defer c.workers.Done()
 			defer func() { <-permits }()
 			if err := work(); err != nil && request.ID != nil {
-				c.fail(request.ID, err)
+				c.failRequest(request, err)
 			}
 		}()
 	}
@@ -255,9 +265,7 @@ func (c *connection) writeLoop() {
 			ctx, cancel := context.WithTimeout(c.ctx, writeTimeout)
 			err := c.ws.Write(ctx, websocket.MessageText, raw)
 			cancel()
-			c.mu.Lock()
-			c.queuedBytes -= len(raw)
-			c.mu.Unlock()
+			c.releaseOutbox(len(raw))
 			if err != nil {
 				c.cancel()
 				return
@@ -272,14 +280,9 @@ func (c *connection) send(value any, replay bool) bool {
 		c.cancel()
 		return false
 	}
-	c.mu.Lock()
-	if c.queuedBytes+len(raw) > maxOutboxBytes {
-		c.mu.Unlock()
-		c.cancel()
+	if !c.reserveOutbox(len(raw), replay) {
 		return false
 	}
-	c.queuedBytes += len(raw)
-	c.mu.Unlock()
 	if replay {
 		select {
 		case c.outbox <- raw:
@@ -294,5 +297,47 @@ func (c *connection) send(value any, replay bool) bool {
 	default:
 		c.cancel()
 		return false
+	}
+}
+
+func (c *connection) reserveOutbox(size int, replay bool) bool {
+	limit := maxOutboxBytes
+	if replay {
+		// A replay can be many frames long. Leave space for concurrent live
+		// updates instead of making a history with images look like a slow peer.
+		limit -= maxFrame
+	}
+	for {
+		c.outboxMu.Lock()
+		if c.queuedBytes+size <= limit {
+			c.queuedBytes += size
+			c.outboxMu.Unlock()
+			return true
+		}
+		if !replay {
+			c.outboxMu.Unlock()
+			c.cancel()
+			return false
+		}
+		if c.outboxSpace == nil {
+			c.outboxSpace = make(chan struct{})
+		}
+		space := c.outboxSpace
+		c.outboxMu.Unlock()
+		select {
+		case <-space:
+		case <-c.ctx.Done():
+			return false
+		}
+	}
+}
+
+func (c *connection) releaseOutbox(size int) {
+	c.outboxMu.Lock()
+	defer c.outboxMu.Unlock()
+	c.queuedBytes -= size
+	if c.outboxSpace != nil {
+		close(c.outboxSpace)
+		c.outboxSpace = nil
 	}
 }

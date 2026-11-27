@@ -148,7 +148,7 @@ func (r *runtime) existingReceipt(ctx context.Context, id, hash string) (InputRe
 	return InputReceipt{}, false, err
 }
 func (s *Service) Submit(ctx context.Context, id string, input InputRequest) (receipt InputReceipt, err error) {
-	return s.submit(ctx, id, input, nil)
+	return s.submit(ctx, id, input, nil, nil)
 }
 
 type acpPromptKey struct{}
@@ -157,18 +157,19 @@ type acpPromptAdmission struct {
 	runID      string
 }
 
-func (s *Service) SubmitACP(ctx context.Context, id string, input InputRequest, clientName string) (InputReceipt, error) {
+func (s *Service) SubmitACP(ctx context.Context, id string, input InputRequest, clientName string, images ...ACPImage) (InputReceipt, error) {
 	admission := &acpPromptAdmission{clientName: clientName}
-	receipt, err := s.submit(context.WithValue(ctx, acpPromptKey{}, admission), id, input, admission)
+	receipt, err := s.submit(context.WithValue(ctx, acpPromptKey{}, admission), id, input, admission, images)
 	receipt.RunID = admission.runID
 	return receipt, err
 }
 
-func (s *Service) submit(ctx context.Context, id string, input InputRequest, acp *acpPromptAdmission) (receipt InputReceipt, err error) {
+func (s *Service) submit(ctx context.Context, id string, input InputRequest, acp *acpPromptAdmission, images []ACPImage) (receipt InputReceipt, err error) {
 	if input.ID == "" || len(input.ID) > 200 {
 		return InputReceipt{}, domain.Invalid("a stable input ID is required")
 	}
-	if strings.TrimSpace(input.Text) == "" && len(input.Files) == 0 {
+	hasInlineImages := len(images) > 0
+	if strings.TrimSpace(input.Text) == "" && len(input.Files) == 0 && !hasInlineImages {
 		return InputReceipt{}, domain.Invalid("message or attachment is required")
 	}
 	if input.Mode == "" {
@@ -193,7 +194,12 @@ func (s *Service) submit(ctx context.Context, id string, input InputRequest, acp
 			err = s.resumeIMSession(ctx, id)
 		}
 	}()
-	hash := digest(input)
+	var hash string
+	if hasInlineImages {
+		hash = acpImageInputDigest(input, images)
+	} else {
+		hash = digest(input)
+	}
 	if receipt, exists, err := r.existingReceipt(ctx, input.ID, hash); err != nil || exists {
 		return receipt, err
 	}
@@ -226,11 +232,26 @@ func (s *Service) submit(ctx context.Context, id string, input InputRequest, acp
 		return InputReceipt{}, err
 	}
 	at := time.Now().In(location)
+	var frozen map[string]core.Content
+	if hasInlineImages {
+		uploaded, prepared, err := r.uploadACPImages(ctx, images)
+		if err != nil {
+			return InputReceipt{}, err
+		}
+		files, frozen = append(files, uploaded...), prepared
+	}
 	var message core.Message
 	if acp != nil {
 		message = messages.ACP(input.ID, input.Text, "Owner", acp.clientName, at, files)
 	} else {
 		message = messages.Web(input.ID, input.Text, "Owner", at, files)
+	}
+	if hasInlineImages {
+		for i, part := range message.Content {
+			if image, ok := frozen[part.URL]; ok {
+				message.Content[i] = image
+			}
+		}
 	}
 	if err = s.Files.FreezeImages(ctx, r.agentID, id, &message); err != nil {
 		return InputReceipt{}, err
