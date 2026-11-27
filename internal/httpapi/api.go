@@ -1,9 +1,10 @@
-// Package httpapi is the Owner boundary. It never shares an authentication
-// surface with the Agent Gateway or accepts execution identity in request data.
+// Package httpapi serves the Owner and external Bot HTTP APIs. Command
+// credentials and execution identity belong to the separate Agent Gateway.
 package httpapi
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/oines/astral/internal/acp"
 	"github.com/oines/astral/internal/auth"
+	"github.com/oines/astral/internal/botaccess"
 	"github.com/oines/astral/internal/channels"
 	"github.com/oines/astral/internal/computers"
 	"github.com/oines/astral/internal/domain"
@@ -55,6 +57,10 @@ type API struct {
 	authMux      *http.ServeMux
 	authRequests publicAuthRequests
 	handler      http.Handler
+	botTokens    *botaccess.Service
+	botMux       *http.ServeMux
+	botHandler   http.Handler
+	botCursorKey [32]byte
 }
 type Preferences struct {
 	domain.Meta
@@ -91,6 +97,10 @@ type ConnectionInput struct {
 }
 type SessionInput struct {
 	AgentID string `json:"agent_id"`
+	Title   string `json:"title"`
+}
+type BotSessionInput struct {
+	AgentID string `json:"agent_id,omitempty"`
 	Title   string `json:"title"`
 }
 type SessionPresentation struct {
@@ -190,9 +200,15 @@ func New(config Config) *API {
 	if config.ACP == nil && config.Harness != nil {
 		config.ACP = acp.New(config.Harness)
 	}
-	a := &API{Config: config, Contract: httpcontract.New(), mux: http.NewServeMux()}
+	a := &API{Config: config, Contract: httpcontract.New(), mux: http.NewServeMux(), botMux: http.NewServeMux()}
+	if config.Harness != nil {
+		a.botTokens = botaccess.New(config.Harness.Store)
+		rand.Read(a.botCursorKey[:])
+	}
 	a.resources()
 	a.acpRoutes()
+	a.botTokenRoutes()
+	a.botResourceRoutes()
 	a.sessionRoutes()
 	a.scheduleRoutes()
 	a.wakeRoutes()
@@ -206,11 +222,17 @@ func New(config Config) *API {
 	a.fileRoutes()
 	a.authRoutes()
 	a.handler = a.authenticate(a.mux)
+	a.botMux.HandleFunc("GET "+BotAPIPrefix+"/openapi.json", a.botOpenAPI)
+	a.botHandler = a.authenticateBot(a.botMux)
 	return a
 }
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/acp" {
 		a.ACPHandler().ServeHTTP(w, r)
+		return
+	}
+	if IsBotAPIPath(r.URL.Path) {
+		a.BotHandler().ServeHTTP(w, r)
 		return
 	}
 	a.handler.ServeHTTP(w, r)
@@ -692,65 +714,86 @@ func (a *API) resources() {
 }
 func (a *API) sessionRoutes() {
 	h := a.Config.Harness
-	route[httpcontract.Empty, []harness.SessionSummary](a, "GET", "/sessions", "listSessions", "Sessions", func(r *http.Request, _ httpcontract.Empty) ([]harness.SessionSummary, error) {
+	sharedBotRoute[httpcontract.Empty, []harness.SessionSummary](a, "GET", "/sessions", "listSessions", "Sessions", func(r *http.Request, _ httpcontract.Empty) ([]harness.SessionSummary, error) {
+		if bot := botID(r); bot != "" {
+			return h.BotSummaries(r.Context(), bot, "")
+		}
 		return h.Summaries(r.Context())
 	})
-	route[SessionInput, harness.View](a, "POST", "/sessions", "createSession", "Sessions", func(r *http.Request, input SessionInput) (harness.View, error) {
-		record, err := h.CreateSession(r.Context(), input.AgentID, input.Title)
+	create := func(r *http.Request, agentID, title string) (harness.View, error) {
+		record, err := h.CreateSession(r.Context(), agentID, title)
 		if err != nil {
 			return harness.View{}, err
 		}
 		return h.View(r.Context(), record.ID)
+	}
+	route[SessionInput, harness.View](a, "POST", "/sessions", "createSession", "Sessions", func(r *http.Request, input SessionInput) (harness.View, error) {
+		return create(r, input.AgentID, input.Title)
 	})
-	route[httpcontract.Empty, harness.View](a, "GET", "/sessions/{id}", "getSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (harness.View, error) {
+	botRoute[BotSessionInput, harness.View](a, "POST", "/sessions", "createSession", "Sessions", func(r *http.Request, input BotSessionInput) (harness.View, error) {
+		bot := botID(r)
+		if input.AgentID != "" && input.AgentID != bot {
+			return harness.View{}, domain.Forbidden("Session must belong to this Bot")
+		}
+		return create(r, bot, input.Title)
+	})
+	sessionRoute[httpcontract.Empty, harness.View](a, "GET", "/sessions/{id}", "getSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (harness.View, error) {
 		return h.View(r.Context(), r.PathValue("id"))
 	})
-	route[SessionPresentation, httpcontract.OK](a, "PATCH", "/sessions/{id}", "updateSession", "Sessions", func(r *http.Request, input SessionPresentation) (httpcontract.OK, error) {
+	sessionRoute[SessionPresentation, httpcontract.OK](a, "PATCH", "/sessions/{id}", "updateSession", "Sessions", func(r *http.Request, input SessionPresentation) (httpcontract.OK, error) {
+		if botID(r) != "" && input.Private != nil {
+			return httpcontract.OK{}, domain.Forbidden("Session visibility is managed by the Owner")
+		}
 		return httpcontract.OK{OK: true}, h.SaveSessionPresentation(r.Context(), r.PathValue("id"), input.Title, input.Pinned, input.Archived, input.Private)
 	})
 	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/sessions/{id}", "deleteSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.DeleteSession(r.Context(), r.PathValue("id"), revision(r))
 	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
-	route[harness.InputRequest, harness.InputReceipt](a, "POST", "/sessions/{id}/inputs", "submitInput", "Sessions", func(r *http.Request, input harness.InputRequest) (harness.InputReceipt, error) {
+	sessionRoute[harness.InputRequest, harness.InputReceipt](a, "POST", "/sessions/{id}/inputs", "submitInput", "Sessions", func(r *http.Request, input harness.InputRequest) (harness.InputReceipt, error) {
 		return h.Submit(r.Context(), r.PathValue("id"), input)
 	})
-	route[httpcontract.Empty, harness.InputReceipt](a, "GET", "/sessions/{id}/inputs/{input}", "inputReceipt", "Sessions", func(r *http.Request, _ httpcontract.Empty) (harness.InputReceipt, error) {
+	sessionRoute[httpcontract.Empty, harness.InputReceipt](a, "GET", "/sessions/{id}/inputs/{input}", "inputReceipt", "Sessions", func(r *http.Request, _ httpcontract.Empty) (harness.InputReceipt, error) {
 		return h.Receipt(r.Context(), r.PathValue("id"), r.PathValue("input"))
 	})
-	route[httpcontract.Empty, httpcontract.OK](a, "POST", "/sessions/{id}/stop", "stopSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+	sessionRoute[httpcontract.Empty, httpcontract.OK](a, "POST", "/sessions/{id}/stop", "stopSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.Stop(r.Context(), r.PathValue("id"))
 	})
-	route[httpcontract.Empty, httpcontract.OK](a, "POST", "/sessions/{id}/continue", "continueSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+	sessionRoute[httpcontract.Empty, httpcontract.OK](a, "POST", "/sessions/{id}/continue", "continueSession", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.Continue(r.Context(), r.PathValue("id"))
 	})
-	route[Compact, httpcontract.OK](a, "POST", "/sessions/{id}/compact", "compactSession", "Sessions", func(r *http.Request, input Compact) (httpcontract.OK, error) {
+	sessionRoute[Compact, httpcontract.OK](a, "POST", "/sessions/{id}/compact", "compactSession", "Sessions", func(r *http.Request, input Compact) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.Compact(r.Context(), r.PathValue("id"), input.Instructions)
 	})
-	route[SelectComputer, httpcontract.OK](a, "POST", "/sessions/{id}/computer", "selectComputer", "Sessions", func(r *http.Request, input SelectComputer) (httpcontract.OK, error) {
+	sessionRoute[SelectComputer, httpcontract.OK](a, "POST", "/sessions/{id}/computer", "selectComputer", "Sessions", func(r *http.Request, input SelectComputer) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.SelectComputer(r.Context(), r.PathValue("id"), input.ComputerID, input.CWD)
 	})
-	route[SelectModel, httpcontract.OK](a, "POST", "/sessions/{id}/model", "selectModel", "Sessions", func(r *http.Request, input SelectModel) (httpcontract.OK, error) {
+	sessionRoute[SelectModel, httpcontract.OK](a, "POST", "/sessions/{id}/model", "selectModel", "Sessions", func(r *http.Request, input SelectModel) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.SelectModel(r.Context(), r.PathValue("id"), input.ProfileID, input.Reasoning)
 	})
-	route[ClearInputs, httpcontract.OK](a, "POST", "/sessions/{id}/pending/clear", "clearPending", "Sessions", func(r *http.Request, input ClearInputs) (httpcontract.OK, error) {
+	sessionRoute[ClearInputs, httpcontract.OK](a, "POST", "/sessions/{id}/pending/clear", "clearPending", "Sessions", func(r *http.Request, input ClearInputs) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.ClearPending(r.Context(), r.PathValue("id"), input.Kind)
 	})
-	route[harness.PendingEdit, httpcontract.OK](a, "PATCH", "/sessions/{id}/pending/{input}", "updatePending", "Sessions", func(r *http.Request, input harness.PendingEdit) (httpcontract.OK, error) {
+	sessionRoute[harness.PendingEdit, httpcontract.OK](a, "PATCH", "/sessions/{id}/pending/{input}", "updatePending", "Sessions", func(r *http.Request, input harness.PendingEdit) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.UpdatePending(r.Context(), r.PathValue("id"), r.PathValue("input"), input)
 	})
-	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/sessions/{id}/pending/{input}", "removePending", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+	sessionRoute[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/sessions/{id}/pending/{input}", "removePending", "Sessions", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.RemovePending(r.Context(), r.PathValue("id"), r.PathValue("input"))
 	})
-	route[MovePending, httpcontract.OK](a, "POST", "/sessions/{id}/pending/{input}/move", "movePending", "Sessions", func(r *http.Request, input MovePending) (httpcontract.OK, error) {
+	sessionRoute[MovePending, httpcontract.OK](a, "POST", "/sessions/{id}/pending/{input}/move", "movePending", "Sessions", func(r *http.Request, input MovePending) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.MovePending(r.Context(), r.PathValue("id"), r.PathValue("input"), input.BeforeID)
 	})
-	route[Fork, domain.Session](a, "POST", "/sessions/{id}/fork", "forkSession", "Sessions", func(r *http.Request, input Fork) (domain.Session, error) {
+	sessionRoute[Fork, domain.Session](a, "POST", "/sessions/{id}/fork", "forkSession", "Sessions", func(r *http.Request, input Fork) (domain.Session, error) {
+		if botID(r) != "" && input.EntryID != "" {
+			if _, err := a.readSessionEntry(r, input.EntryID); err != nil {
+				return domain.Session{}, err
+			}
+		}
 		return h.Fork(r.Context(), r.PathValue("id"), input.EntryID, input.Title, input.ID)
 	})
-	route[Approval, httpcontract.OK](a, "POST", "/sessions/{id}/approvals/{approval}", "decideApproval", "Sessions", func(r *http.Request, input Approval) (httpcontract.OK, error) {
+	sessionRoute[Approval, httpcontract.OK](a, "POST", "/sessions/{id}/approvals/{approval}", "decideApproval", "Sessions", func(r *http.Request, input Approval) (httpcontract.OK, error) {
 		return httpcontract.OK{OK: true}, h.DecideApproval(r.Context(), r.PathValue("id"), r.PathValue("approval"), input.Decision)
 	})
-	route[httpcontract.Empty, ContextStats](a, "GET", "/sessions/{id}/context", "sessionContext", "Sessions", func(r *http.Request, _ httpcontract.Empty) (ContextStats, error) {
+	sessionRoute[httpcontract.Empty, ContextStats](a, "GET", "/sessions/{id}/context", "sessionContext", "Sessions", func(r *http.Request, _ httpcontract.Empty) (ContextStats, error) {
 		session, err := h.Core(r.Context(), r.PathValue("id"))
 		if err != nil {
 			return ContextStats{}, err
@@ -792,17 +835,23 @@ func (a *API) sessionRoutes() {
 		return ContextStats{EstimatedInput: view.EstimatedInput, ContextWindow: spec.ContextWindow, MaxInputTokens: spec.MaxInputTokens, OutputReservation: view.Request.MaxOutputTokens, HeadID: view.HeadID}, nil
 
 	})
-	route[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/history", "sessionHistory", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
-		return gateway.History(r.Context(), h, r.PathValue("id"), r.URL.Query().Get("cursor"), limit(r, 50), r.URL.Query().Get("trace") == "true", false)
-	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
-	route[httpcontract.Empty, core.Entry](a, "GET", "/sessions/{id}/entries/{entry}", "sessionEntry", "Sessions", func(r *http.Request, _ httpcontract.Empty) (core.Entry, error) {
-		session, err := h.Core(r.Context(), r.PathValue("id"))
+	sessionRoute[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/history", "sessionHistory", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
+		view := historyView(r, "history")
+		cursor, err := a.historyCursor(r, view)
 		if err != nil {
-			return core.Entry{}, err
+			return gateway.HistoryPage{}, err
 		}
-		entry, err := session.History().Get(r.Context(), r.PathValue("entry"))
+		page, err := gateway.History(r.Context(), h, r.PathValue("id"), cursor, limit(r, 50), r.URL.Query().Get("trace") == "true", false)
+		page.NextCursor = a.historyNextCursor(r, view, page.NextCursor)
+		return page, err
+	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
+	sessionRoute[httpcontract.Empty, core.Entry](a, "GET", "/sessions/{id}/entries/{entry}", "sessionEntry", "Sessions", func(r *http.Request, _ httpcontract.Empty) (core.Entry, error) {
+		entry, err := a.readSessionEntry(r, r.PathValue("entry"))
 		gateway.RemoveImageData(&entry)
 		return entry, err
+	})
+	botSessionRoute[httpcontract.Empty, []harness.SessionSummary](a, "GET", "/sessions/{id}/subagents", "listSubagents", "Sessions", func(r *http.Request, _ httpcontract.Empty) ([]harness.SessionSummary, error) {
+		return h.BotSummaries(r.Context(), botID(r), r.PathValue("id"))
 	})
 }
 func revision(r *http.Request) int64 {

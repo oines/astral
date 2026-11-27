@@ -80,6 +80,16 @@ func (s *Service) selectDirectSubagentModel(ctx context.Context, parent, id stri
 }
 
 func (s *Service) selectSubagentModels(ctx context.Context, id string, selection core.ModelSelection) error {
+	return s.applySubagentModelSelection(ctx, id, selection, false)
+}
+
+// SelectModelReasoning applies a reasoning-only change for the observed model.
+// A concurrent selection of a different model takes precedence over this edit.
+func (s *Service) SelectModelReasoning(ctx context.Context, id, profileID string, reasoning *core.ReasoningOptions) error {
+	return s.applySubagentModelSelection(ctx, id, core.ModelSelection{ID: profileID, Reasoning: reasoning}, true)
+}
+
+func (s *Service) applySubagentModelSelection(ctx context.Context, id string, selection core.ModelSelection, keepModel bool) error {
 	if err := lockSubagentContext(ctx, &s.subagentMu); err != nil {
 		return err
 	}
@@ -121,16 +131,31 @@ func (s *Service) selectSubagentModels(ctx context.Context, id string, selection
 		}
 	}
 	r.mu.Lock()
+	if _, scoped := persistence.CurrentSessionScope(ctx); scoped {
+		var current domain.Session
+		if err = s.Store.Get(ctx, "sessions", id, &current); err == nil {
+			err = persistence.CheckSessionAccess(ctx, current, s.Store)
+		}
+		if err != nil {
+			r.mu.Unlock()
+			return err
+		}
+	}
 	if _, err = r.readableCore(); err != nil {
 		r.mu.Unlock()
 		return err
 	}
-	previous, err := s.modelPreferredSelection(ctx, id, r.core.Load().Configuration().Selection)
+	active := r.core.Load().Configuration().Selection
+	if keepModel && active.ID != selection.ID {
+		r.mu.Unlock()
+		return domain.Conflict("the Session model changed; reload its configuration")
+	}
+	previous, err := s.modelPreferredSelection(ctx, id, active)
 	if err != nil {
 		r.mu.Unlock()
 		return err
 	}
-	changed := !jsonEqual(previous, selection) || !jsonEqual(r.core.Load().Configuration().Selection, selection)
+	changed := !jsonEqual(previous, selection) || !jsonEqual(active, selection)
 
 	// Record the intent before the first Core write. Recovery only propagates
 	// it if the root's durable selection confirms that write succeeded.

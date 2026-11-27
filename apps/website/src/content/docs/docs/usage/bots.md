@@ -60,11 +60,11 @@ Open **Computer access** (or pick **Manage Computers** from the session's comput
 
 Choose **Connect platform** in Bot settings and follow [Connect a chat](/docs/chat/overview/) for Telegram, QQ, WeChat, or Feishu. One Bot can hold multiple accounts (even on the same platform), each with isolated credentials, enabled state, and allowed chats.
 
-## Connect an app over ACP
+## Connect an app or script
 
-In **Basic settings → ACP access**, copy the WebSocket address and create a token named for the app or device that will use it. Copy the token before closing the dialog. Give a different token to each app so you can revoke its access separately. Revoking a token immediately disconnects any clients using it.
+In **Basic settings → External access**, copy the address for the integration you want to use. Choose [Bot API](/docs/hosting/bot-api/) for scripts and HTTP apps, or [ACP](/docs/hosting/acp/) for compatible editors and clients that join live sessions.
 
-The token grants access to this Bot's ordinary, unarchived, non-private sessions, including their history and the ability to start or stop work. Confirm the Bot's computer access before sharing a token. [Check client compatibility and connect](/docs/hosting/acp/).
+Create a token for the selected purpose and name it for the app or device. Copy it before closing the dialog. Give each app a separate token so you can revoke its access independently. Review the Bot’s **Computer access** and share tokens only with clients you trust.
 
 ## Disable or delete
 

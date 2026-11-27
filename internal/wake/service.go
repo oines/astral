@@ -156,7 +156,7 @@ func requireController(ctx context.Context, tx interface {
 	Get(context.Context, string, string, any) error
 }) error {
 	scope, ok := persistence.CurrentSessionScope(ctx)
-	if !ok {
+	if !ok || scope.SessionID == "" {
 		return nil
 	}
 	var caller domain.Session
@@ -236,7 +236,7 @@ func (s *Service) loadStateLocked(ctx context.Context, id string) error {
 func (s *Service) Create(ctx context.Context, agentID string, input CreateInput) (domain.WakeEndpoint, error) {
 	scope, ok := persistence.CurrentSessionScope(ctx)
 	computerID, _ := ctx.Value(computerKey{}).(string)
-	if !ok || scope.AgentID != agentID || computerID == "" {
+	if !ok || scope.SessionID == "" || scope.AgentID != agentID || computerID == "" {
 		return domain.WakeEndpoint{}, domain.Forbidden("only a root Agent command can create event endpoints")
 	}
 	if input.SessionID == "" {

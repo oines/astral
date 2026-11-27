@@ -49,26 +49,40 @@ func (a *API) streamRoutes() {
 	for _, spec := range []struct {
 		path, id, content string
 		handler           http.HandlerFunc
+		botSession        func(*http.Request) string
 	}{
-		{"/sessions/{id}/events", "sessionEvents", "text/event-stream", a.events},
-		{"/sessions/{id}/processes/{execution}/output", "sessionProcessOutput", "text/event-stream", a.processOutput},
-		{"/sessions/{id}/rollout", "exportRollout", "application/x-ndjson", a.exportRollout},
-		{"/sessions/{id}/entries/{entry}/images/{index}", "historyImage", "application/octet-stream", a.historyImage},
-		{"/files/{id}/content", "fileContent", "application/octet-stream", a.fileContent},
+		{"/sessions/{id}/events", "sessionEvents", "text/event-stream", a.events, sessionPathID},
+		{"/sessions/{id}/processes/{execution}/output", "sessionProcessOutput", "text/event-stream", a.processOutput, sessionPathID},
+		{"/sessions/{id}/rollout", "exportRollout", "application/x-ndjson", a.exportRollout, nil},
+		{"/sessions/{id}/entries/{entry}/images/{index}", "historyImage", "application/octet-stream", a.historyImage, sessionPathID},
+		{"/files/{id}/content", "fileContent", "application/octet-stream", a.fileContent, sessionQueryID},
 	} {
 		path := "/api/v1" + spec.path
-		a.Contract.Describe(httpcontract.Operation{Method: "GET", Path: path, ID: spec.id, Tag: "Streams", Auth: true, ContentType: spec.content, Query: []httpcontract.Parameter{{Name: "session_id"}, {Name: "download", Type: "boolean"}}})
+		op := httpcontract.Operation{Method: "GET", Path: path, ID: spec.id, Tag: "Streams", Auth: true, ContentType: spec.content, Query: []httpcontract.Parameter{{Name: "session_id"}, {Name: "download", Type: "boolean"}}}
+		describe := a.Contract.Describe
+		if spec.id == "fileContent" {
+			describe = a.Contract.DescribeContent
+		}
+		describe(op)
 		a.mux.HandleFunc("GET "+path, spec.handler)
+		if spec.botSession != nil {
+			describe(a.botRawRoute(op, spec.handler, spec.botSession))
+		}
 	}
-	route[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/timeline", "sessionTimeline", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
+	sessionRoute[httpcontract.Empty, gateway.HistoryPage](a, "GET", "/sessions/{id}/timeline", "sessionTimeline", "Sessions", func(r *http.Request, _ httpcontract.Empty) (gateway.HistoryPage, error) {
 		query := r.URL.Query()
 		page := gateway.HistoryPage{Entries: []core.Entry{}}
-		var err error
-		if !query.Has("activity_cursor") || query.Get("cursor") != "" || query.Get("trace") == "true" {
-			page, err = timelineHistory(r.Context(), a.Config.Harness.CoreStore, r.PathValue("id"), query.Get("cursor"), limit(r, 60), query.Get("trace") == "true")
+		view := historyView(r, "timeline")
+		cursor, err := a.historyCursor(r, view)
+		if err != nil {
+			return page, err
+		}
+		if !query.Has("activity_cursor") || cursor != "" || query.Get("trace") == "true" {
+			page, err = timelineHistory(r.Context(), a.Config.Harness.CoreStore, r.PathValue("id"), cursor, limit(r, 60), query.Get("trace") == "true")
 			if err != nil {
 				return page, err
 			}
+			page.NextCursor = a.historyNextCursor(r, view, page.NextCursor)
 		}
 		if query.Has("activity_cursor") && query.Get("trace") != "true" {
 			activity, err := a.Config.Harness.SubagentActivities(r.Context(), r.PathValue("id"), query.Get("activity_cursor"), limit(r, 60), true)
@@ -80,25 +94,24 @@ func (a *API) streamRoutes() {
 		return page, nil
 	}, httpcontract.Parameter{Name: "cursor"}, httpcontract.Parameter{Name: "activity_cursor"}, httpcontract.Parameter{Name: "limit", Type: "integer"}, httpcontract.Parameter{Name: "trace", Type: "boolean"})
 
-	a.Contract.Describe(httpcontract.Operation{Method: "POST", Path: "/api/v1/sessions/{id}/attachments", ID: "uploadAttachment", Tag: "Files", Auth: true, Response: reflect.TypeFor[UploadedAttachment](),
-		Query: []httpcontract.Parameter{{Name: "name", Required: true}, {Name: "computer_id"}}})
-	upload := a.Contract.Paths["/api/v1/sessions/{id}/attachments"].(map[string]any)["post"].(map[string]any)
-	upload["requestBody"] = map[string]any{"required": true, "content": map[string]any{"application/octet-stream": map[string]any{"schema": map[string]any{"type": "string", "format": "binary"}}}}
-	a.mux.HandleFunc("POST /api/v1/sessions/{id}/attachments", a.upload)
+	const attachmentPath = "/sessions/{id}/attachments"
+	upload := httpcontract.Operation{Method: "POST", Path: "/api/v1" + attachmentPath, ID: "uploadAttachment", Tag: "Files", Auth: true, Response: reflect.TypeFor[UploadedAttachment](),
+		Query: []httpcontract.Parameter{{Name: "name", Required: true}, {Name: "computer_id"}}}
+	a.Contract.Describe(upload)
+	a.mux.HandleFunc("POST "+upload.Path, a.upload)
+	a.Contract.Describe(a.botRawRoute(upload, a.upload, sessionPathID))
+	for _, path := range []string{upload.Path, BotAPIPrefix + attachmentPath} {
+		a.Contract.Paths[path].(map[string]any)["post"].(map[string]any)["requestBody"] = map[string]any{
+			"required": true, "content": map[string]any{"application/octet-stream": map[string]any{"schema": map[string]any{"type": "string", "format": "binary"}}},
+		}
+	}
 	// Event schemas are part of the contract even though EventSource has its own
 	// lifecycle and must not be represented as a normal JSON mutation.
-	a.Contract.Describe(httpcontract.Operation{Method: "GET", Path: "/api/v1/sessions/{id}/snapshot", ID: "sessionSnapshot", Tag: "Sessions", Auth: true, Response: reflect.TypeFor[Snapshot]()})
-	a.mux.HandleFunc("GET /api/v1/sessions/{id}/snapshot", func(w http.ResponseWriter, r *http.Request) {
-		snapshot, err := a.snapshot(r)
-		if err != nil {
-			httpcontract.Failure(w, r, err)
-			return
-		}
-		httpcontract.JSON(w, 200, snapshot)
+	sessionRoute[httpcontract.Empty, Snapshot](a, "GET", "/sessions/{id}/snapshot", "sessionSnapshot", "Sessions", func(r *http.Request, _ httpcontract.Empty) (Snapshot, error) {
+		return a.snapshot(r)
 	})
-	a.Contract.Describe(httpcontract.Operation{Method: "GET", Path: "/api/v1/event-schema", ID: "eventSchema", Tag: "System", Auth: true, Response: reflect.TypeFor[Event]()})
-	a.mux.HandleFunc("GET /api/v1/event-schema", func(w http.ResponseWriter, r *http.Request) {
-		httpcontract.JSON(w, 200, Event{Epoch: a.Config.Harness.RuntimeID})
+	sharedBotRoute[httpcontract.Empty, Event](a, "GET", "/event-schema", "eventSchema", "System", func(r *http.Request, _ httpcontract.Empty) (Event, error) {
+		return Event{Epoch: a.Config.Harness.RuntimeID}, nil
 	})
 }
 func (a *API) snapshot(r *http.Request) (Snapshot, error) {
@@ -168,6 +181,8 @@ func (a *API) snapshotAt(r *http.Request, watermark uint64) (Snapshot, error) {
 		}
 	}
 	snapshot.Trace.Entries = trace
+	snapshot.History.NextCursor = a.historyNextCursor(r, "timeline", snapshot.History.NextCursor)
+	snapshot.Trace.NextCursor = a.historyNextCursor(r, "timeline/trace", snapshot.Trace.NextCursor)
 	return snapshot, nil
 }
 func (a *API) events(w http.ResponseWriter, r *http.Request) {
@@ -569,6 +584,10 @@ func (a *API) fileContent(w http.ResponseWriter, r *http.Request) {
 		httpcontract.Failure(w, r, err)
 		return
 	}
+	if bot := botID(r); bot != "" && ref.AgentID != bot {
+		httpcontract.Failure(w, r, domain.Missing("File", ref.ID))
+		return
+	}
 	sessionID := r.URL.Query().Get("session_id")
 	if sessionID == "" {
 		httpcontract.Failure(w, r, domain.Invalid("Session is required for source Computer access"))
@@ -688,12 +707,7 @@ func images(value reflect.Value, out *[]core.Content) {
 	}
 }
 func (a *API) historyImage(w http.ResponseWriter, r *http.Request) {
-	session, err := a.Config.Harness.Core(r.Context(), r.PathValue("id"))
-	if err != nil {
-		httpcontract.Failure(w, r, err)
-		return
-	}
-	entry, err := session.History().Get(r.Context(), r.PathValue("entry"))
+	entry, err := a.readSessionEntry(r, r.PathValue("entry"))
 	if err != nil {
 		httpcontract.Failure(w, r, err)
 		return

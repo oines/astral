@@ -437,7 +437,7 @@ func loopbackRequest(raddr string) bool {
 // a newly added Owner API, login route, or SPA fallback.
 func (s *Server) accessHandler(management, computer http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == computers.TunnelPath || r.URL.Path == "/health" || r.URL.Path == "/acp" {
+		if r.URL.Path == computers.TunnelPath || r.URL.Path == "/health" || r.URL.Path == "/acp" || httpapi.IsBotAPIPath(r.URL.Path) {
 			computer.ServeHTTP(w, r)
 			return
 		}

@@ -143,17 +143,8 @@ func (s *Service) archiveSession(ctx context.Context, agentID, id string, title 
 	if err := s.Store.Get(ctx, "sessions", id, &root); err != nil {
 		return err
 	}
-	if agentID != "" && root.AgentID != agentID {
-		return domain.Forbidden("Session belongs to another Bot")
-	}
-	if err := persistence.CheckSessionAccess(ctx, root); err != nil {
+	if err := checkArchiveRoot(ctx, agentID, root); err != nil {
 		return err
-	}
-	if root.SubagentParentID != "" {
-		return domain.Forbidden("subagents are managed through agent_control")
-	}
-	if root.BindingID != "" {
-		return domain.Conflict("a bound Session cannot be archived")
 	}
 	if title != nil && strings.TrimSpace(*title) == "" {
 		return domain.Invalid("title cannot be empty")
@@ -177,8 +168,10 @@ func (s *Service) archiveSession(ctx context.Context, agentID, id string, title 
 			if err := tx.Get(ctx, "sessions", target, &record); err != nil {
 				return err
 			}
-			record.Archived = true
 			if target == id {
+				if err := checkArchiveRoot(ctx, agentID, record); err != nil {
+					return err
+				}
 				if title != nil {
 					record.Title, record.TitleSource = *title, domain.TitleManual
 				}
@@ -186,6 +179,7 @@ func (s *Service) archiveSession(ctx context.Context, agentID, id string, title 
 					record.Pinned = *pinned
 				}
 			}
+			record.Archived = true
 			if private != nil {
 				record.Private = *private
 			}
@@ -247,6 +241,22 @@ func (s *Service) archiveSession(ctx context.Context, agentID, id string, title 
 	}
 	for _, target := range ids {
 		s.notify(target)
+	}
+	return nil
+}
+
+func checkArchiveRoot(ctx context.Context, agentID string, root domain.Session) error {
+	if agentID != "" && root.AgentID != agentID {
+		return domain.Forbidden("Session belongs to another Bot")
+	}
+	if err := persistence.CheckSessionAccess(ctx, root); err != nil {
+		return err
+	}
+	if root.SubagentParentID != "" {
+		return domain.Forbidden("subagents are managed through agent_control")
+	}
+	if root.BindingID != "" {
+		return domain.Conflict("a bound Session cannot be archived")
 	}
 	return nil
 }

@@ -38,7 +38,7 @@ type Contract struct {
 
 func New() *Contract { return &Contract{Paths: map[string]any{}, Schemas: map[string]any{}} }
 func (c *Contract) Document() map[string]any {
-	return map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": "Astral API", "version": "0.1.0", "description": "Owner, bound Agent Gateway and authenticated Daemon interfaces. Streams use separate clients."},
+	return map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": "Astral API", "version": "0.1.0", "description": "Owner, Bot, bound Agent Gateway and authenticated Daemon interfaces. Streams use separate clients."},
 		"paths": c.Paths, "components": map[string]any{"schemas": c.Schemas, "securitySchemes": map[string]any{
 			"desktop":         map[string]any{"type": "apiKey", "in": "header", "name": "Authorization", "description": "Desktop TOKEN; private runtime identity accepted only from loopback."},
 			"webSessionHTTP":  map[string]any{"type": "apiKey", "in": "cookie", "name": "astral_session", "description": "Browser session for HTTP requests only."},
@@ -46,6 +46,7 @@ func (c *Contract) Document() map[string]any {
 			"daemon":          map[string]any{"type": "http", "scheme": "bearer"},
 			"command":         CommandSecurityScheme(),
 			"acpToken":        map[string]any{"type": "http", "scheme": "bearer", "description": "Credential scoped to one Bot's ACP WebSocket endpoint."},
+			"botToken":        map[string]any{"type": "http", "scheme": "bearer", "description": "Credential scoped to one Bot's external HTTP API."},
 		}}}
 }
 
@@ -68,6 +69,7 @@ type Operation struct {
 	Request, Response     reflect.Type
 	Status                int
 	Auth                  bool
+	BotAuth               bool
 	CommandAuth           bool
 	ContentType           string
 	Query, Headers        []Parameter
@@ -110,6 +112,8 @@ func (c *Contract) Describe(o Operation) {
 	}
 	if o.CommandAuth {
 		operation["security"] = []any{map[string]any{"command": []string{}}}
+	} else if o.BotAuth {
+		operation["security"] = []any{map[string]any{"botToken": []string{}}}
 	} else if o.Auth {
 		operation["security"] = []any{map[string]any{"desktop": []string{}}, map[string]any{"webSessionHTTP": []string{}}, map[string]any{"webSessionHTTPS": []string{}}}
 	}

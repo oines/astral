@@ -31,12 +31,16 @@ type wireMessage struct {
 	Params struct {
 		SessionID string `json:"sessionId"`
 		Update    struct {
-			Kind    string            `json:"sessionUpdate"`
-			Content json.RawMessage   `json:"content"`
-			Meta    map[string]string `json:"_meta"`
-			ToolID  string            `json:"toolCallId"`
-			Title   string            `json:"title"`
-			Status  string            `json:"status"`
+			Kind         string            `json:"sessionUpdate"`
+			Content      json.RawMessage   `json:"content"`
+			Meta         map[string]string `json:"_meta"`
+			ToolID       string            `json:"toolCallId"`
+			Title        string            `json:"title"`
+			Name         string            `json:"name"`
+			Status       string            `json:"status"`
+			CompactionID string            `json:"compactionId"`
+			Used         int               `json:"used"`
+			Size         int               `json:"size"`
 		} `json:"update"`
 	} `json:"params"`
 }
@@ -224,6 +228,18 @@ func TestACPWebSocketSessionsAndTokenRevocation(t *testing.T) {
 	response, updates := client.response(t, 3)
 	if response.Error != nil || response.Result.StopReason != "end_turn" || updateCount(updates, "agent_message_chunk", "bot answer", "acp") != 1 || updateCount(updates, "user_message_chunk", acpQuestion, "acp") != 0 {
 		t.Fatalf("ACP prompt result=%+v, updates=%+v", response, updates)
+	}
+	usageUpdates := 0
+	for _, update := range updates {
+		if update.Params.Update.Kind == "usage_update" {
+			usageUpdates++
+			if update.Params.Update.Used != 20 || update.Params.Update.Size != 128000 {
+				t.Fatalf("incorrect context usage: %+v", update.Params.Update)
+			}
+		}
+	}
+	if usageUpdates != 1 {
+		t.Fatalf("received %d usage updates for one generation", usageUpdates)
 	}
 	checkModelInput(acpQuestion, "acp", tokenName)
 	// A Web caller can supply any input ID. An ACP-shaped ID must neither
@@ -448,7 +464,7 @@ func TestACPMountRemainsVisibleToSubscribedPeer(t *testing.T) {
 	var completed bool
 	for _, update := range updates {
 		part := update.Params.Update
-		if part.Kind == "tool_call" && part.Title == toolName {
+		if part.Kind == "tool_call" && part.Title == toolName && part.Name == toolName {
 			toolID = part.ToolID
 		}
 		if toolID != "" && part.ToolID == toolID && part.Status == "completed" {
@@ -542,6 +558,151 @@ func TestJSONRPCRejectsInvalidRequests(t *testing.T) {
 	for _, raw := range []string{`[`, `[]`, `null`, `{"jsonrpc":"2.0","method":"session/new","id":{}}`} {
 		if _, err := decodeRequest(json.RawMessage(raw)); err == nil {
 			t.Errorf("accepted %s", raw)
+		}
+	}
+}
+
+func TestACPReplayWaitsForOutboxSpace(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	c := &connection{ctx: ctx, cancel: cancel}
+	for remaining := maxOutboxBytes - maxFrame; remaining > 0; remaining -= maxFrame {
+		if !c.reserveOutbox(maxFrame, true) {
+			t.Fatal("could not reserve the replay buffer")
+		}
+	}
+	sent := make(chan bool, 1)
+	go func() { sent <- c.reserveOutbox(maxFrame, true) }()
+	testkit.Await(t, ctx, func() bool {
+		c.outboxMu.Lock()
+		defer c.outboxMu.Unlock()
+		return c.outboxSpace != nil
+	})
+	if !c.reserveOutbox(maxFrame, false) {
+		t.Fatal("replay used the entire buffer and stopped live delivery")
+	}
+	c.releaseOutbox(maxFrame)
+	c.releaseOutbox(maxFrame)
+	if !<-sent {
+		t.Fatal("replay did not continue after draining the buffer")
+	}
+}
+
+func TestACPRequestIDsAndSessionErrors(t *testing.T) {
+	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return testkit.Text("done") })
+	service := New(p.Harness)
+	server := httptest.NewServer(service)
+	t.Cleanup(server.Close)
+	token, err := service.CreateToken(p.Context, p.Agent.ID, "Editor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, _, err := dial(t, server.URL, token.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.send(t, 1, "session/list", struct{}{})
+	if reply := client.read(t); reply.Error == nil || reply.Error.Code != -32600 {
+		t.Fatalf("pre-initialize response: %+v", reply)
+	}
+	if err := wsjson.Write(client.ctx, client.conn, json.RawMessage(`{"jsonrpc":"2.0","id":null,"method":"initialize","params":{"protocolVersion":1}}`)); err != nil {
+		t.Fatal(err)
+	}
+	var response rpcReply
+	if err := wsjson.Read(client.ctx, client.conn, &response); err != nil {
+		t.Fatal(err)
+	}
+	if string(response.ID) != "null" || response.Error != nil || response.Result == nil {
+		t.Fatalf("initialize with null ID: %+v", response)
+	}
+	client.send(t, 2, "session/prompt", map[string]any{"sessionId": "missing", "prompt": []contentBlock{{Type: "text", Text: "hello"}}})
+	reply, _ := client.response(t, 2)
+	if reply.Error == nil || reply.Error.Code != -32002 {
+		t.Fatalf("unknown session response: %+v", reply)
+	}
+	data, ok := reply.Error.Data.(map[string]any)
+	if !ok || data["sessionId"] != "missing" {
+		t.Fatalf("missing error data: %#v", reply.Error.Data)
+	}
+}
+
+func TestACPCompactionUpdatesAreNegotiated(t *testing.T) {
+	p := testkit.New(t, 0, func(context.Context, int, map[string]any) any { return testkit.Text("done") })
+	service := New(p.Harness)
+	server := httptest.NewServer(service)
+	t.Cleanup(server.Close)
+	token, err := service.CreateToken(p.Context, p.Agent.ID, "Editor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, _, err := dial(t, server.URL, token.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.send(t, 1, "initialize", map[string]any{"protocolVersion": 1,
+		"clientCapabilities": map[string]any{"session": map[string]any{"compaction": struct{}{}}},
+	})
+	if reply, _ := client.response(t, 1); reply.Error != nil {
+		t.Fatalf("initialize: %+v", reply.Error)
+	}
+	id := client.create(t)
+	for i, text := range []string{"Remember my task", strings.Repeat("Retain the newest details. ", 6000)} {
+		client.send(t, 3+i, "session/prompt", map[string]any{"sessionId": id, "prompt": []contentBlock{{Type: "text", Text: text}}})
+		if reply, _ := client.response(t, 3+i); reply.Error != nil {
+			t.Fatalf("prompt: %+v", reply.Error)
+		}
+	}
+	title := "Shared title"
+	if err := p.Harness.SaveSessionPresentation(p.Context, id, &title, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		msg := client.read(t)
+		if msg.Params.Update.Kind == "session_info_update" && msg.Params.Update.Title == title {
+			break
+		}
+	}
+	if err := p.Harness.Compact(p.Context, id, "Retain the task"); err != nil {
+		t.Fatal(err)
+	}
+	var compactID string
+	for compactID == "" {
+		if msg := client.read(t); msg.Params.Update.Kind == "compaction_update" {
+			if msg.Params.Update.Status != "completed" || msg.Params.Update.CompactionID == "" {
+				t.Fatalf("compaction update: %+v", msg.Params.Update)
+			}
+			compactID = msg.Params.Update.CompactionID
+		}
+	}
+	loadParams := map[string]any{"sessionId": id, "cwd": "/work", "mcpServers": []any{}}
+	client.send(t, 6, "session/load", loadParams)
+	reply, updates := client.response(t, 6)
+	if reply.Error != nil {
+		t.Fatalf("reload: %+v", reply.Error)
+	}
+	replayed := 0
+	for _, update := range updates {
+		if update.Params.Update.Kind == "compaction_update" && update.Params.Update.CompactionID == compactID {
+			replayed++
+		}
+	}
+	if replayed != 1 {
+		t.Fatalf("replayed completed compaction %d times", replayed)
+	}
+
+	legacy, _, err := dial(t, server.URL, token.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.initialize(t)
+	legacy.send(t, 2, "session/load", loadParams)
+	reply, updates = legacy.response(t, 2)
+	if reply.Error != nil {
+		t.Fatalf("legacy load: %+v", reply.Error)
+	}
+	for _, update := range updates {
+		if update.Params.Update.Kind == "compaction_update" {
+			t.Fatal("legacy client received an unnegotiated compaction update")
 		}
 	}
 }

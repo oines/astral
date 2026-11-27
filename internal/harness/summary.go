@@ -8,6 +8,7 @@ import (
 
 	core "github.com/oines/astral-core"
 	"github.com/oines/astral/internal/domain"
+	"github.com/oines/astral/internal/persistence"
 )
 
 // SessionSummary is a directory entry, not a loaded execution view. Reading it
@@ -56,6 +57,21 @@ func (s *Service) Summaries(ctx context.Context) ([]SessionSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.summarizeSessions(ctx, records)
+}
+
+// BotSummaries shares the directory projection after narrowing the storage
+// query. Parent authorization is enforced by the Bot API before listing its
+// direct children.
+func (s *Service) BotSummaries(ctx context.Context, botID, parentID string) ([]SessionSummary, error) {
+	records, err := s.Store.BotSessionRecords(ctx, botID, parentID)
+	if err != nil {
+		return nil, err
+	}
+	return s.summarizeSessions(ctx, records)
+}
+
+func (s *Service) summarizeSessions(ctx context.Context, records []persistence.Record) ([]SessionSummary, error) {
 	s.mu.Lock()
 	closed := s.closed
 	s.mu.Unlock()

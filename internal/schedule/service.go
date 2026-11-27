@@ -337,8 +337,12 @@ type getter interface {
 }
 
 func authorizePlan(ctx context.Context, store getter, plan domain.Schedule) error {
-	if _, scoped := persistence.CurrentSessionScope(ctx); !scoped {
+	scope, scoped := persistence.CurrentSessionScope(ctx)
+	if !scoped {
 		return nil
+	}
+	if plan.AgentID != scope.AgentID {
+		return domain.Missing("Schedule", plan.ID)
 	}
 	id := plan.SessionID
 	if plan.SessionMode == "new" {

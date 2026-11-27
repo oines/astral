@@ -569,6 +569,21 @@ export type AstralInternalAuthView = {
     username: string;
 };
 
+export type AstralInternalBotaccessCreatedToken = {
+    created_at: string;
+    id: string;
+    last_used_at?: string;
+    name: string;
+    token: string;
+};
+
+export type AstralInternalBotaccessTokenInfo = {
+    created_at: string;
+    id: string;
+    last_used_at?: string;
+    name: string;
+};
+
 export type AstralInternalChannelsCapabilities = {
     adapter: string;
     caption_limit: number;
@@ -1246,19 +1261,6 @@ export type AstralInternalDomainWakeEndpoint = {
     updated_at: string;
 };
 
-export type AstralInternalGatewayAvailableModel = {
-    context_window: number;
-    default_reasoning: AstralCoreReasoningOptions;
-    id: string;
-    images: string;
-    max_input_tokens?: number;
-    max_output_tokens: number;
-    model_id: string;
-    name: string;
-    provider_name: string;
-    reasoning_controls: AstralCoreModelsReasoningControls;
-};
-
 export type AstralInternalGatewayCapabilities = {
     authentication: string;
     capabilities: Array<AstralInternalGatewayCapability>;
@@ -1642,6 +1644,40 @@ export type AstralInternalHttpapiBootstrap = {
     version: string;
 };
 
+export type AstralInternalHttpapiBotApiTokenInput = {
+    name: string;
+};
+
+export type AstralInternalHttpapiBotApiTokens = {
+    endpoint: string;
+    tokens: Array<AstralInternalBotaccessTokenInfo>;
+};
+
+export type AstralInternalHttpapiBotSelf = {
+    avatar?: string;
+    default_computer_id?: string;
+    default_model_id?: string;
+    default_reasoning?: AstralCoreReasoningOptions;
+    id: string;
+    name: string;
+    persona: string;
+    revision: number;
+};
+
+export type AstralInternalHttpapiBotSelfPatch = {
+    default_computer_id?: string;
+    default_model_id?: string;
+    default_reasoning?: AstralCoreReasoningOptions;
+    name?: string;
+    persona?: string;
+    revision: number;
+};
+
+export type AstralInternalHttpapiBotSessionInput = {
+    agent_id?: string;
+    title: string;
+};
+
 export type AstralInternalHttpapiChatRetentionRequest = {
     retention_days: number;
 };
@@ -2007,6 +2043,19 @@ export type AstralInternalModelbridgeAuthorization = {
     status: string;
     user_code?: string;
     verification_url?: string;
+};
+
+export type AstralInternalModelbridgeAvailableModel = {
+    context_window: number;
+    default_reasoning: AstralCoreReasoningOptions;
+    id: string;
+    images: string;
+    max_input_tokens?: number;
+    max_output_tokens: number;
+    model_id: string;
+    name: string;
+    provider_name: string;
+    reasoning_controls: AstralCoreModelsReasoningControls;
 };
 
 export type AstralInternalModelbridgeRefreshResult = {
@@ -2539,6 +2588,88 @@ export type ApplyAgentModelPriorityResponses = {
 
 export type ApplyAgentModelPriorityResponse = ApplyAgentModelPriorityResponses[keyof ApplyAgentModelPriorityResponses];
 
+export type ListBotApiTokensData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/agents/{id}/bot-api-tokens';
+};
+
+export type ListBotApiTokensErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type ListBotApiTokensError = ListBotApiTokensErrors[keyof ListBotApiTokensErrors];
+
+export type ListBotApiTokensResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiBotApiTokens;
+};
+
+export type ListBotApiTokensResponse = ListBotApiTokensResponses[keyof ListBotApiTokensResponses];
+
+export type CreateBotApiTokenData = {
+    body: AstralInternalHttpapiBotApiTokenInput;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/agents/{id}/bot-api-tokens';
+};
+
+export type CreateBotApiTokenErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type CreateBotApiTokenError = CreateBotApiTokenErrors[keyof CreateBotApiTokenErrors];
+
+export type CreateBotApiTokenResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalBotaccessCreatedToken;
+};
+
+export type CreateBotApiTokenResponse = CreateBotApiTokenResponses[keyof CreateBotApiTokenResponses];
+
+export type RevokeBotApiTokenData = {
+    body?: never;
+    path: {
+        id: string;
+        token_id: string;
+    };
+    query?: never;
+    url: '/api/v1/agents/{id}/bot-api-tokens/{token_id}';
+};
+
+export type RevokeBotApiTokenErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type RevokeBotApiTokenError = RevokeBotApiTokenErrors[keyof RevokeBotApiTokenErrors];
+
+export type RevokeBotApiTokenResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type RevokeBotApiTokenResponse = RevokeBotApiTokenResponses[keyof RevokeBotApiTokenResponses];
+
 export type StartWeixinLoginData = {
     body: AstralInternalChannelsWeixinLoginInput;
     path: {
@@ -3023,6 +3154,1298 @@ export type BootstrapResponses = {
 };
 
 export type BootstrapResponse = BootstrapResponses[keyof BootstrapResponses];
+
+export type BotListComputersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/computers';
+};
+
+export type BotListComputersErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotListComputersError = BotListComputersErrors[keyof BotListComputersErrors];
+
+export type BotListComputersResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalDomainComputerStatus>;
+};
+
+export type BotListComputersResponse = BotListComputersResponses[keyof BotListComputersResponses];
+
+export type BotListComputerDirectoryData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        /**
+         * Session whose Bot owns or is allowed to access this file.
+         */
+        session_id: string;
+        /**
+         * Directory or file path on the selected Computer. Relative paths use that Computer's Bot home. An omitted path uses the Session CWD on its current Computer, otherwise the Bot home.
+         */
+        path?: string;
+        /**
+         * Opaque continuation cursor from this directory's previous page.
+         */
+        cursor?: string;
+        /**
+         * Page size, from 1 to 500; defaults to 200.
+         */
+        limit?: number;
+    };
+    url: '/api/v1/bot/computers/{id}/files/directory';
+};
+
+export type BotListComputerDirectoryErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotListComputerDirectoryError = BotListComputerDirectoryErrors[keyof BotListComputerDirectoryErrors];
+
+export type BotListComputerDirectoryResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalComputersDirectoryPage;
+};
+
+export type BotListComputerDirectoryResponse = BotListComputerDirectoryResponses[keyof BotListComputerDirectoryResponses];
+
+export type BotEventSchemaData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/event-schema';
+};
+
+export type BotEventSchemaErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotEventSchemaError = BotEventSchemaErrors[keyof BotEventSchemaErrors];
+
+export type BotEventSchemaResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiEvent;
+};
+
+export type BotEventSchemaResponse = BotEventSchemaResponses[keyof BotEventSchemaResponses];
+
+export type BotGetFileReferenceData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        /**
+         * Session whose Bot owns or is allowed to access this file.
+         */
+        session_id: string;
+    };
+    url: '/api/v1/bot/files/{id}';
+};
+
+export type BotGetFileReferenceErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotGetFileReferenceError = BotGetFileReferenceErrors[keyof BotGetFileReferenceErrors];
+
+export type BotGetFileReferenceResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainFileRef;
+};
+
+export type BotGetFileReferenceResponse = BotGetFileReferenceResponses[keyof BotGetFileReferenceResponses];
+
+export type BotFileContentData = {
+    body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        session_id?: string;
+        download?: boolean;
+    };
+    url: '/api/v1/bot/files/{id}/content';
+};
+
+export type BotFileContentErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotFileContentError = BotFileContentErrors[keyof BotFileContentErrors];
+
+export type BotFileContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
+};
+
+export type BotFileContentResponse = BotFileContentResponses[keyof BotFileContentResponses];
+
+export type BotListModelsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/models';
+};
+
+export type BotListModelsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotListModelsError = BotListModelsErrors[keyof BotListModelsErrors];
+
+export type BotListModelsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalModelbridgeAvailableModel>;
+};
+
+export type BotListModelsResponse = BotListModelsResponses[keyof BotListModelsResponses];
+
+export type BotListSchedulesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/schedules';
+};
+
+export type BotListSchedulesErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotListSchedulesError = BotListSchedulesErrors[keyof BotListSchedulesErrors];
+
+export type BotListSchedulesResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalDomainSchedule>;
+};
+
+export type BotListSchedulesResponse = BotListSchedulesResponses[keyof BotListSchedulesResponses];
+
+export type BotCreateScheduleData = {
+    body: AstralInternalScheduleInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/schedules';
+};
+
+export type BotCreateScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotCreateScheduleError = BotCreateScheduleErrors[keyof BotCreateScheduleErrors];
+
+export type BotCreateScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSchedule;
+};
+
+export type BotCreateScheduleResponse = BotCreateScheduleResponses[keyof BotCreateScheduleResponses];
+
+export type BotDeleteScheduleData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/api/v1/bot/schedules/{id}';
+};
+
+export type BotDeleteScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotDeleteScheduleError = BotDeleteScheduleErrors[keyof BotDeleteScheduleErrors];
+
+export type BotDeleteScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotDeleteScheduleResponse = BotDeleteScheduleResponses[keyof BotDeleteScheduleResponses];
+
+export type BotGetScheduleData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/schedules/{id}';
+};
+
+export type BotGetScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotGetScheduleError = BotGetScheduleErrors[keyof BotGetScheduleErrors];
+
+export type BotGetScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSchedule;
+};
+
+export type BotGetScheduleResponse = BotGetScheduleResponses[keyof BotGetScheduleResponses];
+
+export type BotUpdateScheduleData = {
+    body: AstralInternalHttpapiScheduleUpdate;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/schedules/{id}';
+};
+
+export type BotUpdateScheduleErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotUpdateScheduleError = BotUpdateScheduleErrors[keyof BotUpdateScheduleErrors];
+
+export type BotUpdateScheduleResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSchedule;
+};
+
+export type BotUpdateScheduleResponse = BotUpdateScheduleResponses[keyof BotUpdateScheduleResponses];
+
+export type BotGetSelfData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/self';
+};
+
+export type BotGetSelfErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotGetSelfError = BotGetSelfErrors[keyof BotGetSelfErrors];
+
+export type BotGetSelfResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiBotSelf;
+};
+
+export type BotGetSelfResponse = BotGetSelfResponses[keyof BotGetSelfResponses];
+
+export type BotUpdateSelfData = {
+    body: AstralInternalHttpapiBotSelfPatch;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/self';
+};
+
+export type BotUpdateSelfErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotUpdateSelfError = BotUpdateSelfErrors[keyof BotUpdateSelfErrors];
+
+export type BotUpdateSelfResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiBotSelf;
+};
+
+export type BotUpdateSelfResponse = BotUpdateSelfResponses[keyof BotUpdateSelfResponses];
+
+export type BotListSessionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/sessions';
+};
+
+export type BotListSessionsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotListSessionsError = BotListSessionsErrors[keyof BotListSessionsErrors];
+
+export type BotListSessionsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalHarnessSessionSummary>;
+};
+
+export type BotListSessionsResponse = BotListSessionsResponses[keyof BotListSessionsResponses];
+
+export type BotCreateSessionData = {
+    body: AstralInternalHttpapiBotSessionInput;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/sessions';
+};
+
+export type BotCreateSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotCreateSessionError = BotCreateSessionErrors[keyof BotCreateSessionErrors];
+
+export type BotCreateSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHarnessView;
+};
+
+export type BotCreateSessionResponse = BotCreateSessionResponses[keyof BotCreateSessionResponses];
+
+export type BotGetSessionData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}';
+};
+
+export type BotGetSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotGetSessionError = BotGetSessionErrors[keyof BotGetSessionErrors];
+
+export type BotGetSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHarnessView;
+};
+
+export type BotGetSessionResponse = BotGetSessionResponses[keyof BotGetSessionResponses];
+
+export type BotUpdateSessionData = {
+    body: AstralInternalHttpapiSessionPresentation;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}';
+};
+
+export type BotUpdateSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotUpdateSessionError = BotUpdateSessionErrors[keyof BotUpdateSessionErrors];
+
+export type BotUpdateSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotUpdateSessionResponse = BotUpdateSessionResponses[keyof BotUpdateSessionResponses];
+
+export type BotDecideApprovalData = {
+    body: AstralInternalHttpapiApproval;
+    path: {
+        id: string;
+        approval: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/approvals/{approval}';
+};
+
+export type BotDecideApprovalErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotDecideApprovalError = BotDecideApprovalErrors[keyof BotDecideApprovalErrors];
+
+export type BotDecideApprovalResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotDecideApprovalResponse = BotDecideApprovalResponses[keyof BotDecideApprovalResponses];
+
+export type BotUploadAttachmentData = {
+    body: Blob | File;
+    path: {
+        id: string;
+    };
+    query: {
+        name: string;
+        computer_id?: string;
+    };
+    url: '/api/v1/bot/sessions/{id}/attachments';
+};
+
+export type BotUploadAttachmentErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotUploadAttachmentError = BotUploadAttachmentErrors[keyof BotUploadAttachmentErrors];
+
+export type BotUploadAttachmentResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiUploadedAttachment;
+};
+
+export type BotUploadAttachmentResponse = BotUploadAttachmentResponses[keyof BotUploadAttachmentResponses];
+
+export type BotCompactSessionData = {
+    body: AstralInternalHttpapiCompact;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/compact';
+};
+
+export type BotCompactSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotCompactSessionError = BotCompactSessionErrors[keyof BotCompactSessionErrors];
+
+export type BotCompactSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotCompactSessionResponse = BotCompactSessionResponses[keyof BotCompactSessionResponses];
+
+export type BotSelectComputerData = {
+    body: AstralInternalHttpapiSelectComputer;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/computer';
+};
+
+export type BotSelectComputerErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSelectComputerError = BotSelectComputerErrors[keyof BotSelectComputerErrors];
+
+export type BotSelectComputerResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotSelectComputerResponse = BotSelectComputerResponses[keyof BotSelectComputerResponses];
+
+export type BotSessionComputerFileContentData = {
+    body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
+    path: {
+        id: string;
+        computer: string;
+    };
+    query: {
+        /**
+         * Path on the source Computer.
+         */
+        path: string;
+        /**
+         * Set to true or 1 to download the file.
+         */
+        download?: boolean;
+    };
+    url: '/api/v1/bot/sessions/{id}/computers/{computer}/files/content';
+};
+
+export type BotSessionComputerFileContentErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSessionComputerFileContentError = BotSessionComputerFileContentErrors[keyof BotSessionComputerFileContentErrors];
+
+export type BotSessionComputerFileContentResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
+};
+
+export type BotSessionComputerFileContentResponse = BotSessionComputerFileContentResponses[keyof BotSessionComputerFileContentResponses];
+
+export type BotSessionContextData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/context';
+};
+
+export type BotSessionContextErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSessionContextError = BotSessionContextErrors[keyof BotSessionContextErrors];
+
+export type BotSessionContextResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiContextStats;
+};
+
+export type BotSessionContextResponse = BotSessionContextResponses[keyof BotSessionContextResponses];
+
+export type BotContinueSessionData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/continue';
+};
+
+export type BotContinueSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotContinueSessionError = BotContinueSessionErrors[keyof BotContinueSessionErrors];
+
+export type BotContinueSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotContinueSessionResponse = BotContinueSessionResponses[keyof BotContinueSessionResponses];
+
+export type BotSessionEntryData = {
+    body?: never;
+    path: {
+        id: string;
+        entry: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/entries/{entry}';
+};
+
+export type BotSessionEntryErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSessionEntryError = BotSessionEntryErrors[keyof BotSessionEntryErrors];
+
+export type BotSessionEntryResponses = {
+    /**
+     * OK
+     */
+    200: AstralCoreEntry;
+};
+
+export type BotSessionEntryResponse = BotSessionEntryResponses[keyof BotSessionEntryResponses];
+
+export type BotHistoryImageData = {
+    body?: never;
+    path: {
+        id: string;
+        entry: string;
+        index: string;
+    };
+    query?: {
+        session_id?: string;
+        download?: boolean;
+    };
+    url: '/api/v1/bot/sessions/{id}/entries/{entry}/images/{index}';
+};
+
+export type BotHistoryImageErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotHistoryImageError = BotHistoryImageErrors[keyof BotHistoryImageErrors];
+
+export type BotHistoryImageResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type BotHistoryImageResponse = BotHistoryImageResponses[keyof BotHistoryImageResponses];
+
+export type BotSessionEventsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        session_id?: string;
+        download?: boolean;
+    };
+    url: '/api/v1/bot/sessions/{id}/events';
+};
+
+export type BotSessionEventsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSessionEventsError = BotSessionEventsErrors[keyof BotSessionEventsErrors];
+
+export type BotSessionEventsResponses = {
+    /**
+     * OK
+     */
+    200: string;
+};
+
+export type BotSessionEventsResponse = BotSessionEventsResponses[keyof BotSessionEventsResponses];
+
+export type BotForkSessionData = {
+    body: AstralInternalHttpapiFork;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/fork';
+};
+
+export type BotForkSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotForkSessionError = BotForkSessionErrors[keyof BotForkSessionErrors];
+
+export type BotForkSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainSession;
+};
+
+export type BotForkSessionResponse = BotForkSessionResponses[keyof BotForkSessionResponses];
+
+export type BotSessionHistoryData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        cursor?: string;
+        limit?: number;
+        trace?: boolean;
+    };
+    url: '/api/v1/bot/sessions/{id}/history';
+};
+
+export type BotSessionHistoryErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSessionHistoryError = BotSessionHistoryErrors[keyof BotSessionHistoryErrors];
+
+export type BotSessionHistoryResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayHistoryPage;
+};
+
+export type BotSessionHistoryResponse = BotSessionHistoryResponses[keyof BotSessionHistoryResponses];
+
+export type BotSubmitInputData = {
+    body: AstralInternalHarnessInputRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/inputs';
+};
+
+export type BotSubmitInputErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSubmitInputError = BotSubmitInputErrors[keyof BotSubmitInputErrors];
+
+export type BotSubmitInputResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHarnessInputReceipt;
+};
+
+export type BotSubmitInputResponse = BotSubmitInputResponses[keyof BotSubmitInputResponses];
+
+export type BotInputReceiptData = {
+    body?: never;
+    path: {
+        id: string;
+        input: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/inputs/{input}';
+};
+
+export type BotInputReceiptErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotInputReceiptError = BotInputReceiptErrors[keyof BotInputReceiptErrors];
+
+export type BotInputReceiptResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHarnessInputReceipt;
+};
+
+export type BotInputReceiptResponse = BotInputReceiptResponses[keyof BotInputReceiptResponses];
+
+export type BotSelectModelData = {
+    body: AstralInternalHttpapiSelectModel;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/model';
+};
+
+export type BotSelectModelErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSelectModelError = BotSelectModelErrors[keyof BotSelectModelErrors];
+
+export type BotSelectModelResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotSelectModelResponse = BotSelectModelResponses[keyof BotSelectModelResponses];
+
+export type BotClearPendingData = {
+    body: AstralInternalHttpapiClearInputs;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/pending/clear';
+};
+
+export type BotClearPendingErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotClearPendingError = BotClearPendingErrors[keyof BotClearPendingErrors];
+
+export type BotClearPendingResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotClearPendingResponse = BotClearPendingResponses[keyof BotClearPendingResponses];
+
+export type BotRemovePendingData = {
+    body?: never;
+    path: {
+        id: string;
+        input: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/pending/{input}';
+};
+
+export type BotRemovePendingErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotRemovePendingError = BotRemovePendingErrors[keyof BotRemovePendingErrors];
+
+export type BotRemovePendingResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotRemovePendingResponse = BotRemovePendingResponses[keyof BotRemovePendingResponses];
+
+export type BotUpdatePendingData = {
+    body: AstralInternalHarnessPendingEdit;
+    path: {
+        id: string;
+        input: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/pending/{input}';
+};
+
+export type BotUpdatePendingErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotUpdatePendingError = BotUpdatePendingErrors[keyof BotUpdatePendingErrors];
+
+export type BotUpdatePendingResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotUpdatePendingResponse = BotUpdatePendingResponses[keyof BotUpdatePendingResponses];
+
+export type BotMovePendingData = {
+    body: AstralInternalHttpapiMovePending;
+    path: {
+        id: string;
+        input: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/pending/{input}/move';
+};
+
+export type BotMovePendingErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotMovePendingError = BotMovePendingErrors[keyof BotMovePendingErrors];
+
+export type BotMovePendingResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotMovePendingResponse = BotMovePendingResponses[keyof BotMovePendingResponses];
+
+export type BotSessionProcessOutputData = {
+    body?: never;
+    path: {
+        id: string;
+        execution: string;
+    };
+    query?: {
+        session_id?: string;
+        download?: boolean;
+    };
+    url: '/api/v1/bot/sessions/{id}/processes/{execution}/output';
+};
+
+export type BotSessionProcessOutputErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSessionProcessOutputError = BotSessionProcessOutputErrors[keyof BotSessionProcessOutputErrors];
+
+export type BotSessionProcessOutputResponses = {
+    /**
+     * OK
+     */
+    200: string;
+};
+
+export type BotSessionProcessOutputResponse = BotSessionProcessOutputResponses[keyof BotSessionProcessOutputResponses];
+
+export type BotSessionSnapshotData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/snapshot';
+};
+
+export type BotSessionSnapshotErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSessionSnapshotError = BotSessionSnapshotErrors[keyof BotSessionSnapshotErrors];
+
+export type BotSessionSnapshotResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpapiSnapshot;
+};
+
+export type BotSessionSnapshotResponse = BotSessionSnapshotResponses[keyof BotSessionSnapshotResponses];
+
+export type BotStopSessionData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/stop';
+};
+
+export type BotStopSessionErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotStopSessionError = BotStopSessionErrors[keyof BotStopSessionErrors];
+
+export type BotStopSessionResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotStopSessionResponse = BotStopSessionResponses[keyof BotStopSessionResponses];
+
+export type BotListSubagentsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/sessions/{id}/subagents';
+};
+
+export type BotListSubagentsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotListSubagentsError = BotListSubagentsErrors[keyof BotListSubagentsErrors];
+
+export type BotListSubagentsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalHarnessSessionSummary>;
+};
+
+export type BotListSubagentsResponse = BotListSubagentsResponses[keyof BotListSubagentsResponses];
+
+export type BotSessionTimelineData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        cursor?: string;
+        activity_cursor?: string;
+        limit?: number;
+        trace?: boolean;
+    };
+    url: '/api/v1/bot/sessions/{id}/timeline';
+};
+
+export type BotSessionTimelineErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotSessionTimelineError = BotSessionTimelineErrors[keyof BotSessionTimelineErrors];
+
+export type BotSessionTimelineResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalGatewayHistoryPage;
+};
+
+export type BotSessionTimelineResponse = BotSessionTimelineResponses[keyof BotSessionTimelineResponses];
+
+export type BotListWakeEndpointsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bot/wake-endpoints';
+};
+
+export type BotListWakeEndpointsErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotListWakeEndpointsError = BotListWakeEndpointsErrors[keyof BotListWakeEndpointsErrors];
+
+export type BotListWakeEndpointsResponses = {
+    /**
+     * OK
+     */
+    200: Array<AstralInternalDomainWakeEndpoint>;
+};
+
+export type BotListWakeEndpointsResponse = BotListWakeEndpointsResponses[keyof BotListWakeEndpointsResponses];
+
+export type BotDeleteWakeEndpointData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        revision: number;
+    };
+    url: '/api/v1/bot/wake-endpoints/{id}';
+};
+
+export type BotDeleteWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotDeleteWakeEndpointError = BotDeleteWakeEndpointErrors[keyof BotDeleteWakeEndpointErrors];
+
+export type BotDeleteWakeEndpointResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalHttpcontractOk;
+};
+
+export type BotDeleteWakeEndpointResponse = BotDeleteWakeEndpointResponses[keyof BotDeleteWakeEndpointResponses];
+
+export type BotGetWakeEndpointData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/wake-endpoints/{id}';
+};
+
+export type BotGetWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotGetWakeEndpointError = BotGetWakeEndpointErrors[keyof BotGetWakeEndpointErrors];
+
+export type BotGetWakeEndpointResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainWakeEndpoint;
+};
+
+export type BotGetWakeEndpointResponse = BotGetWakeEndpointResponses[keyof BotGetWakeEndpointResponses];
+
+export type BotUpdateWakeEndpointData = {
+    body: AstralInternalWakePatch;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/bot/wake-endpoints/{id}';
+};
+
+export type BotUpdateWakeEndpointErrors = {
+    /**
+     * Operation error
+     */
+    default: AstralInternalHttpcontractError;
+};
+
+export type BotUpdateWakeEndpointError = BotUpdateWakeEndpointErrors[keyof BotUpdateWakeEndpointErrors];
+
+export type BotUpdateWakeEndpointResponses = {
+    /**
+     * OK
+     */
+    200: AstralInternalDomainWakeEndpoint;
+};
+
+export type BotUpdateWakeEndpointResponse = BotUpdateWakeEndpointResponses[keyof BotUpdateWakeEndpointResponses];
 
 export type ListComputersData = {
     body?: never;
@@ -3690,6 +5113,12 @@ export type GetFileReferenceResponse = GetFileReferenceResponses[keyof GetFileRe
 
 export type FileContentData = {
     body?: never;
+    headers?: {
+        /**
+         * One bytes range (start-end, start-, or -suffix). Sources with unknown size return the complete content with HTTP 200.
+         */
+        Range?: string;
+    };
     path: {
         id: string;
     };
@@ -3701,6 +5130,10 @@ export type FileContentData = {
 };
 
 export type FileContentErrors = {
+    /**
+     * Range Not Satisfiable
+     */
+    416: AstralInternalHttpcontractError;
     /**
      * Operation error
      */
@@ -3714,6 +5147,10 @@ export type FileContentResponses = {
      * OK
      */
     200: Blob | File;
+    /**
+     * Partial Content
+     */
+    206: Blob | File;
 };
 
 export type FileContentResponse = FileContentResponses[keyof FileContentResponses];
@@ -7190,7 +8627,7 @@ export type AgentModelsResponses = {
     /**
      * OK
      */
-    200: Array<AstralInternalGatewayAvailableModel>;
+    200: Array<AstralInternalModelbridgeAvailableModel>;
 };
 
 export type AgentModelsResponse = AgentModelsResponses[keyof AgentModelsResponses];

@@ -14,7 +14,7 @@ import (
 
 func (a *API) fileRoutes() {
 	sessionParameter := httpcontract.Parameter{Name: "session_id", Required: true, Description: "Session whose Bot owns or is allowed to access this file."}
-	route[httpcontract.Empty, domain.FileRef](a, "GET", "/files/{id}", "getFileReference", "Files", func(r *http.Request, _ httpcontract.Empty) (domain.FileRef, error) {
+	sharedBotRoute[httpcontract.Empty, domain.FileRef](a, "GET", "/files/{id}", "getFileReference", "Files", func(r *http.Request, _ httpcontract.Empty) (domain.FileRef, error) {
 		session, err := a.fileBrowserSession(r, r.URL.Query().Get("session_id"))
 		if err != nil {
 			return domain.FileRef{}, err
@@ -24,6 +24,9 @@ func (a *API) fileRoutes() {
 			return ref, err
 		}
 		if ref.AgentID != session.AgentID {
+			if botID(r) != "" {
+				return domain.FileRef{}, domain.Missing("File", ref.ID)
+			}
 			return domain.FileRef{}, domain.Forbidden("file reference belongs to another Bot")
 		}
 		// Metadata belongs to history. Reading it does not contact the source
@@ -31,7 +34,7 @@ func (a *API) fileRoutes() {
 		return ref, nil
 	}, sessionParameter)
 
-	route[httpcontract.Empty, computers.DirectoryPage](a, "GET", "/computers/{id}/files/directory", "listComputerDirectory", "Files", func(r *http.Request, _ httpcontract.Empty) (computers.DirectoryPage, error) {
+	sharedBotRoute[httpcontract.Empty, computers.DirectoryPage](a, "GET", "/computers/{id}/files/directory", "listComputerDirectory", "Files", func(r *http.Request, _ httpcontract.Empty) (computers.DirectoryPage, error) {
 		session, err := a.fileBrowserSession(r, r.URL.Query().Get("session_id"))
 		if err != nil {
 			return computers.DirectoryPage{}, err
@@ -61,18 +64,25 @@ func (a *API) fileRoutes() {
 		httpcontract.Parameter{Name: "limit", Type: "integer", Description: "Page size, from 1 to 500; defaults to 200."})
 
 	const content = "/api/v1/sessions/{id}/computers/{computer}/files/content"
-	a.Contract.DescribeContent(httpcontract.Operation{
+	op := httpcontract.Operation{
 		Method: "GET", Path: content, ID: "sessionComputerFileContent", Tag: "Files", Auth: true, ContentType: "application/octet-stream",
 		Description: "Read a regular file on a Computer allowed for this Session. Relative paths use the Bot home on that Computer.",
 		Query:       []httpcontract.Parameter{{Name: "path", Required: true, Description: "Path on the source Computer."}, {Name: "download", Type: "boolean", Description: "Set to true or 1 to download the file."}},
-	})
+	}
+	a.Contract.DescribeContent(op)
 	a.mux.HandleFunc("GET "+content, a.computerFileContent)
+	a.Contract.DescribeContent(a.botRawRoute(op, a.computerFileContent, sessionPathID))
 }
 
 func (a *API) fileBrowserSession(r *http.Request, id string) (domain.Session, error) {
 	var session domain.Session
 	if id == "" {
 		return session, domain.Invalid("Session is required for Computer file access")
+	}
+	if botID(r) != "" {
+		if _, _, err := a.authorizeBotSession(r, id, false); err != nil {
+			return session, err
+		}
 	}
 	if err := a.Config.Harness.Store.Get(r.Context(), "sessions", id, &session); err != nil {
 		return session, err

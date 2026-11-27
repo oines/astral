@@ -11,7 +11,7 @@ var errSubagentSchedule = domain.Forbidden("Subagent work is controlled by its d
 
 func requireScheduleController(ctx context.Context, store getter) error {
 	scope, scoped := persistence.CurrentSessionScope(ctx)
-	if !scoped {
+	if !scoped || scope.SessionID == "" {
 		return nil
 	}
 	var caller domain.Session

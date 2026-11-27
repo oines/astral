@@ -8,8 +8,9 @@ import (
 
 type sessionScopeKey struct{}
 
-// SessionScope is set only from the Host-validated command binding. Owner API
-// calls have no scope and retain access to every Session.
+// SessionScope is set by a trusted entry point after validating the caller.
+// An empty SessionID grants Bot scope without a calling Session's ancestry.
+// Owner API calls have no scope and retain access to every Session.
 type SessionScope struct {
 	AgentID   string
 	SessionID string

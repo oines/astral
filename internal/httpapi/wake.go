@@ -14,16 +14,22 @@ import (
 )
 
 func (a *API) wakeRoutes() {
-	route[httpcontract.Empty, []domain.WakeEndpoint](a, "GET", "/wake-endpoints", "listWakeEndpoints", "Wake endpoints", func(r *http.Request, _ httpcontract.Empty) ([]domain.WakeEndpoint, error) {
-		return a.Config.Harness.WakeEndpoints.List(r.Context(), r.URL.Query().Get("agent_id"))
-	}, httpcontract.Parameter{Name: "agent_id", Description: "Omit to list endpoints for all Bots."})
-	route[httpcontract.Empty, domain.WakeEndpoint](a, "GET", "/wake-endpoints/{id}", "getWakeEndpoint", "Wake endpoints", func(r *http.Request, _ httpcontract.Empty) (domain.WakeEndpoint, error) {
-		return a.Config.Harness.WakeEndpoints.Get(r.Context(), "", r.PathValue("id"))
+	list := func(r *http.Request, _ httpcontract.Empty) ([]domain.WakeEndpoint, error) {
+		id, err := listedBotID(r)
+		if err != nil {
+			return nil, err
+		}
+		return a.Config.Harness.WakeEndpoints.List(r.Context(), id)
+	}
+	route(a, "GET", "/wake-endpoints", "listWakeEndpoints", "Wake endpoints", list, httpcontract.Parameter{Name: "agent_id", Description: "Omit to list endpoints for all Bots."})
+	botRoute(a, "GET", "/wake-endpoints", "listWakeEndpoints", "Wake endpoints", list)
+	sharedBotRoute[httpcontract.Empty, domain.WakeEndpoint](a, "GET", "/wake-endpoints/{id}", "getWakeEndpoint", "Wake endpoints", func(r *http.Request, _ httpcontract.Empty) (domain.WakeEndpoint, error) {
+		return a.Config.Harness.WakeEndpoints.Get(r.Context(), botID(r), r.PathValue("id"))
 	})
-	route[wake.Patch, domain.WakeEndpoint](a, "PATCH", "/wake-endpoints/{id}", "updateWakeEndpoint", "Wake endpoints", func(r *http.Request, input wake.Patch) (domain.WakeEndpoint, error) {
-		return a.Config.Harness.WakeEndpoints.Update(r.Context(), "", r.PathValue("id"), input)
+	sharedBotRoute[wake.Patch, domain.WakeEndpoint](a, "PATCH", "/wake-endpoints/{id}", "updateWakeEndpoint", "Wake endpoints", func(r *http.Request, input wake.Patch) (domain.WakeEndpoint, error) {
+		return a.Config.Harness.WakeEndpoints.Update(r.Context(), botID(r), r.PathValue("id"), input)
 	})
-	route[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/wake-endpoints/{id}", "deleteWakeEndpoint", "Wake endpoints", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
+	sharedBotRoute[httpcontract.Empty, httpcontract.OK](a, "DELETE", "/wake-endpoints/{id}", "deleteWakeEndpoint", "Wake endpoints", func(r *http.Request, _ httpcontract.Empty) (httpcontract.OK, error) {
 		values := r.URL.Query()["revision"]
 		if len(r.URL.Query()) != 1 || len(values) != 1 {
 			return httpcontract.OK{}, domain.Invalid("one revision query parameter is required")
@@ -32,7 +38,7 @@ func (a *API) wakeRoutes() {
 		if err != nil || revision <= 0 {
 			return httpcontract.OK{}, domain.Invalid("revision must be a positive integer")
 		}
-		return httpcontract.OK{OK: true}, a.Config.Harness.WakeEndpoints.Delete(r.Context(), "", r.PathValue("id"), revision)
+		return httpcontract.OK{OK: true}, a.Config.Harness.WakeEndpoints.Delete(r.Context(), botID(r), r.PathValue("id"), revision)
 	}, httpcontract.Parameter{Name: "revision", Type: "integer", Required: true})
 	a.Contract.Describe(httpcontract.Operation{Method: "GET", Path: "/api/v1/wake-endpoints/events", ID: "wakeEndpointEvents", Tag: "Wake endpoints", Auth: true, ContentType: "text/event-stream", Query: []httpcontract.Parameter{{Name: "agent_id"}, {Name: "configuration_only", Type: "boolean", Description: "Send the initial full snapshot and subsequent configuration changes only; omit to include receiving and limit status updates."}}})
 	a.mux.HandleFunc("GET /api/v1/wake-endpoints/events", a.wakeEvents)
